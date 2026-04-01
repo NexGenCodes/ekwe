@@ -1,0 +1,6 @@
+name = "ekwe-proxy"
+main = "index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+# Set secrets via: wrangler secret put GROQ_KEY_1

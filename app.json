@@ -25,6 +25,13 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-font",
+      "expo-asset",
+      "@react-native-voice/voice",
+      "@sentry/react-native"
+    ],
+    "assetBundlePatterns": ["src/models/*", "src/assets/fonts/*"]
   }
 }
