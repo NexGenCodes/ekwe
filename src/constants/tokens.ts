@@ -91,8 +91,8 @@ export const lightTokens: Tokens = {
   color: {
     background: {
       primary: '#FFFFFF',
-      secondary: '#F5F7FA',
-      tertiary: '#EDF0F4',
+      secondary: '#EBF0F5',
+      tertiary: '#E2E8F0',
     },
     text: {
       primary: '#0A1F30',

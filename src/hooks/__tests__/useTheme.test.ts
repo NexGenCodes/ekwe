@@ -43,7 +43,7 @@ describe('useTheme Hook', () => {
     (useColorScheme as unknown as jest.Mock).mockReturnValue('dark');
 
     const { result } = renderHook(() => useTheme());
-    expect(result.current).toBe(lightTokens);
+    expect(result.current.tokens).toBe(lightTokens);
     expect(setResolvedMock).toHaveBeenCalledWith(ResolvedTheme.Light);
   });
 
@@ -56,7 +56,7 @@ describe('useTheme Hook', () => {
     (useColorScheme as unknown as jest.Mock).mockReturnValue('light');
 
     const { result } = renderHook(() => useTheme());
-    expect(result.current).toBe(darkTokens);
+    expect(result.current.tokens).toBe(darkTokens);
     expect(setResolvedMock).toHaveBeenCalledWith(ResolvedTheme.Dark);
   });
 
@@ -69,12 +69,12 @@ describe('useTheme Hook', () => {
 
     (useColorScheme as unknown as jest.Mock).mockReturnValue('dark');
     const { result: darkResult } = renderHook(() => useTheme());
-    expect(darkResult.current).toBe(darkTokens);
+    expect(darkResult.current.tokens).toBe(darkTokens);
     expect(setResolvedMock).toHaveBeenCalledWith(ResolvedTheme.Dark);
 
     (useColorScheme as unknown as jest.Mock).mockReturnValue('light');
     const { result: lightResult } = renderHook(() => useTheme());
-    expect(lightResult.current).toBe(lightTokens);
+    expect(lightResult.current.tokens).toBe(lightTokens);
     expect(setResolvedMock).toHaveBeenCalledWith(ResolvedTheme.Light);
   });
 });
