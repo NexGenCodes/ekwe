@@ -1,13 +1,20 @@
 export interface Tokens {
   color: {
-    background: { primary: string; secondary: string; tertiary: string };
+    background: {
+      primary: string;
+      secondary: string;
+      tertiary: string;
+    };
     text: {
       primary: string;
       secondary: string;
       tertiary: string;
       inverse: string;
     };
-    border: { default: string; strong: string };
+    border: {
+      default: string;
+      strong: string;
+    };
     brand: {
       navy: string;
       core: string;
@@ -28,7 +35,9 @@ export interface Tokens {
       done: string;
       error: string;
     };
-    translation: { surface: string };
+    translation: {
+      surface: string;
+    };
   };
   space: {
     1: number;
@@ -78,56 +87,6 @@ export interface Tokens {
   };
 }
 
-const sharedSpace: Tokens['space'] = {
-  1: 4,
-  2: 8,
-  3: 12,
-  4: 16,
-  5: 20,
-  6: 24,
-  8: 32,
-  10: 40,
-  12: 48,
-};
-
-const sharedRadius: Tokens['radius'] = {
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  full: 999,
-};
-
-const sharedFont: Tokens['font'] = {
-  family: {
-    display: 'DMSerifDisplay-Regular',
-    body: 'Outfit-Regular',
-    bodyMed: 'Outfit-Medium',
-    mono: 'SpaceMono-Regular',
-  },
-  size: {
-    display: 32,
-    heading: 20,
-    body: 15,
-    label: 12,
-    caption: 11,
-  },
-  weight: {
-    regular: '400',
-    medium: '500',
-  },
-  lineHeight: {
-    display: 38,
-    heading: 26,
-    body: 24,
-    label: 18,
-    caption: 16,
-  },
-  letterSpacing: {
-    label: 0.8,
-  },
-};
-
 export const lightTokens: Tokens = {
   color: {
     background: {
@@ -169,9 +128,42 @@ export const lightTokens: Tokens = {
       surface: '#E6F1FB',
     },
   },
-  space: sharedSpace,
-  radius: sharedRadius,
-  font: sharedFont,
+  space: {
+    1: 4,
+    2: 8,
+    3: 12,
+    4: 16,
+    5: 20,
+    6: 24,
+    8: 32,
+    10: 40,
+    12: 48,
+  },
+  radius: { sm: 8, md: 12, lg: 16, xl: 24, full: 999 },
+  font: {
+    family: {
+      display: 'DMSerifDisplay-Regular',
+      body: 'Outfit-Regular',
+      bodyMed: 'Outfit-Medium',
+      mono: 'SpaceMono-Regular',
+    },
+    size: {
+      display: 32,
+      heading: 20,
+      body: 15,
+      label: 12,
+      caption: 11,
+    },
+    weight: { regular: '400', medium: '500' },
+    lineHeight: {
+      display: 38,
+      heading: 26,
+      body: 24,
+      label: 18,
+      caption: 16,
+    },
+    letterSpacing: { label: 0.8 },
+  },
   shadow: {
     card: {
       shadowColor: '#0A1F30',
@@ -191,7 +183,9 @@ export const lightTokens: Tokens = {
 };
 
 export const darkTokens: Tokens = {
+  ...lightTokens,
   color: {
+    ...lightTokens.color,
     background: {
       primary: '#0A1220',
       secondary: '#111827',
@@ -207,33 +201,10 @@ export const darkTokens: Tokens = {
       default: '#1E2D3D',
       strong: '#2D3F52',
     },
-    brand: {
-      navy: '#0A1F30',
-      core: '#1A7EC8',
-      bright: '#26A0E3',
-      sky: '#7ecaf5',
-      green: '#1D9E75',
-    },
-    status: {
-      error: '#E24B4A',
-      warning: '#BA7517',
-      success: '#1D9E75',
-      info: '#1A7EC8',
-    },
-    bubble: {
-      idle: '#0A1F30',
-      recording: '#E24B4A',
-      processing: '#0A1F30',
-      done: '#1D9E75',
-      error: '#854F0B',
-    },
     translation: {
       surface: '#042C53',
     },
   },
-  space: sharedSpace,
-  radius: sharedRadius,
-  font: sharedFont,
   shadow: {
     card: {},
     overlay: {},

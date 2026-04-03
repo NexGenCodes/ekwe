@@ -13,12 +13,12 @@ export enum EkweError {
   PERMISSION_MIC = 'EKWE_PERMISSION_MIC',
   PERMISSION_OVERLAY = 'EKWE_PERMISSION_OVERLAY',
   SESSION_INTERRUPTED = 'EKWE_SESSION_INTERRUPTED',
-  ONNX_LOAD_FAIL = 'EKWE_ONNX_LOAD_FAIL',
-  VAD_FAIL = 'EKWE_VAD_FAIL',
   TRANSCRIPTION_FAIL = 'EKWE_TRANSCRIPTION_FAIL',
   TRANSLATION_FAIL = 'EKWE_TRANSLATION_FAIL',
   RATE_LIMITED = 'EKWE_RATE_LIMITED',
   ALL_PROVIDERS_FAIL = 'EKWE_ALL_PROVIDERS_FAIL',
+  AUDIO_RECORD_FAIL = 'EKWE_AUDIO_RECORD_FAIL',
+  AUDIO_EMPTY = 'EKWE_AUDIO_EMPTY',
 }
 
 export const ErrorMessages: Record<EkweError, string> = {
@@ -29,7 +29,7 @@ export const ErrorMessages: Record<EkweError, string> = {
   [EkweError.LOW_VOLUME]:
     'Volume too low. Speaker volume has been raised — try again.',
   [EkweError.INTERRUPTED]:
-    'Recording stopped by an incoming call. Tap the bubble to try again.',
+    'Recording stopped by an incoming call. Tap the bubble to retry.',
   [EkweError.BAD_FORMAT]: 'This audio format is not supported.',
   [EkweError.PROCESSOR_FAIL]: 'Audio processing failed. Please try again.',
   [EkweError.EMPTY_TRANSCRIPT]:
@@ -42,15 +42,15 @@ export const ErrorMessages: Record<EkweError, string> = {
   [EkweError.PERMISSION_MIC]:
     'Microphone access is required. Enable it in Settings.',
   [EkweError.PERMISSION_OVERLAY]:
-    'Display over other apps is required for the bubble. Enable it in Settings.',
+    'Display over other apps is required. Enable it in Settings.',
   [EkweError.SESSION_INTERRUPTED]:
-    'Session was interrupted. Your partial transcript has been saved.',
-  [EkweError.ONNX_LOAD_FAIL]:
-    'Audio processor failed to load. Please restart Ekwe.',
-  [EkweError.VAD_FAIL]: 'Voice detection failed. Please try again.',
+    'Session interrupted. Your partial transcript was saved.',
   [EkweError.TRANSCRIPTION_FAIL]: 'Transcription failed. Please try again.',
   [EkweError.TRANSLATION_FAIL]: 'Translation failed. Please try again.',
   [EkweError.RATE_LIMITED]: 'Service is busy. Trying another provider.',
   [EkweError.ALL_PROVIDERS_FAIL]:
-    'Transcription is busy right now. Please try again in a moment.',
+    'Transcription is busy right now. Try again in a moment.',
+  [EkweError.AUDIO_RECORD_FAIL]: 'Could not start recording. Please try again.',
+  [EkweError.AUDIO_EMPTY]:
+    'No audio was captured. Make sure the voice note is audible.',
 };

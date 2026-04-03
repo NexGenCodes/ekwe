@@ -1,16 +1,17 @@
 import { createMMKV } from 'react-native-mmkv';
-import type { StateStorage } from 'zustand/middleware';
+import { StateStorage } from 'zustand/middleware';
 
-const storage = createMMKV({ id: 'ekwe-store' });
+const mmkv = createMMKV({ id: 'ekwe-store' });
 
 export const mmkvStorage: StateStorage = {
   getItem: (name: string): string | null => {
-    return storage.getString(name) ?? null;
+    const value = mmkv.getString(name);
+    return value ?? null;
   },
   setItem: (name: string, value: string): void => {
-    storage.set(name, value);
+    mmkv.set(name, value);
   },
   removeItem: (name: string): void => {
-    storage.remove(name);
+    mmkv.remove(name);
   },
 };

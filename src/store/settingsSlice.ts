@@ -1,9 +1,7 @@
-import type { StateCreator } from 'zustand';
-
 export enum ThemePreference {
-  LIGHT = 'light',
-  DARK = 'dark',
-  SYSTEM = 'system',
+  Light = 'light',
+  Dark = 'dark',
+  System = 'system',
 }
 
 export interface SettingsState {
@@ -30,16 +28,9 @@ export interface SettingsActions {
   setShowSpeakerRerouteBanner: (val: boolean) => void;
 }
 
-export type SettingsSlice = SettingsState & SettingsActions;
-
-export const createSettingsSlice: StateCreator<
-  SettingsSlice,
-  [],
-  [],
-  SettingsSlice
-> = (set) => ({
+const initialSettings: SettingsState = {
   bubbleEnabled: false,
-  themePreference: ThemePreference.SYSTEM,
+  themePreference: ThemePreference.System,
   retentionDays: 7,
   selectedLanguages: ['en', 'es', 'it', 'de', 'zh'],
   pinnedLanguages: [],
@@ -47,31 +38,26 @@ export const createSettingsSlice: StateCreator<
   forceSpeakerMode: true,
   showVolumeRaiseBanner: true,
   showSpeakerRerouteBanner: true,
-  setBubbleEnabled: (val: boolean): void => {
-    set({ bubbleEnabled: val });
-  },
-  setThemePreference: (val: ThemePreference): void => {
-    set({ themePreference: val });
-  },
-  setRetentionDays: (val: number): void => {
-    set({ retentionDays: val });
-  },
-  setSelectedLanguages: (codes: string[]): void => {
-    set({ selectedLanguages: codes });
-  },
-  setPinnedLanguages: (codes: string[]): void => {
-    set({ pinnedLanguages: codes });
-  },
-  setAutoRaiseVolume: (val: boolean): void => {
-    set({ autoRaiseVolume: val });
-  },
-  setForceSpeakerMode: (val: boolean): void => {
-    set({ forceSpeakerMode: val });
-  },
-  setShowVolumeRaiseBanner: (val: boolean): void => {
-    set({ showVolumeRaiseBanner: val });
-  },
-  setShowSpeakerRerouteBanner: (val: boolean): void => {
-    set({ showSpeakerRerouteBanner: val });
-  },
+};
+
+export const createSettingsSlice = (
+  set: (fn: (state: SettingsState) => Partial<SettingsState>) => void,
+): SettingsState & SettingsActions => ({
+  ...initialSettings,
+  setBubbleEnabled: (bubbleEnabled): void => set(() => ({ bubbleEnabled })),
+  setThemePreference: (themePreference): void =>
+    set(() => ({ themePreference })),
+  setRetentionDays: (retentionDays): void => set(() => ({ retentionDays })),
+  setSelectedLanguages: (selectedLanguages): void =>
+    set(() => ({ selectedLanguages })),
+  setPinnedLanguages: (pinnedLanguages): void =>
+    set(() => ({ pinnedLanguages })),
+  setAutoRaiseVolume: (autoRaiseVolume): void =>
+    set(() => ({ autoRaiseVolume })),
+  setForceSpeakerMode: (forceSpeakerMode): void =>
+    set(() => ({ forceSpeakerMode })),
+  setShowVolumeRaiseBanner: (showVolumeRaiseBanner): void =>
+    set(() => ({ showVolumeRaiseBanner })),
+  setShowSpeakerRerouteBanner: (showSpeakerRerouteBanner): void =>
+    set(() => ({ showSpeakerRerouteBanner })),
 });

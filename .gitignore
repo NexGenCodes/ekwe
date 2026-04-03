@@ -41,3 +41,25 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# tests
+coverage/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS specific
+Thumbs.db
+
+# local# Environment
+.env*
+PLAN.md
+*.log
+
+# Expo extras
+.expo-shared/
+
+# Cloudflare Workers
+.dev.vars
+.wrangler/

@@ -1,12 +1,11 @@
 {
   "expo": {
-    "name": "ekwe2",
-    "slug": "ekwe2",
+    "name": "ekwe",
+    "slug": "ekwe",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -20,8 +19,11 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.anonymous.ekwe"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -29,9 +31,19 @@
     "plugins": [
       "expo-font",
       "expo-asset",
-      "@react-native-voice/voice",
-      "@sentry/react-native"
+      "expo-speech-recognition",
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "airwaybill",
+          "project": "javascript-nextjs"
+        }
+      ],
+      "@sentry/react-native",
+      "expo-audio"
     ],
-    "assetBundlePatterns": ["src/models/*", "src/assets/fonts/*"]
+    "assetBundlePatterns": [
+      "src/assets/fonts/*"
+    ]
   }
 }

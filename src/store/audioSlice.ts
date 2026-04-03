@@ -1,12 +1,11 @@
 import { EkweError } from 'src/constants/errors';
-import type { StateCreator } from 'zustand';
 
 export enum RecordingState {
-  IDLE = 'idle',
-  RECORDING = 'recording',
-  PROCESSING = 'processing',
-  DONE = 'done',
-  ERROR = 'error',
+  Idle = 'idle',
+  Recording = 'recording',
+  Processing = 'processing',
+  Done = 'done',
+  Error = 'error',
 }
 
 export interface AudioState {
@@ -32,10 +31,8 @@ export interface AudioActions {
   resetAudioState: () => void;
 }
 
-export type AudioSlice = AudioState & AudioActions;
-
 const initialAudioState: AudioState = {
-  recordingState: RecordingState.IDLE,
+  recordingState: RecordingState.Idle,
   transcriptBuffer: '',
   errorCode: null,
   sessionId: null,
@@ -45,35 +42,19 @@ const initialAudioState: AudioState = {
   duration: null,
 };
 
-export const createAudioSlice: StateCreator<AudioSlice, [], [], AudioSlice> = (
-  set,
-) => ({
+export const createAudioSlice = (
+  set: (fn: (state: AudioState) => Partial<AudioState>) => void,
+): AudioState & AudioActions => ({
   ...initialAudioState,
-  setRecordingState: (state: RecordingState): void => {
-    set({ recordingState: state });
-  },
-  appendTranscript: (text: string): void => {
-    set((prev) => ({ transcriptBuffer: prev.transcriptBuffer + text }));
-  },
-  setError: (code: EkweError): void => {
-    set({ errorCode: code, recordingState: RecordingState.ERROR });
-  },
-  setAudioPath: (path: string): void => {
-    set({ audioPath: path });
-  },
-  setSessionId: (id: string): void => {
-    set({ sessionId: id });
-  },
-  setSourceLang: (code: string): void => {
-    set({ sourceLang: code });
-  },
-  setTargetLang: (code: string): void => {
-    set({ targetLang: code });
-  },
-  setDuration: (seconds: number): void => {
-    set({ duration: seconds });
-  },
-  resetAudioState: (): void => {
-    set(initialAudioState);
-  },
+  setRecordingState: (recordingState): void => set(() => ({ recordingState })),
+  appendTranscript: (text): void =>
+    set((state) => ({ transcriptBuffer: state.transcriptBuffer + text })),
+  setError: (errorCode): void =>
+    set(() => ({ errorCode, recordingState: RecordingState.Error })),
+  setAudioPath: (audioPath): void => set(() => ({ audioPath })),
+  setSessionId: (sessionId): void => set(() => ({ sessionId })),
+  setSourceLang: (sourceLang): void => set(() => ({ sourceLang })),
+  setTargetLang: (targetLang): void => set(() => ({ targetLang })),
+  setDuration: (duration): void => set(() => ({ duration })),
+  resetAudioState: (): void => set(() => ({ ...initialAudioState })),
 });

@@ -1,5 +1,3 @@
-import type { StateCreator } from 'zustand';
-
 export interface HistoryEntry {
   id: string;
   sourceLang: string;
@@ -22,30 +20,21 @@ export interface HistoryActions {
   runCleanup: (retentionMs: number) => void;
 }
 
-export type HistorySlice = HistoryState & HistoryActions;
-
-export const createHistorySlice: StateCreator<
-  HistorySlice,
-  [],
-  [],
-  HistorySlice
-> = (set) => ({
+export const createHistorySlice = (
+  set: (fn: (state: HistoryState) => Partial<HistoryState>) => void,
+): HistoryState & HistoryActions => ({
   entries: [],
-  addEntry: (entry: HistoryEntry): void => {
-    set((state) => ({ entries: [entry, ...state.entries] }));
-  },
-  deleteEntry: (id: string): void => {
+  addEntry: (entry): void =>
+    set((state) => ({ entries: [entry, ...state.entries] })),
+  deleteEntry: (id): void =>
     set((state) => ({
       entries: state.entries.filter((e) => e.id !== id),
-    }));
-  },
-  clearAll: (): void => {
-    set({ entries: [] });
-  },
-  runCleanup: (retentionMs: number): void => {
-    const now = Date.now();
+    })),
+  clearAll: (): void => set(() => ({ entries: [] })),
+  runCleanup: (retentionMs): void =>
     set((state) => ({
-      entries: state.entries.filter((e) => now - e.timestamp <= retentionMs),
-    }));
-  },
+      entries: state.entries.filter(
+        (e) => Date.now() - e.timestamp <= retentionMs,
+      ),
+    })),
 });

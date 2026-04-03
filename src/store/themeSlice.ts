@@ -1,8 +1,6 @@
-import type { StateCreator } from 'zustand';
-
 export enum ResolvedTheme {
-  LIGHT = 'light',
-  DARK = 'dark',
+  Light = 'light',
+  Dark = 'dark',
 }
 
 export interface ThemeState {
@@ -13,13 +11,9 @@ export interface ThemeActions {
   setResolved: (theme: ResolvedTheme) => void;
 }
 
-export type ThemeSlice = ThemeState & ThemeActions;
-
-export const createThemeSlice: StateCreator<ThemeSlice, [], [], ThemeSlice> = (
-  set,
-) => ({
-  resolved: ResolvedTheme.LIGHT,
-  setResolved: (theme: ResolvedTheme): void => {
-    set({ resolved: theme });
-  },
+export const createThemeSlice = (
+  set: (fn: (state: ThemeState) => Partial<ThemeState>) => void,
+): ThemeState & ThemeActions => ({
+  resolved: ResolvedTheme.Light,
+  setResolved: (resolved): void => set(() => ({ resolved })),
 });

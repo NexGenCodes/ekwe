@@ -1,32 +1,28 @@
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
-import { lightTokens, darkTokens } from 'src/constants/tokens';
-import type { Tokens } from 'src/constants/tokens';
-import { useStore } from 'src/store';
+import { lightTokens, darkTokens, Tokens } from 'src/constants/tokens';
+import { useThemeStore, useSettingsStore } from 'src/store';
 import { ThemePreference } from 'src/store/settingsSlice';
 import { ResolvedTheme } from 'src/store/themeSlice';
 
 export const useTheme = (): Tokens => {
-  const themePreference = useStore((s) => s.themePreference);
-  const setResolved = useStore((s) => s.setResolved);
-  const systemColorScheme = useColorScheme();
+  const themePreference = useSettingsStore((s) => s.themePreference);
+  const setResolved = useThemeStore((s) => s.setResolved);
+  const systemScheme = useColorScheme();
 
   const resolved: ResolvedTheme = ((): ResolvedTheme => {
-    if (themePreference === ThemePreference.LIGHT) {
-      return ResolvedTheme.LIGHT;
+    if (themePreference === ThemePreference.Light) {
+      return ResolvedTheme.Light;
     }
-    if (themePreference === ThemePreference.DARK) {
-      return ResolvedTheme.DARK;
+    if (themePreference === ThemePreference.Dark) {
+      return ResolvedTheme.Dark;
     }
-    // ThemePreference.SYSTEM
-    return systemColorScheme === 'dark'
-      ? ResolvedTheme.DARK
-      : ResolvedTheme.LIGHT;
+    return systemScheme === 'dark' ? ResolvedTheme.Dark : ResolvedTheme.Light;
   })();
 
-  useEffect((): void => {
+  useEffect(() => {
     setResolved(resolved);
   }, [resolved, setResolved]);
 
-  return resolved === ResolvedTheme.LIGHT ? lightTokens : darkTokens;
+  return resolved === ResolvedTheme.Dark ? darkTokens : lightTokens;
 };
