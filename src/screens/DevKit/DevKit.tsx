@@ -21,9 +21,14 @@ import {
 import React, { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { HistoryItem } from 'src/components/cards/HistoryItem';
+import { TranscriptCard } from 'src/components/cards/TranscriptCard';
+import { TranslationCard } from 'src/components/cards/TranslationCard';
 import { AudioWaveform } from 'src/components/common/AudioWaveform';
 import { EkweBanner } from 'src/components/common/EkweBanner';
 import { EkweButton } from 'src/components/common/EkweButton';
+import { LanguagePickerSheet } from 'src/components/common/LanguagePickerSheet';
+import { PermissionGate } from 'src/components/common/PermissionGate';
 import { ThemeToggler } from 'src/components/common/ThemeToggler';
 import { useTheme } from 'src/hooks/useTheme';
 
@@ -51,6 +56,11 @@ export const DevKit = (): React.ReactElement => {
   const { tokens } = useTheme();
   const [bannerVisible, setBannerVisible] = useState<boolean>(false);
   const [progress, setProgress] = useState<number>(0.3);
+
+  // Phase 3 States
+  const [isLangPickerVisible, setIsLangPickerVisible] = useState(false);
+  const [selectedLangs, setSelectedLangs] = useState<string[]>(['en', 'es']);
+  const [pinnedLangs, setPinnedLangs] = useState<string[]>(['en']);
 
   const renderSection = (
     title: string,
@@ -249,7 +259,180 @@ export const DevKit = (): React.ReactElement => {
             )}
           </View>,
         )}
+
+        {/* PermissionGate preview */}
+        {renderSection(
+          'PermissionGate Preview',
+          <View
+            style={[
+              styles.previewContainer,
+              {
+                borderColor: tokens.color.border.default,
+                borderRadius: tokens.radius.lg,
+              },
+            ]}
+          >
+            <PermissionGate
+              icon={
+                <Mic
+                  size={64}
+                  color={tokens.color.brand.core}
+                  strokeWidth={1}
+                />
+              }
+              heading="Ekwe needs your microphone"
+              body="To capture voice notes playing around you."
+              primaryLabel="Enable microphone"
+              onPrimary={() => {}}
+              secondaryLabel="Not now"
+              onSecondary={() => {}}
+            />
+          </View>,
+        )}
+
+        {/* LanguagePickerSheet Preview */}
+        {renderSection(
+          'LanguagePickerSheet',
+          <View>
+            <EkweButton
+              variant="secondary"
+              label="Open language picker"
+              onPress={() => setIsLangPickerVisible(true)}
+            />
+            <Text
+              style={{
+                color: tokens.color.text.tertiary,
+                marginTop: 12,
+                textAlign: 'center',
+                fontFamily: tokens.font.family.body,
+              }}
+            >
+              {selectedLangs.length} languages selected
+            </Text>
+          </View>,
+        )}
+
+        {/* TranscriptCard */}
+        {renderSection(
+          'TranscriptCard',
+          <View style={{ gap: tokens.space[4] }}>
+            <TranscriptCard
+              sourceLang="es"
+              duration={47}
+              isStreaming={false}
+              transcript="Buenos días, ¿cómo estás? Espero que hayas dormido bien esta noche."
+              onCopy={() => {}}
+              onTranslate={() => {}}
+              onShare={() => {}}
+            />
+            <TranscriptCard
+              sourceLang="de"
+              duration={12}
+              isStreaming
+              transcript="Ich wollte dir nur sagen"
+              onCopy={() => {}}
+              onTranslate={() => {}}
+              onShare={() => {}}
+            />
+            <TranscriptCard
+              sourceLang="en"
+              duration={33}
+              isStreaming={false}
+              transcript="Buongiorno, come stai?"
+              languageMismatch={{ detected: 'Italian', suggested: 'en' }}
+              onAcceptMismatch={() => {}}
+              onCopy={() => {}}
+              onTranslate={() => {}}
+              onShare={() => {}}
+            />
+          </View>,
+        )}
+
+        {/* TranslationCard */}
+        {renderSection(
+          'TranslationCard',
+          <View style={{ gap: tokens.space[4] }}>
+            <TranslationCard
+              targetLang="en"
+              isLoading
+              onCopy={() => {}}
+              onShare={() => {}}
+            />
+            <TranslationCard
+              targetLang="fr"
+              downloadProgress={0.6}
+              onCopy={() => {}}
+              onShare={() => {}}
+            />
+            <TranslationCard
+              targetLang="en"
+              translation="Good morning, how are you? I hope you slept well last night."
+              onCopy={() => {}}
+              onShare={() => {}}
+            />
+          </View>,
+        )}
+
+        {/* HistoryItem */}
+        {renderSection(
+          'HistoryItem',
+          <View>
+            <HistoryItem
+              entry={{
+                id: 'a1b2c3d4',
+                sourceLang: 'es',
+                targetLang: 'en',
+                transcript: 'Buenos días, ¿cómo estás?',
+                timestamp: Date.now(),
+                duration: 47,
+                sourceApp: 'WhatsApp',
+                translation: null,
+              }}
+              onPress={() => {}}
+              onDelete={() => {}}
+            />
+            <HistoryItem
+              entry={{
+                id: 'e5f6g7h8',
+                sourceLang: 'de',
+                targetLang: 'en',
+                transcript: 'Ich wollte dir nur sagen dass ich dich vermisse',
+                timestamp: Date.now() - 3600000,
+                duration: 23,
+                sourceApp: 'Telegram',
+                translation: null,
+              }}
+              onPress={() => {}}
+              onDelete={() => {}}
+            />
+            <HistoryItem
+              entry={{
+                id: 'i9j0k1l2',
+                sourceLang: 'fr',
+                targetLang: 'en',
+                transcript: 'Bonjour comment tu vas',
+                timestamp: Date.now() - 86400000,
+                duration: 15,
+                sourceApp: null,
+                translation: null,
+              }}
+              onPress={() => {}}
+              onDelete={() => {}}
+            />
+          </View>,
+        )}
       </ScrollView>
+
+      <LanguagePickerSheet
+        isVisible={isLangPickerVisible}
+        selectedLanguages={selectedLangs}
+        pinnedLanguages={pinnedLangs}
+        onSelectionChange={(selected, pinned) => {
+          setSelectedLangs(selected);
+          setPinnedLangs(pinned);
+        }}
+        onClose={() => setIsLangPickerVisible(false)}
+      />
     </SafeAreaView>
   );
 };
@@ -310,5 +493,10 @@ const styles = StyleSheet.create({
     fontSize: 8,
     marginTop: 4,
     color: '#888',
+  },
+  previewContainer: {
+    borderWidth: 1,
+    height: 380,
+    overflow: 'hidden',
   },
 });
