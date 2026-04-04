@@ -1,5 +1,10 @@
 export { HomeScreen } from './Home';
 export { HistoryScreen } from './History';
 export { SettingsScreen } from './Settings';
-export { OnboardingScreen } from './Onboarding';
+export {
+  WelcomeScreen,
+  MicrophoneScreen,
+  LanguageScreen,
+  ReadyScreen,
+} from './Onboarding';
 export { ResultScreen } from './Result';

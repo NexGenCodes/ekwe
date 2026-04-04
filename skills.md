@@ -93,8 +93,6 @@ Body must include: what was tested, which devices verified, known limitations
 
 ## Testing requirements
 
-Jest unit tests: dont use jest test on ui component use maestro
-add test in __test__ in its folder and find a place to add __mock__
-all utils at 100% coverage, all service methods, all Zustand slice actions, error enum completeness, history cleanup timestamp logic, filler word removal, hallucination detection
-Detox E2E: full onboarding, share intent cold/background/foreground, history CRUD, settings persistence, bubble enable + permission, FloatingResultCard, permission denied gate
+Jest unit tests: use for all utils at 100% coverage, all service methods, all Zustand slice actions, component unit logic, and store hydration.
+Maestro E2E: use for all UI flows — full onboarding, share intent cold/background/foreground, history CRUD, settings persistence, bubble enable + permission, FloatingResultCard, and permission denied gate.
 Physical devices: Pixel 7, Samsung S23, Xiaomi Redmi, Oppo A78, iPhone 14 Pro, iPhone 12

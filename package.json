@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@gorhom/bottom-sheet": "^5.2.8",
+    "@react-native-community/netinfo": "11.5.2",
     "@react-navigation/bottom-tabs": "^7.15.9",
     "@react-navigation/native": "^7.2.2",
     "@react-navigation/native-stack": "^7.14.10",
@@ -25,9 +26,11 @@
     "expo-asset": "~55.0.12",
     "expo-audio": "~55.0.11",
     "expo-blur": "~55.0.12",
+    "expo-clipboard": "~55.0.11",
     "expo-constants": "~55.0.11",
     "expo-font": "~55.0.6",
     "expo-haptics": "~55.0.11",
+    "expo-keep-awake": "~55.0.6",
     "expo-linking": "~55.0.11",
     "expo-speech-recognition": "^3.1.2",
     "expo-splash-screen": "~55.0.15",
@@ -76,13 +79,14 @@
   "jest": {
     "preset": "jest-expo",
     "setupFilesAfterEnv": [
-      "@testing-library/jest-native/extend-expect"
+      "@testing-library/jest-native/extend-expect",
+      "./jest.setup.js"
     ],
     "moduleNameMapper": {
       "^src/(.*)$": "<rootDir>/src/$1"
     },
     "transformIgnorePatterns": [
-      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|react-native-mmkv|onnxruntime-react-native)"
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|react-native-mmkv|react-native-worklets|lucide-react-native)"
     ],
     "collectCoverageFrom": [
       "src/utils/**/*.ts",
@@ -92,6 +96,7 @@
       "src/hooks/**/*.ts",
       "!src/utils/index.ts",
       "!src/utils/sentry.ts",
+      "!src/constants/mockData.ts",
       "!src/**/index.ts"
     ],
     "coverageThreshold": {

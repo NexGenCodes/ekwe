@@ -133,6 +133,19 @@ export const EkweBanner = ({
   );
 };
 
+export const BannerPresets = {
+  noInternet: {
+    variant: 'error' as const,
+    title: 'No connection',
+    message: 'Translations will resume once you are back online.',
+  },
+  offlineMode: {
+    variant: 'warning' as const,
+    title: 'Offline mode',
+    message: 'Using on-device models only.',
+  },
+};
+
 const styles = StyleSheet.create({
   container: {
     margin: 16,

@@ -3,6 +3,7 @@
     "name": "ekwe",
     "slug": "ekwe",
     "version": "1.0.0",
+    "scheme": "ekwe",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -43,7 +44,7 @@
       "expo-audio"
     ],
     "assetBundlePatterns": [
-      "src/assets/fonts/*"
+      "assets/fonts/*"
     ]
   }
 }

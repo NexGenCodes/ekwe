@@ -77,4 +77,40 @@ describe('useTheme Hook', () => {
     expect(lightResult.current.tokens).toBe(lightTokens);
     expect(setResolvedMock).toHaveBeenCalledWith(ResolvedTheme.Light);
   });
+
+  it('should toggle theme from light to dark', () => {
+    const setThemePreferenceMock = jest.fn();
+    (useSettingsStore as unknown as jest.Mock).mockImplementation(
+      (
+        selector: (state: Partial<SettingsState & SettingsActions>) => unknown,
+      ) =>
+        selector({
+          themePreference: ThemePreference.Light,
+          setThemePreference: setThemePreferenceMock,
+        }),
+    );
+
+    const { result } = renderHook(() => useTheme());
+    result.current.toggleTheme();
+
+    expect(setThemePreferenceMock).toHaveBeenCalledWith(ThemePreference.Dark);
+  });
+
+  it('should toggle theme from dark to light', () => {
+    const setThemePreferenceMock = jest.fn();
+    (useSettingsStore as unknown as jest.Mock).mockImplementation(
+      (
+        selector: (state: Partial<SettingsState & SettingsActions>) => unknown,
+      ) =>
+        selector({
+          themePreference: ThemePreference.Dark,
+          setThemePreference: setThemePreferenceMock,
+        }),
+    );
+
+    const { result } = renderHook(() => useTheme());
+    result.current.toggleTheme();
+
+    expect(setThemePreferenceMock).toHaveBeenCalledWith(ThemePreference.Light);
+  });
 });
