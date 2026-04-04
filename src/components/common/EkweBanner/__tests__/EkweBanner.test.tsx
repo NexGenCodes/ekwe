@@ -4,32 +4,6 @@ import React from 'react';
 import { EkweBanner, BannerPresets } from '../EkweBanner';
 
 // Mock useTheme — component-specific tokens
-jest.mock('src/hooks/useTheme', () => ({
-  useTheme: (): unknown => ({
-    tokens: {
-      color: {
-        status: {
-          success: '#00FF00',
-          warning: '#FFFF00',
-          error: '#FF0000',
-          info: '#0000FF',
-        },
-        text: {
-          primary: '#000000',
-          secondary: '#666666',
-        },
-      },
-      font: {
-        family: {
-          body: 'Outfit-Regular',
-          bodyMed: 'Outfit-Medium',
-        },
-      },
-    },
-    id: 'light',
-  }),
-}));
-
 describe('EkweBanner', () => {
   const mockOnClose = jest.fn();
   const defaultProps = {

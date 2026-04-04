@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ViewProps } from 'react-native';
+import { ViewProps } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 interface HighContrastCardProps extends ViewProps {

@@ -3,47 +3,9 @@ import React from 'react';
 
 import { HistoryItem } from '../HistoryItem';
 
-// Mock useTheme
-jest.mock('src/hooks/useTheme', () => ({
-  useTheme: (): unknown => ({
-    tokens: {
-      color: {
-        background: {
-          primary: '#FFFFFF',
-        },
-        border: {
-          default: '#EEEEEE',
-        },
-        status: {
-          error: '#FF0000',
-        },
-        text: {
-          primary: '#000000',
-          secondary: '#666666',
-          tertiary: '#999999',
-          inverse: '#FFFFFF',
-        },
-      },
-      font: {
-        family: {
-          body: 'Outfit-Regular',
-          bodyMed: 'Outfit-Medium',
-        },
-        size: {
-          label: 12,
-          caption: 10,
-        },
-        letterSpacing: {
-          label: 0.5,
-        },
-      },
-    },
-  }),
-}));
-
 // Mock getRelativeTime
 jest.mock('src/utils/relativeTime', () => ({
-  getRelativeTime: (): string => '2 mins ago',
+  getRelativeTime: jest.fn().mockReturnValue('2 mins ago'),
 }));
 
 describe('HistoryItem', () => {

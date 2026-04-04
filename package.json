@@ -30,6 +30,7 @@
     "expo-build-properties": "~55.0.11",
     "expo-clipboard": "~55.0.11",
     "expo-constants": "~55.0.11",
+    "expo-file-system": "~55.0.14",
     "expo-font": "~55.0.6",
     "expo-haptics": "~55.0.11",
     "expo-keep-awake": "~55.0.6",
@@ -52,6 +53,7 @@
     "react-native-svg": "15.15.3",
     "react-native-worklets": "0.7.2",
     "tailwindcss": "^3.4.19",
+    "uuid": "^13.0.0",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
@@ -59,6 +61,7 @@
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.2.10",
+    "@types/uuid": "^10.0.0",
     "babel-plugin-module-resolver": "^5.0.3",
     "babel-preset-expo": "~55.0.8",
     "eslint": "^8.57.1",
@@ -98,6 +101,7 @@
       "src/types/**/*.ts",
       "src/store/**/*.ts",
       "src/hooks/**/*.ts",
+      "src/services/**/*.ts",
       "!src/utils/index.ts",
       "!src/utils/sentry.ts",
       "!src/constants/mockData.ts",

@@ -22,9 +22,9 @@ jest.mock('react-native-reanimated', () => {
   const RN = require('react-native');
 
   const createAnimatedComponent = (Component) => {
-    const Animated = React.forwardRef((props, ref) =>
-      React.createElement(Component, { ...props, ref })
-    );
+    const Animated = React.forwardRef((props, ref) => {
+      return <Component {...props} ref={ref} />;
+    });
     Animated.displayName = `Animated(${Component.displayName || Component.name || 'Component'})`;
     return Animated;
   };
@@ -32,11 +32,11 @@ jest.mock('react-native-reanimated', () => {
   return {
     __esModule: true,
     default: {
-      View: createAnimatedComponent(RN.View),
-      Text: createAnimatedComponent(RN.Text),
-      Image: createAnimatedComponent(RN.Image),
-      ScrollView: createAnimatedComponent(RN.ScrollView),
-      FlatList: createAnimatedComponent(RN.FlatList),
+      View: RN.View,
+      Text: RN.Text,
+      Image: RN.Image,
+      ScrollView: RN.ScrollView,
+      FlatList: RN.FlatList,
       createAnimatedComponent,
     },
     useSharedValue: (val) => ({ value: val }),
@@ -77,8 +77,7 @@ jest.mock('react-native-gesture-handler', () => {
   const RN = require('react-native');
 
   return {
-    GestureHandlerRootView: ({ children }) =>
-      React.createElement(RN.View, null, children),
+    GestureHandlerRootView: ({ children }) => children,
     GestureDetector: ({ children }) => children,
     Gesture: {
       Pan: () => ({
@@ -96,14 +95,14 @@ jest.mock('react-native-gesture-handler', () => {
     },
     Swipeable: React.forwardRef(function MockSwipeable(
       { children, renderRightActions },
-      ref
+      ref,
     ) {
       React.useImperativeHandle(ref, () => ({ close: jest.fn() }));
-      return React.createElement(RN.View, null,
-        children,
-        React.createElement(RN.View, { testID: 'right-actions' },
-          renderRightActions ? renderRightActions() : null
-        )
+      return (
+        <RN.View>
+          {renderRightActions?.()}
+          {children}
+        </RN.View>
       );
     }),
   };
@@ -131,8 +130,7 @@ jest.mock('expo-blur', () => {
   const React = require('react');
   const RN = require('react-native');
   return {
-    BlurView: ({ children, ...props }) =>
-      React.createElement(RN.View, props, children),
+    BlurView: ({ children }) => children,
   };
 });
 
@@ -144,8 +142,10 @@ jest.mock('lucide-react-native', () => {
   const RN = require('react-native');
 
   const createIcon = (name) => {
-    const Icon = (props) =>
-      React.createElement(RN.View, { testID: `icon-${name}`, ...props });
+    const Icon = (props) => {
+      const { testID, ...rest } = props;
+      return <RN.View {...rest} testID={testID || `icon-${name}`} />;
+    };
     Icon.displayName = name;
     return Icon;
   };
@@ -168,10 +168,8 @@ jest.mock('react-native-safe-area-context', () => {
   const React = require('react');
   const RN = require('react-native');
   return {
-    SafeAreaView: ({ children, style }) =>
-      React.createElement(RN.View, { style }, children),
-    SafeAreaProvider: ({ children }) =>
-      React.createElement(RN.View, null, children),
+    SafeAreaView: ({ children }) => children,
+    SafeAreaProvider: ({ children }) => children,
     useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
   };
 });
@@ -179,14 +177,18 @@ jest.mock('react-native-safe-area-context', () => {
 /* ------------------------------------------------------------------ */
 /*  react-native-mmkv                                                  */
 /* ------------------------------------------------------------------ */
-jest.mock('react-native-mmkv', () => ({
-  MMKV: jest.fn().mockImplementation(() => ({
+jest.mock('react-native-mmkv', () => {
+  const mockInstance = {
     getString: jest.fn(),
     set: jest.fn(),
     delete: jest.fn(),
     clearAll: jest.fn(),
-  })),
-}));
+  };
+  return {
+    MMKV: jest.fn().mockImplementation(() => mockInstance),
+    createMMKV: jest.fn().mockReturnValue(mockInstance),
+  };
+});
 
 /* ------------------------------------------------------------------ */
 /*  @sentry/react-native                                               */
@@ -203,3 +205,97 @@ jest.mock('@sentry/react-native', () => ({
     init: jest.fn(),
   },
 }));
+
+/* ------------------------------------------------------------------ */
+/*  expo-linking                                                       */
+/* ------------------------------------------------------------------ */
+jest.mock('expo-linking', () => {
+  const listeners = [];
+  return {
+    addEventListener: jest.fn((type, handler) => {
+      if (type === 'url') {
+        listeners.push(handler);
+        return { remove: () => listeners.splice(listeners.indexOf(handler), 1) };
+      }
+      return { remove: () => {} };
+    }),
+    getInitialURL: jest.fn().mockResolvedValue(null),
+    parse: jest.fn((url) => {
+      const uriMatch = url.match(/[?&]uri=([^&]+)/);
+      const uri = uriMatch ? decodeURIComponent(uriMatch[1]) : 'test.mp3';
+      return {
+        scheme: 'ekwe',
+        hostname: 'share',
+        path: '',
+        queryParams: { uri },
+      };
+    }),
+    // Helper to simulate incoming URL in tests
+    _dispatchUrl: (url) => {
+      listeners.forEach((l) => l({ url }));
+    },
+    _resetListeners: () => {
+      listeners.length = 0;
+    },
+  };
+});
+
+/* ------------------------------------------------------------------ */
+/*  uuid                                                               */
+/* ------------------------------------------------------------------ */
+jest.mock('uuid', () => ({
+  v4: jest.fn().mockReturnValue('test-uuid-1234'),
+}));
+
+/* ------------------------------------------------------------------ */
+/*  expo-audio                                                         */
+/* ------------------------------------------------------------------ */
+jest.mock('expo-audio', () => {
+  const Recording = jest.fn().mockImplementation(() => ({
+    prepareToRecordAsync: jest.fn().mockResolvedValue(undefined),
+    record: jest.fn(),
+    stop: jest.fn().mockResolvedValue(undefined),
+    getStatus: jest.fn().mockReturnValue({
+      isRecording: true,
+      durationMillis: 5000,
+      metering: -20,
+      url: 'file://test.m4a',
+    }),
+    uri: 'file://test.m4a',
+  }));
+
+  const AudioModule = {
+    Recording,
+    AudioPlayer: jest.fn(),
+    AudioPlaylist: jest.fn(),
+    setAudioModeAsync: jest.fn().mockResolvedValue(undefined),
+    requestRecordingPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
+    getRecordingPermissionsAsync: jest.fn().mockResolvedValue({ granted: true }),
+  };
+
+  return {
+    AudioModule,
+    Recording,
+    requestRecordingPermissionsAsync: AudioModule.requestRecordingPermissionsAsync,
+    getRecordingPermissionsAsync: AudioModule.getRecordingPermissionsAsync,
+    setAudioModeAsync: AudioModule.setAudioModeAsync,
+    RecordingPresets: {
+      HIGH_QUALITY: {
+        android: {},
+        ios: {},
+      },
+    },
+  };
+});
+
+/* ------------------------------------------------------------------ */
+/*  expo-file-system                                                   */
+/* ------------------------------------------------------------------ */
+jest.mock('expo-file-system', () => ({
+  getInfoAsync: jest.fn().mockResolvedValue({
+    exists: true,
+    size: 1024 * 1024, // 1MB default
+    uri: 'file://test.m4a',
+  }),
+}));
+

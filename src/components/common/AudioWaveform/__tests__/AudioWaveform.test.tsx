@@ -4,21 +4,6 @@ import React from 'react';
 import { AudioWaveform } from '../AudioWaveform';
 
 // Mock useTheme — component-specific tokens
-jest.mock('src/hooks/useTheme', () => ({
-  useTheme: (): unknown => ({
-    tokens: {
-      color: {
-        background: {
-          tertiary: '#F5F5F5',
-        },
-        brand: {
-          core: '#0000FF',
-        },
-      },
-    },
-  }),
-}));
-
 describe('AudioWaveform', () => {
   const defaultProps = {
     amplitudes: [0.1, 0.5, 0.8, 0.5, 0.1],

@@ -24,21 +24,20 @@ describe('ThemeToggler', () => {
     });
   };
 
-  it('renders switch to dark mode in light mode', () => {
+  it('renders button to dark mode in light mode', () => {
     setupTheme('light');
     const { getByRole } = render(<ThemeToggler />);
 
-    const switchRole = getByRole('switch');
-    expect(switchRole.props.accessibilityLabel).toBe('Switch to dark mode');
-    expect(switchRole.props.accessibilityState.checked).toBe(false);
+    const buttonRole = getByRole('button');
+    expect(buttonRole.props.accessibilityLabel).toBe('Switch to dark mode');
   });
 
-  it('renders switch to light mode in dark mode', () => {
+  it('renders button to light mode in dark mode', () => {
     setupTheme('dark');
     const { getByRole } = render(<ThemeToggler />);
 
-    const switchRole = getByRole('button');
-    expect(switchRole.props.accessibilityLabel).toBe('Switch to light mode');
+    const buttonRole = getByRole('button');
+    expect(buttonRole.props.accessibilityLabel).toBe('Switch to light mode');
   });
 
   it('calls toggleTheme and haptics on press', () => {

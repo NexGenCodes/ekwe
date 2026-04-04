@@ -4,46 +4,6 @@ import React from 'react';
 import { LanguagePickerInline } from '../LanguagePickerInline';
 
 // Mock useTheme — component-specific tokens
-jest.mock('src/hooks/useTheme', () => ({
-  useTheme: (): unknown => ({
-    tokens: {
-      color: {
-        background: {
-          primary: '#FFFFFF',
-          secondary: '#F5F5F5',
-        },
-        text: {
-          primary: '#000000',
-          tertiary: '#666666',
-          inverse: '#FFFFFF',
-        },
-        brand: {
-          core: '#0000FF',
-        },
-        border: {
-          default: '#E0E0E0',
-          strong: '#CCCCCC',
-        },
-      },
-      font: {
-        family: {
-          body: 'Outfit-Regular',
-        },
-        size: {
-          body: 16,
-          caption: 12,
-        },
-      },
-      radius: {
-        md: 8,
-      },
-      space: {
-        '4': 16,
-      },
-    },
-  }),
-}));
-
 describe('LanguagePickerInline', () => {
   const mockOnSelectionChange = jest.fn();
   const defaultProps = {

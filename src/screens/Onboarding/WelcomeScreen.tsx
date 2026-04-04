@@ -41,7 +41,7 @@ const FeatureCard = ({
     );
     translateY.value = withDelay(
       400 + index * 150,
-      withSpring(0, { damping: 15, stiffness: 100 }),
+      withSpring(0, { damping: 25, stiffness: 100 }),
     );
   }, [index, opacity, translateY]);
 
@@ -90,7 +90,6 @@ export const WelcomeScreen = ({
 
   useEffect(() => {
     headerOpacity.value = withTiming(1, { duration: 800 });
-    headerTranslateY.value = withSpring(0, { damping: 12 });
   }, [headerOpacity, headerTranslateY]);
 
   const features = [

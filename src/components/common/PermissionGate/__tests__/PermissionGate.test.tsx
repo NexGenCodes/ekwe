@@ -5,51 +5,6 @@ import { View } from 'react-native';
 import { PermissionGate } from '../PermissionGate';
 
 // Mock useTheme — component-specific tokens
-jest.mock('src/hooks/useTheme', () => ({
-  useTheme: (): unknown => ({
-    tokens: {
-      color: {
-        background: {
-          primary: '#FFFFFF',
-          secondary: '#F5F5F5',
-          tertiary: '#F5F5F5',
-        },
-        text: {
-          primary: '#000000',
-          secondary: '#666666',
-          inverse: '#FFFFFF',
-        },
-        brand: {
-          core: '#0000FF',
-        },
-      },
-      font: {
-        family: {
-          body: 'Outfit-Regular',
-          bodyMed: 'Outfit-Medium',
-          display: 'Outfit-Bold',
-        },
-        size: {
-          heading: 24,
-          body: 16,
-          label: 14,
-        },
-        lineHeight: {
-          heading: 32,
-          body: 24,
-        },
-      },
-      space: {
-        '1': 4,
-        '2': 8,
-        '3': 12,
-        '4': 16,
-        '6': 24,
-      },
-    },
-  }),
-}));
-
 describe('PermissionGate', () => {
   const mockOnPrimary = jest.fn();
   const mockOnSecondary = jest.fn();

@@ -1,5 +1,4 @@
 import { Copy, Share, Loader2 } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import React, { useEffect } from 'react';
 import { View, Text } from 'react-native';
 import Animated, {

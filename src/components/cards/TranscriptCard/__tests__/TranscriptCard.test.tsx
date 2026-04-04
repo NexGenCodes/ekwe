@@ -3,64 +3,6 @@ import React from 'react';
 
 import { TranscriptCard } from '../TranscriptCard';
 
-// Mock useTheme
-jest.mock('src/hooks/useTheme', () => ({
-  useTheme: (): unknown => ({
-    tokens: {
-      color: {
-        background: {
-          primary: '#FFFFFF',
-        },
-        border: {
-          default: '#E0E0E0',
-        },
-        brand: {
-          core: '#0000FF',
-        },
-        status: {
-          warning: '#FFA500',
-        },
-        text: {
-          primary: '#000000',
-          secondary: '#666666',
-        },
-      },
-      font: {
-        family: {
-          body: 'Outfit-Regular',
-          bodyMed: 'Outfit-Medium',
-        },
-        size: {
-          body: 16,
-          caption: 12,
-        },
-        lineHeight: {
-          body: 24,
-        },
-        letterSpacing: {
-          label: 0.5,
-        },
-      },
-      radius: {
-        lg: 12,
-      },
-      shadow: {
-        card: {
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
-          elevation: 2,
-        },
-      },
-      space: {
-        '3': 12,
-        '4': 16,
-      },
-    },
-  }),
-}));
-
 describe('TranscriptCard', () => {
   const mockOnCopy = jest.fn();
   const mockOnShare = jest.fn();

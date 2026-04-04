@@ -5,43 +5,6 @@ import { View } from 'react-native';
 import { EkweButton } from '../EkweButton';
 
 // Mock useTheme — component-specific tokens
-jest.mock('src/hooks/useTheme', () => ({
-  useTheme: (): unknown => ({
-    tokens: {
-      color: {
-        brand: {
-          core: '#0000FF',
-        },
-        background: {
-          secondary: '#F5F5F5',
-        },
-        text: {
-          primary: '#000000',
-          secondary: '#666666',
-          inverse: '#FFFFFF',
-        },
-      },
-      font: {
-        family: {
-          display: 'Outfit-Bold',
-        },
-        size: {
-          label: 14,
-          body: 16,
-          heading: 20,
-        },
-      },
-      space: {
-        '1': 4,
-        '2': 8,
-        '3': 12,
-        '4': 16,
-        '6': 24,
-      },
-    },
-  }),
-}));
-
 describe('EkweButton', () => {
   const mockOnPress = jest.fn();
 

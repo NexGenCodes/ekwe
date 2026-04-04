@@ -3,51 +3,6 @@ import React from 'react';
 
 import { TranslationCard } from '../TranslationCard';
 
-// Mock useTheme
-jest.mock('src/hooks/useTheme', () => ({
-  useTheme: (): unknown => ({
-    tokens: {
-      color: {
-        background: {
-          primary: '#FFFFFF',
-        },
-        border: {
-          default: '#E0E0E0',
-        },
-        brand: {
-          core: '#0000FF',
-        },
-        text: {
-          primary: '#000000',
-        },
-      },
-      font: {
-        family: {
-          body: 'Outfit-Regular',
-          bodyMed: 'Outfit-Medium',
-        },
-        size: {
-          body: 16,
-          caption: 12,
-        },
-        lineHeight: {
-          body: 24,
-        },
-        letterSpacing: {
-          label: 0.5,
-        },
-      },
-      radius: {
-        lg: 12,
-        full: 999,
-      },
-      space: {
-        '4': 16,
-      },
-    },
-  }),
-}));
-
 describe('TranslationCard', () => {
   const mockOnCopy = jest.fn();
   const mockOnShare = jest.fn();
