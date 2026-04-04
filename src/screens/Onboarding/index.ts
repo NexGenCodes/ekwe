@@ -1,4 +1,5 @@
 export { WelcomeScreen } from './WelcomeScreen';
-export { MicrophoneScreen } from './MicrophoneScreen';
+export { FeatureOneScreen } from './FeatureOneScreen';
+export { FeatureTwoScreen } from './FeatureTwoScreen';
 export { LanguageScreen } from './LanguageScreen';
-export { ReadyScreen } from './ReadyScreen';
+export { AllSetScreen } from './AllSetScreen';

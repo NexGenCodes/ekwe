@@ -21,8 +21,12 @@ export interface EkweButtonProps {
   onPress: () => void;
   /** Optional container style */
   style?: StyleProp<ViewStyle>;
+  /** Optional container tailwind class */
+  className?: string;
   /** Optional label style */
   labelStyle?: StyleProp<TextStyle>;
+  /** Optional label tailwind class */
+  labelClassName?: string;
   /** Accessibility label for screen readers */
   accessibilityLabel?: string;
   /** Accessibility hint for screen readers */

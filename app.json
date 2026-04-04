@@ -41,7 +41,18 @@
         }
       ],
       "@sentry/react-native",
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "minSdkVersion": 24,
+            "buildArchs": ["arm64-v8a"]
+          }
+        }
+      ]
     ],
     "assetBundlePatterns": [
       "assets/fonts/*"

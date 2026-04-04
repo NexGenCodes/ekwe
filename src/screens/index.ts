@@ -1,10 +1,11 @@
-export { HomeScreen } from './Home';
-export { HistoryScreen } from './History';
-export { SettingsScreen } from './Settings';
+export { HomeScreen } from './Home/HomeScreen';
+export { HistoryScreen } from './History/HistoryScreen';
+export { SettingsScreen } from './Settings/SettingsScreen';
 export {
-  WelcomeScreen,
-  MicrophoneScreen,
+  FeatureOneScreen,
+  FeatureTwoScreen,
   LanguageScreen,
-  ReadyScreen,
+  AllSetScreen,
+  WelcomeScreen,
 } from './Onboarding';
-export { ResultScreen } from './Result';
+export { ResultScreen } from './Result/ResultScreen';

@@ -28,7 +28,7 @@ const styles = StyleSheet.create({
   lang: {
     fontFamily: lightTokens.font.family.bodyMed,
     fontSize: lightTokens.font.size.label,
-    color: lightTokens.color.brand.core,
+    color: lightTokens.color.brand.primary,
     letterSpacing: lightTokens.font.letterSpacing.label,
     marginBottom: lightTokens.space[1],
   },

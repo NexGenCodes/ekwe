@@ -1,23 +1,25 @@
 import { FlashList } from '@shopify/flash-list';
+import * as Haptics from 'expo-haptics';
+import { useColorScheme } from 'nativewind';
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TextInput, Pressable } from 'react-native';
+import { View, Text, TextInput, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CloseIcon } from 'src/assets/icons/CloseIcon';
 import { DrumIcon } from 'src/assets/icons/DrumIcon';
 import { SearchIcon } from 'src/assets/icons/SearchIcon';
 import { HistoryItem } from 'src/components/cards/HistoryItem';
 import { MOCK_HISTORY } from 'src/constants/mockData';
-import { useTheme } from 'src/hooks/useTheme';
+import { getColor } from 'src/constants/theme';
 import { MainTabScreenProps } from 'src/navigation/types';
 import { useHistoryStore } from 'src/store';
 
 export const HistoryScreen = ({
   navigation,
 }: MainTabScreenProps<'History'>): React.ReactElement => {
-  const { tokens } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const entries = useHistoryStore((s) => s.entries);
   const deleteEntry = useHistoryStore((s) => s.deleteEntry);
+  const { colorScheme } = useColorScheme();
 
   const displayEntries = useMemo(() => {
     const all = entries.length > 0 ? entries : MOCK_HISTORY;
@@ -30,71 +32,49 @@ export const HistoryScreen = ({
     );
   }, [entries, searchQuery]);
 
+  const isDark = colorScheme === 'dark';
+  const tertiaryColor = getColor('muted', isDark);
+  const iconColor = getColor('primaryAccent', isDark);
+
   return (
     <SafeAreaView
       edges={['top']}
-      style={[
-        styles.container,
-        { backgroundColor: tokens.color.background.primary },
-      ]}
+      className="flex-1 bg-background dark:bg-background-dark"
     >
-      <View style={styles.header}>
-        <Text
-          style={[
-            styles.title,
-            {
-              fontFamily: tokens.font.family.bodyMed,
-              fontSize: tokens.font.size.heading,
-              color: tokens.color.text.primary,
-            },
-          ]}
-        >
+      <View className="px-6 pt-4 pb-2">
+        <Text className="font-display text-[32px] leading-[38px] text-zinc-950 dark:text-zinc-50">
           History
         </Text>
 
-        <View
-          style={[
-            styles.searchBar,
-            {
-              backgroundColor: tokens.color.background.secondary,
-              borderRadius: tokens.radius.md,
-              marginTop: tokens.space[4],
-            },
-          ]}
-        >
-          <SearchIcon
-            size={18}
-            color={tokens.color.text.tertiary}
-            style={styles.searchIcon}
-          />
+        <View className="h-12 flex-row items-center px-4 bg-card dark:bg-card-dark rounded-2xl mt-6 border border-zinc-200/50 dark:border-zinc-800/50 shadow-sm">
+          <SearchIcon size={18} color={iconColor} style={{ marginRight: 10 }} />
           <TextInput
-            style={[
-              styles.input,
-              {
-                color: tokens.color.text.primary,
-                fontFamily: tokens.font.family.body,
-                fontSize: tokens.font.size.body,
-              },
-            ]}
-            placeholder="Search history"
-            placeholderTextColor={tokens.color.text.tertiary}
+            className="flex-1 h-12 text-base font-body text-zinc-950 dark:text-zinc-50"
+            placeholder="Search translations..."
+            placeholderTextColor={tertiaryColor}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-              <CloseIcon size={16} color={tokens.color.text.tertiary} />
+            <Pressable
+              onPress={() => {
+                Haptics.selectionAsync();
+                setSearchQuery('');
+              }}
+              hitSlop={12}
+            >
+              <CloseIcon size={18} color={tertiaryColor} />
             </Pressable>
           )}
         </View>
       </View>
 
-      <View style={styles.listContainer}>
+      <View className="flex-1">
         {displayEntries.length > 0 ? (
           <FlashList
             data={displayEntries}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={{ paddingBottom: 24, paddingTop: 20 }}
             renderItem={({ item }): React.ReactElement => (
               <HistoryItem
                 entry={item}
@@ -106,18 +86,9 @@ export const HistoryScreen = ({
             )}
           />
         ) : (
-          <View style={styles.emptyState}>
-            <DrumIcon size={48} color={tokens.color.text.tertiary} />
-            <Text
-              style={[
-                styles.emptyTitle,
-                {
-                  fontFamily: tokens.font.family.body,
-                  color: tokens.color.text.tertiary,
-                  marginTop: tokens.space[3],
-                },
-              ]}
-            >
+          <View className="flex-1 items-center justify-center mt-[-80px]">
+            <DrumIcon size={48} color={tertiaryColor} />
+            <Text className="text-base font-body text-zinc-400 dark:text-zinc-500 mt-3 text-center">
               {searchQuery ? 'No matches found' : 'History is empty'}
             </Text>
           </View>
@@ -126,44 +97,3 @@ export const HistoryScreen = ({
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    padding: 16,
-  },
-  title: {
-    letterSpacing: -0.5,
-  },
-  searchBar: {
-    height: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  input: {
-    flex: 1,
-    height: 44,
-  },
-  listContainer: {
-    flex: 1,
-  },
-  listContent: {
-    paddingBottom: 24,
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -80,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    textAlign: 'center',
-  },
-});

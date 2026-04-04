@@ -1,6 +1,7 @@
 import { Copy, Share, Loader2 } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -11,7 +12,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { EkweButton } from 'src/components/common/EkweButton';
 import { LANGUAGES } from 'src/constants/languages';
-import { useTheme } from 'src/hooks/useTheme';
 
 import { TranslationCardProps } from './TranslationCard.types';
 
@@ -27,8 +27,6 @@ export const TranslationCard = ({
   onShare,
   style,
 }: TranslationCardProps): React.ReactElement => {
-  const { tokens } = useTheme();
-
   // Mount animation
   const mountOpacity = useSharedValue(0);
   const mountTranslateY = useSharedValue(8);
@@ -82,9 +80,9 @@ export const TranslationCard = ({
   const renderContent = (): React.ReactNode => {
     if (isLoading) {
       return (
-        <View style={styles.loadingState}>
+        <View className="min-h-[80px] items-center justify-center">
           <Animated.View style={spinStyle}>
-            <Loader2 size={24} color={tokens.color.brand.core} />
+            <Loader2 size={24} color="#1A7EC8" />
           </Animated.View>
         </View>
       );
@@ -92,37 +90,14 @@ export const TranslationCard = ({
 
     if (downloadProgress !== undefined && downloadProgress < 1) {
       return (
-        <View style={styles.downloadState}>
-          <View
-            style={[
-              styles.progressContainer,
-              {
-                backgroundColor: tokens.color.border.default,
-                borderRadius: tokens.radius.full,
-              },
-            ]}
-          >
+        <View className="min-h-[80px] justify-center">
+          <View className="h-1 w-full overflow-hidden mb-2 bg-zinc-200 dark:bg-zinc-800 rounded-full">
             <Animated.View
-              style={[
-                styles.progressBar,
-                {
-                  backgroundColor: tokens.color.brand.core,
-                  borderRadius: tokens.radius.full,
-                },
-                progressStyle,
-              ]}
+              style={progressStyle}
+              className="h-full bg-primary rounded-full"
             />
           </View>
-          <Text
-            style={[
-              styles.downloadLabel,
-              {
-                fontFamily: tokens.font.family.body,
-                fontSize: tokens.font.size.caption,
-                color: tokens.color.brand.core,
-              },
-            ]}
-          >
+          <Text className="text-center font-body text-xs text-primary">
             Downloading language model… {Math.round(downloadProgress * 100)}%
           </Text>
         </View>
@@ -131,33 +106,23 @@ export const TranslationCard = ({
 
     return (
       <View>
-        <Text
-          style={[
-            styles.translationText,
-            {
-              fontFamily: tokens.font.family.body,
-              fontSize: tokens.font.size.body,
-              color: tokens.color.text.primary,
-              lineHeight: tokens.font.lineHeight.body,
-            },
-          ]}
-        >
+        <Text className="mb-4 font-body text-base text-zinc-950 dark:text-zinc-50 leading-[22px]">
           {translation}
         </Text>
-        <View style={styles.actions}>
+        <View className="flex-row gap-3">
           <EkweButton
             variant="ghost"
             size="small"
             label="Copy"
             onPress={onCopy}
-            leftIcon={<Copy size={14} color={tokens.color.brand.core} />}
+            leftIcon={<Copy size={14} color="#1A7EC8" />}
           />
           <EkweButton
             variant="ghost"
             size="small"
             label="Share"
             onPress={onShare}
-            leftIcon={<Share size={14} color={tokens.color.brand.core} />}
+            leftIcon={<Share size={14} color="#1A7EC8" />}
           />
         </View>
       </View>
@@ -166,27 +131,8 @@ export const TranslationCard = ({
 
   return (
     <Animated.View style={[mountStyle, style]}>
-      <View
-        style={[
-          styles.container,
-          {
-            backgroundColor: tokens.color.background.primary,
-            borderColor: tokens.color.brand.core + '4D',
-            borderRadius: tokens.radius.lg,
-            padding: tokens.space[4],
-          },
-        ]}
-      >
-        <Text
-          style={[
-            styles.headerLabel,
-            {
-              fontFamily: tokens.font.family.bodyMed,
-              color: tokens.color.brand.core,
-              letterSpacing: tokens.font.letterSpacing.label,
-            },
-          ]}
-        >
+      <View className="bg-background dark:bg-background-dark border-[0.5px] border-primary/30 rounded-2xl p-4">
+        <Text className="text-[10px] mb-3 font-bodyMed text-primary tracking-[1px]">
           {getLanguageName(targetLang).toUpperCase()}
         </Text>
         {renderContent()}
@@ -194,42 +140,3 @@ export const TranslationCard = ({
     </Animated.View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    borderWidth: 0.5,
-  },
-  headerLabel: {
-    fontSize: 10,
-    marginBottom: 12,
-  },
-  loadingState: {
-    minHeight: 80,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  downloadState: {
-    minHeight: 80,
-    justifyContent: 'center',
-  },
-  progressContainer: {
-    height: 4,
-    width: '100%',
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  progressBar: {
-    height: '100%',
-    width: 0,
-  },
-  downloadLabel: {
-    textAlign: 'center',
-  },
-  translationText: {
-    marginBottom: 16,
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-});

@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { lightTokens } from 'src/constants/tokens';
+import { Text } from 'react-native';
+import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 
 interface FloatingResultCardProps {
   transcript: string;
@@ -10,21 +10,14 @@ export const FloatingResultCard: React.FC<FloatingResultCardProps> = ({
   transcript,
 }) => {
   return (
-    <View style={styles.card}>
-      <Text style={styles.text}>{transcript}</Text>
-    </View>
+    <Animated.View
+      entering={FadeInDown}
+      exiting={FadeOutUp}
+      className="p-5 bg-card dark:bg-card-dark rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 shadow-2xl shadow-zinc-950/20"
+    >
+      <Text className="font-body text-base text-zinc-950 dark:text-zinc-50 leading-6">
+        {transcript}
+      </Text>
+    </Animated.View>
   );
 };
-
-const styles = StyleSheet.create({
-  card: {
-    padding: lightTokens.space[4],
-    backgroundColor: lightTokens.color.translation.surface,
-    borderRadius: lightTokens.radius.lg,
-  },
-  text: {
-    fontFamily: lightTokens.font.family.body,
-    fontSize: lightTokens.font.size.body,
-    color: lightTokens.color.text.primary,
-  },
-});

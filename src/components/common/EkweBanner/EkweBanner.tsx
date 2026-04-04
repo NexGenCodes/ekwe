@@ -1,9 +1,10 @@
 import { BlurView } from 'expo-blur';
 import { Check, AlertTriangle, X, LucideIcon } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import React, { useEffect, useMemo } from 'react';
-import { StyleSheet, View, Text, Pressable, Platform } from 'react-native';
+import { View, Text, Pressable, Platform } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
-import { useTheme } from 'src/hooks/useTheme';
+import { getColor } from 'src/constants/theme';
 
 import { EkweBannerProps } from './EkweBanner.types';
 
@@ -17,7 +18,8 @@ export const EkweBanner = ({
   style,
   accessibilityLabel,
 }: EkweBannerProps): React.ReactElement | null => {
-  const { tokens, id } = useTheme();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   useEffect((): (() => void) | void => {
     if (visible && duration && onClose) {
@@ -33,27 +35,27 @@ export const EkweBanner = ({
     switch (variant) {
       case 'success':
         return {
-          color: tokens.color.status.success,
+          color: getColor('success', isDark),
           Icon: Check,
         };
       case 'warning':
         return {
-          color: tokens.color.status.warning,
+          color: getColor('warning', isDark),
           Icon: AlertTriangle,
         };
       case 'error':
         return {
-          color: tokens.color.status.error,
+          color: getColor('error', isDark),
           Icon: AlertTriangle,
         };
       case 'info':
       default:
         return {
-          color: tokens.color.status.info,
+          color: getColor('info', isDark),
           Icon: AlertTriangle,
         };
     }
-  }, [variant, tokens]);
+  }, [variant, isDark]);
 
   if (!visible) return null;
 
@@ -63,8 +65,8 @@ export const EkweBanner = ({
     <Animated.View
       entering={FadeInUp.springify().damping(15)}
       exiting={FadeOutUp}
+      className="m-4 rounded-2xl border-[1px] overflow-hidden shadow-md"
       style={[
-        styles.container,
         {
           borderColor: `${color}40`,
           backgroundColor: Platform.OS === 'ios' ? 'transparent' : `${color}15`,
@@ -77,37 +79,24 @@ export const EkweBanner = ({
       {Platform.OS === 'ios' && (
         <BlurView
           intensity={20}
-          tint={id === 'dark' ? 'dark' : 'light'}
-          style={StyleSheet.absoluteFill}
+          tint={isDark ? 'dark' : 'light'}
+          className="absolute inset-0"
         />
       )}
-      <View style={styles.content}>
-        <View style={[styles.iconContainer, { backgroundColor: `${color}20` }]}>
+      <View className="flex-row items-center p-3">
+        <View
+          className="w-9 h-9 rounded-xl items-center justify-center mr-3"
+          style={{ backgroundColor: `${color}20` }}
+        >
           <Icon size={20} color={color} strokeWidth={2.5} />
         </View>
 
-        <View style={styles.textContainer}>
-          <Text
-            style={[
-              styles.title,
-              {
-                color: tokens.color.text.primary,
-                fontFamily: tokens.font.family.bodyMed,
-              },
-            ]}
-          >
+        <View className="flex-1 justify-center">
+          <Text className="text-base font-bodyMed mb-0.5 text-zinc-950 dark:text-zinc-50">
             {title}
           </Text>
           {message && (
-            <Text
-              style={[
-                styles.message,
-                {
-                  color: tokens.color.text.secondary,
-                  fontFamily: tokens.font.family.body,
-                },
-              ]}
-            >
+            <Text className="text-sm font-body leading-5 text-zinc-600 dark:text-zinc-400">
               {message}
             </Text>
           )}
@@ -117,15 +106,11 @@ export const EkweBanner = ({
           <Pressable
             onPress={onClose}
             hitSlop={12}
-            style={styles.closeButton}
+            className="ml-3 w-8 h-8 items-center justify-center active:opacity-60"
             accessibilityRole="button"
             accessibilityLabel="Dismiss banner"
           >
-            <X
-              size={20}
-              color={tokens.color.text.secondary}
-              strokeWidth={2.5}
-            />
+            <X size={20} color={getColor('muted', isDark)} strokeWidth={2.5} />
           </Pressable>
         )}
       </View>
@@ -145,46 +130,3 @@ export const BannerPresets = {
     message: 'Using on-device models only.',
   },
 };
-
-const styles = StyleSheet.create({
-  container: {
-    margin: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    overflow: 'hidden',
-    borderCurve: 'continuous',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-  },
-  iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  textContainer: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 16,
-    marginBottom: 2,
-  },
-  message: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  closeButton: {
-    marginLeft: 12,
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

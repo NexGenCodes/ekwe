@@ -9,10 +9,10 @@ import {
 } from '@react-navigation/native-stack';
 
 export type OnboardingStackParams = {
-  Welcome: undefined;
-  Microphone: undefined;
+  FeatureOne: undefined;
+  FeatureTwo: undefined;
   Language: undefined;
-  Ready: undefined;
+  AllSet: undefined;
 };
 
 export type MainTabsParams = {
@@ -30,13 +30,20 @@ export type MainStackParams = {
 };
 
 export type RootStackParams = {
+  Welcome: undefined;
   Onboarding: NavigatorScreenParams<OnboardingStackParams>;
   Main: NavigatorScreenParams<MainStackParams>;
 };
 
 // Typed navigation props — import these in screens
+export type RootScreenProps<T extends keyof RootStackParams> =
+  NativeStackScreenProps<RootStackParams, T>;
+
 export type OnboardingScreenProps<T extends keyof OnboardingStackParams> =
-  NativeStackScreenProps<OnboardingStackParams, T>;
+  CompositeScreenProps<
+    NativeStackScreenProps<OnboardingStackParams, T>,
+    NativeStackScreenProps<RootStackParams>
+  >;
 
 export type MainTabScreenProps<T extends keyof MainTabsParams> =
   CompositeScreenProps<

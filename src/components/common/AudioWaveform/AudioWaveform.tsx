@@ -1,5 +1,6 @@
+import { useColorScheme } from 'nativewind';
 import React from 'react';
-import { View, StyleSheet, LayoutChangeEvent } from 'react-native';
+import { View, LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -7,12 +8,9 @@ import Animated, {
   withSpring,
   interpolateColor,
 } from 'react-native-reanimated';
-import { Tokens } from 'src/constants/tokens';
-import { useTheme } from 'src/hooks/useTheme';
+import { getColor } from 'src/constants/theme';
 
 import { AudioWaveformProps } from './AudioWaveform.types';
-
-const BAR_WIDTH = 3;
 
 export const AudioWaveform = ({
   amplitudes,
@@ -23,8 +21,9 @@ export const AudioWaveform = ({
   style,
   interactive = true,
 }: AudioWaveformProps): React.ReactElement => {
-  const { tokens } = useTheme();
+  const { colorScheme } = useColorScheme();
   const measuredWidth = useSharedValue(width);
+  const isDark = colorScheme === 'dark';
 
   const handleLayout = (event: LayoutChangeEvent): void => {
     measuredWidth.value = event.nativeEvent.layout.width;
@@ -61,12 +60,7 @@ export const AudioWaveform = ({
   const renderContent = (): React.ReactElement | React.ReactElement[] => {
     if (amplitudes.length === 0) {
       return (
-        <View
-          style={[
-            styles.emptyBaseline,
-            { backgroundColor: tokens.color.background.tertiary },
-          ]}
-        />
+        <View className="w-full h-0.5 rounded-full opacity-50 bg-zinc-200 dark:bg-zinc-800" />
       );
     }
 
@@ -79,8 +73,8 @@ export const AudioWaveform = ({
           key={index}
           amplitude={amp}
           isActive={isActive}
-          tokens={tokens}
           height={height}
+          isDark={isDark}
         />
       );
     });
@@ -89,7 +83,8 @@ export const AudioWaveform = ({
   return (
     <GestureDetector gesture={composed}>
       <View
-        style={[styles.container, { height, width }, style]}
+        className="flex-row items-center justify-between"
+        style={[{ height, width }, style]}
         onLayout={handleLayout}
         accessibilityRole="adjustable"
         accessibilityLabel="Audio Waveform"
@@ -104,17 +99,21 @@ export const AudioWaveform = ({
 interface BarProps {
   amplitude: number;
   isActive: boolean;
-  tokens: Tokens;
   height: number;
+  isDark: boolean;
 }
 
 const WaveformBar = ({
   amplitude,
   isActive,
-  tokens,
   height,
+  isDark,
 }: BarProps): React.ReactElement => {
   const activeValue = useSharedValue(isActive ? 1 : 0);
+
+  // Constants for colors to avoid using tokens.ts directly
+  const TERTIARY_COLOR = getColor('border', isDark);
+  const PRIMARY_BRAND_COLOR = getColor('primaryAccent', isDark); // Unified Ekwe blue
 
   React.useEffect(() => {
     activeValue.value = withSpring(isActive ? 1 : 0, { damping: 20 });
@@ -128,7 +127,7 @@ const WaveformBar = ({
       const color = interpolateColor(
         activeValue.value,
         [0, 1],
-        [tokens.color.background.tertiary, tokens.color.brand.core],
+        [TERTIARY_COLOR, PRIMARY_BRAND_COLOR],
       );
 
       return {
@@ -138,23 +137,7 @@ const WaveformBar = ({
     },
   );
 
-  return <Animated.View style={[styles.bar, animatedStyle]} />;
+  return (
+    <Animated.View className="w-[3px] rounded-full" style={animatedStyle} />
+  );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  bar: {
-    width: BAR_WIDTH,
-    borderRadius: BAR_WIDTH / 2,
-  },
-  emptyBaseline: {
-    width: '100%',
-    height: 2,
-    borderRadius: 1,
-    opacity: 0.5,
-  },
-});

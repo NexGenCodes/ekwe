@@ -7,6 +7,7 @@ import BottomSheet, {
   BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
 import { Search, Star, X, Check } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import React, {
   useRef,
   useMemo,
@@ -14,73 +15,12 @@ import React, {
   useCallback,
   useEffect,
 } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { EkweButton } from 'src/components/common/EkweButton';
-import { LANGUAGES, Language } from 'src/constants/languages';
-import { useTheme } from 'src/hooks/useTheme';
+import { LANGUAGES, Language, FLAG_MAP } from 'src/constants/languages';
+import { getColor } from 'src/constants/theme';
 
 import { LanguagePickerSheetProps } from './LanguagePickerSheet.types';
-
-const FLAG_MAP: Record<string, string> = {
-  en: '🇬🇧',
-  es: '🇪🇸',
-  it: '🇮🇹',
-  de: '🇩🇪',
-  zh: '🇨🇳',
-  fr: '🇫🇷',
-  pt: '🇵🇹',
-  ru: '🇷🇺',
-  ja: '🇯🇵',
-  ko: '🇰🇷',
-  ar: '🇸🇦',
-  hi: '🇮🇳',
-  nl: '🇳🇱',
-  pl: '🇵🇱',
-  tr: '🇹🇷',
-  sv: '🇸🇪',
-  da: '🇩🇰',
-  fi: '🇫🇮',
-  nb: '🇳🇴',
-  cs: '🇨🇿',
-  sk: '🇸🇰',
-  ro: '🇷🇴',
-  hu: '🇭🇺',
-  uk: '🇺🇦',
-  el: '🇬🇷',
-  he: '🇮🇱',
-  th: '🇹🇭',
-  vi: '🇻🇳',
-  id: '🇮🇩',
-  ms: '🇲🇾',
-  bg: '🇧🇬',
-  hr: '🇭🇷',
-  sr: '🇷🇸',
-  ca: '🇪🇸',
-  lt: '🇱🇹',
-  lv: '🇱🇻',
-  et: '🇪🇪',
-  sl: '🇸🇮',
-  sq: '🇦🇱',
-  mk: '🇲🇰',
-  af: '🇿🇦',
-  bn: '🇧🇩',
-  fa: '🇮🇷',
-  ur: '🇵🇰',
-  sw: '🇰🇪',
-  tl: '🇵🇭',
-  ta: '🇮🇳',
-  te: '🇮🇳',
-  ml: '🇮🇳',
-  mr: '🇮🇳',
-  gu: '🇮🇳',
-  pa: '🇮🇳',
-  ne: '🇳🇵',
-  si: '🇱🇰',
-  km: '🇰🇭',
-  lo: '🇱🇦',
-  my: '🇲🇲',
-  ka: '🇬🇪',
-};
 
 interface LanguageRowProps {
   item: Language;
@@ -90,6 +30,7 @@ interface LanguageRowProps {
   onTogglePin: () => void;
 }
 
+// Row component for the section list
 const LanguageRow = ({
   item,
   isSelected,
@@ -97,81 +38,58 @@ const LanguageRow = ({
   onToggleSelect,
   onTogglePin,
 }: LanguageRowProps): React.ReactElement => {
-  const { tokens } = useTheme();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  const mutedColor = getColor('muted', isDark);
+  const primaryColor = getColor('primaryAccent', isDark);
+  const onPrimaryColor = getColor('onPrimary', isDark);
 
   return (
     <Pressable
       onPress={onToggleSelect}
-      style={[styles.row, { backgroundColor: tokens.color.background.primary }]}
+      className="h-[52px] flex-row items-center px-4 bg-background dark:bg-background-dark active:opacity-60"
     >
-      <View style={styles.rowLeft}>
-        <Text style={styles.flag}>{FLAG_MAP[item.code] || '🌐'}</Text>
+      <View className="flex-1 flex-row items-center">
+        <Text className="text-xl mr-3">{FLAG_MAP[item.code] || '🌐'}</Text>
         <View>
-          <Text
-            style={[
-              styles.englishName,
-              {
-                color: tokens.color.text.primary,
-                fontFamily: tokens.font.family.body,
-              },
-            ]}
-          >
+          <Text className="text-base font-body text-zinc-950 dark:text-zinc-50">
             {item.englishName}
           </Text>
-          <Text
-            style={[
-              styles.nativeName,
-              {
-                color: tokens.color.text.tertiary,
-                fontFamily: tokens.font.family.body,
-              },
-            ]}
-          >
+          <Text className="text-xs mt-0.5 font-body text-zinc-500 dark:text-zinc-400">
             {item.nativeName}
           </Text>
         </View>
       </View>
 
-      <View style={styles.rowRight}>
-        <Pressable onPress={onTogglePin} hitSlop={8} style={styles.starButton}>
+      <View className="flex-row items-center">
+        <Pressable
+          onPress={onTogglePin}
+          hitSlop={8}
+          className="p-2 active:opacity-60"
+        >
           <Star
             size={20}
-            color={
-              isPinned ? tokens.color.brand.core : tokens.color.text.tertiary
-            }
-            fill={isPinned ? tokens.color.brand.core : 'transparent'}
+            color={isPinned ? primaryColor : mutedColor}
+            fill={isPinned ? primaryColor : 'transparent'}
           />
         </Pressable>
 
         <View
-          style={[
-            styles.selectionCircle,
-            {
-              borderColor: matches(isSelected)
-                ? tokens.color.brand.core
-                : tokens.color.border.strong,
-              backgroundColor: isSelected
-                ? tokens.color.brand.core
-                : 'transparent',
-              borderWidth: isSelected ? 0 : 1.5,
-            },
-          ]}
+          className={`w-[22px] h-[22px] rounded-full ml-3 items-center justify-center ${
+            isSelected
+              ? 'bg-primary border-0'
+              : 'bg-transparent border-[1.5px] border-zinc-300 dark:border-zinc-700'
+          }`}
         >
           {isSelected && (
-            <Check
-              size={12}
-              color={tokens.color.text.inverse}
-              strokeWidth={3}
-            />
+            <Check size={12} color={onPrimaryColor} strokeWidth={3} />
           )}
         </View>
       </View>
     </Pressable>
   );
 };
-
-// Helper for TypeScript
-const matches = (val: boolean): boolean => val;
 
 export const LanguagePickerSheet = ({
   isVisible,
@@ -180,10 +98,15 @@ export const LanguagePickerSheet = ({
   onSelectionChange,
   onClose,
 }: LanguagePickerSheetProps): React.ReactElement => {
-  const { tokens } = useTheme();
+  const { colorScheme } = useColorScheme();
   const sheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['85%'], []);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const isDark = colorScheme === 'dark';
+  const bgColor = getColor('background', isDark);
+  const handleColor = getColor('border', isDark);
+  const mutedColor = getColor('muted', isDark);
 
   useEffect(() => {
     if (isVisible) {
@@ -227,21 +150,13 @@ export const LanguagePickerSheet = ({
 
   const renderFooter = useCallback(
     (props: BottomSheetFooterProps) => (
-      <BottomSheetFooter {...props} bottomInset={tokens.space[4]}>
-        <View
-          style={[
-            styles.footer,
-            {
-              backgroundColor: tokens.color.background.primary,
-              borderTopColor: tokens.color.border.default,
-            },
-          ]}
-        >
+      <BottomSheetFooter {...props} bottomInset={16}>
+        <View className="px-4 py-3 border-t-[0.5px] border-zinc-200 dark:border-zinc-800 bg-background dark:bg-background-dark">
           <EkweButton label="Confirm" onPress={onClose} variant="primary" />
         </View>
       </BottomSheetFooter>
     ),
-    [onClose, tokens],
+    [onClose],
   );
 
   const toggleSelection = (code: string): void => {
@@ -268,50 +183,30 @@ export const LanguagePickerSheet = ({
       backdropComponent={renderBackdrop}
       footerComponent={renderFooter}
       backgroundStyle={{
-        backgroundColor: tokens.color.background.primary,
-        borderTopLeftRadius: tokens.radius.xl,
-        borderTopRightRadius: tokens.radius.xl,
+        backgroundColor: bgColor,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
       }}
       handleIndicatorStyle={{
-        backgroundColor: tokens.color.border.strong,
+        backgroundColor: handleColor,
         width: 40,
       }}
     >
-      <View style={styles.fixedHeader}>
+      <View className="z-10 bg-background dark:bg-background-dark">
         {/* Search */}
-        <View style={styles.searchContainer}>
-          <View
-            style={[
-              styles.searchBar,
-              {
-                backgroundColor: tokens.color.background.secondary,
-                borderColor: tokens.color.border.default,
-                borderRadius: tokens.radius.md,
-              },
-            ]}
-          >
-            <Search
-              size={18}
-              color={tokens.color.text.tertiary}
-              style={styles.searchIcon}
-            />
+        <View className="px-4 pb-2">
+          <View className="h-11 border-[0.5px] border-zinc-200 dark:border-zinc-800 rounded-xl flex-row items-center px-3 bg-card dark:bg-card-dark">
+            <Search size={18} color={mutedColor} style={{ marginRight: 8 }} />
             <BottomSheetTextInput
-              style={[
-                styles.input,
-                {
-                  color: tokens.color.text.primary,
-                  fontFamily: tokens.font.family.body,
-                  fontSize: tokens.font.size.body,
-                },
-              ]}
+              className="flex-1 h-11 text-base font-body text-zinc-950 dark:text-zinc-50"
               placeholder="Search languages"
-              placeholderTextColor={tokens.color.text.tertiary}
+              placeholderTextColor={mutedColor}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
             {searchQuery.length > 0 && (
               <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-                <X size={16} color={tokens.color.text.tertiary} />
+                <X size={16} color={mutedColor} />
               </Pressable>
             )}
           </View>
@@ -320,21 +215,8 @@ export const LanguagePickerSheet = ({
         {/* Fixed Pinned Section */}
         {pinnedItems.length > 0 && (
           <View>
-            <View
-              style={[
-                styles.sectionHeader,
-                { backgroundColor: tokens.color.background.secondary },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.sectionHeaderText,
-                  {
-                    color: tokens.color.text.tertiary,
-                    fontSize: tokens.font.size.caption,
-                  },
-                ]}
-              >
+            <View className="px-4 py-3 bg-card dark:bg-card-dark">
+              <Text className="font-semibold tracking-[0.5px] text-zinc-500 dark:text-zinc-400 text-xs">
                 PINNED
               </Text>
             </View>
@@ -352,21 +234,8 @@ export const LanguagePickerSheet = ({
         )}
 
         {/* Fixed "All Languages" Header */}
-        <View
-          style={[
-            styles.sectionHeader,
-            { backgroundColor: tokens.color.background.secondary },
-          ]}
-        >
-          <Text
-            style={[
-              styles.sectionHeaderText,
-              {
-                color: tokens.color.text.tertiary,
-                fontSize: tokens.font.size.caption,
-              },
-            ]}
-          >
+        <View className="px-4 py-3 bg-card dark:bg-card-dark">
+          <Text className="font-semibold tracking-[0.5px] text-zinc-500 dark:text-zinc-400 text-xs">
             {searchQuery ? 'RESULTS' : 'ALL LANGUAGES'}
           </Text>
         </View>
@@ -386,85 +255,8 @@ export const LanguagePickerSheet = ({
             onTogglePin={() => togglePin(item.code)}
           />
         )}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={{ paddingBottom: 100 }}
       />
     </BottomSheet>
   );
 };
-
-const styles = StyleSheet.create({
-  searchContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  fixedHeader: {
-    zIndex: 1,
-  },
-  searchBar: {
-    height: 44,
-    borderWidth: 0.5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  input: {
-    flex: 1,
-    height: 44,
-  },
-  row: {
-    height: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  rowLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  flag: {
-    fontSize: 20,
-    marginRight: 12,
-  },
-  englishName: {
-    fontSize: 16,
-  },
-  nativeName: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  rowRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  starButton: {
-    padding: 8,
-  },
-  selectionCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    marginLeft: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sectionHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  sectionHeaderText: {
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  listContent: {
-    paddingBottom: 100, // Extra padding for the sticky footer
-  },
-  footer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 0.5,
-  },
-});

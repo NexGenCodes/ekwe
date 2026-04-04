@@ -1,271 +1,163 @@
-import NetInfo from '@react-native-community/netinfo';
-import { FlashList } from '@shopify/flash-list';
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Pressable,
-  Alert,
-} from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { StatusBar } from 'expo-status-bar';
+import { useColorScheme } from 'nativewind';
+import React, { useEffect } from 'react';
+import { View, Text, Pressable, Alert } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withRepeat,
+  withTiming,
+  withSequence,
+  interpolate,
+  Extrapolate,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { DrumIcon } from 'src/assets/icons/DrumIcon';
 import { EkweWordmark } from 'src/assets/icons/EkweWordmark';
+import { MicrophoneIcon } from 'src/assets/icons/MicrophoneIcon';
+import { ThemeToggler } from 'src/components';
 import { HistoryItem } from 'src/components/cards/HistoryItem';
-import { EkweBanner, BannerPresets } from 'src/components/common/EkweBanner';
-import { EkweButton } from 'src/components/common/EkweButton';
-import { LANGUAGES } from 'src/constants/languages';
-import { MOCK_HISTORY } from 'src/constants/mockData';
-import { useTheme } from 'src/hooks/useTheme';
+import { getColor } from 'src/constants/theme';
 import { MainTabScreenProps } from 'src/navigation/types';
-import { useHistoryStore, useSettingsStore } from 'src/store';
-import { HistoryEntry } from 'src/store/historySlice';
-
+import { useHistoryStore } from 'src/store';
 export const HomeScreen = ({
   navigation,
 }: MainTabScreenProps<'Home'>): React.ReactElement => {
-  const { tokens } = useTheme();
-  const [isOffline, setIsOffline] = useState(false);
   const entries = useHistoryStore((s) => s.entries);
-  const deleteEntry = useHistoryStore((s) => s.deleteEntry);
-  const selectedLanguages = useSettingsStore((s) => s.selectedLanguages);
-  const setSelectedLanguages = useSettingsStore((s) => s.setSelectedLanguages);
 
-  // Fallback to mock data in Phase 4 for display purposes
-  const displayEntries = entries.length > 0 ? entries : MOCK_HISTORY;
-  const targetLang = selectedLanguages[0] ?? 'en';
+  const lastEntry = entries[0];
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  // --- Animations ---
+  const pulse = useSharedValue(1);
+  const scale = useSharedValue(1);
 
   useEffect(() => {
-    const unsub = NetInfo.addEventListener((state) => {
-      setIsOffline(!(state.isConnected ?? true));
-    });
-    return unsub;
-  }, []);
+    pulse.value = withRepeat(
+      withSequence(
+        withTiming(1.2, { duration: 1500 }),
+        withTiming(1, { duration: 1500 }),
+      ),
+      -1,
+      false,
+    );
+  }, [pulse]);
 
-  const handlePillPress = (code: string): void => {
-    const next = [code, ...selectedLanguages.filter((l) => l !== code)];
-    setSelectedLanguages(next);
+  const animatedPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulse.value }],
+    opacity: interpolate(pulse.value, [1, 1.2], [0.4, 0], Extrapolate.CLAMP),
+  }));
+
+  const animatedMicStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = (): void => {
+    scale.value = withSpring(0.92, { damping: 15, stiffness: 300 });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handlePressOut = (): void => {
+    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
   };
 
   return (
-    <SafeAreaView
-      edges={['top']}
-      style={[styles.container, { backgroundColor: tokens.color.brand.navy }]}
-    >
-      <View
-        style={[
-          styles.content,
-          { backgroundColor: tokens.color.background.primary },
-        ]}
-      >
-        {/* Header (Navy) */}
-        <View
-          style={[styles.header, { backgroundColor: tokens.color.brand.navy }]}
+    <SafeAreaView edges={['top']} className="flex-1 bg-zinc-950 dark:bg-black">
+      <StatusBar style="light" />
+      {/* Header Bar */}
+      <View className="h-[60px] flex-row items-center justify-between px-6">
+        <EkweWordmark size={50} color={getColor('onPrimary', isDark)} />
+        <Pressable
+          onPress={() => {
+            Haptics.selectionAsync();
+            navigation.navigate('Settings');
+          }}
+          className="w-10 h-10 items-end justify-center active:bg-white/10 rounded-full"
         >
-          <EkweWordmark size={24} color={tokens.color.text.inverse} />
-        </View>
+          <ThemeToggler />
+        </Pressable>
+      </View>
 
-        {/* Language Pills (Navy) */}
-        <View
-          style={[
-            styles.pillsWrapper,
-            { backgroundColor: tokens.color.brand.navy },
-          ]}
-        >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.pillsScroll}
-          >
-            {selectedLanguages.map((code): React.ReactElement => {
-              const lang = LANGUAGES.find((l) => l.code === code);
-              const isActive = code === targetLang;
-              return (
-                <Pressable
-                  key={code}
-                  onPress={() => handlePillPress(code)}
-                  style={[
-                    styles.pill,
-                    {
-                      backgroundColor: isActive
-                        ? tokens.color.brand.core
-                        : 'rgba(255,255,255,0.12)',
-                      marginRight: tokens.space[2],
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.pillText,
-                      {
-                        fontFamily: tokens.font.family.body,
-                        fontSize: tokens.font.size.caption,
-                        color: isActive
-                          ? tokens.color.text.inverse
-                          : tokens.color.text.inverse + 'A6',
-                      },
-                    ]}
-                  >
-                    {(lang?.englishName ?? code).toUpperCase()}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        <ScrollView
-          style={styles.scrollBody}
-          contentContainerStyle={styles.scrollBodyContent}
-        >
-          <EkweButton
-            variant="secondary"
-            size="large"
-            label="Share voice note"
-            style={styles.shareButton}
-            onPress={() => Alert.alert('Share feature coming soon.')}
-          />
-
-          {isOffline && (
-            <EkweBanner
-              {...BannerPresets.noInternet}
-              style={styles.banner}
-              visible
+      <View className="flex-1 rounded-t-[32px] mt-2 overflow-hidden bg-background dark:bg-background-dark">
+        {/* The Console (Hero Area) */}
+        <View className="flex-[1.2] items-center justify-center">
+          <View className="w-[200px] h-[200px] items-center justify-center mb-6 relative">
+            {/* Pulsing Rings */}
+            <Animated.View
+              className="absolute w-[140px] h-[140px] rounded-full bg-primary dark:bg-primary-dark"
+              style={animatedPulseStyle}
             />
-          )}
+            <Animated.View
+              className="absolute w-[140px] h-[140px] rounded-full bg-primary dark:bg-primary-dark opacity-10"
+              style={{ transform: [{ scale: 1.1 }] }}
+            />
 
-          <Text
-            style={[
-              styles.sectionHeader,
-              {
-                fontFamily: tokens.font.family.bodyMed,
-                fontSize: tokens.font.size.caption,
-                color: tokens.color.text.tertiary,
-                paddingTop: tokens.space[4],
-                paddingBottom: tokens.space[2],
-              },
-            ]}
-          >
-            RECENT
-          </Text>
-
-          <View style={styles.listContainer}>
-            {displayEntries.length > 0 ? (
-              <FlashList<HistoryEntry>
-                data={displayEntries}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }): React.ReactElement => (
-                  <HistoryItem
-                    entry={item}
-                    onPress={() =>
-                      navigation.navigate('Result', { entryId: item.id })
-                    }
-                    onDelete={() => deleteEntry(item.id)}
-                  />
-                )}
-              />
-            ) : (
-              <View style={styles.emptyState}>
-                <DrumIcon size={48} color={tokens.color.text.tertiary} />
-                <Text
-                  style={[
-                    styles.emptyTitle,
-                    {
-                      fontFamily: tokens.font.family.body,
-                      color: tokens.color.text.tertiary,
-                      marginTop: tokens.space[3],
-                    },
-                  ]}
-                >
-                  No translations yet
-                </Text>
-                <Text
-                  style={[
-                    styles.emptySubtitle,
-                    {
-                      fontFamily: tokens.font.family.body,
-                      color: tokens.color.text.tertiary,
-                      marginTop: tokens.space[2],
-                    },
-                  ]}
-                >
-                  Share a voice note or tap the bubble to get started
-                </Text>
-              </View>
-            )}
+            {/* Main Mic Button */}
+            <Pressable
+              onPressIn={handlePressIn}
+              onPressOut={handlePressOut}
+              onPress={() => {
+                Haptics.notificationAsync(
+                  Haptics.NotificationFeedbackType.Success,
+                );
+                Alert.alert('Manual recording coming in Phase 5');
+              }}
+            >
+              <Animated.View
+                className="w-24 h-24 rounded-full items-center justify-center bg-card dark:bg-card-dark shadow-lg border border-white/20"
+                style={animatedMicStyle}
+              >
+                <MicrophoneIcon
+                  size={40}
+                  color={getColor('primaryAccent', isDark)}
+                  strokeWidth={2.5}
+                />
+              </Animated.View>
+            </Pressable>
           </View>
-        </ScrollView>
+
+          <Text className="text-[32px] text-center leading-[38px] font-display text-zinc-950 dark:text-zinc-50 mb-2">
+            Ready to Translate
+          </Text>
+          <Text className="text-base text-center leading-[24px] font-body text-zinc-500 dark:text-zinc-400 px-10 max-w-[340px]">
+            Share a voice note or use the floating bubble to begin.
+          </Text>
+        </View>
+
+        {/* Recent Sneak-Peek */}
+        <View className="flex-[0.8] px-6 pb-10 justify-end">
+          <View className="flex-row justify-between items-center mb-4">
+            <Text className="text-xs uppercase tracking-widest font-bodyMed text-zinc-400 dark:text-zinc-500">
+              LAST TRANSLATION
+            </Text>
+            <Pressable onPress={() => navigation.navigate('History')}>
+              <Text className="text-sm font-bodyMed text-primary dark:text-primary-dark">
+                View History
+              </Text>
+            </Pressable>
+          </View>
+
+          {lastEntry ? (
+            <HistoryItem
+              entry={lastEntry}
+              onPress={() =>
+                navigation.navigate('Result', { entryId: lastEntry.id })
+              }
+              onDelete={() =>
+                useHistoryStore.getState().deleteEntry(lastEntry.id)
+              }
+            />
+          ) : (
+            <View className="h-20 items-center justify-center px-5 bg-card dark:bg-card-dark rounded-xl">
+              <Text className="text-base text-center leading-[24px] font-body text-zinc-400 dark:text-zinc-500">
+                Your recent activity will appear here.
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-  },
-  header: {
-    height: 44,
-    justifyContent: 'flex-end',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  pillsWrapper: {
-    paddingBottom: 12,
-  },
-  pillsScroll: {
-    paddingLeft: 16,
-  },
-  pill: {
-    height: 32,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pillText: {
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  scrollBody: {
-    flex: 1,
-  },
-  scrollBodyContent: {
-    paddingBottom: 40,
-  },
-  shareButton: {
-    marginHorizontal: 16,
-    marginTop: 16,
-  },
-  banner: {
-    marginHorizontal: 16,
-    marginTop: 12,
-  },
-  sectionHeader: {
-    paddingHorizontal: 16,
-    letterSpacing: 1,
-  },
-  listContainer: {
-    flex: 1,
-    minHeight: 300,
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 32,
-    paddingHorizontal: 40,
-  },
-  emptyTitle: {
-    textAlign: 'center',
-    fontSize: 16,
-  },
-  emptySubtitle: {
-    textAlign: 'center',
-    fontSize: 14,
-  },
-});

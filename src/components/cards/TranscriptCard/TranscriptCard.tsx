@@ -1,6 +1,6 @@
 import { Copy, Share, ChevronRight } from 'lucide-react-native';
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -11,7 +11,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { EkweButton } from 'src/components/common/EkweButton';
 import { LANGUAGES } from 'src/constants/languages';
-import { useTheme } from 'src/hooks/useTheme';
 
 import { TranscriptCardProps } from './TranscriptCard.types';
 
@@ -37,7 +36,6 @@ export const TranscriptCard = ({
   onAcceptMismatch,
   style,
 }: TranscriptCardProps): React.ReactElement => {
-  const { tokens } = useTheme();
   const cursorOpacity = useSharedValue(1);
 
   useEffect(() => {
@@ -62,83 +60,33 @@ export const TranscriptCard = ({
 
   return (
     <View
-      style={[
-        styles.container,
-        {
-          backgroundColor: tokens.color.background.primary,
-          borderColor: tokens.color.border.default,
-          borderRadius: tokens.radius.lg,
-          padding: tokens.space[4],
-          ...tokens.shadow.card,
-        },
-        style,
-      ]}
+      className="bg-background dark:bg-background-dark border-[0.5px] border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 shadow-sm"
+      style={style}
     >
       {/* Header */}
-      <View style={styles.header}>
-        <Text
-          style={[
-            styles.headerLabel,
-            {
-              fontFamily: tokens.font.family.bodyMed,
-              color: tokens.color.text.tertiary,
-              letterSpacing: tokens.font.letterSpacing.label,
-            },
-          ]}
-        >
+      <View className="flex-row justify-between mb-3">
+        <Text className="font-bodyMed text-[10px] text-zinc-500 dark:text-zinc-400 tracking-[1px]">
           {getLanguageName(sourceLang).toUpperCase()}
         </Text>
-        <Text
-          style={[
-            styles.headerLabel,
-            {
-              fontFamily: tokens.font.family.bodyMed,
-              color: tokens.color.text.tertiary,
-              letterSpacing: tokens.font.letterSpacing.label,
-            },
-          ]}
-        >
+        <Text className="font-bodyMed text-[10px] text-zinc-500 dark:text-zinc-400 tracking-[1px]">
           {formatDuration(duration)}
         </Text>
       </View>
 
       {/* Body */}
-      <View style={styles.body}>
+      <View className="min-h-[80px] mb-3">
         {isStreaming ? (
-          <View style={styles.streamingContainer}>
-            <Text
-              style={[
-                styles.transcriptText,
-                {
-                  fontFamily: tokens.font.family.body,
-                  fontSize: tokens.font.size.body,
-                  color: tokens.color.text.primary,
-                  lineHeight: tokens.font.lineHeight.body,
-                },
-              ]}
-            >
+          <View className="flex-row flex-wrap items-baseline">
+            <Text className="font-body text-base text-zinc-950 dark:text-zinc-50 leading-[22px] text-left">
               {transcript}
             </Text>
             <Animated.View
-              style={[
-                styles.cursor,
-                { backgroundColor: tokens.color.brand.core },
-                cursorStyle,
-              ]}
+              className="w-0.5 h-4 ml-0.5 bg-primary rounded-full translate-y-0.5"
+              style={cursorStyle}
             />
           </View>
         ) : (
-          <Text
-            style={[
-              styles.transcriptText,
-              {
-                fontFamily: tokens.font.family.body,
-                fontSize: tokens.font.size.body,
-                color: tokens.color.text.primary,
-                lineHeight: tokens.font.lineHeight.body,
-              },
-            ]}
-          >
+          <Text className="font-body text-base text-zinc-950 dark:text-zinc-50 leading-[22px] text-left">
             {transcript}
           </Text>
         )}
@@ -148,50 +96,34 @@ export const TranscriptCard = ({
       {languageMismatch && (
         <Pressable
           onPress={onAcceptMismatch}
-          style={[
-            styles.mismatchRow,
-            {
-              backgroundColor: tokens.color.status.warning + '1A',
-              borderRadius: tokens.radius.sm,
-              padding: tokens.space[2],
-            },
-          ]}
+          className="flex-row items-center mb-3 bg-amber-500/10 rounded overflow-hidden p-2 active:opacity-60"
         >
-          <Text
-            style={[
-              styles.mismatchText,
-              {
-                fontFamily: tokens.font.family.body,
-                fontSize: tokens.font.size.caption,
-                color: tokens.color.status.warning,
-              },
-            ]}
-          >
+          <Text className="flex-1 mr-2 font-body text-xs text-amber-500">
             Sounds like {languageMismatch.detected}, not{' '}
             {getLanguageName(sourceLang)}. Translate from{' '}
             {languageMismatch.detected}?
           </Text>
-          <ChevronRight size={14} color={tokens.color.status.warning} />
+          <ChevronRight size={14} color="#F59E0B" />
         </Pressable>
       )}
 
       {/* Actions */}
-      <View style={styles.actions}>
+      <View className="flex-row items-center gap-3">
         <EkweButton
           variant="ghost"
           size="small"
           label="Copy"
           onPress={onCopy}
-          leftIcon={<Copy size={14} color={tokens.color.brand.core} />}
+          leftIcon={<Copy size={14} color="#1A7EC8" />}
         />
         <EkweButton
           variant="ghost"
           size="small"
           label="Share"
           onPress={onShare}
-          leftIcon={<Share size={14} color={tokens.color.brand.core} />}
+          leftIcon={<Share size={14} color="#1A7EC8" />}
         />
-        <View style={styles.flexSpacer} />
+        <View className="flex-1" />
         <EkweButton
           variant="secondary"
           size="small"
@@ -202,52 +134,3 @@ export const TranscriptCard = ({
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    borderWidth: 0.5,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  headerLabel: {
-    fontSize: 10,
-  },
-  body: {
-    minHeight: 80,
-    marginBottom: 12,
-  },
-  streamingContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'baseline',
-  },
-  transcriptText: {
-    textAlign: 'left',
-  },
-  cursor: {
-    width: 2,
-    height: 16,
-    marginLeft: 2,
-    transform: [{ translateY: 2 }],
-  },
-  mismatchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  mismatchText: {
-    flex: 1,
-    marginRight: 8,
-  },
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  flexSpacer: {
-    flex: 1,
-  },
-});

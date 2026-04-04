@@ -1,78 +1,11 @@
 import { Search, Star, X, Check } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import React, { useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  TextInput,
-  SectionList,
-} from 'react-native';
-import { LANGUAGES, Language } from 'src/constants/languages';
-import { useTheme } from 'src/hooks/useTheme';
+import { View, Text, Pressable, TextInput, SectionList } from 'react-native';
+import { LANGUAGES, Language, FLAG_MAP } from 'src/constants/languages';
+import { getColor } from 'src/constants/theme';
 
 import { LanguagePickerInlineProps } from './LanguagePickerInline.types';
-
-const FLAG_MAP: Record<string, string> = {
-  en: '🇬🇧',
-  es: '🇪🇸',
-  it: '🇮🇹',
-  de: '🇩🇪',
-  zh: '🇨🇳',
-  fr: '🇫🇷',
-  pt: '🇵🇹',
-  ru: '🇷🇺',
-  ja: '🇯🇵',
-  ko: '🇰🇷',
-  ar: '🇸🇦',
-  hi: '🇮🇳',
-  nl: '🇳🇱',
-  pl: '🇵🇱',
-  tr: '🇹🇷',
-  sv: '🇸🇪',
-  da: '🇩🇰',
-  fi: '🇫🇮',
-  nb: '🇳🇴',
-  cs: '🇨🇿',
-  sk: '🇸🇰',
-  ro: '🇷🇴',
-  hu: '🇭🇺',
-  uk: '🇺🇦',
-  el: '🇬🇷',
-  he: '🇮🇱',
-  th: '🇹🇭',
-  vi: '🇻🇳',
-  id: '🇮🇩',
-  ms: '🇲🇾',
-  bg: '🇧🇬',
-  hr: '🇭🇷',
-  sr: '🇷🇸',
-  ca: '🇪🇸',
-  lt: '🇱🇹',
-  lv: '🇱🇻',
-  et: '🇪🇪',
-  sl: '🇸🇮',
-  sq: '🇦🇱',
-  mk: '🇲🇰',
-  af: '🇿🇦',
-  bn: '🇧🇩',
-  fa: '🇮🇷',
-  ur: '🇵🇰',
-  sw: '🇰🇪',
-  tl: '🇵🇭',
-  ta: '🇮🇳',
-  te: '🇮🇳',
-  ml: '🇮🇳',
-  mr: '🇮🇳',
-  gu: '🇮🇳',
-  pa: '🇮🇳',
-  ne: '🇳🇵',
-  si: '🇱🇰',
-  km: '🇰🇭',
-  lo: '🇱🇦',
-  my: '🇲🇲',
-  ka: '🇬🇪',
-};
 
 interface LanguageRowProps {
   item: Language;
@@ -82,6 +15,8 @@ interface LanguageRowProps {
   onTogglePin: () => void;
 }
 
+const matches = (val: boolean): boolean => val;
+
 const LanguageRow = ({
   item,
   isSelected,
@@ -89,76 +24,55 @@ const LanguageRow = ({
   onToggleSelect,
   onTogglePin,
 }: LanguageRowProps): React.ReactElement => {
-  const { tokens } = useTheme();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  const mutedColor = getColor('muted', isDark);
+  const primaryColor = getColor('primary', isDark);
 
   return (
     <Pressable
       onPress={onToggleSelect}
       testID={`lang-row-${item.code}`}
-      style={[styles.row, { backgroundColor: tokens.color.background.primary }]}
+      className="h-[52px] flex-row items-center px-4 bg-background dark:bg-background-dark active:opacity-60"
     >
-      <View style={styles.rowLeft}>
-        <Text style={styles.flag}>{FLAG_MAP[item.code] || '🌐'}</Text>
+      <View className="flex-1 flex-row items-center">
+        <Text className="text-xl mr-3">{FLAG_MAP[item.code] || '🌐'}</Text>
         <View>
-          <Text
-            style={[
-              styles.englishName,
-              {
-                color: tokens.color.text.primary,
-                fontFamily: tokens.font.family.body,
-              },
-            ]}
-          >
+          <Text className="text-base font-body text-zinc-950 dark:text-zinc-50">
             {item.englishName}
           </Text>
-          <Text
-            style={[
-              styles.nativeName,
-              {
-                color: tokens.color.text.tertiary,
-                fontFamily: tokens.font.family.body,
-              },
-            ]}
-          >
+          <Text className="text-xs mt-0.5 font-body text-zinc-500 dark:text-zinc-400">
             {item.nativeName}
           </Text>
         </View>
       </View>
 
-      <View style={styles.rowRight}>
+      <View className="flex-row items-center">
         <Pressable
           onPress={onTogglePin}
           testID={`pin-button-${item.code}`}
           hitSlop={8}
-          style={styles.starButton}
+          className="p-2 active:opacity-60"
         >
           <Star
             size={20}
-            color={
-              isPinned ? tokens.color.brand.core : tokens.color.text.tertiary
-            }
-            fill={isPinned ? tokens.color.brand.core : 'transparent'}
+            color={isPinned ? primaryColor : mutedColor}
+            fill={isPinned ? primaryColor : 'transparent'}
           />
         </Pressable>
 
         <View
-          style={[
-            styles.selectionCircle,
-            {
-              borderColor: matches(isSelected)
-                ? tokens.color.brand.core
-                : tokens.color.border.strong,
-              backgroundColor: isSelected
-                ? tokens.color.brand.core
-                : 'transparent',
-              borderWidth: isSelected ? 0 : 1.5,
-            },
-          ]}
+          className={`w-[22px] h-[22px] rounded-full ml-3 items-center justify-center ${
+            matches(isSelected)
+              ? 'border-0 bg-primary'
+              : 'border-[1.5px] border-zinc-300 dark:border-zinc-700 bg-transparent'
+          }`}
         >
           {isSelected && (
             <Check
               size={12}
-              color={tokens.color.text.inverse}
+              color={getColor('onPrimary', isDark)}
               strokeWidth={3}
             />
           )}
@@ -168,15 +82,16 @@ const LanguageRow = ({
   );
 };
 
-const matches = (val: boolean): boolean => val;
-
 export const LanguagePickerInline = ({
   selectedLanguages,
   pinnedLanguages,
   onSelectionChange,
 }: LanguagePickerInlineProps): React.ReactElement => {
-  const { tokens } = useTheme();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const [searchQuery, setSearchQuery] = useState('');
+
+  const mutedColor = getColor('muted', isDark);
 
   const filteredLanguages = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -209,7 +124,10 @@ export const LanguagePickerInline = ({
   }, [filteredLanguages, pinnedLanguages, searchQuery]);
 
   const toggleSelection = (code: string): void => {
-    const next = selectedLanguages.includes(code)
+    const isSelected = selectedLanguages.includes(code);
+    if (!isSelected && selectedLanguages.length >= 4) return;
+
+    const next = isSelected
       ? selectedLanguages.filter((c) => c !== code)
       : [...selectedLanguages, code];
     onSelectionChange(next, pinnedLanguages);
@@ -223,40 +141,20 @@ export const LanguagePickerInline = ({
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.searchContainer}>
-        <View
-          style={[
-            styles.searchBar,
-            {
-              backgroundColor: tokens.color.background.secondary,
-              borderColor: tokens.color.border.default,
-              borderRadius: tokens.radius.md,
-            },
-          ]}
-        >
-          <Search
-            size={18}
-            color={tokens.color.text.tertiary}
-            style={styles.searchIcon}
-          />
+    <View className="flex-1 bg-background dark:bg-background-dark">
+      <View className="px-4 pb-2 z-10">
+        <View className="h-11 border-[0.5px] border-zinc-200 dark:border-zinc-800 rounded-xl flex-row items-center px-3 bg-card dark:bg-card-dark">
+          <Search size={18} color={mutedColor} style={{ marginRight: 8 }} />
           <TextInput
-            style={[
-              styles.input,
-              {
-                color: tokens.color.text.primary,
-                fontFamily: tokens.font.family.body,
-                fontSize: tokens.font.size.body,
-              },
-            ]}
+            className="flex-1 h-11 text-base font-body text-zinc-950 dark:text-zinc-50"
             placeholder="Search languages"
-            placeholderTextColor={tokens.color.text.tertiary}
+            placeholderTextColor={mutedColor}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-              <X size={16} color={tokens.color.text.tertiary} />
+              <X size={16} color={mutedColor} />
             </Pressable>
           )}
         </View>
@@ -275,100 +173,15 @@ export const LanguagePickerInline = ({
           />
         )}
         renderSectionHeader={({ section: { title } }): React.ReactElement => (
-          <View
-            style={[
-              styles.sectionHeader,
-              { backgroundColor: tokens.color.background.secondary },
-            ]}
-          >
-            <Text
-              style={[
-                styles.sectionHeaderText,
-                {
-                  color: tokens.color.text.tertiary,
-                  fontSize: tokens.font.size.caption,
-                },
-              ]}
-            >
+          <View className="px-4 py-3 bg-card dark:bg-card-dark border-b-[0.5px] border-zinc-200 dark:border-zinc-800">
+            <Text className="font-semibold tracking-[0.5px] text-zinc-500 dark:text-zinc-400 text-xs">
               {title}
             </Text>
           </View>
         )}
         stickySectionHeadersEnabled
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={{ paddingBottom: 100 }}
       />
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  searchContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  searchBar: {
-    height: 44,
-    borderWidth: 0.5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  input: {
-    flex: 1,
-    height: 44,
-  },
-  row: {
-    height: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  rowLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  flag: {
-    fontSize: 20,
-    marginRight: 12,
-  },
-  englishName: {
-    fontSize: 16,
-  },
-  nativeName: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  rowRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  starButton: {
-    padding: 8,
-  },
-  selectionCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    marginLeft: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sectionHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  sectionHeaderText: {
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  listContent: {
-    paddingBottom: 100,
-  },
-});

@@ -14,11 +14,6 @@ import {
   SettingsState,
   SettingsActions,
 } from 'src/store/settingsSlice';
-import {
-  createThemeSlice,
-  ThemeState,
-  ThemeActions,
-} from 'src/store/themeSlice';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
@@ -26,16 +21,10 @@ export type { AudioState, AudioActions };
 export type { HistoryState, HistoryActions };
 export { mmkvStorage };
 export type { SettingsState, SettingsActions };
-export type { ThemeState, ThemeActions };
 
 // Audio — session only, not persisted
 export const useAudioStore = create<AudioState & AudioActions>()((set) =>
   createAudioSlice(set),
-);
-
-// Theme — computed on boot, not persisted
-export const useThemeStore = create<ThemeState & ThemeActions>()((set) =>
-  createThemeSlice(set),
 );
 
 // History — persisted to MMKV

@@ -21,6 +21,7 @@ describe('Settings Slice', () => {
     expect(slice.bubbleEnabled).toBe(false);
     expect(slice.themePreference).toBe(ThemePreference.System);
     expect(slice.retentionDays).toBe(7);
+    expect(slice.targetLanguage).toBe('en');
   });
 
   it('should update bubble enabled state', () => {
@@ -42,6 +43,12 @@ describe('Settings Slice', () => {
     const languages = ['en', 'fr'];
     slice.setSelectedLanguages(languages);
     expect(slice.selectedLanguages).toEqual(languages);
+  });
+
+  it('should update target language', () => {
+    const lang = 'it';
+    slice.setTargetLanguage(lang);
+    expect(slice.targetLanguage).toBe(lang);
   });
 
   it('should update pinned languages', () => {

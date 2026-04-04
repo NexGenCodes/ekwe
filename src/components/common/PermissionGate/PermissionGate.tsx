@@ -1,8 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EkweButton } from 'src/components/common/EkweButton';
-import { useTheme } from 'src/hooks/useTheme';
 
 import { PermissionGateProps } from './PermissionGate.types';
 
@@ -16,47 +15,20 @@ export const PermissionGate = ({
   onSecondary,
   style,
 }: PermissionGateProps): React.ReactElement => {
-  const { tokens } = useTheme();
-
   return (
     <SafeAreaView
-      style={[
-        styles.container,
-        { backgroundColor: tokens.color.background.primary },
-        style,
-      ]}
+      className="flex-1 bg-background dark:bg-background-dark"
+      style={style}
     >
-      <View style={styles.content}>
-        <View style={styles.innerContent}>
-          <View style={styles.iconContainer}>{icon}</View>
+      <View className="flex-1 items-center justify-center px-6">
+        <View className="w-full max-w-[300px] items-center">
+          <View className="mb-4">{icon}</View>
 
-          <Text
-            style={[
-              styles.heading,
-              {
-                fontFamily: tokens.font.family.bodyMed,
-                fontSize: tokens.font.size.heading,
-                lineHeight: tokens.font.lineHeight.heading,
-                color: tokens.color.text.primary,
-                marginTop: tokens.space[4],
-              },
-            ]}
-          >
+          <Text className="text-center font-bodyMed text-xl leading-6 text-zinc-950 dark:text-zinc-50 mt-4">
             {heading}
           </Text>
 
-          <Text
-            style={[
-              styles.body,
-              {
-                fontFamily: tokens.font.family.body,
-                fontSize: tokens.font.size.body,
-                lineHeight: tokens.font.lineHeight.body,
-                color: tokens.color.text.secondary,
-                marginTop: tokens.space[3],
-              },
-            ]}
-          >
+          <Text className="text-center max-w-[280px] font-body text-base leading-6 text-zinc-600 dark:text-zinc-400 mt-3">
             {body}
           </Text>
 
@@ -65,7 +37,7 @@ export const PermissionGate = ({
             size="large"
             label={primaryLabel}
             onPress={onPrimary}
-            style={styles.primaryButton}
+            className="w-full mt-8"
           />
 
           {secondaryLabel && onSecondary && (
@@ -74,7 +46,7 @@ export const PermissionGate = ({
               size="medium"
               label={secondaryLabel}
               onPress={onSecondary}
-              style={styles.secondaryButton}
+              className="w-full mt-3"
             />
           )}
         </View>
@@ -82,38 +54,3 @@ export const PermissionGate = ({
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  innerContent: {
-    width: '100%',
-    maxWidth: 300,
-    alignItems: 'center',
-  },
-  iconContainer: {
-    marginBottom: 16,
-  },
-  heading: {
-    textAlign: 'center',
-  },
-  body: {
-    textAlign: 'center',
-    maxWidth: 280,
-  },
-  primaryButton: {
-    width: '100%',
-    marginTop: 32,
-  },
-  secondaryButton: {
-    width: '100%',
-    marginTop: 12,
-  },
-});

@@ -1,7 +1,8 @@
 import * as Haptics from 'expo-haptics';
 import { Loader } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import React, { useMemo } from 'react';
-import { Pressable, Text, StyleSheet, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -10,7 +11,7 @@ import Animated, {
   withRepeat,
   cancelAnimation,
 } from 'react-native-reanimated';
-import { useTheme } from 'src/hooks/useTheme';
+import { getColor } from 'src/constants/theme';
 
 import { EkweButtonProps } from './EkweButton.types';
 
@@ -27,11 +28,14 @@ export const EkweButton = ({
   disabled = false,
   onPress,
   style,
+  className = '',
   labelStyle,
+  labelClassName = '',
   accessibilityLabel,
 }: EkweButtonProps): React.ReactElement => {
-  const { tokens } = useTheme();
   const scale = useSharedValue(1);
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   // Animated style for press feedback
   const animatedStyle = useAnimatedStyle(
@@ -42,108 +46,72 @@ export const EkweButton = ({
 
   const handlePressIn = (): void => {
     if (!disabled && !loading) {
-      scale.value = withSpring(0.97, { damping: 10, stiffness: 300 });
+      scale.value = withSpring(0.97, { damping: 15, stiffness: 300 });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
   };
 
   const handlePressOut = (): void => {
-    scale.value = withSpring(1, { damping: 10, stiffness: 300 });
+    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
   };
 
   // Resolve styles based on variant and size
-  const variantStyles = useMemo((): {
-    container: {
-      backgroundColor: string;
-      borderWidth: number;
-      borderColor?: string;
-    };
-    text: { color: string };
-  } => {
+  const variantStyles = useMemo(() => {
     switch (variant) {
       case 'primary':
         return {
-          container: {
-            backgroundColor: tokens.color.brand.core,
-            borderWidth: 0,
-          },
-          text: { color: tokens.color.text.inverse },
+          container: 'bg-primary dark:bg-primary-dark',
+          text: 'text-white',
+          spinner: getColor('onPrimary', isDark),
         };
       case 'secondary':
         return {
-          container: {
-            backgroundColor: tokens.color.background.secondary,
-            borderWidth: 0,
-          },
-          text: { color: tokens.color.text.primary },
+          container: 'bg-card dark:bg-card-dark',
+          text: 'text-zinc-950 dark:text-zinc-50',
+          spinner: getColor('foreground', isDark),
         };
       case 'outline':
         return {
-          container: {
-            backgroundColor: 'transparent',
-            borderWidth: 1.5,
-            borderColor: tokens.color.brand.core,
-          },
-          text: { color: tokens.color.brand.core },
+          container:
+            'bg-transparent border-[1.5px] border-primary dark:border-primary-dark',
+          text: 'text-primary dark:text-primary-dark',
+          spinner: getColor('primaryAccent', isDark),
         };
       case 'ghost':
         return {
-          container: {
-            backgroundColor: 'transparent',
-            borderWidth: 0,
-          },
-          text: { color: tokens.color.text.secondary },
+          container: 'bg-transparent',
+          text: 'text-zinc-500 dark:text-zinc-400',
+          spinner: getColor('muted', isDark),
         };
       default:
         return {
-          container: {
-            backgroundColor: tokens.color.brand.core,
-            borderWidth: 0,
-          },
-          text: { color: tokens.color.text.inverse },
+          container: 'bg-primary dark:bg-primary-dark',
+          text: 'text-white',
+          spinner: getColor('onPrimary', isDark),
         };
     }
-  }, [variant, tokens]);
+  }, [variant, isDark]);
 
-  const sizeStyles = useMemo((): {
-    container: {
-      paddingVertical: number;
-      paddingHorizontal: number;
-      minHeight: number;
-    };
-    text: { fontSize: number };
-  } => {
+  const sizeStyles = useMemo(() => {
     switch (size) {
       case 'small':
         return {
-          container: {
-            paddingVertical: tokens.space[1],
-            paddingHorizontal: tokens.space[3],
-            minHeight: 44,
-          },
-          text: { fontSize: tokens.font.size.label },
+          container: 'py-1 px-3 min-h-[44px]',
+          text: 'text-sm',
         };
       case 'large':
         return {
-          container: {
-            paddingVertical: tokens.space[4],
-            paddingHorizontal: tokens.space[6],
-            minHeight: 56,
-          },
-          text: { fontSize: tokens.font.size.heading },
+          container: 'py-4 px-6 min-h-[56px]',
+          text: 'text-[28px] leading-[34px] tracking-[-0.5px]',
         };
       case 'medium':
       default:
         return {
-          container: {
-            paddingVertical: tokens.space[2],
-            paddingHorizontal: tokens.space[4],
-            minHeight: 48,
-          },
-          text: { fontSize: tokens.font.size.body },
+          container: 'py-2 px-4 min-h-[48px]',
+          text: 'text-base',
         };
     }
-  }, [size, tokens]);
+  }, [size]);
 
   // Spinner rotation
   const rotation = useSharedValue(0);
@@ -172,14 +140,8 @@ export const EkweButton = ({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       disabled={disabled || loading}
-      style={[
-        styles.base,
-        variantStyles.container,
-        sizeStyles.container,
-        disabled && styles.disabled,
-        style,
-        animatedStyle,
-      ]}
+      style={[style, animatedStyle]}
+      className={`flex-row items-center justify-center rounded-full ${variantStyles.container} ${sizeStyles.container} ${disabled ? 'opacity-50' : ''} ${className}`}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || label}
       accessibilityState={{ disabled, busy: loading }}
@@ -188,53 +150,22 @@ export const EkweButton = ({
       {loading ? (
         <AnimatedLoader
           size={size === 'small' ? 16 : 20}
-          color={variantStyles.text.color}
+          color={variantStyles.spinner}
           style={spinStyle}
           strokeWidth={2.5}
         />
       ) : (
-        <View style={styles.content}>
-          {leftIcon && <View style={styles.iconLeft}>{leftIcon}</View>}
+        <View className="flex-row items-center">
+          {leftIcon && <View className="mr-2">{leftIcon}</View>}
           <Text
-            style={[
-              styles.label,
-              variantStyles.text,
-              sizeStyles.text,
-              { fontFamily: tokens.font.family.display },
-              labelStyle,
-            ]}
+            style={labelStyle}
+            className={`text-center font-display ${variantStyles.text} ${sizeStyles.text} ${labelClassName}`}
           >
             {label}
           </Text>
-          {rightIcon && <View style={styles.iconRight}>{rightIcon}</View>}
+          {rightIcon && <View className="ml-2">{rightIcon}</View>}
         </View>
       )}
     </AnimatedPressable>
   );
 };
-
-const styles = StyleSheet.create({
-  base: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 999,
-    borderCurve: 'continuous',
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  label: {
-    textAlign: 'center',
-  },
-  iconLeft: {
-    marginRight: 8,
-  },
-  iconRight: {
-    marginLeft: 8,
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-});

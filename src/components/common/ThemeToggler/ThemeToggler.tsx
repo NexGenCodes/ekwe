@@ -1,113 +1,81 @@
 import * as Haptics from 'expo-haptics';
 import { Moon, Sun } from 'lucide-react-native';
-import React from 'react';
-import { Pressable, StyleSheet, View, Text } from 'react-native';
-import { useTheme } from 'src/hooks/useTheme';
+import { useColorScheme } from 'nativewind';
+import React, { useEffect } from 'react';
+import { Pressable } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
+import { getColor } from 'src/constants/theme';
 
 import { ThemeTogglerProps } from './ThemeToggler.types';
 
 export const ThemeToggler = ({
   style,
   accessibilityLabel,
-  showLabels = false,
 }: ThemeTogglerProps): React.ReactElement => {
-  const { tokens, id, toggleTheme } = useTheme();
-  const isDark = id === 'dark';
+  const { colorScheme, toggleColorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const transition = useSharedValue(isDark ? 1 : 0);
+
+  useEffect(() => {
+    transition.value = withSpring(isDark ? 1 : 0, {
+      damping: 15,
+      stiffness: 300,
+    });
+  }, [isDark]);
 
   const handlePress = (): void => {
-    toggleTheme();
+    toggleColorScheme();
     Haptics.selectionAsync();
   };
 
-  const indicatorStyle = {
-    left: isDark ? 34 : 2,
-    backgroundColor: tokens.color.background.primary,
-  };
+  const iconStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${transition.value * 180}deg` }],
+  }));
 
-  const containerStyle = [
-    styles.container,
-    {
-      backgroundColor: tokens.color.background.tertiary,
-      borderColor: tokens.color.border.default,
-    },
-    style,
-  ];
+  const sunStyle = useAnimatedStyle(() => ({
+    opacity: withSpring(isDark ? 1 : 0),
+    transform: [{ scale: withSpring(isDark ? 1 : 0.5) }],
+    position: 'absolute',
+  }));
+
+  const moonStyle = useAnimatedStyle(() => ({
+    opacity: withSpring(!isDark ? 1 : 0),
+    transform: [{ scale: withSpring(!isDark ? 1 : 0.5) }],
+    position: 'absolute',
+  }));
 
   return (
     <Pressable
       onPress={handlePress}
-      style={containerStyle}
-      accessibilityRole="switch"
+      style={style}
+      className="w-12 h-12 rounded-full items-center justify-center border border-zinc-200/50 dark:border-zinc-800/80 bg-zinc-100/80 dark:bg-zinc-950/40 active:scale-95 transition-all duration-200 ease-in-out"
+      accessibilityRole="button"
       accessibilityLabel={
         accessibilityLabel || `Switch to ${isDark ? 'light' : 'dark'} mode`
       }
-      accessibilityState={{ checked: isDark }}
     >
-      <View style={[styles.indicator, indicatorStyle]} />
-      <View style={styles.iconWrapper}>
-        <Sun
-          size={16}
-          color={!isDark ? tokens.color.brand.core : tokens.color.text.tertiary}
-          strokeWidth={2.5}
-        />
-      </View>
-      <View style={styles.iconWrapper}>
-        <Moon
-          size={16}
-          color={isDark ? tokens.color.brand.core : tokens.color.text.tertiary}
-          strokeWidth={2.5}
-        />
-      </View>
-      {showLabels && (
-        <Text
-          style={[
-            styles.label,
-            {
-              color: tokens.color.text.primary,
-              fontFamily: tokens.font.family.bodyMed,
-            },
-          ]}
-        >
-          {isDark ? 'Dark' : 'Light'}
-        </Text>
-      )}
+      <Animated.View
+        style={[iconStyle, { alignItems: 'center', justifyContent: 'center' }]}
+      >
+        <Animated.View style={sunStyle}>
+          <Sun
+            size={24}
+            color={getColor('primaryAccent', true)}
+            strokeWidth={2.5}
+          />
+        </Animated.View>
+        <Animated.View style={moonStyle}>
+          <Moon
+            size={24}
+            color={getColor('primaryAccent', false)}
+            strokeWidth={2.5}
+          />
+        </Animated.View>
+      </Animated.View>
     </Pressable>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: 68,
-    height: 36,
-    borderRadius: 18,
-    padding: 2,
-    borderWidth: 1,
-    borderCurve: 'continuous',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  indicator: {
-    position: 'absolute',
-    left: 2,
-    top: 2,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    borderCurve: 'continuous',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    zIndex: 0,
-  },
-  iconWrapper: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  label: {
-    position: 'absolute',
-    right: -40,
-    fontSize: 12,
-  },
-});

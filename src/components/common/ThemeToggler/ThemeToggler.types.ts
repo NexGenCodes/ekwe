@@ -5,6 +5,4 @@ export interface ThemeTogglerProps {
   style?: StyleProp<ViewStyle>;
   /** Accessibility label override */
   accessibilityLabel?: string;
-  /** Whether to show text labels (optional) */
-  showLabels?: boolean;
 }

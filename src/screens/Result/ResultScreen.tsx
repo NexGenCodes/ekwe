@@ -1,12 +1,13 @@
 import * as Clipboard from 'expo-clipboard';
+import { useColorScheme } from 'nativewind';
 import React, { useMemo, useState } from 'react';
-import { View, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { View, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CloseIcon } from 'src/assets/icons/CloseIcon';
 import { TranslationCard } from 'src/components/cards/TranslationCard';
 import { AudioWaveform } from 'src/components/common/AudioWaveform';
 import { MOCK_HISTORY } from 'src/constants/mockData';
-import { useTheme } from 'src/hooks/useTheme';
+import { getColor } from 'src/constants/theme';
 import { ResultScreenProps } from 'src/navigation/types';
 import { useHistoryStore } from 'src/store';
 
@@ -14,10 +15,10 @@ export const ResultScreen = ({
   route,
   navigation,
 }: ResultScreenProps): React.ReactElement => {
-  const { tokens } = useTheme();
   const { entryId } = route.params;
   const entries = useHistoryStore((s) => s.entries);
   const [, setCopied] = useState(false);
+  const { colorScheme } = useColorScheme();
 
   const entry = useMemo(() => {
     const found = entries.find((e) => e.id === entryId);
@@ -34,26 +35,23 @@ export const ResultScreen = ({
 
   // Mock waveform data
   const mockWaveform = Array.from({ length: 40 }, () => Math.random());
+  const isDark = colorScheme === 'dark';
+  const iconColor = getColor('foreground', isDark);
 
   return (
-    <SafeAreaView
-      style={[
-        styles.container,
-        { backgroundColor: tokens.color.background.primary },
-      ]}
-    >
-      <View style={styles.header}>
+    <SafeAreaView className="flex-1 bg-background dark:bg-background-dark">
+      <View className="h-14 justify-center px-2">
         <Pressable
           onPress={() => navigation.goBack()}
           hitSlop={12}
-          style={styles.closeButton}
+          className="p-2 w-10 h-10 items-center justify-center active:opacity-60"
         >
-          <CloseIcon size={24} color={tokens.color.text.primary} />
+          <CloseIcon size={24} color={iconColor} />
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.waveformContainer}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        <View className="px-6 py-8 items-center">
           <AudioWaveform
             amplitudes={mockWaveform}
             progress={0}
@@ -62,7 +60,7 @@ export const ResultScreen = ({
           />
         </View>
 
-        <View style={styles.cardContainer}>
+        <View className="px-4">
           <TranslationCard
             translation={entry.translation ?? ''}
             targetLang={entry.targetLang}
@@ -74,28 +72,3 @@ export const ResultScreen = ({
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    height: 56,
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-  },
-  closeButton: {
-    padding: 8,
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
-  waveformContainer: {
-    paddingHorizontal: 24,
-    paddingVertical: 32,
-    alignItems: 'center',
-  },
-  cardContainer: {
-    paddingHorizontal: 16,
-  },
-});

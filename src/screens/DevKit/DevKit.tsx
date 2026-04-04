@@ -18,8 +18,9 @@ import {
   Loader,
   LucideIcon,
 } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import React, { useState } from 'react';
-import { ScrollView, View, Text, StyleSheet } from 'react-native';
+import { ScrollView, View, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { HistoryItem } from 'src/components/cards/HistoryItem';
 import { TranscriptCard } from 'src/components/cards/TranscriptCard';
@@ -30,7 +31,7 @@ import { EkweButton } from 'src/components/common/EkweButton';
 import { LanguagePickerSheet } from 'src/components/common/LanguagePickerSheet';
 import { PermissionGate } from 'src/components/common/PermissionGate';
 import { ThemeToggler } from 'src/components/common/ThemeToggler';
-import { useTheme } from 'src/hooks/useTheme';
+import { getColor } from 'src/constants/theme';
 
 const Icons: Record<string, LucideIcon> = {
   Mic,
@@ -53,7 +54,8 @@ const Icons: Record<string, LucideIcon> = {
 };
 
 export const DevKit = (): React.ReactElement => {
-  const { tokens } = useTheme();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const [bannerVisible, setBannerVisible] = useState<boolean>(false);
   const [progress, setProgress] = useState<number>(0.3);
 
@@ -66,89 +68,43 @@ export const DevKit = (): React.ReactElement => {
     title: string,
     children: React.ReactNode,
   ): React.ReactElement => (
-    <View style={styles.section}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: tokens.color.text.tertiary,
-            fontFamily: tokens.font.family.bodyMed,
-          },
-        ]}
-      >
+    <View className="mt-6 px-5">
+      <Text className="text-[10px] tracking-[1px] mb-3 text-zinc-500 dark:text-zinc-400 font-bodyMed">
         {title.toUpperCase()}
       </Text>
-      <View style={styles.sectionContent}>{children}</View>
+      <View className="p-4 rounded-2xl bg-zinc-100 dark:bg-zinc-900">
+        {children}
+      </View>
     </View>
   );
 
   return (
-    <SafeAreaView
-      style={[
-        styles.container,
-        { backgroundColor: tokens.color.background.primary },
-      ]}
-    >
-      <View style={styles.header}>
-        <Text
-          style={[
-            styles.headerTitle,
-            {
-              color: tokens.color.text.primary,
-              fontFamily: tokens.font.family.display,
-            },
-          ]}
-        >
+    <SafeAreaView className="flex-1 bg-background dark:bg-background-dark">
+      <View className="flex-row items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800">
+        <Text className="text-2xl font-display text-zinc-950 dark:text-zinc-50">
           Ekwe DevKit
         </Text>
         <ThemeToggler />
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={{ paddingBottom: 40 }}
         contentInsetAdjustmentBehavior="automatic"
       >
         {/* Typography */}
         {renderSection(
           'Typography',
           <View>
-            <Text
-              style={{
-                fontFamily: tokens.font.family.display,
-                fontSize: tokens.font.size.display,
-                color: tokens.color.text.primary,
-              }}
-            >
+            <Text className="font-display text-[32px] text-zinc-950 dark:text-zinc-50">
               Display Text
             </Text>
-            <Text
-              style={{
-                fontFamily: tokens.font.family.bodyMed,
-                fontSize: tokens.font.size.heading,
-                color: tokens.color.text.primary,
-                marginTop: 8,
-              }}
-            >
+            <Text className="font-bodyMed text-xl text-zinc-950 dark:text-zinc-50 mt-2">
               Heading Medium
             </Text>
-            <Text
-              style={{
-                fontFamily: tokens.font.family.body,
-                fontSize: tokens.font.size.body,
-                color: tokens.color.text.secondary,
-                marginTop: 4,
-              }}
-            >
+            <Text className="font-body text-base text-zinc-600 dark:text-zinc-400 mt-1">
               Body Regular - The quick brown fox jumps over the lazy dog.
             </Text>
-            <Text
-              style={{
-                fontFamily: tokens.font.family.mono,
-                fontSize: tokens.font.size.caption,
-                color: tokens.color.text.tertiary,
-                marginTop: 4,
-              }}
-            >
+            <Text className="font-mono text-xs text-zinc-500 dark:text-zinc-500 mt-1">
               Mono Caption: 0123456789
             </Text>
           </View>,
@@ -157,42 +113,42 @@ export const DevKit = (): React.ReactElement => {
         {/* Buttons */}
         {renderSection(
           'Buttons',
-          <View style={styles.grid}>
+          <View className="flex-row flex-wrap gap-3">
             <EkweButton
               label="Primary"
               onPress={(): void => {}}
               variant="primary"
-              style={styles.gridItem}
+              className="min-w-[45%]"
             />
             <EkweButton
               label="Secondary"
               onPress={(): void => {}}
               variant="secondary"
-              style={styles.gridItem}
+              className="min-w-[45%]"
             />
             <EkweButton
               label="Outline"
               onPress={(): void => {}}
               variant="outline"
-              style={styles.gridItem}
+              className="min-w-[45%]"
             />
             <EkweButton
               label="Ghost"
               onPress={(): void => {}}
               variant="ghost"
-              style={styles.gridItem}
+              className="min-w-[45%]"
             />
             <EkweButton
               label="Loading"
               onPress={(): void => {}}
               loading
-              style={styles.gridItem}
+              className="min-w-[45%]"
             />
             <EkweButton
               label="Disabled"
               onPress={(): void => {}}
               disabled
-              style={styles.gridItem}
+              className="min-w-[45%]"
             />
           </View>,
         )}
@@ -227,13 +183,7 @@ export const DevKit = (): React.ReactElement => {
               width={300}
               height={60}
             />
-            <Text
-              style={{
-                color: tokens.color.text.tertiary,
-                marginTop: 8,
-                textAlign: 'center',
-              }}
-            >
+            <Text className="text-zinc-500 dark:text-zinc-400 mt-2 text-center font-body text-sm">
               Progress: {(progress * 100).toFixed(0)}%
             </Text>
           </View>,
@@ -242,16 +192,19 @@ export const DevKit = (): React.ReactElement => {
         {/* Icons Grid */}
         {renderSection(
           'Icons',
-          <View style={styles.iconGrid}>
+          <View className="flex-row flex-wrap justify-between gap-4">
             {Object.entries(Icons).map(
               ([name, Icon]): React.ReactElement => (
-                <View key={name} style={styles.iconItem}>
+                <View key={name} className="w-[22%] items-center mb-4">
                   <Icon
                     size={24}
-                    color={tokens.color.brand.core}
+                    color={getColor('primaryAccent', isDark)}
                     strokeWidth={2.5}
                   />
-                  <Text style={styles.iconLabel} numberOfLines={1}>
+                  <Text
+                    className="text-[8px] mt-1 text-zinc-500 text-center"
+                    numberOfLines={1}
+                  >
                     {name}
                   </Text>
                 </View>
@@ -263,20 +216,12 @@ export const DevKit = (): React.ReactElement => {
         {/* PermissionGate preview */}
         {renderSection(
           'PermissionGate Preview',
-          <View
-            style={[
-              styles.previewContainer,
-              {
-                borderColor: tokens.color.border.default,
-                borderRadius: tokens.radius.lg,
-              },
-            ]}
-          >
+          <View className="border border-zinc-200 dark:border-zinc-800 h-[380px] overflow-hidden rounded-2xl">
             <PermissionGate
               icon={
                 <Mic
                   size={64}
-                  color={tokens.color.brand.core}
+                  color={getColor('primaryAccent', isDark)}
                   strokeWidth={1}
                 />
               }
@@ -299,14 +244,7 @@ export const DevKit = (): React.ReactElement => {
               label="Open language picker"
               onPress={() => setIsLangPickerVisible(true)}
             />
-            <Text
-              style={{
-                color: tokens.color.text.tertiary,
-                marginTop: 12,
-                textAlign: 'center',
-                fontFamily: tokens.font.family.body,
-              }}
-            >
+            <Text className="text-zinc-500 dark:text-zinc-400 mt-3 text-center font-body text-sm">
               {selectedLangs.length} languages selected
             </Text>
           </View>,
@@ -315,7 +253,7 @@ export const DevKit = (): React.ReactElement => {
         {/* TranscriptCard */}
         {renderSection(
           'TranscriptCard',
-          <View style={{ gap: tokens.space[4] }}>
+          <View className="gap-4">
             <TranscriptCard
               sourceLang="es"
               duration={47}
@@ -351,7 +289,7 @@ export const DevKit = (): React.ReactElement => {
         {/* TranslationCard */}
         {renderSection(
           'TranslationCard',
-          <View style={{ gap: tokens.space[4] }}>
+          <View className="gap-4">
             <TranslationCard
               targetLang="en"
               isLoading
@@ -436,67 +374,3 @@ export const DevKit = (): React.ReactElement => {
     </SafeAreaView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
-  },
-  headerTitle: {
-    fontSize: 24,
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
-  section: {
-    marginTop: 24,
-    paddingHorizontal: 20,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    letterSpacing: 1,
-    marginBottom: 12,
-  },
-  sectionContent: {
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.02)',
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  gridItem: {
-    minWidth: '45%',
-  },
-  iconGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 16,
-  },
-  iconItem: {
-    width: '22%',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  iconLabel: {
-    fontSize: 8,
-    marginTop: 4,
-    color: '#888',
-  },
-  previewContainer: {
-    borderWidth: 1,
-    height: 380,
-    overflow: 'hidden',
-  },
-});

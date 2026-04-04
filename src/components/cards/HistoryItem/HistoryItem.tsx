@@ -1,8 +1,7 @@
 import React, { useRef } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { LANGUAGES } from 'src/constants/languages';
-import { useTheme } from 'src/hooks/useTheme';
 import { getRelativeTime } from 'src/utils/relativeTime';
 
 import { HistoryItemProps } from './HistoryItem.types';
@@ -16,33 +15,18 @@ export const HistoryItem = ({
   onDelete,
   style,
 }: HistoryItemProps): React.ReactElement => {
-  const { tokens } = useTheme();
   const swipeableRef = useRef<Swipeable>(null);
 
   const renderRightActions = (): React.ReactElement => (
-    <View
-      style={[
-        styles.deleteAction,
-        { backgroundColor: tokens.color.status.error },
-      ]}
-    >
+    <View className="w-20 h-16 bg-red-500">
       <Pressable
         onPress={() => {
           onDelete();
           swipeableRef.current?.close();
         }}
-        style={styles.deleteButton}
+        className="flex-1 items-center justify-center p-2 active:opacity-60"
       >
-        <Text
-          style={[
-            styles.deleteText,
-            {
-              fontFamily: tokens.font.family.bodyMed,
-              fontSize: tokens.font.size.label,
-              color: tokens.color.text.inverse,
-            },
-          ]}
-        >
+        <Text className="font-bodyMed text-xs text-white font-bold">
           DELETE
         </Text>
       </Pressable>
@@ -58,27 +42,13 @@ export const HistoryItem = ({
     >
       <Pressable
         onPress={onPress}
-        style={[
-          styles.container,
-          {
-            backgroundColor: tokens.color.background.primary,
-            borderBottomColor: tokens.color.border.default,
-          },
-          style,
-        ]}
+        className="h-[80px] flex-row items-center px-5 mx-4 mb-3 bg-card dark:bg-card-dark rounded-2xl border border-zinc-200/50 dark:border-zinc-800/80 active:bg-zinc-100 dark:active:bg-zinc-800/50"
+        style={style}
       >
-        <View style={styles.leftContent}>
+        <View className="flex-1">
           <Text
             numberOfLines={1}
-            style={[
-              styles.pairText,
-              {
-                fontFamily: tokens.font.family.bodyMed,
-                fontSize: tokens.font.size.label,
-                color: tokens.color.text.secondary,
-                letterSpacing: tokens.font.letterSpacing.label,
-              },
-            ]}
+            className="mb-0.5 font-bodyMed text-xs text-primary tracking-[1px]"
           >
             {`${getLanguageName(entry.sourceLang)} → ${getLanguageName(
               entry.targetLang,
@@ -87,30 +57,14 @@ export const HistoryItem = ({
           <Text
             numberOfLines={1}
             ellipsizeMode="tail"
-            style={[
-              styles.transcriptPreview,
-              {
-                fontFamily: tokens.font.family.body,
-                fontSize: tokens.font.size.caption,
-                color: tokens.color.text.tertiary,
-              },
-            ]}
+            className="mt-0.5 font-body text-xs text-zinc-400 dark:text-zinc-500"
           >
             {entry.transcript.split('\n')[0] ?? ''}
           </Text>
         </View>
 
-        <View style={styles.rightContent}>
-          <Text
-            style={[
-              styles.timeText,
-              {
-                fontFamily: tokens.font.family.body,
-                fontSize: tokens.font.size.caption,
-                color: tokens.color.text.tertiary,
-              },
-            ]}
-          >
+        <View className="ml-3">
+          <Text className="text-right font-body text-xs text-zinc-400 dark:text-zinc-500">
             {getRelativeTime(entry.timestamp)}
           </Text>
         </View>
@@ -118,40 +72,3 @@ export const HistoryItem = ({
     </Swipeable>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    height: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    borderBottomWidth: 0.5,
-  },
-  leftContent: {
-    flex: 1,
-  },
-  pairText: {
-    marginBottom: 2,
-  },
-  transcriptPreview: {
-    marginTop: 2,
-  },
-  rightContent: {
-    marginLeft: 12,
-  },
-  timeText: {
-    textAlign: 'right',
-  },
-  deleteAction: {
-    width: 80,
-    height: 64,
-  },
-  deleteButton: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteText: {
-    fontWeight: 'bold',
-  },
-});

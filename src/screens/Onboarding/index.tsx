@@ -18,6 +18,6 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: lightTokens.font.family.display,
     fontSize: lightTokens.font.size.heading,
-    color: lightTokens.color.brand.navy,
+    color: lightTokens.color.brand.dark,
   },
 });
