@@ -1,19 +1,6 @@
-import { NativeModules, Platform } from 'react-native';
+import { Platform } from 'react-native';
 
-interface AudioEffectsResult {
-  noiseSuppressor: boolean;
-  echoCanceler: boolean;
-  gainControl: boolean;
-}
-
-interface AudioEffectsModuleInterface {
-  attachEffects: (audioSessionId: number) => Promise<AudioEffectsResult>;
-  releaseEffects: () => Promise<void>;
-}
-
-const module = NativeModules.AudioEffectsModule as
-  | AudioEffectsModuleInterface
-  | undefined;
+import EkweNative, { AudioEffectsResult } from '../../modules/ekwe-native';
 
 /**
  * Attaches Android audio effects (NoiseSuppressor, AcousticEchoCanceler,
@@ -23,7 +10,7 @@ const module = NativeModules.AudioEffectsModule as
 export const attachAudioEffects = async (
   audioSessionId: number,
 ): Promise<AudioEffectsResult> => {
-  if (Platform.OS !== 'android' || module === undefined) {
+  if (Platform.OS !== 'android') {
     return {
       noiseSuppressor: false,
       echoCanceler: false,
@@ -31,7 +18,7 @@ export const attachAudioEffects = async (
     };
   }
   try {
-    return await module.attachEffects(audioSessionId);
+    return await EkweNative.attachEffects(audioSessionId);
   } catch {
     return {
       noiseSuppressor: false,
@@ -46,9 +33,9 @@ export const attachAudioEffects = async (
  * No-op on iOS. Never throws.
  */
 export const releaseAudioEffects = async (): Promise<void> => {
-  if (Platform.OS !== 'android' || module === undefined) return;
+  if (Platform.OS !== 'android') return;
   try {
-    await module.releaseEffects();
+    await EkweNative.releaseEffects();
   } catch {
     // Swallow — resources may already be released
   }

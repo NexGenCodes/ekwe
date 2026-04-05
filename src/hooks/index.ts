@@ -1,1 +1,1 @@
-// No hooks exported yet or specify remaining ones
+export { useBubble } from './useBubble';

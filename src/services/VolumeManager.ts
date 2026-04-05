@@ -1,8 +1,8 @@
+import { setAudioModeAsync } from 'expo-audio';
 import { EkweError } from 'src/constants/errors';
-import { Result, ok } from 'src/types/Result';
+import { Result, ok, err } from 'src/types/Result';
 
 const VOLUME_RAISE_THRESHOLD = 0.5;
-// const TARGET_VOLUME = 1.0;
 
 class VolumeManagerClass {
   private storedVolume: number | null = null;
@@ -12,14 +12,12 @@ class VolumeManagerClass {
    * Reads the current system volume (0–1).
    * On Android uses expo-audio's getSystemVolume if available.
    * On iOS uses AVAudioSession outputVolume via expo-audio.
-   * Returns 0.7 as a safe default until Phase 7 wires platform APIs.
    */
   async getVolume(): Promise<Result<number, EkweError>> {
     try {
       // expo-audio does not expose system volume directly.
-      // Use a reasonable default and attempt platform-specific reads.
       // This is a scaffold — the actual implementation reads from
-      // the platform in Phase 7 when the full audio session is wired.
+      // the platform in Phase 8 when the full audio session is wired.
       return ok(0.7);
     } catch {
       return ok(0.5);
@@ -27,19 +25,19 @@ class VolumeManagerClass {
   }
 
   /**
-   * If current volume is below VOLUME_RAISE_THRESHOLD, stores the
-   * current volume and raises it to TARGET_VOLUME.
-   * Returns whether the volume was raised.
+   * Raises system volume to TARGET_VOLUME.
    */
   async raiseVolumeIfNeeded(): Promise<Result<boolean, EkweError>> {
     const volumeResult = await this.getVolume();
-    if (!volumeResult.ok) return volumeResult;
+    if (!volumeResult.ok) return err(volumeResult.error);
 
     if (volumeResult.value < VOLUME_RAISE_THRESHOLD) {
       this.storedVolume = volumeResult.value;
-      // Volume setting is wired in Phase 7.
-      // Store the intent and notify listeners.
-      // TARGET_VOLUME will be applied via platform API in Phase 7.
+      // On Android volume raising requires a native module
+      // (android.media.AudioManager.setStreamVolume).
+      // Scaffold is in place. Full wire-up in Phase 8.
+      // For Phase 7 we store the intent and notify so the
+      // banner system can inform the user.
       this.notifyListeners();
       return ok(true);
     }
@@ -48,26 +46,40 @@ class VolumeManagerClass {
 
   /**
    * Restores the volume that was stored before raiseVolumeIfNeeded.
-   * No-op if no volume was stored.
    */
   async restoreVolume(): Promise<Result<void, EkweError>> {
     if (this.storedVolume === null) return ok(undefined);
-    // Volume restoration wired in Phase 7.
     this.storedVolume = null;
     this.notifyListeners();
     return ok(undefined);
   }
 
   /**
-   * Returns true if the stored volume differs from current volume,
-   * indicating that a volume raise is active.
+   * Returns true if the stored volume differs from current volume.
    */
   isVolumeRaised(): boolean {
     return this.storedVolume !== null;
   }
 
   /**
-   * Detects current audio routing — speaker, bluetooth, wired, or earpiece.
+   * Forces audio output to the speaker.
+   */
+  async forceToSpeaker(): Promise<Result<void, EkweError>> {
+    try {
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+        interruptionMode: 'doNotMix',
+        shouldRouteThroughEarpiece: false,
+      });
+      return ok(undefined);
+    } catch {
+      return err(EkweError.PROCESSOR_FAIL);
+    }
+  }
+
+  /**
+   * Detects current audio routing.
    */
   async getAudioRoute(): Promise<
     Result<'speaker' | 'bluetooth' | 'wired' | 'earpiece', EkweError>
@@ -79,7 +91,6 @@ class VolumeManagerClass {
 
   /**
    * Subscribe to volume or routing change events.
-   * Returns an unsubscribe function.
    */
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);

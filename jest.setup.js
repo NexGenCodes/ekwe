@@ -299,3 +299,20 @@ jest.mock('expo-file-system', () => ({
   }),
 }));
 
+/* ------------------------------------------------------------------ */
+/*  ekwe-native local module                                           */
+/* ------------------------------------------------------------------ */
+jest.mock('./modules/ekwe-native', () => ({
+  hasOverlayPermission: jest.fn().mockResolvedValue(true),
+  requestOverlayPermission: jest.fn().mockResolvedValue(undefined),
+  startBubbleService: jest.fn().mockResolvedValue(undefined),
+  stopBubbleService: jest.fn().mockResolvedValue(undefined),
+  getSavedPosition: jest.fn().mockResolvedValue(null),
+  savePosition: jest.fn().mockResolvedValue(undefined),
+  attachEffects: jest.fn().mockResolvedValue({
+    noiseSuppressor: true,
+    echoCanceler: true,
+    gainControl: true,
+  }),
+  releaseEffects: jest.fn().mockResolvedValue(undefined),
+}));

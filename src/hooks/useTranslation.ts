@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { EkweError } from 'src/constants/errors';
 import { TranslationService } from 'src/services/Translation';
-import { useAudioStore, useSettingsStore, useHistoryStore } from 'src/store';
+import { useAudioStore, useHistoryStore } from 'src/store';
 import { Result, ok, err } from 'src/types/Result';
 
 export interface UseTranslationReturn {

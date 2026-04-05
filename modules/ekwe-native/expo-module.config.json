@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["EkweNativeModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.ekwenative.EkweNativeModule"]
+  }
+}

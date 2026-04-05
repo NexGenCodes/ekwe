@@ -3,7 +3,14 @@ import { useFonts } from 'expo-font';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as SplashScreen from 'expo-splash-screen';
 import { JSX, useEffect } from 'react';
+import { Platform, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BubbleOverlay } from 'src/components/bubble/BubbleOverlay';
 import { RootNavigator } from 'src/navigation/RootNavigator';
+import {
+  configureNotifications,
+  registerNotificationCategories,
+} from 'src/utils/IosNotification';
 import { initialiseSentry } from 'src/utils/sentry';
 
 initialiseSentry();
@@ -16,6 +23,17 @@ export default function App(): JSX.Element | null {
     'Outfit-Medium': require('./assets/fonts/Outfit-Medium.ttf'),
     'SpaceMono-Regular': require('./assets/fonts/SpaceMono-Regular.ttf'),
   });
+
+  // Configure notifications on iOS
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      const setupNotifications = async (): Promise<void> => {
+        configureNotifications();
+        await registerNotificationCategories();
+      };
+      setupNotifications();
+    }
+  }, []);
 
   useEffect(() => {
     // Manually activate keep-awake and catch rejections (common on Android startup)
@@ -45,5 +63,12 @@ export default function App(): JSX.Element | null {
 
   if (!fontsLoaded && !fontError) return null;
 
-  return <RootNavigator />;
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View className="flex-1">
+        <RootNavigator />
+        <BubbleOverlay />
+      </View>
+    </GestureHandlerRootView>
+  );
 }

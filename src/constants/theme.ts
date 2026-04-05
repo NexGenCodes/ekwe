@@ -14,6 +14,11 @@ export const palette = {
     warning: '#B45309',
     error: '#BE123C',
     info: '#1A7EC8',
+    'bubble.idle': '#1D4ED8',
+    'bubble.recording': '#EF4444',
+    'bubble.processing': '#D97706',
+    'bubble.done': '#059669',
+    'bubble.error': '#BE123C',
   },
   dark: {
     background: '#09090B',
@@ -30,12 +35,16 @@ export const palette = {
     warning: '#F59E0B',
     error: '#FB7185',
     info: '#38BDF8',
+    'bubble.idle': '#1D4ED8',
+    'bubble.recording': '#EF4444',
+    'bubble.processing': '#FBBF24',
+    'bubble.done': '#34D399',
+    'bubble.error': '#FB7185',
   },
 };
 
-export const getColor = (
-  color: keyof typeof palette.light,
-  isDark: boolean,
-): string => {
+export type ColorKey = keyof typeof palette.light;
+
+export const getColor = (color: ColorKey, isDark: boolean): string => {
   return isDark ? palette.dark[color] : palette.light[color];
 };

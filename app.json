@@ -13,7 +13,8 @@
       "backgroundColor": "#0A1220"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.ekwe"
     },
     "android": {
       "adaptiveIcon": {
@@ -52,10 +53,14 @@
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
             "minSdkVersion": 24,
-            "buildArchs": ["arm64-v8a"]
+            "buildArchs": [
+              "arm64-v8a"
+            ]
           }
         }
-      ]
+      ],
+      "expo-widgets",
+      "./modules/ekwe-native/app.plugin.js"
     ],
     "assetBundlePatterns": [
       "assets/fonts/*"
