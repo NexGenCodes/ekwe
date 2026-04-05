@@ -1,3 +1,7 @@
+import {
+  NativeStackNavigationProp,
+  NativeStackScreenProps,
+} from '@react-navigation/native-stack';
 import { Check } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import React, { useEffect } from 'react';
@@ -12,7 +16,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EkweWordmark } from 'src/assets/icons/EkweWordmark';
 import { getColor } from 'src/constants/colors';
-import { OnboardingScreenProps } from 'src/navigation/types';
+import { OnboardingScreenProps, RootStackParams } from 'src/navigation/types';
 import { useSettingsStore } from 'src/store';
 
 const AUTO_NAV_DELAY = 2000;
@@ -58,9 +62,10 @@ export const AllSetScreen = ({
 
   const goToHome = (): void => {
     setOnboardingCompleted(true);
-    navigation.replace('Main', {
-      screen: 'MainTabs',
-      params: { screen: 'Home' },
+    // Use reset on parent (RootNavigator) to switch to Main and clear onboarding
+    navigation.getParent<NativeStackNavigationProp<RootStackParams>>()?.reset({
+      index: 0,
+      routes: [{ name: 'Main' }],
     });
   };
 

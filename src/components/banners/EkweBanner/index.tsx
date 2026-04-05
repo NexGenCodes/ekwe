@@ -1,8 +1,10 @@
 import { Info, CheckCircle2, AlertCircle, X } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import React from 'react';
 import { View, Text, Pressable, ViewStyle } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { EkweButton } from 'src/components/common/EkweButton';
+import { getColor } from 'src/constants/colors';
 
 export interface EkweBannerProps {
   message: string;
@@ -19,32 +21,39 @@ export interface EkweBannerProps {
   style?: ViewStyle;
 }
 
-const VARIANT_CONFIG = {
+interface VariantConfig {
+  icon: typeof Info;
+  color: string;
+  bg: string;
+  border: string;
+}
+
+const getVariantConfig = (isDark: boolean): Record<string, VariantConfig> => ({
   info: {
     icon: Info,
-    color: '#1A7EC8',
+    color: getColor('info', isDark),
     bg: 'bg-blue-50 dark:bg-blue-900/10',
     border: 'border-blue-200/50 dark:border-blue-800/50',
   },
   success: {
     icon: CheckCircle2,
-    color: '#10B981',
+    color: getColor('success', isDark),
     bg: 'bg-emerald-50 dark:bg-emerald-900/10',
     border: 'border-emerald-200/50 dark:border-emerald-800/50',
   },
   warning: {
     icon: AlertCircle,
-    color: '#F59E0B',
+    color: getColor('warning', isDark),
     bg: 'bg-amber-50 dark:bg-amber-900/10',
     border: 'border-amber-200/50 dark:border-amber-800/50',
   },
   error: {
     icon: AlertCircle,
-    color: '#EF4444',
+    color: getColor('error', isDark),
     bg: 'bg-red-50 dark:bg-red-900/10',
     border: 'border-red-200/50 dark:border-red-800/50',
   },
-};
+});
 
 export const BannerPresets = {
   noInternet: {
@@ -66,10 +75,13 @@ export const EkweBanner: React.FC<EkweBannerProps> = ({
   onClose,
   style,
 }) => {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
   if (!visible) return null;
 
   const currentType = variant || type;
-  const config = VARIANT_CONFIG[currentType];
+  const config = getVariantConfig(isDark)[currentType];
   const Icon = config.icon;
 
   return (
@@ -109,7 +121,7 @@ export const EkweBanner: React.FC<EkweBannerProps> = ({
           onPress={onClose || onDismiss}
           className="ml-2 p-1 active:opacity-60"
         >
-          <X size={16} color="#A1A1AA" />
+          <X size={16} color={getColor('muted', isDark)} />
         </Pressable>
       )}
     </Animated.View>

@@ -1,42 +1,50 @@
-import { setAudioModeAsync } from 'expo-audio';
+import { Platform } from 'react-native';
+import { AudioManager } from 'react-native-audio-api';
 import { EkweError } from 'src/constants/errors';
 import { Result, ok, err } from 'src/types/Result';
 
 const VOLUME_RAISE_THRESHOLD = 0.5;
 
 class VolumeManagerClass {
+  private currentVolume = 0.5;
   private storedVolume: number | null = null;
   private listeners: Set<() => void> = new Set();
+  private isInitialized = false;
 
-  /**
-   * Reads the current system volume (0–1).
-   * On Android uses expo-audio's getSystemVolume if available.
-   * On iOS uses AVAudioSession outputVolume via expo-audio.
-   */
-  async getVolume(): Promise<Result<number, EkweError>> {
-    try {
-      // expo-audio does not expose system volume directly.
-      // This is a known platform limitation.
-      // We return a mock value here until native modules are built if needed.
-      return ok(0.7);
-    } catch {
-      return ok(0.5);
-    }
+  constructor() {
+    this.init();
+  }
+
+  private async init(): Promise<void> {
+    if (this.isInitialized) return;
+
+    // Activate native volume observation
+    AudioManager.observeVolumeChanges(true);
+    AudioManager.addSystemEventListener('volumeChange', (event) => {
+      this.currentVolume = event.value;
+      this.notifyListeners();
+    });
+
+    this.isInitialized = true;
   }
 
   /**
-   * Raises system volume to TARGET_VOLUME.
+   * Reads the current system volume (0–1) tracked via native events.
+   */
+  async getVolume(): Promise<Result<number, EkweError>> {
+    return ok(this.currentVolume);
+  }
+
+  /**
+   * Raises system volume to stored intent (UI nudge).
    */
   async raiseVolumeIfNeeded(): Promise<Result<boolean, EkweError>> {
-    const volumeResult = await this.getVolume();
-    if (!volumeResult.ok) return err(volumeResult.error);
+    const res = await this.getVolume();
+    if (!res.ok) return res;
+    const volume = res.value;
 
-    if (volumeResult.value < VOLUME_RAISE_THRESHOLD) {
-      this.storedVolume = volumeResult.value;
-      // On Android volume raising requires a native module
-      // (android.media.AudioManager.setStreamVolume).
-      // This remains a no-op due to expo-audio limitations.
-      // We store the intent and notify so the banner system can inform the user.
+    if (volume < VOLUME_RAISE_THRESHOLD) {
+      this.storedVolume = volume;
       this.notifyListeners();
       return ok(true);
     }
@@ -44,33 +52,35 @@ class VolumeManagerClass {
   }
 
   /**
-   * Restores the volume that was stored before raiseVolumeIfNeeded.
+   * Restores the volume intent state.
    */
   async restoreVolume(): Promise<Result<void, EkweError>> {
-    if (this.storedVolume === null) return ok(undefined);
     this.storedVolume = null;
     this.notifyListeners();
     return ok(undefined);
   }
 
   /**
-   * Returns true if the stored volume differs from current volume.
+   * Returns true if the volume was flagged as low.
    */
   isVolumeRaised(): boolean {
     return this.storedVolume !== null;
   }
 
   /**
-   * Forces audio output to the speaker.
+   * Forces audio output to the speaker using Pro Audio Session options.
    */
   async forceToSpeaker(): Promise<Result<void, EkweError>> {
     try {
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-        interruptionMode: 'doNotMix',
-        shouldRouteThroughEarpiece: false,
-      });
+      if (Platform.OS === 'ios') {
+        AudioManager.setAudioSessionOptions({
+          iosCategory: 'playAndRecord',
+          iosOptions: ['defaultToSpeaker', 'allowBluetoothHFP'],
+          iosMode: 'voiceChat',
+        });
+      }
+      // On Android, routing is managed by the AudioContext/Recorder pair
+      // which defaults to standard communications routing.
       return ok(undefined);
     } catch {
       return err(EkweError.PROCESSOR_FAIL);
@@ -78,14 +88,38 @@ class VolumeManagerClass {
   }
 
   /**
-   * Detects current audio routing.
+   * Detects current audio routing natively.
    */
   async getAudioRoute(): Promise<
     Result<'speaker' | 'bluetooth' | 'wired' | 'earpiece', EkweError>
   > {
-    // Routing detection requires native modules.
-    // Return speaker as default due to platform limitations.
-    return ok('speaker');
+    try {
+      const info = await AudioManager.getDevicesInfo();
+
+      // Determine route based on current output names/categories
+      const output =
+        Platform.OS === 'ios' && info.currentOutputs.length > 0
+          ? info.currentOutputs[0]
+          : info.availableOutputs[0];
+
+      if (!output) return ok('speaker');
+
+      const name = output.name.toLowerCase();
+      if (
+        name.includes('bluetooth') ||
+        name.includes('airpods') ||
+        name.includes('bt')
+      )
+        return ok('bluetooth');
+      if (name.includes('headphone') || name.includes('wired'))
+        return ok('wired');
+      if (name.includes('earpiece') || name.includes('receiver'))
+        return ok('earpiece');
+
+      return ok('speaker');
+    } catch {
+      return ok('speaker');
+    }
   }
 
   /**
@@ -102,9 +136,6 @@ class VolumeManagerClass {
     this.listeners.forEach((l) => l());
   }
 
-  /**
-   * Resets internal state. Used for testing only.
-   */
   _resetForTesting(): void {
     this.storedVolume = null;
     this.listeners.clear();

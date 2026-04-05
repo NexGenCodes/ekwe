@@ -14,7 +14,7 @@ const mockAudio = {
   trimStartMs: 0,
   trimEndMs: 5000,
   hasSpeech: true,
-  averageAmplitude: 0.5,
+  averageDb: 0.5,
   meteringData: [],
 };
 

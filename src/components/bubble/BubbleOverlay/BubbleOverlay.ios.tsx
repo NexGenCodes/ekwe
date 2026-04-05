@@ -1,20 +1,19 @@
 import { useColorScheme } from 'nativewind';
-import React, { useEffect } from 'react';
-import { View, Text } from 'react-native';
+import React, { useEffect, useMemo } from 'react';
+import { Text } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  withSpring,
+} from 'react-native-reanimated';
 import { MicrophoneIcon } from 'src/assets/icons/MicrophoneIcon';
-import { bubbleColors } from 'src/constants/colors';
+import { bubbleColors, getColor } from 'src/constants/colors';
+import { useMetering } from 'src/hooks';
 import { useAudioStore, useSettingsStore } from 'src/store';
 import { RecordingState } from 'src/store/audioSlice';
 
 // Live Activity management — expo-widgets
-// Full Live Activity wiring requires native module config.
-// The widget target must be configured in Xcode.
-
-const updateLiveActivity = (state: RecordingState): void => {
-  // expo-widgets Live Activity API:
-  // import { LiveActivity } from 'expo-widgets'
-  // LiveActivity.update({ state: state })
-  // Requires Xcode target configuration to test.
+const updateLiveActivity = (_state: RecordingState): void => {
+  // Logic placeholder for Live Activity
 };
 
 export const BubbleOverlay = (): React.ReactElement | null => {
@@ -25,35 +24,42 @@ export const BubbleOverlay = (): React.ReactElement | null => {
   const bubbleEnabled = useSettingsStore((s) => s.bubbleEnabled);
   const resetAudioState = useAudioStore((s) => s.resetAudioState);
 
+  const liveAmplitude = useMetering();
+
+  const pillAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        scale:
+          recordingState === RecordingState.Recording
+            ? withSpring(1 + liveAmplitude.value * 0.15, {
+                damping: 12,
+                stiffness: 300,
+                mass: 0.3,
+              })
+            : withSpring(1),
+      },
+    ],
+  }));
+
   // Sync state to Live Activity
   useEffect(() => {
     updateLiveActivity(recordingState);
   }, [recordingState]);
 
-  // Done auto-reset
+  // Auto-reset timers
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
     if (recordingState === RecordingState.Done) {
-      const timer = setTimeout(() => resetAudioState(), 3000);
-      return (): void => clearTimeout(timer);
+      timer = setTimeout(() => resetAudioState(), 3000);
+    } else if (recordingState === RecordingState.Error) {
+      timer = setTimeout(() => resetAudioState(), 5000);
     }
-    return undefined;
+    return (): void => timer && clearTimeout(timer);
   }, [recordingState, resetAudioState]);
 
-  // Error auto-reset
-  useEffect(() => {
-    if (recordingState === RecordingState.Error) {
-      const timer = setTimeout(() => resetAudioState(), 5000);
-      return (): void => clearTimeout(timer);
-    }
-    return undefined;
-  }, [recordingState, resetAudioState]);
-
-  if (!bubbleEnabled) return null;
-
-  // On iOS the in-app indicator is a minimal status pill
-  // at the top of the screen — the real experience is the
-  // Dynamic Island / lock screen Live Activity
-  const getStateColor = (): string => {
+  // THEME COLORS (Pre-calculated for UI thread safety)
+  const onPrimaryColor = useMemo(() => getColor('onPrimary', isDark), [isDark]);
+  const stateColor = useMemo(() => {
     switch (recordingState) {
       case RecordingState.Recording:
         return bubbleTheme.recording;
@@ -66,9 +72,9 @@ export const BubbleOverlay = (): React.ReactElement | null => {
       default:
         return bubbleTheme.idle;
     }
-  };
+  }, [recordingState, bubbleTheme]);
 
-  const getStateLabel = (): string => {
+  const stateLabel = useMemo(() => {
     switch (recordingState) {
       case RecordingState.Recording:
         return 'Recording';
@@ -81,19 +87,19 @@ export const BubbleOverlay = (): React.ReactElement | null => {
       default:
         return 'Ekwe ready';
     }
-  };
+  }, [recordingState]);
+
+  if (!bubbleEnabled) return null;
 
   return (
-    <View
+    <Animated.View
       className="absolute top-15 self-center rounded-full flex-row items-center gap-2 px-3 py-1"
-      style={{
-        backgroundColor: getStateColor(),
-      }}
+      style={[{ backgroundColor: stateColor }, pillAnimatedStyle]}
     >
-      <MicrophoneIcon size={14} color="#FFFFFF" />
+      <MicrophoneIcon size={14} color={onPrimaryColor} />
       <Text className="uppercase tracking-widest text-white font-medium text-xs">
-        {getStateLabel()}
+        {stateLabel}
       </Text>
-    </View>
+    </Animated.View>
   );
 };

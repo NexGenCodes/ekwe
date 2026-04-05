@@ -1,10 +1,10 @@
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useState, useEffect, useCallback } from 'react';
-import { RootStackParamList } from 'src/navigation/RootNavigator';
+import { RootStackParams } from 'src/navigation/types';
 import { SessionRecord, InterruptedSession } from 'src/utils/sessionRecord';
 
-type Nav = NativeStackNavigationProp<RootStackParamList>;
+type Nav = NativeStackNavigationProp<RootStackParams>;
 
 export const useAppStateRestoration = (): {
   interruptedSession: InterruptedSession | null;

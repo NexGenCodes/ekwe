@@ -2,6 +2,7 @@ import './global.css';
 import { useFonts } from 'expo-font';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
 import { JSX, useEffect } from 'react';
 import { Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -40,7 +41,7 @@ export default function App(): JSX.Element | null {
     const activate = async (): Promise<void> => {
       try {
         await activateKeepAwakeAsync();
-      } catch (_err) {
+      } catch {
         /* Silently fail if activity is not ready */
       }
     };
@@ -66,6 +67,7 @@ export default function App(): JSX.Element | null {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View className="flex-1">
+        <StatusBar style="auto" />
         <RootNavigator />
         <BubbleOverlay />
       </View>

@@ -4,7 +4,7 @@ import React from 'react';
 import { View, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EkweButton } from 'src/components/common/EkweButton';
-import { LanguagePickerSheet } from 'src/components/common/LanguagePickerSheet';
+import { LanguagePickerInline } from 'src/components/common/LanguagePickerInline';
 import { useSettingsStore } from 'src/store';
 
 import { OnboardingParamList } from './OnboardingNavigator';
@@ -29,17 +29,15 @@ export const LanguageScreen = (): React.ReactElement => {
         </Text>
       </View>
 
-      {/* Inline LanguagePickerSheet — always visible */}
+      {/* Inline LanguagePicker — always visible */}
       <View className="flex-1">
-        <LanguagePickerSheet
-          isVisible
+        <LanguagePickerInline
           selectedLanguages={selectedLanguages}
           pinnedLanguages={pinnedLanguages}
           onSelectionChange={(sel, pins) => {
             setSelectedLanguages(sel);
             setPinnedLanguages(pins);
           }}
-          onClose={() => {}}
         />
       </View>
 
@@ -49,7 +47,7 @@ export const LanguageScreen = (): React.ReactElement => {
           size="large"
           label="Continue"
           disabled={selectedLanguages.length === 0}
-          onPress={() => navigation.navigate('Ready')}
+          onPress={() => navigation.navigate('AllSet')}
         />
       </View>
     </SafeAreaView>

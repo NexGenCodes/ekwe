@@ -4,7 +4,7 @@ import { AudioProcessor } from 'src/services/AudioProcessor';
 describe('AudioProcessor', () => {
   describe('processRecording', () => {
     it('detects silence if below threshold', async () => {
-      const metering = new Array(20).fill(0.01); // All quiet
+      const metering = new Array(20).fill(-60); // All quiet
       const result = await AudioProcessor.processRecording(
         'file.m4a',
         2000,
@@ -15,10 +15,7 @@ describe('AudioProcessor', () => {
     });
 
     it('accepts audio crossing threshold', async () => {
-      const metering = [
-        ...new Array(10).fill(0.01),
-        ...new Array(10).fill(0.6),
-      ]; // Quiet then loud
+      const metering = [...new Array(10).fill(-60), ...new Array(10).fill(-20)]; // Quiet then loud
       const result = await AudioProcessor.processRecording(
         'file.m4a',
         2000,
@@ -29,7 +26,7 @@ describe('AudioProcessor', () => {
     });
 
     it('rejects if duration is < 500ms even if loud', async () => {
-      const metering = new Array(5).fill(0.8);
+      const metering = new Array(5).fill(-10);
       const result = await AudioProcessor.processRecording(
         'file.m4a',
         400,
@@ -49,7 +46,7 @@ describe('AudioProcessor', () => {
 
     it('returns NO_SPEECH if below threshold', () => {
       const result = AudioProcessor.analyseMetering(
-        new Array(10).fill(0.01),
+        new Array(10).fill(-60),
         100,
       );
       expect(result.ok).toBe(false);
@@ -58,7 +55,7 @@ describe('AudioProcessor', () => {
 
     it('calculates trim points correctly', () => {
       // 0.1s steps. Speech from index 2 to 4 (0.2s to 0.4s)
-      const metering = [0.01, 0.01, 0.6, 0.8, 0.7, 0.01, 0.01];
+      const metering = [-60, -60, -20, -10, -20, -60, -60];
       const result = AudioProcessor.analyseMetering(metering, 100);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -79,29 +76,32 @@ describe('AudioProcessor', () => {
     });
 
     it('returns ok for valid file', async () => {
-      FileSystem.getInfoAsync.mockResolvedValueOnce({
+      const { File: MockFile } = require('expo-file-system');
+      (MockFile as jest.Mock).mockImplementationOnce(() => ({
         exists: true,
         size: 5 * 1024 * 1024,
-      });
+      }));
       const result = await AudioProcessor.validateSharedFile('valid.mp3');
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.uri).toBe('valid.mp3');
     });
 
     it('returns SHARE_COPY_FAIL if file does not exist', async () => {
-      FileSystem.getInfoAsync.mockResolvedValueOnce({
+      const { File: MockFile } = require('expo-file-system');
+      (MockFile as jest.Mock).mockImplementationOnce(() => ({
         exists: false,
-      });
+      }));
       const result = await AudioProcessor.validateSharedFile('missing.mp3');
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toBe(EkweError.SHARE_COPY_FAIL);
     });
 
     it('returns FILE_TOO_LARGE if size > 25MB', async () => {
-      FileSystem.getInfoAsync.mockResolvedValueOnce({
+      const { File: MockFile } = require('expo-file-system');
+      (MockFile as jest.Mock).mockImplementationOnce(() => ({
         exists: true,
         size: 30 * 1024 * 1024,
-      });
+      }));
       const result = await AudioProcessor.validateSharedFile('huge.mp3');
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toBe(EkweError.FILE_TOO_LARGE);

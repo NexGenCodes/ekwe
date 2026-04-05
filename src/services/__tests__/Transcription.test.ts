@@ -10,6 +10,10 @@ jest.mock('expo-file-system', () => ({
     exists: true,
     size: 1024 * 100, // 100KB default
   }),
+  File: jest.fn().mockImplementation(() => ({
+    exists: true,
+    size: 1024 * 100,
+  })),
 }));
 
 jest.mock('franc-min', () => ({
@@ -31,7 +35,7 @@ const mockAudio: ProcessedAudio = {
   trimStartMs: 500,
   trimEndMs: 4500,
   hasSpeech: true,
-  averageAmplitude: 0.5,
+  averageDb: 0.5,
   meteringData: [],
 };
 
@@ -60,9 +64,10 @@ describe('TranscriptionService', () => {
   });
 
   it.skip('returns err(SHARE_COPY_FAIL) when file does not exist', async () => {
-    (FileSystem.getInfoAsync as jest.Mock).mockResolvedValueOnce({
+    const { File: MockFile } = require('expo-file-system');
+    (MockFile as jest.Mock).mockImplementationOnce(() => ({
       exists: false,
-    });
+    }));
     const { TranscriptionService } = require('src/services/Transcription');
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
     expect(result.ok).toBe(false);
@@ -72,10 +77,11 @@ describe('TranscriptionService', () => {
   });
 
   it.skip('returns err(BAD_FORMAT) when file exceeds 25MB', async () => {
-    (FileSystem.getInfoAsync as jest.Mock).mockResolvedValueOnce({
+    const { File: MockFile } = require('expo-file-system');
+    (MockFile as jest.Mock).mockImplementationOnce(() => ({
       exists: true,
       size: 50 * 1024 * 1024, // 50MB
-    });
+    }));
     const { TranscriptionService } = require('src/services/Transcription');
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
 

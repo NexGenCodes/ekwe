@@ -60,7 +60,7 @@ export const SettingsScreen = (): React.JSX.Element => {
               value={autoCopy}
               onValueChange={setAutoCopy}
               trackColor={{ true: primaryColor }}
-              thumbColor={isDark ? '#FFFFFF' : '#FFFFFF'}
+              thumbColor={getColor('onPrimary', isDark)}
             />,
           )}
           {renderItem(
@@ -69,7 +69,7 @@ export const SettingsScreen = (): React.JSX.Element => {
               value={hapticsEnabled}
               onValueChange={setHapticsEnabled}
               trackColor={{ true: primaryColor }}
-              thumbColor={isDark ? '#FFFFFF' : '#FFFFFF'}
+              thumbColor={getColor('onPrimary', isDark)}
             />,
           )}
           {renderItem('Theme', <ThemeToggler />)}

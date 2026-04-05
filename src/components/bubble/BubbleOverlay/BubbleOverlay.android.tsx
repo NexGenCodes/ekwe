@@ -1,6 +1,6 @@
 import { useColorScheme } from 'nativewind';
-import React, { useEffect, useRef } from 'react';
-import { Dimensions, View, ViewStyle } from 'react-native';
+import React, { useEffect, useRef, useMemo } from 'react';
+import { Dimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
@@ -11,14 +11,15 @@ import Animated, {
   withSequence,
   cancelAnimation,
   runOnJS,
+  useAnimatedReaction,
+  SharedValue,
 } from 'react-native-reanimated';
 import { CheckmarkIcon } from 'src/assets/icons/CheckmarkIcon';
 import { ExclamationIcon } from 'src/assets/icons/ExclamationIcon';
 import { MicrophoneIcon } from 'src/assets/icons/MicrophoneIcon';
 import { SpinnerIcon } from 'src/assets/icons/SpinnerIcon';
-import { AudioWaveform } from 'src/components/common/AudioWaveform';
-import { bubbleColors } from 'src/constants/colors';
-import { useBubble } from 'src/hooks';
+import { bubbleColors, getColor } from 'src/constants/colors';
+import { useBubble, useMetering } from 'src/hooks';
 import { useAudioStore, useSettingsStore } from 'src/store';
 import { RecordingState } from 'src/store/audioSlice';
 import { BubbleNative } from 'src/utils/BubbleModule';
@@ -54,31 +55,16 @@ export const BubbleOverlay = (): React.ReactElement | null => {
     });
   }, []);
 
-  // Done state auto-reset after 3 seconds
+  // Auto-reset timers
   useEffect(() => {
     if (recordingState === RecordingState.Done) {
-      doneTimer.current = setTimeout(() => {
-        resetAudioState();
-      }, 3000);
+      doneTimer.current = setTimeout(() => resetAudioState(), 3000);
+    } else if (recordingState === RecordingState.Error) {
+      errorTimer.current = setTimeout(() => resetAudioState(), 5000);
     }
     return (): void => {
-      if (doneTimer.current !== null) {
-        clearTimeout(doneTimer.current);
-      }
-    };
-  }, [recordingState, resetAudioState]);
-
-  // Error state auto-reset after 5 seconds
-  useEffect(() => {
-    if (recordingState === RecordingState.Error) {
-      errorTimer.current = setTimeout(() => {
-        resetAudioState();
-      }, 5000);
-    }
-    return (): void => {
-      if (errorTimer.current !== null) {
-        clearTimeout(errorTimer.current);
-      }
+      if (doneTimer.current) clearTimeout(doneTimer.current);
+      if (errorTimer.current) clearTimeout(errorTimer.current);
     };
   }, [recordingState, resetAudioState]);
 
@@ -129,9 +115,60 @@ export const BubbleOverlay = (): React.ReactElement | null => {
     }
   }, [recordingState]);
 
-  // SPINNER ANIMATION for processing state
-  const spinRotation = useSharedValue(0);
+  // LIVE METERING
+  const liveAmplitude = useMetering();
+  const history = [
+    useSharedValue(0),
+    useSharedValue(0),
+    useSharedValue(0),
+    useSharedValue(0),
+    useSharedValue(0),
+  ];
 
+  useAnimatedReaction(
+    () => liveAmplitude.value,
+    (val) => {
+      if (recordingState === RecordingState.Recording) {
+        // Snappy springs — low damping + high stiffness = immediate visual response.
+        // Stagger damping across bars for a natural cascade effect.
+        history[4].value = withSpring(val, {
+          damping: 12,
+          stiffness: 300,
+          mass: 0.3,
+        });
+        history[3].value = withSpring(val, {
+          damping: 14,
+          stiffness: 280,
+          mass: 0.3,
+        });
+        history[2].value = withSpring(val, {
+          damping: 16,
+          stiffness: 260,
+          mass: 0.3,
+        });
+        history[1].value = withSpring(val, {
+          damping: 18,
+          stiffness: 240,
+          mass: 0.3,
+        });
+        history[0].value = withSpring(val, {
+          damping: 20,
+          stiffness: 220,
+          mass: 0.3,
+        });
+      }
+    },
+    [recordingState],
+  );
+
+  useEffect(() => {
+    if (recordingState !== RecordingState.Recording) {
+      history.forEach((h) => (h.value = 0));
+    }
+  }, [recordingState]);
+
+  // SPINNER
+  const spinRotation = useSharedValue(0);
   useEffect(() => {
     if (recordingState === RecordingState.Processing) {
       spinRotation.value = withRepeat(
@@ -145,13 +182,12 @@ export const BubbleOverlay = (): React.ReactElement | null => {
     }
   }, [recordingState]);
 
-  const spinnerStyle = useAnimatedStyle(
-    (): ViewStyle => ({
-      transform: [{ rotate: `${spinRotation.value}deg` }],
-    }),
-  );
+  const spinnerStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${spinRotation.value}deg` }],
+  }));
 
-  const getBubbleColor = (): string => {
+  // THEME COLORS (Pre-calculated for UI thread safety)
+  const bubbleColorValue = useMemo(() => {
     switch (recordingState) {
       case RecordingState.Recording:
         return bubbleTheme.recording;
@@ -164,24 +200,44 @@ export const BubbleOverlay = (): React.ReactElement | null => {
       default:
         return bubbleTheme.idle;
     }
-  };
+  }, [recordingState, bubbleTheme]);
+
+  const onPrimaryColor = useMemo(() => getColor('onPrimary', isDark), [isDark]);
 
   const bubbleColor = useSharedValue(bubbleTheme.idle);
+  useEffect((): void => {
+    bubbleColor.value = withTiming(bubbleColorValue, { duration: 200 });
+  }, [bubbleColorValue, bubbleColor]);
 
-  useEffect(() => {
-    bubbleColor.value = withTiming(getBubbleColor(), {
-      duration: 200,
-    });
-  }, [recordingState]);
+  // Sub-component for individual bars to fix hook violation
+  const MeterBar = ({
+    value,
+    color,
+  }: {
+    value: SharedValue<number>;
+    color: string;
+  }): React.ReactElement => {
+    const animatedStyle = useAnimatedStyle(() => ({
+      height: Math.max(4, value.value * 20),
+    }));
 
-  // DRAG GESTURE with edge snapping
-  const startX = useSharedValue(DEFAULT_X);
-  const startY = useSharedValue(DEFAULT_Y);
-
-  const savePosition = (x: number, y: number): void => {
-    BubbleNative.savePosition(x, y);
+    return (
+      <Animated.View
+        style={[
+          {
+            width: 3,
+            borderRadius: 1.5,
+            backgroundColor: color,
+          },
+          animatedStyle,
+        ]}
+      />
+    );
   };
 
+  // GESTURES
+  const startX = useSharedValue(DEFAULT_X);
+  const startY = useSharedValue(DEFAULT_Y);
   const panGesture = Gesture.Pan()
     .onStart(() => {
       isDragging.value = true;
@@ -194,48 +250,38 @@ export const BubbleOverlay = (): React.ReactElement | null => {
     })
     .onEnd(() => {
       isDragging.value = false;
-      // Snap to nearest horizontal edge
       const snapX =
         translateX.value < SCREEN.width / 2
           ? 16
           : SCREEN.width - BUBBLE_SIZE - 16;
       translateX.value = withSpring(snapX, { damping: 15 });
-      // Clamp Y within screen
       const clampedY = Math.max(
         60,
         Math.min(SCREEN.height - BUBBLE_SIZE - 60, translateY.value),
       );
       translateY.value = withSpring(clampedY, { damping: 15 });
-      runOnJS(savePosition)(snapX, clampedY);
+      runOnJS(BubbleNative.savePosition)(snapX, clampedY);
     });
 
-  const tapGesture = Gesture.Tap().onEnd(() => {
-    runOnJS(handleBubbleTap)();
-  });
-
+  const tapGesture = Gesture.Tap().onEnd(() => runOnJS(handleBubbleTap)());
   const composed = Gesture.Simultaneous(panGesture, tapGesture);
 
-  const bubbleAnimatedStyle = useAnimatedStyle(
-    (): ViewStyle => ({
-      transform: [
-        { translateX: translateX.value },
-        { translateY: translateY.value },
-      ],
-    }),
-  );
+  const bubbleAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+    ],
+  }));
 
-  const pulseAnimatedStyle = useAnimatedStyle(
-    (): ViewStyle => ({
-      transform: [{ scale: pulseScale.value }],
-      opacity: pulseOpacity.value,
-    }),
-  );
+  const pulseAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pulseScale.value }],
+    opacity: pulseOpacity.value,
+  }));
 
   if (!bubbleEnabled) return null;
 
   return (
     <View className="absolute inset-0 pointer-events-none">
-      {/* Pulse ring */}
       <Animated.View
         style={[
           {
@@ -244,14 +290,12 @@ export const BubbleOverlay = (): React.ReactElement | null => {
             height: BUBBLE_SIZE,
             borderRadius: BUBBLE_SIZE / 2,
             borderWidth: 1.5,
-            borderColor: getBubbleColor(),
+            borderColor: bubbleColorValue,
           },
           bubbleAnimatedStyle,
           pulseAnimatedStyle,
         ]}
       />
-
-      {/* Bubble */}
       <GestureDetector gesture={composed}>
         <Animated.View
           style={[
@@ -260,7 +304,7 @@ export const BubbleOverlay = (): React.ReactElement | null => {
               width: BUBBLE_SIZE,
               height: BUBBLE_SIZE,
               borderRadius: BUBBLE_SIZE / 2,
-              backgroundColor: getBubbleColor(),
+              backgroundColor: bubbleColorValue,
               alignItems: 'center',
               justifyContent: 'center',
             },
@@ -268,34 +312,27 @@ export const BubbleOverlay = (): React.ReactElement | null => {
           ]}
         >
           {recordingState === RecordingState.Idle && (
-            <MicrophoneIcon size={20} color="#FFFFFF" />
+            <MicrophoneIcon size={20} color={onPrimaryColor} />
           )}
-
           {recordingState === RecordingState.Recording && (
-            <AudioWaveform
-              amplitudes={[0.5, 0.8, 0.4, 0.9, 0.6]} // Mock amplitudes for recording animation
-              progress={1}
-              width={24}
-              height={20}
-              interactive={false}
-              style={{ opacity: 1 }}
-            />
+            <View className="flex-row items-center gap-0.5">
+              {history.map((h, i) => (
+                <MeterBar key={i} value={h} color={onPrimaryColor} />
+              ))}
+            </View>
           )}
-
           {recordingState === RecordingState.Processing && (
             <SpinnerIcon
               size={20}
-              color="#FFFFFF"
+              color={onPrimaryColor}
               animatedStyle={spinnerStyle}
             />
           )}
-
           {recordingState === RecordingState.Done && (
-            <CheckmarkIcon size={20} color="#FFFFFF" />
+            <CheckmarkIcon size={20} color={onPrimaryColor} />
           )}
-
           {recordingState === RecordingState.Error && (
-            <ExclamationIcon size={20} color="#FFFFFF" />
+            <ExclamationIcon size={20} color={onPrimaryColor} />
           )}
         </Animated.View>
       </GestureDetector>

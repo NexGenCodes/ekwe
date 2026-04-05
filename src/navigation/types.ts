@@ -9,20 +9,19 @@ import {
 } from '@react-navigation/native-stack';
 
 export type OnboardingStackParams = {
-  FeatureOne: undefined;
-  FeatureTwo: undefined;
+  Welcome: undefined;
   Language: undefined;
   AllSet: undefined;
 };
 
-export type MainTabsParams = {
+export type TabParamList = {
   Home: undefined;
   History: undefined;
   Settings: undefined;
 };
 
 export type MainStackParams = {
-  MainTabs: NavigatorScreenParams<MainTabsParams>;
+  MainTabs: NavigatorScreenParams<TabParamList>;
   Result: {
     entryId?: string;
     isLive?: boolean;
@@ -33,6 +32,21 @@ export type RootStackParams = {
   Welcome: undefined;
   Onboarding: NavigatorScreenParams<OnboardingStackParams>;
   Main: NavigatorScreenParams<MainStackParams>;
+  Result: {
+    uri?: string; // For shared voice notes
+    sessionId?: string;
+    entryId?: string;
+    transcript?: string;
+    sourceLang?: string;
+    targetLang?: string;
+    isLive?: boolean;
+    isHistoryReplay?: boolean;
+    duration?: number;
+  };
+  Translate: {
+    text: string;
+    detectedLang?: string;
+  };
 };
 
 // Typed navigation props — import these in screens
@@ -45,14 +59,14 @@ export type OnboardingScreenProps<T extends keyof OnboardingStackParams> =
     NativeStackScreenProps<RootStackParams>
   >;
 
-export type MainTabScreenProps<T extends keyof MainTabsParams> =
+export type MainTabScreenProps<T extends keyof TabParamList> =
   CompositeScreenProps<
-    BottomTabScreenProps<MainTabsParams, T>,
+    BottomTabScreenProps<TabParamList, T>,
     NativeStackScreenProps<MainStackParams>
   >;
 
 export type ResultScreenProps = NativeStackScreenProps<
-  MainStackParams,
+  RootStackParams,
   'Result'
 >;
 

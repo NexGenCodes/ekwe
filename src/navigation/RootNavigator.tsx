@@ -10,33 +10,15 @@ import { SettingsIcon } from 'src/assets/icons/SettingsIcon';
 import { getColor } from 'src/constants/colors';
 import { useShareIntentHandler } from 'src/hooks/useShareIntentHandler';
 import { linking } from 'src/navigation/linking';
+import { RootStackParams, TabParamList } from 'src/navigation/types';
 import { HistoryScreen } from 'src/screens/History/HistoryScreen';
 import { HomeScreen } from 'src/screens/Home/HomeScreen';
 import { OnboardingNavigator } from 'src/screens/Onboarding/OnboardingNavigator';
 import { ResultScreen } from 'src/screens/Result/ResultScreen';
 import { SettingsScreen } from 'src/screens/Settings/SettingsScreen';
+import { TranslateScreen } from 'src/screens/Translate/TranslateScreen';
 
-export type RootStackParamList = {
-  Onboarding: undefined;
-  Main: undefined;
-  Result: {
-    sessionId?: string;
-    entryId?: string;
-    transcript?: string;
-    sourceLang?: string;
-    targetLang?: string;
-    duration?: number;
-    isHistoryReplay?: boolean;
-  };
-};
-
-export type TabParamList = {
-  Home: undefined;
-  History: undefined;
-  Settings: undefined;
-};
-
-const Stack = createNativeStackNavigator<RootStackParamList>();
+const Stack = createNativeStackNavigator<RootStackParams>();
 const Tab = createBottomTabNavigator<TabParamList>();
 
 const TAB_BAR_HEIGHT = 64;
@@ -100,6 +82,14 @@ export const RootNavigator = (): React.JSX.Element => {
           <Stack.Screen
             name="Result"
             component={ResultScreen}
+            options={{
+              presentation: 'modal',
+              animation: 'slide_from_bottom',
+            }}
+          />
+          <Stack.Screen
+            name="Translate"
+            component={TranslateScreen}
             options={{
               presentation: 'modal',
               animation: 'slide_from_bottom',

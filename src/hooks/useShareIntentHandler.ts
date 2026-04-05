@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { Alert } from 'react-native';
 import { RootStackParams } from 'src/navigation/types';
 import { AudioCapture } from 'src/services/AudioCapture';
-
+import { detectLanguage } from 'src/utils/detectLanguage';
 type Nav = NativeStackNavigationProp<RootStackParams>;
 
 export const useShareIntentHandler = (): void => {
@@ -30,34 +30,42 @@ export const useShareIntentHandler = (): void => {
   useEffect(() => {
     const rawIntent = shareIntent as RawIntent;
     if (hasShareIntent && rawIntent) {
-      const handleIncomingAudio = async (): Promise<void> => {
-        const uri =
-          rawIntent.value || rawIntent.files?.[0]?.path || rawIntent.data;
-        if (!uri) return;
-        // Strict Voice Note Validation
-        const result = await AudioCapture.processSharedFile(uri);
+      if (rawIntent.type === 'text' && rawIntent.value) {
+        // Handle text sharing
+        const text = rawIntent.value;
+        const detectedLang = detectLanguage(text);
 
-        if (result.ok) {
-          navigation.navigate('Main', {
-            screen: 'Result',
-            params: {
-              entryId: `share_${Date.now()}`,
+        navigation.navigate('Translate', { text, detectedLang });
+        resetShareIntent();
+      } else {
+        // Handle incoming audio
+        const handleIncomingAudio = async (): Promise<void> => {
+          const uri =
+            rawIntent.value || rawIntent.files?.[0]?.path || rawIntent.data;
+          if (!uri) return;
+
+          // Strict Voice Note Validation
+          const result = await AudioCapture.processSharedFile(uri);
+
+          if (result.ok) {
+            navigation.navigate('Result', {
+              uri: result.value.uri,
               isLive: false,
-            },
-          });
+            });
 
-          // Reset so it doesn't trigger again on reload
-          resetShareIntent();
-        } else {
-          Alert.alert(
-            'Invalid Format',
-            'Ekwe only supports voice notes (.m4a, .opus, .ogg, .aac). Music files are not allowed.',
-            [{ text: 'OK', onPress: () => resetShareIntent() }],
-          );
-        }
-      };
+            // Reset so it doesn't trigger again on reload
+            resetShareIntent();
+          } else {
+            Alert.alert(
+              'Invalid Format',
+              'Ekwe only supports voice notes (.m4a, .opus, .ogg, .aac). Music files are not allowed.',
+              [{ text: 'OK', onPress: (): void => resetShareIntent() }],
+            );
+          }
+        };
 
-      handleIncomingAudio();
+        handleIncomingAudio();
+      }
     }
   }, [hasShareIntent, shareIntent, navigation, resetShareIntent]);
 

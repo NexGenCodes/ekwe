@@ -1,14 +1,14 @@
 import * as Haptics from 'expo-haptics';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedReaction,
   withTiming,
-  withRepeat,
-  withSequence,
+  withSpring,
   Easing,
   cancelAnimation,
 } from 'react-native-reanimated';
@@ -18,6 +18,7 @@ import { MicrophoneIcon } from 'src/assets/icons/MicrophoneIcon';
 import { ThemeToggler } from 'src/components';
 import { HistoryItem } from 'src/components/cards/HistoryItem';
 import { getColor } from 'src/constants/colors';
+import { useMetering } from 'src/hooks';
 import { MainTabScreenProps } from 'src/navigation/types';
 import { AudioCapture } from 'src/services/AudioCapture';
 import { useHistoryStore } from 'src/store';
@@ -32,19 +33,41 @@ export const HomeScreen = ({
 
   const [isRecording, setIsRecording] = useState(false);
 
-  // --- Animations ---
+  // Pre-calculate colors for UI-thread safety
+  const errorColor = useMemo(() => getColor('error', isDark), [isDark]);
+  const cardColor = useMemo(() => getColor('card', isDark), [isDark]);
+  const borderColor = useMemo(() => getColor('border', isDark), [isDark]);
+  const primaryColor = useMemo(() => getColor('primary', isDark), [isDark]);
+
+  // --- Live metering from react-native-audio-api ---
+  const liveAmplitude = useMetering();
+
+  // --- Animations (UI-thread driven) ---
   const scale = useSharedValue(1);
   const ringScale = useSharedValue(1);
-  const ringOpacity = useSharedValue(0.2);
+  const ringOpacity = useSharedValue(0);
+
+  // Drive ring animation from live audio metering on UI thread.
+  // When recording, the ring pulses in sync with actual voice levels.
+  useAnimatedReaction(
+    () => liveAmplitude.value,
+    (val) => {
+      if (isRecording) {
+        // Scale ring 1.0-1.6 based on amplitude, snappy spring
+        ringScale.value = withSpring(1 + val * 0.6, {
+          damping: 12,
+          stiffness: 300,
+          mass: 0.3,
+        });
+        // Opacity 0.15-0.5 based on amplitude
+        ringOpacity.value = withTiming(0.15 + val * 0.35, { duration: 16 });
+      }
+    },
+    [isRecording],
+  );
 
   const animatedMicStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
-    backgroundColor: isRecording
-      ? getColor('error', isDark) + '20' // 20% opacity red
-      : getColor('card', isDark),
-    borderColor: isRecording
-      ? getColor('error', isDark)
-      : getColor('border', isDark),
   }));
 
   const animatedRingStyle = useAnimatedStyle(() => ({
@@ -52,27 +75,11 @@ export const HomeScreen = ({
     opacity: ringOpacity.value,
   }));
 
-  const startPulse = (): void => {
-    ringScale.value = withRepeat(
-      withTiming(1.6, { duration: 1200, easing: Easing.out(Easing.ease) }),
-      -1,
-      false,
-    );
-    ringOpacity.value = withRepeat(
-      withSequence(
-        withTiming(0.4, { duration: 1200 }),
-        withTiming(0, { duration: 1200 }),
-      ),
-      -1,
-      false,
-    );
-  };
-
   const stopPulse = (): void => {
     cancelAnimation(ringScale);
     cancelAnimation(ringOpacity);
     ringScale.value = withTiming(1, { duration: 200 });
-    ringOpacity.value = withTiming(0.2, { duration: 200 });
+    ringOpacity.value = withTiming(0, { duration: 200 });
   };
 
   const handlePressIn = (): void => {
@@ -121,7 +128,8 @@ export const HomeScreen = ({
 
       if (result.ok) {
         setIsRecording(true);
-        startPulse();
+        // Initial ring state — metering will take over immediately via useAnimatedReaction
+        ringOpacity.value = withTiming(0.15, { duration: 100 });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else {
         Alert.alert('Error', 'Failed to start recording. Please try again.');
@@ -135,7 +143,7 @@ export const HomeScreen = ({
 
       {/* Header Bar */}
       <View className="h-[60px] flex-row items-center justify-between px-6">
-        <EkweWordmark size={50} color={getColor('primary', isDark)} />
+        <EkweWordmark size={50} color={primaryColor} />
         <Pressable
           onPress={() => {
             Haptics.selectionAsync();
@@ -195,10 +203,20 @@ export const HomeScreen = ({
         {/* Thumb Zone Core */}
         <View className="flex-[0.35] items-center justify-end relative">
           <View className="w-[200px] h-[200px] items-center justify-center relative">
-            {/* Visual Ring (Animated if recording) */}
+            {/* Visual Ring — driven by live metering when recording */}
             <Animated.View
-              style={animatedRingStyle}
-              className="absolute w-[120px] h-[120px] rounded-full bg-primary/20 border border-primary/30"
+              style={[
+                animatedRingStyle,
+                {
+                  backgroundColor: isRecording
+                    ? errorColor + '30'
+                    : primaryColor + '20',
+                  borderColor: isRecording
+                    ? errorColor + '50'
+                    : primaryColor + '30',
+                },
+              ]}
+              className="absolute w-[120px] h-[120px] rounded-full border"
             />
 
             {/* Main Mic Button */}
@@ -209,16 +227,21 @@ export const HomeScreen = ({
               className="z-10"
             >
               <Animated.View
-                className="w-24 h-24 rounded-full items-center justify-center bg-card border border-border shadow-soft"
-                style={animatedMicStyle}
+                className="w-24 h-24 rounded-full items-center justify-center shadow-soft"
+                style={[
+                  animatedMicStyle,
+                  {
+                    backgroundColor: isRecording
+                      ? errorColor + '20'
+                      : cardColor,
+                    borderWidth: 1,
+                    borderColor: isRecording ? errorColor : borderColor,
+                  },
+                ]}
               >
                 <MicrophoneIcon
                   size={42}
-                  color={
-                    isRecording
-                      ? getColor('error', isDark)
-                      : getColor('primary', isDark)
-                  }
+                  color={isRecording ? errorColor : primaryColor}
                   strokeWidth={2.5}
                 />
               </Animated.View>

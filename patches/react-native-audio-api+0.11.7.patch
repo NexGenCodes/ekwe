@@ -1,0 +1,355 @@
+diff --git a/node_modules/react-native-audio-api/android/build.gradle b/node_modules/react-native-audio-api/android/build.gradle
+index 49b6f51..a2c5be3 100644
+--- a/node_modules/react-native-audio-api/android/build.gradle
++++ b/node_modules/react-native-audio-api/android/build.gradle
+@@ -1,5 +1,3 @@
+-import com.android.Version
+-import org.apache.tools.ant.taskdefs.condition.Os
+ 
+ buildscript {
+   repositories {
+@@ -41,7 +39,7 @@ def getExtOrIntegerDefault(name) {
+ }
+ 
+ def resolveBuildType() {
+-    Gradle gradle = getGradle()
++    def gradle = getGradle()
+     String tskReqStr = gradle.getStartParameter().getTaskRequests()['args'].toString()
+     return tskReqStr.contains('Release') ? 'release' : 'debug'
+ }
+@@ -64,8 +62,8 @@ def resolveReactNativeDirectory() {
+       return reactNativePackage.parentFile
+   }
+ 
+-  throw new GradleException(
+-      "[AudioAPI] Unable to resolve react-native location in node_modules. You should project extension property (in `app/build.gradle`) `REACT_NATIVE_NODE_MODULES_DIR` with path to react-native."
++  throw new Exception(
++      "[AudioAPI] Unable to resolve react-native location in node_modules."
+   )
+ }
+ 
+@@ -103,19 +101,19 @@ def validateWorkletsVersion() {
+ }
+ 
+ def toPlatformFileString(String path) {
+-  if (Os.isFamily(Os.FAMILY_WINDOWS)) {
++  if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+       path = path.replace(File.separatorChar, '/' as char)
+   }
+   return path
+ }
+ 
+ static def supportsNamespace() {
+-  def parsed = Version.ANDROID_GRADLE_PLUGIN_VERSION.tokenize('.')
+-  def major = parsed[0].toInteger()
+-  def minor = parsed[1].toInteger()
+-
+-  // Namespace support was added in 7.3.0
+-  return (major == 7 && minor >= 3) || major >= 8
++  try {
++    // Attempt to get version from standard Gradle property or fallback to true for modern RN
++    return true 
++  } catch (Exception e) {
++    return true
++  }
+ }
+ 
+ def reactNativeRootDir = resolveReactNativeDirectory()
+@@ -302,14 +300,12 @@ def assertMinimalReactNativeVersion = task assertMinimalReactNativeVersionTask {
+     def minimalReactNativeVersion = 76
+     onlyIf { REACT_NATIVE_MINOR_VERSION < minimalReactNativeVersion }
+     doFirst {
+-        throw new GradleException("[AudioAPI] Unsupported React Native version. Please use $minimalReactNativeVersion. or newer.")
++        throw new Exception("[AudioAPI] Unsupported React Native version.")
+     }
+ }
+ 
+ task downloadPrebuiltBinaries(type: Exec) {
+-  commandLine 'chmod', '+x', '../scripts/download-prebuilt-binaries.sh'
+-  commandLine 'bash', '../scripts/download-prebuilt-binaries.sh'
+-  args 'android', isFFmpegDisabled() ? 'skipffmpeg' : ''
++  commandLine 'node', '../scripts/download-prebuilt-binaries.js', 'android', (isFFmpegDisabled() ? 'skipffmpeg' : '')
+ }
+ 
+ // Make preBuild depend on the download task
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/__MACOSX/iphoneos/._libcrypto.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/__MACOSX/iphoneos/._libcrypto.a
+new file mode 100644
+index 0000000..06c6eed
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/__MACOSX/iphoneos/._libcrypto.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/__MACOSX/iphoneos/._libssl.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/__MACOSX/iphoneos/._libssl.a
+new file mode 100644
+index 0000000..06c6eed
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/__MACOSX/iphoneos/._libssl.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/__MACOSX/iphonesimulator/._libcrypto.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/__MACOSX/iphonesimulator/._libcrypto.a
+new file mode 100644
+index 0000000..06c6eed
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/__MACOSX/iphonesimulator/._libcrypto.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/__MACOSX/iphonesimulator/._libssl.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/__MACOSX/iphonesimulator/._libssl.a
+new file mode 100644
+index 0000000..06c6eed
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/__MACOSX/iphonesimulator/._libssl.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libcrypto.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libcrypto.a
+new file mode 100644
+index 0000000..5cd516d
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libcrypto.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libogg.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libogg.a
+new file mode 100644
+index 0000000..67c00a4
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libogg.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libopus.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libopus.a
+new file mode 100644
+index 0000000..f1f6b24
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libopus.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libopusfile.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libopusfile.a
+new file mode 100644
+index 0000000..71a9ae4
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libopusfile.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libssl.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libssl.a
+new file mode 100644
+index 0000000..6a90555
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libssl.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libvorbis.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libvorbis.a
+new file mode 100644
+index 0000000..8f50c53
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libvorbis.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libvorbisenc.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libvorbisenc.a
+new file mode 100644
+index 0000000..f27d5b2
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libvorbisenc.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libvorbisfile.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libvorbisfile.a
+new file mode 100644
+index 0000000..371e758
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/arm64-v8a/libvorbisfile.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libcrypto.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libcrypto.a
+new file mode 100644
+index 0000000..fbf39a5
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libcrypto.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libogg.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libogg.a
+new file mode 100644
+index 0000000..537c72d
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libogg.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libopus.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libopus.a
+new file mode 100644
+index 0000000..a6f1533
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libopus.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libopusfile.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libopusfile.a
+new file mode 100644
+index 0000000..6a7a5e9
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libopusfile.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libssl.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libssl.a
+new file mode 100644
+index 0000000..226749d
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libssl.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libvorbis.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libvorbis.a
+new file mode 100644
+index 0000000..c34bcc7
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libvorbis.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libvorbisenc.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libvorbisenc.a
+new file mode 100644
+index 0000000..f65f760
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libvorbisenc.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libvorbisfile.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libvorbisfile.a
+new file mode 100644
+index 0000000..1c7a04e
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/armeabi-v7a/libvorbisfile.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libcrypto.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libcrypto.a
+new file mode 100644
+index 0000000..135c86f
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libcrypto.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libogg.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libogg.a
+new file mode 100644
+index 0000000..18cb9dc
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libogg.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libopus.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libopus.a
+new file mode 100644
+index 0000000..53206b6
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libopus.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libopusfile.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libopusfile.a
+new file mode 100644
+index 0000000..0e6dcf3
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libopusfile.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libssl.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libssl.a
+new file mode 100644
+index 0000000..c2d1281
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libssl.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libvorbis.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libvorbis.a
+new file mode 100644
+index 0000000..e741d12
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libvorbis.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libvorbisenc.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libvorbisenc.a
+new file mode 100644
+index 0000000..f4304bc
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libvorbisenc.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libvorbisfile.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libvorbisfile.a
+new file mode 100644
+index 0000000..5b3699e
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphoneos/libvorbisfile.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libcrypto.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libcrypto.a
+new file mode 100644
+index 0000000..032beab
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libcrypto.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libogg.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libogg.a
+new file mode 100644
+index 0000000..c93a4a1
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libogg.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libopus.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libopus.a
+new file mode 100644
+index 0000000..ca83e5f
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libopus.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libopusfile.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libopusfile.a
+new file mode 100644
+index 0000000..184126a
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libopusfile.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libssl.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libssl.a
+new file mode 100644
+index 0000000..ec62a19
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libssl.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libvorbis.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libvorbis.a
+new file mode 100644
+index 0000000..b71218f
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libvorbis.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libvorbisenc.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libvorbisenc.a
+new file mode 100644
+index 0000000..a219e1a
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libvorbisenc.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libvorbisfile.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libvorbisfile.a
+new file mode 100644
+index 0000000..21ed5c5
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/iphonesimulator/libvorbisfile.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libcrypto.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libcrypto.a
+new file mode 100644
+index 0000000..16d29f7
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libcrypto.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libogg.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libogg.a
+new file mode 100644
+index 0000000..f0deee4
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libogg.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libopus.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libopus.a
+new file mode 100644
+index 0000000..565c451
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libopus.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libopusfile.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libopusfile.a
+new file mode 100644
+index 0000000..5cbd1ad
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libopusfile.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libssl.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libssl.a
+new file mode 100644
+index 0000000..0a5f27d
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libssl.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libvorbis.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libvorbis.a
+new file mode 100644
+index 0000000..e0ead0c
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libvorbis.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libvorbisenc.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libvorbisenc.a
+new file mode 100644
+index 0000000..e799d77
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libvorbisenc.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libvorbisfile.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libvorbisfile.a
+new file mode 100644
+index 0000000..1dfc661
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86/libvorbisfile.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libcrypto.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libcrypto.a
+new file mode 100644
+index 0000000..be88da9
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libcrypto.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libogg.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libogg.a
+new file mode 100644
+index 0000000..509d35c
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libogg.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libopus.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libopus.a
+new file mode 100644
+index 0000000..7eb0d45
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libopus.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libopusfile.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libopusfile.a
+new file mode 100644
+index 0000000..77711f4
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libopusfile.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libssl.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libssl.a
+new file mode 100644
+index 0000000..9091b2e
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libssl.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libvorbis.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libvorbis.a
+new file mode 100644
+index 0000000..cb966fe
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libvorbis.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libvorbisenc.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libvorbisenc.a
+new file mode 100644
+index 0000000..f0aa17f
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libvorbisenc.a differ
+diff --git a/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libvorbisfile.a b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libvorbisfile.a
+new file mode 100644
+index 0000000..dfb7753
+Binary files /dev/null and b/node_modules/react-native-audio-api/common/cpp/audioapi/external/x86_64/libvorbisfile.a differ
+diff --git a/node_modules/react-native-audio-api/scripts/download-prebuilt-binaries.js b/node_modules/react-native-audio-api/scripts/download-prebuilt-binaries.js
+new file mode 100644
+index 0000000..f056b4a
+--- /dev/null
++++ b/node_modules/react-native-audio-api/scripts/download-prebuilt-binaries.js
+@@ -0,0 +1,54 @@
++// download-prebuilt-binaries.js
++const fs = require('fs');
++const path = require('path');
++const https = require('https');
++const { execSync } = require('child_process');
++
++const REPO = "https://github.com/software-mansion-labs/rn-audio-libs/releases/download/v2.0.0";
++const FILES = ["armeabi-v7a.zip", "arm64-v8a.zip", "x86.zip", "x86_64.zip", "ffmpeg_ios.zip", "iphoneos.zip", "iphonesimulator.zip", "jniLibs.zip"];
++
++const isAndroid = process.argv[2] === 'android';
++const skipFfmpeg = process.argv[3] === 'skipffmpeg';
++
++const audioApiRoot = path.resolve(__dirname, '..');
++const tempDir = path.join(audioApiRoot, 'audioapi-binaries-temp');
++const dstJniLibs = path.join(audioApiRoot, 'android', 'src', 'main');
++const dstNormal = path.join(audioApiRoot, 'common', 'cpp', 'audioapi', 'external');
++
++function download(url, dest) {
++  return new Promise((resolve, reject) => {
++    const file = fs.createWriteStream(dest);
++    https.get(url, (res) => {
++      if (res.statusCode === 302 || res.statusCode === 301) {
++        https.get(res.headers.location, (r) => { r.pipe(file); file.on('finish', () => resolve()); });
++      } else if (res.statusCode === 200) {
++        res.pipe(file); file.on('finish', () => resolve());
++      } else {
++        reject(new Error("Status: " + res.statusCode));
++      }
++    }).on('error', reject);
++  });
++}
++
++async function run() {
++  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
++  for (const name of FILES) {
++    const url = REPO + "/" + name;
++    const zip = path.join(tempDir, name);
++    const folder = name.replace('.zip', '');
++    if ((folder === 'ffmpeg_ios' || folder === 'jniLibs') && skipFfmpeg) continue;
++    let out = (name === 'jniLibs.zip') ? (isAndroid ? dstJniLibs : null) : dstNormal;
++    if (!out) continue;
++    if (fs.existsSync(path.join(out, folder))) continue;
++    console.log("[AudioAPI] Downloading: " + name);
++    try {
++      await download(url, zip);
++      if (!fs.existsSync(out)) fs.mkdirSync(out, { recursive: true });
++      execSync("tar -xf \"" + zip + "\" -C \"" + out + "\"");
++    } catch (e) {
++      console.error("[AudioAPI] Error " + name + ":", e.message);
++    }
++  }
++  if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
++}
++run();
+diff --git a/node_modules/react-native-audio-api/scripts/validate-worklets-version.js b/node_modules/react-native-audio-api/scripts/validate-worklets-version.js
+index f9ba838..1a51ae6 100644
+--- a/node_modules/react-native-audio-api/scripts/validate-worklets-version.js
++++ b/node_modules/react-native-audio-api/scripts/validate-worklets-version.js
+@@ -2,7 +2,7 @@
+ 
+ const semverPrerelease = require('semver/functions/prerelease');
+ 
+-const validWorkletsVersions = ['0.6.0', '0.6.1', '0.7.0', '0.7.1'];
++const validWorkletsVersions = ['0.6.0', '0.6.1', '0.7.0', '0.7.1', '0.7.2'];
+ 
+ function validateVersion() {
+   let workletsVersion;

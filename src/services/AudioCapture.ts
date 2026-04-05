@@ -1,11 +1,3 @@
-import {
-  requestRecordingPermissionsAsync,
-  getRecordingPermissionsAsync,
-  setAudioModeAsync,
-  RecordingPresets,
-  AudioModule,
-} from 'expo-audio';
-import type { RecordingOptions } from 'expo-audio';
 import { Platform } from 'react-native';
 import { EkweError } from 'src/constants/errors';
 import { VolumeManager } from 'src/services/VolumeManager';
@@ -15,6 +7,8 @@ import {
   releaseAudioEffects,
 } from 'src/utils/AudioEffectsModule';
 import { validateSharedAudio } from 'src/utils/fileValidation';
+
+import AudioService from './AudioService';
 
 export interface CaptureSession {
   sessionId: string;
@@ -29,36 +23,18 @@ export interface RecordingResult {
   sessionId: string;
 }
 
-/**
- * Minimal interface for AudioRecorder to enable testing without
- * importing the full expo-audio native module.
- */
-export interface RecorderHandle {
-  record: () => void;
-  stop: () => Promise<void>;
-  prepareToRecordAsync: (options?: Partial<RecordingOptions>) => Promise<void>;
-  getStatus: () => {
-    isRecording: boolean;
-    durationMillis: number;
-    metering?: number;
-    url: string | null;
-  };
-  uri: string | null;
-}
-
 class AudioCaptureClass {
-  private recorder: RecorderHandle | null = null;
   private meteringData: number[] = [];
   private meteringInterval: ReturnType<typeof setInterval> | null = null;
   private currentSessionId: string | null = null;
+  private listeners: ((amplitude: number) => void)[] = [];
 
   /**
    * Requests microphone permission.
-   * Returns ok(true) if granted, err(PERMISSION_MIC) if denied.
    */
   async requestPermission(): Promise<Result<boolean, EkweError>> {
     try {
-      const { granted } = await requestRecordingPermissionsAsync();
+      const granted = await AudioService.requestPermission();
       if (!granted) return err(EkweError.PERMISSION_MIC);
       return ok(true);
     } catch {
@@ -71,7 +47,7 @@ class AudioCaptureClass {
    */
   async checkPermission(): Promise<Result<boolean, EkweError>> {
     try {
-      const { granted } = await getRecordingPermissionsAsync();
+      const granted = await AudioService.checkPermission();
       return ok(granted);
     } catch {
       return err(EkweError.PERMISSION_MIC);
@@ -79,15 +55,13 @@ class AudioCaptureClass {
   }
 
   /**
-   * Starts a new bubble-path recording session.
-   * Raises volume if needed, configures audio session,
-   * attaches Android effects, begins metering.
+   * Starts a new recording session.
    */
   async startRecording(
     sessionId: string,
     onMetering: (amplitude: number) => void,
   ): Promise<Result<void, EkweError>> {
-    if (this.recorder !== null) {
+    if (AudioService.isRecording()) {
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
 
@@ -98,70 +72,24 @@ class AudioCaptureClass {
     await VolumeManager.raiseVolumeIfNeeded();
 
     try {
-      // Configure the audio mode for recording
-      await setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-        interruptionMode: 'doNotMix',
-        shouldRouteThroughEarpiece: false,
-      });
+      await AudioService.startRecording();
 
-      const options: RecordingOptions = {
-        ...RecordingPresets.HIGH_QUALITY,
-        isMeteringEnabled: true,
-        sampleRate: 16000,
-        numberOfChannels: 1,
-        bitRate: 128000,
-        android: {
-          ...RecordingPresets.HIGH_QUALITY.android,
-          audioSource: 'voice_recognition',
-        },
-        ios: {
-          ...RecordingPresets.HIGH_QUALITY.ios,
-          sampleRate: 16000,
-          linearPCMBitDepth: 16,
-          linearPCMIsBigEndian: false,
-          linearPCMIsFloat: false,
-        },
-      };
-
-      // expo-audio SDK 55 uses AudioModule.Recording for class-based recording in services.
-      const recorder = new (
-        AudioModule as unknown as {
-          Recording: new (options: RecordingOptions) => RecorderHandle;
-        }
-      ).Recording(options);
-      await recorder.prepareToRecordAsync(options);
-
-      this.recorder = recorder;
       this.currentSessionId = sessionId;
       this.meteringData = [];
 
-      // Attach Android audio effects
+      // Attach Android audio effects if session 0 is supported
       if (Platform.OS === 'android') {
-        // expo-audio does not expose audioSessionId directly yet.
-        // This is a platform limitation — attach via session 0 for now.
-        // The module is wired and ready for when the API supports it.
         await attachAudioEffects(0);
       }
 
-      recorder.record();
-
-      // Begin metering polling
+      // Begin metering polling at ~60fps to sync with display refresh rate.
       this.meteringInterval = setInterval(() => {
-        if (this.recorder === null) return;
-        const status = this.recorder.getStatus();
-        if (status.isRecording && status.metering !== undefined) {
-          // expo-audio returns metering in dBFS (-160 to 0)
-          // Normalise to 0-1 for the waveform
-          const normalised = Math.max(
-            0,
-            Math.min(1, (status.metering + 160) / 160),
-          );
-          this.meteringData.push(normalised);
-          onMetering(normalised);
-        }
-      }, 100);
+        const db = AudioService.getMetering();
+        this.meteringData.push(db);
+        const normalized = Math.max(0, Math.min(1, (db + 60) / 60));
+        onMetering(normalized);
+        this.notifyListeners(normalized);
+      }, 16);
 
       return ok(undefined);
     } catch {
@@ -170,11 +98,10 @@ class AudioCaptureClass {
   }
 
   /**
-   * Stops the current recording session and returns the result.
-   * Restores volume, releases Android effects, clears metering.
+   * Stops the current recording session.
    */
   async stopRecording(): Promise<Result<RecordingResult, EkweError>> {
-    if (this.recorder === null || this.currentSessionId === null) {
+    if (!AudioService.isRecording() || this.currentSessionId === null) {
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
 
@@ -184,32 +111,19 @@ class AudioCaptureClass {
     }
 
     try {
-      await this.recorder.stop();
-      const uri = this.recorder.uri;
+      const { path, duration } = await AudioService.stopRecording();
 
-      if (uri === null || uri === undefined) {
-        this.recorder = null;
-        this.currentSessionId = null;
-        return err(EkweError.AUDIO_EMPTY);
-      }
-
-      const status = this.recorder.getStatus();
-      const durationMs = status.durationMillis ?? 0;
-
-      if (durationMs < 500) {
-        this.recorder = null;
-        this.currentSessionId = null;
+      if (duration < 500) {
         return err(EkweError.TOO_SHORT);
       }
 
       const result: RecordingResult = {
-        uri,
-        durationMs,
+        uri: path,
+        durationMs: duration,
         meteringData: [...this.meteringData],
         sessionId: this.currentSessionId,
       };
 
-      this.recorder = null;
       this.currentSessionId = null;
       this.meteringData = [];
 
@@ -221,15 +135,13 @@ class AudioCaptureClass {
 
       return ok(result);
     } catch {
-      this.recorder = null;
       this.currentSessionId = null;
       return err(EkweError.INTERRUPTED);
     }
   }
 
   /**
-   * Cancels the current recording without saving.
-   * Used when an interruption occurs (incoming call, etc).
+   * Cancels the current recording.
    */
   async cancelRecording(): Promise<Result<void, EkweError>> {
     if (this.meteringInterval !== null) {
@@ -237,16 +149,14 @@ class AudioCaptureClass {
       this.meteringInterval = null;
     }
 
-    if (this.recorder !== null) {
-      try {
-        await this.recorder.stop();
-      } catch {
-        // Ignore errors during cancel
-      }
-      this.recorder = null;
-      this.currentSessionId = null;
-      this.meteringData = [];
+    try {
+      await AudioService.stopRecording();
+    } catch {
+      // Ignore errors during cancel
     }
+
+    this.currentSessionId = null;
+    this.meteringData = [];
 
     await VolumeManager.restoreVolume();
 
@@ -258,9 +168,7 @@ class AudioCaptureClass {
   }
 
   /**
-   * Processes an audio file received via the share intent path.
-   * Validates the file exists, is a strict voice-note format, and fits size limits.
-   * Returns the URI ready to send to Groq.
+   * Processes an audio file received via share.
    */
   async processSharedFile(
     uri: string,
@@ -269,9 +177,6 @@ class AudioCaptureClass {
     if (!validationResult.ok) {
       return err(validationResult.error);
     }
-
-    // We don't have duration upfront from simple share intents.
-    // Return 0, exact duration will be checked by AudioProcessor if needed.
     return ok({ uri: validationResult.value.uri, durationMs: 0 });
   }
 
@@ -279,29 +184,21 @@ class AudioCaptureClass {
    * Returns true if a recording is currently active.
    */
   isRecording(): boolean {
-    return this.recorder !== null;
+    return AudioService.isRecording();
   }
 
   /**
-   * Injects a mock recorder for testing. Not for production use.
+   * Adds a listener for real-time metering updates.
    */
-  _setRecorderForTesting(recorder: RecorderHandle, sessionId: string): void {
-    this.recorder = recorder;
-    this.currentSessionId = sessionId;
-    this.meteringData = [];
+  addListener(callback: (amplitude: number) => void): () => void {
+    this.listeners.push(callback);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== callback);
+    };
   }
 
-  /**
-   * Resets internal state. Used for testing only.
-   */
-  _resetForTesting(): void {
-    if (this.meteringInterval !== null) {
-      clearInterval(this.meteringInterval);
-      this.meteringInterval = null;
-    }
-    this.recorder = null;
-    this.currentSessionId = null;
-    this.meteringData = [];
+  private notifyListeners(amplitude: number): void {
+    this.listeners.forEach((l) => l(amplitude));
   }
 }
 

@@ -1,8 +1,9 @@
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { EkweError } from 'src/constants/errors';
 import { Result, ok, err } from 'src/types/Result';
 
-const SPEECH_THRESHOLD = 0.05; // amplitude 0–1
+const SPEECH_THRESHOLD_DB = -45; // dB threshold for speech presence
+const LOW_QUALITY_THRESHOLD_DB = -60; // dB threshold for quality warning
 const SILENCE_PAD_MS = 100; // padding around speech boundaries
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB in bytes
 
@@ -12,13 +13,13 @@ export interface ProcessedAudio {
   trimStartMs: number;
   trimEndMs: number;
   hasSpeech: boolean;
-  averageAmplitude: number;
+  averageDb: number;
   meteringData: number[];
 }
 
 export interface AudioQualityReport {
   hasSpeech: boolean;
-  averageAmplitude: number;
+  averageDb: number;
   isLowQuality: boolean;
   trimStartMs: number;
   trimEndMs: number;
@@ -26,9 +27,8 @@ export interface AudioQualityReport {
 
 class AudioProcessorClass {
   /**
-   * Analyses metering data collected during recording.
-   * Identifies speech boundaries using amplitude thresholding.
-   * Returns trim points and quality metrics.
+   * Analyses metering data (in dB) collected during recording.
+   * Identifies speech boundaries using dB thresholding.
    */
   analyseMetering(
     meteringData: number[],
@@ -41,7 +41,7 @@ class AudioProcessorClass {
     const average =
       meteringData.reduce((sum, v) => sum + v, 0) / meteringData.length;
 
-    const speechSamples = meteringData.filter((v) => v > SPEECH_THRESHOLD);
+    const speechSamples = meteringData.filter((v) => v > SPEECH_THRESHOLD_DB);
 
     if (speechSamples.length === 0) {
       return err(EkweError.NO_SPEECH);
@@ -52,7 +52,7 @@ class AudioProcessorClass {
     let lastSpeech = -1;
 
     for (let i = 0; i < meteringData.length; i++) {
-      if (meteringData[i] > SPEECH_THRESHOLD) {
+      if (meteringData[i] > SPEECH_THRESHOLD_DB) {
         if (firstSpeech === -1) firstSpeech = i;
         lastSpeech = i;
       }
@@ -62,11 +62,11 @@ class AudioProcessorClass {
     const trimStartMs = Math.max(0, firstSpeech * intervalMs - SILENCE_PAD_MS);
     const trimEndMs = (lastSpeech + 1) * intervalMs + SILENCE_PAD_MS;
 
-    const isLowQuality = average < 0.1;
+    const isLowQuality = average < LOW_QUALITY_THRESHOLD_DB;
 
     return ok({
       hasSpeech: true,
-      averageAmplitude: average,
+      averageDb: average,
       isLowQuality,
       trimStartMs,
       trimEndMs,
@@ -75,8 +75,6 @@ class AudioProcessorClass {
 
   /**
    * Validates a recording result before sending to Groq.
-   * Checks duration, speech presence, and file integrity.
-   * Returns the processed audio ready for transcription.
    */
   async processRecording(
     uri: string,
@@ -84,9 +82,9 @@ class AudioProcessorClass {
     meteringData: number[],
   ): Promise<Result<ProcessedAudio, EkweError>> {
     if (durationMs < 500) return err(EkweError.TOO_SHORT);
-    if (uri.length === 0) return err(EkweError.AUDIO_EMPTY);
+    if (!uri) return err(EkweError.AUDIO_EMPTY);
 
-    const qualityResult = this.analyseMetering(meteringData, 100);
+    const qualityResult = this.analyseMetering(meteringData, 32); // Consistent 32ms polling
 
     if (!qualityResult.ok) return err(qualityResult.error);
 
@@ -98,20 +96,15 @@ class AudioProcessorClass {
       trimStartMs: quality.trimStartMs,
       trimEndMs: quality.trimEndMs,
       hasSpeech: quality.hasSpeech,
-      averageAmplitude: quality.averageAmplitude,
+      averageDb: quality.averageDb,
       meteringData,
     };
 
-    // Return with a low quality warning attached to the result
-    // but still return ok — low quality is not a hard failure.
-    // The Transcription service checks processed.averageAmplitude
-    // and may add a LOW_QUALITY warning to the final result.
     return ok(processed);
   }
 
   /**
-   * Validates a shared file path before sending to Groq.
-   * Checks the file exists and is within Groq's 25MB limit.
+   * Validates a shared file path using modern SDK 55 APIs.
    */
   async validateSharedFile(
     uri: string,
@@ -119,12 +112,12 @@ class AudioProcessorClass {
     if (!uri) return err(EkweError.SHARE_COPY_FAIL);
 
     try {
-      const info = await FileSystem.getInfoAsync(uri);
-      if (!info.exists) {
+      const file = new File(uri);
+      if (!file.exists) {
         return err(EkweError.SHARE_COPY_FAIL);
       }
 
-      if (info.size > MAX_FILE_SIZE) {
+      if (file.size > MAX_FILE_SIZE) {
         return err(EkweError.FILE_TOO_LARGE);
       }
 

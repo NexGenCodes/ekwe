@@ -1,8 +1,9 @@
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { EkweError } from 'src/constants/errors';
 import { LANGUAGES } from 'src/constants/languages';
 import { ProcessedAudio } from 'src/services/AudioProcessor';
 import { Result, ok, err } from 'src/types/Result';
+import { detectLanguage } from 'src/utils/detectLanguage';
 import { removeFillerWords } from 'src/utils/removeFiller';
 
 const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? '';
@@ -42,61 +43,55 @@ class TranscriptionServiceClass {
   /**
    * Transcribes a processed audio recording.
    * Sends the file to the Worker /transcribe endpoint.
-   * Runs language detection, filler word removal,
-   * and hallucination checks before returning.
    */
   async transcribe(
     audio: ProcessedAudio,
     sourceLang: string,
   ): Promise<Result<TranscriptionResult, EkweError>> {
-    // Read the file and check size
-    const fileInfo = await FileSystem.getInfoAsync(audio.uri);
-
-    if (!fileInfo.exists) {
-      return err(EkweError.SHARE_COPY_FAIL);
-    }
-
-    if (fileInfo.exists && fileInfo.size > MAX_FILE_SIZE_BYTES) {
-      return err(EkweError.BAD_FORMAT);
-    }
-
-    const workerUrl = getWorkerUrl();
-    if (workerUrl.length === 0) {
-      return err(EkweError.NETWORK_LOST);
-    }
-
-    // Build the multipart form
-    const formData = new FormData();
-
-    formData.append('file', {
-      uri: audio.uri,
-      type: 'audio/m4a',
-      name: 'recording.m4a',
-    } as unknown as Blob);
-
-    formData.append('language', sourceLang);
-    formData.append('timestamp_granularities', 'word');
-
     try {
+      const file = new File(audio.uri);
+      if (!file.exists) {
+        return err(EkweError.SHARE_COPY_FAIL);
+      }
+
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        return err(EkweError.FILE_TOO_LARGE);
+      }
+
+      const workerUrl = getWorkerUrl();
+      if (!workerUrl) return err(EkweError.NETWORK_LOST);
+
+      // Detect MIME type and extension
+      const extension = audio.uri.split('.').pop()?.toLowerCase() || 'm4a';
+      const mimeType = this.getMimeType(extension);
+
+      // Build the multipart form
+      const formData = new FormData();
+      // Using 'as unknown as any' is discouraged, but FormData in React Native
+      // expects a specific object structure for files which is not in standard TS.
+      // We'll use a type assertion to avoid the lint error.
+      formData.append('file', {
+        uri: audio.uri,
+        type: mimeType,
+        name: `recording.${extension}`,
+      } as unknown as Blob);
+
+      formData.append('language', sourceLang || 'auto');
+      formData.append('timestamp_granularities', 'word');
+
       const response = await fetch(`${workerUrl}/transcribe`, {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        const body = (await response.json()) as {
-          error?: string;
-        };
+        const body = await response.json().catch(() => ({}));
         return this.mapErrorCode(body.error ?? 'EKWE_TRANSCRIPTION_FAIL');
       }
 
       const data = (await response.json()) as {
         text: string;
-        words?: {
-          word: string;
-          start: number;
-          end: number;
-        }[];
+        words?: { word: string; start: number; end: number }[];
         language?: string;
       };
 
@@ -110,6 +105,18 @@ class TranscriptionServiceClass {
     } catch {
       return err(EkweError.NETWORK_LOST);
     }
+  }
+
+  private getMimeType(extension: string): string {
+    const map: Record<string, string> = {
+      ogg: 'audio/ogg',
+      opus: 'audio/opus',
+      m4a: 'audio/m4a',
+      mp4: 'audio/mp4',
+      wav: 'audio/wav',
+      mp3: 'audio/mpeg',
+    };
+    return map[extension] || 'audio/m4a';
   }
 
   /**
@@ -132,7 +139,7 @@ class TranscriptionServiceClass {
       return err(EkweError.EMPTY_TRANSCRIPT);
     }
 
-    // Language detection with franc-min
+    // Language detection
     const detectedLang = this.detectLanguage(rawText);
 
     // Filler word removal
@@ -156,32 +163,20 @@ class TranscriptionServiceClass {
       sourceLang,
       wordTimestamps: adjustedWords,
       durationSeconds: audio.durationMs / 1000,
-      isLowQuality: audio.averageAmplitude < 0.1,
+      isLowQuality: audio.averageDb < -60, // Recalibrated for dB
       fillerWordsRemoved,
     });
   }
 
   /**
-   * Detects language using franc-min.
-   * Returns the detected ISO 639-1 code or the fallback.
+   * Detects language using franc-min via shared utility.
    */
   detectLanguage(text: string): string {
-    try {
-      // franc returns ISO 639-3, we need 639-1
-      // Use a minimal mapping for the languages Ekwe supports
-      const { franc } = require('franc-min') as {
-        franc: (text: string) => string;
-      };
-      const iso3 = franc(text);
-      return this.iso3ToIso1(iso3);
-    } catch {
-      return 'und'; // undetermined
-    }
+    return detectLanguage(text);
   }
 
   /**
    * Checks if a transcript is likely a Whisper hallucination.
-   * Uses words-per-second ratio and known hallucination patterns.
    */
   isHallucination(text: string, durationMs: number): boolean {
     const words = this.countWords(text);
@@ -202,70 +197,6 @@ class TranscriptionServiceClass {
       .trim()
       .split(/\s+/)
       .filter((w) => w.length > 0).length;
-  }
-
-  private iso3ToIso1(iso3: string): string {
-    const map: Record<string, string> = {
-      eng: 'en',
-      spa: 'es',
-      ita: 'it',
-      deu: 'de',
-      zho: 'zh',
-      fra: 'fr',
-      por: 'pt',
-      rus: 'ru',
-      jpn: 'ja',
-      kor: 'ko',
-      ara: 'ar',
-      hin: 'hi',
-      nld: 'nl',
-      pol: 'pl',
-      tur: 'tr',
-      swe: 'sv',
-      dan: 'da',
-      fin: 'fi',
-      nor: 'nb',
-      ces: 'cs',
-      slk: 'sk',
-      ron: 'ro',
-      hun: 'hu',
-      ukr: 'uk',
-      ell: 'el',
-      heb: 'he',
-      tha: 'th',
-      vie: 'vi',
-      ind: 'id',
-      msa: 'ms',
-      bul: 'bg',
-      hrv: 'hr',
-      srp: 'sr',
-      cat: 'ca',
-      lit: 'lt',
-      lav: 'lv',
-      est: 'et',
-      slv: 'sl',
-      sqi: 'sq',
-      mkd: 'mk',
-      afr: 'af',
-      ben: 'bn',
-      fas: 'fa',
-      urd: 'ur',
-      swa: 'sw',
-      fil: 'tl',
-      tam: 'ta',
-      tel: 'te',
-      mal: 'ml',
-      mar: 'mr',
-      guj: 'gu',
-      pan: 'pa',
-      nep: 'ne',
-      sin: 'si',
-      khm: 'km',
-      lao: 'lo',
-      mya: 'my',
-      kat: 'ka',
-    };
-    return map[iso3] ?? 'und';
   }
 
   private mapErrorCode(code: string): Result<never, EkweError> {

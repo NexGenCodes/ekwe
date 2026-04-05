@@ -9,10 +9,10 @@ import { SearchIcon } from 'src/assets/icons/SearchIcon';
 import { HistoryItem } from 'src/components/cards/HistoryItem';
 import { getColor } from 'src/constants/colors';
 import { useHistory } from 'src/hooks/useHistory';
-import { RootStackParamList } from 'src/navigation/RootNavigator';
+import { RootStackParams } from 'src/navigation/types';
 import { HistoryEntry } from 'src/store/historySlice';
 
-type Nav = NativeStackNavigationProp<RootStackParamList>;
+type Nav = NativeStackNavigationProp<RootStackParams>;
 
 export const HistoryScreen = (): React.JSX.Element => {
   const navigation = useNavigation<Nav>();

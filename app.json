@@ -6,11 +6,11 @@
     "scheme": "ekwe",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0A1220"
+      "backgroundColor": "#09090B"
     },
     "ios": {
       "supportsTablet": true,
@@ -19,7 +19,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0A1220"
+        "backgroundColor": "#09090B"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -34,6 +34,24 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#09090B",
+          "image": "./assets/splash-icon.png",
+          "dark": {
+            "backgroundColor": "#09090B",
+            "image": "./assets/splash-icon.png"
+          }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#2563EB"
+        }
+      ],
       "expo-font",
       "expo-asset",
       "expo-speech-recognition",
@@ -45,7 +63,7 @@
         }
       ],
       "@sentry/react-native",
-      "expo-audio",
+      "expo-widgets",
       [
         "expo-build-properties",
         {
@@ -61,17 +79,21 @@
       ],
       "expo-widgets",
       "./modules/ekwe-native/app.plugin.js",
-      "expo-sharing",
       [
         "expo-share-intent",
         {
           "android": {
-            "mimeType": "audio/*"
+            "mimeType": ["audio/*", "text/*"]
           },
           "ios": {
             "mimeType": [
               "public.audio",
-              "public.mpeg-4-audio"
+              "public.mpeg-4-audio",
+              "org.xiph.opus",
+              "org.xiph.ogg-audio",
+              "public.text",
+              "public.plain-text",
+              "public.url"
             ]
           }
         }
