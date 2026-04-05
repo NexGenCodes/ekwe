@@ -1,140 +1,174 @@
 import * as Haptics from 'expo-haptics';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'nativewind';
-import React, { useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, Pressable, Alert } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
-  withRepeat,
   withTiming,
+  withRepeat,
   withSequence,
-  interpolate,
-  Extrapolate,
+  Easing,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EkweWordmark } from 'src/assets/icons/EkweWordmark';
 import { MicrophoneIcon } from 'src/assets/icons/MicrophoneIcon';
 import { ThemeToggler } from 'src/components';
 import { HistoryItem } from 'src/components/cards/HistoryItem';
-import { getColor } from 'src/constants/theme';
+import { getColor } from 'src/constants/colors';
 import { MainTabScreenProps } from 'src/navigation/types';
+import { AudioCapture } from 'src/services/AudioCapture';
 import { useHistoryStore } from 'src/store';
+
 export const HomeScreen = ({
   navigation,
 }: MainTabScreenProps<'Home'>): React.ReactElement => {
   const entries = useHistoryStore((s) => s.entries);
-
   const lastEntry = entries[0];
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  // --- Animations ---
-  const pulse = useSharedValue(1);
-  const scale = useSharedValue(1);
+  const [isRecording, setIsRecording] = useState(false);
 
-  useEffect(() => {
-    pulse.value = withRepeat(
+  // --- Animations ---
+  const scale = useSharedValue(1);
+  const ringScale = useSharedValue(1);
+  const ringOpacity = useSharedValue(0.2);
+
+  const animatedMicStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    backgroundColor: isRecording
+      ? getColor('error', isDark) + '20' // 20% opacity red
+      : getColor('card', isDark),
+    borderColor: isRecording
+      ? getColor('error', isDark)
+      : getColor('border', isDark),
+  }));
+
+  const animatedRingStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: ringScale.value }],
+    opacity: ringOpacity.value,
+  }));
+
+  const startPulse = (): void => {
+    ringScale.value = withRepeat(
+      withTiming(1.6, { duration: 1200, easing: Easing.out(Easing.ease) }),
+      -1,
+      false,
+    );
+    ringOpacity.value = withRepeat(
       withSequence(
-        withTiming(1.2, { duration: 1500 }),
-        withTiming(1, { duration: 1500 }),
+        withTiming(0.4, { duration: 1200 }),
+        withTiming(0, { duration: 1200 }),
       ),
       -1,
       false,
     );
-  }, [pulse]);
+  };
 
-  const animatedPulseStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pulse.value }],
-    opacity: interpolate(pulse.value, [1, 1.2], [0.4, 0], Extrapolate.CLAMP),
-  }));
-
-  const animatedMicStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+  const stopPulse = (): void => {
+    cancelAnimation(ringScale);
+    cancelAnimation(ringOpacity);
+    ringScale.value = withTiming(1, { duration: 200 });
+    ringOpacity.value = withTiming(0.2, { duration: 200 });
+  };
 
   const handlePressIn = (): void => {
-    scale.value = withSpring(0.92, { damping: 15, stiffness: 300 });
+    scale.value = withTiming(0.95, {
+      duration: 150,
+      easing: Easing.out(Easing.cubic),
+    });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handlePressOut = (): void => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    scale.value = withTiming(1, {
+      duration: 150,
+      easing: Easing.out(Easing.cubic),
+    });
+  };
+
+  const toggleRecording = async (): Promise<void> => {
+    if (isRecording) {
+      // Stop recording
+      const result = await AudioCapture.stopRecording();
+      setIsRecording(false);
+      stopPulse();
+
+      if (result.ok) {
+        navigation.navigate('Result', {
+          entryId: result.value.sessionId,
+          isLive: true,
+        });
+      }
+    } else {
+      // JIT Permission Check
+      const perm = await AudioCapture.requestPermission();
+      if (!perm.ok) {
+        Alert.alert(
+          'Microphone Access',
+          'Ekwe needs microphone access to translate your voice notes. Please enable it in Settings.',
+          [{ text: 'OK' }],
+        );
+        return;
+      }
+
+      // Start recording
+      const sessionId = `rec_${Date.now()}`;
+      const result = await AudioCapture.startRecording(sessionId, () => {});
+
+      if (result.ok) {
+        setIsRecording(true);
+        startPulse();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        Alert.alert('Error', 'Failed to start recording. Please try again.');
+      }
+    }
   };
 
   return (
-    <SafeAreaView edges={['top']} className="flex-1 bg-zinc-950 dark:bg-black">
-      <StatusBar style="light" />
+    <SafeAreaView edges={['top']} className="flex-1 bg-background">
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+
       {/* Header Bar */}
       <View className="h-[60px] flex-row items-center justify-between px-6">
-        <EkweWordmark size={50} color={getColor('onPrimary', isDark)} />
+        <EkweWordmark size={50} color={getColor('primary', isDark)} />
         <Pressable
           onPress={() => {
             Haptics.selectionAsync();
             navigation.navigate('Settings');
           }}
-          className="w-10 h-10 items-end justify-center active:bg-white/10 rounded-full"
+          className="w-10 h-10 items-end justify-center rounded-full"
         >
           <ThemeToggler />
         </Pressable>
       </View>
 
-      <View className="flex-1 rounded-t-[32px] mt-2 overflow-hidden bg-background dark:bg-background-dark">
-        {/* The Console (Hero Area) */}
-        <View className="flex-[1.2] items-center justify-center">
-          <View className="w-[200px] h-[200px] items-center justify-center mb-6 relative">
-            {/* Pulsing Rings */}
-            <Animated.View
-              className="absolute w-[140px] h-[140px] rounded-full bg-primary dark:bg-primary-dark"
-              style={animatedPulseStyle}
-            />
-            <Animated.View
-              className="absolute w-[140px] h-[140px] rounded-full bg-primary dark:bg-primary-dark opacity-10"
-              style={{ transform: [{ scale: 1.1 }] }}
-            />
-
-            {/* Main Mic Button */}
-            <Pressable
-              onPressIn={handlePressIn}
-              onPressOut={handlePressOut}
-              onPress={() => {
-                Haptics.notificationAsync(
-                  Haptics.NotificationFeedbackType.Success,
-                );
-                Alert.alert('Manual recording coming in Phase 5');
-              }}
-            >
-              <Animated.View
-                className="w-24 h-24 rounded-full items-center justify-center bg-card dark:bg-card-dark shadow-lg border border-white/20"
-                style={animatedMicStyle}
-              >
-                <MicrophoneIcon
-                  size={40}
-                  color={getColor('primaryAccent', isDark)}
-                  strokeWidth={2.5}
-                />
-              </Animated.View>
-            </Pressable>
-          </View>
-
-          <Text className="text-[32px] text-center leading-[38px] font-display text-zinc-950 dark:text-zinc-50 mb-2">
-            Ready to Translate
+      <View className="flex-1 overflow-hidden px-6 pt-4 justify-between pb-8">
+        {/* Top Content */}
+        <View className="flex-[0.65] justify-start mt-6">
+          <Text className="text-[32px] leading-[38px] font-display text-foreground mb-3">
+            {isRecording ? 'Listening...' : 'Ready to Translate'}
           </Text>
-          <Text className="text-base text-center leading-[24px] font-body text-zinc-500 dark:text-zinc-400 px-10 max-w-[340px]">
-            Share a voice note or use the floating bubble to begin.
+          <Text className="text-base leading-[24px] font-body text-muted mb-10 max-w-[340px]">
+            {isRecording
+              ? 'Tap the core again to stop and process your voice note.'
+              : 'Share a voice note from another app, or tap below to record.'}
           </Text>
-        </View>
 
-        {/* Recent Sneak-Peek */}
-        <View className="flex-[0.8] px-6 pb-10 justify-end">
-          <View className="flex-row justify-between items-center mb-4">
-            <Text className="text-xs uppercase tracking-widest font-bodyMed text-zinc-400 dark:text-zinc-500">
-              LAST TRANSLATION
+          <View className="flex-row justify-between items-center mb-5">
+            <Text className="text-base uppercase tracking-widest font-bodyMed text-muted">
+              RECENT ACTIVITY
             </Text>
-            <Pressable onPress={() => navigation.navigate('History')}>
-              <Text className="text-sm font-bodyMed text-primary dark:text-primary-dark">
-                View History
+            <Pressable
+              onPress={() => navigation.navigate('History')}
+              className="active:opacity-70 p-2 -mr-2"
+            >
+              <Text className="text-base font-bodyMed text-primary">
+                History
               </Text>
             </Pressable>
           </View>
@@ -150,12 +184,46 @@ export const HomeScreen = ({
               }
             />
           ) : (
-            <View className="h-20 items-center justify-center px-5 bg-card dark:bg-card-dark rounded-xl">
-              <Text className="text-base text-center leading-[24px] font-body text-zinc-400 dark:text-zinc-500">
-                Your recent activity will appear here.
+            <View className="h-28 items-center justify-center px-6 bg-card rounded-[20px] border border-border">
+              <Text className="text-base text-center leading-[24px] font-body text-muted">
+                Your translation history will appear here.
               </Text>
             </View>
           )}
+        </View>
+
+        {/* Thumb Zone Core */}
+        <View className="flex-[0.35] items-center justify-end relative">
+          <View className="w-[200px] h-[200px] items-center justify-center relative">
+            {/* Visual Ring (Animated if recording) */}
+            <Animated.View
+              style={animatedRingStyle}
+              className="absolute w-[120px] h-[120px] rounded-full bg-primary/20 border border-primary/30"
+            />
+
+            {/* Main Mic Button */}
+            <Pressable
+              onPressIn={handlePressIn}
+              onPressOut={handlePressOut}
+              onPress={toggleRecording}
+              className="z-10"
+            >
+              <Animated.View
+                className="w-24 h-24 rounded-full items-center justify-center bg-card border border-border shadow-soft"
+                style={animatedMicStyle}
+              >
+                <MicrophoneIcon
+                  size={42}
+                  color={
+                    isRecording
+                      ? getColor('error', isDark)
+                      : getColor('primary', isDark)
+                  }
+                  strokeWidth={2.5}
+                />
+              </Animated.View>
+            </Pressable>
+          </View>
         </View>
       </View>
     </SafeAreaView>

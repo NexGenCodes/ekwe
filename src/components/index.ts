@@ -5,6 +5,5 @@ export {
   AudioWaveform,
   EkweButton,
   LanguagePickerSheet,
-  PermissionGate,
   ThemeToggler,
 } from './common';

@@ -1,4 +1,5 @@
 import { Copy, Share, Loader2 } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import React, { useEffect } from 'react';
 import { View, Text } from 'react-native';
 import Animated, {
@@ -10,6 +11,7 @@ import Animated, {
   cancelAnimation,
 } from 'react-native-reanimated';
 import { EkweButton } from 'src/components/common/EkweButton';
+import { getColor } from 'src/constants/colors';
 import { LANGUAGES } from 'src/constants/languages';
 
 import { TranslationCardProps } from './TranslationCard.types';
@@ -26,6 +28,9 @@ export const TranslationCard = ({
   onShare,
   style,
 }: TranslationCardProps): React.ReactElement => {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
   // Mount animation
   const mountOpacity = useSharedValue(0);
   const mountTranslateY = useSharedValue(8);
@@ -81,7 +86,7 @@ export const TranslationCard = ({
       return (
         <View className="min-h-[80px] items-center justify-center">
           <Animated.View style={spinStyle}>
-            <Loader2 size={24} color="#1A7EC8" />
+            <Loader2 size={24} color={getColor('primary', isDark)} />
           </Animated.View>
         </View>
       );
@@ -90,13 +95,13 @@ export const TranslationCard = ({
     if (downloadProgress !== undefined && downloadProgress < 1) {
       return (
         <View className="min-h-[80px] justify-center">
-          <View className="h-1 w-full overflow-hidden mb-2 bg-zinc-200 dark:bg-zinc-800 rounded-full">
+          <View className="h-1 w-full overflow-hidden mb-2 bg-border rounded-full">
             <Animated.View
               style={progressStyle}
               className="h-full bg-primary rounded-full"
             />
           </View>
-          <Text className="text-center font-body text-xs text-primary">
+          <Text className="text-center font-body text-sm text-primary">
             Downloading language model… {Math.round(downloadProgress * 100)}%
           </Text>
         </View>
@@ -105,7 +110,7 @@ export const TranslationCard = ({
 
     return (
       <View>
-        <Text className="mb-4 font-body text-base text-zinc-950 dark:text-zinc-50 leading-[22px]">
+        <Text className="mb-4 font-body text-base text-foreground leading-[22px]">
           {translation}
         </Text>
         <View className="flex-row gap-3">
@@ -114,14 +119,14 @@ export const TranslationCard = ({
             size="small"
             label="Copy"
             onPress={onCopy}
-            leftIcon={<Copy size={14} color="#1A7EC8" />}
+            leftIcon={<Copy size={14} color={getColor('primary', isDark)} />}
           />
           <EkweButton
             variant="ghost"
             size="small"
             label="Share"
             onPress={onShare}
-            leftIcon={<Share size={14} color="#1A7EC8" />}
+            leftIcon={<Share size={14} color={getColor('primary', isDark)} />}
           />
         </View>
       </View>
@@ -130,8 +135,8 @@ export const TranslationCard = ({
 
   return (
     <Animated.View style={[mountStyle, style]}>
-      <View className="bg-background dark:bg-background-dark border-[0.5px] border-primary/30 rounded-2xl p-4">
-        <Text className="text-[10px] mb-3 font-bodyMed text-primary tracking-[1px]">
+      <View className="bg-background border border-primary/30 rounded-2xl p-4">
+        <Text className="text-xs mb-3 font-bodyMed text-primary tracking-widest">
           {getLanguageName(targetLang).toUpperCase()}
         </Text>
         {renderContent()}

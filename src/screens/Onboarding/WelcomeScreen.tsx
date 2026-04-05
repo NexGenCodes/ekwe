@@ -12,7 +12,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EkweWordmark } from 'src/assets/icons/EkweWordmark';
 import { EkweButton } from 'src/components/common/EkweButton';
-import { getColor } from 'src/constants/theme';
+import { getColor } from 'src/constants/colors';
 import { RootScreenProps } from 'src/navigation/types';
 import { useSettingsStore } from 'src/store';
 
@@ -77,7 +77,7 @@ export const WelcomeScreen = ({
   const { colorScheme } = useColorScheme();
 
   const isDark = colorScheme === 'dark';
-  const iconColor = getColor('primaryAccent', isDark);
+  const iconColor = getColor('primary', isDark);
   const logoColor = getColor('foreground', isDark);
 
   const headerOpacity = useSharedValue(0);
@@ -145,7 +145,7 @@ export const WelcomeScreen = ({
               });
             } else {
               navigation.navigate('Onboarding', {
-                screen: 'FeatureOne',
+                screen: 'Language',
               });
             }
           }}

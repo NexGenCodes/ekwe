@@ -8,7 +8,7 @@ import Animated, {
   withSpring,
   interpolateColor,
 } from 'react-native-reanimated';
-import { getColor } from 'src/constants/theme';
+import { getColor } from 'src/constants/colors';
 
 import { AudioWaveformProps } from './AudioWaveform.types';
 
@@ -113,7 +113,7 @@ const WaveformBar = ({
 
   // Constants for colors to avoid using tokens.ts directly
   const TERTIARY_COLOR = getColor('border', isDark);
-  const PRIMARY_BRAND_COLOR = getColor('primaryAccent', isDark); // Unified Ekwe blue
+  const PRIMARY_BRAND_COLOR = getColor('primary', isDark); // Unified Ekwe blue
 
   React.useEffect(() => {
     activeValue.value = withSpring(isActive ? 1 : 0, { damping: 20 });

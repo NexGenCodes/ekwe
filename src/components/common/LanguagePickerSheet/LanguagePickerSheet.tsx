@@ -17,8 +17,8 @@ import React, {
 } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { EkweButton } from 'src/components/common/EkweButton';
+import { getColor } from 'src/constants/colors';
 import { LANGUAGES, Language, FLAG_MAP } from 'src/constants/languages';
-import { getColor } from 'src/constants/theme';
 
 import { LanguagePickerSheetProps } from './LanguagePickerSheet.types';
 
@@ -42,7 +42,7 @@ const LanguageRow = ({
   const isDark = colorScheme === 'dark';
 
   const mutedColor = getColor('muted', isDark);
-  const primaryColor = getColor('primaryAccent', isDark);
+  const primaryColor = getColor('primary', isDark);
   const onPrimaryColor = getColor('onPrimary', isDark);
 
   return (

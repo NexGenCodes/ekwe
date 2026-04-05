@@ -18,7 +18,7 @@ export const HistoryItem = ({
   const swipeableRef = useRef<Swipeable>(null);
 
   const renderRightActions = (): React.ReactElement => (
-    <View className="w-20 h-16 bg-red-500">
+    <View className="w-20 bg-error">
       <Pressable
         onPress={() => {
           onDelete();
@@ -26,7 +26,7 @@ export const HistoryItem = ({
         }}
         className="flex-1 items-center justify-center p-2 active:opacity-60"
       >
-        <Text className="font-bodyMed text-xs text-white font-bold">
+        <Text className="font-bodyMed text-sm text-white font-bold">
           DELETE
         </Text>
       </Pressable>
@@ -42,13 +42,13 @@ export const HistoryItem = ({
     >
       <Pressable
         onPress={onPress}
-        className="h-[80px] flex-row items-center px-5 mx-4 mb-3 bg-card dark:bg-card-dark rounded-2xl border border-zinc-200/50 dark:border-zinc-800/80 active:bg-zinc-100 dark:active:bg-zinc-800/50"
+        className="flex-row items-center px-5 mx-4 mb-3 bg-card rounded-2xl border border-border active:bg-zinc-100 dark:active:bg-zinc-800/50"
         style={style}
       >
-        <View className="flex-1">
+        <View className="flex-1 py-4">
           <Text
             numberOfLines={1}
-            className="mb-0.5 font-bodyMed text-xs text-primary tracking-[1px]"
+            className="mb-1 font-bodyMed text-sm text-primary tracking-[1px]"
           >
             {`${getLanguageName(entry.sourceLang)} → ${getLanguageName(
               entry.targetLang,
@@ -57,14 +57,14 @@ export const HistoryItem = ({
           <Text
             numberOfLines={1}
             ellipsizeMode="tail"
-            className="mt-0.5 font-body text-xs text-zinc-400 dark:text-zinc-500"
+            className="font-body text-base text-muted"
           >
             {entry.transcript.split('\n')[0] ?? ''}
           </Text>
         </View>
 
         <View className="ml-3">
-          <Text className="text-right font-body text-xs text-zinc-400 dark:text-zinc-500">
+          <Text className="text-right font-body text-sm text-muted">
             {getRelativeTime(entry.timestamp)}
           </Text>
         </View>

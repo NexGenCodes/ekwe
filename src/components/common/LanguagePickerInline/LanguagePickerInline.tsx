@@ -2,8 +2,8 @@ import { Search, Star, X, Check } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import React, { useMemo, useState } from 'react';
 import { View, Text, Pressable, TextInput, SectionList } from 'react-native';
+import { getColor } from 'src/constants/colors';
 import { LANGUAGES, Language, FLAG_MAP } from 'src/constants/languages';
-import { getColor } from 'src/constants/theme';
 
 import { LanguagePickerInlineProps } from './LanguagePickerInline.types';
 

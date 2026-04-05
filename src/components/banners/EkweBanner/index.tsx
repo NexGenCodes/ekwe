@@ -1,14 +1,22 @@
 import { Info, CheckCircle2, AlertCircle, X } from 'lucide-react-native';
 import React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, ViewStyle } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
+import { EkweButton } from 'src/components/common/EkweButton';
 
-interface EkweBannerProps {
+export interface EkweBannerProps {
   message: string;
   title?: string;
-  visible: boolean;
+  visible?: boolean;
+  type?: 'info' | 'success' | 'warning' | 'error';
   variant?: 'info' | 'success' | 'warning' | 'error';
+  action?: {
+    label: string;
+    onPress: () => void;
+  };
+  onDismiss?: () => void;
   onClose?: () => void;
+  style?: ViewStyle;
 }
 
 const VARIANT_CONFIG = {
@@ -38,16 +46,30 @@ const VARIANT_CONFIG = {
   },
 };
 
+export const BannerPresets = {
+  noInternet: {
+    type: 'error' as const,
+    title: 'No Internet Connection',
+    message: 'Translations may be slow or unavailable.',
+    visible: true,
+  },
+};
+
 export const EkweBanner: React.FC<EkweBannerProps> = ({
   message,
   title,
-  visible,
-  variant = 'info',
+  visible = true,
+  type = 'info',
+  variant,
+  action,
+  onDismiss,
   onClose,
+  style,
 }) => {
   if (!visible) return null;
 
-  const config = VARIANT_CONFIG[variant];
+  const currentType = variant || type;
+  const config = VARIANT_CONFIG[currentType];
   const Icon = config.icon;
 
   return (
@@ -55,6 +77,7 @@ export const EkweBanner: React.FC<EkweBannerProps> = ({
       entering={FadeInUp}
       exiting={FadeOutUp}
       className={`p-4 rounded-2xl border ${config.bg} ${config.border} flex-row items-start`}
+      style={style}
     >
       <Icon
         size={20}
@@ -70,9 +93,22 @@ export const EkweBanner: React.FC<EkweBannerProps> = ({
         <Text className="font-body text-xs text-zinc-600 dark:text-zinc-400 leading-[18px]">
           {message}
         </Text>
+        {action && (
+          <View className="mt-3">
+            <EkweButton
+              variant="secondary"
+              size="small"
+              label={action.label}
+              onPress={action.onPress}
+            />
+          </View>
+        )}
       </View>
-      {onClose && (
-        <Pressable onPress={onClose} className="ml-2 p-1 active:opacity-60">
+      {(onClose || onDismiss) && (
+        <Pressable
+          onPress={onClose || onDismiss}
+          className="ml-2 p-1 active:opacity-60"
+        >
           <X size={16} color="#A1A1AA" />
         </Pressable>
       )}

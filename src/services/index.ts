@@ -1,1 +1,4 @@
-// Services barrel — will export API clients and audio services in Phase 2
+export { AudioCapture } from './AudioCapture';
+export { AudioProcessor } from './AudioProcessor';
+export { VolumeManager } from './VolumeManager';
+export { TranslationService } from './Translation';

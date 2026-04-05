@@ -8,7 +8,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { getColor } from 'src/constants/theme';
+import { getColor } from 'src/constants/colors';
 
 import { ThemeTogglerProps } from './ThemeToggler.types';
 
@@ -62,16 +62,12 @@ export const ThemeToggler = ({
         style={[iconStyle, { alignItems: 'center', justifyContent: 'center' }]}
       >
         <Animated.View style={sunStyle}>
-          <Sun
-            size={24}
-            color={getColor('primaryAccent', true)}
-            strokeWidth={2.5}
-          />
+          <Sun size={24} color={getColor('primary', true)} strokeWidth={2.5} />
         </Animated.View>
         <Animated.View style={moonStyle}>
           <Moon
             size={24}
-            color={getColor('primaryAccent', false)}
+            color={getColor('primary', false)}
             strokeWidth={2.5}
           />
         </Animated.View>

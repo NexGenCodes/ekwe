@@ -1,7 +1,7 @@
 import { useColorScheme } from 'nativewind';
 import React from 'react';
 import { Text, TextStyle } from 'react-native';
-import { getColor } from 'src/constants/theme';
+import { getColor } from 'src/constants/colors';
 
 export interface EkweWordmarkProps {
   size?: number;

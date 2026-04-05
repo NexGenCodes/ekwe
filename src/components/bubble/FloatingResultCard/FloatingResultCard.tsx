@@ -1,23 +1,23 @@
+import * as Clipboard from 'expo-clipboard';
 import React, { useEffect } from 'react';
-import { Dimensions, ScrollView, View } from 'react-native';
+import { Dimensions, ScrollView, View, Alert, Share } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
   runOnJS,
+  Easing,
 } from 'react-native-reanimated';
 import { TranscriptCard } from 'src/components/cards/TranscriptCard';
 import { TranslationCard } from 'src/components/cards/TranslationCard';
-import { useTheme } from 'src/hooks/useTheme';
 import { useTranslation } from 'src/hooks/useTranslation';
 import { useSettingsStore } from 'src/store';
 
 import { FloatingResultCardProps } from './FloatingResultCard.types';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
-const CARD_MAX_HEIGHT = SCREEN_HEIGHT * 0.6;
+const CARD_MAX_HEIGHT = SCREEN_HEIGHT * 0.65;
 
 export const FloatingResultCard = ({
   transcript,
@@ -27,43 +27,48 @@ export const FloatingResultCard = ({
   sessionId,
   onDismiss,
 }: FloatingResultCardProps): React.ReactElement => {
-  const tokens = useTheme();
   const { translate, isTranslating, translation } = useTranslation();
   const selectedLanguages = useSettingsStore((s) => s.selectedLanguages);
 
-  const translateY = useSharedValue(CARD_MAX_HEIGHT);
+  const translateY = useSharedValue(SCREEN_HEIGHT);
   const opacity = useSharedValue(0);
 
   // Slide up on mount
   useEffect(() => {
-    translateY.value = withSpring(0, { damping: 20, stiffness: 200 });
-    opacity.value = withTiming(1, { duration: 200 });
+    translateY.value = withTiming(0, {
+      duration: 300,
+      easing: Easing.out(Easing.cubic),
+    });
+    opacity.value = withTiming(1, { duration: 250 });
   }, []);
 
   const dismiss = (): void => {
-    translateY.value = withSpring(CARD_MAX_HEIGHT, { damping: 20 }, () =>
-      runOnJS(onDismiss)(),
+    translateY.value = withTiming(
+      SCREEN_HEIGHT,
+      {
+        duration: 250,
+        easing: Easing.in(Easing.cubic),
+      },
+      () => runOnJS(onDismiss)(),
     );
     opacity.value = withTiming(0, { duration: 200 });
   };
 
   // Swipe down to dismiss
-  const startY = useSharedValue(0);
-
   const panGesture = Gesture.Pan()
-    .onStart(() => {
-      startY.value = translateY.value;
-    })
     .onUpdate((e) => {
       if (e.translationY > 0) {
         translateY.value = e.translationY;
       }
     })
     .onEnd((e) => {
-      if (e.translationY > 80 || e.velocityY > 500) {
+      if (e.translationY > 100 || e.velocityY > 600) {
         runOnJS(dismiss)();
       } else {
-        translateY.value = withSpring(0, { damping: 20 });
+        translateY.value = withTiming(0, {
+          duration: 200,
+          easing: Easing.out(Easing.cubic),
+        });
       }
     });
 
@@ -78,11 +83,25 @@ export const FloatingResultCard = ({
   };
 
   const handleCopy = async (): Promise<void> => {
-    // Clipboard — Expo Clipboard in Phase 8
+    if (transcript) {
+      await Clipboard.setStringAsync(transcript);
+      Alert.alert('Copied', 'Transcript copied to clipboard');
+    }
   };
 
   const handleShare = async (): Promise<void> => {
-    // Share sheet — Expo Sharing in Phase 8
+    if (transcript) {
+      try {
+        await Share.share({
+          message: translation
+            ? `Ekwe Translation:\n${transcript}\n\nTranslated (${targetLang}):\n${translation}`
+            : `Ekwe Transcript:\n${transcript}`,
+        });
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Error sharing', error);
+      }
+    }
   };
 
   return (
@@ -90,26 +109,26 @@ export const FloatingResultCard = ({
       {/* Backdrop */}
       <Animated.View
         onTouchEnd={dismiss}
-        className="absolute inset-0 bg-black/40"
+        className="absolute inset-0 bg-black/60"
         style={{ opacity }}
       />
 
-      {/* Card */}
+      {/* Card Wrapper for Gesture */}
       <GestureDetector gesture={panGesture}>
         <Animated.View
-          className="absolute bottom-0 left-6 right-6 bg-white dark:bg-zinc-900 rounded-3xl pb-6 overflow-hidden"
-          style={[
-            tokens.shadow.overlay,
-            cardStyle,
-            { maxHeight: CARD_MAX_HEIGHT },
-          ]}
+          className="absolute bottom-0 left-4 right-4 bg-background dark:bg-card rounded-t-[32px] rounded-b-[24px] pb-8 overflow-hidden shadow-2xl mb-4"
+          style={[cardStyle, { maxHeight: CARD_MAX_HEIGHT }]}
         >
           {/* Drag handle */}
-          <View className="items-center pt-3 pb-2">
-            <View className="w-10 h-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+          <View className="items-center py-4">
+            <View className="w-12 h-1.5 rounded-full bg-border" />
           </View>
 
-          <ScrollView className="p-4" showsVerticalScrollIndicator={false}>
+          <ScrollView
+            className="px-4"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 20 }}
+          >
             <TranscriptCard
               transcript={transcript}
               sourceLang={sourceLang}
@@ -120,7 +139,7 @@ export const FloatingResultCard = ({
             />
 
             {(isTranslating || translation !== null) && (
-              <View className="mt-3">
+              <View className="mt-4">
                 <TranslationCard
                   translation={translation ?? undefined}
                   targetLang={targetLang ?? selectedLanguages[0] ?? 'en'}

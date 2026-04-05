@@ -1,74 +1,115 @@
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Clipboard from 'expo-clipboard';
-import { useColorScheme } from 'nativewind';
-import React, { useMemo, useState } from 'react';
-import { View, Pressable, ScrollView } from 'react-native';
+import * as Sharing from 'expo-sharing';
+import React, { useState } from 'react';
+import { View, Text, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { CloseIcon } from 'src/assets/icons/CloseIcon';
-import { TranslationCard } from 'src/components/cards/TranslationCard';
 import { AudioWaveform } from 'src/components/common/AudioWaveform';
-import { MOCK_HISTORY } from 'src/constants/mockData';
-import { getColor } from 'src/constants/theme';
-import { ResultScreenProps } from 'src/navigation/types';
+import { EkweButton } from 'src/components/common/EkweButton';
+import { TranscriptionView } from 'src/components/common/TranscriptionView';
+import { LANGUAGES } from 'src/constants/languages';
+import { RootStackParamList } from 'src/navigation/RootNavigator';
 import { useHistoryStore } from 'src/store';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'Result'>;
+
+const getLanguageName = (code: string): string =>
+  LANGUAGES.find((l) => l.code === code)?.englishName ?? code;
 
 export const ResultScreen = ({
   route,
   navigation,
-}: ResultScreenProps): React.ReactElement => {
-  const { entryId } = route.params;
-  const entries = useHistoryStore((s) => s.entries);
-  const [, setCopied] = useState(false);
-  const { colorScheme } = useColorScheme();
+}: Props): React.JSX.Element => {
+  const {
+    entryId,
+    transcript: initialTranscript = '',
+    sourceLang: initialSourceLang = 'en',
+    targetLang: initialTargetLang = 'es',
+    isHistoryReplay: initialIsHistoryReplay = false,
+  } = route.params;
 
-  const entry = useMemo(() => {
-    const found = entries.find((e) => e.id === entryId);
-    return (
-      found || MOCK_HISTORY.find((e) => e.id === entryId) || MOCK_HISTORY[0]
-    );
-  }, [entries, entryId]);
+  const entries = useHistoryStore((s) => s.entries);
+  const foundEntry = entryId ? entries.find((e) => e.id === entryId) : null;
+
+  const transcript = foundEntry?.transcript || initialTranscript;
+  const sourceLang = foundEntry?.sourceLang || initialSourceLang;
+  const targetLang = foundEntry?.targetLang || initialTargetLang;
+  const isHistoryReplay = !!foundEntry || initialIsHistoryReplay;
+
+  const [copied, setCopied] = useState(false);
 
   const handleCopy = async (): Promise<void> => {
-    await Clipboard.setStringAsync(entry.translation ?? '');
+    await Clipboard.setStringAsync(transcript);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Mock waveform data
-  const mockWaveform = Array.from({ length: 40 }, () => Math.random());
-  const isDark = colorScheme === 'dark';
-  const iconColor = getColor('foreground', isDark);
+  const handleShare = async (): Promise<void> => {
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(transcript);
+    }
+  };
 
   return (
-    <SafeAreaView className="flex-1 bg-background dark:bg-background-dark">
-      <View className="h-14 justify-center px-2">
-        <Pressable
+    <SafeAreaView edges={['top']} className="flex-1 bg-background">
+      {/* Header */}
+      <View className="px-4 py-4 flex-row justify-between items-center shadow-sm">
+        <Text className="font-bodyMed text-lg text-foreground">
+          {isHistoryReplay ? 'History Record' : 'Translation Result'}
+        </Text>
+        <EkweButton
+          variant="ghost"
+          size="small"
+          label="Back"
           onPress={() => navigation.goBack()}
-          hitSlop={12}
-          className="p-2 w-10 h-10 items-center justify-center active:opacity-60"
-        >
-          <CloseIcon size={24} color={iconColor} />
-        </Pressable>
+        />
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        <View className="px-6 py-8 items-center">
-          <AudioWaveform
-            amplitudes={mockWaveform}
-            progress={0}
-            onSeek={() => {}}
-            height={60}
+      <ScrollView className="flex-1 px-4">
+        {/* Transcription context */}
+        <View className="mt-6 mb-8">
+          <Text className="font-bodyMed text-sm uppercase tracking-widest mb-3 text-muted">
+            {getLanguageName(sourceLang).toUpperCase()} →{' '}
+            {getLanguageName(targetLang).toUpperCase()}
+          </Text>
+          <TranscriptionView
+            transcript={transcript}
+            isLive={!isHistoryReplay}
           />
         </View>
 
-        <View className="px-4">
-          <TranslationCard
-            translation={entry.translation ?? ''}
-            targetLang={entry.targetLang}
-            onCopy={handleCopy}
-            onShare={() => {}} // Phase 6
-          />
-        </View>
+        {/* Replay controls if history */}
+        {isHistoryReplay && (
+          <View className="mb-10 bg-card p-6 rounded-3xl border border-border">
+            <Text className="font-bodyMed text-xs text-muted mb-4 uppercase tracking-widest">
+              Voice Recording
+            </Text>
+            <AudioWaveform amplitudes={[]} progress={0.4} height={60} />
+          </View>
+        )}
       </ScrollView>
+
+      {/* Action Bar */}
+      <View className="px-4 py-8 border-t border-border bg-background">
+        <View className="flex-row gap-4">
+          <View className="flex-1">
+            <EkweButton
+              variant="secondary"
+              size="medium"
+              label={copied ? 'Copied' : 'Copy Text'}
+              onPress={handleCopy}
+            />
+          </View>
+          <View className="flex-1">
+            <EkweButton
+              variant="primary"
+              size="medium"
+              label="Share"
+              onPress={handleShare}
+            />
+          </View>
+        </View>
+      </View>
     </SafeAreaView>
   );
 };

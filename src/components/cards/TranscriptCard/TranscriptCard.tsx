@@ -1,4 +1,5 @@
 import { Copy, Share, ChevronRight } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import React, { useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import Animated, {
@@ -10,6 +11,7 @@ import Animated, {
   cancelAnimation,
 } from 'react-native-reanimated';
 import { EkweButton } from 'src/components/common/EkweButton';
+import { getColor } from 'src/constants/colors';
 import { LANGUAGES } from 'src/constants/languages';
 
 import { TranscriptCardProps } from './TranscriptCard.types';
@@ -36,6 +38,8 @@ export const TranscriptCard = ({
   onAcceptMismatch,
   style,
 }: TranscriptCardProps): React.ReactElement => {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const cursorOpacity = useSharedValue(1);
 
   useEffect(() => {
@@ -60,15 +64,15 @@ export const TranscriptCard = ({
 
   return (
     <View
-      className="bg-background dark:bg-background-dark border-[0.5px] border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 shadow-sm"
+      className="bg-background border border-border rounded-2xl p-4 shadow-sm"
       style={style}
     >
       {/* Header */}
       <View className="flex-row justify-between mb-3">
-        <Text className="font-bodyMed text-[10px] text-zinc-500 dark:text-zinc-400 tracking-[1px]">
+        <Text className="font-bodyMed text-xs text-muted tracking-widest">
           {getLanguageName(sourceLang).toUpperCase()}
         </Text>
-        <Text className="font-bodyMed text-[10px] text-zinc-500 dark:text-zinc-400 tracking-[1px]">
+        <Text className="font-bodyMed text-xs text-muted tracking-widest">
           {formatDuration(duration)}
         </Text>
       </View>
@@ -77,7 +81,7 @@ export const TranscriptCard = ({
       <View className="min-h-[80px] mb-3">
         {isStreaming ? (
           <View className="flex-row flex-wrap items-baseline">
-            <Text className="font-body text-base text-zinc-950 dark:text-zinc-50 leading-[22px] text-left">
+            <Text className="font-body text-base text-foreground leading-[22px] text-left">
               {transcript}
             </Text>
             <Animated.View
@@ -86,7 +90,7 @@ export const TranscriptCard = ({
             />
           </View>
         ) : (
-          <Text className="font-body text-base text-zinc-950 dark:text-zinc-50 leading-[22px] text-left">
+          <Text className="font-body text-base text-foreground leading-[22px] text-left">
             {transcript}
           </Text>
         )}
@@ -96,14 +100,14 @@ export const TranscriptCard = ({
       {languageMismatch && (
         <Pressable
           onPress={onAcceptMismatch}
-          className="flex-row items-center mb-3 bg-amber-500/10 rounded overflow-hidden p-2 active:opacity-60"
+          className="flex-row items-center mb-3 bg-warning/10 rounded-xl p-3 active:opacity-60"
         >
-          <Text className="flex-1 mr-2 font-body text-xs text-amber-500">
+          <Text className="flex-1 mr-2 font-body text-sm text-warning">
             Sounds like {languageMismatch.detected}, not{' '}
             {getLanguageName(sourceLang)}. Translate from{' '}
             {languageMismatch.detected}?
           </Text>
-          <ChevronRight size={14} color="#F59E0B" />
+          <ChevronRight size={14} color={getColor('warning', isDark)} />
         </Pressable>
       )}
 
@@ -114,14 +118,14 @@ export const TranscriptCard = ({
           size="small"
           label="Copy"
           onPress={onCopy}
-          leftIcon={<Copy size={14} color="#1A7EC8" />}
+          leftIcon={<Copy size={14} color={getColor('primary', isDark)} />}
         />
         <EkweButton
           variant="ghost"
           size="small"
           label="Share"
           onPress={onShare}
-          leftIcon={<Share size={14} color="#1A7EC8" />}
+          leftIcon={<Share size={14} color={getColor('primary', isDark)} />}
         />
         <View className="flex-1" />
         <EkweButton

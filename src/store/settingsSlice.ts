@@ -16,6 +16,8 @@ export interface SettingsState {
   showVolumeRaiseBanner: boolean;
   showSpeakerRerouteBanner: boolean;
   onboardingCompleted: boolean;
+  autoCopy: boolean;
+  hapticsEnabled: boolean;
 }
 
 export interface SettingsActions {
@@ -30,6 +32,8 @@ export interface SettingsActions {
   setShowVolumeRaiseBanner: (val: boolean) => void;
   setShowSpeakerRerouteBanner: (val: boolean) => void;
   setOnboardingCompleted: (val: boolean) => void;
+  setAutoCopy: (val: boolean) => void;
+  setHapticsEnabled: (val: boolean) => void;
 }
 
 const initialSettings: SettingsState = {
@@ -44,6 +48,8 @@ const initialSettings: SettingsState = {
   showVolumeRaiseBanner: true,
   showSpeakerRerouteBanner: true,
   onboardingCompleted: false,
+  autoCopy: true,
+  hapticsEnabled: true,
 };
 
 export const createSettingsSlice = (
@@ -69,4 +75,6 @@ export const createSettingsSlice = (
     set(() => ({ showSpeakerRerouteBanner })),
   setOnboardingCompleted: (onboardingCompleted): void =>
     set(() => ({ onboardingCompleted })),
+  setAutoCopy: (autoCopy): void => set(() => ({ autoCopy })),
+  setHapticsEnabled: (hapticsEnabled): void => set(() => ({ hapticsEnabled })),
 });

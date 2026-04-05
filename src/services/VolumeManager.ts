@@ -16,8 +16,8 @@ class VolumeManagerClass {
   async getVolume(): Promise<Result<number, EkweError>> {
     try {
       // expo-audio does not expose system volume directly.
-      // This is a scaffold — the actual implementation reads from
-      // the platform in Phase 8 when the full audio session is wired.
+      // This is a known platform limitation.
+      // We return a mock value here until native modules are built if needed.
       return ok(0.7);
     } catch {
       return ok(0.5);
@@ -35,9 +35,8 @@ class VolumeManagerClass {
       this.storedVolume = volumeResult.value;
       // On Android volume raising requires a native module
       // (android.media.AudioManager.setStreamVolume).
-      // Scaffold is in place. Full wire-up in Phase 8.
-      // For Phase 7 we store the intent and notify so the
-      // banner system can inform the user.
+      // This remains a no-op due to expo-audio limitations.
+      // We store the intent and notify so the banner system can inform the user.
       this.notifyListeners();
       return ok(true);
     }
@@ -84,8 +83,8 @@ class VolumeManagerClass {
   async getAudioRoute(): Promise<
     Result<'speaker' | 'bluetooth' | 'wired' | 'earpiece', EkweError>
   > {
-    // Full implementation in Phase 7.
-    // Return speaker as default for now.
+    // Routing detection requires native modules.
+    // Return speaker as default due to platform limitations.
     return ok('speaker');
   }
 

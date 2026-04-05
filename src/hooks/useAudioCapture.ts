@@ -64,9 +64,8 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
     const result = await AudioCapture.startRecording(
       sessionId,
       (_amplitude) => {
-        // Amplitude values drive the AudioWaveform component
-        // via the audio store in Phase 7 when the bubble is wired.
-        // Here we just ensure the callback is connected.
+        // Amplitude values drive the AudioWaveform component if connected.
+        // Currently handled directly by the BubbleOverlay animations.
       },
     );
 

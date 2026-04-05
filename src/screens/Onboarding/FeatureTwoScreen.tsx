@@ -16,7 +16,7 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EkweButton } from 'src/components/common/EkweButton';
 import { PageDots } from 'src/components/common/PageDots';
-import { getColor } from 'src/constants/theme';
+import { getColor } from 'src/constants/colors';
 import { OnboardingScreenProps } from 'src/navigation/types';
 
 export const FeatureTwoScreen = ({
@@ -26,7 +26,7 @@ export const FeatureTwoScreen = ({
   const [micGranted, setMicGranted] = useState(false);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const iconColor = getColor('primaryAccent', isDark);
+  const iconColor = getColor('primary', isDark);
 
   // Entrance animation
   const contentOpacity = useSharedValue(0);

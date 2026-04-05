@@ -1,2 +1,17 @@
-<manifest>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="expo.modules.ekwenative">
+
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <service
+            android:name=".BubbleService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+    </application>
 </manifest>
+

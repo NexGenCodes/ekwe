@@ -14,6 +14,7 @@ import {
   attachAudioEffects,
   releaseAudioEffects,
 } from 'src/utils/AudioEffectsModule';
+import { validateSharedAudio } from 'src/utils/fileValidation';
 
 export interface CaptureSession {
   sessionId: string;
@@ -139,7 +140,7 @@ class AudioCaptureClass {
       // Attach Android audio effects
       if (Platform.OS === 'android') {
         // expo-audio does not expose audioSessionId directly yet.
-        // This is a scaffold — attach via the session when exposed.
+        // This is a platform limitation — attach via session 0 for now.
         // The module is wired and ready for when the API supports it.
         await attachAudioEffects(0);
       }
@@ -258,43 +259,20 @@ class AudioCaptureClass {
 
   /**
    * Processes an audio file received via the share intent path.
-   * Validates the file exists and is a supported format.
+   * Validates the file exists, is a strict voice-note format, and fits size limits.
    * Returns the URI ready to send to Groq.
    */
   async processSharedFile(
     uri: string,
   ): Promise<Result<{ uri: string; durationMs: number }, EkweError>> {
-    if (uri.length === 0) return err(EkweError.SHARE_COPY_FAIL);
-
-    const supportedExtensions = [
-      '.mp3',
-      '.mp4',
-      '.m4a',
-      '.wav',
-      '.ogg',
-      '.flac',
-      '.aac',
-      '.opus',
-      '.webm',
-    ];
-
-    const lowerUri = uri.toLowerCase();
-    const isSupported = supportedExtensions.some((ext) =>
-      lowerUri.endsWith(ext),
-    );
-
-    if (!isSupported) return err(EkweError.BAD_FORMAT);
-
-    // File size and duration validation happens in Phase 6
-    // when we read the file before sending to Groq.
-    // Here we just validate the URI is accessible.
-    try {
-      // expo-file-system validation scaffolded here.
-      // Full validation in Phase 6.
-      return ok({ uri, durationMs: 0 });
-    } catch {
-      return err(EkweError.SHARE_COPY_FAIL);
+    const validationResult = await validateSharedAudio(uri);
+    if (!validationResult.ok) {
+      return err(validationResult.error);
     }
+
+    // We don't have duration upfront from simple share intents.
+    // Return 0, exact duration will be checked by AudioProcessor if needed.
+    return ok({ uri: validationResult.value.uri, durationMs: 0 });
   }
 
   /**

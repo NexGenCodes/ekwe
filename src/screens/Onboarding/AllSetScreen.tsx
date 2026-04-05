@@ -11,7 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EkweWordmark } from 'src/assets/icons/EkweWordmark';
-import { getColor } from 'src/constants/theme';
+import { getColor } from 'src/constants/colors';
 import { OnboardingScreenProps } from 'src/navigation/types';
 import { useSettingsStore } from 'src/store';
 

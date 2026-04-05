@@ -1,3 +1,4 @@
+import { useColorScheme } from 'nativewind';
 import React, { useEffect, useRef } from 'react';
 import { Dimensions, View, ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -16,8 +17,8 @@ import { ExclamationIcon } from 'src/assets/icons/ExclamationIcon';
 import { MicrophoneIcon } from 'src/assets/icons/MicrophoneIcon';
 import { SpinnerIcon } from 'src/assets/icons/SpinnerIcon';
 import { AudioWaveform } from 'src/components/common/AudioWaveform';
+import { bubbleColors } from 'src/constants/colors';
 import { useBubble } from 'src/hooks';
-import { useTheme } from 'src/hooks/useTheme';
 import { useAudioStore, useSettingsStore } from 'src/store';
 import { RecordingState } from 'src/store/audioSlice';
 import { BubbleNative } from 'src/utils/BubbleModule';
@@ -28,7 +29,9 @@ const DEFAULT_X = SCREEN.width - BUBBLE_SIZE - 16;
 const DEFAULT_Y = SCREEN.height * 0.3;
 
 export const BubbleOverlay = (): React.ReactElement | null => {
-  const tokens = useTheme();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const bubbleTheme = bubbleColors(isDark);
   const recordingState = useAudioStore((s) => s.recordingState);
   const resetAudioState = useAudioStore((s) => s.resetAudioState);
   const bubbleEnabled = useSettingsStore((s) => s.bubbleEnabled);
@@ -148,23 +151,22 @@ export const BubbleOverlay = (): React.ReactElement | null => {
     }),
   );
 
-  // BACKGROUND COLOUR per state
   const getBubbleColor = (): string => {
     switch (recordingState) {
       case RecordingState.Recording:
-        return tokens.color.bubble.recording;
+        return bubbleTheme.recording;
       case RecordingState.Processing:
-        return tokens.color.bubble.processing;
+        return bubbleTheme.processing;
       case RecordingState.Done:
-        return tokens.color.bubble.done;
+        return bubbleTheme.done;
       case RecordingState.Error:
-        return tokens.color.bubble.error;
+        return bubbleTheme.error;
       default:
-        return tokens.color.bubble.idle;
+        return bubbleTheme.idle;
     }
   };
 
-  const bubbleColor = useSharedValue(tokens.color.bubble.idle);
+  const bubbleColor = useSharedValue(bubbleTheme.idle);
 
   useEffect(() => {
     bubbleColor.value = withTiming(getBubbleColor(), {
@@ -266,7 +268,7 @@ export const BubbleOverlay = (): React.ReactElement | null => {
           ]}
         >
           {recordingState === RecordingState.Idle && (
-            <MicrophoneIcon size={20} color={tokens.color.brand.bright} />
+            <MicrophoneIcon size={20} color="#FFFFFF" />
           )}
 
           {recordingState === RecordingState.Recording && (
@@ -283,17 +285,17 @@ export const BubbleOverlay = (): React.ReactElement | null => {
           {recordingState === RecordingState.Processing && (
             <SpinnerIcon
               size={20}
-              color={tokens.color.brand.bright}
+              color="#FFFFFF"
               animatedStyle={spinnerStyle}
             />
           )}
 
           {recordingState === RecordingState.Done && (
-            <CheckmarkIcon size={20} color={tokens.color.text.inverse} />
+            <CheckmarkIcon size={20} color="#FFFFFF" />
           )}
 
           {recordingState === RecordingState.Error && (
-            <ExclamationIcon size={20} color={tokens.color.text.inverse} />
+            <ExclamationIcon size={20} color="#FFFFFF" />
           )}
         </Animated.View>
       </GestureDetector>

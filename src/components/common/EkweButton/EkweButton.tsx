@@ -6,12 +6,12 @@ import { Pressable, Text, View } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
   withTiming,
   withRepeat,
   cancelAnimation,
+  Easing,
 } from 'react-native-reanimated';
-import { getColor } from 'src/constants/theme';
+import { getColor } from 'src/constants/colors';
 
 import { EkweButtonProps } from './EkweButton.types';
 
@@ -46,13 +46,19 @@ export const EkweButton = ({
 
   const handlePressIn = (): void => {
     if (!disabled && !loading) {
-      scale.value = withSpring(0.97, { damping: 15, stiffness: 300 });
+      scale.value = withTiming(0.97, {
+        duration: 120,
+        easing: Easing.out(Easing.cubic),
+      });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
   };
 
   const handlePressOut = (): void => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    scale.value = withTiming(1, {
+      duration: 120,
+      easing: Easing.out(Easing.cubic),
+    });
   };
 
   // Resolve styles based on variant and size
@@ -60,32 +66,31 @@ export const EkweButton = ({
     switch (variant) {
       case 'primary':
         return {
-          container: 'bg-primary dark:bg-primary-dark',
+          container: 'bg-primary',
           text: 'text-white',
           spinner: getColor('onPrimary', isDark),
         };
       case 'secondary':
         return {
-          container: 'bg-card dark:bg-card-dark',
-          text: 'text-zinc-950 dark:text-zinc-50',
+          container: 'bg-card',
+          text: 'text-foreground',
           spinner: getColor('foreground', isDark),
         };
       case 'outline':
         return {
-          container:
-            'bg-transparent border-[1.5px] border-primary dark:border-primary-dark',
-          text: 'text-primary dark:text-primary-dark',
-          spinner: getColor('primaryAccent', isDark),
+          container: 'bg-transparent border-[1.5px] border-primary',
+          text: 'text-primary',
+          spinner: getColor('primary', isDark),
         };
       case 'ghost':
         return {
           container: 'bg-transparent',
-          text: 'text-zinc-500 dark:text-zinc-400',
+          text: 'text-muted',
           spinner: getColor('muted', isDark),
         };
       default:
         return {
-          container: 'bg-primary dark:bg-primary-dark',
+          container: 'bg-primary',
           text: 'text-white',
           spinner: getColor('onPrimary', isDark),
         };
@@ -96,8 +101,8 @@ export const EkweButton = ({
     switch (size) {
       case 'small':
         return {
-          container: 'py-1 px-3 min-h-[44px]',
-          text: 'text-sm',
+          container: 'py-1 px-3 min-h-[48px]',
+          text: 'text-base', // Enforced 16px
         };
       case 'large':
         return {
@@ -118,7 +123,7 @@ export const EkweButton = ({
   React.useEffect(() => {
     if (loading) {
       rotation.value = withRepeat(
-        withTiming(360, { duration: 1000 }),
+        withTiming(360, { duration: 1000, easing: Easing.linear }),
         -1, // infinite
         false, // no reverse
       );

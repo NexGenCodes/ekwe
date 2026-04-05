@@ -1,63 +1,55 @@
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React from 'react';
 import { View, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EkweButton } from 'src/components/common/EkweButton';
-import { LanguagePickerInline } from 'src/components/common/LanguagePickerInline';
-import { PageDots } from 'src/components/common/PageDots';
-import { OnboardingScreenProps } from 'src/navigation/types';
+import { LanguagePickerSheet } from 'src/components/common/LanguagePickerSheet';
 import { useSettingsStore } from 'src/store';
 
-export const LanguageScreen = ({
-  navigation,
-}: OnboardingScreenProps<'Language'>): React.ReactElement => {
+import { OnboardingParamList } from './OnboardingNavigator';
+
+type Nav = NativeStackNavigationProp<OnboardingParamList, 'Language'>;
+
+export const LanguageScreen = (): React.ReactElement => {
+  const navigation = useNavigation<Nav>();
   const selectedLanguages = useSettingsStore((s) => s.selectedLanguages);
-  const targetLanguage = useSettingsStore((s) => s.targetLanguage);
   const pinnedLanguages = useSettingsStore((s) => s.pinnedLanguages);
   const setSelectedLanguages = useSettingsStore((s) => s.setSelectedLanguages);
-  const setTargetLanguage = useSettingsStore((s) => s.setTargetLanguage);
   const setPinnedLanguages = useSettingsStore((s) => s.setPinnedLanguages);
 
   return (
     <SafeAreaView className="flex-1 bg-background dark:bg-background-dark">
-      {/* Step indicator */}
-      <View className="pt-4 pb-6 items-center px-6">
-        <PageDots total={3} active={2} />
-      </View>
-
-      <View className="mb-4 px-6">
-        <Text className="text-[28px] leading-[34px] tracking-[-0.5px] font-display text-zinc-950 dark:text-zinc-50">
+      <View className="px-4 pt-4">
+        <Text className="font-bodyMed text-2xl text-black dark:text-white">
           Your languages
         </Text>
-        <Text className="text-base font-body text-zinc-500 dark:text-zinc-400 mt-2">
-          Pick up to 4 languages you use most
+        <Text className="font-body text-base mt-2 text-zinc-500 dark:text-zinc-400">
+          Pick the ones you use most
         </Text>
       </View>
 
-      <View className="flex-1 pb-[100px]">
-        <LanguagePickerInline
+      {/* Inline LanguagePickerSheet — always visible */}
+      <View className="flex-1">
+        <LanguagePickerSheet
+          isVisible
           selectedLanguages={selectedLanguages}
           pinnedLanguages={pinnedLanguages}
           onSelectionChange={(sel, pins) => {
             setSelectedLanguages(sel);
             setPinnedLanguages(pins);
-
-            // Initialize targetLanguage if not set or if removed
-            if (!sel.includes(targetLanguage) && sel.length > 0) {
-              setTargetLanguage(sel[0]);
-            }
           }}
+          onClose={() => {}}
         />
       </View>
 
-      <View className="absolute bottom-0 w-full px-8 pb-10 bg-background/90 dark:bg-background-dark/90">
+      <View className="px-4 pb-6">
         <EkweButton
           variant="primary"
           size="large"
           label="Continue"
           disabled={selectedLanguages.length === 0}
-          onPress={() => {
-            navigation.navigate('AllSet');
-          }}
+          onPress={() => navigation.navigate('Ready')}
         />
       </View>
     </SafeAreaView>

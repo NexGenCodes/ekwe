@@ -60,7 +60,22 @@
         }
       ],
       "expo-widgets",
-      "./modules/ekwe-native/app.plugin.js"
+      "./modules/ekwe-native/app.plugin.js",
+      "expo-sharing",
+      [
+        "expo-share-intent",
+        {
+          "android": {
+            "mimeType": "audio/*"
+          },
+          "ios": {
+            "mimeType": [
+              "public.audio",
+              "public.mpeg-4-audio"
+            ]
+          }
+        }
+      ]
     ],
     "assetBundlePatterns": [
       "assets/fonts/*"

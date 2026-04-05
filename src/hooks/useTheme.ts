@@ -1,12 +1,16 @@
 import { useColorScheme } from 'nativewind';
-import { getColor } from 'src/constants/theme';
+import { getColor, bubbleColors } from 'src/constants/colors';
 
 export interface ThemeTokens {
   color: {
-    brand: { bright: string };
-    text: { inverse: string };
-    background: { primary: string };
-    border: { strong: string };
+    primary: string;
+    background: string;
+    card: string;
+    muted: string;
+    border: string;
+    success: string;
+    warning: string;
+    error: string;
     bubble: {
       idle: string;
       recording: string;
@@ -14,13 +18,6 @@ export interface ThemeTokens {
       done: string;
       error: string;
     };
-  };
-  space: Record<number, number>;
-  radius: { full: number; xl: number };
-  font: {
-    family: { bodyMed: string };
-    size: { caption: number };
-    letterSpacing: { label: number };
   };
   shadow: {
     overlay: {
@@ -39,47 +36,15 @@ export const useTheme = (): ThemeTokens => {
 
   return {
     color: {
-      brand: {
-        bright: '#FFFFFF',
-      },
-      text: {
-        inverse: '#FFFFFF',
-      },
-      background: {
-        primary: isDark ? '#09090B' : '#FFFFFF',
-      },
-      border: {
-        strong: isDark ? '#3F3F46' : '#D4D4D8',
-      },
-      bubble: {
-        idle: getColor('bubble.idle', isDark),
-        recording: getColor('bubble.recording', isDark),
-        processing: getColor('bubble.processing', isDark),
-        done: getColor('bubble.done', isDark),
-        error: getColor('bubble.error', isDark),
-      },
-    },
-    space: {
-      1: 4,
-      2: 8,
-      3: 12,
-      4: 16,
-      6: 24,
-    },
-    radius: {
-      full: 9999,
-      xl: 24,
-    },
-    font: {
-      family: {
-        bodyMed: 'Outfit-Medium',
-      },
-      size: {
-        caption: 12,
-      },
-      letterSpacing: {
-        label: 0.5,
-      },
+      primary: getColor('primary', isDark),
+      background: getColor('background', isDark),
+      card: getColor('card', isDark),
+      muted: getColor('muted', isDark),
+      border: getColor('border', isDark),
+      success: getColor('success', isDark),
+      warning: getColor('warning', isDark),
+      error: getColor('error', isDark),
+      bubble: bubbleColors(isDark),
     },
     shadow: {
       overlay: {

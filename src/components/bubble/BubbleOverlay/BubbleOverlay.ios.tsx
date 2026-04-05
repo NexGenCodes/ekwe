@@ -1,24 +1,26 @@
+import { useColorScheme } from 'nativewind';
 import React, { useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { MicrophoneIcon } from 'src/assets/icons/MicrophoneIcon';
-import { useTheme } from 'src/hooks/useTheme';
+import { bubbleColors } from 'src/constants/colors';
 import { useAudioStore, useSettingsStore } from 'src/store';
 import { RecordingState } from 'src/store/audioSlice';
 
-// Live Activity management — expo-widgets SDK 55
-// Full Live Activity wiring is scaffolded here.
-// The widget target is configured in Phase 8 during
-// the Xcode target setup for App Store submission.
+// Live Activity management — expo-widgets
+// Full Live Activity wiring requires native module config.
+// The widget target must be configured in Xcode.
 
 const updateLiveActivity = (state: RecordingState): void => {
   // expo-widgets Live Activity API:
   // import { LiveActivity } from 'expo-widgets'
   // LiveActivity.update({ state: state })
-  // Scaffolded — wired in Phase 8 after Xcode target is configured.
+  // Requires Xcode target configuration to test.
 };
 
 export const BubbleOverlay = (): React.ReactElement | null => {
-  const tokens = useTheme();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const bubbleTheme = bubbleColors(isDark);
   const recordingState = useAudioStore((s) => s.recordingState);
   const bubbleEnabled = useSettingsStore((s) => s.bubbleEnabled);
   const resetAudioState = useAudioStore((s) => s.resetAudioState);
@@ -54,15 +56,15 @@ export const BubbleOverlay = (): React.ReactElement | null => {
   const getStateColor = (): string => {
     switch (recordingState) {
       case RecordingState.Recording:
-        return tokens.color.bubble.recording;
+        return bubbleTheme.recording;
       case RecordingState.Processing:
-        return tokens.color.bubble.processing;
+        return bubbleTheme.processing;
       case RecordingState.Done:
-        return tokens.color.bubble.done;
+        return bubbleTheme.done;
       case RecordingState.Error:
-        return tokens.color.bubble.error;
+        return bubbleTheme.error;
       default:
-        return tokens.color.bubble.idle;
+        return bubbleTheme.idle;
     }
   };
 
@@ -83,21 +85,13 @@ export const BubbleOverlay = (): React.ReactElement | null => {
 
   return (
     <View
-      className="absolute top-15 self-center rounded-full flex-row items-center gap-2"
+      className="absolute top-15 self-center rounded-full flex-row items-center gap-2 px-3 py-1"
       style={{
         backgroundColor: getStateColor(),
-        paddingHorizontal: tokens.space[3],
-        paddingVertical: tokens.space[1],
       }}
     >
-      <MicrophoneIcon size={14} color={tokens.color.text.inverse} />
-      <Text
-        className="uppercase tracking-widest text-white"
-        style={{
-          fontFamily: tokens.font.family.bodyMed,
-          fontSize: tokens.font.size.caption,
-        }}
-      >
+      <MicrophoneIcon size={14} color="#FFFFFF" />
+      <Text className="uppercase tracking-widest text-white font-medium text-xs">
         {getStateLabel()}
       </Text>
     </View>
