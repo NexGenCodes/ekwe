@@ -1,5 +1,6 @@
 import { useColorScheme } from 'nativewind';
-import { getColor, bubbleColors } from 'src/constants/colors';
+
+import { getColor, bubbleColors } from '@/constants/colors';
 
 export interface ThemeTokens {
   color: {
@@ -28,6 +29,7 @@ export interface ThemeTokens {
       elevation: number;
     };
   };
+  isDark: boolean;
 }
 
 export const useTheme = (): ThemeTokens => {
@@ -35,6 +37,7 @@ export const useTheme = (): ThemeTokens => {
   const isDark = colorScheme === 'dark';
 
   return {
+    isDark,
     color: {
       primary: getColor('primary', isDark),
       background: getColor('background', isDark),

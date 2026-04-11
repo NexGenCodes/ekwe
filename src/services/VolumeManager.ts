@@ -1,7 +1,8 @@
 import { Platform } from 'react-native';
 import { AudioManager } from 'react-native-audio-api';
-import { EkweError } from 'src/constants/errors';
-import { Result, ok, err } from 'src/types/Result';
+
+import { EkweError } from '@/constants/errors';
+import { Result, ok, err } from '@/types/Result';
 
 const VOLUME_RAISE_THRESHOLD = 0.5;
 

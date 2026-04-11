@@ -11,9 +11,10 @@ import Animated, {
   cancelAnimation,
   Easing,
 } from 'react-native-reanimated';
-import { getColor } from 'src/constants/colors';
 
 import { EkweButtonProps } from './EkweButton.types';
+
+import { getColor } from '@/constants/colors';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedLoader = Animated.createAnimatedComponent(Loader);
@@ -66,31 +67,32 @@ export const EkweButton = ({
     switch (variant) {
       case 'primary':
         return {
-          container: 'bg-primary',
+          container: 'bg-primary dark:bg-primary-dark',
           text: 'text-white',
           spinner: getColor('onPrimary', isDark),
         };
       case 'secondary':
         return {
-          container: 'bg-card',
-          text: 'text-foreground',
+          container: 'bg-card dark:bg-card-dark',
+          text: 'text-foreground dark:text-foreground-dark',
           spinner: getColor('foreground', isDark),
         };
       case 'outline':
         return {
-          container: 'bg-transparent border-[1.5px] border-primary',
-          text: 'text-primary',
+          container:
+            'bg-transparent border-[1.5px] border-primary dark:border-primary-dark',
+          text: 'text-primary dark:text-primary-dark',
           spinner: getColor('primary', isDark),
         };
       case 'ghost':
         return {
           container: 'bg-transparent',
-          text: 'text-muted',
+          text: 'text-muted dark:text-muted-dark',
           spinner: getColor('muted', isDark),
         };
       default:
         return {
-          container: 'bg-primary',
+          container: 'bg-primary dark:bg-primary-dark',
           text: 'text-white',
           spinner: getColor('onPrimary', isDark),
         };

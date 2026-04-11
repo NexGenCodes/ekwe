@@ -1,6 +1,6 @@
 /**
  * Detects the ISO 639-1 language code of a given text string
- * using franc-min. Returns 'und' if detection fails.
+ * using backend detection. Returns 'und' if detection fails.
  *
  * Extracted from TranscriptionService so both audio and
  * text share intent paths can reuse it.
@@ -68,11 +68,7 @@ const ISO3_TO_ISO1: Record<string, string> = {
 };
 
 export const detectLanguage = (text: string): string => {
-  try {
-    const { franc } = require('franc-min');
-    const iso3: string = franc(text);
-    return ISO3_TO_ISO1[iso3] ?? 'und';
-  } catch {
-    return 'und';
-  }
+  // Offline language detection was removed to reduce bundle size.
+  // Language detection now relies on backend STT APIs (Whisper/Deepgram).
+  return 'und';
 };

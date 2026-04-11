@@ -14,6 +14,7 @@ export enum EkweError {
   PERMISSION_OVERLAY = 'EKWE_PERMISSION_OVERLAY',
   SESSION_INTERRUPTED = 'EKWE_SESSION_INTERRUPTED',
   TRANSCRIPTION_FAIL = 'EKWE_TRANSCRIPTION_FAIL',
+  TRANSCRIBE_TIMEOUT = 'EKWE_TRANSCRIBE_TIMEOUT',
   TRANSLATION_FAIL = 'EKWE_TRANSLATION_FAIL',
   RATE_LIMITED = 'EKWE_RATE_LIMITED',
   ALL_PROVIDERS_FAIL = 'EKWE_ALL_PROVIDERS_FAIL',
@@ -47,6 +48,8 @@ export const ErrorMessages: Record<EkweError, string> = {
   [EkweError.SESSION_INTERRUPTED]:
     'Session interrupted. Your partial transcript was saved.',
   [EkweError.TRANSCRIPTION_FAIL]: 'Transcription failed. Please try again.',
+  [EkweError.TRANSCRIBE_TIMEOUT]:
+    'Request timed out. The audio might be too complex or long.',
   [EkweError.TRANSLATION_FAIL]: 'Translation failed. Please try again.',
   [EkweError.RATE_LIMITED]: 'Service is busy. Trying another provider.',
   [EkweError.ALL_PROVIDERS_FAIL]:

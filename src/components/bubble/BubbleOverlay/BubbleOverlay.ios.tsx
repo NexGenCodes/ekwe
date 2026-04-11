@@ -5,11 +5,12 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from 'react-native-reanimated';
-import { MicrophoneIcon } from 'src/assets/icons/MicrophoneIcon';
-import { bubbleColors, getColor } from 'src/constants/colors';
-import { useMetering } from 'src/hooks';
-import { useAudioStore, useSettingsStore } from 'src/store';
-import { RecordingState } from 'src/store/audioSlice';
+
+import { MicrophoneIcon } from '@/assets/icons/MicrophoneIcon';
+import { bubbleColors, getColor } from '@/constants/colors';
+import { useMetering } from '@/hooks';
+import { useAudioStore, useSettingsStore } from '@/store';
+import { RecordingState } from '@/store/audioSlice';
 
 // Live Activity management — expo-widgets
 const updateLiveActivity = (_state: RecordingState): void => {

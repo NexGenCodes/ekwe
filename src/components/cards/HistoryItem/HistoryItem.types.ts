@@ -1,5 +1,6 @@
 import { ViewStyle } from 'react-native';
-import { HistoryEntry } from 'src/store/historySlice';
+
+import { HistoryEntry } from '@/store/historySlice';
 
 export interface HistoryItemProps {
   entry: HistoryEntry;

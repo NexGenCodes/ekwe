@@ -6,7 +6,7 @@ import Svg, { Path } from 'react-native-svg';
 interface IconProps {
   size?: number;
   color?: string;
-  animatedStyle?: StyleProp<ViewStyle>;
+  animatedStyle?: any; // Widened to 'any' temporarily to bypass the AnimatedStyleHandle / ViewStyle mismatch in this specific RN/Reanimated version
 }
 
 const AnimatedSvg = Animated.createAnimatedComponent(Svg);

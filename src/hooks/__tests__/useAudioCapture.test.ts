@@ -1,15 +1,15 @@
 import { renderHook, act } from '@testing-library/react-native';
-import { EkweError } from 'src/constants/errors';
-import { useAudioCapture } from 'src/hooks/useAudioCapture';
-import { AudioCapture } from 'src/services/AudioCapture';
-import { AudioProcessor } from 'src/services/AudioProcessor';
-import { useAudioStore } from 'src/store';
-import { RecordingState } from 'src/store/audioSlice';
-import { ok, err } from 'src/types/Result';
+
+import { EkweError } from '@/constants/errors';
+import { useAudioCapture } from '@/hooks/useAudioCapture';
+import { AudioCapture } from '@/services/AudioCapture';
+import { AudioProcessor } from '@/services/AudioProcessor';
+import { useAudioStore } from '@/store';
+import { RecordingState } from '@/store/audioSlice';
+import { ok, err } from '@/types/Result';
 
 jest.mock('src/services/AudioCapture');
 jest.mock('src/services/AudioProcessor');
-jest.mock('uuid', () => ({ v4: jest.fn().mockReturnValue('mock-uuid-123') }));
 
 describe('useAudioCapture', () => {
   beforeEach(() => {
@@ -34,7 +34,7 @@ describe('useAudioCapture', () => {
 
     const state = useAudioStore.getState();
     expect(state.recordingState).toBe(RecordingState.Recording);
-    expect(state.sessionId).toBe('mock-uuid-123');
+    expect(state.sessionId).toBe('test-uuid-1234');
   });
 
   it('startRecording handles error', async () => {

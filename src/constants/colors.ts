@@ -3,13 +3,13 @@
 // Palette: blue primary, black/white, + status colors. That's it.
 
 export const colors = {
-  primary: { DEFAULT: '#2563EB', dark: '#3B82F6' }, // Modern startup Blue (Passes WCAG AA on light/dark backgrounds)
+  primary: { DEFAULT: '#0A1F30', dark: '#1A7EC8' }, // Navy light, Accent Blue dark
   onPrimary: { DEFAULT: '#FFFFFF', dark: '#FFFFFF' },
   background: { DEFAULT: '#FFFFFF', dark: '#09090B' }, // Pure white light, premium true OLED-friendly deep Zinc
-  foreground: { DEFAULT: '#09090B', dark: '#FAFAFA' }, // Zinc 950 (ultra-crisp, no eye strain) light, Zinc 50 dark
-  card: { DEFAULT: '#F4F4F5', dark: '#18181B' }, // Zinc 100 card for light, Zinc 900 for dark (premium subtle elevation)
-  muted: { DEFAULT: '#71717A', dark: '#A1A1AA' }, // Zinc 500/400 (Perfect 4.5:1+ contrast secondary text)
-  border: { DEFAULT: '#E4E4E7', dark: '#27272A' }, // Ultra-sleek dividers (Zinc 200 light, Zinc 800 dark)
+  foreground: { DEFAULT: '#09090B', dark: '#F8FAFC' }, // Zinc 950 light, Slate 50 dark
+  card: { DEFAULT: '#F1F5F9', dark: '#18181B' }, // Slate 100 for light, Zinc 900 for dark (premium subtle elevation)
+  muted: { DEFAULT: '#64748B', dark: '#94A3B8' }, // Slate 500 light, Slate 400 dark (Perfect contrast secondary text)
+  border: { DEFAULT: '#E2E8F0', dark: '#27272A' }, // Slate 200 light, Zinc 800 dark
   success: { DEFAULT: '#16A34A', dark: '#22C55E' }, // Crisp Green
   warning: { DEFAULT: '#D97706', dark: '#F59E0B' }, // Crisp Amber
   error: { DEFAULT: '#DC2626', dark: '#EF4444' }, // Crisp Red

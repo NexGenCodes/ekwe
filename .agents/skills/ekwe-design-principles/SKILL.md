@@ -179,9 +179,7 @@ Ekwe is a voice note translation app for Android and iOS built in React Native +
 ## Result type — use everywhere
 
 ```typescript
-type Result<T, E> =
-  | { ok: true; value: T }
-  | { ok: false; error: E }
+type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 ```
 
 Every service method returns this. Every screen and hook checks `.ok` before proceeding. Every `.ok === false` path renders an EkweBanner.

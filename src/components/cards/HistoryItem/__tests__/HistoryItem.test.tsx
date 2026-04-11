@@ -55,7 +55,7 @@ describe('HistoryItem', () => {
   });
 
   it('calls onDelete when delete button in right actions is pressed', () => {
-    const { getByText } = render(
+    const { getByTestId } = render(
       <HistoryItem
         entry={mockEntry}
         onPress={mockOnPress}
@@ -63,7 +63,7 @@ describe('HistoryItem', () => {
       />,
     );
 
-    const deleteButton = getByText('DELETE');
+    const deleteButton = getByTestId('delete-button');
     fireEvent.press(deleteButton);
 
     expect(mockOnDelete).toHaveBeenCalledTimes(1);

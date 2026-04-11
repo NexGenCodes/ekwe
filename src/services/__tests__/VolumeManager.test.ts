@@ -1,4 +1,4 @@
-import { VolumeManager } from 'src/services/VolumeManager';
+import { VolumeManager } from '@/services/VolumeManager';
 
 describe('VolumeManager', () => {
   beforeEach(() => {

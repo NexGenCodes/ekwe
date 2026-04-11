@@ -1,18 +1,25 @@
 import { Platform } from 'react-native';
-import { EkweError } from 'src/constants/errors';
-import { AudioCapture } from 'src/services/AudioCapture';
-import AudioService from 'src/services/AudioService';
-import { VolumeManager } from 'src/services/VolumeManager';
+
+import { EkweError } from '@/constants/errors';
+import { AudioCapture } from '@/services/AudioCapture';
+import AudioService from '@/services/AudioService';
+import { VolumeManager } from '@/services/VolumeManager';
 import {
   attachAudioEffects,
   releaseAudioEffects,
-} from 'src/utils/AudioEffectsModule';
+} from '@/utils/AudioEffectsModule';
 
 jest.mock('src/services/AudioService');
 jest.mock('src/services/VolumeManager');
 jest.mock('src/utils/AudioEffectsModule', () => ({
   attachAudioEffects: jest.fn().mockResolvedValue(undefined),
   releaseAudioEffects: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('src/utils/fileValidation', () => ({
+  validateSharedAudio: jest.fn().mockResolvedValue({
+    ok: true,
+    value: { uri: 'file://valid.m4a' },
+  }),
 }));
 
 describe('AudioCapture', () => {
@@ -24,11 +31,12 @@ describe('AudioCapture', () => {
       value: undefined,
     });
     (VolumeManager.restoreVolume as jest.Mock).mockResolvedValue({ ok: true });
-    (AudioService.requestPermission as jest.Mock).mockResolvedValue(true);
-    (AudioService.checkPermission as jest.Mock).mockResolvedValue(true);
-    (AudioService.startRecording as jest.Mock).mockResolvedValue(
-      'file://test.m4a',
-    );
+    (AudioService.requestPermission as jest.Mock).mockResolvedValue('Granted');
+    (AudioService.checkPermission as jest.Mock).mockResolvedValue('Granted');
+    (AudioService.startRecording as jest.Mock).mockResolvedValue({
+      status: 'success',
+      path: 'file://test.m4a',
+    });
     (AudioService.stopRecording as jest.Mock).mockResolvedValue({
       path: 'file://test.m4a',
       duration: 1000,
@@ -49,7 +57,7 @@ describe('AudioCapture', () => {
     });
 
     it('returns err(PERMISSION_MIC) when denied', async () => {
-      (AudioService.requestPermission as jest.Mock).mockResolvedValue(false);
+      (AudioService.requestPermission as jest.Mock).mockResolvedValue('Denied');
       const result = await AudioCapture.requestPermission();
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toBe(EkweError.PERMISSION_MIC);

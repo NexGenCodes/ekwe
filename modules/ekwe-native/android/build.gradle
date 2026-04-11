@@ -1,6 +1,12 @@
-plugins {
-  id 'com.android.library'
-  id 'expo-module-gradle-plugin'
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+
+// Inherit global properties
+buildscript {
+  // Simple helper that allows the root project to override versions declared by this library.
+  ext.safeExtGet = { prop, fallback ->
+    rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
+  }
 }
 
 group = 'expo.modules.ekwenative'

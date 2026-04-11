@@ -14,15 +14,16 @@ import Animated, {
   useAnimatedReaction,
   SharedValue,
 } from 'react-native-reanimated';
-import { CheckmarkIcon } from 'src/assets/icons/CheckmarkIcon';
-import { ExclamationIcon } from 'src/assets/icons/ExclamationIcon';
-import { MicrophoneIcon } from 'src/assets/icons/MicrophoneIcon';
-import { SpinnerIcon } from 'src/assets/icons/SpinnerIcon';
-import { bubbleColors, getColor } from 'src/constants/colors';
-import { useBubble, useMetering } from 'src/hooks';
-import { useAudioStore, useSettingsStore } from 'src/store';
-import { RecordingState } from 'src/store/audioSlice';
-import { BubbleNative } from 'src/utils/BubbleModule';
+
+import { CheckmarkIcon } from '@/assets/icons/CheckmarkIcon';
+import { ExclamationIcon } from '@/assets/icons/ExclamationIcon';
+import { MicrophoneIcon } from '@/assets/icons/MicrophoneIcon';
+import { SpinnerIcon } from '@/assets/icons/SpinnerIcon';
+import { bubbleColors, getColor } from '@/constants/colors';
+import { useBubble, useMetering } from '@/hooks';
+import { useAudioStore, useSettingsStore } from '@/store';
+import { RecordingState } from '@/store/audioSlice';
+import { BubbleNative } from '@/utils/BubbleModule';
 
 const BUBBLE_SIZE = 52;
 const SCREEN = Dimensions.get('window');
@@ -117,13 +118,12 @@ export const BubbleOverlay = (): React.ReactElement | null => {
 
   // LIVE METERING
   const liveAmplitude = useMetering();
-  const history = [
-    useSharedValue(0),
-    useSharedValue(0),
-    useSharedValue(0),
-    useSharedValue(0),
-    useSharedValue(0),
-  ];
+  const h0 = useSharedValue(0);
+  const h1 = useSharedValue(0);
+  const h2 = useSharedValue(0);
+  const h3 = useSharedValue(0);
+  const h4 = useSharedValue(0);
+  const history = useMemo(() => [h0, h1, h2, h3, h4], [h0, h1, h2, h3, h4]);
 
   useAnimatedReaction(
     () => liveAmplitude.value,

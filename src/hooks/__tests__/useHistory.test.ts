@@ -1,7 +1,8 @@
 import { renderHook, act } from '@testing-library/react-native';
 import { AppState } from 'react-native';
-import { useHistory } from 'src/hooks/useHistory';
-import { useHistoryStore, useSettingsStore } from 'src/store';
+
+import { useHistory } from '@/hooks/useHistory';
+import { useHistoryStore, useSettingsStore } from '@/store';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 

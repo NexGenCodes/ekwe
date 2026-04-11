@@ -3,8 +3,9 @@ import { useColorScheme } from 'nativewind';
 import React from 'react';
 import { View, Text, Pressable, ViewStyle } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
-import { EkweButton } from 'src/components/common/EkweButton';
-import { getColor } from 'src/constants/colors';
+
+import { EkweButton } from '@/components/common/EkweButton';
+import { getColor } from '@/constants/colors';
 
 export interface EkweBannerProps {
   message: string;

@@ -10,11 +10,12 @@ import Animated, {
   withTiming,
   cancelAnimation,
 } from 'react-native-reanimated';
-import { EkweButton } from 'src/components/common/EkweButton';
-import { getColor } from 'src/constants/colors';
-import { LANGUAGES } from 'src/constants/languages';
 
 import { TranscriptCardProps } from './TranscriptCard.types';
+
+import { EkweButton } from '@/components/common/EkweButton';
+import { getColor } from '@/constants/colors';
+import { LANGUAGES } from '@/constants/languages';
 
 const formatDuration = (seconds: number): string => {
   const m = Math.floor(seconds / 60);

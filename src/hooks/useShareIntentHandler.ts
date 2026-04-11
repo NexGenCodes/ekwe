@@ -1,73 +1,149 @@
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useRouter, useRootNavigationState } from 'expo-router';
 import { useShareIntent } from 'expo-share-intent';
 import { useEffect } from 'react';
-import { Alert } from 'react-native';
-import { RootStackParams } from 'src/navigation/types';
-import { AudioCapture } from 'src/services/AudioCapture';
-import { detectLanguage } from 'src/utils/detectLanguage';
-type Nav = NativeStackNavigationProp<RootStackParams>;
+import { Alert, AppState, Platform } from 'react-native';
+
+import { AudioCapture } from '@/services/AudioCapture';
+import { TranscriptionService } from '@/services/Transcription';
+import { TranslationService } from '@/services/Translation';
+import { useSettingsStore, useAudioStore } from '@/store';
+import { BubbleNative } from '@/utils/BubbleModule';
+
+// Standalone function to prevent stale closures in the component lifecycle
+const handleGhostMode = async (uri: string) => {
+  console.log(
+    '[GhostMode] App in background — performing background transcription',
+  );
+
+  // 1. Instant Feedback: Show "MAGIC" state (sparkles) so user knows it started
+  BubbleNative.updateState('MAGIC');
+  useAudioStore.getState().setActiveFloatingHead('card');
+
+  // 2. Perform background transcription
+  const transcriptionResult = await TranscriptionService.transcribe(
+    {
+      uri,
+      durationMs: 0,
+      averageDb: -40,
+      trimStartMs: 0,
+      trimEndMs: 0,
+      hasSpeech: true,
+      meteringData: [],
+    },
+    'auto',
+  );
+
+  if (transcriptionResult.ok) {
+    // 3. Chain Translation
+    const targetLang = useSettingsStore.getState().targetLanguage || 'en';
+    const translationResult = await TranslationService.translate(
+      transcriptionResult.value.transcript,
+      'auto',
+      targetLang,
+    );
+
+    // 4. Trigger Native Window with both results
+    BubbleNative.showFloatingCard(
+      transcriptionResult.value.transcript,
+      translationResult.ok
+        ? translationResult.value.translation
+        : transcriptionResult.value.transcript,
+    );
+  } else {
+    console.error('[GhostMode] Background transcription failed');
+    useAudioStore.getState().setActiveFloatingHead('none');
+    BubbleNative.updateState('IDLE');
+  }
+};
 
 export const useShareIntentHandler = (): void => {
+  const router = useRouter();
+  const navigationState = useRootNavigationState();
+  const { onboardingCompleted, setOnboardingCompleted } = useSettingsStore();
+
   const { hasShareIntent, shareIntent, resetShareIntent, error } =
     useShareIntent();
-  const navigation = useNavigation<Nav>();
-
-  interface RawIntent {
-    value?: string;
-    files?: { path: string }[];
-    data?: string;
-    type?: string;
-  }
 
   useEffect(() => {
     if (error) {
-      // eslint-disable-next-line no-console
       console.error('[ShareIntent] Error:', error);
     }
   }, [error]);
 
   useEffect(() => {
-    const rawIntent = shareIntent as RawIntent;
-    if (hasShareIntent && rawIntent) {
-      if (rawIntent.type === 'text' && rawIntent.value) {
-        // Handle text sharing
-        const text = rawIntent.value;
-        const detectedLang = detectLanguage(text);
+    // Wait for the navigation root to be mounted
+    if (!navigationState?.key) return;
 
-        navigation.navigate('Translate', { text, detectedLang });
+    if (hasShareIntent && shareIntent.type) {
+      // Pro Flow: Bypass onboarding
+      if (!onboardingCompleted) {
+        setOnboardingCompleted(true);
+      }
+
+      if (shareIntent.type === 'text' && shareIntent.text) {
+        router.push({
+          pathname: '/translate',
+          params: {
+            text: shareIntent.text,
+            detectedLang: 'en', // default or use logic
+          },
+        });
         resetShareIntent();
-      } else {
-        // Handle incoming audio
-        const handleIncomingAudio = async (): Promise<void> => {
-          const uri =
-            rawIntent.value || rawIntent.files?.[0]?.path || rawIntent.data;
-          if (!uri) return;
+      } else if (shareIntent.type === 'file' && shareIntent.files?.[0]) {
+        const file = shareIntent.files[0];
+        resetShareIntent();
 
-          // Strict Voice Note Validation
-          const result = await AudioCapture.processSharedFile(uri);
+        // Ghost Mode Decision — Use AppState to decide UI path
+        const isBackground = AppState.currentState !== 'active';
+
+        const processFile = async () => {
+          let filePath = file.path;
+
+          // ANDROID FIX: Resolve content:// URI to standard file path
+          if (Platform.OS === 'android' && filePath.startsWith('content://')) {
+            const resolved = await BubbleNative.resolveContentUri(filePath);
+            if (resolved) filePath = resolved;
+          }
+
+          const result = await AudioCapture.processSharedFile(
+            filePath,
+            file.mimeType,
+          );
 
           if (result.ok) {
-            navigation.navigate('Result', {
-              uri: result.value.uri,
-              isLive: false,
-            });
-
-            // Reset so it doesn't trigger again on reload
-            resetShareIntent();
+            // On Android + Background -> Trigger Native Ghost Card
+            if (Platform.OS === 'android' && isBackground) {
+              handleGhostMode(result.value.uri);
+            } else {
+              // Foreground or iOS -> Use high-fidelity RN Overlay
+              useAudioStore
+                .getState()
+                .setOverlayState(
+                  true,
+                  undefined,
+                  result.value.uri,
+                  file.mimeType,
+                );
+            }
           } else {
             Alert.alert(
-              'Invalid Format',
-              'Ekwe only supports voice notes (.m4a, .opus, .ogg, .aac). Music files are not allowed.',
-              [{ text: 'OK', onPress: (): void => resetShareIntent() }],
+              'Unsupported Format',
+              'Ekwe only supports voice note formats (.opus, .m4a, .ogg).',
+              [{ text: 'Dismiss' }],
             );
           }
         };
 
-        handleIncomingAudio();
+        processFile();
       }
     }
-  }, [hasShareIntent, shareIntent, navigation, resetShareIntent]);
-
-  return undefined;
+  }, [
+    hasShareIntent,
+    shareIntent,
+    router,
+    navigationState?.key,
+    onboardingCompleted,
+    setOnboardingCompleted,
+    resetShareIntent,
+  ]);
 };

@@ -1,10 +1,11 @@
 import { renderHook, act } from '@testing-library/react-native';
-import { EkweError } from 'src/constants/errors';
-import { useTranscription } from 'src/hooks/useTranscription';
-import { TranscriptionService } from 'src/services/Transcription';
-import { useAudioStore, useSettingsStore, useHistoryStore } from 'src/store';
-import { RecordingState } from 'src/store/audioSlice';
-import { ok, err } from 'src/types/Result';
+
+import { EkweError } from '@/constants/errors';
+import { useTranscription } from '@/hooks/useTranscription';
+import { TranscriptionService } from '@/services/Transcription';
+import { useAudioStore, useSettingsStore, useHistoryStore } from '@/store';
+import { RecordingState } from '@/store/audioSlice';
+import { ok, err } from '@/types/Result';
 
 jest.mock('src/services/Transcription');
 

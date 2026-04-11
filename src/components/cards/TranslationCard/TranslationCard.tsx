@@ -10,11 +10,12 @@ import Animated, {
   Easing,
   cancelAnimation,
 } from 'react-native-reanimated';
-import { EkweButton } from 'src/components/common/EkweButton';
-import { getColor } from 'src/constants/colors';
-import { LANGUAGES } from 'src/constants/languages';
 
 import { TranslationCardProps } from './TranslationCard.types';
+
+import { EkweButton } from '@/components/common/EkweButton';
+import { getColor } from '@/constants/colors';
+import { LANGUAGES } from '@/constants/languages';
 
 const getLanguageName = (code: string): string =>
   LANGUAGES.find((l) => l.code === code)?.englishName ?? code;

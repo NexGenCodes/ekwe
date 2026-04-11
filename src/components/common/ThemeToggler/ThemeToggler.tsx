@@ -8,15 +8,19 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import { getColor } from 'src/constants/colors';
 
 import { ThemeTogglerProps } from './ThemeToggler.types';
+
+import { getColor } from '@/constants/colors';
+import { useSettingsStore } from '@/store';
+import { ThemePreference } from '@/store/settingsSlice';
 
 export const ThemeToggler = ({
   style,
   accessibilityLabel,
 }: ThemeTogglerProps): React.ReactElement => {
-  const { colorScheme, toggleColorScheme } = useColorScheme();
+  const { colorScheme } = useColorScheme();
+  const { setThemePreference } = useSettingsStore();
   const isDark = colorScheme === 'dark';
   const transition = useSharedValue(isDark ? 1 : 0);
 
@@ -28,7 +32,8 @@ export const ThemeToggler = ({
   }, [isDark]);
 
   const handlePress = (): void => {
-    toggleColorScheme();
+    const nextTheme = isDark ? ThemePreference.Light : ThemePreference.Dark;
+    setThemePreference(nextTheme);
     Haptics.selectionAsync();
   };
 

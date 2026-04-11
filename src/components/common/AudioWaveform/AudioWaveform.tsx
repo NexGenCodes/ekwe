@@ -8,9 +8,10 @@ import Animated, {
   withSpring,
   interpolateColor,
 } from 'react-native-reanimated';
-import { getColor } from 'src/constants/colors';
 
 import { AudioWaveformProps } from './AudioWaveform.types';
+
+import { getColor } from '@/constants/colors';
 
 export const AudioWaveform = ({
   amplitudes,

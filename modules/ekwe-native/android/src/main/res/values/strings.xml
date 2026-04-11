@@ -1,0 +1,3 @@
+<resources>
+  <string name="accessibility_description">Permits Ekwe to detect when supported messaging apps are opened to provide contextual translations.</string>
+</resources>

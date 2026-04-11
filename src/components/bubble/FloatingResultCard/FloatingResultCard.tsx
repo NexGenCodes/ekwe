@@ -9,12 +9,13 @@ import Animated, {
   runOnJS,
   Easing,
 } from 'react-native-reanimated';
-import { TranscriptCard } from 'src/components/cards/TranscriptCard';
-import { TranslationCard } from 'src/components/cards/TranslationCard';
-import { useTranslation } from 'src/hooks/useTranslation';
-import { useSettingsStore } from 'src/store';
 
 import { FloatingResultCardProps } from './FloatingResultCard.types';
+
+import { TranscriptCard } from '@/components/cards/TranscriptCard';
+import { TranslationCard } from '@/components/cards/TranslationCard';
+import { useTranslation } from '@/hooks/useTranslation';
+import { useSettingsStore } from '@/store';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const CARD_MAX_HEIGHT = SCREEN_HEIGHT * 0.65;

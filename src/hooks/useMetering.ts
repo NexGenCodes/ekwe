@@ -5,7 +5,8 @@ import {
   withTiming,
   SharedValue,
 } from 'react-native-reanimated';
-import { AudioCapture } from 'src/services/AudioCapture';
+
+import { AudioCapture } from '@/services/AudioCapture';
 
 /**
  * Low-latency metering hook synced to the display refresh rate.

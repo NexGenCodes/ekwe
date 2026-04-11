@@ -1,6 +1,7 @@
-import { File } from 'expo-file-system';
-import { EkweError } from 'src/constants/errors';
-import { Result, ok, err } from 'src/types/Result';
+import { File as ExpoFile } from 'expo-file-system';
+
+import { EkweError } from '@/constants/errors';
+import { Result, ok, err } from '@/types/Result';
 
 const SPEECH_THRESHOLD_DB = -45; // dB threshold for speech presence
 const LOW_QUALITY_THRESHOLD_DB = -60; // dB threshold for quality warning
@@ -112,12 +113,14 @@ class AudioProcessorClass {
     if (!uri) return err(EkweError.SHARE_COPY_FAIL);
 
     try {
-      const file = new File(uri);
+      const file = new ExpoFile(uri);
+
+      // JSI metadata access
       if (!file.exists) {
         return err(EkweError.SHARE_COPY_FAIL);
       }
 
-      if (file.size > MAX_FILE_SIZE) {
+      if (file.size && file.size > MAX_FILE_SIZE) {
         return err(EkweError.FILE_TOO_LARGE);
       }
 

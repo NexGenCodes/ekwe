@@ -1,5 +1,5 @@
-import { EkweError } from 'src/constants/errors';
-import { AudioProcessor } from 'src/services/AudioProcessor';
+import { EkweError } from '@/constants/errors';
+import { AudioProcessor } from '@/services/AudioProcessor';
 
 describe('AudioProcessor', () => {
   describe('processRecording', () => {
@@ -67,8 +67,6 @@ describe('AudioProcessor', () => {
   });
 
   describe('validateSharedFile', () => {
-    const FileSystem = require('expo-file-system');
-
     it('returns error if uri is empty', async () => {
       const result = await AudioProcessor.validateSharedFile('');
       expect(result.ok).toBe(false);
@@ -76,32 +74,32 @@ describe('AudioProcessor', () => {
     });
 
     it('returns ok for valid file', async () => {
-      const { File: MockFile } = require('expo-file-system');
-      (MockFile as jest.Mock).mockImplementationOnce(() => ({
+      const { getInfoAsync } = require('expo-file-system');
+      (getInfoAsync as jest.Mock).mockResolvedValueOnce({
         exists: true,
         size: 5 * 1024 * 1024,
-      }));
+      });
       const result = await AudioProcessor.validateSharedFile('valid.mp3');
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.value.uri).toBe('valid.mp3');
     });
 
     it('returns SHARE_COPY_FAIL if file does not exist', async () => {
-      const { File: MockFile } = require('expo-file-system');
-      (MockFile as jest.Mock).mockImplementationOnce(() => ({
+      const { getInfoAsync } = require('expo-file-system');
+      (getInfoAsync as jest.Mock).mockResolvedValueOnce({
         exists: false,
-      }));
+      });
       const result = await AudioProcessor.validateSharedFile('missing.mp3');
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toBe(EkweError.SHARE_COPY_FAIL);
     });
 
     it('returns FILE_TOO_LARGE if size > 25MB', async () => {
-      const { File: MockFile } = require('expo-file-system');
-      (MockFile as jest.Mock).mockImplementationOnce(() => ({
+      const { getInfoAsync } = require('expo-file-system');
+      (getInfoAsync as jest.Mock).mockResolvedValueOnce({
         exists: true,
         size: 30 * 1024 * 1024,
-      }));
+      });
       const result = await AudioProcessor.validateSharedFile('huge.mp3');
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toBe(EkweError.FILE_TOO_LARGE);

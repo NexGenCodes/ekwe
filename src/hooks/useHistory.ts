@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { useHistoryStore, useSettingsStore } from 'src/store';
-import { HistoryEntry } from 'src/store/historySlice';
+
+import { useHistoryStore, useSettingsStore } from '@/store';
+import { HistoryEntry } from '@/store/historySlice';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 

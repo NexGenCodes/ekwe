@@ -1,4 +1,4 @@
-import { EkweError } from 'src/constants/errors';
+import { EkweError } from '@/constants/errors';
 
 export enum RecordingState {
   Idle = 'idle',
@@ -6,7 +6,17 @@ export enum RecordingState {
   Processing = 'processing',
   Done = 'done',
   Error = 'error',
+  Overlay = 'overlay', // New state for shared file processing
 }
+
+export enum OverlayStep {
+  Pick = 'pick',
+  Preview = 'preview',
+  Process = 'process',
+  Result = 'result',
+}
+
+export type FloatingHeadType = 'none' | 'bubble' | 'card';
 
 export interface AudioState {
   recordingState: RecordingState;
@@ -17,6 +27,12 @@ export interface AudioState {
   sourceLang: string | null;
   targetLang: string | null;
   duration: number | null;
+  // Unified Overlay State
+  showOverlay: boolean;
+  overlayStep: OverlayStep;
+  overlayFileUri: string | null;
+  overlayMimeType: string | null;
+  activeFloatingHead: FloatingHeadType;
 }
 
 export interface AudioActions {
@@ -28,6 +44,13 @@ export interface AudioActions {
   setSourceLang: (code: string) => void;
   setTargetLang: (code: string) => void;
   setDuration: (seconds: number) => void;
+  setOverlayState: (
+    visible: boolean,
+    step?: OverlayStep,
+    uri?: string,
+    mime?: string,
+  ) => void;
+  setActiveFloatingHead: (head: FloatingHeadType) => void;
   resetAudioState: () => void;
 }
 
@@ -40,6 +63,11 @@ const initialAudioState: AudioState = {
   sourceLang: null,
   targetLang: null,
   duration: null,
+  showOverlay: false,
+  overlayStep: OverlayStep.Pick,
+  overlayFileUri: null,
+  overlayMimeType: null,
+  activeFloatingHead: 'none',
 };
 
 export const createAudioSlice = (
@@ -56,5 +84,24 @@ export const createAudioSlice = (
   setSourceLang: (sourceLang): void => set(() => ({ sourceLang })),
   setTargetLang: (targetLang): void => set(() => ({ targetLang })),
   setDuration: (duration): void => set(() => ({ duration })),
+  setOverlayState: (
+    showOverlay,
+    overlayStep,
+    overlayFileUri,
+    overlayMimeType,
+  ): void =>
+    set((state) => ({
+      showOverlay,
+      overlayStep: overlayStep ?? state.overlayStep,
+      overlayFileUri: overlayFileUri ?? state.overlayFileUri,
+      overlayMimeType: overlayMimeType ?? state.overlayMimeType,
+      activeFloatingHead: showOverlay
+        ? 'card'
+        : state.activeFloatingHead === 'card'
+          ? 'none'
+          : state.activeFloatingHead,
+    })),
+  setActiveFloatingHead: (activeFloatingHead): void =>
+    set(() => ({ activeFloatingHead })),
   resetAudioState: (): void => set(() => ({ ...initialAudioState })),
 });

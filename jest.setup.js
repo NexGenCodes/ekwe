@@ -2,17 +2,13 @@
  * Global Jest Setup — Ekwe
  *
  * Centralises mocks for native modules that crash in a pure-JS test
- * environment.  Individual test files only need to mock things specific
- * to their component (e.g. useTheme token values).
+ * environment.
  */
 
-/* ------------------------------------------------------------------ */
-/*  react-native-worklets — must come BEFORE reanimated                */
-/* ------------------------------------------------------------------ */
-jest.mock('react-native-worklets', () => ({
-  createWorkletFromJSFunction: jest.fn(),
-  defaultValueUnpackerCode: '',
-}));
+// Babel in SDK 52 + Jest sometimes requires the Promise constructor to be explicitly global
+if (typeof Promise === 'undefined') {
+  global.Promise = require('promise');
+}
 
 /* ------------------------------------------------------------------ */
 /*  react-native-reanimated v4                                         */
@@ -57,7 +53,9 @@ jest.mock('react-native-reanimated', () => {
       out: () => (x) => x,
       inOut: () => (x) => x,
     },
-    FadeIn: { duration: () => ({ springify: () => ({ damping: () => ({}) }) }) },
+    FadeIn: {
+      duration: () => ({ springify: () => ({ damping: () => ({}) }) }),
+    },
     FadeOut: { duration: () => ({}) },
     FadeInUp: { springify: () => ({ damping: () => ({}) }) },
     FadeOutUp: {},
@@ -157,7 +155,7 @@ jest.mock('lucide-react-native', () => {
         if (prop === '__esModule') return true;
         return createIcon(prop);
       },
-    }
+    },
   );
 });
 
@@ -191,22 +189,6 @@ jest.mock('react-native-mmkv', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  @sentry/react-native                                               */
-/* ------------------------------------------------------------------ */
-jest.mock('@sentry/react-native', () => ({
-  init: jest.fn(),
-  captureException: jest.fn(),
-  captureMessage: jest.fn(),
-  setUser: jest.fn(),
-  setTag: jest.fn(),
-  setExtra: jest.fn(),
-  addBreadcrumb: jest.fn(),
-  Native: {
-    init: jest.fn(),
-  },
-}));
-
-/* ------------------------------------------------------------------ */
 /*  expo-linking                                                       */
 /* ------------------------------------------------------------------ */
 jest.mock('expo-linking', () => {
@@ -215,7 +197,9 @@ jest.mock('expo-linking', () => {
     addEventListener: jest.fn((type, handler) => {
       if (type === 'url') {
         listeners.push(handler);
-        return { remove: () => listeners.splice(listeners.indexOf(handler), 1) };
+        return {
+          remove: () => listeners.splice(listeners.indexOf(handler), 1),
+        };
       }
       return { remove: () => {} };
     }),
@@ -241,12 +225,13 @@ jest.mock('expo-linking', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  uuid                                                               */
+/*  crypto.randomUUID                                                  */
 /* ------------------------------------------------------------------ */
-jest.mock('uuid', () => ({
-  v4: jest.fn().mockReturnValue('test-uuid-1234'),
-}));
-
+Object.defineProperty(global, 'crypto', {
+  value: {
+    randomUUID: jest.fn().mockReturnValue('test-uuid-1234'),
+  },
+});
 /* ------------------------------------------------------------------ */
 /*  react-native-audio-api                                             */
 /* ------------------------------------------------------------------ */
@@ -333,4 +318,38 @@ jest.mock('./modules/ekwe-native', () => ({
     gainControl: true,
   }),
   releaseEffects: jest.fn().mockResolvedValue(undefined),
+}));
+
+/* ------------------------------------------------------------------ */
+/*  @clerk/clerk-expo                                                  */
+/* ------------------------------------------------------------------ */
+jest.mock('@clerk/clerk-expo', () => ({
+  Clerk: {
+    session: {
+      getToken: jest.fn().mockResolvedValue('mock-token'),
+    },
+  },
+  useAuth: () => ({
+    isSignedIn: true,
+    isLoaded: true,
+    signOut: jest.fn(),
+  }),
+  useUser: () => ({
+    user: {
+      id: 'user_123',
+      publicMetadata: { tier: 'pro' },
+    },
+  }),
+  useSignIn: () => ({ isLoaded: true, signIn: {}, setActive: jest.fn() }),
+  useSignUp: () => ({ isLoaded: true, signUp: {}, setActive: jest.fn() }),
+}));
+
+/* ------------------------------------------------------------------ */
+/*  @/utils/authHeaders (Global Mock)                                  */
+/* ------------------------------------------------------------------ */
+jest.mock('src/utils/authHeaders', () => ({
+  getAuthHeaders: jest.fn(async (h = {}) => ({
+    ...h,
+    Authorization: 'Bearer mock-token',
+  })),
 }));

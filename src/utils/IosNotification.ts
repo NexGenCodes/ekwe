@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
-import { EkweError } from 'src/constants/errors';
-import { Result, ok } from 'src/types/Result';
+
+import { EkweError } from '@/constants/errors';
+import { Result, ok } from '@/types/Result';
 
 export const configureNotifications = (): void => {
   Notifications.setNotificationHandler({
@@ -18,8 +19,10 @@ export const requestNotificationPermission = async (): Promise<
   Result<boolean, EkweError>
 > => {
   try {
-    const { status } = await Notifications.requestPermissionsAsync();
-    return ok(status === 'granted');
+    const response = await Notifications.requestPermissionsAsync();
+    const isGranted =
+      (response as unknown as { status: string }).status === 'granted';
+    return ok(isGranted);
   } catch {
     return ok(false);
   }

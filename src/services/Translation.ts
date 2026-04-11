@@ -1,6 +1,8 @@
-import { EkweError } from 'src/constants/errors';
-import { LANGUAGES } from 'src/constants/languages';
-import { Result, ok, err } from 'src/types/Result';
+import { EkweError } from '@/constants/errors';
+import { LANGUAGES } from '@/constants/languages';
+import { Result, ok, err } from '@/types/Result';
+import { getAuthHeaders } from '@/utils/authHeaders';
+import { fetchWithRetry } from '@/utils/networkUtils';
 
 const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? '';
 
@@ -34,14 +36,19 @@ class TranslationServiceClass {
     const sourceName = this.getLanguageName(sourceLang);
 
     try {
-      const response = await fetch(`${workerUrl}/translate`, {
+      const headers = await getAuthHeaders({
+        'Content-Type': 'application/json',
+      });
+
+      const response = await fetchWithRetry(`${workerUrl}/translate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           text,
           targetLang: targetName,
           sourceLang: sourceName,
         }),
+        retries: 2, // Translations are smaller, don't need heavy retries
       });
 
       if (!response.ok) {

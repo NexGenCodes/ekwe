@@ -1,9 +1,10 @@
 import { renderHook, act } from '@testing-library/react-native';
-import { EkweError } from 'src/constants/errors';
-import { useTranslation } from 'src/hooks/useTranslation';
-import { TranslationService } from 'src/services/Translation';
-import { useAudioStore, useHistoryStore, useSettingsStore } from 'src/store';
-import { ok, err } from 'src/types/Result';
+
+import { EkweError } from '@/constants/errors';
+import { useTranslation } from '@/hooks/useTranslation';
+import { TranslationService } from '@/services/Translation';
+import { useAudioStore, useHistoryStore, useSettingsStore } from '@/store';
+import { ok, err } from '@/types/Result';
 
 jest.mock('src/services/Translation');
 

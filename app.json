@@ -5,29 +5,28 @@
     "version": "1.0.0",
     "scheme": "ekwe",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon-light.png",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash-icon-light.png",
       "resizeMode": "contain",
-      "backgroundColor": "#09090B"
+      "backgroundColor": "#FFFFFF",
+      "dark": {
+        "image": "./assets/splash-icon.png",
+        "backgroundColor": "#09090B"
+      }
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.ekwe"
+      "bundleIdentifier": "com.anonymous.ekwe",
+      "userInterfaceStyle": "automatic"
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#09090B"
+        "foregroundImage": "./assets/adaptive-icon-light.png",
+        "backgroundColor": "#FFFFFF",
+        "monochromeImage": "./assets/adaptive-icon.png"
       },
-      "predictiveBackGestureEnabled": false,
-      "permissions": [
-        "android.permission.RECORD_AUDIO",
-        "android.permission.SYSTEM_ALERT_WINDOW",
-        "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
-      ],
       "package": "com.anonymous.ekwe"
     },
     "web": {
@@ -37,8 +36,8 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#09090B",
-          "image": "./assets/splash-icon.png",
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/splash-icon-light.png",
           "dark": {
             "backgroundColor": "#09090B",
             "image": "./assets/splash-icon.png"
@@ -48,21 +47,23 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png",
+          "icon": "./assets/notification-icon-light.png",
           "color": "#2563EB"
         }
       ],
-      "expo-font",
-      "expo-asset",
-      "expo-speech-recognition",
       [
-        "@sentry/react-native/expo",
+        "expo-font",
         {
-          "organization": "airwaybill",
-          "project": "javascript-nextjs"
+          "fonts": [
+            "./assets/fonts/DMSerifDisplay-Regular.ttf",
+            "./assets/fonts/Outfit-Regular.ttf",
+            "./assets/fonts/Outfit-Medium.ttf",
+            "./assets/fonts/SpaceMono-Regular.ttf"
+          ]
         }
       ],
-      "@sentry/react-native",
+      "expo-asset",
+      "expo-speech-recognition",
       "expo-widgets",
       [
         "expo-build-properties",
@@ -71,36 +72,46 @@
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
             "minSdkVersion": 24,
-            "buildArchs": [
-              "arm64-v8a"
-            ]
+            "buildArchs": ["arm64-v8a"],
+            "ndkVersion": "27.0.12077973"
           }
         }
       ],
-      "expo-widgets",
-      "./modules/ekwe-native/app.plugin.js",
       [
         "expo-share-intent",
         {
-          "android": {
-            "mimeType": ["audio/*", "text/*"]
-          },
-          "ios": {
-            "mimeType": [
-              "public.audio",
-              "public.mpeg-4-audio",
-              "org.xiph.opus",
-              "org.xiph.ogg-audio",
-              "public.text",
-              "public.plain-text",
-              "public.url"
-            ]
+          "androidIntentFilters": [
+            "text/plain", 
+            "audio/*", 
+            "application/octet-stream"
+          ],
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsFileWithMaxCount": 1,
+            "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
+            "NSExtensionActivationSupportsText": true
           }
         }
-      ]
+      ],
+      [
+        "react-native-audio-api",
+        {
+          "iosBackgroundMode": true,
+          "iosMicrophonePermission": "This app requires access to the microphone to record audio.",
+          "androidPermissions": [
+            "android.permission.MODIFY_AUDIO_SETTINGS",
+            "android.permission.RECORD_AUDIO",
+            "android.permission.FOREGROUND_SERVICE",
+            "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+            "android.permission.FOREGROUND_SERVICE_MICROPHONE"
+          ],
+          "androidForegroundService": true,
+          "androidFSTypes": ["mediaPlayback", "microphone"]
+        }
+      ],
+      "./modules/ekwe-native/app.plugin.js",
+      "expo-secure-store",
+      "expo-router"
     ],
-    "assetBundlePatterns": [
-      "assets/fonts/*"
-    ]
+    "assetBundlePatterns": ["assets/fonts/*"]
   }
 }

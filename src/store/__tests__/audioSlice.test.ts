@@ -1,11 +1,11 @@
-import { EkweError } from 'src/constants/errors';
-
 import {
   createAudioSlice,
   RecordingState,
   AudioState,
   AudioActions,
 } from '../audioSlice';
+
+import { EkweError } from '@/constants/errors';
 
 describe('Audio Slice', () => {
   let slice: AudioState & AudioActions;

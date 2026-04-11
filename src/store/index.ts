@@ -1,21 +1,18 @@
-import {
-  createAudioSlice,
-  AudioState,
-  AudioActions,
-} from 'src/store/audioSlice';
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+import { createAudioSlice, AudioState, AudioActions } from '@/store/audioSlice';
 import {
   createHistorySlice,
   HistoryState,
   HistoryActions,
-} from 'src/store/historySlice';
-import { mmkvStorage } from 'src/store/mmkvStorage';
+} from '@/store/historySlice';
+import { mmkvStorage } from '@/store/mmkvStorage';
 import {
   createSettingsSlice,
   SettingsState,
   SettingsActions,
-} from 'src/store/settingsSlice';
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+} from '@/store/settingsSlice';
 
 export type { AudioState, AudioActions };
 export type { HistoryState, HistoryActions };

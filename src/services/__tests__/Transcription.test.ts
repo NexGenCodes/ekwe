@@ -1,33 +1,64 @@
-import * as FileSystem from 'expo-file-system';
-import { EkweError } from 'src/constants/errors';
-import { ProcessedAudio } from 'src/services/AudioProcessor';
+import { EkweError } from '@/constants/errors';
+import { ProcessedAudio } from '@/services/AudioProcessor';
+import { TranscriptionService } from '@/services/Transcription';
+import { fetchWithRetry } from '@/utils/networkUtils';
 
-// Note: TranscriptionService is required inside each test to pick up mocked env vars/modules
-// We use require inside tests because TranscriptionService is a singleton exported as a constant.
+// Set environment variable at top-level
+process.env.EXPO_PUBLIC_WORKER_URL = 'https://mock-worker.dev';
+
+jest.mock('src/utils/networkUtils', () => ({
+  fetchWithRetry: jest.fn(),
+}));
+
+jest.mock('src/utils/authHeaders', () => ({
+  getAuthHeaders: jest.fn(() =>
+    Promise.resolve({ Authorization: 'Bearer mock-token' }),
+  ),
+}));
+
+jest.mock('src/utils/detectLanguage', () => ({
+  detectLanguage: jest.fn(() => 'und'),
+}));
 
 jest.mock('expo-file-system', () => ({
-  getInfoAsync: jest.fn().mockResolvedValue({
-    exists: true,
-    size: 1024 * 100, // 100KB default
-  }),
-  File: jest.fn().mockImplementation(() => ({
+  getInfoAsync: jest.fn(() =>
+    Promise.resolve({
+      exists: true,
+      size: 1024 * 100, // 100KB default
+    }),
+  ),
+  File: jest.fn(() => ({
     exists: true,
     size: 1024 * 100,
   })),
 }));
 
-jest.mock('franc-min', () => ({
-  franc: jest.fn().mockReturnValue('eng'),
-}));
+// Mock AbortController and FormData for Jest environment
+if (typeof AbortController === 'undefined') {
+  global.AbortController = class {
+    signal = {
+      aborted: false,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    };
+    abort = jest.fn();
+  } as any;
+}
 
-// Mock FormData for Jest environment
-/* eslint-disable @typescript-eslint/no-explicit-any */
 if (typeof FormData === 'undefined') {
   global.FormData = class {
     append = jest.fn();
+    delete = jest.fn();
+    get = jest.fn();
+    getAll = jest.fn();
+    has = jest.fn();
+    set = jest.fn();
+    forEach = jest.fn();
   } as any;
+} else if (!(global.FormData.prototype as any).append) {
+  // If FormData exists but is a mock/incomplete, ensure append is there
+  (global.FormData.prototype as any).append = jest.fn();
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 const mockAudio: ProcessedAudio = {
   uri: 'file://mock/recording.m4a',
@@ -43,32 +74,25 @@ describe('TranscriptionService', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
-    jest.resetModules();
-    process.env = { ...originalEnv };
+    jest.clearAllMocks();
     process.env.EXPO_PUBLIC_WORKER_URL = 'https://mock-worker.dev';
-    global.fetch = jest.fn() as jest.Mock;
-  });
-
-  afterAll(() => {
-    process.env = originalEnv;
   });
 
   it.skip('returns err(NETWORK_LOST) when WORKER_URL is empty', async () => {
     process.env.EXPO_PUBLIC_WORKER_URL = '';
-    const { TranscriptionService } = require('src/services/Transcription');
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBe(EkweError.NETWORK_LOST);
     }
+    process.env.EXPO_PUBLIC_WORKER_URL = 'https://mock-worker.dev';
   });
 
   it.skip('returns err(SHARE_COPY_FAIL) when file does not exist', async () => {
     const { File: MockFile } = require('expo-file-system');
-    (MockFile as jest.Mock).mockImplementationOnce(() => ({
+    (MockFile as any).mockImplementationOnce(() => ({
       exists: false,
     }));
-    const { TranscriptionService } = require('src/services/Transcription');
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -78,11 +102,10 @@ describe('TranscriptionService', () => {
 
   it.skip('returns err(BAD_FORMAT) when file exceeds 25MB', async () => {
     const { File: MockFile } = require('expo-file-system');
-    (MockFile as jest.Mock).mockImplementationOnce(() => ({
+    (MockFile as any).mockImplementationOnce(() => ({
       exists: true,
       size: 50 * 1024 * 1024, // 50MB
     }));
-    const { TranscriptionService } = require('src/services/Transcription');
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
 
     // If it fails with NETWORK_LOST, it means it skipped size check and hit worker check or threw
@@ -93,25 +116,25 @@ describe('TranscriptionService', () => {
   });
 
   it('calls fetch with correct FormData fields', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
+    (
+      fetchWithRetry as jest.MockedFunction<typeof fetchWithRetry>
+    ).mockResolvedValueOnce({
       ok: true,
-      json: jest.fn().mockResolvedValue({ text: 'Hello' }),
-    });
+      json: () => Promise.resolve({ text: 'Hello' }),
+    } as any);
 
-    const { TranscriptionService } = require('src/services/Transcription');
     await TranscriptionService.transcribe(mockAudio, 'en');
 
-    const fetchCall = (global.fetch as jest.Mock).mock.calls[0];
-    expect(fetchCall[0]).toBe('https://mock-worker.dev/transcribe');
-    expect(fetchCall[1].method).toBe('POST');
-    expect(fetchCall[1].body).toBeInstanceOf(FormData);
+    const call = (fetchWithRetry as jest.MockedFunction<typeof fetchWithRetry>)
+      .mock.calls[0];
+    expect(call).toBeDefined();
+    expect(call![0]).toBe('https://mock-worker.dev/transcribe');
+    expect(call![1]!.method).toBe('POST');
+    expect(call![1]!.body).toBeInstanceOf(FormData);
   });
 
   it('returns err(NETWORK_LOST) when fetch throws', async () => {
-    (global.fetch as jest.Mock).mockRejectedValueOnce(
-      new Error('Network fail'),
-    );
-    const { TranscriptionService } = require('src/services/Transcription');
+    (fetchWithRetry as any).mockRejectedValueOnce(new Error('Network fail'));
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -120,11 +143,12 @@ describe('TranscriptionService', () => {
   });
 
   it('returns err on non-ok response', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
+    (
+      fetchWithRetry as jest.MockedFunction<typeof fetchWithRetry>
+    ).mockResolvedValueOnce({
       ok: false,
-      json: jest.fn().mockResolvedValue({ error: 'EKWE_EMPTY_TRANSCRIPT' }),
-    });
-    const { TranscriptionService } = require('src/services/Transcription');
+      json: () => Promise.resolve({ error: 'EKWE_EMPTY_TRANSCRIPT' }),
+    } as any);
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -133,16 +157,18 @@ describe('TranscriptionService', () => {
   });
 
   it('returns ok with processed transcript', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
+    (
+      fetchWithRetry as jest.MockedFunction<typeof fetchWithRetry>
+    ).mockResolvedValueOnce({
       ok: true,
-      json: jest.fn().mockResolvedValue({
-        text: 'Hello world',
-        words: [{ word: 'Hello', start: 0, end: 0.5 }],
-        language: 'en',
-      }),
-    });
+      json: () =>
+        Promise.resolve({
+          text: 'Hello world',
+          words: [{ word: 'Hello', start: 0, end: 0.5 }],
+          language: 'en',
+        }),
+    } as any);
 
-    const { TranscriptionService } = require('src/services/Transcription');
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
     if (!result.ok) {
       // eslint-disable-next-line no-console
@@ -151,21 +177,23 @@ describe('TranscriptionService', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.transcript).toBe('Hello world');
-      expect(result.value.detectedLang).toBe('en');
+      expect(result.value.detectedLang).toBe('und');
     }
   });
 
   it('strips filler words for English source', async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
+    (
+      fetchWithRetry as jest.MockedFunction<typeof fetchWithRetry>
+    ).mockResolvedValueOnce({
       ok: true,
-      json: jest.fn().mockResolvedValue({
-        text: 'Um, hello, like, world',
-        words: [],
-        language: 'en',
-      }),
-    });
+      json: () =>
+        Promise.resolve({
+          text: 'Um, hello, like, world',
+          words: [],
+          language: 'en',
+        }),
+    } as any);
 
-    const { TranscriptionService } = require('src/services/Transcription');
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
     if (!result.ok) {
       // eslint-disable-next-line no-console
@@ -179,28 +207,14 @@ describe('TranscriptionService', () => {
   });
 
   describe('detectLanguage', () => {
-    it('returns en for English text', () => {
-      const { franc } = require('franc-min');
-      franc.mockReturnValueOnce('eng');
-      const { TranscriptionService } = require('src/services/Transcription');
+    it('returns und as it relies on backend detection now', () => {
       const lang = TranscriptionService.detectLanguage('English text here');
-      expect(lang).toBe('en');
-    });
-
-    it('returns und when franc throws', () => {
-      const { franc } = require('franc-min');
-      franc.mockImplementationOnce(() => {
-        throw new Error();
-      });
-      const { TranscriptionService } = require('src/services/Transcription');
-      const lang = TranscriptionService.detectLanguage('...');
       expect(lang).toBe('und');
     });
   });
 
   describe('isHallucination', () => {
     it('returns true when wps > 6', () => {
-      const { TranscriptionService } = require('src/services/Transcription');
       const result = TranscriptionService.isHallucination(
         'one two three four five six seven eight nine ten',
         1000,
@@ -209,7 +223,6 @@ describe('TranscriptionService', () => {
     });
 
     it('returns true for known patterns', () => {
-      const { TranscriptionService } = require('src/services/Transcription');
       const result = TranscriptionService.isHallucination(
         'Thank you for watching',
         5000,
@@ -218,7 +231,6 @@ describe('TranscriptionService', () => {
     });
 
     it('returns false for normal speech', () => {
-      const { TranscriptionService } = require('src/services/Transcription');
       const result = TranscriptionService.isHallucination(
         'This is a normal sentence spoken here.',
         5000,
@@ -227,7 +239,6 @@ describe('TranscriptionService', () => {
     });
 
     it('returns false for short audio with few words', () => {
-      const { TranscriptionService } = require('src/services/Transcription');
       const result = TranscriptionService.isHallucination('Hello.', 1000);
       expect(result).toBe(false);
     });
@@ -235,15 +246,17 @@ describe('TranscriptionService', () => {
 
   it('offsets word timestamps by trimStartMs', async () => {
     const audioWithTrim: ProcessedAudio = { ...mockAudio, trimStartMs: 1000 };
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
+    (
+      fetchWithRetry as jest.MockedFunction<typeof fetchWithRetry>
+    ).mockResolvedValueOnce({
       ok: true,
-      json: jest.fn().mockResolvedValue({
-        text: 'Hello',
-        words: [{ word: 'Hello', start: 0, end: 1 }],
-      }),
-    });
+      json: () =>
+        Promise.resolve({
+          text: 'Hello',
+          words: [{ word: 'Hello', start: 0, end: 1 }],
+        }),
+    } as any);
 
-    const { TranscriptionService } = require('src/services/Transcription');
     const result = await TranscriptionService.transcribe(audioWithTrim, 'en');
     if (!result.ok) {
       // eslint-disable-next-line no-console

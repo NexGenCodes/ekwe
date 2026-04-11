@@ -59,9 +59,29 @@ public class EkweNativeModule: Module {
       // No-op on iOS
     }
 
+    AsyncFunction("updateBubbleVisibility") { (visible: Bool) in
+      // iOS — Bubbles are in-app only, visibility is handled in JS
+    }
+
+    AsyncFunction("updateBubbleState") { (mode: String, data: String?) in
+      // iOS — Update Live Activity state
+      print("[Ekwe] Updating iOS Live Activity state: \(mode)")
+    }
+
+    AsyncFunction("showFloatingCard") { (transcription: String, translation: String) in
+      // iOS — True floating cards are blocked by Apple.
+      // We fall back to the in-app SharedVoiceNoteOverlay handled in useShareIntentHandler.
+      print("[Ekwe] iOS Ghost Mode: Falling back to in-app overlay")
+    }
+
+    OnAppForegrounded {
+      // PRO-GRADE EXCLUSIVITY: Kill all background UI (Live Activities)
+      // when the user enters the main app.
+      print("[Ekwe] App foregrounded — cleaning up iOS background tasks")
+    }
+
     // ------------------------------------
-    // TODO: Live Activity / Dynamic Island
-    // Add ActivityKit bindings here in Phase 8.
+    // TODO: Live Activity / Dynamic Island (ActivityKit)
     // ------------------------------------
   }
 }

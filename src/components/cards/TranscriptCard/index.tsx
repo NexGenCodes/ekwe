@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { lightTokens } from 'src/constants/tokens';
+
+import { lightTokens } from '@/constants/tokens';
 
 interface TranscriptCardProps {
   text: string;

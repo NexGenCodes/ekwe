@@ -1,4 +1,4 @@
-import { HistoryEntry } from 'src/store/historySlice';
+import { HistoryEntry } from '@/store/historySlice';
 
 export const MOCK_HISTORY: HistoryEntry[] = [
   {

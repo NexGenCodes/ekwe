@@ -1,13 +1,14 @@
 import { useCallback, useState } from 'react';
-import { EkweError } from 'src/constants/errors';
-import { ProcessedAudio } from 'src/services/AudioProcessor';
+
+import { EkweError } from '@/constants/errors';
+import { ProcessedAudio } from '@/services/AudioProcessor';
 import {
   TranscriptionService,
   TranscriptionResult,
-} from 'src/services/Transcription';
-import { useAudioStore, useSettingsStore, useHistoryStore } from 'src/store';
-import { RecordingState } from 'src/store/audioSlice';
-import { Result, ok, err } from 'src/types/Result';
+} from '@/services/Transcription';
+import { useAudioStore, useSettingsStore, useHistoryStore } from '@/store';
+import { RecordingState } from '@/store/audioSlice';
+import { Result, ok, err } from '@/types/Result';
 
 export interface UseTranscriptionReturn {
   transcribe: (

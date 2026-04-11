@@ -4,10 +4,17 @@ import React from 'react';
 
 import { ThemeToggler } from '../ThemeToggler';
 
-// Mock useColorScheme from nativewind
-const mockToggleColorScheme = jest.fn();
+// Mock useColorScheme from nativewind (read-only, no toggleColorScheme)
 jest.mock('nativewind', () => ({
   useColorScheme: jest.fn(),
+}));
+
+// Mock useSettingsStore from the zustand store
+const mockSetThemePreference = jest.fn();
+jest.mock('src/store', () => ({
+  useSettingsStore: jest.fn(() => ({
+    setThemePreference: mockSetThemePreference,
+  })),
 }));
 
 describe('ThemeToggler', () => {
@@ -18,10 +25,7 @@ describe('ThemeToggler', () => {
   });
 
   const setupTheme = (colorScheme: 'light' | 'dark'): void => {
-    useColorSchemeMock.mockReturnValue({
-      colorScheme,
-      toggleColorScheme: mockToggleColorScheme,
-    });
+    useColorSchemeMock.mockReturnValue({ colorScheme });
   };
 
   it('renders button to dark mode in light mode', () => {
@@ -40,13 +44,23 @@ describe('ThemeToggler', () => {
     expect(buttonRole.props.accessibilityLabel).toBe('Switch to light mode');
   });
 
-  it('calls toggleTheme and haptics on press', () => {
+  it('calls setThemePreference and haptics on press', () => {
     setupTheme('light');
     const { getByRole } = render(<ThemeToggler />);
 
     fireEvent.press(getByRole('button'));
 
-    expect(mockToggleColorScheme).toHaveBeenCalledTimes(1);
+    expect(mockSetThemePreference).toHaveBeenCalledTimes(1);
+    expect(mockSetThemePreference).toHaveBeenCalledWith('dark');
     expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('toggles to light when currently dark', () => {
+    setupTheme('dark');
+    const { getByRole } = render(<ThemeToggler />);
+
+    fireEvent.press(getByRole('button'));
+
+    expect(mockSetThemePreference).toHaveBeenCalledWith('light');
   });
 });

@@ -3,10 +3,11 @@ import { Search, Star, X, Check } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import React, { useMemo, useState, useCallback, memo } from 'react';
 import { View, Text, Pressable, TextInput } from 'react-native';
-import { getColor } from 'src/constants/colors';
-import { LANGUAGES, Language, FLAG_MAP } from 'src/constants/languages';
 
 import { LanguagePickerInlineProps } from './LanguagePickerInline.types';
+
+import { getColor } from '@/constants/colors';
+import { LANGUAGES, Language, FLAG_MAP } from '@/constants/languages';
 
 interface LanguageRowProps {
   item: Language;

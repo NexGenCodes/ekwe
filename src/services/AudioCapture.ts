@@ -1,14 +1,16 @@
-import { Platform } from 'react-native';
-import { EkweError } from 'src/constants/errors';
-import { VolumeManager } from 'src/services/VolumeManager';
-import { Result, ok, err } from 'src/types/Result';
+import * as Haptics from 'expo-haptics';
+import { Platform, Alert, Linking } from 'react-native';
+
+import AudioService from './AudioService';
+
+import { EkweError } from '@/constants/errors';
+import { VolumeManager } from '@/services/VolumeManager';
+import { Result, ok, err } from '@/types/Result';
 import {
   attachAudioEffects,
   releaseAudioEffects,
-} from 'src/utils/AudioEffectsModule';
-import { validateSharedAudio } from 'src/utils/fileValidation';
-
-import AudioService from './AudioService';
+} from '@/utils/AudioEffectsModule';
+import { validateSharedAudio } from '@/utils/fileValidation';
 
 export interface CaptureSession {
   sessionId: string;
@@ -34,9 +36,21 @@ class AudioCaptureClass {
    */
   async requestPermission(): Promise<Result<boolean, EkweError>> {
     try {
-      const granted = await AudioService.requestPermission();
-      if (!granted) return err(EkweError.PERMISSION_MIC);
-      return ok(true);
+      const status = await AudioService.requestPermission();
+      if (status === 'Granted') return ok(true);
+
+      if (status === 'Denied' || status === 'Restricted') {
+        Alert.alert(
+          'Microphone Required',
+          'Ekwe needs microphone access to record and translate voice notes. Please enable it in Settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ],
+        );
+      }
+
+      return err(EkweError.PERMISSION_MIC);
     } catch {
       return err(EkweError.PERMISSION_MIC);
     }
@@ -47,8 +61,8 @@ class AudioCaptureClass {
    */
   async checkPermission(): Promise<Result<boolean, EkweError>> {
     try {
-      const granted = await AudioService.checkPermission();
-      return ok(granted);
+      const status = await AudioService.checkPermission();
+      return ok(status === 'Granted');
     } catch {
       return err(EkweError.PERMISSION_MIC);
     }
@@ -61,7 +75,8 @@ class AudioCaptureClass {
     sessionId: string,
     onMetering: (amplitude: number) => void,
   ): Promise<Result<void, EkweError>> {
-    if (AudioService.isRecording()) {
+    const isAlreadyRecording = AudioService.isRecording();
+    if (isAlreadyRecording) {
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
 
@@ -72,27 +87,34 @@ class AudioCaptureClass {
     await VolumeManager.raiseVolumeIfNeeded();
 
     try {
-      await AudioService.startRecording();
-
       this.currentSessionId = sessionId;
       this.meteringData = [];
+
+      await AudioService.startRecording();
+
+      // Pro-level haptic feedback
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       // Attach Android audio effects if session 0 is supported
       if (Platform.OS === 'android') {
         await attachAudioEffects(0);
       }
 
-      // Begin metering polling at ~60fps to sync with display refresh rate.
+      // Begin metering polling at ~30fps to reduce JS thread load while maintaining visual smoothness.
       this.meteringInterval = setInterval(() => {
         const db = AudioService.getMetering();
-        this.meteringData.push(db);
+        // db is typically -160 to 0
         const normalized = Math.max(0, Math.min(1, (db + 60) / 60));
+
+        this.meteringData.push(db);
         onMetering(normalized);
         this.notifyListeners(normalized);
-      }, 16);
+      }, 32);
 
       return ok(undefined);
     } catch {
+      this.currentSessionId = null;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
   }
@@ -101,7 +123,9 @@ class AudioCaptureClass {
    * Stops the current recording session.
    */
   async stopRecording(): Promise<Result<RecordingResult, EkweError>> {
-    if (!AudioService.isRecording() || this.currentSessionId === null) {
+    const sessionId = this.currentSessionId;
+    const isRecording = AudioService.isRecording();
+    if (!isRecording || !sessionId) {
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
 
@@ -114,6 +138,7 @@ class AudioCaptureClass {
       const { path, duration } = await AudioService.stopRecording();
 
       if (duration < 500) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         return err(EkweError.TOO_SHORT);
       }
 
@@ -121,7 +146,7 @@ class AudioCaptureClass {
         uri: path,
         durationMs: duration,
         meteringData: [...this.meteringData],
-        sessionId: this.currentSessionId,
+        sessionId,
       };
 
       this.currentSessionId = null;
@@ -133,9 +158,13 @@ class AudioCaptureClass {
         await releaseAudioEffects();
       }
 
+      // Success feedback
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
       return ok(result);
     } catch {
       this.currentSessionId = null;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return err(EkweError.INTERRUPTED);
     }
   }
@@ -172,8 +201,9 @@ class AudioCaptureClass {
    */
   async processSharedFile(
     uri: string,
+    mimeType?: string,
   ): Promise<Result<{ uri: string; durationMs: number }, EkweError>> {
-    const validationResult = await validateSharedAudio(uri);
+    const validationResult = await validateSharedAudio(uri, mimeType);
     if (!validationResult.ok) {
       return err(validationResult.error);
     }

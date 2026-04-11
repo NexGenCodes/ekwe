@@ -4,9 +4,10 @@ import { useColorScheme } from 'nativewind';
 import React, { useEffect, useMemo } from 'react';
 import { View, Text, Pressable, Platform } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
-import { getColor } from 'src/constants/colors';
 
 import { EkweBannerProps } from './EkweBanner.types';
+
+import { getColor } from '@/constants/colors';
 
 export const EkweBanner = ({
   title,

@@ -1,10 +1,13 @@
-import { File } from 'expo-file-system';
-import { EkweError } from 'src/constants/errors';
-import { LANGUAGES } from 'src/constants/languages';
-import { ProcessedAudio } from 'src/services/AudioProcessor';
-import { Result, ok, err } from 'src/types/Result';
-import { detectLanguage } from 'src/utils/detectLanguage';
-import { removeFillerWords } from 'src/utils/removeFiller';
+import { File as ExpoFile } from 'expo-file-system';
+
+import { EkweError } from '@/constants/errors';
+import { LANGUAGES } from '@/constants/languages';
+import { ProcessedAudio } from '@/services/AudioProcessor';
+import { Result, ok, err } from '@/types/Result';
+import { getAuthHeaders } from '@/utils/authHeaders';
+import { detectLanguage } from '@/utils/detectLanguage';
+import { fetchWithRetry } from '@/utils/networkUtils';
+import { removeFillerWords } from '@/utils/removeFiller';
 
 const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? '';
 
@@ -37,6 +40,10 @@ export interface TranscriptionResult {
   durationSeconds: number;
   isLowQuality: boolean;
   fillerWordsRemoved: number;
+  languageMismatch?: {
+    expected: string;
+    detected: string;
+  };
 }
 
 class TranscriptionServiceClass {
@@ -49,17 +56,21 @@ class TranscriptionServiceClass {
     sourceLang: string,
   ): Promise<Result<TranscriptionResult, EkweError>> {
     try {
-      const file = new File(audio.uri);
+      const file = new ExpoFile(audio.uri);
       if (!file.exists) {
         return err(EkweError.SHARE_COPY_FAIL);
       }
 
-      if (file.size > MAX_FILE_SIZE_BYTES) {
+      const size = file.size;
+      if (size && size > MAX_FILE_SIZE_BYTES) {
         return err(EkweError.FILE_TOO_LARGE);
       }
 
       const workerUrl = getWorkerUrl();
-      if (!workerUrl) return err(EkweError.NETWORK_LOST);
+      if (!workerUrl) {
+        console.error('DEBUG: workerUrl is EMPTY!');
+        return err(EkweError.NETWORK_LOST);
+      }
 
       // Detect MIME type and extension
       const extension = audio.uri.split('.').pop()?.toLowerCase() || 'm4a';
@@ -67,9 +78,6 @@ class TranscriptionServiceClass {
 
       // Build the multipart form
       const formData = new FormData();
-      // Using 'as unknown as any' is discouraged, but FormData in React Native
-      // expects a specific object structure for files which is not in standard TS.
-      // We'll use a type assertion to avoid the lint error.
       formData.append('file', {
         uri: audio.uri,
         type: mimeType,
@@ -79,13 +87,23 @@ class TranscriptionServiceClass {
       formData.append('language', sourceLang || 'auto');
       formData.append('timestamp_granularities', 'word');
 
-      const response = await fetch(`${workerUrl}/transcribe`, {
+      const headers = await getAuthHeaders();
+
+      const response = await fetchWithRetry(`${workerUrl}/transcribe`, {
         method: 'POST',
+        headers,
         body: formData,
+        retries: 3,
+        timeout: 45000,
       });
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
+        console.error(
+          'Transcription FAIL: non-ok response',
+          response.status,
+          body,
+        );
         return this.mapErrorCode(body.error ?? 'EKWE_TRANSCRIPTION_FAIL');
       }
 
@@ -102,7 +120,8 @@ class TranscriptionServiceClass {
         sourceLang,
         audio,
       );
-    } catch {
+    } catch (e: any) {
+      console.error('Transcription FAIL: exception', e.message);
       return err(EkweError.NETWORK_LOST);
     }
   }
@@ -165,11 +184,25 @@ class TranscriptionServiceClass {
       durationSeconds: audio.durationMs / 1000,
       isLowQuality: audio.averageDb < -60, // Recalibrated for dB
       fillerWordsRemoved,
+      languageMismatch: this.getLanguageMismatch(returnedLang, sourceLang),
     });
   }
 
+  private getLanguageMismatch(detected: string, expected: string) {
+    if (expected === 'auto' || !detected) return undefined;
+
+    // Normalize (some providers return 'en', some 'english')
+    const d = detected.toLowerCase();
+    const e = expected.toLowerCase();
+
+    if (d !== e && d.substring(0, 2) !== e.substring(0, 2)) {
+      return { expected, detected };
+    }
+    return undefined;
+  }
+
   /**
-   * Detects language using franc-min via shared utility.
+   * Detects language via shared utility.
    */
   detectLanguage(text: string): string {
     return detectLanguage(text);
@@ -206,6 +239,7 @@ class TranscriptionServiceClass {
       EKWE_SHARE_COPY_FAIL: EkweError.SHARE_COPY_FAIL,
       EKWE_EMPTY_TRANSCRIPT: EkweError.EMPTY_TRANSCRIPT,
       EKWE_TRANSCRIPTION_FAIL: EkweError.TRANSCRIPTION_FAIL,
+      EKWE_TRANSCRIBE_TIMEOUT: EkweError.TRANSCRIBE_TIMEOUT,
     };
     return err(map[code] ?? EkweError.TRANSCRIPTION_FAIL);
   }

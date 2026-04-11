@@ -1,11 +1,11 @@
 import { useCallback, useEffect } from 'react';
-import { EkweError } from 'src/constants/errors';
-import { AudioCapture } from 'src/services/AudioCapture';
-import { AudioProcessor } from 'src/services/AudioProcessor';
-import { useAudioStore } from 'src/store';
-import { RecordingState } from 'src/store/audioSlice';
-import { Result, ok, err } from 'src/types/Result';
-import { v4 as uuidv4 } from 'uuid';
+
+import { EkweError } from '@/constants/errors';
+import { AudioCapture } from '@/services/AudioCapture';
+import { AudioProcessor } from '@/services/AudioProcessor';
+import { useAudioStore } from '@/store';
+import { RecordingState } from '@/store/audioSlice';
+import { Result, ok, err } from '@/types/Result';
 
 export interface UseAudioCaptureReturn {
   startRecording: () => Promise<Result<void, EkweError>>;
@@ -57,7 +57,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
 
-    const sessionId = uuidv4();
+    const sessionId = crypto.randomUUID();
     setSessionId(sessionId);
     setRecordingState(RecordingState.Recording);
 
