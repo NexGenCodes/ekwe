@@ -12,6 +12,13 @@ buildscript {
 group = 'expo.modules.ekwenative'
 version = '0.7.10'
 
+dependencies {
+  implementation "androidx.cardview:cardview:1.0.0"
+  implementation "androidx.lifecycle:lifecycle-process:2.8.7"
+  // Ensure React Native constants and ReactActivity are accessible
+  implementation "com.facebook.react:react-android"
+}
+
 android {
   namespace "expo.modules.ekwenative"
   defaultConfig {

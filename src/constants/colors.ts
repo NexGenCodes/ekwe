@@ -3,6 +3,9 @@
 // Palette: blue primary, black/white, + status colors. That's it.
 
 export const colors = {
+  // WARNING [NATIVE SYNC]: If you change 'primary.dark' (#1A7EC8), you MUST manually 
+  // update the hex color in `ShareActivity.kt` down in the `expo.modules.ekwenative` folder.
+  // Kotlin requires a hardcoded hex for the instant-boot "Echo" native spinner.
   primary: { DEFAULT: '#0A1F30', dark: '#1A7EC8' }, // Navy light, Accent Blue dark
   onPrimary: { DEFAULT: '#FFFFFF', dark: '#FFFFFF' },
   background: { DEFAULT: '#FFFFFF', dark: '#09090B' }, // Pure white light, premium true OLED-friendly deep Zinc

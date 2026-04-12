@@ -15,9 +15,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { ThemeSync } from '@/components';
-import { BubbleOverlay } from '@/components/bubble/BubbleOverlay';
+import { EchoSheet } from '@/components/EchoSheet';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
-import { SharedVoiceNoteOverlay } from '@/components/overlay/SharedVoiceNoteOverlay';
 import { ShareIntentProvider } from '@/components/providers/ShareIntentProvider';
 import { colors, getColor } from '@/constants/colors';
 import { useAuth } from '@/hooks/useAuth';
@@ -29,6 +28,7 @@ import {
   configureNotifications,
   registerNotificationCategories,
 } from '@/utils/IosNotification';
+import { LensBubble } from '@/components/LensBubble.android';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -82,7 +82,7 @@ function InnerLayout() {
                 usage and ensure context exclusivity.
               */
               <View className="flex-1">
-                <SharedVoiceNoteOverlay />
+                <EchoSheet />
               </View>
             ) : (
               /* Normal App Flow */
@@ -132,8 +132,8 @@ function InnerLayout() {
                     </>
                   )}
                 </Stack>
-                <BubbleOverlay />
-                <SharedVoiceNoteOverlay />
+                <LensBubble />
+                <EchoSheet />
               </>
             )}
           </View>
@@ -165,7 +165,7 @@ export default function RootLayout() {
     activate();
 
     return (): void => {
-      deactivateKeepAwake().catch(() => {});
+      deactivateKeepAwake().catch(() => { });
     };
   }, []);
 

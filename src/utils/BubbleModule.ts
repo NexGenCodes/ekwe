@@ -13,7 +13,7 @@ export const BubbleNative = {
     try {
       return await EkweNative.hasOverlayPermission();
     } catch (e) {
-      console.warn('[BubbleModule] hasOverlayPermission error:', e);
+      console.warn('[BubbleNative] hasOverlayPermission error:', e);
       return false;
     }
   },
@@ -22,31 +22,64 @@ export const BubbleNative = {
     try {
       await EkweNative.requestOverlayPermission();
     } catch (e) {
-      console.warn('[BubbleModule] requestOverlayPermission error:', e);
+      console.warn('[BubbleNative] requestOverlayPermission error:', e);
     }
   },
 
-  async startBubbleService(): Promise<Result<void, EkweError>> {
+  async showBubble(x: number = 100, y: number = 100): Promise<Result<void, EkweError>> {
     try {
-      await EkweNative.startBubbleService();
+      await EkweNative.showBubble(x, y);
       return ok(undefined);
     } catch {
       return err(EkweError.PERMISSION_OVERLAY);
     }
   },
 
-  async stopBubbleService(): Promise<void> {
+  async dismissBubble(): Promise<void> {
     try {
-      await EkweNative.stopBubbleService();
+      await EkweNative.dismissBubble();
     } catch (e) {
-      console.warn('[BubbleModule] stopBubbleService error:', e);
+      console.warn('[BubbleNative] dismissBubble error:', e);
+    }
+  },
+
+  async expandBubble(): Promise<void> {
+    try {
+      await EkweNative.expandBubble();
+    } catch (e) {
+      console.warn('[BubbleNative] expandBubble error:', e);
+    }
+  },
+
+  async collapseBubble(): Promise<void> {
+    try {
+      await EkweNative.collapseBubble();
+    } catch (e) {
+      console.warn('[BubbleNative] collapseBubble error:', e);
+    }
+  },
+
+  async showOverlay(audioPath: string, sourceApp: string): Promise<Result<void, EkweError>> {
+    try {
+      await EkweNative.showOverlay(audioPath, sourceApp);
+      return ok(undefined);
+    } catch (e) {
+      console.warn('[BubbleNative] showOverlay error:', e);
+      return err(EkweError.PROCESSOR_FAIL);
+    }
+  },
+
+  async dismissOverlay(): Promise<void> {
+    try {
+      await EkweNative.dismissOverlay();
+    } catch (e) {
+      console.warn('[BubbleNative] dismissOverlay error:', e);
     }
   },
 
   async getSavedPosition(): Promise<SavedPosition | null> {
     try {
-      const pos = await EkweNative.getSavedPosition();
-      return pos;
+      return await EkweNative.getSavedPosition();
     } catch {
       return null;
     }
@@ -56,15 +89,7 @@ export const BubbleNative = {
     try {
       await EkweNative.savePosition(x, y);
     } catch (e) {
-      console.warn('[BubbleModule] savePosition error:', e);
-    }
-  },
-
-  async updateVisibility(visible: boolean): Promise<void> {
-    try {
-      await EkweNative.updateBubbleVisibility(visible);
-    } catch (e) {
-      console.warn('[BubbleModule] updateVisibility error:', e);
+      console.warn('[BubbleNative] savePosition error:', e);
     }
   },
 
@@ -73,9 +98,9 @@ export const BubbleNative = {
     data?: string,
   ): Promise<void> {
     try {
-      await EkweNative.updateBubbleState(mode, data);
+      await EkweNative.updateBubbleMode(mode, data);
     } catch (e) {
-      console.warn('[BubbleModule] updateState error:', e);
+      console.warn('[BubbleNative] updateState error:', e);
     }
   },
 
@@ -83,7 +108,7 @@ export const BubbleNative = {
     try {
       await EkweNative.requestMediaProjection();
     } catch (e) {
-      console.warn('[BubbleModule] requestMediaProjection error:', e);
+      console.warn('[BubbleNative] requestMediaProjection error:', e);
     }
   },
 
@@ -91,18 +116,7 @@ export const BubbleNative = {
     try {
       await EkweNative.stopAudioCapture();
     } catch (e) {
-      console.warn('[BubbleModule] stopAudioCapture error:', e);
-    }
-  },
-
-  async showFloatingCard(
-    transcription: string,
-    translation: string,
-  ): Promise<void> {
-    try {
-      await EkweNative.showFloatingCard(transcription, translation);
-    } catch (e) {
-      console.warn('[BubbleModule] showFloatingCard error:', e);
+      console.warn('[BubbleNative] stopAudioCapture error:', e);
     }
   },
 
@@ -110,8 +124,17 @@ export const BubbleNative = {
     try {
       return await EkweNative.resolveContentUri(uri);
     } catch (e) {
-      console.warn('[BubbleModule] resolveContentUri error:', e);
+      console.warn('[BubbleNative] resolveContentUri error:', e);
       return null;
     }
   },
+
+  async getWindowState(): Promise<string> {
+    try {
+      return await EkweNative.getWindowState();
+    } catch (e) {
+      console.warn('[BubbleNative] getWindowState error:', e);
+      return 'IDLE';
+    }
+  }
 };

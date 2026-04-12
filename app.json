@@ -80,11 +80,7 @@
       [
         "expo-share-intent",
         {
-          "androidIntentFilters": [
-            "text/plain", 
-            "audio/*", 
-            "application/octet-stream"
-          ],
+          "androidIntentFilters": [],
           "iosActivationRules": {
             "NSExtensionActivationSupportsFileWithMaxCount": 1,
             "NSExtensionActivationSupportsWebURLWithMaxCount": 1,

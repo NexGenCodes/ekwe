@@ -32,6 +32,7 @@ export interface AudioState {
   overlayStep: OverlayStep;
   overlayFileUri: string | null;
   overlayMimeType: string | null;
+  overlaySourceApp: string | null;
   activeFloatingHead: FloatingHeadType;
 }
 
@@ -49,6 +50,7 @@ export interface AudioActions {
     step?: OverlayStep,
     uri?: string,
     mime?: string,
+    sourceApp?: string,
   ) => void;
   setActiveFloatingHead: (head: FloatingHeadType) => void;
   resetAudioState: () => void;
@@ -67,6 +69,7 @@ const initialAudioState: AudioState = {
   overlayStep: OverlayStep.Pick,
   overlayFileUri: null,
   overlayMimeType: null,
+  overlaySourceApp: null,
   activeFloatingHead: 'none',
 };
 
@@ -89,12 +92,14 @@ export const createAudioSlice = (
     overlayStep,
     overlayFileUri,
     overlayMimeType,
+    overlaySourceApp,
   ): void =>
     set((state) => ({
       showOverlay,
       overlayStep: overlayStep ?? state.overlayStep,
       overlayFileUri: overlayFileUri ?? state.overlayFileUri,
       overlayMimeType: overlayMimeType ?? state.overlayMimeType,
+      overlaySourceApp: overlaySourceApp ?? state.overlaySourceApp,
       activeFloatingHead: showOverlay
         ? 'card'
         : state.activeFloatingHead === 'card'

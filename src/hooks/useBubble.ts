@@ -38,11 +38,13 @@ export const useBubble = (): UseBubbleReturn => {
 
     const syncState = async () => {
       // 1. Handle Visibility
-      const shouldHide =
-        strategy.hideBubble || strategy.packageName === 'unknown';
-      await BubbleNative.updateVisibility(!shouldHide);
-
-      if (shouldHide) return;
+      const shouldHide = strategy.hideBubble || strategy.packageName === 'unknown';
+      if (shouldHide) {
+        await BubbleNative.dismissBubble();
+        return;
+      } else {
+        await BubbleNative.showBubble();
+      }
 
       // 2. Handle Magic Mode for Messaging Apps
       if (strategy.recommendedMode === 'MEDIA_SCAN') {
@@ -103,7 +105,7 @@ export const useBubble = (): UseBubbleReturn => {
 
       setBubbleEnabled(true);
       setActiveFloatingHead('bubble');
-      const serviceResult = await BubbleNative.startBubbleService();
+      const serviceResult = await BubbleNative.showBubble();
       if (!serviceResult.ok) {
         setBubbleEnabled(false);
         setActiveFloatingHead('none');
@@ -125,7 +127,7 @@ export const useBubble = (): UseBubbleReturn => {
     setBubbleEnabled(false);
     setActiveFloatingHead('none');
     if (Platform.OS === 'android') {
-      await BubbleNative.stopBubbleService();
+      await BubbleNative.dismissBubble();
     }
   }, [setBubbleEnabled, setActiveFloatingHead]);
 

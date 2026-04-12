@@ -65,7 +65,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
       sessionId,
       (_amplitude) => {
         // Amplitude values drive the AudioWaveform component if connected.
-        // Currently handled directly by the BubbleOverlay animations.
+        // Currently handled directly by the LensBubble animations.
       },
     );
 

@@ -2,13 +2,11 @@ import React from 'react';
 import { Text } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 
-interface FloatingResultCardProps {
+interface LensCardProps {
   transcript: string;
 }
 
-export const FloatingResultCard: React.FC<FloatingResultCardProps> = ({
-  transcript,
-}) => {
+export function LensCard({ transcript }: LensCardProps) {
   return (
     <Animated.View
       entering={FadeInDown}
@@ -20,4 +18,4 @@ export const FloatingResultCard: React.FC<FloatingResultCardProps> = ({
       </Text>
     </Animated.View>
   );
-};
+}

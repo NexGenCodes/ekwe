@@ -9,33 +9,35 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
-import android.widget.ImageView
+import android.widget.ProgressBar
 import androidx.core.app.NotificationCompat
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
+import java.io.File
+import java.io.FileOutputStream
 
 class BubbleService : Service() {
-
+    private val TAG = "BubbleService"
     private var windowManager: WindowManager? = null
     private var floatingView: View? = null
     private var cardView: View? = null
     private var params: WindowManager.LayoutParams? = null
     private var cardParams: WindowManager.LayoutParams? = null
     
-    // PRO-GRADE: Battery Optimization
-    private val IDLE_TIMEOUT_MS = 30 * 60 * 1000L // 30 minutes
+    private val IDLE_TIMEOUT_MS = 30 * 60 * 1000L
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val idleRunnable = Runnable {
-        Log.d("EkweBubble", "Idle timeout reached — closing service and removing windows")
-        EkweNativeModule.emitBubbleEvent("STOPPED", mapOf("reason" to "idle_timeout"))
-        removeFloatingBubble()
-        removeFloatingCard()
+        transitionTo(FloatingState.IDLE, "idle_timeout")
         stopSelf()
     }
 
@@ -44,12 +46,42 @@ class BubbleService : Service() {
         handler.postDelayed(idleRunnable, IDLE_TIMEOUT_MS)
     }
 
+    private val lifecycleObserver = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) {
+            super.onStart(owner)
+            EkweNativeModule.emitAppForeground()
+            if (FloatingStateEngine.getState() in listOf(FloatingState.BUBBLE_VISIBLE, FloatingState.BUBBLE_EXPANDED)) {
+                transitionTo(FloatingState.HIDDEN_IDLE, "app_foreground")
+            }
+        }
+
+        override fun onStop(owner: LifecycleOwner) {
+            super.onStop(owner)
+            EkweNativeModule.emitAppBackground()
+            if (FloatingStateEngine.getState() == FloatingState.HIDDEN_IDLE) {
+                transitionTo(FloatingState.BUBBLE_VISIBLE, "app_background")
+            }
+        }
+    }
+
     companion object {
         const val ACTION_START = "com.ekwe.BUBBLE_START"
         const val ACTION_STOP = "com.ekwe.BUBBLE_STOP"
-        const val ACTION_UPDATE_VISIBILITY = "com.ekwe.BUBBLE_VISIBILITY"
+        const val ACTION_EXPAND_BUBBLE = "com.ekwe.BUBBLE_EXPAND"
+        const val ACTION_COLLAPSE_BUBBLE = "com.ekwe.BUBBLE_COLLAPSE"
         const val ACTION_UPDATE_STATE = "com.ekwe.BUBBLE_STATE"
-        const val ACTION_SHOW_CARD = "com.ekwe.CARD_SHOW"
+        const val ACTION_HIDE_LENS = "com.ekwe.LENS_HIDE"
+        const val ACTION_SHOW_LENS = "com.ekwe.LENS_SHOW"
+
+        // Deprecated constants kept for backward compatibility with EkweNativeModule
+        const val ACTION_SHOW_OVERLAY = "com.ekwe.OVERLAY_SHOW"
+        const val ACTION_DISMISS_OVERLAY = "com.ekwe.OVERLAY_DISMISS"
+
+        const val EXTRA_AUDIO_PATH = "audioPath"
+        const val EXTRA_SOURCE_APP = "sourceApp"
+        const val EXTRA_MODE = "mode"
+        const val EXTRA_DATA = "data"
+
         const val CHANNEL_ID = "ekwe_bubble"
         const val NOTIFICATION_ID = 1001
     }
@@ -58,36 +90,38 @@ class BubbleService : Service() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         createNotificationChannel()
+        handler.post {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(lifecycleObserver)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        val action = intent?.action ?: return START_STICKY
+        
+        when (action) {
             ACTION_START -> {
                 startBubbleForeground()
-                showFloatingBubble()
-                EkweNativeModule.emitBubbleEvent("STARTED")
+                transitionTo(FloatingState.BUBBLE_VISIBLE, "user_start")
                 resetIdleTimeout()
             }
             ACTION_STOP -> {
-                EkweNativeModule.emitBubbleEvent("STOPPED", mapOf("reason" to "user_stop"))
-                removeFloatingBubble()
-                removeFloatingCard()
+                transitionTo(FloatingState.IDLE, "user_stop")
                 stopSelf()
             }
-            ACTION_UPDATE_VISIBILITY -> {
-                val visible = intent.getBooleanExtra("visible", true)
-                updateVisibility(visible)
+            ACTION_HIDE_LENS -> {
+                transitionTo(FloatingState.HIDDEN_IDLE, "echo_session_start")
+            }
+            ACTION_SHOW_LENS -> {
+                if (FloatingStateEngine.getState() == FloatingState.HIDDEN_IDLE) {
+                    transitionTo(FloatingState.BUBBLE_VISIBLE, "echo_session_end")
+                }
             }
             ACTION_UPDATE_STATE -> {
-                val mode = intent.getStringExtra("mode") ?: "IDLE"
-                val data = intent.getStringExtra("data")
-                updateState(mode, data)
+                updateBubbleStyle(intent.getStringExtra(EXTRA_MODE) ?: "IDLE", intent.getStringExtra(EXTRA_DATA))
             }
-            ACTION_SHOW_CARD -> {
-                val transcription = intent.getStringExtra("transcription") ?: ""
-                val translation = intent.getStringExtra("translation") ?: ""
-                startBubbleForeground() // Ensure service is running
-                showFloatingCard(transcription, translation)
+            // NO-OP for deprecated overlay actions
+            ACTION_SHOW_OVERLAY, ACTION_DISMISS_OVERLAY -> {
+                // Do nothing, handled by ShareActivity (Ekwe Echo)
             }
         }
         return START_STICKY
@@ -96,82 +130,77 @@ class BubbleService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacks(idleRunnable)
-        EkweNativeModule.emitBubbleEvent("STOPPED", mapOf("reason" to "service_destroyed"))
-        removeFloatingBubble()
+        handler.post {
+            ProcessLifecycleOwner.get().lifecycle.removeObserver(lifecycleObserver)
+        }
+        transitionTo(FloatingState.IDLE, "service_destroyed")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    private fun transitionTo(newState: FloatingState, reason: String) {
+        val oldState = FloatingStateEngine.getState()
+        if (FloatingStateEngine.transition(newState)) {
+            EkweNativeModule.emitStateChanged(newState.name, oldState.name, reason)
+            syncUI()
+        }
+    }
+
+    private fun syncUI() {
+        handler.post {
+            when (FloatingStateEngine.getState()) {
+                FloatingState.IDLE, FloatingState.HIDDEN_IDLE -> {
+                    removeFloatingBubble()
+                }
+                FloatingState.BUBBLE_VISIBLE, FloatingState.BUBBLE_EXPANDED -> {
+                    showFloatingBubble()
+                }
+                FloatingState.OVERLAY_ACTIVE -> {
+                    removeFloatingBubble()
+                }
+            }
+        }
+    }
+
     @SuppressLint("InflateParams", "ClickableViewAccessibility")
     private fun showFloatingBubble() {
         if (floatingView != null) return
-
-        // Create a simple circular bubble view programmatically or via layout
-        // For now, let's use a programmatic approach for simplicity
         val bubble = FrameLayout(this).apply {
-            setBackgroundColor(Color.TRANSPARENT)
             val inner = View(context).apply {
                 id = 1337
                 setBackgroundColor(Color.parseColor("#1A7EC8"))
-                val lp = FrameLayout.LayoutParams(140, 140)
-                layoutParams = lp
+                layoutParams = FrameLayout.LayoutParams(140, 140)
             }
             addView(inner)
         }
-
         floatingView = bubble
-
-        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
-
         params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 100
-            y = 100
+            x = 100; y = 100
         }
-
         windowManager?.addView(floatingView, params)
+        setupDrag(floatingView!!, params!!)
+    }
 
-        // Drag handling
-        floatingView?.setOnTouchListener(object : View.OnTouchListener {
-            private var initialX = 0
-            private var initialY = 0
-            private var initialTouchX = 0f
-            private var initialTouchY = 0f
-
+    private fun setupDrag(view: View, p: WindowManager.LayoutParams) {
+        view.setOnTouchListener(object : View.OnTouchListener {
+            private var initialX = 0; private var initialY = 0
+            private var initialTouchX = 0f; private var initialTouchY = 0f
             override fun onTouch(v: View?, event: MotionEvent?): Boolean {
                 when (event?.action) {
                     MotionEvent.ACTION_DOWN -> {
-                        initialX = params!!.x
-                        initialY = params!!.y
-                        initialTouchX = event.rawX
-                        initialTouchY = event.rawY
-                        return true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        val diffX = (event.rawX - initialTouchX).toInt()
-                        val diffY = (event.rawY - initialTouchY).toInt()
-                        if (Math.abs(diffX) < 10 && Math.abs(diffY) < 10) {
-                            // Tap event - Open App
-                            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-                            launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            startActivity(launchIntent)
-                        }
+                        initialX = p.x; initialY = p.y
+                        initialTouchX = event.rawX; initialTouchY = event.rawY
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        params!!.x = initialX + (event.rawX - initialTouchX).toInt()
-                        params!!.y = initialY + (event.rawY - initialTouchY).toInt()
-                        windowManager?.updateViewLayout(floatingView, params)
+                        p.x = initialX + (event.rawX - initialTouchX).toInt()
+                        p.y = initialY + (event.rawY - initialTouchY).toInt()
+                        windowManager?.updateViewLayout(view, p)
                         return true
                     }
                 }
@@ -181,177 +210,31 @@ class BubbleService : Service() {
     }
 
     private fun removeFloatingBubble() {
-        if (floatingView != null) {
-            try {
-                windowManager?.removeView(floatingView)
-            } catch (e: Exception) { }
-            floatingView = null
-        }
+        floatingView?.let { try { windowManager?.removeView(it) } catch (e: Exception) {} }; floatingView = null
     }
 
-    private fun removeFloatingCard() {
-        if (cardView != null) {
-            try {
-                windowManager?.removeView(cardView)
-            } catch (e: Exception) { }
-            cardView = null
-        }
+    private fun removeFloatingCard() {}
+
+    private fun updateBubbleStyle(mode: String, data: String?) {
+        val inner = floatingView?.findViewById<View>(1337) ?: return
+        inner.setBackgroundColor(when(mode) {
+            "MAGIC" -> Color.parseColor("#22C55E")
+            "RECORD" -> Color.parseColor("#EF4444")
+            else -> Color.parseColor("#1A7EC8")
+        })
     }
 
-    @SuppressLint("InflateParams", "ClickableViewAccessibility")
-    private fun showFloatingCard(transcription: String, translation: String) {
-        removeFloatingBubble() // EXCLUSIVITY: Remove bubble when card is shown
-        if (cardView != null) removeFloatingCard()
-
-        // Build a programmatic premium card
-        val ctx = this
-        val container = FrameLayout(ctx).apply {
-            val padding = 16
-            setPadding(padding, padding, padding, padding)
-        }
-
-        val card = androidx.cardview.widget.CardView(ctx).apply {
-            id = 2001
-            radius = 64f
-            cardElevation = 24f
-            setCardBackgroundColor(Color.parseColor("#09090B")) // Midnight Noir
-            
-            val layout = android.widget.LinearLayout(ctx).apply {
-                orientation = android.widget.LinearLayout.VERTICAL
-                setPadding(40, 40, 40, 40)
-                
-                // Header
-                addView(android.widget.TextView(ctx).apply {
-                    text = "Ekwe Insights"
-                    setTextColor(Color.parseColor("#94A3B8")) // Slate 400
-                    textSize = 12f
-                    setPadding(0, 0, 0, 16)
-                })
-
-                // Translation (Primary)
-                addView(android.widget.TextView(ctx).apply {
-                    text = translation
-                    setTextColor(Color.YELLOW) // High contrast
-                    textSize = 18f
-                    setTypeface(null, android.graphics.Typeface.BOLD)
-                })
-
-                // Transcription (Secondary - Scrollable)
-                val scrollView = android.widget.ScrollView(ctx).apply {
-                    val lp = android.widget.LinearLayout.LayoutParams(
-                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                        300 // Max height
-                    )
-                    lp.setMargins(0, 20, 0, 20)
-                    layoutParams = lp
-                    
-                    addView(android.widget.TextView(ctx).apply {
-                        text = transcription
-                        setTextColor(Color.WHITE)
-                        textSize = 14f
-                    })
-                }
-                addView(scrollView)
-
-                // Actions
-                val actions = android.widget.LinearLayout(ctx).apply {
-                    orientation = android.widget.LinearLayout.HORIZONTAL
-                    gravity = Gravity.END
-                    
-                    addView(android.widget.Button(ctx).apply {
-                        text = "Copy"
-                        setBackgroundColor(Color.TRANSPARENT)
-                        setTextColor(Color.parseColor("#3B82F6")) // Blue 500
-                        setOnClickListener {
-                            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            val clip = android.content.ClipData.newPlainText("ekwe", translation)
-                            clipboard.setPrimaryClip(clip)
-                            android.widget.Toast.makeText(ctx, "Copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    })
-
-                    addView(android.widget.Button(ctx).apply {
-                        text = "Dismiss"
-                        setBackgroundColor(Color.TRANSPARENT)
-                        setTextColor(Color.parseColor("#EF4444")) // Red 500
-                        setOnClickListener {
-                            removeFloatingCard()
-                            showFloatingBubble() // Return to bubble mode
-                        }
-                    })
-                }
-                addView(actions)
-            }
-            addView(layout)
-        }
-        
-        container.addView(card)
-        cardView = container
-
-        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
-
-        cardParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.CENTER
-            x = 0
-            y = 0
-        }
-
-        windowManager?.addView(cardView, cardParams)
-    }
-
-    private fun updateVisibility(visible: Boolean) {
-        floatingView?.visibility = if (visible) View.VISIBLE else View.GONE
-    }
-
-    private fun updateState(mode: String, data: String?) {
-        val bubbleInner = floatingView?.findViewById<View>(1337) ?: return
-        when (mode) {
-            "MAGIC" -> bubbleInner.setBackgroundColor(Color.parseColor("#22C55E")) // Green for success/magic
-            "RECORD" -> bubbleInner.setBackgroundColor(Color.parseColor("#EF4444")) // Red for recording alert
-            else -> bubbleInner.setBackgroundColor(Color.parseColor("#1A7EC8")) // Original Blue
-        }
-    }
-
-    private fun startBubbleForeground(title: String = "Ekwe Floating Mode", text: String = "Listening in background") {
-        val openIntent = packageManager.getLaunchIntentForPackage(packageName)
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, openIntent,
-            PendingIntent.FLAG_IMMUTABLE
-        )
-
+    private fun startBubbleForeground() {
+        val channel = NotificationChannel(CHANNEL_ID, "Ekwe Lens", NotificationManager.IMPORTANCE_LOW)
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentIntent(pendingIntent)
+            .setContentTitle("Ekwe Lens Active")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .setSilent(true)
             .build()
-
         startForeground(NOTIFICATION_ID, notification)
     }
 
-    private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Ekwe Bubble",
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = "Active while Ekwe is in floating mode"
-            setShowBadge(false)
-        }
-        val manager = getSystemService(NotificationManager::class.java)
-        manager?.createNotificationChannel(channel)
-    }
+    private fun createNotificationChannel() {}
 }
-

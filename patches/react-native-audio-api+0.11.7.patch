@@ -308,7 +308,7 @@ new file mode 100644
 index 0000000..0099dec
 --- /dev/null
 +++ b/node_modules/react-native-audio-api/scripts/download-prebuilt-binaries.js
-@@ -0,0 +1,134 @@
+@@ -0,0 +1,165 @@
 +const https = require('https');
 +const fs = require('fs');
 +const path = require('path');
@@ -365,6 +365,21 @@ index 0000000..0099dec
 +    });
 +}
 +
++async function downloadFileWithRetry(url, dest, retries = 3) {
++    for (let i = 0; i < retries; i++) {
++        try {
++            await downloadFile(url, dest);
++            return;
++        } catch (err) {
++            console.error(`Download failed for ${url} (attempt ${i + 1}/${retries}): ${err.message}`);
++            if (i === retries - 1) throw err;
++            const delay = Math.pow(2, i) * 2000;
++            console.log(`Retrying in ${delay}ms...`);
++            await new Promise(resolve => setTimeout(resolve, delay));
++        }
++    }
++}
++
 +function unzipFile(zipPath, destPath) {
 +    console.log(`Unzipping ${path.basename(zipPath)} to ${destPath}`);
 +    if (!fs.existsSync(destPath)) {
@@ -408,6 +423,20 @@ index 0000000..0099dec
 +    for (const name of DOWNLOAD_NAMES) {
 +        const extractedDirName = name.replace('.zip', '');
 +        
++        // Filtering irrelevant platforms to avoid network issues and bloat
++        const isIosFile = name.includes('ios') || name.includes('iphone');
++        const isAndroidFile = name.includes('v7a') || name.includes('v8a') || name === 'x86.zip' || name === 'x86_64.zip' || name === 'jniLibs.zip';
++
++        if (isAndroid && isIosFile) {
++            console.log(`Skipping ${name} - not required for Android build.`);
++            continue;
++        }
++
++        if (!isAndroid && isAndroidFile) {
++            console.log(`Skipping ${name} - not required for iOS build.`);
++            continue;
++        }
++
 +        if ((extractedDirName === 'ffmpeg_ios' || extractedDirName === 'jniLibs') && skipFFmpeg) {
 +            continue;
 +        }
@@ -427,7 +456,7 @@ index 0000000..0099dec
 +
 +        console.log(`Downloading ${name} from ${url}...`);
 +        try {
-+            await downloadFile(url, zipPath);
++            await downloadFileWithRetry(url, zipPath);
 +            unzipFile(zipPath, outputDir);
 +        } catch (err) {
 +            console.error(`Error processing ${name}: ${err.message}`);
@@ -443,6 +472,8 @@ index 0000000..0099dec
 +    console.error(err);
 +    process.exit(1);
 +});
++
++
 diff --git a/node_modules/react-native-audio-api/scripts/validate-worklets-version.js b/node_modules/react-native-audio-api/scripts/validate-worklets-version.js
 index f9ba838..00288c8 100644
 --- a/node_modules/react-native-audio-api/scripts/validate-worklets-version.js

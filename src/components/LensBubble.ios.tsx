@@ -17,7 +17,7 @@ const updateLiveActivity = (_state: RecordingState): void => {
   // Logic placeholder for Live Activity
 };
 
-export const BubbleOverlay = (): React.ReactElement | null => {
+export function LensBubble(): React.ReactElement | null {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const bubbleTheme = bubbleColors(isDark);
@@ -58,35 +58,25 @@ export const BubbleOverlay = (): React.ReactElement | null => {
     return (): void => timer && clearTimeout(timer);
   }, [recordingState, resetAudioState]);
 
-  // THEME COLORS (Pre-calculated for UI thread safety)
+  // THEME COLORS
   const onPrimaryColor = useMemo(() => getColor('onPrimary', isDark), [isDark]);
   const stateColor = useMemo(() => {
     switch (recordingState) {
-      case RecordingState.Recording:
-        return bubbleTheme.recording;
-      case RecordingState.Processing:
-        return bubbleTheme.processing;
-      case RecordingState.Done:
-        return bubbleTheme.done;
-      case RecordingState.Error:
-        return bubbleTheme.error;
-      default:
-        return bubbleTheme.idle;
+      case RecordingState.Recording: return bubbleTheme.recording;
+      case RecordingState.Processing: return bubbleTheme.processing;
+      case RecordingState.Done: return bubbleTheme.done;
+      case RecordingState.Error: return bubbleTheme.error;
+      default: return bubbleTheme.idle;
     }
   }, [recordingState, bubbleTheme]);
 
   const stateLabel = useMemo(() => {
     switch (recordingState) {
-      case RecordingState.Recording:
-        return 'Recording';
-      case RecordingState.Processing:
-        return 'Processing';
-      case RecordingState.Done:
-        return 'Done';
-      case RecordingState.Error:
-        return 'Error';
-      default:
-        return 'Ekwe ready';
+      case RecordingState.Recording: return 'Recording';
+      case RecordingState.Processing: return 'Processing';
+      case RecordingState.Done: return 'Done';
+      case RecordingState.Error: return 'Error';
+      default: return 'Ekwe ready';
     }
   }, [recordingState]);
 
@@ -103,4 +93,4 @@ export const BubbleOverlay = (): React.ReactElement | null => {
       </Text>
     </Animated.View>
   );
-};
+}

@@ -1,39 +1,54 @@
 import { requireNativeModule } from 'expo';
 import type { NativeModule } from 'expo-modules-core';
-
-import type { BubblePosition, AudioEffectsResult } from './EkweNative.types';
+import type { BubblePosition, AudioEffectsResult, FloatingState } from './EkweNative.types';
 
 declare class EkweNativeModule extends NativeModule<{
-  onBubbleStateChanged: (event: { state: string; reason?: string }) => void;
+  // Unified window lifecycle events
+  onStateChanged: (event: { state: FloatingState; previousState: FloatingState; reason?: string }) => void;
+  onIntentQueued: (event: { audioPath: string; sourceApp: string }) => void;
+  onAppForeground: (event: {}) => void;
+  onAppBackground: (event: {}) => void;
+  // Retained from old API
   onForegroundAppChanged: (event: { packageName: string }) => void;
 }> {
-  // Bubble Overlay
+  // --- Bubble ---
   hasOverlayPermission(): Promise<boolean>;
   requestOverlayPermission(): Promise<void>;
-  startBubbleService(): Promise<void>;
-  stopBubbleService(): Promise<void>;
+  showBubble(x: number, y: number): Promise<void>;
+  hideBubble(): Promise<void>; // (Optional synonym for dismissBubble)
+  dismissBubble(): Promise<void>;
+  expandBubble(): Promise<void>;
+  collapseBubble(): Promise<void>;
+  updateBubbleMode(mode: 'RECORD' | 'MAGIC' | 'IDLE', data?: string): Promise<void>;
+
+  // --- Overlay ---
+  showOverlay(audioPath: string, sourceApp: string): Promise<void>;
+  setOverlayHeight(heightPx: number, animated: boolean): Promise<void>;
+  dismissOverlay(): Promise<void>;
+
+  // --- Echo / Loader ---
+  dismissEcho(): Promise<void>;
+  dismissNativeLoader(): Promise<void>;
+
+  // --- State ---
+  getWindowState(): Promise<FloatingState>;
+
+  // --- Position (retained) ---
   getSavedPosition(): Promise<BubblePosition>;
   savePosition(x: number, y: number): Promise<void>;
-  updateBubbleVisibility(visible: boolean): Promise<void>;
-  updateBubbleState(
-    mode: 'RECORD' | 'MAGIC' | 'IDLE',
-    data?: string,
-  ): Promise<void>;
-  showFloatingCard(transcription: string, translation: string): Promise<void>;
 
-  // Content URI Resolution (Android)
+  // --- Content URI Resolution (retained) ---
   resolveContentUri(uri: string): Promise<string | null>;
 
-  // Accessibility & Detection
+  // --- Accessibility (retained) ---
   isAccessibilityEnabled(): Promise<boolean>;
   requestAccessibilityPermission(): Promise<void>;
 
-
-  // System Audio Capture
+  // --- System Audio (retained) ---
   requestMediaProjection(): Promise<void>;
   stopAudioCapture(): Promise<void>;
 
-  // Audio Effects
+  // --- Audio Effects (retained) ---
   attachEffects(audioSessionId: number): Promise<AudioEffectsResult>;
   releaseEffects(): Promise<void>;
 }

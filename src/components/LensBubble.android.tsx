@@ -30,7 +30,7 @@ const SCREEN = Dimensions.get('window');
 const DEFAULT_X = SCREEN.width - BUBBLE_SIZE - 16;
 const DEFAULT_Y = SCREEN.height * 0.3;
 
-export const BubbleOverlay = (): React.ReactElement | null => {
+export function LensBubble(): React.ReactElement | null {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const bubbleTheme = bubbleColors(isDark);
@@ -129,33 +129,11 @@ export const BubbleOverlay = (): React.ReactElement | null => {
     () => liveAmplitude.value,
     (val) => {
       if (recordingState === RecordingState.Recording) {
-        // Snappy springs — low damping + high stiffness = immediate visual response.
-        // Stagger damping across bars for a natural cascade effect.
-        history[4].value = withSpring(val, {
-          damping: 12,
-          stiffness: 300,
-          mass: 0.3,
-        });
-        history[3].value = withSpring(val, {
-          damping: 14,
-          stiffness: 280,
-          mass: 0.3,
-        });
-        history[2].value = withSpring(val, {
-          damping: 16,
-          stiffness: 260,
-          mass: 0.3,
-        });
-        history[1].value = withSpring(val, {
-          damping: 18,
-          stiffness: 240,
-          mass: 0.3,
-        });
-        history[0].value = withSpring(val, {
-          damping: 20,
-          stiffness: 220,
-          mass: 0.3,
-        });
+        history[4].value = withSpring(val, { damping: 12, stiffness: 300, mass: 0.3 });
+        history[3].value = withSpring(val, { damping: 14, stiffness: 280, mass: 0.3 });
+        history[2].value = withSpring(val, { damping: 16, stiffness: 260, mass: 0.3 });
+        history[1].value = withSpring(val, { damping: 18, stiffness: 240, mass: 0.3 });
+        history[0].value = withSpring(val, { damping: 20, stiffness: 220, mass: 0.3 });
       }
     },
     [recordingState],
@@ -171,11 +149,7 @@ export const BubbleOverlay = (): React.ReactElement | null => {
   const spinRotation = useSharedValue(0);
   useEffect(() => {
     if (recordingState === RecordingState.Processing) {
-      spinRotation.value = withRepeat(
-        withTiming(360, { duration: 700 }),
-        -1,
-        false,
-      );
+      spinRotation.value = withRepeat(withTiming(360, { duration: 700 }), -1, false);
     } else {
       cancelAnimation(spinRotation);
       spinRotation.value = 0;
@@ -186,19 +160,14 @@ export const BubbleOverlay = (): React.ReactElement | null => {
     transform: [{ rotate: `${spinRotation.value}deg` }],
   }));
 
-  // THEME COLORS (Pre-calculated for UI thread safety)
+  // THEME COLORS
   const bubbleColorValue = useMemo(() => {
     switch (recordingState) {
-      case RecordingState.Recording:
-        return bubbleTheme.recording;
-      case RecordingState.Processing:
-        return bubbleTheme.processing;
-      case RecordingState.Done:
-        return bubbleTheme.done;
-      case RecordingState.Error:
-        return bubbleTheme.error;
-      default:
-        return bubbleTheme.idle;
+      case RecordingState.Recording: return bubbleTheme.recording;
+      case RecordingState.Processing: return bubbleTheme.processing;
+      case RecordingState.Done: return bubbleTheme.done;
+      case RecordingState.Error: return bubbleTheme.error;
+      default: return bubbleTheme.idle;
     }
   }, [recordingState, bubbleTheme]);
 
@@ -209,29 +178,12 @@ export const BubbleOverlay = (): React.ReactElement | null => {
     bubbleColor.value = withTiming(bubbleColorValue, { duration: 200 });
   }, [bubbleColorValue, bubbleColor]);
 
-  // Sub-component for individual bars to fix hook violation
-  const MeterBar = ({
-    value,
-    color,
-  }: {
-    value: SharedValue<number>;
-    color: string;
-  }): React.ReactElement => {
+  const MeterBar = ({ value, color }: { value: SharedValue<number>; color: string }): React.ReactElement => {
     const animatedStyle = useAnimatedStyle(() => ({
       height: Math.max(4, value.value * 20),
     }));
-
     return (
-      <Animated.View
-        style={[
-          {
-            width: 3,
-            borderRadius: 1.5,
-            backgroundColor: color,
-          },
-          animatedStyle,
-        ]}
-      />
+      <Animated.View style={[{ width: 3, borderRadius: 1.5, backgroundColor: color }, animatedStyle]} />
     );
   };
 
@@ -250,15 +202,9 @@ export const BubbleOverlay = (): React.ReactElement | null => {
     })
     .onEnd(() => {
       isDragging.value = false;
-      const snapX =
-        translateX.value < SCREEN.width / 2
-          ? 16
-          : SCREEN.width - BUBBLE_SIZE - 16;
+      const snapX = translateX.value < SCREEN.width / 2 ? 16 : SCREEN.width - BUBBLE_SIZE - 16;
       translateX.value = withSpring(snapX, { damping: 15 });
-      const clampedY = Math.max(
-        60,
-        Math.min(SCREEN.height - BUBBLE_SIZE - 60, translateY.value),
-      );
+      const clampedY = Math.max(60, Math.min(SCREEN.height - BUBBLE_SIZE - 60, translateY.value));
       translateY.value = withSpring(clampedY, { damping: 15 });
       runOnJS(BubbleNative.savePosition)(snapX, clampedY);
     });
@@ -267,10 +213,7 @@ export const BubbleOverlay = (): React.ReactElement | null => {
   const composed = Gesture.Simultaneous(panGesture, tapGesture);
 
   const bubbleAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-    ],
+    transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
   }));
 
   const pulseAnimatedStyle = useAnimatedStyle(() => ({
@@ -311,31 +254,19 @@ export const BubbleOverlay = (): React.ReactElement | null => {
             bubbleAnimatedStyle,
           ]}
         >
-          {recordingState === RecordingState.Idle && (
-            <MicrophoneIcon size={20} color={onPrimaryColor} />
-          )}
+          {recordingState === RecordingState.Idle && <MicrophoneIcon size={20} color={onPrimaryColor} />}
           {recordingState === RecordingState.Recording && (
             <View className="flex-row items-center gap-0.5">
-              {history.map((h, i) => (
-                <MeterBar key={i} value={h} color={onPrimaryColor} />
-              ))}
+              {history.map((h, i) => <MeterBar key={i} value={h} color={onPrimaryColor} />)}
             </View>
           )}
           {recordingState === RecordingState.Processing && (
-            <SpinnerIcon
-              size={20}
-              color={onPrimaryColor}
-              animatedStyle={spinnerStyle}
-            />
+            <SpinnerIcon size={20} color={onPrimaryColor} animatedStyle={spinnerStyle} />
           )}
-          {recordingState === RecordingState.Done && (
-            <CheckmarkIcon size={20} color={onPrimaryColor} />
-          )}
-          {recordingState === RecordingState.Error && (
-            <ExclamationIcon size={20} color={onPrimaryColor} />
-          )}
+          {recordingState === RecordingState.Done && <CheckmarkIcon size={20} color={onPrimaryColor} />}
+          {recordingState === RecordingState.Error && <ExclamationIcon size={20} color={onPrimaryColor} />}
         </Animated.View>
       </GestureDetector>
     </View>
   );
-};
+}
