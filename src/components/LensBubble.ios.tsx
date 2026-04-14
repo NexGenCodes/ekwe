@@ -1,4 +1,3 @@
-import { useColorScheme } from 'nativewind';
 import React, { useEffect, useMemo } from 'react';
 import { Text } from 'react-native';
 import Animated, {
@@ -9,6 +8,7 @@ import Animated, {
 import { MicrophoneIcon } from '@/assets/icons/MicrophoneIcon';
 import { bubbleColors, getColor } from '@/constants/colors';
 import { useMetering } from '@/hooks';
+import { useTheme } from '@/hooks/useTheme';
 import { useAudioStore, useSettingsStore } from '@/store';
 import { RecordingState } from '@/store/audioSlice';
 
@@ -18,7 +18,7 @@ const updateLiveActivity = (_state: RecordingState): void => {
 };
 
 export function LensBubble(): React.ReactElement | null {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
   const bubbleTheme = bubbleColors(isDark);
   const recordingState = useAudioStore((s) => s.recordingState);
@@ -62,21 +62,31 @@ export function LensBubble(): React.ReactElement | null {
   const onPrimaryColor = useMemo(() => getColor('onPrimary', isDark), [isDark]);
   const stateColor = useMemo(() => {
     switch (recordingState) {
-      case RecordingState.Recording: return bubbleTheme.recording;
-      case RecordingState.Processing: return bubbleTheme.processing;
-      case RecordingState.Done: return bubbleTheme.done;
-      case RecordingState.Error: return bubbleTheme.error;
-      default: return bubbleTheme.idle;
+      case RecordingState.Recording:
+        return bubbleTheme.recording;
+      case RecordingState.Processing:
+        return bubbleTheme.processing;
+      case RecordingState.Done:
+        return bubbleTheme.done;
+      case RecordingState.Error:
+        return bubbleTheme.error;
+      default:
+        return bubbleTheme.idle;
     }
   }, [recordingState, bubbleTheme]);
 
   const stateLabel = useMemo(() => {
     switch (recordingState) {
-      case RecordingState.Recording: return 'Recording';
-      case RecordingState.Processing: return 'Processing';
-      case RecordingState.Done: return 'Done';
-      case RecordingState.Error: return 'Error';
-      default: return 'Ekwe ready';
+      case RecordingState.Recording:
+        return 'Recording';
+      case RecordingState.Processing:
+        return 'Processing';
+      case RecordingState.Done:
+        return 'Done';
+      case RecordingState.Error:
+        return 'Error';
+      default:
+        return 'Ekwe ready';
     }
   }, [recordingState]);
 

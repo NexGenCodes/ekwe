@@ -3,19 +3,31 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useShareIntent } from 'expo-share-intent';
 import { useEffect } from 'react';
-import { Alert, AppState, Platform, NativeModules } from 'react-native';
+import { Alert, AppState, Platform } from 'react-native';
+
+import EkweNative from '../../modules/ekwe-native';
 
 import { AudioCapture } from '@/services/AudioCapture';
 import { TranscriptionService } from '@/services/Transcription';
 import { TranslationService } from '@/services/Translation';
 import { useSettingsStore, useAudioStore, useHistoryStore } from '@/store';
+import { logger } from '@/utils';
 import { BubbleNative } from '@/utils/BubbleModule';
 
-const { EkweNative } = NativeModules;
+// Module-level abort controller for background echo sessions
+let echoSessionAbort: AbortController | null = null;
 
 // Standalone function to prevent stale closures in the component lifecycle
-const handleEchoSession = async (uri: string, sourceApp: string = 'Unknown App') => {
-  console.log(
+const handleEchoSession = async (
+  uri: string,
+  sourceApp: string = 'Unknown App',
+): Promise<void> => {
+  // Cancel any previous background session
+  echoSessionAbort?.abort();
+  echoSessionAbort = new AbortController();
+  const signal = echoSessionAbort.signal;
+
+  logger.info(
     `[EkweEcho] App in background — transcribing voice from ${sourceApp}`,
   );
 
@@ -42,7 +54,10 @@ const handleEchoSession = async (uri: string, sourceApp: string = 'Unknown App')
         meteringData: [],
       },
       'auto',
+      signal,
     );
+
+    if (signal.aborted) return;
 
     if (transcriptionResult.ok) {
       const data = transcriptionResult.value;
@@ -52,30 +67,39 @@ const handleEchoSession = async (uri: string, sourceApp: string = 'Unknown App')
         data.transcript,
         'auto',
         targetLang,
+        signal,
       );
+
+      if (signal.aborted) return;
 
       // 4. Persistence to History (Crucial: Background sessions must be saved)
       useHistoryStore.getState().addEntry({
         id: `echo_${Date.now()}`,
         sourceLang: data.sourceLang,
-        targetLang: targetLang,
+        targetLang,
         transcript: data.transcript,
-        translation: translationResult.ok ? translationResult.value.translation : null,
+        translation: translationResult.ok
+          ? translationResult.value.translation
+          : null,
         timestamp: Date.now(),
         duration: data.durationSeconds,
-        sourceApp: sourceApp
+        sourceApp,
       });
 
-      // 5. Dismiss Overlay 
+      // 5. Dismiss Overlay
       BubbleNative.dismissOverlay();
     } else {
-      console.error('[EkweEcho] Background transcription failed');
+      logger.error('[EkweEcho] Background transcription failed');
     }
   } catch (err) {
-    console.error('[EkweEcho] Fatal session error:', err);
+    logger.error('[EkweEcho] Fatal session error:', err);
   } finally {
     // Always release Wakelock
-    deactivateKeepAwake('ekweEcho');
+    try {
+      deactivateKeepAwake('ekweEcho');
+    } catch {
+      /* Activity may be destroyed */
+    }
     // CLEANUP: Deleting the audio cache after processing is done
     EkweNative?.deleteFile(uri);
     BubbleNative.updateState('IDLE');
@@ -85,79 +109,71 @@ const handleEchoSession = async (uri: string, sourceApp: string = 'Unknown App')
 export const useShareIntentHandler = (): void => {
   const router = useRouter();
   const navigationState = useRootNavigationState();
-  const { onboardingCompleted, setOnboardingCompleted } = useSettingsStore();
+  const { onboardingCompleted } = useSettingsStore();
 
   const { hasShareIntent, shareIntent, resetShareIntent, error } =
     useShareIntent({
       disabled: Platform.OS === 'android',
     });
 
-  useEffect(() => {
+  useEffect((): void => {
     if (error) {
-      console.error('[ShareIntent] Error:', error);
+      logger.error('[ShareIntent] Error:', error);
     }
   }, [error]);
 
   // NATIVE QUEUE Bridge: Process intents intercepted by Ekwe Echo (ShareActivity)
-  useEventListener(EkweNative, 'onIntentQueued', async (event: { audioPath: string; sourceApp: string }) => {
-    console.log(`[ShareIntent] Native Intent Received: ${event.audioPath}`);
-    
-    const { onboardingCompleted } = useSettingsStore.getState();
+  useEventListener(
+    EkweNative,
+    'onIntentQueued',
+    async (event: { audioPath: string; sourceApp: string }): Promise<void> => {
+      logger.info(`[ShareIntent] Native Intent Received: ${event.audioPath}`);
 
-    // GOTCHA 4: Prevent Echo transcription if the user isn't authenticated yet
-    if (!onboardingCompleted) {
-      console.warn('[ShareIntent] User not onboarded. Booting MainActivity visually.');
-      BubbleNative.dismissOverlay();
-      Alert.alert('Login Required', 'Please open Ekwe to log in before translating shared voice notes.');
-      return;
-    }
-
-    let filePath = event.audioPath;
-    if (Platform.OS === 'android' && filePath.startsWith('content://')) {
-      const resolved = await BubbleNative.resolveContentUri(filePath);
-      if (resolved) filePath = resolved;
-    }
-
-    const mimeType = 'audio/*'; 
-    const isBackground = AppState.currentState !== 'active';
-
-    const result = await AudioCapture.processSharedFile(
-      filePath,
-      mimeType,
-    );
-
-    if (result.ok) {
-      if (Platform.OS === 'android' && isBackground) {
-        handleEchoSession(result.value.uri, event.sourceApp);
-      } else {
-        useAudioStore
-          .getState()
-          .setOverlayState(
-            true,
-            undefined,
-            result.value.uri,
-            mimeType,
-          );
+      let filePath = event.audioPath;
+      if (Platform.OS === 'android' && filePath.startsWith('content://')) {
+        const resolved = await BubbleNative.resolveContentUri(filePath);
+        if (resolved) filePath = resolved;
       }
-    } else {
-      Alert.alert(
-        'Unsupported Format',
-        'Ekwe only supports voice note formats.',
-        [{ text: 'Dismiss' }],
-      );
-      BubbleNative.dismissOverlay();
-    }
-  });
 
-  useEffect(() => {
+      const mimeType = 'audio/*';
+      const isBackground = AppState.currentState !== 'active';
+
+      const result = await AudioCapture.processSharedFile(filePath, mimeType);
+
+      if (result.ok) {
+        if (Platform.OS === 'android' && isBackground) {
+          handleEchoSession(result.value.uri, event.sourceApp);
+        } else {
+          router.push({
+            pathname: '/result',
+            params: { uri: result.value.uri },
+          });
+        }
+      } else {
+        Alert.alert(
+          'Unsupported Format',
+          'Ekwe only supports voice note formats.',
+          [{ text: 'Dismiss' }],
+        );
+        BubbleNative.dismissOverlay();
+      }
+    },
+  );
+
+  useEffect((): void => {
     // Wait for the navigation root to be mounted (only for foreground routing)
     const isBackground = AppState.currentState !== 'active';
     if (!navigationState?.key && !isBackground) return;
 
     if (hasShareIntent && shareIntent.type) {
       if (!onboardingCompleted) {
-        console.warn('[ShareIntent] User not onboarded. Skipping share processing.');
-        Alert.alert('Login Required', 'Please open Ekwe to log in before translating shared items.');
+        logger.warn(
+          '[ShareIntent] User not onboarded. Skipping share processing.',
+        );
+        Alert.alert(
+          'Login Required',
+          'Please open Ekwe to log in before translating shared items.',
+        );
         resetShareIntent();
         return;
       }
@@ -172,15 +188,17 @@ export const useShareIntentHandler = (): void => {
         });
         resetShareIntent();
       } else if (shareIntent.type === 'file' && shareIntent.files) {
-        const validFiles = shareIntent.files.filter(f => f && typeof f === 'object' && 'path' in f);
+        const validFiles = shareIntent.files.filter(
+          (f) => f && typeof f === 'object' && 'path' in f,
+        );
         if (validFiles.length === 0) return;
 
         const file = validFiles[0];
         resetShareIntent();
 
-        const isBackground = AppState.currentState !== 'active';
+        const isBackgroundApp = AppState.currentState !== 'active';
 
-        const processFile = async () => {
+        const processFile = async (): Promise<void> => {
           let filePath = file.path;
 
           if (Platform.OS === 'android' && filePath.startsWith('content://')) {
@@ -194,18 +212,14 @@ export const useShareIntentHandler = (): void => {
           );
 
           if (result.ok) {
-            if (Platform.OS === 'android' && isBackground) {
-               BubbleNative.showOverlay(result.value.uri, 'Unknown App');
-               handleEchoSession(result.value.uri, 'Unknown App');
+            if (Platform.OS === 'android' && isBackgroundApp) {
+              BubbleNative.showOverlay(result.value.uri, 'Unknown App');
+              handleEchoSession(result.value.uri, 'Unknown App');
             } else {
-              useAudioStore
-                .getState()
-                .setOverlayState(
-                  true,
-                  undefined,
-                  result.value.uri,
-                  file.mimeType,
-                );
+              router.push({
+                pathname: '/result',
+                params: { uri: result.value.uri },
+              });
             }
           } else {
             Alert.alert(
@@ -225,7 +239,6 @@ export const useShareIntentHandler = (): void => {
     router,
     navigationState?.key,
     onboardingCompleted,
-    setOnboardingCompleted,
     resetShareIntent,
   ]);
 };

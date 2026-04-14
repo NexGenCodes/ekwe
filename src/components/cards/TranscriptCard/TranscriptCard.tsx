@@ -1,5 +1,4 @@
 import { Copy, Share, ChevronRight } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import React, { useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import Animated, {
@@ -16,6 +15,7 @@ import { TranscriptCardProps } from './TranscriptCard.types';
 import { EkweButton } from '@/components/common/EkweButton';
 import { getColor } from '@/constants/colors';
 import { LANGUAGES } from '@/constants/languages';
+import { useTheme } from '@/hooks/useTheme';
 
 const formatDuration = (seconds: number): string => {
   const m = Math.floor(seconds / 60);
@@ -39,7 +39,7 @@ export const TranscriptCard = ({
   onAcceptMismatch,
   style,
 }: TranscriptCardProps): React.ReactElement => {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
   const cursorOpacity = useSharedValue(1);
 

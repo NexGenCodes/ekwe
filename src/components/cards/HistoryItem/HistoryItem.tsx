@@ -1,5 +1,4 @@
 import * as Haptics from 'expo-haptics';
-import { useColorScheme } from 'nativewind';
 import React, { useRef } from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -11,6 +10,7 @@ import { TrashIcon } from '@/assets/icons/TrashIcon';
 import { UploadIcon } from '@/assets/icons/UploadIcon';
 import { getColor } from '@/constants/colors';
 import { LANGUAGES } from '@/constants/languages';
+import { useTheme } from '@/hooks/useTheme';
 import { getRelativeTime } from '@/utils/relativeTime';
 
 const getLanguageName = (code: string): string =>
@@ -24,10 +24,9 @@ export const HistoryItem = ({
 }: HistoryItemProps): React.ReactElement => {
   const swipeableRef = useRef<Swipeable>(null);
 
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
   const primaryColor = getColor('primary', isDark);
-  const mutedColor = getColor('muted', isDark);
 
   const renderRightActions = (): React.ReactElement => (
     <View className="w-20 bg-error/10 dark:bg-error-dark/20 justify-center">

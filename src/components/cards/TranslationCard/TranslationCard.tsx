@@ -1,5 +1,4 @@
 import { Copy, Share, Loader2 } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import React, { useEffect } from 'react';
 import { View, Text } from 'react-native';
 import Animated, {
@@ -16,6 +15,7 @@ import { TranslationCardProps } from './TranslationCard.types';
 import { EkweButton } from '@/components/common/EkweButton';
 import { getColor } from '@/constants/colors';
 import { LANGUAGES } from '@/constants/languages';
+import { useTheme } from '@/hooks/useTheme';
 
 const getLanguageName = (code: string): string =>
   LANGUAGES.find((l) => l.code === code)?.englishName ?? code;
@@ -29,7 +29,7 @@ export const TranslationCard = ({
   onShare,
   style,
 }: TranslationCardProps): React.ReactElement => {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
 
   // Mount animation

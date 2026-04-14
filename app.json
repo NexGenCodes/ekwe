@@ -72,7 +72,9 @@
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
             "minSdkVersion": 24,
-            "buildArchs": ["arm64-v8a"],
+            "buildArchs": [
+              "arm64-v8a"
+            ],
             "ndkVersion": "27.0.12077973"
           }
         }
@@ -101,13 +103,26 @@
             "android.permission.FOREGROUND_SERVICE_MICROPHONE"
           ],
           "androidForegroundService": true,
-          "androidFSTypes": ["mediaPlayback", "microphone"]
+          "androidFSTypes": [
+            "mediaPlayback",
+            "microphone"
+          ]
         }
       ],
       "./modules/ekwe-native/app.plugin.js",
       "expo-secure-store",
-      "expo-router"
+      "expo-router",
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "ekwe",
+          "project": "react-native"
+        }
+      ],
+      "expo-web-browser"
     ],
-    "assetBundlePatterns": ["assets/fonts/*"]
+    "assetBundlePatterns": [
+      "assets/fonts/*"
+    ]
   }
 }

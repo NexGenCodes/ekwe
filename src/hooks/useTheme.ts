@@ -1,8 +1,11 @@
 import { useColorScheme } from 'nativewind';
+import { useColorScheme as useSystemColorScheme } from 'react-native';
 
 import { getColor, bubbleColors } from '@/constants/colors';
 
 export interface ThemeTokens {
+  colorScheme: 'light' | 'dark' | 'system';
+  setColorScheme: (scheme: 'light' | 'dark' | 'system') => void;
   color: {
     primary: string;
     background: string;
@@ -33,10 +36,18 @@ export interface ThemeTokens {
 }
 
 export const useTheme = (): ThemeTokens => {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const { colorScheme, setColorScheme } = useColorScheme();
+  const systemColorScheme = useSystemColorScheme();
+
+  // Cast to string to avoid TS error: NativeWind types this strictly as light/dark,
+  // but we still want a safety net in case it holds 'system' temporarily.
+  const resolvedColorScheme =
+    (colorScheme as string) === 'system' ? systemColorScheme : colorScheme;
+  const isDark = resolvedColorScheme === 'dark';
 
   return {
+    colorScheme: colorScheme as 'light' | 'dark' | 'system',
+    setColorScheme,
     isDark,
     color: {
       primary: getColor('primary', isDark),

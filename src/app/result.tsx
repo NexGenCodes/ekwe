@@ -1,7 +1,7 @@
 import * as Clipboard from 'expo-clipboard';
+import * as FileSystem from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useColorScheme } from 'nativewind';
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,9 +11,9 @@ import { EkweButton } from '@/components/common/EkweButton';
 import { getColor } from '@/constants/colors';
 import { ErrorMessages } from '@/constants/errors';
 import { LANGUAGES } from '@/constants/languages';
-import { AudioProcessor, ProcessedAudio } from '@/services/AudioProcessor';
-import { TranscriptionService } from '@/services/Transcription';
-import { TranslationService } from '@/services/Translation';
+import { useTranscription } from '@/hooks/api/useTranscription';
+import { useTranslation } from '@/hooks/api/useTranslation';
+import { useTheme } from '@/hooks/useTheme';
 import { useHistoryStore, useSettingsStore } from '@/store';
 
 export default function ResultScreen(): React.JSX.Element {
@@ -38,7 +38,7 @@ export default function ResultScreen(): React.JSX.Element {
   const defaultSourceLang = useSettingsStore((s) => s.selectedLanguages[0]);
   const defaultTargetLang = useSettingsStore((s) => s.targetLanguage);
 
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
   const primaryColor = getColor('primary', isDark);
 
@@ -63,86 +63,87 @@ export default function ResultScreen(): React.JSX.Element {
       'es',
   );
   const [isProcessing, setIsProcessing] = useState(false);
+  const [hasPolished, setHasPolished] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const isHistoryReplay = !!foundEntry || initialIsHistoryReplay === 'true';
+
+  const { mutateAsync: transcribe } = useTranscription();
+  const { mutateAsync: translate } = useTranslation();
 
   // Transcription Pipeline (Auto-trigger if uri is provided)
   const processSharedAudio = useCallback(
     async (audioUri: string): Promise<void> => {
       setIsProcessing(true);
       try {
-        const validate = await AudioProcessor.validateSharedFile(audioUri);
-        if (!validate.ok) {
-          Alert.alert('Error', 'Failed to validate audio file.');
-          return;
-        }
-
-        const processed: ProcessedAudio = {
-          uri: audioUri,
-          durationMs: 0,
-          trimStartMs: 0,
-          trimEndMs: 0,
-          hasSpeech: true,
-          averageDb: 1,
-          meteringData: [],
-        };
-
-        const result = await TranscriptionService.transcribe(
-          processed,
+        const txResult = await transcribe({
+          audio: {
+            uri: audioUri,
+            durationMs: 0,
+            trimStartMs: 0,
+            trimEndMs: 0,
+            hasSpeech: true,
+            averageDb: -40,
+            meteringData: [],
+          },
           sourceLang,
+        });
+
+        setTranscript(txResult.transcript);
+
+        // Clean up file system
+        await FileSystem.deleteAsync(audioUri, { idempotent: true }).catch(
+          () => {},
         );
-        if (result.ok) {
-          setTranscript(result.value.transcript);
-          // Save to history
-          addEntry({
-            id: `res_${Date.now()}`,
-            sourceLang,
-            targetLang,
-            transcript: result.value.transcript,
-            translation: null,
-            timestamp: Date.now(),
-            duration: result.value.durationSeconds * 1000,
-            sourceApp: 'shared',
-          });
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } else {
-          Alert.alert(
-            'Transcription Failed',
-            ErrorMessages[result.error] ?? 'Could not process the voice note.',
-          );
-        }
-      } catch {
-        Alert.alert('Error', 'An unexpected error occurred.');
+
+        // Save to history using perfectly detected language
+        addEntry({
+          id: entryId ? String(entryId) : `res_${Date.now()}`,
+          sourceLang: txResult.detectedLang,
+          targetLang,
+          transcript: txResult.transcript,
+          translation: null,
+          timestamp: Date.now(),
+          duration: 0,
+          sourceApp: 'ekwe',
+        });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setHasPolished(true);
+      } catch (err) {
+        const error = err as Error;
+        Alert.alert(
+          'Transcription Failed',
+          ErrorMessages[error.message as keyof typeof ErrorMessages] ??
+            'Could not process the voice note.',
+        );
       } finally {
         setIsProcessing(false);
       }
     },
-    [addEntry, sourceLang, targetLang],
+    [addEntry, sourceLang, targetLang, entryId, transcribe],
   );
 
   useEffect(() => {
-    if (uri && !transcript && !isProcessing) {
+    if (uri && !hasPolished && !isProcessing && !isHistoryReplay) {
       processSharedAudio(uri as string);
     }
-  }, [uri, transcript, isProcessing, processSharedAudio]);
+  }, [uri, hasPolished, isProcessing, isHistoryReplay, processSharedAudio]);
 
   const handleTranslate = async (): Promise<void> => {
     if (!transcript) return;
     setIsTranslating(true);
     try {
-      const result = await TranslationService.translate(
-        transcript,
+      const trResult = await translate({
+        text: transcript,
         sourceLang,
         targetLang,
-      );
-      if (result.ok) {
-        setTranslation(result.value.translation);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } else {
-        Alert.alert('Translation Failed', 'Try again in a moment.');
-      }
+      });
+
+      setTranslation(trResult.translation);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert('Translation Failed', 'Try again in a moment.');
     } finally {
       setIsTranslating(false);
     }
@@ -183,7 +184,7 @@ export default function ResultScreen(): React.JSX.Element {
         contentContainerStyle={{ paddingBottom: 40 }}
       >
         {/* Status Indicator */}
-        {isProcessing && (
+        {isProcessing && !transcript && (
           <View className="items-center py-12 space-y-4">
             <ActivityIndicator size="large" color={primaryColor} />
             <View className="items-center">
@@ -198,13 +199,14 @@ export default function ResultScreen(): React.JSX.Element {
         )}
 
         {/* Content Blocks */}
-        {!isProcessing && transcript.length > 0 && (
+        {transcript.length > 0 && (
           <View className="mt-8">
             {/* Original Text */}
             <View className="mb-8">
               <View className="flex-row justify-between items-center mb-3">
                 <Text className="font-bodyMed text-xs uppercase tracking-widest text-muted dark:text-muted-dark">
-                  ORIGINAL · {getLanguageName(sourceLang)}
+                  ORIGINAL · {getLanguageName(sourceLang)}{' '}
+                  {isProcessing && '✨ POLISHING'}
                 </Text>
                 <View className="flex-row gap-2">
                   <EkweButton

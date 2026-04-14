@@ -1,9 +1,9 @@
 import { createMMKV } from 'react-native-mmkv';
 import { StateStorage } from 'zustand/middleware';
 
-const mmkv = createMMKV({ 
+const mmkv = createMMKV({
   id: 'ekwe-store',
-  mode: 'multi-process' 
+  mode: 'multi-process',
 });
 
 export const mmkvStorage: StateStorage = {

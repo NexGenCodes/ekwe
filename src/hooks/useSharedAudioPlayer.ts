@@ -7,14 +7,32 @@ import {
   AudioBuffer,
 } from 'react-native-audio-api';
 
+import logger from '@/utils/logger';
+
+// Module-level singleton — survives component unmounts for zero-latency re-mount
+let _sharedAudioContext: AudioContext | null = null;
+
+function getAudioContext(): AudioContext {
+  if (!_sharedAudioContext) {
+    _sharedAudioContext = new AudioContext();
+  }
+  return _sharedAudioContext;
+}
+
+/** Pre-warm the audio engine. Call early to eliminate cold-start latency. */
+export const preWarmAudioEngine = (): void => {
+  getAudioContext();
+};
+
 export interface SharedAudioPlayer {
   play: () => Promise<void>;
   pause: () => void;
-  seek: (seconds: number) => void;
+  seek: (seconds: number) => Promise<void>;
   isPlaying: boolean;
   progress: number;
   duration: number;
   isDecoding: boolean;
+  isLoaded: boolean;
   realWaveform: number[]; // Extracted from actual audio data
 }
 
@@ -30,7 +48,14 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isDecoding, setIsDecoding] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
   const [realWaveform, setRealWaveform] = useState<number[]>([]);
+
+  // Ref to avoid stale closures in setInterval callbacks
+  const isPlayingRef = useRef(false);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   const contextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -41,16 +66,19 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
 
   // Initialize and proactively decode
   useEffect(() => {
-    if (!uri) return;
+    if (!uri) {
+      setIsLoaded(false);
+      setRealWaveform([]);
+      return;
+    }
 
-    const init = async () => {
+    const init = async (): Promise<void> => {
       try {
         setIsDecoding(true);
+        setIsLoaded(false);
 
         // 1. Setup Context
-        if (!contextRef.current) {
-          contextRef.current = new AudioContext();
-        }
+        contextRef.current = getAudioContext();
 
         // 2. Proactive Decode (High-Performance JSI)
         // Note: react-native-audio-api handled the Opus/Ogg decoding internally
@@ -69,50 +97,35 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
             const val = Math.abs(channelData[i * bucketSize + j]);
             if (val > max) max = val;
           }
-          // Convert to dB scale similar to the app's metering (-160 to 0)
-          const db = max > 0 ? Math.max(-160, 20 * Math.log10(max)) : -160;
-          peaks.push(db);
+          // Normalize to 0-1 range for Skia scaling
+          // We use a small power function to make the peaks more "expressive" (visual compression)
+          peaks.push(Math.pow(max, 0.7));
         }
         setRealWaveform(peaks);
 
         setIsDecoding(false);
+        setIsLoaded(true);
       } catch (error) {
-        console.error('[SharedAudioPlayer] Decode failed:', error);
+        logger.error('[SharedAudioPlayer] Decode failed:', error);
         setIsDecoding(false);
+        setIsLoaded(false);
       }
     };
 
     init();
 
-    return () => {
+    return (): void => {
       stopProgressTimer();
       if (sourceRef.current) {
         try {
           sourceRef.current.stop();
-        } catch (e) {}
+        } catch {
+          // Ignore
+        }
       }
-      // Note: We don't close the context here if we want to reuse it,
-      // but cleaning up buffers is good.
       bufferRef.current = null;
     };
   }, [uri]);
-
-  const startProgressTimer = useCallback(() => {
-    stopProgressTimer();
-    timerRef.current = setInterval(() => {
-      if (contextRef.current && isPlaying) {
-        const currentPos =
-          contextRef.current.currentTime -
-          startTimeRef.current +
-          pausedAtRef.current;
-        if (currentPos >= duration) {
-          handlePlaybackEnd();
-        } else {
-          setProgress(currentPos);
-        }
-      }
-    }, 100);
-  }, [isPlaying, duration]);
 
   const stopProgressTimer = useCallback(() => {
     if (timerRef.current) {
@@ -129,7 +142,24 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [stopProgressTimer]);
 
-  const play = async () => {
+  const startProgressTimer = useCallback(() => {
+    stopProgressTimer();
+    timerRef.current = setInterval(() => {
+      if (contextRef.current && isPlayingRef.current) {
+        const currentPos =
+          contextRef.current.currentTime -
+          startTimeRef.current +
+          pausedAtRef.current;
+        if (currentPos >= duration) {
+          handlePlaybackEnd();
+        } else {
+          setProgress(currentPos);
+        }
+      }
+    }, 100);
+  }, [duration, handlePlaybackEnd]);
+
+  const play = async (): Promise<void> => {
     if (!bufferRef.current || !contextRef.current) return;
 
     try {
@@ -139,22 +169,48 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
 
       // Web Audio API logic: Create new source per play
       const source = contextRef.current.createBufferSource();
-      source.buffer = bufferRef.current;
+
+      const offsetSeconds = pausedAtRef.current;
+      if (offsetSeconds > 0.05) {
+        // PRO-LEVEL POLYFILL: The underlying C++ JSI node ignores source.start(when, offset)
+        // We bypass this entirely by slicing the raw PCM Float32Array and creating a functionally exact cropped buffer.
+        const startFrame = Math.floor(
+          offsetSeconds * contextRef.current.sampleRate,
+        );
+        const originalData = bufferRef.current.getChannelData(0);
+        const remainingFrames = originalData.length - startFrame;
+
+        if (remainingFrames > 0) {
+          const slicedBuffer = contextRef.current.createBuffer(
+            1,
+            remainingFrames,
+            contextRef.current.sampleRate,
+          );
+          slicedBuffer.getChannelData(0).set(originalData.subarray(startFrame));
+          source.buffer = slicedBuffer;
+        } else {
+          source.buffer = bufferRef.current;
+        }
+      } else {
+        source.buffer = bufferRef.current;
+      }
+
       source.connect(contextRef.current.destination);
 
       sourceRef.current = source;
       startTimeRef.current = contextRef.current.currentTime;
 
-      source.start(0, pausedAtRef.current);
+      // Start at 0, the offset is mathematically baked into the buffer itself
+      source.start(0);
       setIsPlaying(true);
       startProgressTimer();
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error) {
-      console.error('[SharedAudioPlayer] Play failed:', error);
+      logger.error('[SharedAudioPlayer] Play failed:', error);
     }
   };
 
-  const pause = () => {
+  const pause = (): void => {
     if (sourceRef.current && contextRef.current) {
       try {
         sourceRef.current.stop();
@@ -162,17 +218,19 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
           contextRef.current.currentTime - startTimeRef.current;
         setIsPlaying(false);
         stopProgressTimer();
-      } catch (e) {}
+      } catch {
+        // Ignore
+      }
     }
   };
 
-  const seek = (seconds: number) => {
+  const seek = async (seconds: number): Promise<void> => {
     if (!contextRef.current) return;
     const wasPlaying = isPlaying;
     if (wasPlaying) pause();
     pausedAtRef.current = Math.max(0, Math.min(seconds, duration));
     setProgress(pausedAtRef.current);
-    if (wasPlaying) play();
+    if (wasPlaying) await play();
   };
 
   return {
@@ -183,6 +241,7 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
     progress,
     duration,
     isDecoding,
+    isLoaded,
     realWaveform,
   };
 };

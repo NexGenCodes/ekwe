@@ -3,8 +3,12 @@ export { HistoryItem, TranscriptCard, TranslationCard } from './cards';
 export {
   AudioWaveform,
   EkweButton,
+  LanguageGrid,
   LanguagePickerSheet,
+  PlaybackControl,
+  ResultDisplay,
   ThemeSelector,
-  ThemeSync,
   ThemeToggler,
+  AccountAvatar,
 } from './common';
+export { Echo as EchoFeature } from './feature/Echo';

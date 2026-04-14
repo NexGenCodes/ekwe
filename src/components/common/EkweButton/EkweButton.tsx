@@ -1,6 +1,5 @@
 import * as Haptics from 'expo-haptics';
 import { Loader } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import React, { useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Animated, {
@@ -15,6 +14,7 @@ import Animated, {
 import { EkweButtonProps } from './EkweButton.types';
 
 import { getColor } from '@/constants/colors';
+import { useTheme } from '@/hooks/useTheme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedLoader = Animated.createAnimatedComponent(Loader);
@@ -35,7 +35,7 @@ export const EkweButton = ({
   accessibilityLabel,
 }: EkweButtonProps): React.ReactElement => {
   const scale = useSharedValue(1);
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
 
   // Animated style for press feedback

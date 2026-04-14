@@ -34,21 +34,16 @@ export async function fetchWithRetry(
   let lastError: Error | null = null;
 
   for (let i = 0; i < retries; i++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const onAbort = (): void => controller.abort();
+    signal?.addEventListener('abort', onAbort);
+
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-      // Combine signals if both provided
-      if (signal) {
-        signal.addEventListener('abort', () => controller.abort());
-      }
-
       const response = await fetch(url, {
         ...fetchOptions,
         signal: controller.signal,
       });
-
-      clearTimeout(timeoutId);
 
       // Only retry on network errors or 5xx server errors.
       // 4xx errors (like 401/403/404) should fail immediately in our app logic.
@@ -57,17 +52,21 @@ export async function fetchWithRetry(
       }
 
       throw new Error(`Server Error: ${response.status}`);
-    } catch (err: any) {
-      lastError = err;
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      lastError = error;
 
       // Don't retry if the request was explicitly aborted by the user
-      if (err.name === 'AbortError' && signal?.aborted) {
-        throw err;
+      if (error.name === 'AbortError' && signal?.aborted) {
+        throw error;
       }
 
       // Exponential backoff: 1s, 2s, 4s...
       const wait = backoff * Math.pow(2, i);
       await new Promise((resolve) => setTimeout(resolve, wait));
+    } finally {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', onAbort);
     }
   }
 

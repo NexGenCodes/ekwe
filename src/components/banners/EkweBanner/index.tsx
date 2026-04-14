@@ -1,11 +1,11 @@
 import { Info, CheckCircle2, AlertCircle, X } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import React from 'react';
 import { View, Text, Pressable, ViewStyle } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 
 import { EkweButton } from '@/components/common/EkweButton';
 import { getColor } from '@/constants/colors';
+import { useTheme } from '@/hooks/useTheme';
 
 export interface EkweBannerProps {
   message: string;
@@ -76,7 +76,7 @@ export const EkweBanner: React.FC<EkweBannerProps> = ({
   onClose,
   style,
 }) => {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
 
   if (!visible) return null;

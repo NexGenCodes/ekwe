@@ -1,42 +1,73 @@
 import '../../global.css';
+
+import NetInfo from '@react-native-community/netinfo';
 import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
 } from '@react-navigation/native';
+import * as Sentry from '@sentry/react-native';
+import {
+  QueryClient,
+  QueryClientProvider,
+  onlineManager,
+} from '@tanstack/react-query';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme } from 'nativewind';
 import { useEffect } from 'react';
 import { Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
-import { ThemeSync } from '@/components';
-import { EchoSheet } from '@/components/EchoSheet';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import { ShareIntentProvider } from '@/components/providers/ShareIntentProvider';
 import { colors, getColor } from '@/constants/colors';
-import { useAuth } from '@/hooks/useAuth';
 import { useShareIntentHandler } from '@/hooks/useShareIntentHandler';
+import { useTheme } from '@/hooks/useTheme';
 import { useTripleExclusivity } from '@/hooks/useTripleExclusivity';
-import { ClerkProvider } from '@/providers/ClerkProvider';
-import { useAudioStore, useSettingsStore } from '@/store';
+import { useSettingsStore } from '@/store';
+import { useAuthStore } from '@/store/authStore';
+import { useSyncQueue } from '@/store/syncQueue';
 import {
   configureNotifications,
   registerNotificationCategories,
 } from '@/utils/IosNotification';
-import { LensBubble } from '@/components/LensBubble.android';
+
+Sentry.init({
+  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+  tracesSampleRate: __DEV__ ? 1.0 : 0.2,
+  enabled: !__DEV__,
+});
+
+// Initialize React Query Client
+const queryClient = new QueryClient();
+
+// Configure React Query to pause/resume mutations automatically when offline/online
+onlineManager.setEventListener((setOnline): (() => void) => {
+  const unsubscribe = NetInfo.addEventListener((state) => {
+    const isConnected = !!state.isConnected;
+    setOnline(isConnected);
+    if (isConnected) {
+      useSyncQueue.getState().flushQueue();
+    }
+  });
+  return (): void => unsubscribe();
+});
 
 SplashScreen.preventAutoHideAsync();
 
-function InnerLayout() {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const { isSignedIn, isLoaded } = useAuth();
-  const { selectedLanguages, targetLanguage } = useSettingsStore();
+function InnerLayout(): React.ReactElement {
+  const { setColorScheme, isDark } = useTheme();
+  const themePreference = useSettingsStore((s) => s.themePreference);
+
+  // Directly pass user preference to NativeWind v4 which handles OS listeners internally
+  useEffect((): void => {
+    setColorScheme(themePreference);
+  }, [themePreference, setColorScheme]);
+
+  const { isInitialized } = useAuthStore();
 
   // Real-time Exclusivity Guard & Share Intent Listener
   useTripleExclusivity();
@@ -50,15 +81,11 @@ function InnerLayout() {
     },
   };
 
-  const showOverlay = useAudioStore((state) => state.showOverlay);
-
-  useEffect(() => {
-    if (isLoaded) {
+  useEffect((): void => {
+    if (isInitialized) {
       SplashScreen.hideAsync();
     }
-  }, [isLoaded]);
-
-  if (!isLoaded) return null;
+  }, [isInitialized]);
 
   return (
     <ThemeProvider value={theme}>
@@ -71,71 +98,37 @@ function InnerLayout() {
         }}
       >
         <ErrorBoundary>
-          <View className="flex-1">
-            <ThemeSync />
+          <View style={{ flex: 1 }}>
             <StatusBar style="auto" />
 
-            {showOverlay ? (
-              /* 
-                Isolated Share Intent View 
-                We skip Stack/Tabs/Bubble to prevent background resource 
-                usage and ensure context exclusivity.
-              */
-              <View className="flex-1">
-                <EchoSheet />
-              </View>
-            ) : (
-              /* Normal App Flow */
-              <>
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    animation: 'fade_from_bottom',
-                  }}
-                >
-                  {!isSignedIn ? (
-                    <Stack.Screen
-                      name="sign-in"
-                      options={{ animation: 'fade' }}
-                    />
-                  ) : (
-                    <>
-                      <Stack.Screen
-                        name="welcome"
-                        options={{ animation: 'fade' }}
-                      />
-                      <Stack.Screen
-                        name="(tabs)"
-                        options={{ animation: 'fade' }}
-                      />
-                      <Stack.Screen
-                        name="result"
-                        options={{
-                          presentation: 'modal',
-                          animation: 'slide_from_bottom',
-                        }}
-                      />
-                      <Stack.Screen
-                        name="translate"
-                        options={{
-                          presentation: 'modal',
-                          animation: 'slide_from_bottom',
-                        }}
-                      />
-                      <Stack.Screen
-                        name="accessibility-disclosure"
-                        options={{
-                          presentation: 'modal',
-                          animation: 'slide_from_bottom',
-                        }}
-                      />
-                    </>
-                  )}
-                </Stack>
-                <LensBubble />
-                <EchoSheet />
-              </>
-            )}
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                animation: 'slide_from_bottom',
+              }}
+            >
+              <Stack.Screen name="index" options={{ animation: 'fade' }} />
+              <Stack.Screen
+                name="(onboarding)"
+                options={{ animation: 'fade' }}
+              />
+              <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
+              <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+              <Stack.Screen
+                name="result"
+                options={{
+                  presentation: 'modal',
+                  animation: 'slide_from_bottom',
+                }}
+              />
+              <Stack.Screen
+                name="translate"
+                options={{
+                  presentation: 'modal',
+                  animation: 'slide_from_bottom',
+                }}
+              />
+            </Stack>
           </View>
         </ErrorBoundary>
       </GestureHandlerRootView>
@@ -143,8 +136,8 @@ function InnerLayout() {
   );
 }
 
-export default function RootLayout() {
-  useEffect(() => {
+function RootLayout(): React.ReactElement {
+  useEffect((): void => {
     if (Platform.OS === 'ios') {
       const setupNotifications = async (): Promise<void> => {
         configureNotifications();
@@ -165,15 +158,17 @@ export default function RootLayout() {
     activate();
 
     return (): void => {
-      deactivateKeepAwake().catch(() => { });
+      deactivateKeepAwake().catch(() => {});
     };
   }, []);
 
   return (
-    <ClerkProvider>
+    <QueryClientProvider client={queryClient}>
       <ShareIntentProvider>
         <InnerLayout />
       </ShareIntentProvider>
-    </ClerkProvider>
+    </QueryClientProvider>
   );
 }
+
+export default Sentry.wrap(RootLayout);

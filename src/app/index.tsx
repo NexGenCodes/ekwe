@@ -1,34 +1,27 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Redirect } from 'expo-router';
 
-export default function Page() {
-  return (
-    <View style={styles.container}>
-      <View style={styles.main}>
-        <Text style={styles.title}>Hello World</Text>
-        <Text style={styles.subtitle}>This is the first page of your app.</Text>
-      </View>
-    </View>
-  );
+import { useSettingsStore } from '@/store';
+import { useAuthStore } from '@/store/authStore';
+
+/**
+ * Index Gatekeeper
+ *
+ * Single decision point for the entire app.
+ * Reads Supabase auth state + MMKV onboarding flag and redirects accordingly.
+ * While Supabase is hydrating from MMKV, returns null (splash stays visible).
+ */
+export default function Index(): React.ReactElement | null {
+  const { isInitialized, session } = useAuthStore();
+  const onboardingCompleted = useSettingsStore((s) => s.onboardingCompleted);
+
+  // Supabase still hydrating from MMKV — keep splash visible
+  if (!isInitialized) return null;
+
+  // Route decision tree
+  if (!onboardingCompleted) return <Redirect href="/(onboarding)/welcome" />;
+
+  // Force auth: go to login if no session, else tabs
+  if (!session) return <Redirect href="/(auth)/login" />;
+
+  return <Redirect href="/(tabs)" />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    padding: 24,
-  },
-  main: {
-    flex: 1,
-    justifyContent: "center",
-    maxWidth: 960,
-    marginHorizontal: "auto",
-  },
-  title: {
-    fontSize: 64,
-    fontWeight: "bold",
-  },
-  subtitle: {
-    fontSize: 36,
-    color: "#38434D",
-  },
-});

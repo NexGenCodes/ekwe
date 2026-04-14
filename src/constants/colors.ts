@@ -3,20 +3,20 @@
 // Palette: blue primary, black/white, + status colors. That's it.
 
 export const colors = {
-  // WARNING [NATIVE SYNC]: If you change 'primary.dark' (#1A7EC8), you MUST manually 
+  // WARNING [NATIVE SYNC]: If you change 'primary.dark' (#1A7EC8), you MUST manually
   // update the hex color in `ShareActivity.kt` down in the `expo.modules.ekwenative` folder.
   // Kotlin requires a hardcoded hex for the instant-boot "Echo" native spinner.
-  primary: { DEFAULT: '#0A1F30', dark: '#1A7EC8' }, // Navy light, Accent Blue dark
+  primary: { DEFAULT: '#09090B', dark: '#3B82F6' }, // Zinc 950 light, Bright Blue dark
   onPrimary: { DEFAULT: '#FFFFFF', dark: '#FFFFFF' },
   background: { DEFAULT: '#FFFFFF', dark: '#09090B' }, // Pure white light, premium true OLED-friendly deep Zinc
   foreground: { DEFAULT: '#09090B', dark: '#F8FAFC' }, // Zinc 950 light, Slate 50 dark
-  card: { DEFAULT: '#F1F5F9', dark: '#18181B' }, // Slate 100 for light, Zinc 900 for dark (premium subtle elevation)
-  muted: { DEFAULT: '#64748B', dark: '#94A3B8' }, // Slate 500 light, Slate 400 dark (Perfect contrast secondary text)
-  border: { DEFAULT: '#E2E8F0', dark: '#27272A' }, // Slate 200 light, Zinc 800 dark
-  success: { DEFAULT: '#16A34A', dark: '#22C55E' }, // Crisp Green
-  warning: { DEFAULT: '#D97706', dark: '#F59E0B' }, // Crisp Amber
-  error: { DEFAULT: '#DC2626', dark: '#EF4444' }, // Crisp Red
-  info: { DEFAULT: '#0284C7', dark: '#38BDF8' }, // Light blue
+  card: { DEFAULT: '#F4F4F5', dark: '#18181B' }, // Zinc 100 for light, Zinc 900 for dark
+  muted: { DEFAULT: '#52525B', dark: '#A1A1AA' }, // Zinc 600 light, Zinc 400 dark (High contrast secondary text)
+  border: { DEFAULT: '#E4E4E7', dark: '#27272A' }, // Zinc 200 light, Zinc 800 dark
+  success: { DEFAULT: '#10B981', dark: '#10B981' },
+  warning: { DEFAULT: '#F59E0B', dark: '#F59E0B' },
+  error: { DEFAULT: '#EF4444', dark: '#EF4444' },
+  info: { DEFAULT: '#3B82F6', dark: '#3B82F6' },
 } as const;
 
 export type ColorKey = keyof typeof colors;

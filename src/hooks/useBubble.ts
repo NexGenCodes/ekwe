@@ -10,6 +10,7 @@ import { useAudioStore, useSettingsStore } from '@/store';
 import { RecordingState } from '@/store/audioSlice';
 import { Result, ok, err } from '@/types/Result';
 import { BubbleNative } from '@/utils/BubbleModule';
+import logger from '@/utils/logger';
 
 export interface UseBubbleReturn {
   enableBubble: () => Promise<Result<void, EkweError>>;
@@ -36,9 +37,10 @@ export const useBubble = (): UseBubbleReturn => {
   useEffect(() => {
     if (!bubbleEnabled) return;
 
-    const syncState = async () => {
+    const syncState = async (): Promise<void> => {
       // 1. Handle Visibility
-      const shouldHide = strategy.hideBubble || strategy.packageName === 'unknown';
+      const shouldHide =
+        strategy.hideBubble || strategy.packageName === 'unknown';
       if (shouldHide) {
         await BubbleNative.dismissBubble();
         return;
@@ -99,7 +101,7 @@ export const useBubble = (): UseBubbleReturn => {
 
       const audioState = useAudioStore.getState();
       if (audioState.activeFloatingHead === 'card') {
-        console.log('[Exclusivity] Cannot start bubble while card is active');
+        logger.info('[Exclusivity] Cannot start bubble while card is active');
         return ok(undefined);
       }
 
@@ -157,7 +159,7 @@ export const useBubble = (): UseBubbleReturn => {
     ) {
       if (recordingState === RecordingState.Recording) {
         await BubbleNative.stopAudioCapture();
-        const stopResult = await stopRecording();
+        await stopRecording();
       } else {
         await BubbleNative.requestMediaProjection();
         await startRecording();

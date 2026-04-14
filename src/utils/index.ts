@@ -7,3 +7,4 @@ export {
   validateFileSize,
   MAX_FILE_SIZE,
 } from './fileValidation';
+export { default as logger } from './logger';

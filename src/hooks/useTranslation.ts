@@ -51,11 +51,10 @@ export const useTranslation = (): UseTranslationReturn => {
 
       // Update history entry with translation
       if (historyEntryId !== undefined) {
-        const existing = entries.find((e) => e.id === historyEntryId);
+        const currentEntries = useHistoryStore.getState().entries;
+        const existing = currentEntries.find((e) => e.id === historyEntryId);
         if (existing !== undefined) {
-          // Delete old entry and re-add with translation
-          deleteEntry(historyEntryId);
-          addEntry({
+          useHistoryStore.getState().updateEntry(historyEntryId, {
             ...existing,
             translation: result.value.translation,
             targetLang,

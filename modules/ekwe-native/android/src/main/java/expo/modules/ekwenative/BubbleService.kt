@@ -151,12 +151,14 @@ class BubbleService : Service() {
             when (FloatingStateEngine.getState()) {
                 FloatingState.IDLE, FloatingState.HIDDEN_IDLE -> {
                     removeFloatingBubble()
+                    removeFloatingCard()
                 }
                 FloatingState.BUBBLE_VISIBLE, FloatingState.BUBBLE_EXPANDED -> {
                     showFloatingBubble()
                 }
                 FloatingState.OVERLAY_ACTIVE -> {
                     removeFloatingBubble()
+                    removeFloatingCard()
                 }
             }
         }
@@ -210,10 +212,14 @@ class BubbleService : Service() {
     }
 
     private fun removeFloatingBubble() {
-        floatingView?.let { try { windowManager?.removeView(it) } catch (e: Exception) {} }; floatingView = null
+        floatingView?.let { try { windowManager?.removeView(it) } catch (e: Exception) { Log.e(TAG, "Failed to remove bubble", e) } }
+        floatingView = null
     }
 
-    private fun removeFloatingCard() {}
+    private fun removeFloatingCard() {
+        cardView?.let { try { windowManager?.removeView(it) } catch (e: Exception) { Log.e(TAG, "Failed to remove card", e) } }
+        cardView = null
+    }
 
     private fun updateBubbleStyle(mode: String, data: String?) {
         val inner = floatingView?.findViewById<View>(1337) ?: return
@@ -225,16 +231,30 @@ class BubbleService : Service() {
     }
 
     private fun startBubbleForeground() {
-        val channel = NotificationChannel(CHANNEL_ID, "Ekwe Lens", NotificationManager.IMPORTANCE_LOW)
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        createNotificationChannel()
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Ekwe Lens Active")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
         startForeground(NOTIFICATION_ID, notification)
     }
 
-    private fun createNotificationChannel() {}
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Ekwe Lens"
+            val descriptionText = "Ensures Ekwe Echo can process audio in the background"
+            val importance = NotificationManager.IMPORTANCE_LOW
+            val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
+                description = descriptionText
+                setSound(null, null)
+                enableVibration(false)
+            }
+            val notificationManager: NotificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
 }

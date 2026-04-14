@@ -1,16 +1,16 @@
 import { Tabs } from 'expo-router';
-import { useColorScheme } from 'nativewind';
 import React from 'react';
 
 import { HistoryIcon } from '@/assets/icons/HistoryIcon';
 import { HomeIcon } from '@/assets/icons/HomeIcon';
 import { SettingsIcon } from '@/assets/icons/SettingsIcon';
 import { getColor } from '@/constants/colors';
+import { useTheme } from '@/hooks/useTheme';
 
 const TAB_BAR_HEIGHT = 64;
 
-export default function TabLayout() {
-  const { colorScheme } = useColorScheme();
+export default function TabLayout(): React.ReactElement {
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
 
   return (
@@ -61,6 +61,12 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <SettingsIcon size={size} color={color} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

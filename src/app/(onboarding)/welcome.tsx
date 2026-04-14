@@ -1,6 +1,5 @@
 import { useRouter } from 'expo-router';
 import { Mic, Globe, ShieldCheck, ChevronRight } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import React, { useEffect, useMemo } from 'react';
 import { View, Text, Dimensions } from 'react-native';
 import Animated, {
@@ -15,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { EkweWordmark } from '@/assets/icons/EkweWordmark';
 import { EkweButton } from '@/components/common/EkweButton';
 import { getColor } from '@/constants/colors';
-import { useSettingsStore } from '@/store';
+import { useTheme } from '@/hooks/useTheme';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -84,8 +83,7 @@ const FeatureCard = ({
 
 export default function WelcomeScreen(): React.ReactElement {
   const router = useRouter();
-  const { colorScheme } = useColorScheme();
-  const { setOnboardingCompleted } = useSettingsStore();
+  const { colorScheme } = useTheme();
 
   const isDark = colorScheme === 'dark';
   const iconColor = getColor('primary', isDark);
@@ -131,8 +129,8 @@ export default function WelcomeScreen(): React.ReactElement {
   );
 
   const handleStart = (): void => {
-    setOnboardingCompleted(true);
-    router.replace('/');
+    // Navigate to Language Selection; onboarding is NOT complete until Auth is finalized
+    router.replace('/language');
   };
 
   return (

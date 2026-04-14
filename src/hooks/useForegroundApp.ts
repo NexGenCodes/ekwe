@@ -1,6 +1,7 @@
-import EkweNative from 'modules/ekwe-native';
 import { useState, useEffect } from 'react';
 import { AppState, Platform } from 'react-native';
+
+import EkweNative from '../../modules/ekwe-native';
 
 import {
   AppStrategy,
@@ -8,11 +9,20 @@ import {
   DEFAULT_STRATEGY,
 } from '@/constants/appStrategies';
 
-export const useForegroundApp = (enabled: boolean = true) => {
+export interface UseForegroundAppResult {
+  strategy: AppStrategy;
+  hasPermission: boolean | null;
+  requestPermission: () => Promise<void>;
+  checkPermission: () => Promise<boolean | undefined>;
+}
+
+export const useForegroundApp = (
+  enabled: boolean = true,
+): UseForegroundAppResult => {
   const [strategy, setStrategy] = useState<AppStrategy>(DEFAULT_STRATEGY);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
-  const checkPermission = async () => {
+  const checkPermission = async (): Promise<boolean | undefined> => {
     if (Platform.OS !== 'android') return;
     const granted = await EkweNative.isAccessibilityEnabled();
     setHasPermission(granted);
@@ -27,24 +37,29 @@ export const useForegroundApp = (enabled: boolean = true) => {
     });
 
     // Listen for real-time app changes from native AccessibilityService
-    let eventSub: any;
+    interface Subscription {
+      remove(): void;
+    }
+    let eventSub: Subscription | undefined;
     if (Platform.OS === 'android' && enabled) {
       eventSub = EkweNative.addListener(
         'onForegroundAppChanged',
-        ({ packageName }) => {
+        ({ packageName }: { packageName: string }) => {
           const newStrategy = getStrategyForApp(packageName);
-          if (newStrategy.packageName !== strategy.packageName) {
-            setStrategy(newStrategy);
-          }
+          setStrategy((prevStrategy) =>
+            prevStrategy.packageName !== newStrategy.packageName
+              ? newStrategy
+              : prevStrategy,
+          );
         },
       );
     }
 
-    return () => {
+    return (): void => {
       sub.remove();
       if (eventSub) eventSub.remove();
     };
-  }, [enabled, strategy.packageName]);
+  }, [enabled]);
 
   return {
     strategy,

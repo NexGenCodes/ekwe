@@ -28,14 +28,25 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
   const resetAudioState = useAudioStore((s) => s.resetAudioState);
   const recordingState = useAudioStore((s) => s.recordingState);
 
-  // Clean up on unmount
+  // Clean up on unmount + register listeners
   useEffect(() => {
+    const removeStatusListener = AudioCapture.addStatusListener((status) => {
+      // Use getState to avoid stale closure / dependency loop
+      if (
+        status === 'stopped' &&
+        useAudioStore.getState().recordingState === RecordingState.Recording
+      ) {
+        setRecordingState(RecordingState.Done);
+      }
+    });
+
     return (): void => {
+      removeStatusListener();
       if (AudioCapture.isRecording()) {
         AudioCapture.cancelRecording();
       }
     };
-  }, []);
+  }, [setRecordingState]);
 
   /**
    * Requests microphone permission via AudioCapture.
@@ -61,13 +72,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
     setSessionId(sessionId);
     setRecordingState(RecordingState.Recording);
 
-    const result = await AudioCapture.startRecording(
-      sessionId,
-      (_amplitude) => {
-        // Amplitude values drive the AudioWaveform component if connected.
-        // Currently handled directly by the LensBubble animations.
-      },
-    );
+    const result = await AudioCapture.startRecording(sessionId);
 
     if (!result.ok) {
       setError(result.error);

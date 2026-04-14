@@ -1,6 +1,5 @@
 import * as Haptics from 'expo-haptics';
 import { Moon, Sun } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import React, { useEffect } from 'react';
 import { Pressable } from 'react-native';
 import Animated, {
@@ -12,6 +11,7 @@ import Animated, {
 import { ThemeTogglerProps } from './ThemeToggler.types';
 
 import { getColor } from '@/constants/colors';
+import { useTheme } from '@/hooks/useTheme';
 import { useSettingsStore } from '@/store';
 import { ThemePreference } from '@/store/settingsSlice';
 
@@ -19,7 +19,7 @@ export const ThemeToggler = ({
   style,
   accessibilityLabel,
 }: ThemeTogglerProps): React.ReactElement => {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const { setThemePreference } = useSettingsStore();
   const isDark = colorScheme === 'dark';
   const transition = useSharedValue(isDark ? 1 : 0);

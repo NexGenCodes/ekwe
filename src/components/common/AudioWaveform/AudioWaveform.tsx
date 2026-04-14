@@ -1,4 +1,3 @@
-import { useColorScheme } from 'nativewind';
 import React from 'react';
 import { View, LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -12,6 +11,7 @@ import Animated, {
 import { AudioWaveformProps } from './AudioWaveform.types';
 
 import { getColor } from '@/constants/colors';
+import { useTheme } from '@/hooks/useTheme';
 
 export const AudioWaveform = ({
   amplitudes,
@@ -22,7 +22,7 @@ export const AudioWaveform = ({
   style,
   interactive = true,
 }: AudioWaveformProps): React.ReactElement => {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const measuredWidth = useSharedValue(width);
   const isDark = colorScheme === 'dark';
 

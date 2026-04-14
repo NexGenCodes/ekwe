@@ -1,10 +1,19 @@
 import { requireNativeModule } from 'expo';
 import type { NativeModule } from 'expo-modules-core';
-import type { BubblePosition, AudioEffectsResult, FloatingState } from './EkweNative.types';
+
+import type {
+  BubblePosition,
+  AudioEffectsResult,
+  FloatingState,
+} from './EkweNative.types';
 
 declare class EkweNativeModule extends NativeModule<{
   // Unified window lifecycle events
-  onStateChanged: (event: { state: FloatingState; previousState: FloatingState; reason?: string }) => void;
+  onStateChanged: (event: {
+    state: FloatingState;
+    previousState: FloatingState;
+    reason?: string;
+  }) => void;
   onIntentQueued: (event: { audioPath: string; sourceApp: string }) => void;
   onAppForeground: (event: {}) => void;
   onAppBackground: (event: {}) => void;
@@ -19,7 +28,11 @@ declare class EkweNativeModule extends NativeModule<{
   dismissBubble(): Promise<void>;
   expandBubble(): Promise<void>;
   collapseBubble(): Promise<void>;
-  updateBubbleMode(mode: 'RECORD' | 'MAGIC' | 'IDLE', data?: string): Promise<void>;
+  updateBubbleMode(
+    mode: 'RECORD' | 'MAGIC' | 'IDLE',
+    data?: string,
+  ): Promise<void>;
+  deleteFile(uri: string): Promise<void>;
 
   // --- Overlay ---
   showOverlay(audioPath: string, sourceApp: string): Promise<void>;

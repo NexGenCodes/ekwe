@@ -7,7 +7,6 @@ import BottomSheet, {
   BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
 import { Search, Star, X, Check } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import React, {
   useRef,
   useMemo,
@@ -22,6 +21,7 @@ import { LanguagePickerSheetProps } from './LanguagePickerSheet.types';
 import { EkweButton } from '@/components/common/EkweButton';
 import { getColor } from '@/constants/colors';
 import { LANGUAGES, Language, FLAG_MAP } from '@/constants/languages';
+import { useTheme } from '@/hooks/useTheme';
 
 interface LanguageRowProps {
   item: Language;
@@ -39,7 +39,7 @@ const LanguageRow = ({
   onToggleSelect,
   onTogglePin,
 }: LanguageRowProps): React.ReactElement => {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
 
   const mutedColor = getColor('muted', isDark);
@@ -99,7 +99,7 @@ export const LanguagePickerSheet = ({
   onSelectionChange,
   onClose,
 }: LanguagePickerSheetProps): React.ReactElement => {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const sheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['85%'], []);
   const [searchQuery, setSearchQuery] = useState('');

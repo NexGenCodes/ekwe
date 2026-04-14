@@ -321,27 +321,35 @@ jest.mock('./modules/ekwe-native', () => ({
 }));
 
 /* ------------------------------------------------------------------ */
-/*  @clerk/clerk-expo                                                  */
+/*  @/store/authStore & Supabase                                      */
 /* ------------------------------------------------------------------ */
-jest.mock('@clerk/clerk-expo', () => ({
-  Clerk: {
-    session: {
-      getToken: jest.fn().mockResolvedValue('mock-token'),
+jest.mock('@/lib/supabase', () => ({
+  supabase: {
+    auth: {
+      getSession: jest.fn().mockResolvedValue({ data: { session: { access_token: 'mock-token', user: { id: 'user_123' } } } }),
+      onAuthStateChange: jest.fn(() => ({ data: { subscription: { unsubscribe: jest.fn() } } })),
     },
+    from: jest.fn().mockReturnThis(),
+    insert: jest.fn().mockResolvedValue({ error: null }),
   },
-  useAuth: () => ({
-    isSignedIn: true,
-    isLoaded: true,
-    signOut: jest.fn(),
-  }),
-  useUser: () => ({
-    user: {
-      id: 'user_123',
-      publicMetadata: { tier: 'pro' },
-    },
-  }),
-  useSignIn: () => ({ isLoaded: true, signIn: {}, setActive: jest.fn() }),
-  useSignUp: () => ({ isLoaded: true, signUp: {}, setActive: jest.fn() }),
+}));
+
+jest.mock('@/store/authStore', () => ({
+  useAuthStore: Object.assign(
+    () => ({
+      session: { access_token: 'mock-token', user: { id: 'user_123' } },
+      user: { id: 'user_123' },
+      isPro: true,
+      isInitialized: true,
+    }),
+    {
+      getState: () => ({
+        session: { access_token: 'mock-token', user: { id: 'user_123' } },
+        setSession: jest.fn(),
+        setInitialized: jest.fn(),
+      }),
+    }
+  ),
 }));
 
 /* ------------------------------------------------------------------ */

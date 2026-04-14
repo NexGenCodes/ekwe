@@ -4,6 +4,7 @@ import { EkweError } from '@/constants/errors';
 import { LANGUAGES } from '@/constants/languages';
 import { ProcessedAudio } from '@/services/AudioProcessor';
 import { Result, ok, err } from '@/types/Result';
+import { logger } from '@/utils';
 import { getAuthHeaders } from '@/utils/authHeaders';
 import { detectLanguage } from '@/utils/detectLanguage';
 import { fetchWithRetry } from '@/utils/networkUtils';
@@ -54,6 +55,7 @@ class TranscriptionServiceClass {
   async transcribe(
     audio: ProcessedAudio,
     sourceLang: string,
+    signal?: AbortSignal,
   ): Promise<Result<TranscriptionResult, EkweError>> {
     try {
       const file = new ExpoFile(audio.uri);
@@ -68,7 +70,7 @@ class TranscriptionServiceClass {
 
       const workerUrl = getWorkerUrl();
       if (!workerUrl) {
-        console.error('DEBUG: workerUrl is EMPTY!');
+        logger.error('[Transcription] workerUrl is EMPTY!');
         return err(EkweError.NETWORK_LOST);
       }
 
@@ -95,12 +97,15 @@ class TranscriptionServiceClass {
         body: formData,
         retries: 3,
         timeout: 45000,
+        signal,
       });
 
       if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        console.error(
-          'Transcription FAIL: non-ok response',
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        logger.error(
+          '[Transcription] FAIL: non-ok response',
           response.status,
           body,
         );
@@ -120,8 +125,9 @@ class TranscriptionServiceClass {
         sourceLang,
         audio,
       );
-    } catch (e: any) {
-      console.error('Transcription FAIL: exception', e.message);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      logger.error('[Transcription] FAIL: exception', message);
       return err(EkweError.NETWORK_LOST);
     }
   }
@@ -165,7 +171,7 @@ class TranscriptionServiceClass {
     const language = LANGUAGES.find((l) => l.code === sourceLang);
     const fillerWords = language?.fillerWords ?? [];
     const cleaned = removeFillerWords(rawText, fillerWords);
-    const fillerWordsRemoved =
+    const fillerWordsRemovedCount =
       this.countWords(rawText) - this.countWords(cleaned);
 
     // Adjust word timestamps for trim offset
@@ -183,12 +189,15 @@ class TranscriptionServiceClass {
       wordTimestamps: adjustedWords,
       durationSeconds: audio.durationMs / 1000,
       isLowQuality: audio.averageDb < -60, // Recalibrated for dB
-      fillerWordsRemoved,
+      fillerWordsRemoved: fillerWordsRemovedCount,
       languageMismatch: this.getLanguageMismatch(returnedLang, sourceLang),
     });
   }
 
-  private getLanguageMismatch(detected: string, expected: string) {
+  private getLanguageMismatch(
+    detected: string,
+    expected: string,
+  ): { expected: string; detected: string } | undefined {
     if (expected === 'auto' || !detected) return undefined;
 
     // Normalize (some providers return 'en', some 'english')

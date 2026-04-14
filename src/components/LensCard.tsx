@@ -6,7 +6,7 @@ interface LensCardProps {
   transcript: string;
 }
 
-export function LensCard({ transcript }: LensCardProps) {
+export function LensCard({ transcript }: LensCardProps): React.ReactElement {
   return (
     <Animated.View
       entering={FadeInDown}

@@ -8,13 +8,13 @@ interface Props {
 
 /**
  * PRO-LEVEL: This provider wraps the entire application.
- * On Android, our custom ShareActivity handles all intents natively, 
+ * On Android, our custom ShareActivity handles all intents natively,
  * so we bypass expo-share-intent completely to avoid 'addListener of null' errors.
  * On iOS, expo-share-intent is still required.
  */
-export function ShareIntentProvider({ children }: Props) {
+export function ShareIntentProvider({ children }: Props): ReactNode {
   if (Platform.OS === 'android') {
-    return <>{children}</>;
+    return children;
   }
 
   return (

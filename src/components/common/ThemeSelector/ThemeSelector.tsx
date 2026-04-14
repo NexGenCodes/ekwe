@@ -3,11 +3,11 @@ import BottomSheet, {
   BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
 import { Sun, Moon, Laptop, Check } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import React, { useCallback, useMemo, useRef, useEffect } from 'react';
 import { View, Text, Pressable } from 'react-native';
 
 import { getColor } from '@/constants/colors';
+import { useTheme } from '@/hooks/useTheme';
 import { useSettingsStore } from '@/store';
 import { ThemePreference } from '@/store/settingsSlice';
 
@@ -20,7 +20,7 @@ export const ThemeSelector = ({
   isVisible,
   onClose,
 }: ThemeSelectorProps): React.ReactElement => {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
   const { themePreference, setThemePreference } = useSettingsStore();
 

@@ -1,7 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronDown, ArrowDownUp } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import React, { useState } from 'react';
 import {
   View,
@@ -17,6 +16,7 @@ import { EkweButton } from '@/components/common/EkweButton';
 import { LanguagePickerSheet } from '@/components/common/LanguagePickerSheet';
 import { getColor } from '@/constants/colors';
 import { LANGUAGES, FLAG_MAP } from '@/constants/languages';
+import { useTheme } from '@/hooks/useTheme';
 import { TranslationService } from '@/services/Translation';
 import { useHistoryStore, useSettingsStore } from '@/store';
 
@@ -34,7 +34,7 @@ export default function TranslateScreen(): React.JSX.Element {
   const pinnedLanguages = useSettingsStore((s) => s.pinnedLanguages);
   const setPinnedLanguages = useSettingsStore((s) => s.setPinnedLanguages);
 
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
   const primaryColor = getColor('primary', isDark);
   const mutedColor = getColor('muted', isDark);

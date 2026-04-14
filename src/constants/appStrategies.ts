@@ -12,7 +12,6 @@ export interface AppStrategy {
   packageName: string;
   appName: string;
   recommendedMode: CaptureMode;
-  audioPath?: string; // Hint for Smart File Picker/Scanner
   hideBubble?: boolean; // Should bubble hide completely in this app?
 }
 
@@ -22,14 +21,12 @@ export const APP_STRATEGIES: Record<string, AppStrategy> = {
     packageName: 'com.whatsapp',
     appName: 'WhatsApp',
     recommendedMode: 'MEDIA_SCAN',
-    audioPath: 'WhatsApp/Media/WhatsApp Voice Notes',
     hideBubble: true, // User prefers native share intent
   },
   'org.telegram.messenger': {
     packageName: 'org.telegram.messenger',
     appName: 'Telegram',
     recommendedMode: 'MEDIA_SCAN',
-    audioPath: 'Telegram/Telegram Audio',
     hideBubble: true, // User prefers native share intent
   },
 

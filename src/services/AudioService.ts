@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { Paths } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 import {
@@ -10,10 +10,8 @@ import {
   FileDirectory,
 } from 'react-native-audio-api';
 
-import {
-  attachAudioEffects,
-  releaseAudioEffects,
-} from '@/utils/AudioEffectsModule';
+import { logger } from '@/utils';
+import { releaseAudioEffects } from '@/utils/AudioEffectsModule';
 
 type PermissionStatus = 'Granted' | 'Denied' | 'Undetermined' | 'Restricted';
 
@@ -58,12 +56,20 @@ class AudioService {
 
     // 1. Configure Global Audio Session (iOS)
     if (Platform.OS === 'ios') {
-      AudioManager.setAudioSessionOptions({
-        iosCategory: 'playAndRecord',
-        iosOptions: ['defaultToSpeaker', 'allowBluetoothHFP', 'mixWithOthers'],
-        iosMode: 'voiceChat',
-      });
-      await AudioManager.setAudioSessionActivity(true);
+      try {
+        await AudioManager.setAudioSessionOptions({
+          iosCategory: 'playAndRecord',
+          iosOptions: [
+            'defaultToSpeaker',
+            'allowBluetoothHFP',
+            'mixWithOthers',
+          ],
+          iosMode: 'videoChat', // videoChat is often more reliable for speaker routing than voiceChat
+        });
+        await AudioManager.setAudioSessionActivity(true);
+      } catch (e) {
+        logger.warn('AudioSession configuration failed:', e);
+      }
     }
 
     // 2. Initialize Nodes
@@ -96,7 +102,7 @@ class AudioService {
     });
 
     if (result.status !== 'success') {
-      console.error(`FileOutput Error: ${result.message}`);
+      logger.error(`FileOutput Error: ${result.message}`);
       throw new Error(`Failed to enable file output: ${result.message}`);
     }
 
@@ -105,7 +111,7 @@ class AudioService {
     const startResult = this.recorder.start();
     if (startResult.status !== 'success') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      console.error('Recording start failed:', startResult.message);
+      logger.error('Recording start failed:', startResult.message);
       throw new Error(`Failed to start recording: ${startResult.message}`);
     }
 
@@ -122,7 +128,7 @@ class AudioService {
     const result = this.recorder.stop();
     if (result.status !== 'success') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      console.error('Recording stop failed:', result.message);
+      logger.error('Recording stop failed:', result.message);
       throw new Error('Failed to stop recording: ' + result.message);
     }
 
@@ -137,7 +143,7 @@ class AudioService {
       try {
         await this.context.suspend();
       } catch (e) {
-        console.warn('AudioContext suspend failed:', e);
+        logger.warn('AudioContext suspend failed:', e);
       }
     }
 
@@ -152,28 +158,24 @@ class AudioService {
    */
   public async purgeCache(): Promise<void> {
     try {
-      // PRO-TIP: We use a type cast here as expo-file-system 55 constants
-      // sometimes have resolution issues with * as imports in certain TS configs.
-      const cacheDir = (FileSystem as unknown as { cacheDirectory: string })
-        .cacheDirectory;
+      const cacheDir = Paths.cache;
       if (!cacheDir) return;
 
-      const files = await FileSystem.readDirectoryAsync(cacheDir);
+      const files = cacheDir.list();
       const audioFiles = files.filter(
-        (f) => f.startsWith('rec_') && f.endsWith('.m4a'),
+        (f) =>
+          !('isDirectory' in f) &&
+          f.name.startsWith('rec_') &&
+          f.name.endsWith('.m4a'),
       );
 
       if (audioFiles.length === 0) return;
 
       for (const file of audioFiles) {
-        // Ensure path separator is handled correctly
-        const fileUri = cacheDir.endsWith('/')
-          ? `${cacheDir}${file}`
-          : `${cacheDir}/${file}`;
-        await FileSystem.deleteAsync(fileUri, { idempotent: true });
+        if (file.exists) file.delete();
       }
     } catch (error) {
-      console.error('Cache purge failed:', error);
+      logger.error('Cache purge failed:', error);
     }
   }
 

@@ -1,4 +1,8 @@
-import { jwtVerify, importSPKI } from 'jose';
+import { jwtVerify, createRemoteJWKSet } from 'jose';
+
+interface Ai {
+  run(model: string, input: unknown): Promise<unknown>;
+}
 
 interface Env {
   GROQ_KEY_1: string;
@@ -18,8 +22,12 @@ interface Env {
   OPENROUTER_KEY: string;
   DEEPGRAM_KEY: string;
   ASSEMBLYAI_KEY: string;
-  CLERK_PEM_PUBLIC_KEY: string;
-  AI: any; // Cloudflare Workers AI
+  SUPABASE_JWT_SECRET: string;
+  SUPABASE_URL?: string;
+  AI: Ai;
+  RATE_LIMITER: {
+    limit: (options: { key: string }) => Promise<{ success: boolean }>;
+  };
 }
 
 const GROQ_TRANSCRIBE = 'https://api.groq.com/openai/v1/audio/transcriptions';
@@ -47,7 +55,7 @@ function isKeyCoolingDown(key: string): boolean {
   return true;
 }
 
-function setKeyCooldown(key: string, seconds = 60) {
+function setKeyCooldown(key: string, seconds = 60): void {
   keyCooldowns.set(key, Date.now() + seconds * 1000);
 }
 
@@ -91,34 +99,56 @@ export default {
     }
     const token = authHeader.split(' ')[1];
 
-    // We only verify if the PEM key is configured
-    if (env.CLERK_PEM_PUBLIC_KEY && env.CLERK_PEM_PUBLIC_KEY.length > 10) {
-      try {
-        const publicKey = await importSPKI(env.CLERK_PEM_PUBLIC_KEY, 'RS256');
-        await jwtVerify(token, publicKey);
-        // User is authenticated
-      } catch (err: any) {
-        return this.addCorsHeaders(
-          Response.json(
-            { error: 'UNAUTHORIZED', message: err.message },
-            { status: 401 },
-          ),
-          corsHeaders,
+    try {
+      // 1. Prioritize JWKS Async verification (Supabase New Signing Keys)
+      if (env.SUPABASE_URL && env.SUPABASE_URL.length > 5) {
+        const jwksUrl = new URL(
+          `${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`,
         );
+        const JWKS = createRemoteJWKSet(jwksUrl);
+        await jwtVerify(token, JWKS);
       }
+      // 2. Fallback to Legacy Symmetric Secret
+      else if (env.SUPABASE_JWT_SECRET && env.SUPABASE_JWT_SECRET.length > 5) {
+        const secret = new TextEncoder().encode(env.SUPABASE_JWT_SECRET);
+        await jwtVerify(token, secret);
+      }
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      return this.addCorsHeaders(
+        Response.json(
+          { error: 'UNAUTHORIZED', message: errorMessage },
+          { status: 401 },
+        ),
+        corsHeaders,
+      );
     }
 
     try {
       if (request.method === 'POST' && url.pathname === '/transcribe') {
-        response = await handleTranscribe(request, env);
+        const abortedCheck = (): void => {
+          if (request.signal?.aborted) {
+            throw new Error('CLIENT_ABORTED');
+          }
+        };
+        response = await handleTranscribe(request, env, abortedCheck);
       } else if (request.method === 'POST' && url.pathname === '/translate') {
-        response = await handleTranslate(request, env);
+        const abortedCheck = (): void => {
+          if (request.signal?.aborted) {
+            throw new Error('CLIENT_ABORTED');
+          }
+        };
+        response = await handleTranslate(request, env, abortedCheck);
       } else {
         response = Response.json({ error: 'NOT_FOUND' }, { status: 404 });
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      if (errorMsg === 'CLIENT_ABORTED') {
+        return new Response(null, { status: 499 }); // Client Closed Request
+      }
       response = Response.json(
-        { error: 'EKWE_NETWORK_LOST', message: e.message },
+        { error: 'EKWE_NETWORK_LOST', message: errorMsg },
         { status: 500 },
       );
     }
@@ -132,6 +162,11 @@ export default {
   ): Response {
     const newHeaders = new Headers(response.headers);
     Object.entries(corsHeaders).forEach(([k, v]) => newHeaders.set(k, v));
+    // Provide additional required headers for typical clients
+    newHeaders.set(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization',
+    );
     return new Response(response.body, {
       status: response.status,
       headers: newHeaders,
@@ -141,16 +176,23 @@ export default {
 
 // ─── Transcription ────────────────────────────────────────────
 
-async function handleTranscribe(request: Request, env: Env): Promise<Response> {
+async function handleTranscribe(
+  request: Request,
+  env: Env,
+  abortedCheck: () => void,
+): Promise<Response> {
   const formData = await request.formData();
-  const file = (formData as any).get('file') as File | null;
-  const language = (formData as any).get('language') as string | null;
-  const timestampGranularities = (formData as any).get(
-    'timestamp_granularities',
-  ) as string | null;
+  const file = formData.get('file') as File | null;
+  const language = formData.get('language') as string | null;
+  const timestampGranularities = formData.get('timestamp_granularities') as
+    | string
+    | null;
 
   if (!file)
     return Response.json({ error: 'EKWE_SHARE_COPY_FAIL' }, { status: 400 });
+
+  abortedCheck();
+
   if (file.size > MAX_FILE_SIZE)
     return Response.json({ error: 'EKWE_FILE_TOO_LARGE' }, { status: 413 });
 
@@ -169,6 +211,7 @@ async function handleTranscribe(request: Request, env: Env): Promise<Response> {
   ]).filter((k) => k && k.length > 5 && !isKeyCoolingDown(k));
 
   for (let i = 0; i < groqKeys.length; i++) {
+    abortedCheck();
     const key = groqKeys[i];
     const res = await groqTranscribe(
       file,
@@ -179,26 +222,28 @@ async function handleTranscribe(request: Request, env: Env): Promise<Response> {
 
     if (res.status === 429) {
       setKeyCooldown(key, 60); // Break for 60s
-      if (i < 2) await new Promise((r) => setTimeout(r, 1000 * (i + 1))); // Small backoff for first 2 failures
-      continue;
+      continue; // Instant rotation - ZERO LAG
     }
     if (res.ok || res.status < 400) return res;
   }
 
-  // 2. Try Deepgram
-  if (env.DEEPGRAM_KEY && env.DEEPGRAM_KEY.length > 5) {
-    const res = await deepgramTranscribe(file, language, env.DEEPGRAM_KEY);
+  // 2. Try Cloudflare Workers AI (Whisper)
+  if (env.AI) {
+    abortedCheck();
+    const res = await cloudflareTranscribe(file, env);
     if (res.ok) return res;
   }
 
-  // 3. Try Cloudflare Workers AI (Whisper)
-  if (env.AI) {
-    const res = await cloudflareTranscribe(file, env);
+  // 3. Try Deepgram
+  if (env.DEEPGRAM_KEY && env.DEEPGRAM_KEY.length > 5) {
+    abortedCheck();
+    const res = await deepgramTranscribe(file, language, env.DEEPGRAM_KEY);
     if (res.ok) return res;
   }
 
   // 4. Try AssemblyAI
   if (env.ASSEMBLYAI_KEY && env.ASSEMBLYAI_KEY.length > 5) {
+    abortedCheck();
     const res = await assemblyAITranscribe(file, language, env.ASSEMBLYAI_KEY);
     if (res.ok) return res;
   }
@@ -232,7 +277,11 @@ async function groqTranscribe(
 
 // ─── Translation ──────────────────────────────────────────────
 
-async function handleTranslate(request: Request, env: Env): Promise<Response> {
+async function handleTranslate(
+  request: Request,
+  env: Env,
+  abortedCheck: () => void,
+): Promise<Response> {
   const body = (await request.json()) as {
     text: string;
     targetLang: string;
@@ -240,6 +289,8 @@ async function handleTranslate(request: Request, env: Env): Promise<Response> {
   };
   if (!body.text?.trim())
     return Response.json({ error: 'EKWE_EMPTY_TRANSCRIPT' }, { status: 400 });
+
+  abortedCheck();
 
   // 1. Try DeepSeek (Randomized order of 3 keys)
   const dsKeys = shuffle([
@@ -249,6 +300,7 @@ async function handleTranslate(request: Request, env: Env): Promise<Response> {
   ]).filter((k) => k && k.length > 5 && !isKeyCoolingDown(k));
 
   for (const key of dsKeys) {
+    abortedCheck();
     const res = await deepSeekTranslate(
       body.text,
       body.targetLang,
@@ -259,7 +311,7 @@ async function handleTranslate(request: Request, env: Env): Promise<Response> {
       setKeyCooldown(key, 30);
       continue;
     }
-    if (res.ok) return res;
+    if (res.ok) return await normalizeChatCompletion(res);
   }
 
   // 2. Try Mistral / OpenRouter / Groq LLaMA
@@ -269,6 +321,7 @@ async function handleTranslate(request: Request, env: Env): Promise<Response> {
   ].filter((p) => p.key && p.key.length > 5);
 
   for (const p of shuffle(llmKeys)) {
+    abortedCheck();
     let res: Response;
     if (p.type === 'mistral')
       res = await mistralTranslate(
@@ -284,7 +337,7 @@ async function handleTranslate(request: Request, env: Env): Promise<Response> {
         body.sourceLang,
         p.key,
       );
-    if (res.ok) return res;
+    if (res.ok) return await normalizeChatCompletion(res);
   }
 
   // Final fallback to Groq LLaMA
@@ -294,13 +347,14 @@ async function handleTranslate(request: Request, env: Env): Promise<Response> {
     env.GROQ_KEY_3,
   ]).filter((k) => k && k.length > 5);
   for (const key of groqKeys) {
+    abortedCheck();
     const res = await groqTranslate(
       body.text,
       body.targetLang,
       body.sourceLang,
       key,
     );
-    if (res.ok) return res;
+    if (res.ok) return await normalizeChatCompletion(res);
   }
 
   return Response.json({ error: 'EKWE_ALL_PROVIDERS_FAIL' }, { status: 503 });
@@ -317,6 +371,25 @@ function buildTranslationPrompt(
   sourceLang?: string,
 ): string {
   return `You are a translator. Translate the text${sourceLang ? ` from ${sourceLang}` : ''} to ${targetLang}. Return ONLY the translation. No preamble.`;
+}
+
+/**
+ * Normalizes LLM chat completion responses to the { translation } format the client expects.
+ * All providers (DeepSeek, Mistral, OpenRouter, Groq) return { choices: [{ message: { content } }] }.
+ */
+async function normalizeChatCompletion(response: Response): Promise<Response> {
+  try {
+    const data = (await response.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      return Response.json({ error: 'EKWE_TRANSLATION_FAIL' }, { status: 502 });
+    }
+    return Response.json({ translation: content });
+  } catch {
+    return Response.json({ error: 'EKWE_TRANSLATION_FAIL' }, { status: 502 });
+  }
 }
 
 async function deepSeekTranslate(
@@ -432,11 +505,11 @@ async function groqTranslate(
 async function cloudflareTranscribe(file: File, env: Env): Promise<Response> {
   try {
     const audioArray = await file.arrayBuffer();
-    const result = await (env.AI as any).run('@cf/openai/whisper', {
+    const result = (await env.AI.run('@cf/openai/whisper', {
       audio: [...new Uint8Array(audioArray)],
-    });
+    })) as { text: string };
     return Response.json({ text: result.text, words: [], language: 'en' });
-  } catch (e) {
+  } catch {
     return Response.json({ error: 'EKWE_NETWORK_LOST' }, { status: 503 });
   }
 }
@@ -461,10 +534,16 @@ async function deepgramTranscribe(
     body: file,
   });
   if (!response.ok) return response;
-  const data = (await response.json()) as any;
+  const data = (await response.json()) as {
+    results?: {
+      channels?: {
+        alternatives?: { transcript?: string; words?: unknown[] }[];
+      }[];
+    };
+  };
   return Response.json({
-    text: data.results?.channels[0]?.alternatives[0]?.transcript || '',
-    words: data.results?.channels[0]?.alternatives[0]?.words || [],
+    text: data.results?.channels?.[0]?.alternatives?.[0]?.transcript || '',
+    words: data.results?.channels?.[0]?.alternatives?.[0]?.words || [],
     language: language || 'en',
   });
 }
@@ -499,14 +578,14 @@ async function assemblyAITranscribe(
   });
   if (!startRes.ok) return startRes;
   const { id } = (await startRes.json()) as { id: string };
-  let result: any = { status: 'queued' };
+  let result: { status: string; text?: string } = { status: 'queued' };
   for (let i = 0; i < 15; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     const poll = await fetch(`${ASSEMBLYAI_TRANSCRIPT}/${id}`, {
       headers: { authorization: apiKey, 'User-Agent': getRandomUserAgent() },
     });
     if (poll.ok) {
-      result = await poll.json();
+      result = (await poll.json()) as { status: string; text?: string };
       if (result.status === 'completed' || result.status === 'error') break;
     }
   }

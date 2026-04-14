@@ -1,6 +1,5 @@
 import { BlurView } from 'expo-blur';
 import { Check, AlertTriangle, X, LucideIcon } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import React, { useEffect, useMemo } from 'react';
 import { View, Text, Pressable, Platform } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
@@ -8,6 +7,7 @@ import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { EkweBannerProps } from './EkweBanner.types';
 
 import { getColor } from '@/constants/colors';
+import { useTheme } from '@/hooks/useTheme';
 
 export const EkweBanner = ({
   title,
@@ -19,7 +19,7 @@ export const EkweBanner = ({
   style,
   accessibilityLabel,
 }: EkweBannerProps): React.ReactElement | null => {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
 
   useEffect((): (() => void) | void => {

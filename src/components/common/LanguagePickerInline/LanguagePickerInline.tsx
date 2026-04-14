@@ -1,6 +1,5 @@
 import { FlashList } from '@shopify/flash-list';
 import { Search, Star, X, Check } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import React, { useMemo, useState, useCallback, memo } from 'react';
 import { View, Text, Pressable, TextInput } from 'react-native';
 
@@ -8,6 +7,7 @@ import { LanguagePickerInlineProps } from './LanguagePickerInline.types';
 
 import { getColor } from '@/constants/colors';
 import { LANGUAGES, Language, FLAG_MAP } from '@/constants/languages';
+import { useTheme } from '@/hooks/useTheme';
 
 interface LanguageRowProps {
   item: Language;
@@ -26,7 +26,7 @@ const LanguageRow = memo(
     onToggleSelect,
     onTogglePin,
   }: LanguageRowProps): React.ReactElement => {
-    const { colorScheme } = useColorScheme();
+    const { colorScheme } = useTheme();
     const isDark = colorScheme === 'dark';
 
     const mutedColor = getColor('muted', isDark);
@@ -95,7 +95,7 @@ export const LanguagePickerInline = ({
   pinnedLanguages,
   onSelectionChange,
 }: LanguagePickerInlineProps): React.ReactElement => {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme } = useTheme();
   const isDark = colorScheme === 'dark';
   const [searchQuery, setSearchQuery] = useState('');
 

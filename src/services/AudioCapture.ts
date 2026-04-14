@@ -11,25 +11,27 @@ import {
   releaseAudioEffects,
 } from '@/utils/AudioEffectsModule';
 import { validateSharedAudio } from '@/utils/fileValidation';
+import logger from '@/utils/logger';
 
 export interface CaptureSession {
   sessionId: string;
   startTime: number;
-  meteringCallback: (amplitude: number) => void;
 }
 
 export interface RecordingResult {
   uri: string;
   durationMs: number;
-  meteringData: number[];
   sessionId: string;
+  meteringData: number[]; // Added for waveform consistency
 }
 
 class AudioCaptureClass {
-  private meteringData: number[] = [];
   private meteringInterval: ReturnType<typeof setInterval> | null = null;
   private currentSessionId: string | null = null;
+  private currentMeteringData: number[] = []; // Track during session
   private listeners: ((amplitude: number) => void)[] = [];
+  private statusListeners: ((status: 'started' | 'stopped') => void)[] = [];
+  private isStartingParams = false;
 
   /**
    * Requests microphone permission.
@@ -45,7 +47,10 @@ class AudioCaptureClass {
           'Ekwe needs microphone access to record and translate voice notes. Please enable it in Settings.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            {
+              text: 'Open Settings',
+              onPress: (): Promise<void> => Linking.openSettings(),
+            },
           ],
         );
       }
@@ -69,51 +74,72 @@ class AudioCaptureClass {
   }
 
   /**
-   * Starts a new recording session.
+   * Starts a new recording session safely.
    */
-  async startRecording(
-    sessionId: string,
-    onMetering: (amplitude: number) => void,
-  ): Promise<Result<void, EkweError>> {
-    const isAlreadyRecording = AudioService.isRecording();
-    if (isAlreadyRecording) {
+  async startRecording(sessionId: string): Promise<Result<void, EkweError>> {
+    // Concurrency Lock: Prevent multiple calls bridging
+    if (this.isStartingParams || AudioService.isRecording()) {
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
 
-    const permResult = await this.checkPermission();
-    if (!permResult.ok) return err(permResult.error);
-    if (!permResult.value) return err(EkweError.PERMISSION_MIC);
-
-    await VolumeManager.raiseVolumeIfNeeded();
+    this.isStartingParams = true;
 
     try {
+      const permResult = await this.checkPermission();
+      if (!permResult.ok || !permResult.value) {
+        this.isStartingParams = false;
+        return err(EkweError.PERMISSION_MIC);
+      }
+
+      await VolumeManager.raiseVolumeIfNeeded();
+
       this.currentSessionId = sessionId;
-      this.meteringData = [];
-
+      this.currentMeteringData = []; // Reset for new session
       await AudioService.startRecording();
+      this.notifyStatusListeners('started');
 
-      // Pro-level haptic feedback
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // Attach Android audio effects if session 0 is supported
       if (Platform.OS === 'android') {
         await attachAudioEffects(0);
       }
 
-      // Begin metering polling at ~30fps to reduce JS thread load while maintaining visual smoothness.
-      this.meteringInterval = setInterval(() => {
-        const db = AudioService.getMetering();
-        // db is typically -160 to 0
-        const normalized = Math.max(0, Math.min(1, (db + 60) / 60));
+      // Begin metering and silence detection loop
+      let silenceStartTime: number | null = null;
+      const SILENCE_THRESHOLD_DB = -50;
+      const SILENCE_DURATION_MS = 5000;
 
-        this.meteringData.push(db);
-        onMetering(normalized);
-        this.notifyListeners(normalized);
+      this.meteringInterval = setInterval(async () => {
+        if (!this.currentSessionId) return;
+
+        const db = AudioService.getMetering();
+
+        // --- Silence Auto-Stop Logic ---
+        if (db < SILENCE_THRESHOLD_DB) {
+          if (silenceStartTime === null) {
+            silenceStartTime = Date.now();
+          } else if (Date.now() - silenceStartTime > SILENCE_DURATION_MS) {
+            logger.info('AudioCapture: Silence detected, auto-stopping...');
+            await this.stopRecording();
+            return;
+          }
+        } else {
+          silenceStartTime = null;
+        }
+
+        // --- Metering UI Update ---
+        if (this.listeners.length > 0) {
+          const normalized = Math.max(0, Math.min(1, (db + 60) / 60));
+          this.currentMeteringData.push(normalized); // Store for result
+          this.notifyListeners(normalized);
+        }
       }, 32);
 
+      this.isStartingParams = false;
       return ok(undefined);
     } catch {
       this.currentSessionId = null;
+      this.isStartingParams = false;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
@@ -136,6 +162,7 @@ class AudioCaptureClass {
 
     try {
       const { path, duration } = await AudioService.stopRecording();
+      this.notifyStatusListeners('stopped');
 
       if (duration < 500) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -145,12 +172,12 @@ class AudioCaptureClass {
       const result: RecordingResult = {
         uri: path,
         durationMs: duration,
-        meteringData: [...this.meteringData],
         sessionId,
+        meteringData: [...this.currentMeteringData],
       };
 
       this.currentSessionId = null;
-      this.meteringData = [];
+      this.currentMeteringData = [];
 
       await VolumeManager.restoreVolume();
 
@@ -158,12 +185,11 @@ class AudioCaptureClass {
         await releaseAudioEffects();
       }
 
-      // Success feedback
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
       return ok(result);
     } catch {
       this.currentSessionId = null;
+      this.notifyStatusListeners('stopped');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return err(EkweError.INTERRUPTED);
     }
@@ -180,13 +206,12 @@ class AudioCaptureClass {
 
     try {
       await AudioService.stopRecording();
+      this.notifyStatusListeners('stopped');
     } catch {
       // Ignore errors during cancel
     }
 
     this.currentSessionId = null;
-    this.meteringData = [];
-
     await VolumeManager.restoreVolume();
 
     if (Platform.OS === 'android') {
@@ -202,12 +227,23 @@ class AudioCaptureClass {
   async processSharedFile(
     uri: string,
     mimeType?: string,
-  ): Promise<Result<{ uri: string; durationMs: number }, EkweError>> {
+  ): Promise<
+    Result<
+      { uri: string; durationMs: number; meteringData: number[] },
+      EkweError
+    >
+  > {
     const validationResult = await validateSharedAudio(uri, mimeType);
-    if (!validationResult.ok) {
-      return err(validationResult.error);
+
+    if (validationResult.ok) {
+      return ok({
+        uri: validationResult.value.uri,
+        durationMs: 0,
+        meteringData: [],
+      });
     }
-    return ok({ uri: validationResult.value.uri, durationMs: 0 });
+
+    return err(validationResult.error);
   }
 
   /**
@@ -225,6 +261,22 @@ class AudioCaptureClass {
     return () => {
       this.listeners = this.listeners.filter((l) => l !== callback);
     };
+  }
+
+  /**
+   * Adds a listener for recording status changes.
+   */
+  addStatusListener(
+    callback: (status: 'started' | 'stopped') => void,
+  ): () => void {
+    this.statusListeners.push(callback);
+    return () => {
+      this.statusListeners = this.statusListeners.filter((l) => l !== callback);
+    };
+  }
+
+  private notifyStatusListeners(status: 'started' | 'stopped'): void {
+    this.statusListeners.forEach((l) => l(status));
   }
 
   private notifyListeners(amplitude: number): void {

@@ -21,6 +21,7 @@ class TranslationServiceClass {
     text: string,
     sourceLang: string,
     targetLang: string,
+    signal?: AbortSignal,
   ): Promise<Result<TranslationResult, EkweError>> {
     const workerUrl = getWorkerUrl();
     if (workerUrl.length === 0) {
@@ -49,6 +50,7 @@ class TranslationServiceClass {
           sourceLang: sourceName,
         }),
         retries: 2, // Translations are smaller, don't need heavy retries
+        signal,
       });
 
       if (!response.ok) {

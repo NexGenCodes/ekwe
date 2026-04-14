@@ -1,14 +1,10 @@
 import { Link, Stack } from 'expo-router';
-import { useColorScheme } from 'nativewind';
 import { View, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EkweButton } from '@/components/common/EkweButton';
 
-export default function NotFoundScreen() {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
+export default function NotFoundScreen(): React.ReactElement {
   return (
     <SafeAreaView className="flex-1 bg-background dark:bg-background-dark">
       <Stack.Screen options={{ title: 'Oops!' }} />

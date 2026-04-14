@@ -146,12 +146,13 @@ class EkweNativeModule : Module() {
     }
 
     AsyncFunction("updateBubbleMode") { mode: String, data: String? ->
-      val intent = Intent(appContext.reactContext, BubbleService::class.java).apply {
+      val ctx = appContext.reactContext ?: return@AsyncFunction
+      val intent = Intent(ctx, BubbleService::class.java).apply {
         action = BubbleService.ACTION_UPDATE_STATE
         putExtra(BubbleService.EXTRA_MODE, mode)
         putExtra(BubbleService.EXTRA_DATA, data)
       }
-      appContext.reactContext?.startService(intent)
+      ctx.startService(intent)
     }
 
     // --- Overlay Window Methods ---

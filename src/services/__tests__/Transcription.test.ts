@@ -42,7 +42,7 @@ if (typeof AbortController === 'undefined') {
       removeEventListener: jest.fn(),
     };
     abort = jest.fn();
-  } as any;
+  } as unknown as typeof AbortController;
 }
 
 if (typeof FormData === 'undefined') {
@@ -54,10 +54,13 @@ if (typeof FormData === 'undefined') {
     has = jest.fn();
     set = jest.fn();
     forEach = jest.fn();
-  } as any;
-} else if (!(global.FormData.prototype as any).append) {
+  } as unknown as typeof FormData;
+} else if (
+  !(global.FormData.prototype as unknown as { append: unknown }).append
+) {
   // If FormData exists but is a mock/incomplete, ensure append is there
-  (global.FormData.prototype as any).append = jest.fn();
+  (global.FormData.prototype as unknown as { append: unknown }).append =
+    jest.fn();
 }
 
 const mockAudio: ProcessedAudio = {
@@ -71,8 +74,6 @@ const mockAudio: ProcessedAudio = {
 };
 
 describe('TranscriptionService', () => {
-  const originalEnv = process.env;
-
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.EXPO_PUBLIC_WORKER_URL = 'https://mock-worker.dev';
@@ -90,7 +91,7 @@ describe('TranscriptionService', () => {
 
   it.skip('returns err(SHARE_COPY_FAIL) when file does not exist', async () => {
     const { File: MockFile } = require('expo-file-system');
-    (MockFile as any).mockImplementationOnce(() => ({
+    (MockFile as jest.Mock).mockImplementationOnce(() => ({
       exists: false,
     }));
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
@@ -102,7 +103,7 @@ describe('TranscriptionService', () => {
 
   it.skip('returns err(BAD_FORMAT) when file exceeds 25MB', async () => {
     const { File: MockFile } = require('expo-file-system');
-    (MockFile as any).mockImplementationOnce(() => ({
+    (MockFile as jest.Mock).mockImplementationOnce(() => ({
       exists: true,
       size: 50 * 1024 * 1024, // 50MB
     }));
@@ -121,7 +122,7 @@ describe('TranscriptionService', () => {
     ).mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ text: 'Hello' }),
-    } as any);
+    } as Awaited<ReturnType<typeof fetchWithRetry>>);
 
     await TranscriptionService.transcribe(mockAudio, 'en');
 
@@ -134,7 +135,9 @@ describe('TranscriptionService', () => {
   });
 
   it('returns err(NETWORK_LOST) when fetch throws', async () => {
-    (fetchWithRetry as any).mockRejectedValueOnce(new Error('Network fail'));
+    (fetchWithRetry as jest.Mock).mockRejectedValueOnce(
+      new Error('Network fail'),
+    );
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -148,7 +151,7 @@ describe('TranscriptionService', () => {
     ).mockResolvedValueOnce({
       ok: false,
       json: () => Promise.resolve({ error: 'EKWE_EMPTY_TRANSCRIPT' }),
-    } as any);
+    } as Awaited<ReturnType<typeof fetchWithRetry>>);
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -167,7 +170,7 @@ describe('TranscriptionService', () => {
           words: [{ word: 'Hello', start: 0, end: 0.5 }],
           language: 'en',
         }),
-    } as any);
+    } as Awaited<ReturnType<typeof fetchWithRetry>>);
 
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
     if (!result.ok) {
@@ -192,7 +195,7 @@ describe('TranscriptionService', () => {
           words: [],
           language: 'en',
         }),
-    } as any);
+    } as Awaited<ReturnType<typeof fetchWithRetry>>);
 
     const result = await TranscriptionService.transcribe(mockAudio, 'en');
     if (!result.ok) {
@@ -255,7 +258,7 @@ describe('TranscriptionService', () => {
           text: 'Hello',
           words: [{ word: 'Hello', start: 0, end: 1 }],
         }),
-    } as any);
+    } as Awaited<ReturnType<typeof fetchWithRetry>>);
 
     const result = await TranscriptionService.transcribe(audioWithTrim, 'en');
     if (!result.ok) {

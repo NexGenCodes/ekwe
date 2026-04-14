@@ -66,13 +66,11 @@ describe('AudioCapture', () => {
 
   describe('startRecording', () => {
     it('starts successfully, attaches effects on Android, raises volume, and polls metering', async () => {
-      const onMetering = jest.fn();
-
       (AudioService.isRecording as jest.Mock)
         .mockReturnValueOnce(false) // For AudioCapture.startRecording check
         .mockReturnValue(true); // For subsequent checks
 
-      const result = await AudioCapture.startRecording('session-1', onMetering);
+      const result = await AudioCapture.startRecording('session-1');
 
       expect(result.ok).toBe(true);
       expect(VolumeManager.raiseVolumeIfNeeded).toHaveBeenCalled();
@@ -81,7 +79,7 @@ describe('AudioCapture', () => {
 
     it('returns AUDIO_RECORD_FAIL if already recording', async () => {
       (AudioService.isRecording as jest.Mock).mockReturnValue(true);
-      const result = await AudioCapture.startRecording('sess2', jest.fn());
+      const result = await AudioCapture.startRecording('sess2');
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toBe(EkweError.AUDIO_RECORD_FAIL);
     });
@@ -93,7 +91,7 @@ describe('AudioCapture', () => {
         .mockReturnValueOnce(false)
         .mockReturnValue(true);
       // We need to call start first to set the session ID in the real class
-      await AudioCapture.startRecording('session-stop', jest.fn());
+      await AudioCapture.startRecording('session-stop');
 
       const result = await AudioCapture.stopRecording();
 
@@ -115,7 +113,7 @@ describe('AudioCapture', () => {
         path: 'file://too-short.m4a',
         duration: 400,
       });
-      await AudioCapture.startRecording('sess', jest.fn());
+      await AudioCapture.startRecording('sess');
 
       const result = await AudioCapture.stopRecording();
       expect(result.ok).toBe(false);
