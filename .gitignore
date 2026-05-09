@@ -67,5 +67,6 @@ Thumbs.db
 # Cloudflare Workers
 .dev.vars
 .wrangler/
+skills-lock.json
 
 
