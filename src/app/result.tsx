@@ -1,5 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
-import * as FileSystem from 'expo-file-system';
+import { File as ExpoFile } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
@@ -93,9 +93,11 @@ export default function ResultScreen(): React.JSX.Element {
         setTranscript(txResult.transcript);
 
         // Clean up file system
-        await FileSystem.deleteAsync(audioUri, { idempotent: true }).catch(
-          () => {},
-        );
+        try {
+          new ExpoFile(audioUri).delete();
+        } catch {
+          /* file may not exist */
+        }
 
         // Save to history using perfectly detected language
         addEntry({

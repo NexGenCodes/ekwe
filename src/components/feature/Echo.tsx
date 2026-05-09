@@ -2,8 +2,8 @@ import BottomSheet, {
   BottomSheetBackdrop,
   BottomSheetView,
 } from '@gorhom/bottom-sheet';
-import { Zap, Copy, CheckCircle2 } from 'lucide-react-native';
-import React, { useRef, useCallback, useEffect } from 'react';
+import { X } from 'lucide-react-native';
+import React, { useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,38 +14,46 @@ import {
   useColorScheme,
 } from 'react-native';
 
-import {
-  LanguageGrid,
-  PlaybackControl,
-  ResultDisplay,
-} from '@/components/common';
+import { EchoConfigStep } from './Echo/EchoConfig';
+import { EchoFinalResult } from './Echo/EchoFinalResult';
+import { EchoLanguagePicker } from './Echo/EchoLanguagePicker';
+import { EchoTranslationConfig } from './Echo/EchoTranslationConfig';
+
 import { getColor } from '@/constants/colors';
-import { STEP_METADATA } from '@/constants/echo';
 import { LANGUAGES } from '@/constants/languages';
 import { useEchoFlow } from '@/hooks/useEchoFlow';
+import { useSettingsStore } from '@/store';
 import { EchoProps } from '@/types/echo';
 
 export const Echo: React.FC<EchoProps> = (props) => {
   const bottomSheetRef = useRef<BottomSheet>(null);
+  const activeTabRef = useRef<'Translation' | 'Transcription'>('Translation');
+  const snapPoints = useMemo(() => ['30%', '42%', '66%', '70%'], []);
 
-  // Use Modular Business Logic
   const {
     step,
     setStep,
     selectedLang,
     setSelectedLang,
+    detectedLang,
+    targetLang,
+    setTargetLang,
     transcription,
     translation,
-    activeTab,
-    setActiveTab,
-    sourceApp,
-    player,
+    sttProvider,
+    llmProvider,
+    audioUri,
     isResolving,
     themePreference,
-    handleProcess,
-    handleCopy,
+    handleTranscribe,
+    handleTranslate,
     onDismiss,
   } = useEchoFlow(props);
+
+  const { selectedLanguages } = useSettingsStore();
+  const availableTargetList = useMemo(() => {
+    return LANGUAGES.filter((l) => selectedLanguages.includes(l.code));
+  }, [selectedLanguages]);
 
   const colorScheme = useColorScheme();
   const isDark =
@@ -53,7 +61,6 @@ export const Echo: React.FC<EchoProps> = (props) => {
       ? colorScheme === 'dark'
       : themePreference === 'dark';
 
-  const bgHex = getColor('card', isDark);
   const handleHex = getColor('border', isDark);
   const textPrimary = getColor('foreground', isDark);
   const textSecondary = getColor('muted', isDark);
@@ -64,11 +71,10 @@ export const Echo: React.FC<EchoProps> = (props) => {
     bottomSheetRef.current?.close();
   }, []);
 
-  // Pro-Level: Handle Android physical back button correctly
   useEffect((): (() => void) => {
     const backAction = (): boolean => {
       handleClose();
-      return true; // prevent default behavior
+      return true;
     };
     const backHandler = BackHandler.addEventListener(
       'hardwareBackPress',
@@ -77,7 +83,23 @@ export const Echo: React.FC<EchoProps> = (props) => {
     return () => backHandler.remove();
   }, [handleClose]);
 
-  const onSheetChange = useCallback(
+  // Snap to the correct height whenever step changes
+  useEffect(() => {
+    const snapMap: Record<string, number> = {
+      PickLanguage: 2, // 66% - Comfortable space for scrolling languages
+      Config: 2, // 42% - Audio player and action button
+      Transcribing: 1, // 42% - Match Config height for smooth loading state
+      TranscribeResult: 3, // 70% - Maximum vertical space for Transcript box + Language Chips
+      Translating: 2, // 66% - Slight squeeze during load prevents violently bouncing back to 30%
+      FullResult: 3, // 70% - Result display taking up maximum area
+    };
+    bottomSheetRef.current?.snapToIndex(snapMap[step] ?? 2);
+  }, [step]);
+
+  const sourceLang =
+    detectedLang || (selectedLang !== 'auto' ? selectedLang : null);
+
+  const handleSheetChange = useCallback(
     (index: number): void => {
       if (index === -1) {
         onDismiss();
@@ -87,16 +109,13 @@ export const Echo: React.FC<EchoProps> = (props) => {
   );
 
   const renderBackdrop = useCallback(
-    (
-      backdropProps: React.JSX.IntrinsicAttributes &
-        import('@gorhom/bottom-sheet').BottomSheetBackdropProps,
-    ): React.JSX.Element => (
+    (props: React.ComponentProps<typeof BottomSheetBackdrop>) => (
       <BottomSheetBackdrop
-        {...backdropProps}
+        {...props}
         disappearsOnIndex={-1}
         appearsOnIndex={0}
         opacity={0.5}
-        pressBehavior="close"
+        pressBehavior="none"
       />
     ),
     [],
@@ -106,181 +125,133 @@ export const Echo: React.FC<EchoProps> = (props) => {
     <View style={styles.container}>
       <BottomSheet
         ref={bottomSheetRef}
-        enableDynamicSizing
+        index={2}
+        snapPoints={snapPoints}
         enablePanDownToClose={false}
-        enableContentPanningGesture={false}
         enableHandlePanningGesture={false}
-        onChange={onSheetChange}
+        enableContentPanningGesture={false}
+        onChange={handleSheetChange}
         backdropComponent={renderBackdrop}
-        backgroundStyle={[{ backgroundColor: bgHex }]}
+        backgroundStyle={[{ backgroundColor: bgMain }]}
         handleIndicatorStyle={[
           styles.handleIndicator,
-          { backgroundColor: handleHex },
+          { backgroundColor: textSecondary },
         ]}
       >
         <BottomSheetView style={styles.content}>
-          {/* Header Block */}
           <View style={styles.header}>
             <View style={styles.headerBadgeRow}>
-              {STEP_METADATA[step].showBadge && (
-                <View
-                  style={[styles.badge, { backgroundColor: brandPrimary }]}
-                />
-              )}
-              <Text style={[styles.sourceLabel, { color: textPrimary }]}>
-                {STEP_METADATA[step].title === 'Magic Results'
-                  ? '✨ Echo Magic'
-                  : `${sourceApp} Audio`}
+              <View style={[styles.badge, { backgroundColor: brandPrimary }]} />
+              <Text style={[styles.sourceLabel, { color: textSecondary }]}>
+                Ekwe Echo
               </Text>
             </View>
             <TouchableOpacity
               onPress={handleClose}
-              style={[styles.closeBtn, { backgroundColor: bgMain }]}
+              style={[styles.closeBtn, { backgroundColor: handleHex }]}
             >
-              <Text style={[styles.closeBtnTxt, { color: textSecondary }]}>
-                ✕
-              </Text>
+              <X size={16} color={textPrimary} />
             </TouchableOpacity>
           </View>
 
-          {/* Phase 1: Language Selection */}
           {step === 'PickLanguage' && (
-            <View>
-              <Text style={[styles.stepTitle, { color: textPrimary }]}>
-                {STEP_METADATA.PickLanguage.title}
-              </Text>
-              <LanguageGrid
-                selectedLang={selectedLang}
-                onSelect={(code) => {
-                  setSelectedLang(code);
-                  setStep('Config');
-                }}
-                isDark={isDark}
-              />
-            </View>
+            <EchoLanguagePicker
+              selectedLang={selectedLang}
+              isDark={isDark}
+              onSelect={(code) => {
+                setSelectedLang(code);
+                setStep('Config');
+              }}
+            />
           )}
 
-          {/* Phase 2: Preview & Configuration */}
-          {(step === 'Config' || step === 'Processing') && (
+          {(step === 'Config' || step === 'Transcribing') && (
             <View>
-              <PlaybackControl
-                isPlaying={player.isPlaying}
-                isDecoding={player.isDecoding}
-                progress={player.progress}
-                duration={player.duration}
-                peaks={player.realWaveform}
-                onTogglePlay={() =>
-                  player.isPlaying ? player.pause() : player.play()
-                }
-                onSeek={player.seek}
-                isDark={isDark}
-              />
-
-              {/* Status Indicator */}
-              <View style={[styles.metaRow, { borderTopColor: handleHex }]}>
-                <Text style={[styles.metaLabel, { color: textSecondary }]}>
-                  Detected as:{' '}
-                </Text>
-                <Text style={[styles.metaValue, { color: textPrimary }]}>
-                  {selectedLang === 'auto'
-                    ? 'Waiting for magic...'
-                    : LANGUAGES.find((l) => l.code === selectedLang)
-                        ?.englishName}
-                </Text>
-                {step === 'Config' && (
-                  <TouchableOpacity
-                    onPress={() => setStep('PickLanguage')}
-                    style={styles.changeBtn}
-                  >
-                    <Text style={[styles.changeLabel, { color: brandPrimary }]}>
-                      Change
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {step === 'Config' && (
-                <TouchableOpacity
-                  onPress={handleProcess}
-                  disabled={!player.isLoaded || isResolving}
-                  style={[
-                    styles.primaryAction,
-                    {
-                      backgroundColor: brandPrimary,
-                      opacity: player.isLoaded && !isResolving ? 1 : 0.6,
-                    },
-                  ]}
+              {step === 'Config' ? (
+                <EchoConfigStep
+                  audioUri={audioUri}
+                  isResolving={isResolving}
+                  isDark={isDark}
+                  onTranscribe={handleTranscribe}
                 >
-                  {(!player.isLoaded || isResolving) && (
-                    <ActivityIndicator
-                      size="small"
-                      color="#FFF"
-                      style={{ marginRight: 8 }}
-                    />
-                  )}
-                  <Zap size={18} color="#FFF" fill="#FFF" />
-                  <Text style={styles.primaryActionTxt}>
-                    {isResolving
-                      ? 'Preparing Audio...'
-                      : player.isLoaded
-                        ? 'Start Translation'
-                        : 'Decoding Audio...'}
+                  <View style={[styles.metaRow, { borderTopColor: handleHex }]}>
+                    <Text style={[styles.metaLabel, { color: textSecondary }]}>
+                      {selectedLang === 'auto'
+                        ? 'Language: '
+                        : 'Source Language: '}
+                    </Text>
+                    <Text style={[styles.metaValue, { color: textPrimary }]}>
+                      {selectedLang === 'auto'
+                        ? 'Auto-Detect'
+                        : LANGUAGES.find((l) => l.code === selectedLang)
+                            ?.englishName}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => setStep('PickLanguage')}
+                      style={styles.changeBtn}
+                    >
+                      <Text
+                        style={[styles.changeLabel, { color: brandPrimary }]}
+                      >
+                        Change
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </EchoConfigStep>
+              ) : (
+                <View style={[styles.metaRow, { borderTopColor: handleHex }]}>
+                  <Text style={[styles.metaLabel, { color: textSecondary }]}>
+                    {selectedLang === 'auto'
+                      ? 'Language: '
+                      : 'Source Language: '}
                   </Text>
-                </TouchableOpacity>
+                  <Text style={[styles.metaValue, { color: textPrimary }]}>
+                    {selectedLang === 'auto'
+                      ? 'Auto-Detect'
+                      : LANGUAGES.find((l) => l.code === selectedLang)
+                          ?.englishName}
+                  </Text>
+                </View>
               )}
 
-              {/* Phase 2: Processing Overlay */}
-              {step === 'Processing' && (
+              {step === 'Transcribing' && (
                 <View style={styles.loadingContainer}>
                   <ActivityIndicator size="large" color={brandPrimary} />
                   <Text style={[styles.loadingTxt, { color: textPrimary }]}>
-                    Casting Echo Magic...
-                  </Text>
-                  <Text
-                    style={[styles.loadingSubTxt, { color: textSecondary }]}
-                  >
-                    Translating audio pulses into text
+                    Listening carefully...
                   </Text>
                 </View>
               )}
             </View>
           )}
 
-          {/* Phase 3: Results Display */}
-          {step === 'Result' && (
-            <View>
-              <ResultDisplay
-                transcription={transcription}
-                translation={translation}
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-                isDark={isDark}
-              />
+          {(step === 'TranscribeResult' || step === 'Translating') && (
+            <EchoTranslationConfig
+              step={step}
+              selectedLang={selectedLang}
+              detectedLang={detectedLang}
+              targetLang={targetLang}
+              transcription={transcription}
+              availableTargetList={availableTargetList}
+              isDark={isDark}
+              setTargetLang={setTargetLang}
+              handleTranslate={handleTranslate}
+            />
+          )}
 
-              <View style={styles.footerActions}>
-                <TouchableOpacity
-                  onPress={handleCopy}
-                  style={[styles.secAction, { borderColor: handleHex }]}
-                >
-                  <Copy size={16} color={textPrimary} />
-                  <Text style={[styles.secActionTxt, { color: textPrimary }]}>
-                    Copy Result
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleClose}
-                  style={[
-                    styles.secAction,
-                    { backgroundColor: handleHex, borderWidth: 0 },
-                  ]}
-                >
-                  <CheckCircle2 size={16} color={textPrimary} />
-                  <Text style={[styles.secActionTxt, { color: textPrimary }]}>
-                    Done
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+          {step === 'FullResult' && (
+            <EchoFinalResult
+              transcription={transcription}
+              translation={translation}
+              sttProvider={sttProvider}
+              llmProvider={llmProvider}
+              sourceLang={sourceLang}
+              targetLang={targetLang}
+              isDark={isDark}
+              activeTabRef={activeTabRef}
+              setStep={setStep}
+              handleClose={handleClose}
+            />
           )}
         </BottomSheetView>
       </BottomSheet>
@@ -291,7 +262,7 @@ export const Echo: React.FC<EchoProps> = (props) => {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   handleIndicator: { width: 40, height: 4 },
-  content: { paddingHorizontal: 20, paddingBottom: 40 },
+  content: { paddingHorizontal: 20, paddingBottom: 60 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -314,8 +285,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeBtnTxt: { fontSize: 14, fontWeight: 'bold' },
-  stepTitle: { fontSize: 18, fontWeight: '800', marginBottom: 20 },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -327,15 +296,6 @@ const styles = StyleSheet.create({
   metaValue: { fontSize: 12, fontWeight: '800' },
   changeBtn: { marginLeft: 'auto' },
   changeLabel: { fontSize: 12, fontWeight: '700' },
-  primaryAction: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 18,
-    borderRadius: 20,
-  },
-  primaryActionTxt: { fontSize: 16, fontWeight: '800', color: '#FFF' },
   loadingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -347,17 +307,4 @@ const styles = StyleSheet.create({
     marginTop: 24,
     marginBottom: 8,
   },
-  loadingSubTxt: { fontSize: 13, fontWeight: '500', opacity: 0.7 },
-  footerActions: { flexDirection: 'row', gap: 12 },
-  secAction: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 18,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  secActionTxt: { fontWeight: '700', fontSize: 14 },
 });

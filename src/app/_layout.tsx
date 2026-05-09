@@ -6,7 +6,6 @@ import {
   DefaultTheme,
   ThemeProvider,
 } from '@react-navigation/native';
-import * as Sentry from '@sentry/react-native';
 import {
   QueryClient,
   QueryClientProvider,
@@ -35,12 +34,6 @@ import {
   registerNotificationCategories,
 } from '@/utils/IosNotification';
 
-Sentry.init({
-  dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
-  tracesSampleRate: __DEV__ ? 1.0 : 0.2,
-  enabled: !__DEV__,
-});
-
 // Initialize React Query Client
 const queryClient = new QueryClient();
 
@@ -65,7 +58,8 @@ function InnerLayout(): React.ReactElement {
   // Directly pass user preference to NativeWind v4 which handles OS listeners internally
   useEffect((): void => {
     setColorScheme(themePreference);
-  }, [themePreference, setColorScheme]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [themePreference]);
 
   const { isInitialized } = useAuthStore();
 
@@ -171,4 +165,4 @@ function RootLayout(): React.ReactElement {
   );
 }
 
-export default Sentry.wrap(RootLayout);
+export default RootLayout;

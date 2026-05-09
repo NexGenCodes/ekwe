@@ -16,10 +16,6 @@ jest.mock('src/utils/authHeaders', () => ({
   ),
 }));
 
-jest.mock('src/utils/detectLanguage', () => ({
-  detectLanguage: jest.fn(() => 'und'),
-}));
-
 jest.mock('expo-file-system', () => ({
   getInfoAsync: jest.fn(() =>
     Promise.resolve({
@@ -205,46 +201,7 @@ describe('TranscriptionService', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.transcript).toBe('hello, world');
-      expect(result.value.fillerWordsRemoved).toBeGreaterThan(0);
     }
-  });
-
-  describe('detectLanguage', () => {
-    it('returns und as it relies on backend detection now', () => {
-      const lang = TranscriptionService.detectLanguage('English text here');
-      expect(lang).toBe('und');
-    });
-  });
-
-  describe('isHallucination', () => {
-    it('returns true when wps > 6', () => {
-      const result = TranscriptionService.isHallucination(
-        'one two three four five six seven eight nine ten',
-        1000,
-      );
-      expect(result).toBe(true);
-    });
-
-    it('returns true for known patterns', () => {
-      const result = TranscriptionService.isHallucination(
-        'Thank you for watching',
-        5000,
-      );
-      expect(result).toBe(true);
-    });
-
-    it('returns false for normal speech', () => {
-      const result = TranscriptionService.isHallucination(
-        'This is a normal sentence spoken here.',
-        5000,
-      );
-      expect(result).toBe(false);
-    });
-
-    it('returns false for short audio with few words', () => {
-      const result = TranscriptionService.isHallucination('Hello.', 1000);
-      expect(result).toBe(false);
-    });
   });
 
   it('offsets word timestamps by trimStartMs', async () => {

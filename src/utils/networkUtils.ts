@@ -47,7 +47,11 @@ export async function fetchWithRetry(
 
       // Only retry on network errors or 5xx server errors.
       // 4xx errors (like 401/403/404) should fail immediately in our app logic.
-      if (response.ok || (response.status >= 400 && response.status < 500)) {
+      if (
+        response.ok ||
+        (response.status >= 400 && response.status < 500) ||
+        i === retries - 1
+      ) {
         return response;
       }
 

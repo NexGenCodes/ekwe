@@ -1,6 +1,10 @@
-import { SharedAudioPlayer } from '@/hooks/useSharedAudioPlayer';
-
-export type EchoStep = 'PickLanguage' | 'Config' | 'Processing' | 'Result';
+export type EchoStep =
+  | 'PickLanguage'
+  | 'Config'
+  | 'Transcribing'
+  | 'TranscribeResult'
+  | 'Translating'
+  | 'FullResult';
 
 export interface SharedFile {
   value: string;
@@ -24,16 +28,21 @@ export interface UseEchoFlowResult {
   setStep: (step: EchoStep) => void;
   selectedLang: string;
   setSelectedLang: (lang: string) => void;
+  detectedLang: string | null;
+  targetLang: string;
+  setTargetLang: (lang: string) => void;
   transcription: string | null;
   translation: string | null;
-  activeTab: 'Translation' | 'Transcription';
-  setActiveTab: (tab: 'Translation' | 'Transcription') => void;
+  sttProvider: string | undefined;
+  llmProvider: string | undefined;
   audioUri: string | undefined;
   sourceApp: string;
-  player: SharedAudioPlayer;
   isResolving: boolean;
   themePreference: 'light' | 'dark' | 'system' | null;
-  handleProcess: () => Promise<void>;
-  handleCopy: () => Promise<void>;
+  handleTranscribe: (
+    durationSeconds: number,
+    waveform: number[],
+  ) => Promise<void>;
+  handleTranslate: () => Promise<void>;
   onDismiss: () => void;
 }

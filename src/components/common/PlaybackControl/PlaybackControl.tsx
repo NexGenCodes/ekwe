@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
-import { SkiaWaveform } from '@/components/common/AudioWaveform';
+import { ReanimatedWaveform } from '@/components/common/AudioWaveform';
 import { getColor } from '@/constants/colors';
 import { formatDuration } from '@/utils/echo';
 
@@ -26,7 +26,7 @@ interface PlaybackControlProps {
 /**
  * PlaybackControl
  *
- * A reusable audio control bar with play/pause, skia waveform, and time tracking.
+ * A reusable audio control bar with play/pause, waveform, and time tracking.
  */
 export const PlaybackControl: React.FC<PlaybackControlProps> = ({
   isPlaying,
@@ -71,7 +71,7 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
         </TouchableOpacity>
 
         <View style={styles.waveformContainer}>
-          <SkiaWaveform
+          <ReanimatedWaveform
             peaks={peaks}
             progress={scrubTime !== null ? scrubTime : progress}
             duration={duration}

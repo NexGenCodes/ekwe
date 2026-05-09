@@ -1,4 +1,4 @@
-import { File } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 
 import EkweNative from '../../modules/ekwe-native';
@@ -26,8 +26,10 @@ export const cleanEchoCache = async (
   try {
     // 1. Filesystem cleanup (Expo)
     if (uri.includes('Cache') || uri.includes('cache')) {
-      const file = new File(uri);
-      if (file.exists) file.delete();
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      if (fileInfo.exists) {
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+      }
     }
 
     // 2. Native bridge cleanup

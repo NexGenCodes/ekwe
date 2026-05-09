@@ -1,5 +1,3 @@
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import * as AppleAuthentication from 'expo-apple-authentication';
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -12,22 +10,22 @@ import {
   Platform,
   ActivityIndicator,
   Pressable,
+  ScrollView,
+  Image,
 } from 'react-native';
 import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { EkweWordmark } from '@/assets/icons/EkweWordmark';
 import { getColor } from '@/constants/colors';
 import { useTheme } from '@/hooks/useTheme';
 import { supabase } from '@/lib/supabase';
 import { useSettingsStore } from '@/store';
 import logger from '@/utils/logger';
 
-// Configure Google Sign-In with your client IDs
-GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-});
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const iconLight = require('../../../assets/icon-light.png');
+const iconDark = require('../../../assets/icon.png');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
 
 export default function LoginScreen(): React.JSX.Element {
   const router = useRouter();
@@ -107,85 +105,56 @@ export default function LoginScreen(): React.JSX.Element {
     }
   };
 
-  interface AuthError {
-    code?: string;
-    message?: string;
-  }
-
-  const onGoogleSignIn = async (): Promise<void> => {
-    try {
-      setIsLoading(true);
-      setError('');
-      await GoogleSignin.hasPlayServices();
-      const userInfo = await GoogleSignin.signIn();
-      if (userInfo?.data?.idToken) {
-        const { error } = await supabase.auth.signInWithIdToken({
-          provider: 'google',
-          token: userInfo.data.idToken,
-        });
-        if (error) throw error;
-        handleAuthSuccess();
-      } else {
-        throw new Error('no ID token present!');
-      }
-    } catch (error: unknown) {
-      const e = error as AuthError;
-      if (e.code !== 'SIGN_IN_CANCELLED' && e.code !== 'IN_PROGRESS') {
-        logger.warn('[Google OAuth] error:', error);
-        setError('Failed to sign in with Google.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const onAppleSignIn = async (): Promise<void> => {
-    try {
-      setIsLoading(true);
-      setError('');
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-      });
-
-      if (credential.identityToken) {
-        const { error } = await supabase.auth.signInWithIdToken({
-          provider: 'apple',
-          token: credential.identityToken,
-        });
-        if (error) throw error;
-        handleAuthSuccess();
-      } else {
-        throw new Error('No identityToken.');
-      }
-    } catch (error: unknown) {
-      const e = error as AuthError;
-      if (e.code !== 'ERR_REQUEST_CANCELED') {
-        logger.warn('[Apple OAuth] error:', error);
-        setError('Failed to sign in with Apple.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
     <SafeAreaView
       style={{ flex: 1, backgroundColor: getColor('background', isDark) }}
     >
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior="padding"
         style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
-        <View style={{ flex: 1, justifyContent: 'center', padding: 32 }}>
+        <ScrollView
+          contentContainerStyle={{
+            flexGrow: 1,
+            justifyContent: 'center',
+            padding: 32,
+          }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          {/* Brand Lockup */}
           <Animated.View
             layout={Layout.springify()}
             entering={FadeInDown.duration(600).springify()}
             style={{ alignItems: 'center', marginBottom: 48 }}
           >
-            <EkweWordmark size={72} color={getColor('foreground', isDark)} />
+            <View
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 20,
+                overflow: 'hidden',
+                marginBottom: 16,
+              }}
+            >
+              <Image
+                source={isDark ? iconDark : iconLight}
+                style={{ width: 72, height: 72 }}
+                resizeMode="cover"
+              />
+            </View>
+            <Text
+              className="font-display"
+              style={{
+                fontSize: 40,
+                color: getColor('foreground', isDark),
+                letterSpacing: -0.5,
+              }}
+            >
+              Ekwe
+            </Text>
             <Text
               style={{
                 fontFamily: 'Outfit-Regular',
@@ -194,7 +163,9 @@ export default function LoginScreen(): React.JSX.Element {
                 marginTop: 8,
               }}
             >
-              {step === 'email' ? 'Every voice, secured.' : 'Check your email'}
+              {step === 'email'
+                ? 'Every voice, understood.'
+                : 'Check your email'}
             </Text>
             {step === 'otp' && (
               <Text
@@ -210,6 +181,7 @@ export default function LoginScreen(): React.JSX.Element {
             )}
           </Animated.View>
 
+          {/* Form Section */}
           <Animated.View
             layout={Layout.springify()}
             entering={FadeInDown.duration(600).delay(100).springify()}
@@ -217,10 +189,12 @@ export default function LoginScreen(): React.JSX.Element {
             {error ? (
               <View
                 style={{
-                  backgroundColor: 'rgba(255, 0, 0, 0.1)',
+                  backgroundColor: 'rgba(239, 68, 68, 0.08)',
                   padding: 12,
                   borderRadius: 12,
                   marginBottom: 16,
+                  borderWidth: 1,
+                  borderColor: 'rgba(239, 68, 68, 0.15)',
                 }}
               >
                 <Text
@@ -288,88 +262,6 @@ export default function LoginScreen(): React.JSX.Element {
                     </Text>
                   )}
                 </TouchableOpacity>
-
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    marginVertical: 32,
-                  }}
-                >
-                  <View
-                    style={{
-                      flex: 1,
-                      height: 1,
-                      backgroundColor: getColor('border', isDark),
-                    }}
-                  />
-                  <Text
-                    style={{
-                      marginHorizontal: 16,
-                      color: getColor('muted', isDark),
-                      fontFamily: 'Outfit-Medium',
-                      fontSize: 14,
-                    }}
-                  >
-                    OR
-                  </Text>
-                  <View
-                    style={{
-                      flex: 1,
-                      height: 1,
-                      backgroundColor: getColor('border', isDark),
-                    }}
-                  />
-                </View>
-
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    justifyContent: 'center',
-                    gap: 16,
-                  }}
-                >
-                  {Platform.OS === 'ios' && (
-                    <AppleAuthentication.AppleAuthenticationButton
-                      buttonType={
-                        AppleAuthentication.AppleAuthenticationButtonType
-                          .SIGN_IN
-                      }
-                      buttonStyle={
-                        isDark
-                          ? AppleAuthentication.AppleAuthenticationButtonStyle
-                              .WHITE
-                          : AppleAuthentication.AppleAuthenticationButtonStyle
-                              .BLACK
-                      }
-                      cornerRadius={30}
-                      style={{ width: 60, height: 60 }}
-                      onPress={onAppleSignIn}
-                    />
-                  )}
-                  {/* Mock Google Logo Button (Requires SVGs in a real setup, using a styled G here) */}
-                  <TouchableOpacity
-                    onPress={onGoogleSignIn}
-                    style={{
-                      width: 60,
-                      height: 60,
-                      borderRadius: 30,
-                      backgroundColor: isDark ? '#1C1C1E' : '#F2F2F7',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 24,
-                        fontWeight: '700',
-                        color: isDark ? 'white' : 'black',
-                      }}
-                    >
-                      G
-                    </Text>
-                  </TouchableOpacity>
-                </View>
               </>
             ) : (
               <>
@@ -456,10 +348,11 @@ export default function LoginScreen(): React.JSX.Element {
             )}
           </Animated.View>
 
+          {/* ToS Footer — flows with content, no absolute positioning */}
           <Animated.View
             layout={Layout.springify()}
             entering={FadeInDown.duration(600).delay(200).springify()}
-            style={{ position: 'absolute', bottom: 40, left: 32, right: 32 }}
+            style={{ marginTop: 48, paddingBottom: 24 }}
           >
             <Text
               style={{
@@ -485,7 +378,7 @@ export default function LoginScreen(): React.JSX.Element {
               .
             </Text>
           </Animated.View>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

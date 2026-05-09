@@ -7,6 +7,7 @@ export interface HistoryEntry {
   timestamp: number;
   duration: number;
   sourceApp: string | null;
+  provider?: string;
 }
 
 export interface HistoryState {

@@ -55,18 +55,23 @@ export default function TabLayout(): React.ReactElement {
         }}
       />
       <Tabs.Screen
+        name="billing"
+        options={{
+          title: 'Billing',
+          tabBarIcon: ({ color, size }) => {
+            // Let's use a standard icon from lucide-react-native if we don't have a custom one
+            const { CreditCard } = require('lucide-react-native');
+            return <CreditCard size={size} color={color} />;
+          },
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
           tabBarIcon: ({ color, size }) => (
             <SettingsIcon size={size} color={color} />
           ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          href: null,
         }}
       />
     </Tabs>

@@ -1,39 +1,93 @@
 import { Session, User } from '@supabase/supabase-js';
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 import { supabase } from '@/lib/supabase';
+import { mmkvStorage } from '@/store/mmkvStorage';
+import logger from '@/utils/logger';
 
 interface AuthState {
   session: Session | null;
   user: User | null;
-  isPro: boolean; // RevenueCat status
-  isInitialized: boolean; // Initial auth load check
+  isPro: boolean;
+  isInitialized: boolean;
+  transactionsUsed: number;
+  activeTier: 'FREE' | 'PREMIUM';
+  isFallback: boolean;
   setSession: (session: Session | null) => void;
   setUser: (user: User | null) => void;
   setIsPro: (isPro: boolean) => void;
   setInitialized: (initialized: boolean) => void;
+  updateBilling: (data: {
+    transactions_used: number;
+    tier_active: 'FREE' | 'PREMIUM';
+    is_fallback: boolean;
+  }) => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  session: null,
-  user: null,
-  isPro: false,
-  isInitialized: false,
-  setSession: (session: Session | null): void =>
-    set({ session, user: session?.user || null }),
-  setUser: (user: User | null): void => set({ user }),
-  setIsPro: (isPro: boolean): void => set({ isPro }),
-  setInitialized: (isInitialized: boolean): void => set({ isInitialized }),
-}));
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      session: null,
+      user: null,
+      isPro: false,
+      isInitialized: false,
+      transactionsUsed: 0,
+      activeTier: 'FREE',
+      isFallback: false,
+      setSession: (session: Session | null): void => {
+        const isPro = session?.user?.app_metadata?.is_pro === true;
+        set({ session, user: session?.user || null, isPro });
+      },
+      setUser: (user: User | null): void => {
+        set({ user });
+      },
+      setIsPro: (isPro: boolean): void => {
+        set({ isPro });
+      },
+      setInitialized: (isInitialized: boolean): void => {
+        set({ isInitialized });
+      },
+      updateBilling: (data: {
+        transactions_used: number;
+        tier_active: 'FREE' | 'PREMIUM';
+        is_fallback: boolean;
+      }): void => {
+        set({
+          transactionsUsed: data.transactions_used,
+          activeTier: data.tier_active,
+          isFallback: data.is_fallback,
+        });
+      },
+    }),
+    {
+      name: 'ekwe-auth-billing',
+      storage: createJSONStorage(() => mmkvStorage),
+      partialize: (state: AuthState): Partial<AuthState> => ({
+        transactionsUsed: state.transactionsUsed,
+        activeTier: state.activeTier,
+        isFallback: state.isFallback,
+      }),
+    },
+  ),
+);
 
-// Set up the listener for global session state
-supabase.auth.onAuthStateChange((_event, session) => {
+supabase.auth.onAuthStateChange((event, session) => {
+  logger.info(`Auth state changed: ${event}`, session?.user?.id);
   useAuthStore.getState().setSession(session);
   useAuthStore.getState().setInitialized(true);
 });
 
-// Immediately fetch the initial session to avoid "unauthorized" flashes on mount
-supabase.auth.getSession().then(({ data: { session } }) => {
-  useAuthStore.getState().setSession(session);
+supabase.auth.getSession().then(({ data, error }) => {
+  if (error) {
+    logger.error('Error fetching auth session', error);
+    useAuthStore.getState().setInitialized(true);
+    return;
+  }
+
+  if (data?.session) {
+    useAuthStore.getState().setSession(data.session);
+  }
+
   useAuthStore.getState().setInitialized(true);
 });

@@ -1,19 +1,16 @@
 name = "ekwe-proxy"
-main = "index.ts"
+main = "src/index.ts"
 compatibility_date = "2024-01-01"
 [dev]
 ip = "0.0.0.0"
 port = 8787
-# wrangler secret put GROQ_KEY_1 (up to _10)
-# wrangler secret put DEEPSEEK_KEY_1 (up to _3)
-# wrangler secret put ASSEMBLYAI_KEY
-# wrangler secret put MISTRAL_KEY
-# wrangler secret put OPENROUTER_KEY
-# wrangler secret put DEEPGRAM_KEY
-# wrangler secret put SUPABASE_JWT_SECRET
 
 [vars]
 SUPABASE_URL = "https://zsjcgebczzbmaarfcdny.supabase.co"
+
+[[kv_namespaces]]
+binding = "EKWE_KV"
+id = "2a61656b51414ff4ae7cbc13a53fb459"
 
 [[ratelimits]]
 name = "RATE_LIMITER"
@@ -22,4 +19,3 @@ simple = { limit = 100, period = 60 } # 100 requests per minute
 
 [ai]
 binding = "AI"
-

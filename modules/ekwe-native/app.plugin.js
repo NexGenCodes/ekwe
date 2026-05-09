@@ -71,7 +71,6 @@ const withAndroidIntentFilters = (config) => {
     let shareActivity = mainApplication.activity.find(
       (a) => a.$['android:name'] === 'expo.modules.ekwenative.ShareActivity'
     );
-    
     if (!shareActivity) {
       shareActivity = {
         $: {
@@ -81,7 +80,7 @@ const withAndroidIntentFilters = (config) => {
           'android:excludeFromRecents': 'true',
           'android:launchMode': 'singleTask',
           'android:taskAffinity': '',
-          'android:label': 'Ekwe Echo'
+          'android:label': 'Ekwe'
         },
         'intent-filter': []
       };

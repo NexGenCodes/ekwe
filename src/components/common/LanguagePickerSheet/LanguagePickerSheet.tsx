@@ -22,6 +22,7 @@ import { EkweButton } from '@/components/common/EkweButton';
 import { getColor } from '@/constants/colors';
 import { LANGUAGES, Language, FLAG_MAP } from '@/constants/languages';
 import { useTheme } from '@/hooks/useTheme';
+import { useAuthStore } from '@/store/authStore';
 
 interface LanguageRowProps {
   item: Language;
@@ -100,6 +101,7 @@ export const LanguagePickerSheet = ({
   onClose,
 }: LanguagePickerSheetProps): React.ReactElement => {
   const { colorScheme } = useTheme();
+  const { isPro } = useAuthStore();
   const sheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['85%'], []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -117,15 +119,20 @@ export const LanguagePickerSheet = ({
     }
   }, [isVisible]);
 
+  const availableLanguages = useMemo(() => {
+    if (isPro) return LANGUAGES;
+    return LANGUAGES.filter((l) => !l.proOnly);
+  }, [isPro]);
+
   const filteredLanguages = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (q === '') return LANGUAGES;
-    return LANGUAGES.filter(
+    if (q === '') return availableLanguages;
+    return availableLanguages.filter(
       (l) =>
         l.englishName.toLowerCase().includes(q) ||
         l.nativeName.toLowerCase().includes(q),
     );
-  }, [searchQuery]);
+  }, [searchQuery, availableLanguages]);
 
   const pinnedItems = useMemo(
     () => filteredLanguages.filter((l) => pinnedLanguages.includes(l.code)),

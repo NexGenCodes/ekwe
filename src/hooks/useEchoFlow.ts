@@ -1,172 +1,116 @@
+import NetInfo from '@react-native-community/netinfo';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { useShareIntent } from 'expo-share-intent';
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Alert, Platform, Linking } from 'react-native';
-
-import EkweNative from '../../modules/ekwe-native';
+import { useState, useEffect, useCallback } from 'react';
+import { Alert, Platform } from 'react-native';
 
 import { useTranscription } from '@/hooks/api/useTranscription';
 import { useTranslation } from '@/hooks/api/useTranslation';
-import {
-  useSharedAudioPlayer,
-  preWarmAudioEngine,
-} from '@/hooks/useSharedAudioPlayer';
-import { supabase } from '@/lib/supabase';
+import { useEchoIntentResolver } from '@/hooks/useEchoIntentResolver';
+import { preWarmAudioEngine } from '@/hooks/useSharedAudioPlayer';
 import { AudioCapture } from '@/services/AudioCapture';
-import { useSettingsStore, useHistoryStore } from '@/store';
+import { HistoryService } from '@/services/HistoryService';
+import { IntentService } from '@/services/IntentService';
+import { useSettingsStore } from '@/store';
 import { useAuthStore } from '@/store/authStore';
-import { useSyncQueue } from '@/store/syncQueue';
 import { EchoStep, EchoProps, UseEchoFlowResult } from '@/types/echo';
-import { logger } from '@/utils';
+import { logger, AppAlert } from '@/utils';
 import { cleanEchoCache } from '@/utils/echo';
 
-/**
- * Resolves a content:// URI to a local file:// URI on Android.
- * On iOS or for file:// URIs, returns the URI as-is.
- */
-async function resolveToFileUri(rawUri: string): Promise<string | null> {
-  if (Platform.OS === 'android' && rawUri.startsWith('content://')) {
-    return EkweNative.resolveContentUri(rawUri);
-  }
-  return rawUri;
-}
-
 export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
-  // Pre-warm the audio engine immediately — before language picker renders
-  preWarmAudioEngine();
+  useEffect(() => {
+    preWarmAudioEngine();
+  }, []);
 
-  const { resetShareIntent } = useShareIntent({
-    disabled: Platform.OS === 'android',
-  });
-  const { targetLanguage, themePreference, onboardingCompleted } =
-    useSettingsStore();
-
-  // Read auth state synchronously via MMKV + Zustand
-  const { isInitialized, session } = useAuthStore();
-
-  // Initialize to undefined so the first incoming URI always triggers resolution
-  const previousRawUri = useRef<string | undefined>(undefined);
+  const { targetLanguage, themePreference, autoCopy } = useSettingsStore();
+  const { session } = useAuthStore();
 
   const isIOS = Platform.OS === 'ios';
   const hasIOSFiles = isIOS && props.value && props.value.length > 0;
-
-  // Resolved file:// URI — only set after content:// → file:// copy completes
-  const [audioUri, setAudioUri] = useState<string | undefined>(undefined);
-  const [isResolving, setIsResolving] = useState(false);
-  const activeResolvedUri = useRef<string | undefined>(undefined);
-
   const mimeType = hasIOSFiles ? props.value![0].mimeType : props.mimeType;
   const sourceApp = isIOS ? 'iOS' : props.sourceApp || 'Unknown App';
 
   // State Machine
   const [step, setStep] = useState<EchoStep>('PickLanguage');
   const [selectedLang, setSelectedLang] = useState<string>('auto');
+  const [detectedLang, setDetectedLang] = useState<string | null>(null);
+  const [targetLang, setTargetLang] = useState<string>(targetLanguage || 'en');
   const [transcription, setTranscription] = useState<string | null>(null);
   const [translation, setTranslation] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'Translation' | 'Transcription'>(
-    'Translation',
-  );
-
-  // Audio Player — only receives a resolved file:// URI
-  const player = useSharedAudioPlayer(audioUri || null);
+  const [sttProvider, setSttProvider] = useState<string>();
+  const [llmProvider, setLlmProvider] = useState<string>();
+  const [audioDuration, setAudioDuration] = useState<number>(0);
 
   // Keep screen awake for the entire Echo session
   useEffect((): (() => void) => {
-    activateKeepAwakeAsync('echoSession').catch(() => {});
+    activateKeepAwakeAsync('echoSession').catch(() => { });
     return () => {
-      deactivateKeepAwake('echoSession')?.catch?.(() => {});
+      deactivateKeepAwake('echoSession')?.catch?.(() => { });
     };
   }, []);
 
-  // ── URI Resolution Pipeline ──────────────────────────────────────────
-  // Resolves content:// → file:// (cache copy), then feeds the file:// to the player.
-  // On first mount this fires immediately. On subsequent intent changes it resets state.
+  // API mutations
   const { mutateAsync: transcribe } = useTranscription();
   const { mutateAsync: translate } = useTranslation();
 
-  // "Cold Install" Guard
-  useEffect((): void => {
-    if (Platform.OS === 'android') {
-      EkweNative.dismissNativeLoader();
-    }
-
-    const rawUri = hasIOSFiles ? props.value?.[0]?.value : props.audioUri;
-    if (!rawUri) return;
-
-    // Wait until Supabase Auth hydrates
-    if (!isInitialized) return;
-
-    // ── Cold Install Guard ───────────────────────────────────────────────
-    // Block intent if the user has not completed onboarding or is not signed in
-    if (!onboardingCompleted || !session) {
-      if (Platform.OS === 'android') {
-        EkweNative.dismissEcho();
-        Linking.openURL('ekwe://');
-      } else {
-        resetShareIntent(true);
-        Linking.openURL('ekwe://');
-      }
-      return;
-    }
-
-    // Guard: skip if we already resolved this exact raw URI
-    if (rawUri === previousRawUri.current) return;
-    const isSubsequentIntent = previousRawUri.current !== undefined;
-    previousRawUri.current = rawUri;
-
-    // Clean up previous session
-    if (activeResolvedUri.current) {
-      cleanEchoCache(activeResolvedUri.current);
-    }
-
-    const resolve = async (): Promise<void> => {
-      setIsResolving(true);
-
-      const fileUri = await resolveToFileUri(rawUri);
-
-      if (!fileUri) {
-        setIsResolving(false);
-        Alert.alert('Error', 'Could not access the shared audio file.');
-        return;
-      }
-
-      activeResolvedUri.current = fileUri;
-      setAudioUri(fileUri);
-      setIsResolving(false);
-
-      // Only reset step/results for subsequent share intents, not on first mount
-      if (isSubsequentIntent) {
-        setStep('PickLanguage');
-        setTranscription(null);
-        setTranslation(null);
-      }
-    };
-
-    resolve();
-  }, [
-    props.audioUri,
-    hasIOSFiles,
-    props.value,
+  // ── URI Resolution Pipeline ──────────────────────────────────────────
+  const {
+    audioUri,
+    isResolving,
+    activeResolvedUri,
+    isSubsequentIntent,
+    setIsSubsequentIntent,
     resetShareIntent,
-    isInitialized,
-    session,
-    onboardingCompleted,
-  ]);
+  } = useEchoIntentResolver(props);
 
-  // Processing Logic
-  const handleProcess = async (): Promise<void> => {
+  // Reset state on subsequent share intents
+  useEffect(() => {
+    if (isSubsequentIntent) {
+      setStep('PickLanguage');
+      setTranscription(null);
+      setTranslation(null);
+      setIsSubsequentIntent(false);
+    }
+  }, [isSubsequentIntent, setIsSubsequentIntent]);
+
+  // Transcription Logic
+  const handleTranscribe = async (
+    durationSeconds: number,
+    waveform: number[],
+  ): Promise<void> => {
+    setAudioDuration(durationSeconds);
+    logger.info('[EchoFlow] ── Initiating Transcription ──');
+    logger.info('[EchoFlow] User ID:', session?.user?.id);
+    logger.info(
+      '[EchoFlow] app_metadata:',
+      JSON.stringify(session?.user?.app_metadata),
+    );
+    logger.info(
+      '[EchoFlow] is_pro:',
+      session?.user?.app_metadata?.is_pro ?? 'MISSING',
+    );
+    logger.info('[EchoFlow] Selected Language:', selectedLang);
+
     if (!audioUri) return;
 
     Haptics.selectionAsync();
-    setStep('Processing');
-    try {
-      EkweNative?.updateBubbleMode?.('MAGIC');
-    } catch {}
+    setStep('Transcribing');
+    IntentService.updateBubbleMode('MAGIC');
+
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      AppAlert.error(
+        'No Internet Connection',
+        'Transcription requires an active internet connection. Please check your network and try again.',
+      );
+      setStep('Config');
+      IntentService.updateBubbleMode('IDLE');
+      return;
+    }
 
     try {
-      // Validate format, size, and sniff audio headers (all need file:// URI)
+      // Validate format, size, and sniff audio headers
       const fileResult = await AudioCapture.processSharedFile(
         audioUri,
         mimeType || 'audio/*',
@@ -178,111 +122,118 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       const txResult = await transcribe({
         audio: {
           uri: safeUri,
-          durationMs: player.duration * 1000,
+          durationMs: durationSeconds * 1000,
           averageDb: -40,
           trimStartMs: 0,
           trimEndMs: 0,
           hasSpeech: true,
-          meteringData: player.realWaveform,
+          meteringData: waveform,
         },
-        sourceLang: selectedLang as string,
+        sourceLang: selectedLang,
       });
-
       setTranscription(txResult.transcript);
+      if (txResult.provider) setSttProvider(txResult.provider);
 
-      // Translation Mutation
-      const tLang = targetLanguage || 'en';
-      let translationResultText = null;
-
-      try {
-        const trResult = await translate({
-          text: txResult.transcript,
-          sourceLang: txResult.detectedLang,
-          targetLang: tLang,
-        });
-        translationResultText = trResult.translation;
-        setTranslation(trResult.translation);
-        setActiveTab('Translation');
-      } catch {
-        setTranslation('Translation failed. See transcription instead.');
-        setActiveTab('Transcription');
+      let finalLang = selectedLang;
+      if (selectedLang === 'auto') {
+        finalLang = txResult.detectedLang || 'en';
+      } else {
+        finalLang = selectedLang;
       }
 
-      // Record to history safely
-      const historyEntry = {
-        id: `echo_${Date.now()}`,
-        sourceLang: txResult.detectedLang,
-        targetLang: tLang,
-        transcript: txResult.transcript,
-        translation: translationResultText,
-        timestamp: Date.now(),
-        duration: player.duration,
-        sourceApp,
-      };
+      setDetectedLang(finalLang);
 
-      useHistoryStore.getState().addEntry(historyEntry);
-
-      // Feature: Sync history to Supabase if user is logged in natively
-      if (session?.user) {
-        logger.info('[Sync] Attempting to push history to Supabase...');
-        const payload = {
-          id: historyEntry.id,
-          user_id: session.user.id,
-          source_lang: historyEntry.sourceLang,
-          target_lang: historyEntry.targetLang,
-          transcript: historyEntry.transcript,
-          translation_text: historyEntry.translation || null,
-          duration: historyEntry.duration,
-          source_app: historyEntry.sourceApp,
-        };
-
-        supabase
-          .from('history')
-          .insert(payload)
-          .then(({ error }): void => {
-            if (error) {
-              logger.warn(
-                '[Sync] Push failed, storing in Outbox Queue:',
-                error.message,
-              );
-              useSyncQueue.getState().enqueue(payload);
-            } else {
-              logger.info('[Sync] Successfully synchronized history entry.');
-            }
-          });
+      // Auto-swap target language if it matches the detected source
+      let finalTarget = targetLang;
+      if (finalLang === targetLang) {
+        const { selectedLanguages } = useSettingsStore.getState();
+        finalTarget =
+          selectedLanguages.find((l) => l !== finalLang) ||
+          (finalLang === 'en' ? 'es' : 'en');
+        setTargetLang(finalTarget);
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setStep('Result');
+
+      setStep('TranscribeResult');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       Alert.alert('Processing Error', message);
       setStep('PickLanguage');
     } finally {
-      try {
-        EkweNative?.updateBubbleMode?.('IDLE');
-      } catch {}
+      IntentService.updateBubbleMode('IDLE');
     }
   };
 
-  const handleCopy = async (): Promise<void> => {
+  // Translation Logic
+  const handleTranslate = async (): Promise<void> => {
+    const textToTranslate = transcription;
+    const source = detectedLang;
+    const target = targetLang;
+    const stt = sttProvider;
+
+    logger.info('[EchoFlow] ── Initiating Translation ──');
+    logger.info('[EchoFlow] Source:', source, '→ Target:', target);
+
+    if (!textToTranslate || !source) return;
+
     Haptics.selectionAsync();
-    const textToCopy =
-      activeTab === 'Translation' ? translation : transcription;
-    if (textToCopy) {
-      await Clipboard.setStringAsync(textToCopy);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setStep('Translating');
+
+    const netState = await NetInfo.fetch();
+    if (!netState.isConnected) {
+      AppAlert.error(
+        'No Internet Connection',
+        'Translation requires an active internet connection. Please check your network and try again.',
+      );
+      setStep('TranscribeResult');
+      return;
     }
+
+    let translationResultText = null;
+
+    try {
+      const trResult = await translate({
+        text: textToTranslate,
+        sourceLang: source,
+        targetLang: target,
+      });
+      translationResultText = trResult.translation;
+      setTranslation(trResult.translation);
+      if (trResult.provider) setLlmProvider(trResult.provider);
+
+      if (autoCopy && translationResultText) {
+        await Clipboard.setStringAsync(translationResultText);
+      }
+    } catch (e: unknown) {
+      logger.error('Translate Error:', e);
+      setTranslation(
+        `Translation failed (Error: ${String(e)}). Target: ${target}, Source: ${source}.`,
+      );
+    }
+
+    // Record to history safely using HistoryService
+    await HistoryService.recordTranslation(
+      {
+        sourceLang: source,
+        targetLang: target,
+        transcript: textToTranslate,
+        translation: translationResultText,
+        duration: audioDuration,
+        sourceApp,
+        provider: stt || 'unknown',
+      },
+      session,
+    );
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setStep('FullResult');
   };
 
   const onDismiss = useCallback((): void => {
     if (activeResolvedUri.current) cleanEchoCache(activeResolvedUri.current);
-    deactivateKeepAwake('echoSession')?.catch?.(() => {});
-    if (Platform.OS === 'android') {
-      EkweNative.dismissEcho();
-    } else {
-      resetShareIntent(true);
-    }
+    deactivateKeepAwake('echoSession')?.catch?.(() => { });
+    IntentService.dismissEcho(resetShareIntent);
   }, [resetShareIntent]);
 
   return {
@@ -290,17 +241,19 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     setStep,
     selectedLang,
     setSelectedLang,
+    detectedLang,
+    targetLang,
+    setTargetLang,
     transcription,
     translation,
-    activeTab,
-    setActiveTab,
+    sttProvider,
+    llmProvider,
     audioUri,
     sourceApp,
-    player,
     isResolving,
     themePreference,
-    handleProcess,
-    handleCopy,
+    handleTranscribe,
+    handleTranslate,
     onDismiss,
   };
 };

@@ -112,13 +112,6 @@
       "./modules/ekwe-native/app.plugin.js",
       "expo-secure-store",
       "expo-router",
-      [
-        "@sentry/react-native/expo",
-        {
-          "organization": "ekwe",
-          "project": "react-native"
-        }
-      ],
       "expo-web-browser"
     ],
     "assetBundlePatterns": [

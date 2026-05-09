@@ -1,7 +1,6 @@
 import { EkweError } from '@/constants/errors';
 import { LANGUAGES } from '@/constants/languages';
 import { Result, ok, err } from '@/types/Result';
-import { getAuthHeaders } from '@/utils/authHeaders';
 import { fetchWithRetry } from '@/utils/networkUtils';
 
 const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? '';
@@ -10,6 +9,7 @@ export interface TranslationResult {
   translation: string;
   sourceLang: string;
   targetLang: string;
+  provider?: string;
 }
 
 class TranslationServiceClass {
@@ -37,13 +37,9 @@ class TranslationServiceClass {
     const sourceName = this.getLanguageName(sourceLang);
 
     try {
-      const headers = await getAuthHeaders({
-        'Content-Type': 'application/json',
-      });
-
       const response = await fetchWithRetry(`${workerUrl}/translate`, {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text,
           targetLang: targetName,
@@ -62,7 +58,19 @@ class TranslationServiceClass {
 
       const data = (await response.json()) as {
         translation: string;
+        provider?: string;
+        transaction?: {
+          transactions_used: number;
+          tier_active: 'FREE' | 'PREMIUM';
+          is_fallback: boolean;
+        };
       };
+
+      if (data.transaction) {
+        // Update global billing state dynamically
+        const { useAuthStore } = require('@/store/authStore');
+        useAuthStore.getState().updateBilling(data.transaction);
+      }
 
       if (
         data.translation === undefined ||
@@ -75,6 +83,7 @@ class TranslationServiceClass {
         translation: data.translation.trim(),
         sourceLang,
         targetLang,
+        provider: data.provider,
       });
     } catch {
       return err(EkweError.NETWORK_LOST);

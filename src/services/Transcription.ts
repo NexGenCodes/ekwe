@@ -1,30 +1,13 @@
 import { File as ExpoFile } from 'expo-file-system';
 
 import { EkweError } from '@/constants/errors';
-import { LANGUAGES } from '@/constants/languages';
+import { supabase } from '@/lib/supabase';
 import { ProcessedAudio } from '@/services/AudioProcessor';
 import { Result, ok, err } from '@/types/Result';
 import { logger } from '@/utils';
-import { getAuthHeaders } from '@/utils/authHeaders';
-import { detectLanguage } from '@/utils/detectLanguage';
-import { fetchWithRetry } from '@/utils/networkUtils';
-import { removeFillerWords } from '@/utils/removeFiller';
 
 const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? '';
 
-const HALLUCINATION_PATTERNS = [
-  'thank you for watching',
-  'thanks for watching',
-  'please subscribe',
-  'like and subscribe',
-  'subtitles by',
-  'transcribed by',
-  'www.',
-  'http',
-];
-
-const MAX_WORDS_PER_SECOND = 6;
-const MIN_WORDS_PER_SECOND = 0.3;
 const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25MB Groq limit
 
 export interface WordTimestamp {
@@ -40,11 +23,7 @@ export interface TranscriptionResult {
   wordTimestamps: WordTimestamp[];
   durationSeconds: number;
   isLowQuality: boolean;
-  fillerWordsRemoved: number;
-  languageMismatch?: {
-    expected: string;
-    detected: string;
-  };
+  provider?: string;
 }
 
 class TranscriptionServiceClass {
@@ -63,8 +42,7 @@ class TranscriptionServiceClass {
         return err(EkweError.SHARE_COPY_FAIL);
       }
 
-      const size = file.size;
-      if (size && size > MAX_FILE_SIZE_BYTES) {
+      if (file.size && file.size > MAX_FILE_SIZE_BYTES) {
         return err(EkweError.FILE_TOO_LARGE);
       }
 
@@ -78,32 +56,50 @@ class TranscriptionServiceClass {
       const extension = audio.uri.split('.').pop()?.toLowerCase() || 'm4a';
       const mimeType = this.getMimeType(extension);
 
-      // Build the multipart form
+      // Get auth token
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      // Build standard FormData
       const formData = new FormData();
+
+      // In React Native, we can append a file to FormData using this specific object structure
       formData.append('file', {
         uri: audio.uri,
+        name: `audio.${extension}`,
         type: mimeType,
-        name: `recording.${extension}`,
       } as unknown as Blob);
 
-      formData.append('language', sourceLang || 'auto');
+      formData.append('lang', sourceLang || 'auto');
       formData.append('timestamp_granularities', 'word');
 
-      const headers = await getAuthHeaders();
-
-      const response = await fetchWithRetry(`${workerUrl}/transcribe`, {
+      // Use standard fetch API (natively supports binary streaming and AbortSignal in SDK 55)
+      const fetchResponse = await fetch(`${workerUrl}/transcribe`, {
         method: 'POST',
-        headers,
+        headers: {
+          Authorization: token ? `Bearer ${token}` : '',
+        },
         body: formData,
-        retries: 3,
-        timeout: 45000,
         signal,
       });
 
+      const bodyText = await fetchResponse.text();
+
+      const response = {
+        ok: fetchResponse.ok,
+        status: fetchResponse.status,
+        body: bodyText,
+      };
+
       if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as {
-          error?: string;
-        };
+        let body: { error?: string } = {};
+        try {
+          body = JSON.parse(response.body);
+        } catch {
+          /* empty */
+        }
         logger.error(
           '[Transcription] FAIL: non-ok response',
           response.status,
@@ -112,11 +108,23 @@ class TranscriptionServiceClass {
         return this.mapErrorCode(body.error ?? 'EKWE_TRANSCRIPTION_FAIL');
       }
 
-      const data = (await response.json()) as {
+      const data = JSON.parse(response.body) as {
         text: string;
         words?: { word: string; start: number; end: number }[];
         language?: string;
+        provider?: string;
+        transaction?: {
+          transactions_used: number;
+          tier_active: 'FREE' | 'PREMIUM';
+          is_fallback: boolean;
+        };
       };
+
+      if (data.transaction) {
+        // Update global billing state dynamically
+        const { useAuthStore } = require('@/store/authStore');
+        useAuthStore.getState().updateBilling(data.transaction);
+      }
 
       return this.processTranscript(
         data.text,
@@ -124,6 +132,7 @@ class TranscriptionServiceClass {
         data.language ?? sourceLang,
         sourceLang,
         audio,
+        data.provider,
       );
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Unknown error';
@@ -135,7 +144,7 @@ class TranscriptionServiceClass {
   private getMimeType(extension: string): string {
     const map: Record<string, string> = {
       ogg: 'audio/ogg',
-      opus: 'audio/opus',
+      opus: 'audio/ogg',
       m4a: 'audio/m4a',
       mp4: 'audio/mp4',
       wav: 'audio/wav',
@@ -146,7 +155,7 @@ class TranscriptionServiceClass {
 
   /**
    * Processes the raw transcript from Groq.
-   * Runs detection, filler removal, and hallucination checks.
+   * Runs detection and hallucination checks.
    */
   private processTranscript(
     rawText: string,
@@ -154,25 +163,14 @@ class TranscriptionServiceClass {
     returnedLang: string,
     sourceLang: string,
     audio: ProcessedAudio,
+    provider?: string,
   ): Result<TranscriptionResult, EkweError> {
     if (rawText.trim().length === 0) {
       return err(EkweError.EMPTY_TRANSCRIPT);
     }
 
-    // Hallucination detection
-    if (this.isHallucination(rawText, audio.durationMs)) {
-      return err(EkweError.EMPTY_TRANSCRIPT);
-    }
-
     // Language detection
-    const detectedLang = this.detectLanguage(rawText);
-
-    // Filler word removal
-    const language = LANGUAGES.find((l) => l.code === sourceLang);
-    const fillerWords = language?.fillerWords ?? [];
-    const cleaned = removeFillerWords(rawText, fillerWords);
-    const fillerWordsRemovedCount =
-      this.countWords(rawText) - this.countWords(cleaned);
+    const detectedLang = returnedLang || sourceLang;
 
     // Adjust word timestamps for trim offset
     const trimOffsetSeconds = audio.trimStartMs / 1000;
@@ -183,62 +181,14 @@ class TranscriptionServiceClass {
     }));
 
     return ok({
-      transcript: cleaned.trim(),
+      transcript: rawText.trim(),
       detectedLang,
       sourceLang,
       wordTimestamps: adjustedWords,
       durationSeconds: audio.durationMs / 1000,
-      isLowQuality: audio.averageDb < -60, // Recalibrated for dB
-      fillerWordsRemoved: fillerWordsRemovedCount,
-      languageMismatch: this.getLanguageMismatch(returnedLang, sourceLang),
+      isLowQuality: audio.averageDb < -60,
+      provider,
     });
-  }
-
-  private getLanguageMismatch(
-    detected: string,
-    expected: string,
-  ): { expected: string; detected: string } | undefined {
-    if (expected === 'auto' || !detected) return undefined;
-
-    // Normalize (some providers return 'en', some 'english')
-    const d = detected.toLowerCase();
-    const e = expected.toLowerCase();
-
-    if (d !== e && d.substring(0, 2) !== e.substring(0, 2)) {
-      return { expected, detected };
-    }
-    return undefined;
-  }
-
-  /**
-   * Detects language via shared utility.
-   */
-  detectLanguage(text: string): string {
-    return detectLanguage(text);
-  }
-
-  /**
-   * Checks if a transcript is likely a Whisper hallucination.
-   */
-  isHallucination(text: string, durationMs: number): boolean {
-    const words = this.countWords(text);
-    const durationSeconds = durationMs / 1000;
-
-    if (durationSeconds > 0) {
-      const wps = words / durationSeconds;
-      if (wps > MAX_WORDS_PER_SECOND) return true;
-      if (words > 3 && wps < MIN_WORDS_PER_SECOND) return true;
-    }
-
-    const lower = text.toLowerCase();
-    return HALLUCINATION_PATTERNS.some((p) => lower.includes(p));
-  }
-
-  private countWords(text: string): number {
-    return text
-      .trim()
-      .split(/\s+/)
-      .filter((w) => w.length > 0).length;
   }
 
   private mapErrorCode(code: string): Result<never, EkweError> {

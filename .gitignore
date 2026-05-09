@@ -52,15 +52,14 @@ coverage/
 # IDE files
 .vscode/
 .idea/
+.agents/
 
 # OS specific
 Thumbs.db
 
 # local# Environment
 .env*
-PLAN.md
 *.log
-.sentryclirc
 
 # Expo extras
 .expo-shared/
@@ -68,3 +67,5 @@ PLAN.md
 # Cloudflare Workers
 .dev.vars
 .wrangler/
+
+

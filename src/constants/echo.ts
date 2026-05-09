@@ -23,12 +23,20 @@ export const STEP_METADATA = {
     title: 'Confirm & Transcribe',
     showBadge: true,
   },
-  Processing: {
-    title: 'Analyzing Voice...',
+  Transcribing: {
+    title: 'Transcribing...',
     showBadge: false,
   },
-  Result: {
-    title: 'Magic Results',
+  TranscribeResult: {
+    title: 'Transcription',
+    showBadge: true,
+  },
+  Translating: {
+    title: 'Translating...',
+    showBadge: false,
+  },
+  FullResult: {
+    title: 'Results',
     showBadge: true,
   },
 };

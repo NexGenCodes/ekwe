@@ -1,0 +1,95 @@
+import { Env, Tier, TranscribeResult } from './types';
+import * as witai from './providers/witai';
+import * as groq from './providers/groq';
+import * as deepgram from './providers/deepgram';
+import * as cloudflare from './providers/cloudflare';
+import * as gladia from './providers/gladia';
+import * as assemblyai from './providers/assemblyai';
+
+// ─── Provider Pipeline Definition ─────────────────────────────────
+
+interface PipelineEntry {
+  name: string;
+  skipOnAuto: boolean;
+  fn: (blob: Blob, lang: string, env: Env, signal: AbortSignal) => Promise<TranscribeResult | null>;
+}
+
+interface CFFormData {
+  get(name: string): string | File | null;
+}
+
+// ♾️ FREE FOREVER — zero marginal cost, sustainable for all users
+const FREE_PIPELINE: PipelineEntry[] = [
+  { name: 'witai', skipOnAuto: true, fn: witai.transcribe },
+  { name: 'gladia', skipOnAuto: false, fn: gladia.transcribe },
+  { name: 'groq', skipOnAuto: false, fn: groq.transcribe },
+  { name: 'cloudflare', skipOnAuto: false, fn: cloudflare.transcribe },
+];
+
+// 💰 PREMIUM — best quality first, paid providers before free fallbacks
+const PREMIUM_PIPELINE: PipelineEntry[] = [
+  { name: 'deepgram', skipOnAuto: false, fn: deepgram.transcribe },
+  { name: 'gladia', skipOnAuto: false, fn: gladia.transcribe },
+  { name: 'assemblyai', skipOnAuto: false, fn: assemblyai.transcribe },
+  { name: 'witai', skipOnAuto: true, fn: witai.transcribe },
+  { name: 'groq', skipOnAuto: false, fn: groq.transcribe },
+  { name: 'cloudflare', skipOnAuto: false, fn: cloudflare.transcribe },
+];
+
+// ─── Orchestrator ─────────────────────────────────────────────────
+
+export async function handleTranscribe(
+  request: Request,
+  env: Env,
+  tier: Tier,
+  signal: AbortSignal,
+): Promise<Response> {
+
+  const formData = (await request.formData()) as unknown as CFFormData;
+  const file = formData.get('file') as File | null;
+  const lang = formData.get('lang') as string | null;
+
+  if (!file) return Response.json({ error: 'MISSING_FILE' }, { status: 400 });
+
+  // ── Magic Byte Sniffer for WhatsApp / Android Edge Cases ──
+  // If the OS strips the file extension, file.type might be empty or generic.
+  let mimeType = file.type;
+  if (!mimeType || mimeType === 'application/octet-stream') {
+    // Read only the first 4 bytes from the stream to avoid memory exhaustion
+    const headerBuffer = await file.slice(0, 4).arrayBuffer();
+    const headerView = new Uint8Array(headerBuffer);
+    // ASCII for 'OggS' (Opus is encapsulated in Ogg containers)
+    if (headerView[0] === 0x4f && headerView[1] === 0x67 && headerView[2] === 0x67 && headerView[3] === 0x53) {
+      mimeType = 'audio/ogg';
+    } else {
+      mimeType = 'audio/wav';
+    }
+  }
+
+  // Wrap the original File stream into a new File object with the correct MIME type.
+  // This COMPLETELY avoids loading the 25MB file into RAM via arrayBuffer().
+  const audioBlob = new File([file], file.name || 'audio.wav', { type: mimeType });
+  const isAuto = !lang || lang === 'auto';
+  const effectiveLang = isAuto ? 'auto' : lang;
+
+  // CAPPED_PREMIUM silently falls to FREE pipeline
+  const pipeline = tier === 'PREMIUM' ? PREMIUM_PIPELINE : FREE_PIPELINE;
+
+  for (const provider of pipeline) {
+    if (isAuto && provider.skipOnAuto) continue;
+
+    try {
+      if (signal.aborted) throw new Error('CLIENT_ABORTED');
+      console.log(`[transcribe] Trying ${provider.name} (lang: ${effectiveLang}, tier: ${tier})`);
+
+      const result = await provider.fn(audioBlob, effectiveLang, env, signal);
+      if (result) return Response.json(result);
+
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message === 'CLIENT_ABORTED') throw e;
+      console.error(`[transcribe] ${provider.name} failed:`, e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return Response.json({ error: 'ALL_PROVIDERS_FAILED' }, { status: 503 });
+}
