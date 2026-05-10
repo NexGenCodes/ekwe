@@ -3,20 +3,20 @@ import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getColor } from '@/constants/colors';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme } from '@/hooks';
 import { useAuthStore } from '@/store/authStore';
 
 export default function BillingScreen(): React.ReactElement {
-  const { colorScheme } = useTheme();
-  const isDark = colorScheme === 'dark';
-  const { isPro, transactionsUsed, isFallback } = useAuthStore();
+  const { color } = useTheme();
+  const isPro = useAuthStore((s) => s.isPro);
+  const transactionsUsed = useAuthStore((s) => s.transactionsUsed);
+  const isFallback = useAuthStore((s) => s.isFallback);
 
-  const textColor = getColor('foreground', isDark);
-  const mutedColor = getColor('muted', isDark);
-  const cardColor = getColor('card', isDark);
-  const borderColor = getColor('border', isDark);
-  const primaryColor = getColor('primary', isDark);
+  const textColor = color.foreground;
+  const mutedColor = color.muted;
+  const cardColor = color.card;
+  const borderColor = color.border;
+  const primaryColor = color.primary;
 
   return (
     <SafeAreaView

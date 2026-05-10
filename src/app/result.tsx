@@ -1,160 +1,42 @@
-import * as Clipboard from 'expo-clipboard';
-import { File as ExpoFile } from 'expo-file-system';
-import * as Haptics from 'expo-haptics';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import React, { } from 'react';
+import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AudioWaveform } from '@/components/common/AudioWaveform';
-import { EkweButton } from '@/components/common/EkweButton';
-import { getColor } from '@/constants/colors';
-import { ErrorMessages } from '@/constants/errors';
-import { LANGUAGES } from '@/constants/languages';
-import { useTranscription } from '@/hooks/api/useTranscription';
-import { useTranslation } from '@/hooks/api/useTranslation';
-import { useTheme } from '@/hooks/useTheme';
-import { useHistoryStore, useSettingsStore } from '@/store';
+import { AudioWaveform } from '@/components';
+import { Button, ScreenHeader } from '@/components/ui';
+import { getLanguageName } from '@/constants/languages';
+import { useClipboard } from '@/hooks';
+import { useResultPipeline } from '@/hooks';
+import { useTheme } from '@/hooks';
 
 export default function ResultScreen(): React.JSX.Element {
   const params = useLocalSearchParams();
-  const router = useRouter();
-
-  const getLanguageName = (code: string): string =>
-    LANGUAGES.find((l) => l.code === code)?.englishName ?? code;
+  const { copied, copy } = useClipboard();
 
   const {
-    uri,
-    entryId,
-    transcript: initialTranscript = '',
-    sourceLang: initialSourceLang,
-    targetLang: initialTargetLang,
-    isHistoryReplay: initialIsHistoryReplay = false,
-  } = params;
+    transcript,
+    translation,
+    sourceLang,
+    targetLang,
+    isProcessing,
+    isTranslating,
+    isHistoryReplay,
+    handleTranslate,
+  } = useResultPipeline({
+    uri: params.uri as string | undefined,
+    entryId: params.entryId as string | undefined,
+    initialTranscript: params.transcript as string | undefined,
+    initialSourceLang: params.sourceLang as string | undefined,
+    initialTargetLang: params.targetLang as string | undefined,
+    isHistoryReplay: params.isHistoryReplay === 'true',
+  });
 
-  // Store & Settings
-  const entries = useHistoryStore((s) => s.entries);
-  const addEntry = useHistoryStore((s) => s.addEntry);
-  const defaultSourceLang = useSettingsStore((s) => s.selectedLanguages[0]);
-  const defaultTargetLang = useSettingsStore((s) => s.targetLanguage);
-
-  const { colorScheme } = useTheme();
-  const isDark = colorScheme === 'dark';
-  const primaryColor = getColor('primary', isDark);
-
-  // Local State
-  const foundEntry = entryId ? entries.find((e) => e.id === entryId) : null;
-  const [transcript, setTranscript] = useState(
-    foundEntry?.transcript || (initialTranscript as string),
-  );
-  const [translation, setTranslation] = useState(
-    foundEntry?.translation || null,
-  );
-  const [sourceLang] = useState(
-    foundEntry?.sourceLang ||
-      (initialSourceLang as string) ||
-      defaultSourceLang ||
-      'en',
-  );
-  const [targetLang] = useState(
-    foundEntry?.targetLang ||
-      (initialTargetLang as string) ||
-      defaultTargetLang ||
-      'es',
-  );
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [hasPolished, setHasPolished] = useState(false);
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const isHistoryReplay = !!foundEntry || initialIsHistoryReplay === 'true';
-
-  const { mutateAsync: transcribe } = useTranscription();
-  const { mutateAsync: translate } = useTranslation();
-
-  // Transcription Pipeline (Auto-trigger if uri is provided)
-  const processSharedAudio = useCallback(
-    async (audioUri: string): Promise<void> => {
-      setIsProcessing(true);
-      try {
-        const txResult = await transcribe({
-          audio: {
-            uri: audioUri,
-            durationMs: 0,
-            trimStartMs: 0,
-            trimEndMs: 0,
-            hasSpeech: true,
-            averageDb: -40,
-            meteringData: [],
-          },
-          sourceLang,
-        });
-
-        setTranscript(txResult.transcript);
-
-        // Clean up file system
-        try {
-          new ExpoFile(audioUri).delete();
-        } catch {
-          /* file may not exist */
-        }
-
-        // Save to history using perfectly detected language
-        addEntry({
-          id: entryId ? String(entryId) : `res_${Date.now()}`,
-          sourceLang: txResult.detectedLang,
-          targetLang,
-          transcript: txResult.transcript,
-          translation: null,
-          timestamp: Date.now(),
-          duration: 0,
-          sourceApp: 'ekwe',
-        });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        setHasPolished(true);
-      } catch (err) {
-        const error = err as Error;
-        Alert.alert(
-          'Transcription Failed',
-          ErrorMessages[error.message as keyof typeof ErrorMessages] ??
-            'Could not process the voice note.',
-        );
-      } finally {
-        setIsProcessing(false);
-      }
-    },
-    [addEntry, sourceLang, targetLang, entryId, transcribe],
-  );
-
-  useEffect(() => {
-    if (uri && !hasPolished && !isProcessing && !isHistoryReplay) {
-      processSharedAudio(uri as string);
-    }
-  }, [uri, hasPolished, isProcessing, isHistoryReplay, processSharedAudio]);
-
-  const handleTranslate = async (): Promise<void> => {
-    if (!transcript) return;
-    setIsTranslating(true);
-    try {
-      const trResult = await translate({
-        text: transcript,
-        sourceLang,
-        targetLang,
-      });
-
-      setTranslation(trResult.translation);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      Alert.alert('Translation Failed', 'Try again in a moment.');
-    } finally {
-      setIsTranslating(false);
-    }
-  };
+  const { color } = useTheme();
+  const primaryColor = color.primary;
 
   const handleCopy = async (text: string): Promise<void> => {
-    await Clipboard.setStringAsync(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    await copy(text);
   };
 
   return (
@@ -163,23 +45,7 @@ export default function ResultScreen(): React.JSX.Element {
       className="flex-1 bg-background dark:bg-background-dark"
     >
       {/* Header */}
-      <View className="px-6 py-4 flex-row justify-between items-center bg-background dark:bg-background-dark border-b border-border dark:border-border-dark">
-        <Text className="font-display text-xl text-foreground dark:text-foreground-dark">
-          {isHistoryReplay ? 'History Record' : 'Translation Result'}
-        </Text>
-        <EkweButton
-          variant="ghost"
-          size="small"
-          label="Close"
-          onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-            } else {
-              router.replace('/');
-            }
-          }}
-        />
-      </View>
+      <ScreenHeader title={isHistoryReplay ? 'History Record' : 'Translation Result'} />
 
       <ScrollView
         className="flex-1 px-6 bg-background dark:bg-background-dark"
@@ -211,7 +77,7 @@ export default function ResultScreen(): React.JSX.Element {
                   {isProcessing && '✨ POLISHING'}
                 </Text>
                 <View className="flex-row gap-2">
-                  <EkweButton
+                  <Button
                     variant="ghost"
                     size="small"
                     label={copied ? 'Copied' : 'Copy'}
@@ -245,7 +111,7 @@ export default function ResultScreen(): React.JSX.Element {
                 {isTranslating ? (
                   <ActivityIndicator color={primaryColor} />
                 ) : (
-                  <EkweButton
+                  <Button
                     variant="primary"
                     size="medium"
                     label={`Translate to ${getLanguageName(targetLang)}`}
@@ -271,7 +137,7 @@ export default function ResultScreen(): React.JSX.Element {
       {/* Global Action Bar */}
       {!isProcessing && translation && (
         <View className="px-6 py-8 border-t border-border dark:border-border-dark bg-background dark:bg-background-dark">
-          <EkweButton
+          <Button
             variant="secondary"
             size="large"
             label={copied ? 'Copied' : 'Copy Full Translation'}

@@ -6,10 +6,9 @@ import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { EkweButton } from '@/components/common/EkweButton';
-import { getColor } from '@/constants/colors';
+import { Button } from '@/components/ui';
 import { LANGUAGES, FLAG_MAP } from '@/constants/languages';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme } from '@/hooks';
 import { useSettingsStore } from '@/store';
 import { useAuthStore } from '@/store/authStore';
 
@@ -38,10 +37,10 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
     useSettingsStore();
   const [selected, setSelected] = useState<string[]>([]);
 
-  const isDark = colorScheme === 'dark';
-  const brandPrimary = getColor('primary', isDark);
-  const bgMain = getColor('background', isDark);
-  const handleHex = getColor('border', isDark);
+  const { color } = useTheme();
+  const brandPrimary = color.primary;
+  const bgMain = color.background;
+  const handleHex = color.border;
 
   const toggleLanguage = (code: string): void => {
     if (selected.includes(code)) {
@@ -131,7 +130,7 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
                     fontFamily: 'Outfit-Medium',
                     color: isSelected
                       ? '#FFFFFF'
-                      : getColor('foreground', isDark),
+                      : color.foreground,
                   }}
                   numberOfLines={1}
                 >
@@ -149,7 +148,7 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
       </ScrollView>
 
       <View className="px-6 pb-12 pt-4 border-t border-border dark:border-zinc-800 bg-background dark:bg-background-dark">
-        <EkweButton
+        <Button
           variant="primary"
           size="large"
           label={`Continue ${selected.length > 0 ? `(${selected.length}/5)` : ''}`}

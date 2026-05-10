@@ -12,9 +12,8 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EkweWordmark } from '@/assets/icons/EkweWordmark';
-import { EkweButton } from '@/components/common/EkweButton';
-import { getColor } from '@/constants/colors';
-import { useTheme } from '@/hooks/useTheme';
+import { Button } from '@/components/ui';
+import { useTheme } from '@/hooks';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -83,11 +82,9 @@ const FeatureCard = ({
 
 export default function WelcomeScreen(): React.ReactElement {
   const router = useRouter();
-  const { colorScheme } = useTheme();
-
-  const isDark = colorScheme === 'dark';
-  const iconColor = getColor('primary', isDark);
-  const logoColor = getColor('foreground', isDark);
+  const { color } = useTheme();
+  const iconColor = color.primary;
+  const logoColor = color.foreground;
 
   const headerOpacity = useSharedValue(0);
   const headerScale = useSharedValue(0.9);
@@ -156,7 +153,7 @@ export default function WelcomeScreen(): React.ReactElement {
       </View>
 
       <View className="w-full px-8 pb-12">
-        <EkweButton
+        <Button
           variant="primary"
           size="large"
           label="Get started"
@@ -164,7 +161,7 @@ export default function WelcomeScreen(): React.ReactElement {
           rightIcon={
             <ChevronRight
               size={24}
-              color={getColor('onPrimary', isDark)}
+              color={color.onPrimary}
               strokeWidth={3}
             />
           }

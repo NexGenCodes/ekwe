@@ -62,8 +62,6 @@
           ]
         }
       ],
-      "expo-asset",
-      "expo-speech-recognition",
       "expo-widgets",
       [
         "expo-build-properties",
@@ -110,9 +108,8 @@
         }
       ],
       "./modules/ekwe-native/app.plugin.js",
-      "expo-secure-store",
       "expo-router",
-      "expo-web-browser"
+      "@react-native-google-signin/google-signin/app.plugin.js"
     ],
     "assetBundlePatterns": [
       "assets/fonts/*"

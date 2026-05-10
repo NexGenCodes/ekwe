@@ -15,21 +15,20 @@ import React from 'react';
 import { View, Text, ScrollView, Image, Pressable, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { EkweButton } from '@/components/common/EkweButton';
-import { getColor } from '@/constants/colors';
-import { useTheme } from '@/hooks/useTheme';
-import { supabase } from '@/lib/supabase';
+import { Button } from '@/components/ui';
+import { useLogout } from '@/hooks';
+import { useTheme } from '@/hooks';
 import { useAuthStore } from '@/store/authStore';
-import logger from '@/utils/logger';
 
 export default function ProfileScreen(): React.JSX.Element {
-  const { user, isPro } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const isPro = useAuthStore((s) => s.isPro);
   const router = useRouter();
-  const { colorScheme } = useTheme();
-  const isDark = colorScheme === 'dark';
+  const { color } = useTheme();
+  const { confirmLogout } = useLogout();
 
-  const primaryColor = getColor('primary', isDark);
-  const mutedColor = getColor('muted', isDark);
+  const primaryColor = color.primary;
+  const mutedColor = color.muted;
 
   const userTier = isPro ? 'pro' : 'free';
   const rawName = user?.user_metadata?.full_name || user?.user_metadata?.name;
@@ -37,24 +36,7 @@ export default function ProfileScreen(): React.JSX.Element {
   const userName =
     rawName || (userEmail ? userEmail.split('@')[0] : 'Ekwe User');
 
-  const handleLogout = async (): Promise<void> => {
-    Alert.alert('Log Out', 'Are you sure you want to log out of Ekwe?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log Out',
-        style: 'destructive',
-        onPress: async (): Promise<void> => {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          try {
-            await supabase.auth.signOut();
-            router.replace('/');
-          } catch (e) {
-            logger.error('Logout error:', e);
-          }
-        },
-      },
-    ]);
-  };
+  const handleLogout = confirmLogout;
 
   const renderInfoRow = (
     icon: React.ReactNode,
@@ -86,7 +68,7 @@ export default function ProfileScreen(): React.JSX.Element {
           onPress={() => router.back()}
           className="w-10 h-10 items-center justify-center rounded-full active:bg-card dark:active:bg-card-dark"
         >
-          <ChevronLeft size={24} color={getColor('foreground', isDark)} />
+          <ChevronLeft size={24} color={color.foreground} />
         </Pressable>
         <Text className="font-display text-xl text-foreground dark:text-foreground-dark">
           Profile
@@ -95,7 +77,7 @@ export default function ProfileScreen(): React.JSX.Element {
           onPress={() => router.push('/(tabs)/settings')}
           className="w-10 h-10 items-center justify-center rounded-full active:bg-card dark:active:bg-card-dark"
         >
-          <Settings size={22} color={getColor('foreground', isDark)} />
+          <Settings size={22} color={color.foreground} />
         </Pressable>
       </View>
 
@@ -185,7 +167,7 @@ export default function ProfileScreen(): React.JSX.Element {
 
         {/* Logout Button */}
         <View className="pb-12">
-          <EkweButton
+          <Button
             variant="ghost"
             size="large"
             label="Log Out"

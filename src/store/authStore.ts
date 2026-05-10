@@ -1,10 +1,7 @@
 import { Session, User } from '@supabase/supabase-js';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-
-import { supabase } from '@/lib/supabase';
 import { mmkvStorage } from '@/store/mmkvStorage';
-import logger from '@/utils/logger';
 
 interface AuthState {
   session: Session | null;
@@ -72,22 +69,3 @@ export const useAuthStore = create<AuthState>()(
   ),
 );
 
-supabase.auth.onAuthStateChange((event, session) => {
-  logger.info(`Auth state changed: ${event}`, session?.user?.id);
-  useAuthStore.getState().setSession(session);
-  useAuthStore.getState().setInitialized(true);
-});
-
-supabase.auth.getSession().then(({ data, error }) => {
-  if (error) {
-    logger.error('Error fetching auth session', error);
-    useAuthStore.getState().setInitialized(true);
-    return;
-  }
-
-  if (data?.session) {
-    useAuthStore.getState().setSession(data.session);
-  }
-
-  useAuthStore.getState().setInitialized(true);
-});

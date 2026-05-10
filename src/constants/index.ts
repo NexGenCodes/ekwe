@@ -1,3 +1,3 @@
 export { EkweError, ErrorMessages } from './errors';
-export { LANGUAGES } from './languages';
+export { LANGUAGES, getLanguageName } from './languages';
 export type { Language } from './languages';

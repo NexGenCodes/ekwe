@@ -1,8 +1,8 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
 
-import { AccessibilityDisclosure } from '@/components/common/AccessibilityDisclosure/AccessibilityDisclosure';
-import { useForegroundApp } from '@/hooks/useForegroundApp';
+import { AccessibilityDisclosure } from '@/components';
+import { useForegroundApp } from '@/hooks';
 
 export default function AccessibilityDisclosureScreen(): React.ReactElement {
   const router = useRouter();

@@ -1,8 +1,7 @@
 import React from 'react';
 import { Text, TextStyle } from 'react-native';
 
-import { getColor } from '@/constants/colors';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme } from '@/hooks';
 
 export interface EkweWordmarkProps {
   size?: number;
@@ -17,11 +16,10 @@ export const EkweWordmark = ({
   centred,
   style,
 }: EkweWordmarkProps): React.JSX.Element => {
-  const { colorScheme } = useTheme();
-  const isDark = colorScheme === 'dark';
+  const { color: themeColor } = useTheme();
 
   // Default color based on theme
-  const defaultColor = getColor('foreground', isDark);
+  const defaultColor = themeColor.foreground;
 
   return (
     <Text

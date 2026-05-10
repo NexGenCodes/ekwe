@@ -1,8 +1,9 @@
 import { File as ExpoFile } from 'expo-file-system';
 
 import { EkweError } from '@/constants/errors';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/services/supabase';
 import { ProcessedAudio } from '@/services/AudioProcessor';
+import { useAuthStore } from '@/store/authStore';
 import { Result, ok, err } from '@/types/Result';
 import { logger } from '@/utils';
 
@@ -121,8 +122,6 @@ class TranscriptionServiceClass {
       };
 
       if (data.transaction) {
-        // Update global billing state dynamically
-        const { useAuthStore } = require('@/store/authStore');
         useAuthStore.getState().updateBilling(data.transaction);
       }
 

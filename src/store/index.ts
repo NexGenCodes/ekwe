@@ -14,6 +14,7 @@ import {
   SettingsActions,
 } from '@/store/settingsSlice';
 
+
 export type { AudioState, AudioActions };
 export type { HistoryState, HistoryActions };
 export { mmkvStorage };
@@ -47,3 +48,7 @@ export const useSettingsStore = create<SettingsState & SettingsActions>()(
     storage: createJSONStorage(() => mmkvStorage),
   }),
 );
+
+export { useAuthStore } from './authStore';
+export { useSyncQueue } from './syncQueue';
+

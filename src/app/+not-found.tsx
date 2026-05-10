@@ -2,7 +2,7 @@ import { Link, Stack } from 'expo-router';
 import { View, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { EkweButton } from '@/components/common/EkweButton';
+import { Button } from '@/components/ui';
 
 export default function NotFoundScreen(): React.ReactElement {
   return (
@@ -18,7 +18,7 @@ export default function NotFoundScreen(): React.ReactElement {
         </Text>
 
         <Link href="/" asChild>
-          <EkweButton
+          <Button
             variant="primary"
             size="large"
             label="Go to home screen!"

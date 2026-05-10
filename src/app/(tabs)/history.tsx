@@ -1,30 +1,28 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
+import { FlashList } from '@shopify/flash-list';
 import React, { useMemo, useState } from 'react';
-import { View, Text, TextInput, ScrollView, Pressable } from 'react-native';
+import { View, Text, TextInput, Pressable } from 'react-native';
 import Animated, {
   FadeInUp,
   FadeInDown,
-  Layout,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CloseIcon } from '@/assets/icons/CloseIcon';
 import { DrumIcon } from '@/assets/icons/DrumIcon';
 import { SearchIcon } from '@/assets/icons/SearchIcon';
-import { HistoryItem } from '@/components/cards/HistoryItem';
-import { getColor } from '@/constants/colors';
-import { useHistory } from '@/hooks/useHistory';
-import { useTheme } from '@/hooks/useTheme';
+import { HistoryItem } from '@/components';
+import { useHistory } from '@/hooks';
+import { useTheme } from '@/hooks';
 import { HistoryEntry } from '@/store/historySlice';
 
 export default function HistoryScreen(): React.JSX.Element {
   const router = useRouter();
   const { entries, deleteEntry } = useHistory();
   const [query, setQuery] = useState('');
-  const { colorScheme } = useTheme();
-  const isDark = colorScheme === 'dark';
-  const mutedColor = getColor('muted', isDark);
+  const { color } = useTheme();
+  const mutedColor = color.muted;
 
   const sections = useMemo(() => {
     const filtered = entries.filter((e) =>
@@ -65,6 +63,48 @@ export default function HistoryScreen(): React.JSX.Element {
     });
   };
 
+  type ListItem =
+    | { type: 'header'; title: string }
+    | { type: 'entry'; data: HistoryEntry };
+
+  const flatData = useMemo(() => {
+    const data: ListItem[] = [];
+    sections.forEach((section) => {
+      data.push({ type: 'header', title: section.title });
+      section.data.forEach((entry) => {
+        data.push({ type: 'entry', data: entry });
+      });
+    });
+    return data;
+  }, [sections]);
+
+  const renderItem = ({ item }: { item: ListItem }) => {
+    if (item.type === 'header') {
+      return (
+        <Text className="font-bodyMed text-[11px] uppercase tracking-[0.15em] px-2 pt-6 pb-3 text-muted dark:text-zinc-500">
+          {item.title}
+        </Text>
+      );
+    }
+
+    return (
+      <View className="mb-3">
+        <HistoryItem
+          entry={item.data}
+          onPress={() => handleEntryPress(item.data)}
+          onDelete={() => deleteEntry(item.data.id)}
+          style={{
+            borderRadius: 20,
+            borderWidth: 1,
+            borderColor: color.border,
+            borderBottomWidth: 1,
+            overflow: 'hidden',
+          }}
+        />
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView
       edges={['top']}
@@ -86,12 +126,7 @@ export default function HistoryScreen(): React.JSX.Element {
             placeholder="Search transcripts..."
             placeholderTextColor={mutedColor}
             value={query}
-            onChangeText={(text) => {
-              if (text.length > query.length) {
-                Haptics.selectionAsync();
-              }
-              setQuery(text);
-            }}
+            onChangeText={setQuery}
           />
           {query.length > 0 && (
             <Pressable
@@ -115,7 +150,7 @@ export default function HistoryScreen(): React.JSX.Element {
           >
             <View className="w-full bg-card dark:bg-card-dark p-10 rounded-[32px] items-center border border-dashed border-border dark:border-zinc-800/80">
               <View className="w-16 h-16 bg-primary/10 rounded-full items-center justify-center mb-6">
-                <DrumIcon size={32} color={getColor('primary', isDark)} />
+                <DrumIcon size={32} color={color.primary} />
               </View>
               <Text className="font-display text-xl text-foreground dark:text-foreground-dark text-center mb-2">
                 {query.length > 0 ? 'No Matches Found' : 'Silent Library'}
@@ -128,52 +163,17 @@ export default function HistoryScreen(): React.JSX.Element {
             </View>
           </Animated.View>
         ) : (
-          <ScrollView
-            className="flex-1 px-4 bg-background dark:bg-background-dark"
-            contentContainerStyle={{ paddingBottom: 40 }}
-            showsVerticalScrollIndicator={false}
-          >
-            {sections.map((section, sIndex) => (
-              <Animated.View
-                key={section.title}
-                entering={FadeInUp.duration(500)
-                  .delay(sIndex * 150)
-                  .springify()}
-                layout={Layout.springify()}
-              >
-                <Text className="font-bodyMed text-[11px] uppercase tracking-[0.15em] px-2 pt-6 pb-3 text-muted dark:text-zinc-500">
-                  {section.title}
-                </Text>
-                <View className="gap-3">
-                  {section.data.map((item, index) => (
-                    <Animated.View
-                      key={item.id}
-                      entering={FadeInUp.duration(400)
-                        .delay(index * 50)
-                        .springify()}
-                      layout={Layout.springify()}
-                    >
-                      <HistoryItem
-                        entry={item}
-                        onPress={() => handleEntryPress(item)}
-                        onDelete={() => deleteEntry(item.id)}
-                        // Inject standalone card styling directly to override default borders
-                        style={{
-                          borderRadius: 20,
-                          borderWidth: 1,
-                          borderColor: isDark
-                            ? 'rgba(255,255,255,0.05)'
-                            : 'rgba(0,0,0,0.05)',
-                          borderBottomWidth: 1,
-                          overflow: 'hidden',
-                        }}
-                      />
-                    </Animated.View>
-                  ))}
-                </View>
-              </Animated.View>
-            ))}
-          </ScrollView>
+          <View className="flex-1 px-4">
+            <FlashList
+              data={flatData}
+              renderItem={renderItem}
+              getItemType={(item) => item.type}
+              // @ts-expect-error - FlashList 2.0.2 typing issue
+              estimatedItemSize={100}
+              contentContainerStyle={{ paddingBottom: 40 }}
+              showsVerticalScrollIndicator={false}
+            />
+          </View>
         )}
       </View>
     </SafeAreaView>

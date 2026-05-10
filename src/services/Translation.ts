@@ -1,5 +1,6 @@
 import { EkweError } from '@/constants/errors';
 import { LANGUAGES } from '@/constants/languages';
+import { useAuthStore } from '@/store/authStore';
 import { Result, ok, err } from '@/types/Result';
 import { fetchWithRetry } from '@/utils/networkUtils';
 
@@ -67,8 +68,6 @@ class TranslationServiceClass {
       };
 
       if (data.transaction) {
-        // Update global billing state dynamically
-        const { useAuthStore } = require('@/store/authStore');
         useAuthStore.getState().updateBilling(data.transaction);
       }
 

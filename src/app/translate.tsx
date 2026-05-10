@@ -1,4 +1,3 @@
-import * as Clipboard from 'expo-clipboard';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronDown, ArrowDownUp } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -12,12 +11,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { EkweButton } from '@/components/common/EkweButton';
-import { LanguagePickerSheet } from '@/components/common/LanguagePickerSheet';
-import { getColor } from '@/constants/colors';
-import { LANGUAGES, FLAG_MAP } from '@/constants/languages';
-import { useTheme } from '@/hooks/useTheme';
-import { TranslationService } from '@/services/Translation';
+import { Button, ScreenHeader, LanguagePickerSheet } from '@/components/ui';
+import { getLanguageName, FLAG_MAP } from '@/constants/languages';
+import { useTranslation } from '@/hooks';
+import { useClipboard } from '@/hooks';
+import { useTheme } from '@/hooks';
 import { useHistoryStore, useSettingsStore } from '@/store';
 
 export default function TranslateScreen(): React.JSX.Element {
@@ -25,8 +23,6 @@ export default function TranslateScreen(): React.JSX.Element {
   const router = useRouter();
   const { text, detectedLang = 'und' } = params;
 
-  const getLanguageName = (code: string): string =>
-    LANGUAGES.find((l) => l.code === code)?.englishName ?? code;
 
   // Store & Settings
   const addEntry = useHistoryStore((s) => s.addEntry);
@@ -34,10 +30,11 @@ export default function TranslateScreen(): React.JSX.Element {
   const pinnedLanguages = useSettingsStore((s) => s.pinnedLanguages);
   const setPinnedLanguages = useSettingsStore((s) => s.setPinnedLanguages);
 
-  const { colorScheme } = useTheme();
-  const isDark = colorScheme === 'dark';
-  const primaryColor = getColor('primary', isDark);
-  const mutedColor = getColor('muted', isDark);
+  const { isDark, color } = useTheme();
+  const primaryColor = color.primary;
+  const mutedColor = color.muted;
+  const { copied, copy } = useClipboard();
+  const { mutateAsync: translate } = useTranslation();
 
   // Local State
   const [sourceLang, setSourceLang] = useState<string>(
@@ -49,7 +46,6 @@ export default function TranslateScreen(): React.JSX.Element {
 
   const [translation, setTranslation] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   // Language Picker State
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -82,37 +78,33 @@ export default function TranslateScreen(): React.JSX.Element {
     if (!text) return;
     setIsTranslating(true);
     try {
-      const result = await TranslationService.translate(
-        text as string,
+      const result = await translate({
+        text: text as string,
         sourceLang,
         targetLang,
-      );
-      if (result.ok) {
-        setTranslation(result.value.translation);
+      });
+      setTranslation(result.translation);
 
-        // Save to history
-        addEntry({
-          id: `tex_${Date.now()}`,
-          sourceLang,
-          targetLang,
-          transcript: text as string,
-          translation: result.value.translation,
-          timestamp: Date.now(),
-          duration: 0,
-          sourceApp: 'shared-text',
-        });
-      } else {
-        Alert.alert('Translation Failed', 'Try again in a moment.');
-      }
+      // Save to history
+      addEntry({
+        id: `tex_${Date.now()}`,
+        sourceLang,
+        targetLang,
+        transcript: text as string,
+        translation: result.translation,
+        timestamp: Date.now(),
+        duration: 0,
+        sourceApp: 'shared-text',
+      });
+    } catch {
+      Alert.alert('Translation Failed', 'Try again in a moment.');
     } finally {
       setIsTranslating(false);
     }
   };
 
   const handleCopy = async (copyText: string): Promise<void> => {
-    await Clipboard.setStringAsync(copyText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    await copy(copyText);
   };
 
   const handleSwap = (): void => {
@@ -127,23 +119,7 @@ export default function TranslateScreen(): React.JSX.Element {
       className="flex-1 bg-background dark:bg-background-dark"
     >
       {/* Header */}
-      <View className="px-6 py-4 flex-row justify-between items-center bg-background dark:bg-background-dark border-b border-border dark:border-border-dark">
-        <Text className="font-display text-xl text-foreground dark:text-foreground-dark">
-          Translate Text
-        </Text>
-        <EkweButton
-          variant="ghost"
-          size="small"
-          label="Close"
-          onPress={() => {
-            if (router.canGoBack()) {
-              router.back();
-            } else {
-              router.replace('/');
-            }
-          }}
-        />
-      </View>
+      <ScreenHeader title="Translate" />
 
       <ScrollView
         className="flex-1 px-6 bg-background dark:bg-background-dark"
@@ -159,7 +135,7 @@ export default function TranslateScreen(): React.JSX.Element {
               >
                 <Text className="font-bodyMed text-xs uppercase tracking-widest text-muted dark:text-muted-dark mr-1">
                   {(detectedLang as string) !== 'und' &&
-                  sourceLang === (detectedLang as string)
+                    sourceLang === (detectedLang as string)
                     ? 'DETECTED · '
                     : 'SOURCE · '}
                   {getLanguageName(sourceLang)} {FLAG_MAP[sourceLang] || ''}
@@ -215,7 +191,7 @@ export default function TranslateScreen(): React.JSX.Element {
               {isTranslating ? (
                 <ActivityIndicator size="large" color={primaryColor} />
               ) : (
-                <EkweButton
+                <Button
                   variant="primary"
                   size="large"
                   label={`Translate to ${getLanguageName(targetLang)}`}
@@ -231,7 +207,7 @@ export default function TranslateScreen(): React.JSX.Element {
       {/* Global Action Bar */}
       {!isTranslating && translation && (
         <View className="px-6 py-8 border-t border-border dark:border-border-dark bg-background dark:bg-background-dark">
-          <EkweButton
+          <Button
             variant="secondary"
             size="large"
             label={copied ? 'Copied' : 'Copy Full Translation'}

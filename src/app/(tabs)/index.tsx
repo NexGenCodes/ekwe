@@ -1,26 +1,24 @@
 import { useRouter } from 'expo-router';
 import { Settings, Clock, Activity, Zap } from 'lucide-react-native';
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EkweWordmark } from '@/assets/icons/EkweWordmark';
 import { AccountAvatar } from '@/components';
-import { getColor } from '@/constants/colors';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme } from '@/hooks';
 import { useAuthStore } from '@/store/authStore';
 
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
-  const { colorScheme } = useTheme();
-  const isDark = colorScheme === 'dark';
-  const { user } = useAuthStore();
+  const { color } = useTheme();
+  const user = useAuthStore((s) => s.user);
 
-  const textColor = useMemo(() => getColor('foreground', isDark), [isDark]);
-  const mutedColor = useMemo(() => getColor('muted', isDark), [isDark]);
-  const cardColor = useMemo(() => getColor('card', isDark), [isDark]);
-  const borderColor = useMemo(() => getColor('border', isDark), [isDark]);
-  const primaryColor = useMemo(() => getColor('primary', isDark), [isDark]);
+  const textColor = color.foreground;
+  const mutedColor = color.muted;
+  const cardColor = color.card;
+  const borderColor = color.border;
+  const primaryColor = color.primary;
 
   return (
     <SafeAreaView

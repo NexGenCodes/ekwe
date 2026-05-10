@@ -6,35 +6,38 @@ import { Alert, View, Text, ScrollView, Switch, Pressable } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { LanguagePickerSheet, ThemeSelector } from '@/components';
-import { getColor } from '@/constants/colors';
-import { useForegroundApp } from '@/hooks/useForegroundApp';
-import { useTheme } from '@/hooks/useTheme';
-import { supabase } from '@/lib/supabase';
+import {
+  LanguagePickerSheet,
+  ThemeToggler,
+  SettingsRow,
+  SectionHeader,
+} from '@/components';
+import { useForegroundApp } from '@/hooks';
+import { useLogout } from '@/hooks';
+import { useTheme } from '@/hooks';
+import { supabase } from '@/services/supabase';
 import { useSettingsStore } from '@/store';
 import { useAuthStore } from '@/store/authStore';
 import logger from '@/utils/logger';
 
 export default function SettingsScreen(): React.JSX.Element {
   const [sheetVisible, setSheetVisible] = useState(false);
-  const [themeSheetVisible, setThemeSheetVisible] = useState(false);
   const router = useRouter();
-  const { colorScheme } = useTheme();
-  const isDark = colorScheme === 'dark';
-  const primaryColor = getColor('primary', isDark);
-  const { user, isPro } = useAuthStore();
+  const { color } = useTheme();
+  const primaryColor = color.primary;
+  const user = useAuthStore((s) => s.user);
+  const isPro = useAuthStore((s) => s.isPro);
+  const { logout } = useLogout();
 
-  const {
-    themePreference,
-    autoCopy,
-    hapticsEnabled,
-    setAutoCopy,
-    setHapticsEnabled,
-    selectedLanguages,
-    pinnedLanguages,
-    setSelectedLanguages,
-    setPinnedLanguages,
-  } = useSettingsStore();
+  const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
+  const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
+  const targetLanguage = useSettingsStore((s) => s.targetLanguage);
+  const selectedLanguages = useSettingsStore((s) => s.selectedLanguages);
+  const autoCopy = useSettingsStore((s) => s.autoCopy);
+  const setAutoCopy = useSettingsStore((s) => s.setAutoCopy);
+  const pinnedLanguages = useSettingsStore((s) => s.pinnedLanguages);
+  const setSelectedLanguages = useSettingsStore((s) => s.setSelectedLanguages);
+  const setPinnedLanguages = useSettingsStore((s) => s.setPinnedLanguages);
 
   const rawName = user?.user_metadata?.full_name || user?.user_metadata?.name;
   const userEmail = user?.email;
@@ -45,13 +48,7 @@ export default function SettingsScreen(): React.JSX.Element {
   const { hasPermission } = useForegroundApp();
 
   const handleLogout = async (): Promise<void> => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      logger.warn('[Settings] Supabase signOut error:', e);
-    }
-    router.replace('/');
+    await logout();
   };
 
   const handleDeleteAccount = (): void => {
@@ -82,47 +79,7 @@ export default function SettingsScreen(): React.JSX.Element {
     );
   };
 
-  const renderSectionHeader = (title: string): React.JSX.Element => (
-    <Text className="font-display text-xs uppercase tracking-[0.15em] px-6 pt-8 pb-3 text-muted dark:text-zinc-500">
-      {title}
-    </Text>
-  );
 
-  const renderItem = (
-    label: string,
-    value: React.ReactNode,
-    onPress?: () => void,
-    isLocked: boolean = false,
-  ): React.JSX.Element => (
-    <Pressable
-      onPress={() => {
-        if (isLocked) {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          // Show upgrade modal logic here in future
-          return;
-        }
-        if (onPress) {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          onPress();
-        }
-      }}
-      disabled={!onPress && !isLocked}
-      className={`flex-row items-center justify-between px-5 py-4 border-b bg-card dark:bg-card-dark border-border dark:border-zinc-800/60 ${
-        onPress && !isLocked
-          ? 'active:opacity-70 transition-opacity duration-200'
-          : ''
-      }`}
-      style={{ opacity: isLocked ? 0.5 : 1 }}
-    >
-      <View className="flex-row items-center gap-2">
-        <Text className="font-bodyMed text-[15px] text-foreground dark:text-zinc-100">
-          {label}
-        </Text>
-        {isLocked && <Lock size={14} color={getColor('muted', isDark)} />}
-      </View>
-      {value}
-    </Pressable>
-  );
 
   return (
     <SafeAreaView
@@ -177,66 +134,64 @@ export default function SettingsScreen(): React.JSX.Element {
         <Animated.View
           entering={FadeInDown.duration(600).delay(100).springify()}
         >
-          {renderSectionHeader('Configuration')}
+          <SectionHeader title="Configuration" />
           <View className="overflow-hidden rounded-[24px] mx-4 border border-border dark:border-zinc-800/80 shadow-sm bg-card dark:bg-card-dark">
-            {renderItem(
-              'Haptic Feedback',
-              <Switch
-                value={hapticsEnabled}
-                onValueChange={setHapticsEnabled}
-                trackColor={{
-                  true: primaryColor,
-                  false: isDark ? '#3F3F46' : '#E4E4E7',
-                }}
-                thumbColor="#FFFFFF"
-              />,
-            )}
-            {renderItem(
-              'App Theme',
-              <View className="flex-row items-center gap-2">
-                <Text className="font-body text-sm text-muted dark:text-zinc-400 capitalize">
-                  {themePreference}
-                </Text>
-                <ChevronRight size={16} color={getColor('muted', isDark)} />
-              </View>,
-              () => setThemeSheetVisible(true),
-            )}
+            <SettingsRow
+              label="Haptic Feedback"
+              value={
+                <Switch
+                  value={hapticsEnabled}
+                  onValueChange={setHapticsEnabled}
+                  trackColor={{
+                    true: primaryColor,
+                    false: color.border,
+                  }}
+                  thumbColor="#FFFFFF"
+                />
+              }
+            />
+            <SettingsRow
+              label="App Theme"
+              value={<ThemeToggler />}
+            />
           </View>
 
-          {renderSectionHeader('Smart Features')}
+          <SectionHeader title="Smart Features" />
           <View className="overflow-hidden rounded-[24px] mx-4 border border-border dark:border-zinc-800/80 shadow-sm bg-card dark:bg-card-dark">
-            {renderItem(
-              'Auto-copy to Clipboard',
-              <Switch
-                value={userTier === 'pro' ? autoCopy : false}
-                onValueChange={setAutoCopy}
-                trackColor={{
-                  true: primaryColor,
-                  false: isDark ? '#3F3F46' : '#E4E4E7',
-                }}
-                thumbColor="#FFFFFF"
-                disabled={userTier !== 'pro'}
-              />,
-              undefined,
-              userTier !== 'pro',
-            )}
-            {renderItem(
-              'App-Context Awareness',
-              <Switch
-                value={!!hasPermission}
-                onValueChange={async (value) => {
-                  if (value) router.push('/accessibility-disclosure');
-                }}
-                trackColor={{
-                  true: primaryColor,
-                  false: isDark ? '#3F3F46' : '#E4E4E7',
-                }}
-                thumbColor="#FFFFFF"
-                disabled={userTier !== 'pro'}
-              />,
-              undefined,
-              userTier !== 'pro',
-            )}
+            <SettingsRow
+              label="Auto-copy to Clipboard"
+              isLocked={userTier !== 'pro'}
+              value={
+                <Switch
+                  value={userTier === 'pro' ? autoCopy : false}
+                  onValueChange={setAutoCopy}
+                  trackColor={{
+                    true: primaryColor,
+                    false: color.border,
+                  }}
+                  thumbColor="#FFFFFF"
+                  disabled={userTier !== 'pro'}
+                />
+              }
+            />
+            <SettingsRow
+              label="App-Context Awareness"
+              isLocked={userTier !== 'pro'}
+              value={
+                <Switch
+                  value={!!hasPermission}
+                  onValueChange={async (value) => {
+                    if (value) router.push('/accessibility-disclosure');
+                  }}
+                  trackColor={{
+                    true: primaryColor,
+                    false: color.border,
+                  }}
+                  thumbColor="#FFFFFF"
+                  disabled={userTier !== 'pro'}
+                />
+              }
+            />
             <View className="px-5 py-4 bg-muted/5">
               <Text className="font-body text-[12px] text-muted dark:text-zinc-400 leading-5">
                 Context Awareness uses a battery-efficient Accessibility Service
@@ -246,27 +201,29 @@ export default function SettingsScreen(): React.JSX.Element {
             </View>
           </View>
 
-          {renderSectionHeader('Languages')}
+          <SectionHeader title="Languages" />
           <View className="overflow-hidden rounded-[24px] mx-4 border border-border dark:border-zinc-800/80 shadow-sm bg-card dark:bg-card-dark">
-            {renderItem(
-              'Edit Selection Grid',
-              <View className="flex-row items-center gap-2">
-                <Text className="font-body text-sm text-muted dark:text-zinc-400">
-                  {selectedLanguages.length}/5 active
-                </Text>
-                <ChevronRight size={16} color={getColor('muted', isDark)} />
-              </View>,
-              () => setSheetVisible(true),
-            )}
+            <SettingsRow
+              label="Edit Selection Grid"
+              onPress={() => setSheetVisible(true)}
+              value={
+                <View className="flex-row items-center gap-2">
+                  <Text className="font-body text-sm text-muted dark:text-zinc-400">
+                    {selectedLanguages.length}/5 active
+                  </Text>
+                  <ChevronRight size={16} color={color.muted} />
+                </View>
+              }
+            />
           </View>
 
-          {renderSectionHeader('Account')}
+          <SectionHeader title="Account" />
           <View className="overflow-hidden rounded-[24px] mx-4 border border-border dark:border-zinc-800/80 shadow-sm mb-6 bg-card dark:bg-card-dark">
             <Pressable
               onPress={handleLogout}
               className="px-5 py-4 flex-row items-center gap-3 border-b border-border dark:border-zinc-800/60 active:bg-red-500/10 transition-colors"
             >
-              <LogOut size={18} color={getColor('foreground', isDark)} />
+              <LogOut size={18} color={color.foreground} />
               <Text className="font-bodyMed text-[15px] text-foreground dark:text-zinc-100">
                 Log out
               </Text>
@@ -299,10 +256,6 @@ export default function SettingsScreen(): React.JSX.Element {
           setSelectedLanguages(sel);
           setPinnedLanguages(pins);
         }}
-      />
-      <ThemeSelector
-        isVisible={themeSheetVisible}
-        onClose={() => setThemeSheetVisible(false)}
       />
     </SafeAreaView>
   );

@@ -4,31 +4,29 @@ import React from 'react';
 import { HistoryIcon } from '@/assets/icons/HistoryIcon';
 import { HomeIcon } from '@/assets/icons/HomeIcon';
 import { SettingsIcon } from '@/assets/icons/SettingsIcon';
-import { getColor } from '@/constants/colors';
-import { useTheme } from '@/hooks/useTheme';
+import { useTheme } from '@/hooks';
 
 const TAB_BAR_HEIGHT = 64;
 
 export default function TabLayout(): React.ReactElement {
-  const { colorScheme } = useTheme();
-  const isDark = colorScheme === 'dark';
+  const { color } = useTheme();
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: getColor('background', isDark),
+          backgroundColor: color.background,
           borderTopWidth: 0.2,
-          borderTopColor: getColor('border', isDark),
+          borderTopColor: color.border,
           height: TAB_BAR_HEIGHT,
           paddingBottom: 12,
           paddingTop: 8,
           elevation: 0,
           shadowOpacity: 0,
         },
-        tabBarActiveTintColor: getColor('primary', isDark),
-        tabBarInactiveTintColor: getColor('muted', isDark),
+        tabBarActiveTintColor: color.primary,
+        tabBarInactiveTintColor: color.muted,
         tabBarLabelStyle: {
           fontFamily: 'Outfit-Regular',
           fontSize: 12,
