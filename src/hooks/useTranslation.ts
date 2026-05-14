@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 
 import { EkweError } from '@/constants/errors';
 import { TranslationService, TranslationResult } from '@/services/Translation';
-import { audio$, audioActions, history$, historyActions } from '@/store';
+import { audioActions, history$, historyActions } from '@/store';
 import { Result, ok, err } from '@/types/Result';
 
 export interface UseTranslationReturn {
@@ -23,7 +23,6 @@ export const useTranslation = (): UseTranslationReturn => {
 
   const { setError } = audioActions;
   const entries = useSelector(() => history$.entries.get());
-  const { addEntry, deleteEntry, updateEntry } = historyActions;
 
   const translate = useCallback(
     async (

@@ -15,7 +15,7 @@ import { HistoryService } from '@/services/HistoryService';
 import { IntentService } from '@/services/IntentService';
 import { settings$, auth$ } from '@/store';
 import { EchoStep, EchoProps, UseEchoFlowResult } from '@/types/echo';
-import { logger, AppAlert } from '@/utils';
+import { logger } from '@/utils';
 import { cleanEchoCache } from '@/utils/echo';
 
 interface EchoState {
@@ -89,7 +89,6 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     preWarmAudioEngine();
   }, []);
 
-  const targetLanguage = useSelector(() => settings$.targetLanguage.get());
   const themePreference = useSelector(() => settings$.themePreference.get());
   const autoCopy = useSelector(() => settings$.autoCopy.get());
   const session = useSelector(() => auth$.session.get());

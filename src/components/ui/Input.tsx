@@ -15,7 +15,7 @@ export interface InputProps extends TextInputProps {
 
 export const Input = forwardRef<TextInput, InputProps>(
   ({ error, style, ...props }, ref) => {
-    const { isDark, color } = useTheme();
+    const { color } = useTheme();
 
     return (
       <View>

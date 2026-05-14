@@ -1,4 +1,5 @@
 import { useColorScheme } from 'nativewind';
+import { useMemo } from 'react';
 import { useColorScheme as useSystemColorScheme } from 'react-native';
 
 import { getColor, bubbleColors } from '@/constants/colors';
@@ -47,11 +48,11 @@ export const useTheme = (): ThemeTokens => {
     (colorScheme as string) === 'system' ? systemColorScheme : colorScheme;
   const isDark = resolvedColorScheme === 'dark';
 
-  return {
-    colorScheme: colorScheme as 'light' | 'dark' | 'system',
-    setColorScheme,
-    isDark,
-    color: {
+  // Stable reference: only recomputes when theme actually switches.
+  // Without this, every useTheme() consumer gets a new object on every render,
+  // defeating React.memo and causing cascade re-renders across the entire tree.
+  const color = useMemo(
+    () => ({
       primary: getColor('primary', isDark),
       onPrimary: getColor('onPrimary', isDark),
       foreground: getColor('foreground', isDark),
@@ -63,8 +64,13 @@ export const useTheme = (): ThemeTokens => {
       warning: getColor('warning', isDark),
       error: getColor('error', isDark),
       bubble: bubbleColors(isDark),
-    },
-    shadow: {
+    }),
+    [isDark],
+  );
+
+  // Shadow tokens never change — allocate once for the lifetime of the app.
+  const shadow = useMemo(
+    () => ({
       overlay: {
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
@@ -72,6 +78,15 @@ export const useTheme = (): ThemeTokens => {
         shadowRadius: 12,
         elevation: 8,
       },
-    },
+    }),
+    [],
+  );
+
+  return {
+    colorScheme: colorScheme as 'light' | 'dark' | 'system',
+    setColorScheme,
+    isDark,
+    color,
+    shadow,
   };
 };

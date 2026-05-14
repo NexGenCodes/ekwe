@@ -13,6 +13,7 @@ export interface SyncEntry {
   translation_text: string | null;
   duration: number;
   source_app: string;
+  provider: string;
 }
 
 export interface SyncQueueState {

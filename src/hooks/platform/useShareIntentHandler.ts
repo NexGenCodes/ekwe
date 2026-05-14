@@ -4,14 +4,14 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useShareIntent } from 'expo-share-intent';
 import { useEffect } from 'react';
-import { Alert, AppState, Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import EkweNative from '../../../modules/ekwe-native';
 
 import { AudioCapture } from '@/services/AudioCapture';
 import { TranscriptionService } from '@/services/Transcription';
 import { TranslationService } from '@/services/Translation';
-import { audio$, audioActions, settings$, historyActions } from '@/store';
+import { audioActions, settings$, historyActions } from '@/store';
 import { logger } from '@/utils';
 import { BubbleNative } from '@/utils/BubbleModule';
 import { AppAlert } from '@/utils/alert';
@@ -73,7 +73,7 @@ const handleEchoSession = async (
 
       // 4. Persistence to History (Crucial: Background sessions must be saved)
       historyActions.addEntry({
-        id: `echo_${Date.now()}`,
+        id: crypto.randomUUID(),
         sourceLang: data.sourceLang,
         targetLang,
         transcript: data.transcript,

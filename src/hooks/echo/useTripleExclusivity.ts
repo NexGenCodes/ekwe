@@ -42,6 +42,10 @@ export const useTripleExclusivity = (): void => {
         case 'OVERLAY_ACTIVE':
           setActiveFloatingHead('card');
           break;
+        default:
+          logger.warn(
+            `[Exclusivity] Unhandled native state: ${event.state as string}`,
+          );
       }
     },
   );
@@ -82,6 +86,10 @@ export const useTripleExclusivity = (): void => {
         case 'OVERLAY_ACTIVE':
           setActiveFloatingHead('card');
           break;
+        default:
+          logger.warn(
+            `[Exclusivity] Unhandled startup state: ${state as string}`,
+          );
       }
     });
   }, []);

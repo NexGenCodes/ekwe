@@ -1,8 +1,8 @@
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
-import { View, Text, TextInput, Pressable } from 'react-native';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import { View, Text, TextInput, Pressable, ViewStyle } from 'react-native';
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -18,12 +18,19 @@ export default function HistoryScreen(): React.JSX.Element {
   const router = useRouter();
   const { entries, deleteEntry } = useHistory();
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+
+  // Debounce search input at 150ms to avoid recomputing sections on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 150);
+    return () => clearTimeout(t);
+  }, [query]);
   const { color } = useTheme();
   const mutedColor = color.muted;
 
   const sections = useMemo(() => {
     const filtered = entries.filter((e) =>
-      e.transcript.toLowerCase().includes(query.toLowerCase()),
+      e.transcript.toLowerCase().includes(debouncedQuery.toLowerCase()),
     );
 
     const now = Date.now();
@@ -44,9 +51,9 @@ export default function HistoryScreen(): React.JSX.Element {
       { title: 'Yesterday', data: yesterday },
       { title: 'Earlier', data: earlier },
     ].filter((s) => s.data.length > 0);
-  }, [entries, query]);
+  }, [entries, debouncedQuery]);
 
-  const handleEntryPress = (entry: HistoryEntry): void => {
+  const handleEntryPress = useCallback((entry: HistoryEntry): void => {
     router.push({
       pathname: '/result',
       params: {
@@ -58,7 +65,7 @@ export default function HistoryScreen(): React.JSX.Element {
         isHistoryReplay: 'true',
       },
     });
-  };
+  }, [router]);
 
   type ListItem =
     | { type: 'header'; title: string }
@@ -75,32 +82,40 @@ export default function HistoryScreen(): React.JSX.Element {
     return data;
   }, [sections]);
 
-  const renderItem = ({ item }: { item: ListItem }): React.ReactElement => {
-    if (item.type === 'header') {
-      return (
-        <Text className="font-bodyMed text-[11px] uppercase tracking-[0.15em] px-2 pt-6 pb-3 text-muted dark:text-zinc-500">
-          {item.title}
-        </Text>
-      );
-    }
+  const itemStyle = useMemo<ViewStyle>(
+    () => ({
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: color.border,
+      borderBottomWidth: 1,
+      overflow: 'hidden',
+    }),
+    [color.border],
+  );
 
-    return (
-      <View className="mb-3">
-        <HistoryItem
-          entry={item.data}
-          onPress={() => handleEntryPress(item.data)}
-          onDelete={() => deleteEntry(item.data.id)}
-          style={{
-            borderRadius: 20,
-            borderWidth: 1,
-            borderColor: color.border,
-            borderBottomWidth: 1,
-            overflow: 'hidden',
-          }}
-        />
-      </View>
-    );
-  };
+  const renderItem = useCallback(
+    ({ item }: { item: ListItem }): React.ReactElement => {
+      if (item.type === 'header') {
+        return (
+          <Text className="font-bodyMed text-[11px] uppercase tracking-[0.15em] px-2 pt-6 pb-3 text-muted dark:text-zinc-500">
+            {item.title}
+          </Text>
+        );
+      }
+
+      return (
+        <View className="mb-3">
+          <HistoryItem
+            entry={item.data}
+            onPress={handleEntryPress}
+            onDelete={deleteEntry}
+            style={itemStyle}
+          />
+        </View>
+      );
+    },
+    [handleEntryPress, deleteEntry, itemStyle],
+  );
 
   return (
     <SafeAreaView

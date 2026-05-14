@@ -39,14 +39,18 @@ export const useResultPipeline = ({
   initialTargetLang,
   isHistoryReplay = false,
 }: UseResultPipelineProps): UseResultPipelineReturn => {
-  const entries = useSelector(() => history$.entries.get());
+  // Targeted selector: only re-renders when THIS specific entry changes,
+  // not when any other history entry is added/modified.
+  const foundEntry = useSelector(() =>
+    entryId
+      ? (history$.entries.get().find((e) => e.id === entryId) ?? null)
+      : null,
+  );
   const { addEntry } = historyActions;
   const defaultSourceLang = useSelector(() =>
     settings$.selectedLanguages[0].get(),
   );
   const defaultTargetLang = useSelector(() => settings$.targetLanguage.get());
-
-  const foundEntry = entryId ? entries.find((e) => e.id === entryId) : null;
   const isReplay = !!foundEntry || isHistoryReplay;
 
   const [transcript, setTranscript] = useState(

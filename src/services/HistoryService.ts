@@ -19,7 +19,7 @@ export const HistoryService = {
     session: Session | null,
   ): Promise<void> => {
     const historyEntry = {
-      id: `echo_${Date.now()}`,
+      id: crypto.randomUUID(),
       ...payload,
       timestamp: Date.now(),
     };

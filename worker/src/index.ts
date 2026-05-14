@@ -10,7 +10,7 @@ let JWKS: ReturnType<typeof createRemoteJWKSet>;
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     // ─── IP Evasion & Anti-Ban Setup ───
-    (env as any).EVASION_HEADERS = getEvasionHeaders(request);
+    env.EVASION_HEADERS = getEvasionHeaders(request);
 
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',

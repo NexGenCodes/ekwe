@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, LayoutChangeEvent, StyleProp, ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -86,19 +86,44 @@ export const AudioWaveform = ({
     };
   });
 
-  const renderBars = (isActive: boolean): React.ReactElement[] => {
-    return amplitudes.map((amp, index) => (
-      <View
-        key={index}
-        style={{
-          width: 3,
-          height: Math.max(4, amp * height),
-          borderRadius: 1.5,
-          backgroundColor: isActive ? PRIMARY_BRAND_COLOR : TERTIARY_COLOR,
-        }}
-      />
-    ));
-  };
+  // Memoize computed bar heights — only recalculates when audio file changes
+  const barHeights = useMemo(
+    () => amplitudes.map((amp) => Math.max(4, amp * height)),
+    [amplitudes, height],
+  );
+
+  // Pre-render bar Views — eliminates 100 allocations per parent render
+  const inactiveBars = useMemo(
+    () =>
+      barHeights.map((h, index) => (
+        <View
+          key={index}
+          style={{
+            width: 3,
+            height: h,
+            borderRadius: 1.5,
+            backgroundColor: TERTIARY_COLOR,
+          }}
+        />
+      )),
+    [barHeights, TERTIARY_COLOR],
+  );
+
+  const activeBars = useMemo(
+    () =>
+      barHeights.map((h, index) => (
+        <View
+          key={index}
+          style={{
+            width: 3,
+            height: h,
+            borderRadius: 1.5,
+            backgroundColor: PRIMARY_BRAND_COLOR,
+          }}
+        />
+      )),
+    [barHeights, PRIMARY_BRAND_COLOR],
+  );
 
   const innerWaveformStyle = useAnimatedStyle(() => {
     return {
@@ -134,7 +159,7 @@ export const AudioWaveform = ({
             position: 'absolute',
           }}
         >
-          {renderBars(false)}
+          {inactiveBars}
         </View>
 
         {/* Foreground Layer (Active/Colored) */}
@@ -162,7 +187,7 @@ export const AudioWaveform = ({
               innerWaveformStyle,
             ]}
           >
-            {renderBars(true)}
+            {activeBars}
           </Animated.View>
         </Animated.View>
       </View>

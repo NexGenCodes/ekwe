@@ -1,5 +1,5 @@
 import { useSelector } from '@legendapp/state/react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 
 import { history$, historyActions, settings$, HistoryEntry } from '@/store';
@@ -56,23 +56,24 @@ export const useHistory = (): UseHistoryReturn => {
     };
   }, [retentionDays]);
 
-  // Sort entries newest first
-  const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);
-
-  // Section by calendar day
-  const now = new Date();
-  const todayStart = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  ).getTime();
-  const yesterdayStart = todayStart - MS_PER_DAY;
-
-  const todayEntries = sorted.filter((e) => e.timestamp >= todayStart);
-  const yesterdayEntries = sorted.filter(
-    (e) => e.timestamp >= yesterdayStart && e.timestamp < todayStart,
+  // Sort entries newest first — only recomputes when entries array changes
+  const sorted = useMemo(
+    () => [...entries].sort((a, b) => b.timestamp - a.timestamp),
+    [entries],
   );
-  const earlierEntries = sorted.filter((e) => e.timestamp < yesterdayStart);
+
+  // Section by calendar day — recomputes only when sorted order changes
+  const { todayEntries, yesterdayEntries, earlierEntries } = useMemo(() => {
+    const todayStart = new Date().setHours(0, 0, 0, 0);
+    const yesterdayStart = todayStart - MS_PER_DAY;
+    return {
+      todayEntries: sorted.filter((e) => e.timestamp >= todayStart),
+      yesterdayEntries: sorted.filter(
+        (e) => e.timestamp >= yesterdayStart && e.timestamp < todayStart,
+      ),
+      earlierEntries: sorted.filter((e) => e.timestamp < yesterdayStart),
+    };
+  }, [sorted]);
 
   return {
     entries: sorted,

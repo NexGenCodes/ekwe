@@ -13,12 +13,12 @@ import { getRelativeTime } from '@/utils/relativeTime';
 
 export interface HistoryItemProps {
   entry: HistoryEntry;
-  onPress: () => void;
-  onDelete: () => void;
+  onPress: (entry: HistoryEntry) => void;
+  onDelete: (id: string) => void;
   style?: ViewStyle;
 }
 
-export const HistoryItem = ({
+export const HistoryItem = React.memo(({
   entry,
   onPress,
   onDelete,
@@ -36,7 +36,7 @@ export const HistoryItem = ({
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         onPress={() => {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          onDelete();
+          onDelete(entry.id);
           swipeableRef.current?.close();
         }}
         className="flex-1 items-center justify-center p-2 active:scale-75 transition-transform"
@@ -57,7 +57,7 @@ export const HistoryItem = ({
       <Pressable
         onPress={() => {
           Haptics.selectionAsync();
-          onPress();
+          onPress(entry);
         }}
         className="flex-row items-center px-4 border-b bg-card dark:bg-card-dark border-border dark:border-border-dark active:scale-95 transition-transform duration-200"
         style={style}
@@ -102,4 +102,9 @@ export const HistoryItem = ({
       </Pressable>
     </Swipeable>
   );
-};
+}, (prev, next) =>
+  prev.entry.id === next.entry.id &&
+  prev.entry.timestamp === next.entry.timestamp &&
+  prev.onPress === next.onPress &&
+  prev.onDelete === next.onDelete,
+);

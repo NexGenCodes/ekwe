@@ -41,7 +41,6 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
 
     const { color } = useTheme();
     const brandPrimary = color.primary;
-    const textPrimary = color.foreground;
     const textSecondary = color.muted;
     const bgMain = color.background;
     const handleHex = color.border;
