@@ -38,7 +38,7 @@ export async function transcribe(
 
   if (!res?.ok) {
     const errText = await res?.text().catch(() => '') || 'No response';
-    logger.error({ provider: 'azure', status: res?.status, error: errText });
+    logger.error('[azure] Transcribe HTTP error', { status: res?.status, body: errText });
     return null;
   }
 

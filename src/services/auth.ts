@@ -8,6 +8,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import { Platform } from 'react-native';
 
 import { supabase } from '@/services/supabase';
+import { authActions } from '@/store';
 import logger from '@/utils/logger';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -18,30 +19,32 @@ export interface AuthResult {
   needsOtp?: boolean;
 }
 
-
 // ── Initialization ─────────────────────────────────────────────────
 
+let _authInitialized = false;
+
 export const initAuth = (): void => {
-  const { useAuthStore } = require('@/store/authStore');
+  if (_authInitialized) return;
+  _authInitialized = true;
 
   supabase.auth.onAuthStateChange((event, session) => {
     logger.info(`Auth state changed: ${event}`, session?.user?.id);
-    useAuthStore.getState().setSession(session);
-    useAuthStore.getState().setInitialized(true);
+    authActions.setSession(session);
+    authActions.setInitialized(true);
   });
 
   supabase.auth.getSession().then(({ data, error }) => {
     if (error) {
       logger.error('Error fetching auth session', error);
-      useAuthStore.getState().setInitialized(true);
+      authActions.setInitialized(true);
       return;
     }
 
     if (data?.session) {
-      useAuthStore.getState().setSession(data.session);
+      authActions.setSession(data.session);
     }
 
-    useAuthStore.getState().setInitialized(true);
+    authActions.setInitialized(true);
   });
 };
 
@@ -126,14 +129,11 @@ export const verifyOtp = async (
 
 // ── Password Reset ──────────────────────────────────────────────
 
-export const sendPasswordReset = async (
-  email: string,
-): Promise<AuthResult> => {
+export const sendPasswordReset = async (email: string): Promise<AuthResult> => {
   try {
-    const { error } = await supabase.auth.resetPasswordForEmail(
-      email.trim(),
-      { redirectTo: 'ekwe://reset-password' },
-    );
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: 'ekwe://reset-password',
+    });
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err) {
@@ -187,7 +187,8 @@ export const signInWithApple = async (): Promise<AuthResult> => {
     if (credential.fullName?.givenName) {
       await supabase.auth.updateUser({
         data: {
-          full_name: `${credential.fullName.givenName} ${credential.fullName.familyName || ''}`.trim(),
+          full_name:
+            `${credential.fullName.givenName} ${credential.fullName.familyName || ''}`.trim(),
         },
       });
     }
@@ -214,7 +215,9 @@ const configureGoogleSignIn = (): void => {
   if (googleConfigured) return;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+    const {
+      GoogleSignin,
+    } = require('@react-native-google-signin/google-signin');
     GoogleSignin.configure({
       webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
       scopes: ['openid', 'email', 'profile'],
@@ -228,7 +231,9 @@ const configureGoogleSignIn = (): void => {
 export const signInWithGoogle = async (): Promise<AuthResult> => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+    const {
+      GoogleSignin,
+    } = require('@react-native-google-signin/google-signin');
     configureGoogleSignIn();
 
     await GoogleSignin.hasPlayServices();
@@ -261,9 +266,7 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
 
 // ── Deep Link Session ───────────────────────────────────────────
 
-export const setSessionFromDeepLink = async (
-  url: string,
-): Promise<boolean> => {
+export const setSessionFromDeepLink = async (url: string): Promise<boolean> => {
   try {
     const fragment = url.split('#')[1] || url.split('?')[1] || '';
     const params = new URLSearchParams(fragment);

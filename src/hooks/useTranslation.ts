@@ -1,8 +1,9 @@
+import { useSelector } from '@legendapp/state/react';
 import { useCallback, useState } from 'react';
 
 import { EkweError } from '@/constants/errors';
-import { TranslationService } from '@/services/Translation';
-import { useAudioStore, useHistoryStore } from '@/store';
+import { TranslationService, TranslationResult } from '@/services/Translation';
+import { audio$, audioActions, history$, historyActions } from '@/store';
 import { Result, ok, err } from '@/types/Result';
 
 export interface UseTranslationReturn {
@@ -11,7 +12,7 @@ export interface UseTranslationReturn {
     sourceLang: string,
     targetLang: string,
     historyEntryId?: string,
-  ) => Promise<Result<string, EkweError>>;
+  ) => Promise<Result<TranslationResult, EkweError>>;
   isTranslating: boolean;
   translation: string | null;
 }
@@ -20,10 +21,9 @@ export const useTranslation = (): UseTranslationReturn => {
   const [isTranslating, setIsTranslating] = useState(false);
   const [translation, setTranslation] = useState<string | null>(null);
 
-  const setError = useAudioStore((s) => s.setError);
-  const entries = useHistoryStore((s) => s.entries);
-  const addEntry = useHistoryStore((s) => s.addEntry);
-  const deleteEntry = useHistoryStore((s) => s.deleteEntry);
+  const { setError } = audioActions;
+  const entries = useSelector(() => history$.entries.get());
+  const { addEntry, deleteEntry, updateEntry } = historyActions;
 
   const translate = useCallback(
     async (
@@ -31,7 +31,7 @@ export const useTranslation = (): UseTranslationReturn => {
       sourceLang: string,
       targetLang: string,
       historyEntryId?: string,
-    ): Promise<Result<string, EkweError>> => {
+    ): Promise<Result<TranslationResult, EkweError>> => {
       setIsTranslating(true);
 
       const result = await TranslationService.translate(
@@ -51,10 +51,10 @@ export const useTranslation = (): UseTranslationReturn => {
 
       // Update history entry with translation
       if (historyEntryId !== undefined) {
-        const currentEntries = useHistoryStore.getState().entries;
+        const currentEntries = history$.entries.get();
         const existing = currentEntries.find((e) => e.id === historyEntryId);
         if (existing !== undefined) {
-          useHistoryStore.getState().updateEntry(historyEntryId, {
+          historyActions.updateEntry(historyEntryId, {
             ...existing,
             translation: result.value.translation,
             targetLang,
@@ -62,9 +62,9 @@ export const useTranslation = (): UseTranslationReturn => {
         }
       }
 
-      return ok(result.value.translation);
+      return ok(result.value);
     },
-    [setError, entries, addEntry, deleteEntry],
+    [entries],
   );
 
   return { translate, isTranslating, translation };

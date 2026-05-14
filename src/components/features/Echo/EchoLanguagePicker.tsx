@@ -8,12 +8,11 @@ import { useTheme } from '@/hooks';
 
 export interface EchoLanguagePickerProps {
   selectedLang: string;
-  isDark: boolean;
   onSelect: (code: string) => void;
 }
 
 export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
-  ({ selectedLang, isDark, onSelect }) => {
+  ({ selectedLang, onSelect }) => {
     const { color } = useTheme();
     const textPrimary = color.foreground;
 
@@ -22,15 +21,8 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
         <Text style={[styles.stepTitle, { color: textPrimary }]}>
           {STEP_METADATA.PickLanguage.title}
         </Text>
-        <BottomSheetScrollView
-          style={{ maxHeight: 400 }}
-          showsVerticalScrollIndicator={false}
-        >
-          <LanguageGrid
-            selectedLang={selectedLang}
-            onSelect={onSelect}
-            isDark={isDark}
-          />
+        <BottomSheetScrollView showsVerticalScrollIndicator={false}>
+          <LanguageGrid selectedLang={selectedLang} onSelect={onSelect} />
         </BottomSheetScrollView>
       </View>
     );

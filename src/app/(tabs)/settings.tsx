@@ -1,23 +1,18 @@
-import * as Haptics from 'expo-haptics';
+import { useSelector } from '@legendapp/state/react';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { Lock, LogOut, ChevronRight, UserCircle } from 'lucide-react-native';
+import { LogOut, ChevronRight, UserCircle } from 'lucide-react-native';
 import React, { useState } from 'react';
-import { Alert, View, Text, ScrollView, Switch, Pressable } from 'react-native';
+import { View, Text, ScrollView, Switch, Pressable } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import {
-  LanguagePickerSheet,
-  ThemeToggler,
-  SettingsRow,
-  SectionHeader,
-} from '@/components';
-import { useForegroundApp } from '@/hooks';
-import { useLogout } from '@/hooks';
-import { useTheme } from '@/hooks';
+import { LanguagePickerSheet, ThemeToggler, SettingsRow } from '@/components';
+import { Card, Badge, SectionHeader } from '@/components/ui';
+import { useForegroundApp, useLogout, useTheme } from '@/hooks';
 import { supabase } from '@/services/supabase';
-import { useSettingsStore } from '@/store';
-import { useAuthStore } from '@/store/authStore';
+import { settings$, settingsActions, auth$ } from '@/store';
+import { AppAlert } from '@/utils/alert';
 import logger from '@/utils/logger';
 
 export default function SettingsScreen(): React.JSX.Element {
@@ -25,19 +20,19 @@ export default function SettingsScreen(): React.JSX.Element {
   const router = useRouter();
   const { color } = useTheme();
   const primaryColor = color.primary;
-  const user = useAuthStore((s) => s.user);
-  const isPro = useAuthStore((s) => s.isPro);
+  const user = useSelector(() => auth$.user.get());
+  const isPro = useSelector(() => auth$.isPro.get());
   const { logout } = useLogout();
 
-  const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
-  const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
-  const targetLanguage = useSettingsStore((s) => s.targetLanguage);
-  const selectedLanguages = useSettingsStore((s) => s.selectedLanguages);
-  const autoCopy = useSettingsStore((s) => s.autoCopy);
-  const setAutoCopy = useSettingsStore((s) => s.setAutoCopy);
-  const pinnedLanguages = useSettingsStore((s) => s.pinnedLanguages);
-  const setSelectedLanguages = useSettingsStore((s) => s.setSelectedLanguages);
-  const setPinnedLanguages = useSettingsStore((s) => s.setPinnedLanguages);
+  const hapticsEnabled = useSelector(() => settings$.hapticsEnabled.get());
+  const { setHapticsEnabled } = settingsActions;
+  const selectedLanguages = useSelector(() =>
+    settings$.selectedLanguages.get(),
+  );
+  const autoCopy = useSelector(() => settings$.autoCopy.get());
+  const { setAutoCopy } = settingsActions;
+  const pinnedLanguages = useSelector(() => settings$.pinnedLanguages.get());
+  const { setSelectedLanguages, setPinnedLanguages } = settingsActions;
 
   const rawName = user?.user_metadata?.full_name || user?.user_metadata?.name;
   const userEmail = user?.email;
@@ -52,34 +47,41 @@ export default function SettingsScreen(): React.JSX.Element {
   };
 
   const handleDeleteAccount = (): void => {
-    Alert.alert(
+    AppAlert.confirm(
       'Delete Account',
       'Are you sure you want to permanently delete your account and all associated data? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async (): Promise<void> => {
-            try {
-              Haptics.notificationAsync(
-                Haptics.NotificationFeedbackType.Success,
-              );
-              // Call edge function to securely delete user or call RPC if available
-              // For now, if no RPC, sign out. You should add RPC logic on the backend.
-              await supabase.auth.signOut();
-              router.replace('/');
-              // Ideally here you make an authenticated call `await supabase.rpc('delete_user')` beforehand.
-            } catch (e) {
-              logger.error('Account deletion failed:', e);
-            }
-          },
-        },
-      ],
+      async () => {
+        try {
+          // 1. Delete user data via Supabase RPC
+          // This function must be defined in your Supabase SQL:
+          // security definer function delete_user() returns void as $$ ... $$
+          const { error } = await supabase.rpc('delete_user');
+
+          if (error) {
+            AppAlert.error(
+              'Deletion Failed',
+              'Could not delete your records. Please contact support.',
+            );
+            return;
+          }
+
+          // 2. Sign out and redirect
+          await supabase.auth.signOut();
+          router.replace('/');
+        } catch (e) {
+          logger.error('Account deletion failed:', e);
+          AppAlert.error(
+            'Critical Error',
+            'An error occurred while deleting your account.',
+          );
+        }
+      },
+      {
+        confirmText: 'Delete Forever',
+        isDestructive: true,
+      },
     );
   };
-
-
 
   return (
     <SafeAreaView
@@ -101,7 +103,9 @@ export default function SettingsScreen(): React.JSX.Element {
           entering={FadeInUp.duration(600).springify()}
           className="px-4 mt-2"
         >
-          <View className="rounded-[24px] border border-border dark:border-zinc-800/80 bg-card dark:bg-card-dark p-5 flex-row items-center shadow-sm">
+          <Card
+            style={{ flexDirection: 'row', alignItems: 'center', padding: 20 }}
+          >
             <View className="w-14 h-14 rounded-full bg-primary/10 items-center justify-center mr-4 border border-primary/20">
               <Text className="text-xl font-display text-primary">
                 {rawName ? (
@@ -119,29 +123,26 @@ export default function SettingsScreen(): React.JSX.Element {
                 {userEmail || 'hello@ekwe.app'}
               </Text>
             </View>
-            <View
-              className={`px-3 py-1.5 rounded-full ${userTier === 'pro' ? 'bg-primary/20' : 'bg-muted/20'}`}
-            >
-              <Text
-                className={`font-display text-[11px] uppercase tracking-wider ${userTier === 'pro' ? 'text-primary' : 'text-muted'}`}
-              >
-                {userTier === 'pro' ? 'Pro Plan' : 'Free Plan'}
-              </Text>
-            </View>
-          </View>
+            <Badge
+              label={userTier === 'pro' ? 'Pro Plan' : 'Free Plan'}
+              variant={userTier === 'pro' ? 'primary' : 'muted'}
+            />
+          </Card>
         </Animated.View>
 
         <Animated.View
           entering={FadeInDown.duration(600).delay(100).springify()}
         >
           <SectionHeader title="Configuration" />
-          <View className="overflow-hidden rounded-[24px] mx-4 border border-border dark:border-zinc-800/80 shadow-sm bg-card dark:bg-card-dark">
+          <Card padding="none" overflow style={{ marginHorizontal: 16 }}>
             <SettingsRow
               label="Haptic Feedback"
               value={
                 <Switch
                   value={hapticsEnabled}
-                  onValueChange={setHapticsEnabled}
+                  onValueChange={(val) => {
+                    setHapticsEnabled(val);
+                  }}
                   trackColor={{
                     true: primaryColor,
                     false: color.border,
@@ -150,21 +151,20 @@ export default function SettingsScreen(): React.JSX.Element {
                 />
               }
             />
-            <SettingsRow
-              label="App Theme"
-              value={<ThemeToggler />}
-            />
-          </View>
+            <SettingsRow label="App Theme" value={<ThemeToggler />} />
+          </Card>
 
           <SectionHeader title="Smart Features" />
-          <View className="overflow-hidden rounded-[24px] mx-4 border border-border dark:border-zinc-800/80 shadow-sm bg-card dark:bg-card-dark">
+          <Card padding="none" overflow style={{ marginHorizontal: 16 }}>
             <SettingsRow
               label="Auto-copy to Clipboard"
               isLocked={userTier !== 'pro'}
               value={
                 <Switch
                   value={userTier === 'pro' ? autoCopy : false}
-                  onValueChange={setAutoCopy}
+                  onValueChange={(val) => {
+                    setAutoCopy(val);
+                  }}
                   trackColor={{
                     true: primaryColor,
                     false: color.border,
@@ -199,10 +199,10 @@ export default function SettingsScreen(): React.JSX.Element {
                 WhatsApp.
               </Text>
             </View>
-          </View>
+          </Card>
 
           <SectionHeader title="Languages" />
-          <View className="overflow-hidden rounded-[24px] mx-4 border border-border dark:border-zinc-800/80 shadow-sm bg-card dark:bg-card-dark">
+          <Card padding="none" overflow style={{ marginHorizontal: 16 }}>
             <SettingsRow
               label="Edit Selection Grid"
               onPress={() => setSheetVisible(true)}
@@ -215,10 +215,14 @@ export default function SettingsScreen(): React.JSX.Element {
                 </View>
               }
             />
-          </View>
+          </Card>
 
           <SectionHeader title="Account" />
-          <View className="overflow-hidden rounded-[24px] mx-4 border border-border dark:border-zinc-800/80 shadow-sm mb-6 bg-card dark:bg-card-dark">
+          <Card
+            padding="none"
+            overflow
+            style={{ marginHorizontal: 16, marginBottom: 24 }}
+          >
             <Pressable
               onPress={handleLogout}
               className="px-5 py-4 flex-row items-center gap-3 border-b border-border dark:border-zinc-800/60 active:bg-red-500/10 transition-colors"
@@ -237,11 +241,15 @@ export default function SettingsScreen(): React.JSX.Element {
                 Delete Account
               </Text>
             </Pressable>
-          </View>
+          </Card>
 
           <View className="pb-16 items-center flex-row justify-center gap-2">
             <Text className="font-body text-[12px] text-muted dark:text-zinc-500">
-              Ekwe v1.0.0 (Build 42)
+              Ekwe v{Constants.expoConfig?.version ?? '1.0.0'} (Build{' '}
+              {Constants.expoConfig?.android?.versionCode ??
+                Constants.expoConfig?.ios?.buildNumber ??
+                '1'}
+              )
             </Text>
           </View>
         </Animated.View>

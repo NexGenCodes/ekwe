@@ -1,4 +1,5 @@
 import { Env, Tier, TranslateResult } from './types';
+import { logger } from './logger';
 import * as groq from './providers/groq';
 import * as mistral from './providers/mistral';
 import * as openrouter from './providers/openrouter';
@@ -58,14 +59,17 @@ export async function handleTranslate(
   for (const provider of pipeline) {
     try {
       if (signal.aborted) throw new Error('CLIENT_ABORTED');
-      console.log(`[translate] Trying ${provider.name} (tier: ${tier})`);
+      logger.info(`[translate] Trying ${provider.name}`, { tier });
 
       const result = await provider.fn(body.text, body.targetLang, body.sourceLang, env, signal);
-      if (result) return Response.json(result);
+      if (result) {
+        logger.info(`[translate] Success: ${provider.name}`, { provider: result.provider });
+        return Response.json(result);
+      }
 
     } catch (e: unknown) {
       if (e instanceof Error && e.message === 'CLIENT_ABORTED') throw e;
-      console.error(`[translate] ${provider.name} failed:`, e instanceof Error ? e.message : String(e));
+      logger.error(`[translate] ${provider.name} failed`, { error: e instanceof Error ? e.message : String(e) });
     }
   }
 

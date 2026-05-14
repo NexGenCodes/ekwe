@@ -1,3 +1,4 @@
+import { useSelector } from '@legendapp/state/react';
 import { useEventListener } from 'expo';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useRouter, useRootNavigationState } from 'expo-router';
@@ -10,9 +11,10 @@ import EkweNative from '../../../modules/ekwe-native';
 import { AudioCapture } from '@/services/AudioCapture';
 import { TranscriptionService } from '@/services/Transcription';
 import { TranslationService } from '@/services/Translation';
-import { useSettingsStore, useAudioStore, useHistoryStore } from '@/store';
+import { audio$, audioActions, settings$, historyActions } from '@/store';
 import { logger } from '@/utils';
 import { BubbleNative } from '@/utils/BubbleModule';
+import { AppAlert } from '@/utils/alert';
 
 // Module-level abort controller for background echo sessions
 let echoSessionAbort: AbortController | null = null;
@@ -34,13 +36,10 @@ const handleEchoSession = async (
   try {
     // 1. Instant Feedback: Show "MAGIC" state (sparkles) so user knows it started
     BubbleNative.updateState('MAGIC');
-    useAudioStore.getState().setActiveFloatingHead('card');
+    audioActions.setActiveFloatingHead('card');
 
     // GOTCHA 3: Prevent Nitro / CPU Thread Throttling
     await activateKeepAwakeAsync('ekweEcho');
-
-    // Settings Sync: Rehydrate store to get latest language in this separate process
-    await useSettingsStore.persist.rehydrate();
 
     // 2. Perform background transcription
     const transcriptionResult = await TranscriptionService.transcribe(
@@ -62,7 +61,7 @@ const handleEchoSession = async (
     if (transcriptionResult.ok) {
       const data = transcriptionResult.value;
       // 3. Chain Translation
-      const targetLang = useSettingsStore.getState().targetLanguage || 'en';
+      const targetLang = settings$.targetLanguage.get() || 'en';
       const translationResult = await TranslationService.translate(
         data.transcript,
         'auto',
@@ -73,7 +72,7 @@ const handleEchoSession = async (
       if (signal.aborted) return;
 
       // 4. Persistence to History (Crucial: Background sessions must be saved)
-      useHistoryStore.getState().addEntry({
+      historyActions.addEntry({
         id: `echo_${Date.now()}`,
         sourceLang: data.sourceLang,
         targetLang,
@@ -109,7 +108,9 @@ const handleEchoSession = async (
 export const useShareIntentHandler = (): void => {
   const router = useRouter();
   const navigationState = useRootNavigationState();
-  const { onboardingCompleted } = useSettingsStore();
+  const onboardingCompleted = useSelector(() =>
+    settings$.onboardingCompleted.get(),
+  );
 
   const { hasShareIntent, shareIntent, resetShareIntent, error } =
     useShareIntent({
@@ -150,10 +151,9 @@ export const useShareIntentHandler = (): void => {
           });
         }
       } else {
-        Alert.alert(
+        AppAlert.error(
           'Unsupported Format',
           'Ekwe only supports voice note formats.',
-          [{ text: 'Dismiss' }],
         );
         BubbleNative.dismissOverlay();
       }
@@ -170,7 +170,7 @@ export const useShareIntentHandler = (): void => {
         logger.warn(
           '[ShareIntent] User not onboarded. Skipping share processing.',
         );
-        Alert.alert(
+        AppAlert.info(
           'Login Required',
           'Please open Ekwe to log in before translating shared items.',
         );
@@ -222,10 +222,9 @@ export const useShareIntentHandler = (): void => {
               });
             }
           } else {
-            Alert.alert(
+            AppAlert.error(
               'Unsupported Format',
               'Ekwe only supports voice note formats (.opus, .m4a, .ogg).',
-              [{ text: 'Dismiss' }],
             );
           }
         };

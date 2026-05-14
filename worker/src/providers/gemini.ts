@@ -1,12 +1,12 @@
 import { Env, TranslateResult } from '../types';
-import { sanitizeKey, fetchWithTimeout, TIMEOUT_FAST } from '../utils';
+import { rotateKeys, fetchWithTimeout, TIMEOUT_FAST } from '../utils';
 import { logger } from '../logger';
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent';
 
 /**
- * Google Gemini 2.0 Flash — single key, 1500 req/day free.
- * Best-in-class multilingual translation. No rotation needed.
+ * Google Gemini 1.5 Flash — Multi-key rotation support.
+ * Best-in-class multilingual translation.
  */
 export async function translate(
   text: string,
@@ -15,42 +15,49 @@ export async function translate(
   env: Env,
   signal: AbortSignal,
 ): Promise<TranslateResult | null> {
-  const apiKey = sanitizeKey(env.GEMINI_KEY);
-  if (apiKey.length <= 5) return null;
+  logger.info('[gemini] Requesting translation', { targetLang, sourceLang });
 
   try {
-    const res = await fetchWithTimeout(
-      `${GEMINI_URL}?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(env.EVASION_HEADERS || {}),
+    const res = await rotateKeys(
+      env,
+      'GEMINI_KEY_',
+      (key) => fetchWithTimeout(
+        `${GEMINI_URL}?key=${key}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(env.EVASION_HEADERS || {}),
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: buildPrompt(text, targetLang, sourceLang) }],
+            }],
+            generationConfig: { temperature: 0.1 },
+          }),
         },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: buildPrompt(text, targetLang, sourceLang) }],
-          }],
-          generationConfig: { temperature: 0.1 },
-        }),
-      },
-      TIMEOUT_FAST,
+        TIMEOUT_FAST,
+        signal,
+      ),
       signal,
     );
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => 'Unreadable');
-      logger.error({ provider: 'gemini', status: res.status, error: errText });
+    if (!res?.ok) {
+      const errText = await res?.text().catch(() => 'No body') || 'Unknown fetch error';
+      logger.error('[gemini] Translate HTTP error', { status: res?.status, body: errText });
       return null;
     }
 
     const data = await res.json() as GeminiResponse;
     const translation = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (!translation) return null;
+    if (!translation) {
+      logger.warn('[gemini] Empty translation returned');
+      return null;
+    }
 
     return { translation, provider: 'gemini-2.0-flash' };
   } catch (e) {
-    logger.error({ provider: 'gemini', error: String(e) });
+    logger.error('[gemini] Translate exception', { error: e instanceof Error ? e.message : String(e) });
     return null;
   }
 }

@@ -1,22 +1,22 @@
 import * as Haptics from 'expo-haptics';
 import { Zap, CheckCircle2 } from 'lucide-react-native';
-import React, { MutableRefObject } from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
-import { ResultDisplay } from '@/components';
+import { ResultDisplay } from './ResultDisplay';
+
 import { AnimatedCopyButton } from '@/components';
+import { Badge } from '@/components/ui';
 import { useTheme } from '@/hooks';
 import { EchoStep } from '@/types/echo';
 
 interface EchoFinalResultProps {
   transcription: string | null;
   translation: string | null;
-  sttProvider: string | undefined;
-  llmProvider: string | undefined;
   sourceLang: string | null;
   targetLang: string;
+  audioDuration?: number;
   isDark: boolean;
-  activeTabRef: MutableRefObject<'Translation' | 'Transcription'>;
   setStep: (step: EchoStep) => void;
   handleClose: () => void;
 }
@@ -25,12 +25,10 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
   ({
     transcription,
     translation,
-    sttProvider,
-    llmProvider,
     sourceLang,
     targetLang,
+    audioDuration,
     isDark,
-    activeTabRef,
     setStep,
     handleClose,
   }) => {
@@ -39,15 +37,24 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
     const handleHex = color.border;
     const textPrimary = color.foreground;
 
+    const [activeTab, setActiveTab] = React.useState<
+      'Translation' | 'Transcription'
+    >('Translation');
+
+    const handleTabChange = React.useCallback(
+      (tab: 'Translation' | 'Transcription') => {
+        setActiveTab(tab);
+      },
+      [],
+    );
+
     return (
       <>
         <ResultDisplay
           transcription={transcription}
           translation={translation}
           defaultTab="Translation"
-          onTabChange={(tab) => {
-            activeTabRef.current = tab;
-          }}
+          onTabChange={handleTabChange}
           isDark={isDark}
           sourceLang={sourceLang}
           targetLang={targetLang}
@@ -61,31 +68,16 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
             marginBottom: 16,
           }}
         >
-          {sttProvider && (
-            <View
-              style={[
-                styles.providerBadge,
-                { backgroundColor: `${brandPrimary}15` },
-              ]}
-            >
-              <Zap size={12} color={brandPrimary} />
-              <Text style={[styles.providerTxt, { color: brandPrimary }]}>
-                STT: {sttProvider.toUpperCase()}
-              </Text>
-            </View>
-          )}
-          {llmProvider && (
-            <View
-              style={[
-                styles.providerBadge,
-                { backgroundColor: `${brandPrimary}15` },
-              ]}
-            >
-              <Zap size={12} color={brandPrimary} />
-              <Text style={[styles.providerTxt, { color: brandPrimary }]}>
-                LLM: {llmProvider.toUpperCase()}
-              </Text>
-            </View>
+          <Badge
+            label="Echo Processed"
+            variant="primary"
+            icon={<CheckCircle2 size={12} color={brandPrimary} />}
+          />
+          {sourceLang && targetLang && (
+            <Badge
+              label={`${sourceLang.toUpperCase()} → ${targetLang.toUpperCase()}`}
+              variant="primary"
+            />
           )}
         </View>
 
@@ -105,9 +97,7 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
 
           <AnimatedCopyButton
             textToCopy={
-              activeTabRef.current === 'Translation'
-                ? translation!
-                : transcription!
+              activeTab === 'Translation' ? translation! : transcription!
             }
             size={16}
             style={[styles.secAction, { borderColor: handleHex }]}
@@ -134,15 +124,6 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
 );
 
 const styles = StyleSheet.create({
-  providerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 4,
-  },
-  providerTxt: { fontSize: 11, fontWeight: '700' },
   footerActions: { flexDirection: 'row', gap: 12 },
   secAction: {
     flex: 1,

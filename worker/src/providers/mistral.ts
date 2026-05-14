@@ -1,5 +1,6 @@
 import { Env, TranslateResult } from '../types';
 import { rotateKeys, getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from '../utils';
+import { logger } from '../logger';
 
 const MISTRAL_CHAT = 'https://api.mistral.ai/v1/chat/completions';
 
@@ -44,7 +45,7 @@ export async function translate(
 
   if (!res?.ok) {
     const errText = await res?.text().catch(() => 'Unreadable error body');
-    console.error(`[mistral] HTTP ${res?.status} error:`, errText);
+    logger.error('[mistral] Translate HTTP error', { status: res?.status, body: errText });
     return null;
   }
 

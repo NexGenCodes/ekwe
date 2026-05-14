@@ -22,28 +22,26 @@ import { AppState, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
+import { useSelector } from '@legendapp/state/react';
+
 import { ErrorBoundary } from '@/components';
-import { ShareIntentProvider } from '@/providers/ShareIntentProvider';
 import { colors } from '@/constants/colors';
-import { useShareIntentHandler } from '@/hooks';
-import { useTheme } from '@/hooks';
-import { useTripleExclusivity } from '@/hooks';
-import { useSettingsStore } from '@/store';
-import { useAuthStore } from '@/store/authStore';
+import { useShareIntentHandler, useTheme, useTripleExclusivity } from '@/hooks';
+import { ShareIntentProvider } from '@/providers/ShareIntentProvider';
+import { initAuth } from '@/services/auth';
+import { settings$, auth$, syncQueueActions } from '@/store';
 import { mmkv } from '@/store/mmkvStorage';
-import { useSyncQueue } from '@/store/syncQueue';
 import {
   configureNotifications,
   registerNotificationCategories,
 } from '@/utils/IosNotification';
-import { initAuth } from '@/services/auth';
 
 // ─── Sync Theme Bootstrap ────────────────────────────────────────
 // Read the persisted settings from MMKV synchronously at module scope.
 // This runs BEFORE React mounts, ensuring NativeWind starts with the
 // correct color scheme from frame 0 — no flash-of-wrong-theme.
-// Zustand `persist` rehydrates later and takes over for reactivity.
-// Key & path must match the Zustand persist config in store/index.ts.
+// Legend-State rehydrates and takes over for reactivity.
+// Key must match the persist config in store.
 const _raw = mmkv.getString('ekwe-settings');
 if (_raw) {
   try {
@@ -67,7 +65,7 @@ onlineManager.setEventListener((setOnline): (() => void) => {
     const isConnected = !!state.isConnected;
     setOnline(isConnected);
     if (isConnected) {
-      useSyncQueue.getState().flushQueue();
+      syncQueueActions.flushQueue();
     }
   });
   return (): void => unsubscribe();
@@ -78,7 +76,7 @@ SplashScreen.preventAutoHideAsync();
 function InnerLayout(): React.ReactElement {
   const router = useRouter();
   const { setColorScheme, isDark, color } = useTheme();
-  const themePreference = useSettingsStore((s) => s.themePreference);
+  const themePreference = useSelector(() => settings$.themePreference.get());
 
   // Sync user preference to NativeWind v4.
   // Also re-apply when the app resumes from background, because NativeWind
@@ -92,11 +90,11 @@ function InnerLayout(): React.ReactElement {
       }
     });
 
-    return () => sub.remove();
+    return (): void => sub.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [themePreference]);
 
-  const { isInitialized } = useAuthStore();
+  const isInitialized = useSelector(() => auth$.isInitialized.get());
 
   // ─── Deep Link: Password Reset ──────────────────────────────
   // When user clicks reset link in email → ekwe://reset-password?tokens...
@@ -119,7 +117,7 @@ function InnerLayout(): React.ReactElement {
 
     // Handle link while app is running (warm)
     const linkSub = Linking.addEventListener('url', handleDeepLink);
-    return () => linkSub.remove();
+    return (): void => linkSub.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -213,7 +211,7 @@ function RootLayout(): React.ReactElement {
     initAuth();
 
     return (): void => {
-      deactivateKeepAwake().catch(() => { });
+      deactivateKeepAwake().catch(() => {});
     };
   }, []);
 

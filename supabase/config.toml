@@ -236,10 +236,14 @@ pass = "env(BREVO_SMTP_PASS)"
 admin_email = "admin@ekwe.app"
 sender_name = "Ekwe"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# Custom email templates — send OTP codes instead of magic links
+[auth.email.template.magic_link]
+subject = "Your Ekwe Login Code"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.confirmation]
+subject = "Confirm Your Ekwe Account"
+content_path = "./supabase/templates/confirmation.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]

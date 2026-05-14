@@ -1,7 +1,7 @@
+import { useSelector } from '@legendapp/state/react';
 import { Redirect } from 'expo-router';
 
-import { useSettingsStore } from '@/store';
-import { useAuthStore } from '@/store/authStore';
+import { settings$, auth$ } from '@/store';
 
 /**
  * Index Gatekeeper
@@ -11,8 +11,11 @@ import { useAuthStore } from '@/store/authStore';
  * While Supabase is hydrating from MMKV, returns null (splash stays visible).
  */
 export default function Index(): React.ReactElement | null {
-  const { isInitialized, session } = useAuthStore();
-  const onboardingCompleted = useSettingsStore((s) => s.onboardingCompleted);
+  const isInitialized = useSelector(() => auth$.isInitialized.get());
+  const session = useSelector(() => auth$.session.get());
+  const onboardingCompleted = useSelector(() =>
+    settings$.onboardingCompleted.get(),
+  );
 
   // Supabase still hydrating from MMKV — keep splash visible
   if (!isInitialized) return null;

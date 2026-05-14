@@ -7,8 +7,9 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
+import { SharedValue } from 'react-native-reanimated';
 
-import { AudioWaveform as ReanimatedWaveform } from '@/components';
+import { AudioWaveform as ReanimatedWaveform } from '@/components/ui';
 import { useTheme } from '@/hooks';
 import { formatDuration } from '@/utils/echo';
 
@@ -16,11 +17,11 @@ interface PlaybackControlProps {
   isPlaying: boolean;
   isDecoding: boolean;
   progress: number;
+  progressSV: SharedValue<number>;
   duration: number;
   peaks: number[];
   onTogglePlay: () => void;
   onSeek: (seconds: number) => void;
-  isDark?: boolean;
 }
 
 /**
@@ -32,15 +33,16 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
   isPlaying,
   isDecoding,
   progress,
+  progressSV,
   duration,
   peaks,
   onTogglePlay,
   onSeek,
-  isDark = false,
 }) => {
   const [scrubTime, setScrubTime] = useState<number | null>(null);
 
   const { color } = useTheme();
+
   const brandPrimary = color.primary;
   const textSecondary = color.muted;
   const bgMain = color.background;
@@ -74,10 +76,15 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
         <View style={styles.waveformContainer}>
           <ReanimatedWaveform
             amplitudes={peaks}
-            progress={scrubTime !== null ? scrubTime : progress}
-            onSeek={(t) => {
+            progressSV={progressSV}
+            duration={duration}
+            onSeeking={(normalizedProgress) => {
+              setScrubTime(normalizedProgress * duration);
+            }}
+            onSeek={(normalizedProgress) => {
+              const targetTime = normalizedProgress * duration;
               setScrubTime(null);
-              onSeek(t);
+              onSeek(targetTime);
             }}
           />
         </View>

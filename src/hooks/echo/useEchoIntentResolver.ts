@@ -1,3 +1,4 @@
+import { useSelector } from '@legendapp/state/react';
 import { useShareIntent } from 'expo-share-intent';
 import {
   useState,
@@ -6,12 +7,14 @@ import {
   MutableRefObject,
   Dispatch,
   SetStateAction,
+  useMemo,
 } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Platform } from 'react-native';
 
+import { AudioCapture } from '@/services/AudioCapture';
 import { IntentService } from '@/services/IntentService';
-import { useSettingsStore } from '@/store';
-import { useAuthStore } from '@/store/authStore';
+import { settings$, auth$ } from '@/store';
+import { AppAlert, logger } from '@/utils';
 import { cleanEchoCache } from '@/utils/echo';
 
 export const useEchoIntentResolver = (props: {
@@ -30,8 +33,11 @@ export const useEchoIntentResolver = (props: {
     disabled: Platform.OS === 'android',
   });
 
-  const { onboardingCompleted } = useSettingsStore();
-  const { isInitialized, session } = useAuthStore();
+  const onboardingCompleted = useSelector(() =>
+    settings$.onboardingCompleted.get(),
+  );
+  const isInitialized = useSelector(() => auth$.isInitialized.get());
+  const session = useSelector(() => auth$.session.get());
 
   const isIOS = Platform.OS === 'ios';
   const hasIOSFiles = isIOS && props.value && props.value.length > 0;
@@ -45,22 +51,41 @@ export const useEchoIntentResolver = (props: {
   // Track if this is a subsequent intent (to know when to reset flow state)
   const [isSubsequentIntent, setIsSubsequentIntent] = useState(false);
 
+  const rawUri = useMemo(
+    () => (hasIOSFiles ? props.value?.[0]?.value : props.audioUri),
+    [hasIOSFiles, props.value, props.audioUri],
+  );
+
   useEffect(() => {
     let isStale = false;
 
     IntentService.dismissNativeLoader();
 
-    const rawUri = hasIOSFiles ? props.value?.[0]?.value : props.audioUri;
-    if (!rawUri) return;
+    logger.info(
+      '[IntentResolver] Guard check — rawUri:',
+      rawUri ? rawUri.substring(0, 60) : 'MISSING',
+      'isInitialized:',
+      isInitialized,
+      'onboardingCompleted:',
+      onboardingCompleted,
+      'session:',
+      !!session,
+    );
 
-    if (!isInitialized) return;
-
-    if (!onboardingCompleted || !session) {
-      IntentService.dismissAndRedirect(resetShareIntent);
+    if (!rawUri) {
+      logger.warn('[IntentResolver] ❌ BLOCKED: no rawUri');
       return;
     }
 
-    if (rawUri === previousRawUri.current) return;
+    // Check if we are already handling this URI or have finished it
+    if (rawUri === previousRawUri.current && activeResolvedUri.current) {
+      logger.debug('[IntentResolver] Already resolved this URI — skipping');
+      return;
+    }
+
+    if (rawUri === previousRawUri.current) {
+      return; // Silently skip while processing
+    }
 
     const isSubseq = previousRawUri.current !== undefined;
     previousRawUri.current = rawUri;
@@ -70,24 +95,50 @@ export const useEchoIntentResolver = (props: {
     }
 
     const resolve = async (): Promise<void> => {
-      setIsResolving(true);
+      try {
+        setIsResolving(true);
+        logger.info(
+          '[IntentResolver] resolve() started. rawUri:',
+          rawUri.substring(0, 60),
+        );
 
-      const fileUri = await IntentService.resolveToFileUri(rawUri);
+        const fileUri = await IntentService.resolveToFileUri(rawUri);
 
-      if (isStale) return;
+        if (isStale) {
+          logger.info(
+            '[IntentResolver] Stale after resolveToFileUri — aborting',
+          );
+          return;
+        }
 
-      if (!fileUri) {
+        if (!fileUri) {
+          logger.warn('[IntentResolver] resolveToFileUri returned null');
+          setIsResolving(false);
+          AppAlert.error('Error', 'Could not access the shared audio file.');
+          return;
+        }
+
+        logger.info('[IntentResolver] fileUri resolved:', fileUri);
+
+        // Validation: verify the file is actually an audio file we can handle
+        try {
+          const mimeType = hasIOSFiles
+            ? props.value?.[0]?.mimeType
+            : props.mimeType;
+          await AudioCapture.processSharedFile(fileUri, mimeType || 'audio/*');
+        } catch {
+          // Validation threw — keep the URI as best-effort fallback
+        }
+
+        // Set audio URI immediately so useSharedAudioPlayer starts decoding
+        activeResolvedUri.current = fileUri;
+        setAudioUri(fileUri);
         setIsResolving(false);
-        Alert.alert('Error', 'Could not access the shared audio file.');
-        return;
-      }
-
-      activeResolvedUri.current = fileUri;
-      setAudioUri(fileUri);
-      setIsResolving(false);
-
-      if (isSubseq) {
-        setIsSubsequentIntent(true);
+        setIsSubsequentIntent(isSubseq);
+        logger.info('[IntentResolver] ✅ audioUri set + isResolving=false');
+      } catch (err) {
+        logger.error('[IntentResolver] ❌ Resolution FAILED:', err);
+        setIsResolving(false);
       }
     };
 
@@ -96,15 +147,7 @@ export const useEchoIntentResolver = (props: {
     return (): void => {
       isStale = true;
     };
-  }, [
-    props.audioUri,
-    hasIOSFiles,
-    props.value,
-    resetShareIntent,
-    isInitialized,
-    session,
-    onboardingCompleted,
-  ]);
+  }, [rawUri, props.mimeType, hasIOSFiles]);
 
   return {
     audioUri,

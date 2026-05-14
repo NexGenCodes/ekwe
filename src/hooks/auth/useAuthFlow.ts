@@ -7,12 +7,8 @@
 import { useRouter } from 'expo-router';
 import { useState, useCallback } from 'react';
 
-import {
-  signInWithApple,
-  signInWithGoogle,
-  AuthResult,
-} from '@/services/auth';
-import { useSettingsStore } from '@/store';
+import { signInWithApple, signInWithGoogle, AuthResult } from '@/services/auth';
+import { settingsActions } from '@/store';
 
 interface UseAuthFlowReturn {
   isLoading: boolean;
@@ -27,7 +23,7 @@ interface UseAuthFlowReturn {
 
 export const useAuthFlow = (): UseAuthFlowReturn => {
   const router = useRouter();
-  const { setOnboardingCompleted } = useSettingsStore();
+  const { setOnboardingCompleted } = settingsActions;
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -36,7 +32,7 @@ export const useAuthFlow = (): UseAuthFlowReturn => {
   const onSuccess = useCallback((): void => {
     setOnboardingCompleted(true);
     router.replace('/(tabs)');
-  }, [setOnboardingCompleted, router]);
+  }, [router]);
 
   const run = useCallback(
     async (fn: () => Promise<AuthResult>): Promise<AuthResult> => {

@@ -1,10 +1,10 @@
+import { useSelector } from '@legendapp/state/react';
 import { useCallback, useEffect } from 'react';
 
 import { EkweError } from '@/constants/errors';
 import { AudioCapture } from '@/services/AudioCapture';
 import { AudioProcessor } from '@/services/AudioProcessor';
-import { useAudioStore } from '@/store';
-import { RecordingState } from '@/store/audioSlice';
+import { audio$, audioActions, RecordingState } from '@/store';
 import { Result, ok, err } from '@/types/Result';
 
 export interface UseAudioCaptureReturn {
@@ -20,13 +20,15 @@ export interface UseAudioCaptureReturn {
  * Manages recording lifecycle: start → metering → stop → process → done.
  */
 export const useAudioCapture = (): UseAudioCaptureReturn => {
-  const setRecordingState = useAudioStore((s) => s.setRecordingState);
-  const setError = useAudioStore((s) => s.setError);
-  const setAudioPath = useAudioStore((s) => s.setAudioPath);
-  const setSessionId = useAudioStore((s) => s.setSessionId);
-  const setDuration = useAudioStore((s) => s.setDuration);
-  const resetAudioState = useAudioStore((s) => s.resetAudioState);
-  const recordingState = useAudioStore((s) => s.recordingState);
+  const recordingState = useSelector(() => audio$.recordingState.get());
+  const {
+    setRecordingState,
+    setError,
+    setAudioPath,
+    setSessionId,
+    setDuration,
+    resetAudioState,
+  } = audioActions;
 
   // Clean up on unmount + register listeners
   useEffect(() => {
@@ -34,7 +36,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
       // Use getState to avoid stale closure / dependency loop
       if (
         status === 'stopped' &&
-        useAudioStore.getState().recordingState === RecordingState.Recording
+        audio$.recordingState.get() === RecordingState.Recording
       ) {
         setRecordingState(RecordingState.Done);
       }
@@ -46,7 +48,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
         AudioCapture.cancelRecording();
       }
     };
-  }, [setRecordingState]);
+  }, []);
 
   /**
    * Requests microphone permission via AudioCapture.
@@ -80,7 +82,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
     }
 
     return ok(undefined);
-  }, [recordingState, setRecordingState, setError, setSessionId]);
+  }, [recordingState]);
 
   /**
    * Stops the current recording, processes it, and updates the store.
@@ -116,7 +118,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
     setRecordingState(RecordingState.Done);
 
     return ok(undefined);
-  }, [setRecordingState, setError, setAudioPath, setDuration]);
+  }, []);
 
   /**
    * Cancels the current recording and resets the audio store.
@@ -124,7 +126,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
   const cancelRecording = useCallback(async (): Promise<void> => {
     await AudioCapture.cancelRecording();
     resetAudioState();
-  }, [resetAudioState]);
+  }, []);
 
   return {
     startRecording,

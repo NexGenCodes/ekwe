@@ -1,16 +1,25 @@
+import { useSelector } from '@legendapp/state/react';
 import { CreditCard } from 'lucide-react-native';
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/hooks';
-import { useAuthStore } from '@/store/authStore';
+import { auth$ } from '@/store';
+import { AppAlert } from '@/utils/alert';
 
 export default function BillingScreen(): React.ReactElement {
   const { color } = useTheme();
-  const isPro = useAuthStore((s) => s.isPro);
-  const transactionsUsed = useAuthStore((s) => s.transactionsUsed);
-  const isFallback = useAuthStore((s) => s.isFallback);
+  const isPro = useSelector(() => auth$.isPro.get());
+  const transactionsUsed = useSelector(() => auth$.transactionsUsed.get());
+  const isFallback = useSelector(() => auth$.isFallback.get());
+
+  const handleUpgrade = (): void => {
+    AppAlert.info(
+      'Ekwe Pro',
+      'Premium subscriptions are currently being rolled out. Check back soon for unlimited high-accuracy translations!',
+    );
+  };
 
   const textColor = color.foreground;
   const mutedColor = color.muted;
@@ -69,6 +78,7 @@ export default function BillingScreen(): React.ReactElement {
 
           {!isPro && (
             <TouchableOpacity
+              onPress={handleUpgrade}
               style={{ backgroundColor: primaryColor }}
               className="py-4 rounded-2xl items-center flex-row justify-center"
             >

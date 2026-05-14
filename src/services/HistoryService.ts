@@ -1,7 +1,6 @@
 import { Session } from '@supabase/supabase-js';
 
-import { useHistoryStore } from '@/store';
-import { useSyncQueue } from '@/store/syncQueue';
+import { historyActions, syncQueueActions } from '@/store';
 import { logger } from '@/utils';
 
 export interface HistoryEntryPayload {
@@ -26,7 +25,7 @@ export const HistoryService = {
     };
 
     // Update local history store
-    useHistoryStore.getState().addEntry(historyEntry);
+    historyActions.addEntry(historyEntry);
 
     // Feature: Offline-First Sync to Supabase
     if (session?.user) {
@@ -44,15 +43,12 @@ export const HistoryService = {
       };
 
       // 1. Instantly persist to the offline-first queue (backed by MMKV)
-      useSyncQueue.getState().enqueue(dbPayload);
+      syncQueueActions.enqueue(dbPayload);
 
       // 2. Trigger a background flush (it handles network failures gracefully)
-      useSyncQueue
-        .getState()
-        .flushQueue()
-        .catch((e) => {
-          logger.error('[Sync] Background flush failed (will retry later)', e);
-        });
+      syncQueueActions.flushQueue().catch((e) => {
+        logger.error('[Sync] Background flush failed (will retry later)', e);
+      });
     }
   },
 };

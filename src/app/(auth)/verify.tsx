@@ -2,25 +2,21 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import {
-  View,
-  Text,
-  Pressable,
-} from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { AuthHeader } from '@/components/features/auth';
-import { Input, ErrorBanner, Button, AuthShell } from '@/components/ui';
+import { AuthHeader, AuthShell } from '@/components';
+import { Input, ErrorBanner, Button } from '@/components/ui';
 import { useTheme } from '@/hooks';
-import { verifyOtp, sendOtp } from '@/services/auth';
 import { otpSchema, OtpForm } from '@/schemas/auth';
-import { useSettingsStore } from '@/store';
+import { verifyOtp, sendOtp } from '@/services/auth';
+import { settingsActions } from '@/store';
 
 const RESEND_COOLDOWN = 60;
 
 export default function VerifyScreen(): React.JSX.Element {
   const router = useRouter();
-  const { setOnboardingCompleted } = useSettingsStore();
+  const { setOnboardingCompleted } = settingsActions;
   const params = useLocalSearchParams<{ email: string; source: string }>();
   const email = params.email || '';
 
@@ -38,7 +34,7 @@ export default function VerifyScreen(): React.JSX.Element {
   useEffect(() => {
     if (cooldown <= 0) return;
     const timer = setTimeout(() => setCooldown((c) => c - 1), 1000);
-    return () => clearTimeout(timer);
+    return (): void => clearTimeout(timer);
   }, [cooldown]);
 
   const onSubmit = useCallback(
@@ -75,9 +71,7 @@ export default function VerifyScreen(): React.JSX.Element {
         caption={`We sent a code to ${email}`}
       />
 
-      <Animated.View
-        entering={FadeInDown.duration(600).delay(100).springify()}
-      >
+      <Animated.View entering={FadeInDown.duration(600).delay(100).springify()}>
         <ErrorBanner message={error} />
 
         <View style={{ marginBottom: 20 }}>
@@ -129,10 +123,7 @@ export default function VerifyScreen(): React.JSX.Element {
             style={{
               fontFamily: 'Outfit-Medium',
               fontSize: 14,
-              color:
-                cooldown > 0
-                  ? color.muted
-                  : color.primary,
+              color: cooldown > 0 ? color.muted : color.primary,
               marginTop: 4,
             }}
           >

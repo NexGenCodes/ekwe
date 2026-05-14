@@ -15,6 +15,7 @@ export interface Env {
   [key: string]: unknown;
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
+  EKWE_APP_KEY: string;
   EKWE_KV: KVNamespace;
   AI: AiBinding;
   RATE_LIMITER: {
@@ -31,6 +32,7 @@ export interface TranscribeResult {
   text: string;
   provider: string;
   duration?: number;
+  language?: string;
 }
 
 export interface TranslateResult {

@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { Platform, Alert, Linking } from 'react-native';
+import { Platform, Linking } from 'react-native';
 
 import AudioService from './AudioService';
 
@@ -10,6 +10,7 @@ import {
   attachAudioEffects,
   releaseAudioEffects,
 } from '@/utils/AudioEffectsModule';
+import { AppAlert } from '@/utils/alert';
 import { validateSharedAudio } from '@/utils/fileValidation';
 import logger from '@/utils/logger';
 
@@ -42,7 +43,7 @@ class AudioCaptureClass {
       if (status === 'Granted') return ok(true);
 
       if (status === 'Denied' || status === 'Restricted') {
-        Alert.alert(
+        AppAlert.info(
           'Microphone Required',
           'Ekwe needs microphone access to record and translate voice notes. Please enable it in Settings.',
           [
@@ -120,6 +121,13 @@ class AudioCaptureClass {
             silenceStartTime = Date.now();
           } else if (Date.now() - silenceStartTime > SILENCE_DURATION_MS) {
             logger.info('AudioCapture: Silence detected, auto-stopping...');
+
+            // Synchronously clear the interval to prevent race conditions while waiting for the native bridge
+            if (this.meteringInterval !== null) {
+              clearInterval(this.meteringInterval);
+              this.meteringInterval = null;
+            }
+
             await this.stopRecording();
             return;
           }

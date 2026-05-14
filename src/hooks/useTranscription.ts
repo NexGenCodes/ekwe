@@ -1,3 +1,4 @@
+import { useSelector } from '@legendapp/state/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { EkweError } from '@/constants/errors';
@@ -6,8 +7,13 @@ import {
   TranscriptionService,
   TranscriptionResult,
 } from '@/services/Transcription';
-import { useAudioStore, useSettingsStore, useHistoryStore } from '@/store';
-import { RecordingState } from '@/store/audioSlice';
+import {
+  audio$,
+  audioActions,
+  settings$,
+  historyActions,
+  RecordingState,
+} from '@/store';
 import { Result, ok, err } from '@/types/Result';
 
 export interface UseTranscriptionReturn {
@@ -30,13 +36,13 @@ export const useTranscription = (): UseTranscriptionReturn => {
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const sourceLang = useAudioStore((s) => s.sourceLang);
-  const setError = useAudioStore((s) => s.setError);
-  const appendTranscript = useAudioStore((s) => s.appendTranscript);
-  const setRecordingState = useAudioStore((s) => s.setRecordingState);
-  const sessionId = useAudioStore((s) => s.sessionId);
-  const selectedLanguages = useSettingsStore((s) => s.selectedLanguages);
-  const addEntry = useHistoryStore((s) => s.addEntry);
+  const sourceLang = useSelector(() => audio$.sourceLang.get());
+  const sessionId = useSelector(() => audio$.sessionId.get());
+  const selectedLanguages = useSelector(() =>
+    settings$.selectedLanguages.get(),
+  );
+  const { setError, appendTranscript, setRecordingState } = audioActions;
+  const { addEntry } = historyActions;
 
   const cancelTranscription = useCallback(() => {
     if (abortControllerRef.current) {
@@ -125,16 +131,7 @@ export const useTranscription = (): UseTranscriptionReturn => {
         return err(EkweError.TRANSCRIPTION_FAIL);
       }
     },
-    [
-      sourceLang,
-      selectedLanguages,
-      setError,
-      appendTranscript,
-      setRecordingState,
-      sessionId,
-      addEntry,
-      cancelTranscription,
-    ],
+    [sourceLang, selectedLanguages, sessionId, cancelTranscription],
   );
 
   return {

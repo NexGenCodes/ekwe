@@ -159,11 +159,7 @@ export default function WelcomeScreen(): React.ReactElement {
           label="Get started"
           onPress={handleStart}
           rightIcon={
-            <ChevronRight
-              size={24}
-              color={color.onPrimary}
-              strokeWidth={3}
-            />
+            <ChevronRight size={24} color={color.onPrimary} strokeWidth={3} />
           }
         />
         <Text className="text-xs text-center mt-8 font-body text-muted dark:text-zinc-600">

@@ -4,7 +4,9 @@ import {
   AudioContext,
   AudioBufferSourceNode,
   AudioBuffer,
+  AudioManager,
 } from 'react-native-audio-api';
+import { useSharedValue, SharedValue } from 'react-native-reanimated';
 
 import logger from '@/utils/logger';
 
@@ -27,8 +29,10 @@ export interface SharedAudioPlayer {
   play: () => Promise<void>;
   pause: () => void;
   seek: (seconds: number) => Promise<void>;
+  cleanup: () => void;
   isPlaying: boolean;
   progress: number;
+  progressSV: SharedValue<number>; // Smooth progress for animations
   duration: number;
   isDecoding: boolean;
   isLoaded: boolean;
@@ -45,6 +49,8 @@ export interface SharedAudioPlayer {
 export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const progressSV = useSharedValue(0);
+
   const [duration, setDuration] = useState(0);
   const [isDecoding, setIsDecoding] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -63,11 +69,45 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
   const pausedAtRef = useRef<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const stopProgressTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  /** Imperatively stop playback and release all audio resources. */
+  const releaseResources = useCallback((): void => {
+    logger.info('[SharedAudioPlayer] releaseResources() called');
+    stopProgressTimer();
+    if (sourceRef.current) {
+      try {
+        sourceRef.current.stop();
+      } catch {
+        // Ignore — source may have already finished
+      }
+      sourceRef.current = null;
+    }
+    bufferRef.current = null;
+    setIsPlaying(false);
+    if (contextRef.current && contextRef.current.state !== 'closed') {
+      contextRef.current.suspend().catch(() => {});
+    }
+    AudioManager.setAudioSessionActivity(false).catch(() => {});
+  }, [stopProgressTimer]);
+
   // Initialize and proactively decode
   useEffect(() => {
+    logger.info(
+      '[SharedAudioPlayer] Effect fired. URI:',
+      uri ? uri.substring(0, 60) + '...' : 'null',
+    );
+
     if (!uri) {
+      logger.info('[SharedAudioPlayer] No URI — skipping decode');
       setIsLoaded(false);
       setRealWaveform([]);
+      progressSV.value = 0;
       return;
     }
 
@@ -78,10 +118,23 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
 
         // 1. Setup Context
         contextRef.current = getAudioContext();
+        logger.info(
+          '[SharedAudioPlayer] AudioContext state:',
+          contextRef.current.state,
+        );
 
         // 2. Proactive Decode (High-Performance JSI)
         // Note: react-native-audio-api handled the Opus/Ogg decoding internally
+        logger.info('[SharedAudioPlayer] Starting decodeAudioData...');
         const decodedBuffer = await contextRef.current.decodeAudioData(uri);
+        logger.info(
+          '[SharedAudioPlayer] Decode SUCCESS. Duration:',
+          decodedBuffer.duration,
+          'Channels:',
+          decodedBuffer.numberOfChannels,
+          'SampleRate:',
+          decodedBuffer.sampleRate,
+        );
         bufferRef.current = decodedBuffer;
         setDuration(decodedBuffer.duration);
 
@@ -89,6 +142,7 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
         const channelData = decodedBuffer.getChannelData(0); // Use first channel
         const bucketSize = Math.floor(channelData.length / 50);
         const peaks: number[] = [];
+        let maxPeak = 0;
 
         for (let i = 0; i < 50; i++) {
           let max = 0;
@@ -96,16 +150,27 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
             const val = Math.abs(channelData[i * bucketSize + j]);
             if (val > max) max = val;
           }
-          // Normalize to 0-1 range for Skia scaling
-          // We use a small power function to make the peaks more "expressive" (visual compression)
-          peaks.push(Math.pow(max, 0.7));
+          // Visual compression: make peaks more expressive
+          const peak = Math.pow(max, 0.7);
+          if (peak > maxPeak) maxPeak = peak;
+          peaks.push(peak);
         }
-        setRealWaveform(peaks);
+
+        // Final normalization: ensure the waveform always reaches near-full height
+        const normalizedPeaks =
+          maxPeak > 0.01 ? peaks.map((p) => p / maxPeak) : peaks;
+
+        setRealWaveform(normalizedPeaks);
+        logger.info(
+          '[SharedAudioPlayer] Waveform extracted. Peaks count:',
+          normalizedPeaks.length,
+        );
 
         setIsDecoding(false);
         setIsLoaded(true);
+        logger.info('[SharedAudioPlayer] ✅ Audio fully loaded and ready');
       } catch (error) {
-        logger.error('[SharedAudioPlayer] Decode failed:', error);
+        logger.error('[SharedAudioPlayer] ❌ Decode FAILED:', error);
         setIsDecoding(false);
         setIsLoaded(false);
       }
@@ -114,56 +179,97 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
     init();
 
     return (): void => {
-      stopProgressTimer();
-      if (sourceRef.current) {
-        try {
-          sourceRef.current.stop();
-        } catch {
-          // Ignore
-        }
-      }
-      bufferRef.current = null;
+      releaseResources();
     };
-  }, [uri]);
-
-  const stopProgressTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
+  }, [uri, releaseResources, progressSV]);
 
   const handlePlaybackEnd = useCallback(() => {
     setIsPlaying(false);
-    setProgress(0);
-    pausedAtRef.current = 0;
+    // Pause at the end instead of resetting
+    setProgress(duration);
+    progressSV.value = duration;
+    pausedAtRef.current = duration;
     stopProgressTimer();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [stopProgressTimer]);
+  }, [stopProgressTimer, duration, progressSV]);
 
   const startProgressTimer = useCallback(() => {
     stopProgressTimer();
+    // High-frequency updates (60fps) for the shared value, low-frequency (10fps) for React state
+    let lastStateUpdate = 0;
+
     timerRef.current = setInterval(() => {
       if (contextRef.current && isPlayingRef.current) {
         const currentPos =
           contextRef.current.currentTime -
           startTimeRef.current +
           pausedAtRef.current;
+
         if (currentPos >= duration) {
           handlePlaybackEnd();
         } else {
-          setProgress(currentPos);
+          // Update SharedValue (60fps smooth)
+          progressSV.value = currentPos;
+
+          // Update React state (10fps for text timer performance)
+          const now = Date.now();
+          if (now - lastStateUpdate > 100) {
+            setProgress(currentPos);
+            lastStateUpdate = now;
+          }
         }
       }
-    }, 100);
-  }, [duration, handlePlaybackEnd]);
+    }, 16); // 60fps internal clock
+  }, [duration, handlePlaybackEnd, stopProgressTimer, progressSV]);
 
   const play = async (): Promise<void> => {
-    if (!bufferRef.current || !contextRef.current) return;
+    if (isPlayingRef.current) {
+      logger.info('[SharedAudioPlayer] Already playing, ignoring play() call.');
+      return;
+    }
+
+    logger.info(
+      '[SharedAudioPlayer] play() called. bufferRef:',
+      !!bufferRef.current,
+      'contextRef:',
+      !!contextRef.current,
+      'isLoaded:',
+      isLoaded,
+    );
+    if (!bufferRef.current || !contextRef.current) {
+      logger.warn(
+        '[SharedAudioPlayer] play() aborted — missing buffer or context',
+      );
+      return;
+    }
 
     try {
       if (contextRef.current.state === 'suspended') {
+        logger.info('[SharedAudioPlayer] Resuming suspended AudioContext...');
         await contextRef.current.resume();
+      }
+
+      // Configure Audio Session to pause other apps when we play
+      try {
+        AudioManager.setAudioSessionOptions({
+          iosCategory: 'playback',
+          iosMode: 'default',
+          iosOptions: ['duckOthers'],
+        });
+        await AudioManager.setAudioSessionActivity(true);
+        AudioManager.observeAudioInterruptions('gainTransientMayDuck');
+      } catch (e) {
+        logger.warn(
+          '[SharedAudioPlayer] Could not set audio session focus:',
+          e,
+        );
+      }
+
+      // If we're at the very end of the track, restart from the beginning
+      if (pausedAtRef.current >= duration - 0.05) {
+        pausedAtRef.current = 0;
+        setProgress(0);
+        progressSV.value = 0;
       }
 
       // Web Audio API logic: Create new source per play
@@ -220,24 +326,59 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
       } catch {
         // Ignore
       }
+      AudioManager.setAudioSessionActivity(false).catch(() => {});
     }
   };
 
   const seek = async (seconds: number): Promise<void> => {
-    if (!contextRef.current) return;
-    const wasPlaying = isPlaying;
-    if (wasPlaying) pause();
-    pausedAtRef.current = Math.max(0, Math.min(seconds, duration));
-    setProgress(pausedAtRef.current);
-    if (wasPlaying) await play();
+    if (!contextRef.current || !bufferRef.current) return;
+    const clampedPos = Math.max(0, Math.min(seconds, duration));
+    pausedAtRef.current = clampedPos;
+    setProgress(clampedPos);
+    progressSV.value = clampedPos;
+
+    if (isPlayingRef.current) {
+      // Seamless swap: stop old source, create new one at the new offset
+      if (sourceRef.current) {
+        try {
+          sourceRef.current.stop();
+        } catch {
+          /* already stopped */
+        }
+      }
+
+      const source = contextRef.current.createBufferSource();
+      const startFrame = Math.floor(clampedPos * contextRef.current.sampleRate);
+      const originalData = bufferRef.current.getChannelData(0);
+      const remainingFrames = originalData.length - startFrame;
+
+      if (remainingFrames > 0) {
+        const slicedBuffer = contextRef.current.createBuffer(
+          1,
+          remainingFrames,
+          contextRef.current.sampleRate,
+        );
+        slicedBuffer.getChannelData(0).set(originalData.subarray(startFrame));
+        source.buffer = slicedBuffer;
+      } else {
+        source.buffer = bufferRef.current;
+      }
+
+      source.connect(contextRef.current.destination);
+      sourceRef.current = source;
+      startTimeRef.current = contextRef.current.currentTime;
+      source.start(0);
+    }
   };
 
   return {
     play,
     pause,
     seek,
+    cleanup: releaseResources,
     isPlaying,
     progress,
+    progressSV,
     duration,
     isDecoding,
     isLoaded,

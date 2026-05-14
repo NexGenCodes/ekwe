@@ -1,5 +1,6 @@
 import { Env, TranscribeResult, TranslateResult } from '../types';
 import { isHallucination } from '../utils';
+import { logger } from '../logger';
 
 /**
  * Cloudflare Workers AI — zero-key safety net.
@@ -23,7 +24,7 @@ export async function transcribe(
       return { text, provider: 'cloudflare' };
     }
   } catch (e) {
-    console.error('[cloudflare] Transcription error:', e instanceof Error ? e.message : String(e));
+    logger.error('[cloudflare] Transcription error', { error: e instanceof Error ? e.message : String(e) });
   }
 
   return null;
@@ -51,7 +52,7 @@ export async function translate(
       return { translation: response, provider: 'cloudflare-ai-llama3' };
     }
   } catch (e) {
-    console.error('[cloudflare] Translation error:', e instanceof Error ? e.message : String(e));
+    logger.error('[cloudflare] Translation error', { error: e instanceof Error ? e.message : String(e) });
   }
 
   return null;

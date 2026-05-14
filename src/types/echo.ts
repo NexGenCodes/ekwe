@@ -4,7 +4,8 @@ export type EchoStep =
   | 'Transcribing'
   | 'TranscribeResult'
   | 'Translating'
-  | 'FullResult';
+  | 'FullResult'
+  | 'Error';
 
 export interface SharedFile {
   value: string;
@@ -44,5 +45,7 @@ export interface UseEchoFlowResult {
     waveform: number[],
   ) => Promise<void>;
   handleTranslate: () => Promise<void>;
+  audioDuration: number;
+  error: string | null;
   onDismiss: () => void;
 }

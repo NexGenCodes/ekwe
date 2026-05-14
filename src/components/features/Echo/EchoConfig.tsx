@@ -8,12 +8,13 @@ import {
   StyleSheet,
 } from 'react-native';
 
-import { PlaybackControl } from '@/components';
+import { PlaybackControl } from './PlaybackControl';
+
 import { useTheme } from '@/hooks';
-import { useSharedAudioPlayer } from '@/hooks';
+import { SharedAudioPlayer } from '@/hooks/audio/useSharedAudioPlayer';
 
 export interface EchoConfigStepProps {
-  audioUri: string | undefined;
+  player: SharedAudioPlayer;
   isResolving: boolean;
   isDark: boolean;
   onTranscribe: (duration: number, waveform: number[]) => void;
@@ -21,8 +22,7 @@ export interface EchoConfigStepProps {
 }
 
 export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
-  ({ audioUri, isResolving, isDark, onTranscribe, children }) => {
-    const player = useSharedAudioPlayer(audioUri || null);
+  ({ player, isResolving, onTranscribe, children }) => {
     const { color } = useTheme();
     const brandPrimary = color.primary;
 
@@ -32,32 +32,32 @@ export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
           isPlaying={player.isPlaying}
           isDecoding={player.isDecoding}
           progress={player.progress}
+          progressSV={player.progressSV}
           duration={player.duration}
           peaks={player.realWaveform}
           onTogglePlay={() =>
             player.isPlaying ? player.pause() : player.play()
           }
           onSeek={player.seek}
-          isDark={isDark}
         />
 
         {children}
 
         <TouchableOpacity
           onPress={() => {
-            if (player.isPlaying) player.pause();
+            player.cleanup();
             onTranscribe(player.duration, player.realWaveform);
           }}
-          disabled={!player.isLoaded || isResolving}
+          disabled={isResolving}
           style={[
             styles.primaryAction,
             {
               backgroundColor: brandPrimary,
-              opacity: player.isLoaded && !isResolving ? 1 : 0.6,
+              opacity: isResolving ? 0.6 : 1,
             },
           ]}
         >
-          {(!player.isLoaded || isResolving) && (
+          {isResolving && (
             <ActivityIndicator
               size="small"
               color="#FFF"
@@ -66,11 +66,7 @@ export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
           )}
           <Zap size={18} color="#FFF" fill="#FFF" />
           <Text style={styles.primaryActionTxt}>
-            {isResolving
-              ? 'Preparing Audio...'
-              : player.isLoaded
-                ? 'Transcribe'
-                : 'Decoding Audio...'}
+            {isResolving ? 'Preparing Audio...' : 'Transcribe'}
           </Text>
         </TouchableOpacity>
       </View>

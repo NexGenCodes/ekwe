@@ -9,8 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui';
 import { LANGUAGES, FLAG_MAP } from '@/constants/languages';
 import { useTheme } from '@/hooks';
-import { useSettingsStore } from '@/store';
-import { useAuthStore } from '@/store/authStore';
+import { settingsActions, auth$ } from '@/store';
 
 const POPULAR_LANGS = [
   'en',
@@ -32,9 +31,8 @@ const POPULAR_LANGS = [
 
 export default function OnboardingLanguagesScreen(): React.ReactElement {
   const router = useRouter();
-  const { colorScheme } = useTheme();
   const { setSelectedLanguages, setTargetLanguage, setOnboardingCompleted } =
-    useSettingsStore();
+    settingsActions;
   const [selected, setSelected] = useState<string[]>([]);
 
   const { color } = useTheme();
@@ -63,8 +61,8 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
     setTargetLanguage(selected[0]); // Primary language is the first choice
     setOnboardingCompleted(true);
 
-    // Check session synchronously from store
-    const { session } = useAuthStore.getState();
+    // Check session synchronously from observable
+    const session = auth$.session.get();
     if (session) {
       router.replace('/(tabs)');
     } else {
@@ -128,9 +126,7 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
                     flex: 1,
                     fontSize: 15,
                     fontFamily: 'Outfit-Medium',
-                    color: isSelected
-                      ? '#FFFFFF'
-                      : color.foreground,
+                    color: isSelected ? '#FFFFFF' : color.foreground,
                   }}
                   numberOfLines={1}
                 >

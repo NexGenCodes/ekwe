@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import EkweNative from '../../../modules/ekwe-native';
 import { FloatingState } from '../../../modules/ekwe-native/src/EkweNative.types';
 
-import { useAudioStore } from '@/store';
+import { audioActions } from '@/store';
 import logger from '@/utils/logger';
 
 /**
@@ -15,7 +15,7 @@ import logger from '@/utils/logger';
  * 3. Lens is hidden when Echo session starts.
  */
 export const useTripleExclusivity = (): void => {
-  const setActiveFloatingHead = useAudioStore((s) => s.setActiveFloatingHead);
+  const { setActiveFloatingHead } = audioActions;
 
   // NATIVE EVENT BRIDGE: Listen for service lifecycle changes from Kotlin
   useEventListener(
@@ -84,5 +84,5 @@ export const useTripleExclusivity = (): void => {
           break;
       }
     });
-  }, [setActiveFloatingHead]);
+  }, []);
 };

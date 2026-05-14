@@ -80,7 +80,7 @@ const withAndroidIntentFilters = (config) => {
           'android:excludeFromRecents': 'true',
           'android:launchMode': 'singleTask',
           'android:taskAffinity': '',
-          'android:label': 'Ekwe'
+          'android:label': 'EKWE'
         },
         'intent-filter': []
       };

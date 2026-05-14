@@ -1,14 +1,22 @@
+import { useSelector } from '@legendapp/state/react';
 import { useCallback, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
+
+import { useAudioCapture } from '../audio';
+import { useForegroundApp } from '../platform';
+
 import { EkweError } from '@/constants/errors';
 import { VoiceNoteScanner } from '@/services/VoiceNoteScanner';
-import { useAudioStore, useSettingsStore } from '@/store';
-import { RecordingState } from '@/store/audioSlice';
+import {
+  audio$,
+  audioActions,
+  settings$,
+  settingsActions,
+  RecordingState,
+} from '@/store';
 import { Result, ok, err } from '@/types/Result';
 import { BubbleNative } from '@/utils/BubbleModule';
 import logger from '@/utils/logger';
-import { useAudioCapture } from '../audio';
-import { useForegroundApp } from '../platform';
 
 export interface UseBubbleReturn {
   enableBubble: () => Promise<Result<void, EkweError>>;
@@ -19,14 +27,16 @@ export interface UseBubbleReturn {
 
 export const useBubble = (): UseBubbleReturn => {
   const { startRecording, stopRecording } = useAudioCapture();
-  const recordingState = useAudioStore((s) => s.recordingState);
-  const audioPath = useAudioStore((s) => s.audioPath);
-  const setDuration = useAudioStore((s) => s.setDuration);
-  const setRecordingState = useAudioStore((s) => s.setRecordingState);
-  const setAudioPath = useAudioStore((s) => s.setAudioPath);
-  const setActiveFloatingHead = useAudioStore((s) => s.setActiveFloatingHead);
-  const setBubbleEnabled = useSettingsStore((s) => s.setBubbleEnabled);
-  const bubbleEnabled = useSettingsStore((s) => s.bubbleEnabled);
+  const recordingState = useSelector(() => audio$.recordingState.get());
+  const audioPath = useSelector(() => audio$.audioPath.get());
+  const bubbleEnabled = useSelector(() => settings$.bubbleEnabled.get());
+  const {
+    setDuration,
+    setRecordingState,
+    setAudioPath,
+    setActiveFloatingHead,
+  } = audioActions;
+  const { setBubbleEnabled } = settingsActions;
 
   const { strategy } = useForegroundApp(bubbleEnabled);
   const magicNoteUri = useRef<string | null>(null);
@@ -97,8 +107,8 @@ export const useBubble = (): UseBubbleReturn => {
         return err(EkweError.PERMISSION_OVERLAY);
       }
 
-      const audioState = useAudioStore.getState();
-      if (audioState.activeFloatingHead === 'card') {
+      const currentHead = audio$.activeFloatingHead.get();
+      if (currentHead === 'card') {
         logger.info('[Exclusivity] Cannot start bubble while card is active');
         return ok(undefined);
       }

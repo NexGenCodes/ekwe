@@ -1,7 +1,14 @@
 import * as Haptics from 'expo-haptics';
 import { Loader } from 'lucide-react-native';
 import React, { useMemo } from 'react';
-import { Pressable, StyleProp, Text, TextStyle, View, ViewStyle } from 'react-native';
+import {
+  Pressable,
+  StyleProp,
+  Text,
+  TextStyle,
+  View,
+  ViewStyle,
+} from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -10,9 +17,8 @@ import Animated, {
   cancelAnimation,
   Easing,
 } from 'react-native-reanimated';
+
 import { useTheme } from '@/hooks';
-
-
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost';
 type ButtonSize = 'small' | 'medium' | 'large';
@@ -36,7 +42,6 @@ export interface ButtonProps {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedLoader = Animated.createAnimatedComponent(Loader);
-
 
 export const Button = ({
   label,

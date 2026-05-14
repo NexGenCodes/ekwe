@@ -1,3 +1,4 @@
+import { useSelector } from '@legendapp/state/react';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -16,13 +17,13 @@ import { View, Text, ScrollView, Image, Pressable, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui';
-import { useLogout } from '@/hooks';
-import { useTheme } from '@/hooks';
-import { useAuthStore } from '@/store/authStore';
+import { useLogout, useTheme } from '@/hooks';
+import { auth$ } from '@/store';
+import { AppAlert } from '@/utils/alert';
 
 export default function ProfileScreen(): React.JSX.Element {
-  const user = useAuthStore((s) => s.user);
-  const isPro = useAuthStore((s) => s.isPro);
+  const user = useSelector(() => auth$.user.get());
+  const isPro = useSelector(() => auth$.isPro.get());
   const router = useRouter();
   const { color } = useTheme();
   const { confirmLogout } = useLogout();
@@ -141,7 +142,7 @@ export default function ProfileScreen(): React.JSX.Element {
           <Pressable
             className="bg-primary/5 dark:bg-primary-dark/5 p-6 rounded-[24px] border border-primary/20 dark:border-primary-dark/30 flex-row items-center justify-between"
             onPress={() =>
-              Alert.alert('Billing', 'Subscription management coming soon.')
+              AppAlert.info('Billing', 'Subscription management coming soon.')
             }
           >
             <View className="flex-row items-center">

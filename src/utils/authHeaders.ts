@@ -1,4 +1,4 @@
-import { useAuthStore } from '@/store/authStore';
+import { auth$ } from '@/store';
 import { logger } from '@/utils';
 
 /**
@@ -10,7 +10,7 @@ export const getAuthHeaders = async (
   headers: HeadersInit = {},
 ): Promise<HeadersInit> => {
   try {
-    const { session } = useAuthStore.getState();
+    const session = auth$.session.get();
     if (session?.access_token) {
       return {
         ...headers,

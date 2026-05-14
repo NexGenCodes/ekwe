@@ -1,5 +1,6 @@
 import { Env, TranscribeResult } from '../types';
 import { isHallucination, fetchWithTimeout, rotateKeys, TIMEOUT_FAST, abortableDelay } from '../utils';
+import { logger } from '../logger';
 
 const GLADIA_UPLOAD = 'https://api.gladia.io/v2/upload';
 const GLADIA_TRANSCRIPTION = 'https://api.gladia.io/v2/pre-recorded';
@@ -27,9 +28,9 @@ export async function transcribe(
   // We use a workaround: return a synthetic Response from attemptTranscription.
   if (!res?.ok) return null;
 
-  const data = await res.json() as { text?: string };
+  const data = await res.json() as { text?: string; language?: string };
   if (data.text && !isHallucination(data.text)) {
-    return { text: data.text, provider: 'gladia' };
+    return { text: data.text, provider: 'gladia', language: data.language };
   }
 
   return null;
@@ -52,7 +53,8 @@ async function attemptTranscription(
   }, TIMEOUT_FAST, signal);
 
   if (!uploadRes.ok) {
-    console.error('[gladia] Upload error:', await uploadRes.text().catch(() => ''));
+    const err = await uploadRes.text().catch(() => 'No body');
+    logger.error('[gladia] Upload error', { status: uploadRes.status, body: err });
     return uploadRes;
   }
 
@@ -62,9 +64,10 @@ async function attemptTranscription(
   const isAuto = !lang || lang === 'auto';
   const transcriptBody: Record<string, unknown> = {
     audio_url,
-    language_behaviour: isAuto ? 'automatic single language' : 'manual',
   };
-  if (!isAuto) transcriptBody.language = lang;
+  if (!isAuto) {
+    transcriptBody.language_config = { languages: [lang] };
+  }
 
   const submitRes = await fetchWithTimeout(GLADIA_TRANSCRIPTION, {
     method: 'POST',
@@ -73,7 +76,8 @@ async function attemptTranscription(
   }, TIMEOUT_FAST, signal);
 
   if (!submitRes.ok) {
-    console.error('[gladia] Submit error:', await submitRes.text().catch(() => ''));
+    const err = await submitRes.text().catch(() => 'No body');
+    logger.error('[gladia] Submit error', { status: submitRes.status, body: err });
     return submitRes;
   }
 
@@ -92,11 +96,16 @@ async function attemptTranscription(
 
     if (data.status === 'done') {
       const text = data.result?.transcription?.full_transcript || '';
-      return Response.json({ text }, { status: 200 });
+      const language = data.result?.transcription?.languages?.[0]?.language;
+      logger.info('[gladia] Transcription completed', { language });
+      return Response.json({ text, language }, { status: 200 });
     }
     if (data.status === 'error') {
+      logger.error('[gladia] Transcription job failed', { data });
       return Response.json({ error: 'gladia_error' }, { status: 502 });
     }
+
+    logger.info('[gladia] Polling for results...', { attempt: i + 1, status: data.status });
   }
 
   // Timeout
@@ -106,7 +115,10 @@ async function attemptTranscription(
 interface GladiaResult {
   status?: string;
   result?: {
-    transcription?: { full_transcript?: string };
+    transcription?: {
+      full_transcript?: string;
+      languages?: Array<{ language?: string }>;
+    };
   };
 }
 

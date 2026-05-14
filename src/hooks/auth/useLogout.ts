@@ -1,9 +1,8 @@
-import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useCallback } from 'react';
-import { Alert } from 'react-native';
 
 import { supabase } from '@/services/supabase';
+import { AppAlert } from '@/utils/alert';
 import logger from '@/utils/logger';
 
 interface UseLogoutReturn {
@@ -17,7 +16,6 @@ export const useLogout = (): UseLogoutReturn => {
   const router = useRouter();
 
   const logout = useCallback(async (): Promise<void> => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     try {
       await supabase.auth.signOut();
     } catch (e) {
@@ -27,14 +25,15 @@ export const useLogout = (): UseLogoutReturn => {
   }, [router]);
 
   const confirmLogout = useCallback((): void => {
-    Alert.alert('Log Out', 'Are you sure you want to log out of Ekwe?', [
-      { text: 'Cancel', style: 'cancel' },
+    AppAlert.confirm(
+      'Log Out',
+      'Are you sure you want to log out of Ekwe?',
+      logout,
       {
-        text: 'Log Out',
-        style: 'destructive',
-        onPress: logout,
+        confirmText: 'Log Out',
+        isDestructive: true,
       },
-    ]);
+    );
   }, [logout]);
 
   return { logout, confirmLogout };

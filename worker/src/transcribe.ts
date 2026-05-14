@@ -1,4 +1,5 @@
 import { Env, Tier, TranscribeResult } from './types';
+import { logger } from './logger';
 import * as witai from './providers/witai';
 import * as groq from './providers/groq';
 import * as deepgram from './providers/deepgram';
@@ -52,18 +53,19 @@ export async function handleTranscribe(
   if (!file) return Response.json({ error: 'MISSING_FILE' }, { status: 400 });
 
   // ── Magic Byte Sniffer for WhatsApp / Android Edge Cases ──
-  // If the OS strips the file extension, file.type might be empty or generic.
+  // Always sniff the first 4 bytes. React Native often assigns 'audio/m4a' 
+  // as a fallback for content:// URIs that lack extensions, even when the file is an Opus Ogg.
   let mimeType = file.type;
-  if (!mimeType || mimeType === 'application/octet-stream') {
-    // Read only the first 4 bytes from the stream to avoid memory exhaustion
-    const headerBuffer = await file.slice(0, 4).arrayBuffer();
-    const headerView = new Uint8Array(headerBuffer);
-    // ASCII for 'OggS' (Opus is encapsulated in Ogg containers)
-    if (headerView[0] === 0x4f && headerView[1] === 0x67 && headerView[2] === 0x67 && headerView[3] === 0x53) {
-      mimeType = 'audio/ogg';
-    } else {
-      mimeType = 'audio/wav';
-    }
+
+  // Read only the first 4 bytes from the stream to avoid memory exhaustion
+  const headerBuffer = await file.slice(0, 4).arrayBuffer();
+  const headerView = new Uint8Array(headerBuffer);
+
+  // ASCII for 'OggS' (Opus is encapsulated in Ogg containers)
+  if (headerView[0] === 0x4f && headerView[1] === 0x67 && headerView[2] === 0x67 && headerView[3] === 0x53) {
+    mimeType = 'audio/ogg';
+  } else if (!mimeType || mimeType === 'application/octet-stream') {
+    mimeType = 'audio/wav'; // ultimate fallback
   }
 
   // Wrap the original File stream into a new File object with the correct MIME type.
@@ -80,16 +82,20 @@ export async function handleTranscribe(
 
     try {
       if (signal.aborted) throw new Error('CLIENT_ABORTED');
-      console.log(`[transcribe] Trying ${provider.name} (lang: ${effectiveLang}, tier: ${tier})`);
+      logger.info(`[transcribe] Trying ${provider.name}`, { lang: effectiveLang, tier });
 
       const result = await provider.fn(audioBlob, effectiveLang, env, signal);
-      if (result) return Response.json(result);
+      if (result) {
+        logger.info(`[transcribe] Success: ${provider.name}`, { lang: result.language, provider: result.provider });
+        return Response.json(result);
+      }
 
     } catch (e: unknown) {
       if (e instanceof Error && e.message === 'CLIENT_ABORTED') throw e;
-      console.error(`[transcribe] ${provider.name} failed:`, e instanceof Error ? e.message : String(e));
+      logger.error(`[transcribe] ${provider.name} failed`, { error: e instanceof Error ? e.message : String(e) });
     }
   }
 
   return Response.json({ error: 'ALL_PROVIDERS_FAILED' }, { status: 503 });
 }
+

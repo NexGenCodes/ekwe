@@ -1,14 +1,13 @@
 import { useLocalSearchParams } from 'expo-router';
-import React, { } from 'react';
+import React from 'react';
 import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
+import { useSharedValue } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AudioWaveform } from '@/components';
-import { Button, ScreenHeader } from '@/components/ui';
+import { Button, Card, ScreenHeader } from '@/components/ui';
 import { getLanguageName } from '@/constants/languages';
-import { useClipboard } from '@/hooks';
-import { useResultPipeline } from '@/hooks';
-import { useTheme } from '@/hooks';
+import { useClipboard, useResultPipeline, useTheme } from '@/hooks';
 
 export default function ResultScreen(): React.JSX.Element {
   const params = useLocalSearchParams();
@@ -34,6 +33,7 @@ export default function ResultScreen(): React.JSX.Element {
 
   const { color } = useTheme();
   const primaryColor = color.primary;
+  const staticProgress = useSharedValue(0);
 
   const handleCopy = async (text: string): Promise<void> => {
     await copy(text);
@@ -45,7 +45,9 @@ export default function ResultScreen(): React.JSX.Element {
       className="flex-1 bg-background dark:bg-background-dark"
     >
       {/* Header */}
-      <ScreenHeader title={isHistoryReplay ? 'History Record' : 'Translation Result'} />
+      <ScreenHeader
+        title={isHistoryReplay ? 'History Record' : 'Translation Result'}
+      />
 
       <ScrollView
         className="flex-1 px-6 bg-background dark:bg-background-dark"
@@ -85,11 +87,11 @@ export default function ResultScreen(): React.JSX.Element {
                   />
                 </View>
               </View>
-              <View className="bg-card dark:bg-card-dark p-6 rounded-[20px] border border-border dark:border-border-dark">
+              <Card style={{ padding: 24, borderRadius: 20 }}>
                 <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground-dark">
                   {transcript}
                 </Text>
-              </View>
+              </Card>
             </View>
 
             {/* Translation Text (Result) */}
@@ -100,11 +102,14 @@ export default function ResultScreen(): React.JSX.Element {
                     TRANSLATED · {getLanguageName(targetLang)}
                   </Text>
                 </View>
-                <View className="bg-primary/5 dark:bg-primary-dark/10 p-6 rounded-[20px] border border-primary/20 dark:border-primary-dark/30">
+                <Card
+                  variant="accent"
+                  style={{ padding: 24, borderRadius: 20 }}
+                >
                   <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground-dark">
                     {translation}
                   </Text>
-                </View>
+                </Card>
               </View>
             ) : (
               <View className="items-center py-6">
@@ -125,12 +130,18 @@ export default function ResultScreen(): React.JSX.Element {
 
         {/* Replay context if history */}
         {isHistoryReplay && !isProcessing && (
-          <View className="mt-4 bg-card dark:bg-card-dark p-6 rounded-[20px] border border-border dark:border-border-dark">
+          <Card style={{ padding: 24, borderRadius: 20 }}>
             <Text className="font-bodyMed text-xs text-muted dark:text-muted-dark mb-4 uppercase tracking-widest">
               Voice Architecture
             </Text>
-            <AudioWaveform amplitudes={[]} progress={0.4} height={60} />
-          </View>
+            <AudioWaveform
+              amplitudes={[]}
+              progressSV={staticProgress}
+              duration={1}
+              height={60}
+              interactive={false}
+            />
+          </Card>
         )}
       </ScrollView>
 

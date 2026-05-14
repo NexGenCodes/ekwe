@@ -1,5 +1,6 @@
 import { Env, TranscribeResult } from '../types';
 import { rotateKeys, isHallucination, fetchWithTimeout, TIMEOUT_FAST, abortableDelay } from '../utils';
+import { logger } from '../logger';
 
 const ASSEMBLYAI_UPLOAD = 'https://api.assemblyai.com/v2/upload';
 const ASSEMBLYAI_TRANSCRIPT = 'https://api.assemblyai.com/v2/transcript';
@@ -32,9 +33,10 @@ export async function transcribe(
 
       if (!uploadRes.ok) {
         if (uploadRes.status === 402 || uploadRes.status === 403) {
-          console.error('[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!');
+          logger.error('[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!');
         } else {
-          console.error('[assemblyai] Upload error:', await uploadRes.text().catch(() => ''));
+          const err = await uploadRes.text().catch(() => 'No body');
+          logger.error('[assemblyai] Upload error', { status: uploadRes.status, body: err });
         }
         return new Response(null, { status: uploadRes.status }); // Pass status back to rotateKeys so it can retry
       }
@@ -60,9 +62,10 @@ export async function transcribe(
 
       if (!createRes.ok) {
         if (createRes.status === 402 || createRes.status === 403) {
-          console.error('[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!');
+          logger.error('[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!');
         } else {
-          console.error('[assemblyai] Create error:', await createRes.text().catch(() => ''));
+          const err = await createRes.text().catch(() => 'No body');
+          logger.error('[assemblyai] Create error', { status: createRes.status, body: err });
         }
         return new Response(null, { status: createRes.status });
       }
@@ -80,10 +83,10 @@ export async function transcribe(
         const data = await poll.json() as AssemblyResult;
 
         if (data.status === 'completed' && data.text) {
-          return new Response(JSON.stringify({ text: data.text, duration: data.audio_duration }), { status: 200 });
+          return new Response(JSON.stringify({ text: data.text, duration: data.audio_duration, language: data.language_code }), { status: 200 });
         }
         if (data.status === 'error') {
-          console.error('[assemblyai] Processing error:', data.error);
+          logger.error('[assemblyai] Processing error', { error: data.error });
           return new Response(null, { status: 500 }); // Break polling
         }
       }
@@ -94,9 +97,9 @@ export async function transcribe(
 
   if (!res?.ok) return null;
 
-  const finalData = await res.json() as { text: string; duration?: number };
+  const finalData = await res.json() as { text: string; duration?: number; language?: string };
   if (!isHallucination(finalData.text)) {
-    return { text: finalData.text, provider: 'assemblyai', duration: finalData.duration };
+    return { text: finalData.text, provider: 'assemblyai', duration: finalData.duration, language: finalData.language };
   }
 
   return null;
@@ -107,6 +110,7 @@ interface AssemblyResult {
   text?: string;
   error?: string;
   audio_duration?: number;
+  language_code?: string;
 }
 
 export const supportsAutoLang = true;

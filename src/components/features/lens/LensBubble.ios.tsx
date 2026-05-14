@@ -1,3 +1,4 @@
+import { useSelector } from '@legendapp/state/react';
 import React, { useEffect, useMemo } from 'react';
 import { Text } from 'react-native';
 import Animated, {
@@ -7,10 +8,8 @@ import Animated, {
 
 import { MicrophoneIcon } from '@/assets/icons/MicrophoneIcon';
 import { bubbleColors } from '@/constants/colors';
-import { useMetering } from '@/hooks';
-import { useTheme } from '@/hooks';
-import { useAudioStore, useSettingsStore } from '@/store';
-import { RecordingState } from '@/store/audioSlice';
+import { useMetering, useTheme } from '@/hooks';
+import { audio$, audioActions, settings$, RecordingState } from '@/store';
 
 // Live Activity management — expo-widgets
 const updateLiveActivity = (_state: RecordingState): void => {
@@ -20,9 +19,9 @@ const updateLiveActivity = (_state: RecordingState): void => {
 export function LensBubble(): React.ReactElement | null {
   const { isDark, color } = useTheme();
   const bubbleTheme = bubbleColors(isDark);
-  const recordingState = useAudioStore((s) => s.recordingState);
-  const bubbleEnabled = useSettingsStore((s) => s.bubbleEnabled);
-  const resetAudioState = useAudioStore((s) => s.resetAudioState);
+  const recordingState = useSelector(() => audio$.recordingState.get());
+  const bubbleEnabled = useSelector(() => settings$.bubbleEnabled.get());
+  const { resetAudioState } = audioActions;
 
   const liveAmplitude = useMetering();
 

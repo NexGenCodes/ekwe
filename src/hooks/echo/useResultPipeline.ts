@@ -1,12 +1,14 @@
+import { useSelector } from '@legendapp/state/react';
 import { File as ExpoFile } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { useState, useCallback, useEffect } from 'react';
-import { Alert } from 'react-native';
+
+import { useTranscription } from '../useTranscription';
+import { useTranslation } from '../useTranslation';
 
 import { ErrorMessages } from '@/constants/errors';
-import { useTranscription } from '@/hooks';
-import { useTranslation } from '@/hooks';
-import { useHistoryStore, useSettingsStore } from '@/store';
+import { history$, historyActions, settings$ } from '@/store';
+import { AppAlert } from '@/utils/alert';
 
 export interface UseResultPipelineProps {
   uri?: string;
@@ -17,6 +19,18 @@ export interface UseResultPipelineProps {
   isHistoryReplay?: boolean;
 }
 
+export interface UseResultPipelineReturn {
+  transcript: string;
+  translation: string | null;
+  sourceLang: string;
+  targetLang: string;
+  isProcessing: boolean;
+  hasPolished: boolean;
+  isTranslating: boolean;
+  isHistoryReplay: boolean;
+  handleTranslate: () => Promise<void>;
+}
+
 export const useResultPipeline = ({
   uri,
   entryId,
@@ -24,11 +38,13 @@ export const useResultPipeline = ({
   initialSourceLang,
   initialTargetLang,
   isHistoryReplay = false,
-}: UseResultPipelineProps) => {
-  const entries = useHistoryStore((s) => s.entries);
-  const addEntry = useHistoryStore((s) => s.addEntry);
-  const defaultSourceLang = useSettingsStore((s) => s.selectedLanguages[0]);
-  const defaultTargetLang = useSettingsStore((s) => s.targetLanguage);
+}: UseResultPipelineProps): UseResultPipelineReturn => {
+  const entries = useSelector(() => history$.entries.get());
+  const { addEntry } = historyActions;
+  const defaultSourceLang = useSelector(() =>
+    settings$.selectedLanguages[0].get(),
+  );
+  const defaultTargetLang = useSelector(() => settings$.targetLanguage.get());
 
   const foundEntry = entryId ? entries.find((e) => e.id === entryId) : null;
   const isReplay = !!foundEntry || isHistoryReplay;
@@ -50,25 +66,28 @@ export const useResultPipeline = ({
   const [hasPolished, setHasPolished] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
 
-  const { mutateAsync: transcribe } = useTranscription();
-  const { mutateAsync: translate } = useTranslation();
+  const { transcribe } = useTranscription();
+  const { translate } = useTranslation();
 
   const processSharedAudio = useCallback(
     async (audioUri: string): Promise<void> => {
       setIsProcessing(true);
       try {
-        const txResult = await transcribe({
-          audio: {
-            uri: audioUri,
-            durationMs: 0,
-            trimStartMs: 0,
-            trimEndMs: 0,
-            hasSpeech: true,
-            averageDb: -40,
-            meteringData: [],
-          },
-          sourceLang,
+        const txResultResponse = await transcribe({
+          uri: audioUri,
+          durationMs: 0,
+          trimStartMs: 0,
+          trimEndMs: 0,
+          hasSpeech: true,
+          averageDb: -40,
+          meteringData: [],
         });
+
+        if (!txResultResponse.ok) {
+          throw new Error(txResultResponse.error);
+        }
+
+        const txResult = txResultResponse.value;
 
         setTranscript(txResult.transcript);
 
@@ -94,7 +113,7 @@ export const useResultPipeline = ({
         setHasPolished(true);
       } catch (err) {
         const error = err as Error;
-        Alert.alert(
+        AppAlert.error(
           'Transcription Failed',
           ErrorMessages[error.message as keyof typeof ErrorMessages] ??
             'Could not process the voice note.',
@@ -116,16 +135,20 @@ export const useResultPipeline = ({
     if (!transcript) return;
     setIsTranslating(true);
     try {
-      const trResult = await translate({
-        text: transcript,
+      const trResultResponse = await translate(
+        transcript,
         sourceLang,
         targetLang,
-      });
+      );
 
-      setTranslation(trResult.translation);
+      if (!trResultResponse.ok) {
+        throw new Error(trResultResponse.error);
+      }
+
+      setTranslation(trResultResponse.value.translation);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      Alert.alert('Translation Failed', 'Try again in a moment.');
+      AppAlert.error('Translation Failed', 'Try again in a moment.');
     } finally {
       setIsTranslating(false);
     }

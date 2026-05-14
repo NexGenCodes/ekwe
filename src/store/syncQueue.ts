@@ -1,8 +1,8 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { observable } from '@legendapp/state';
+import { persistObservable } from '@legendapp/state/persist';
 
 import { supabase } from '@/services/supabase';
-import { mmkvStorage } from '@/store/mmkvStorage';
+import { ObservablePersistMMKVCustom } from '@/store/mmkvPlugin';
 
 export interface SyncEntry {
   id: string;
@@ -20,53 +20,47 @@ export interface SyncQueueState {
   isSyncing: boolean;
 }
 
-export interface SyncQueueActions {
-  enqueue: (entry: SyncEntry) => void;
-  flushQueue: () => Promise<void>;
-}
+export const syncQueue$ = observable<SyncQueueState>({
+  queue: [],
+  isSyncing: false,
+});
 
-export const useSyncQueue = create<SyncQueueState & SyncQueueActions>()(
-  persist(
-    (set, get) => ({
-      queue: [],
-      isSyncing: false,
+persistObservable(syncQueue$, {
+  local: 'ekwe-sync-queue',
+  pluginLocal: ObservablePersistMMKVCustom,
+});
 
-      enqueue: (entry: SyncEntry): void => {
-        set((state) => {
-          // Prevent duplicate queue entries based on ID
-          if (state.queue.find((item) => item.id === entry.id)) return state;
-          return { queue: [...state.queue, entry] };
-        });
-      },
+// Actions
+export const syncQueueActions = {
+  enqueue: (entry: SyncEntry): void => {
+    const queue = syncQueue$.queue.get();
+    if (queue.find((item) => item.id === entry.id)) return;
+    syncQueue$.queue.push(entry);
+  },
 
-      flushQueue: async (): Promise<void> => {
-        const { queue, isSyncing } = get();
-        if (queue.length === 0 || isSyncing) return;
+  flushQueue: async (): Promise<void> => {
+    const { queue, isSyncing } = syncQueue$.get();
+    if (queue.length === 0 || isSyncing) return;
 
-        set({ isSyncing: true });
+    syncQueue$.isSyncing.set(true);
 
-        const successfulIds: string[] = [];
+    const successfulIds: string[] = [];
 
-        for (const entry of queue) {
-          try {
-            const { error } = await supabase.from('history').insert(entry);
-            if (!error) {
-              successfulIds.push(entry.id);
-            }
-          } catch {
-            // Silent fail, it will retry on the next flush
-          }
+    for (const entry of queue) {
+      try {
+        const { error } = await supabase.from('history').insert(entry);
+        if (!error) {
+          successfulIds.push(entry.id);
         }
+      } catch {
+        // Silent fail, it will retry on the next flush
+      }
+    }
 
-        set((state) => ({
-          queue: state.queue.filter((item) => !successfulIds.includes(item.id)),
-          isSyncing: false,
-        }));
-      },
-    }),
-    {
-      name: 'ekwe-sync-queue',
-      storage: createJSONStorage(() => mmkvStorage),
-    },
-  ),
-);
+    const currentQueue = syncQueue$.queue.get();
+    syncQueue$.queue.set(
+      currentQueue.filter((item) => !successfulIds.includes(item.id)),
+    );
+    syncQueue$.isSyncing.set(false);
+  },
+};

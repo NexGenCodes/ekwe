@@ -1,9 +1,9 @@
 import { File as ExpoFile } from 'expo-file-system';
 
 import { EkweError } from '@/constants/errors';
-import { supabase } from '@/services/supabase';
 import { ProcessedAudio } from '@/services/AudioProcessor';
-import { useAuthStore } from '@/store/authStore';
+import { supabase } from '@/services/supabase';
+import { authActions } from '@/store';
 import { Result, ok, err } from '@/types/Result';
 import { logger } from '@/utils';
 
@@ -80,7 +80,8 @@ class TranscriptionServiceClass {
       const fetchResponse = await fetch(`${workerUrl}/transcribe`, {
         method: 'POST',
         headers: {
-          Authorization: token ? `Bearer ${token}` : '',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'X-Ekwe-Key': process.env.EXPO_PUBLIC_EKWE_APP_KEY ?? '',
         },
         body: formData,
         signal,
@@ -122,7 +123,7 @@ class TranscriptionServiceClass {
       };
 
       if (data.transaction) {
-        useAuthStore.getState().updateBilling(data.transaction);
+        authActions.updateBilling(data.transaction);
       }
 
       return this.processTranscript(
@@ -168,8 +169,13 @@ class TranscriptionServiceClass {
       return err(EkweError.EMPTY_TRANSCRIPT);
     }
 
-    // Language detection
-    const detectedLang = returnedLang || sourceLang;
+    // Language detection — never let detectedLang be 'auto'
+    const detectedLang =
+      returnedLang && returnedLang !== 'auto'
+        ? returnedLang
+        : sourceLang !== 'auto'
+          ? sourceLang
+          : 'en';
 
     // Adjust word timestamps for trim offset
     const trimOffsetSeconds = audio.trimStartMs / 1000;

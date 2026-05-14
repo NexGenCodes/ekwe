@@ -1,5 +1,6 @@
 import { Env, TranscribeResult, TranslateResult } from '../types';
 import { isHallucination, getUserAgent, fetchWithTimeout, rotateKeys, TIMEOUT_FAST } from '../utils';
+import { logger } from '../logger';
 
 const GROQ_TRANSCRIBE = 'https://api.groq.com/openai/v1/audio/transcriptions';
 const GROQ_CHAT = 'https://api.groq.com/openai/v1/chat/completions';
@@ -12,6 +13,8 @@ export async function transcribe(
   env: Env,
   signal: AbortSignal,
 ): Promise<TranscribeResult | null> {
+  logger.info('[groq] Requesting transcription', { lang, size: blob.size });
+
   const res = await rotateKeys(
     env,
     'GROQ_KEY_',
@@ -35,17 +38,19 @@ export async function transcribe(
 
   if (!res?.ok) {
     const errText = await res?.text().catch(() => 'No body') || 'Unknown fetch error';
-    console.error(`[groq] Transcribe HTTP ${res?.status} error:`, errText);
+    logger.error('[groq] Transcribe HTTP error', { status: res?.status, body: errText });
     return null;
   }
 
-  const data = await res.json() as { text?: string; duration?: number };
+  const data = await res.json() as { text?: string; duration?: number; language?: string };
   const durationMs = data.duration ? data.duration * 1000 : undefined;
 
   if (data.text && !isHallucination(data.text, durationMs)) {
-    return { text: data.text, provider: 'groq', duration: data.duration };
+    logger.info('[groq] Transcription success', { length: data.text.length, lang: data.language });
+    return { text: data.text, provider: 'groq', duration: data.duration, language: data.language };
   }
 
+  logger.warn('[groq] Transcription empty or hallucinated', { text: data.text });
   return null;
 }
 
@@ -58,6 +63,8 @@ export async function translate(
   env: Env,
   signal: AbortSignal,
 ): Promise<TranslateResult | null> {
+  logger.info('[groq] Requesting translation', { targetLang, sourceLang });
+
   const res = await rotateKeys(
     env,
     'GROQ_KEY_',
@@ -87,7 +94,7 @@ export async function translate(
 
   if (!res?.ok) {
     const errText = await res?.text().catch(() => 'No body') || 'Unknown fetch error';
-    console.error(`[groq] Translate HTTP ${res?.status} error:`, errText);
+    logger.error('[groq] Translate HTTP error', { status: res?.status, body: errText });
     return null;
   }
 

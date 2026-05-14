@@ -1,4 +1,5 @@
 import { Env, Tier } from './types';
+import { logger } from './logger';
 
 // ─── Constants ────────────────────────────────────────────────────
 export const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB hard limit
@@ -152,7 +153,7 @@ export async function rotateKeys(
 
     if (res.status === 429) {
       await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, 'true', { expirationTtl: 60 });
-      console.log(`[${namespace}] Key blacklisted for 60s (429)`);
+      logger.info(`[${namespace}] Key blacklisted for 60s (429)`);
       // Anti-ban Jitter: Delay 50ms - 150ms before trying the next key
       const jitterMs = Math.floor(Math.random() * 100) + 50;
       await new Promise(r => setTimeout(r, jitterMs));
@@ -197,8 +198,8 @@ export async function checkPreflight(env: Env, userId: string, requestedTier: Ti
     if (res.ok) {
       return await res.json() as PreflightResponse;
     }
-  } catch {
-    // Fail open if Supabase is down
+  } catch (err) {
+    logger.error('[preflight] check failed', { error: err });
   }
   return { allowed: true, tier_active: requestedTier, is_fallback: false, transactions_used: 0 };
 }

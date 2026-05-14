@@ -20,7 +20,6 @@ class AudioService {
   private context: AudioContext | null = null;
   private recorder: AudioRecorder | null = null;
   private analyser: AnalyserNode | null = null;
-  private recordingPath: string | null = null;
 
   private constructor() {}
 
@@ -83,7 +82,7 @@ class AudioService {
     adapter.connect(this.analyser);
   }
 
-  public async startRecording(): Promise<string> {
+  public async startRecording(): Promise<void> {
     const status = await this.checkPermission();
     if (status !== 'Granted') {
       const result = await this.requestPermission();
@@ -106,8 +105,6 @@ class AudioService {
       throw new Error(`Failed to enable file output: ${result.message}`);
     }
 
-    this.recordingPath = result.path;
-
     const startResult = this.recorder.start();
     if (startResult.status !== 'success') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -116,8 +113,6 @@ class AudioService {
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    return this.recordingPath;
   }
 
   public async stopRecording(): Promise<{ path: string; duration: number }> {
@@ -135,8 +130,7 @@ class AudioService {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     const duration = result.duration * 1000; // Convert to ms
-    const path = result.path;
-    this.recordingPath = null;
+    const path = result.paths[0];
 
     // Optimal Performance: Suspend context when not in use
     if (this.context && this.context.state === 'running') {

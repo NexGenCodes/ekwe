@@ -39,4 +39,8 @@ export const STEP_METADATA = {
     title: 'Results',
     showBadge: true,
   },
+  Error: {
+    title: 'Something went wrong',
+    showBadge: true,
+  },
 };

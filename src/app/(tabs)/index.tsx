@@ -1,3 +1,4 @@
+import { useSelector } from '@legendapp/state/react';
 import { useRouter } from 'expo-router';
 import { Settings, Clock, Activity, Zap } from 'lucide-react-native';
 import React from 'react';
@@ -6,13 +7,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EkweWordmark } from '@/assets/icons/EkweWordmark';
 import { AccountAvatar } from '@/components';
+import { Card, IconContainer } from '@/components/ui';
 import { useTheme } from '@/hooks';
-import { useAuthStore } from '@/store/authStore';
+import { auth$, history$ } from '@/store';
 
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
   const { color } = useTheme();
-  const user = useAuthStore((s) => s.user);
+  const user = useSelector(() => auth$.user.get());
+  const entries = useSelector(() => history$.entries.get());
+
+  const totalTranslations = entries.filter((e) => !!e.translation).length;
+  const totalSeconds = entries.reduce((acc, e) => acc + (e.duration || 0), 0);
+  const totalMinutes = Math.round(totalSeconds / 60);
 
   const textColor = color.foreground;
   const mutedColor = color.muted;
@@ -55,16 +62,10 @@ export default function HomeScreen(): React.ReactElement {
 
         {/* Quick Stats Grid */}
         <View className="flex-row justify-between mb-8">
-          <View
-            style={{ backgroundColor: cardColor, borderColor }}
-            className="flex-1 rounded-3xl p-5 border mr-2"
-          >
-            <View
-              className="w-10 h-10 rounded-full items-center justify-center mb-3"
-              style={{ backgroundColor: primaryColor + '20' }}
-            >
+          <Card style={{ flex: 1, marginRight: 8, padding: 20 }}>
+            <IconContainer style={{ marginBottom: 12 }}>
               <Activity size={20} color={primaryColor} />
-            </View>
+            </IconContainer>
             <Text
               style={{ color: mutedColor }}
               className="font-body text-sm mb-1"
@@ -75,20 +76,14 @@ export default function HomeScreen(): React.ReactElement {
               style={{ color: textColor }}
               className="font-display text-2xl"
             >
-              24
+              {totalTranslations}
             </Text>
-          </View>
+          </Card>
 
-          <View
-            style={{ backgroundColor: cardColor, borderColor }}
-            className="flex-1 rounded-3xl p-5 border ml-2"
-          >
-            <View
-              className="w-10 h-10 rounded-full items-center justify-center mb-3"
-              style={{ backgroundColor: primaryColor + '20' }}
-            >
+          <Card style={{ flex: 1, marginLeft: 8, padding: 20 }}>
+            <IconContainer style={{ marginBottom: 12 }}>
               <Zap size={20} color={primaryColor} />
-            </View>
+            </IconContainer>
             <Text
               style={{ color: mutedColor }}
               className="font-body text-sm mb-1"
@@ -99,9 +94,9 @@ export default function HomeScreen(): React.ReactElement {
               style={{ color: textColor }}
               className="font-display text-2xl"
             >
-              120m
+              {totalMinutes}m
             </Text>
-          </View>
+          </Card>
         </View>
 
         {/* Quick Actions */}
@@ -119,12 +114,9 @@ export default function HomeScreen(): React.ReactElement {
             className="flex-row items-center p-4 rounded-2xl border"
             activeOpacity={0.7}
           >
-            <View
-              className="w-10 h-10 rounded-full items-center justify-center mr-4"
-              style={{ backgroundColor: mutedColor + '20' }}
-            >
+            <IconContainer variant="muted" style={{ marginRight: 16 }}>
               <Clock size={20} color={textColor} />
-            </View>
+            </IconContainer>
             <View className="flex-1">
               <Text
                 style={{ color: textColor }}
@@ -144,12 +136,9 @@ export default function HomeScreen(): React.ReactElement {
             className="flex-row items-center p-4 rounded-2xl border"
             activeOpacity={0.7}
           >
-            <View
-              className="w-10 h-10 rounded-full items-center justify-center mr-4"
-              style={{ backgroundColor: mutedColor + '20' }}
-            >
+            <IconContainer variant="muted" style={{ marginRight: 16 }}>
               <Settings size={20} color={textColor} />
-            </View>
+            </IconContainer>
             <View className="flex-1">
               <Text
                 style={{ color: textColor }}

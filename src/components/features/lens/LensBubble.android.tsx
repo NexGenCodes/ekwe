@@ -1,3 +1,4 @@
+import { useSelector } from '@legendapp/state/react';
 import React, { useEffect, useRef, useMemo } from 'react';
 import { Dimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -19,10 +20,8 @@ import { ExclamationIcon } from '@/assets/icons/ExclamationIcon';
 import { MicrophoneIcon } from '@/assets/icons/MicrophoneIcon';
 import { SpinnerIcon } from '@/assets/icons/SpinnerIcon';
 import { bubbleColors } from '@/constants/colors';
-import { useBubble, useMetering } from '@/hooks';
-import { useTheme } from '@/hooks';
-import { useAudioStore, useSettingsStore } from '@/store';
-import { RecordingState } from '@/store/audioSlice';
+import { useBubble, useMetering, useTheme } from '@/hooks';
+import { audio$, audioActions, settings$, RecordingState } from '@/store';
 import { BubbleNative } from '@/utils/BubbleModule';
 
 const BUBBLE_SIZE = 52;
@@ -33,9 +32,9 @@ const DEFAULT_Y = SCREEN.height * 0.3;
 export function LensBubble(): React.ReactElement | null {
   const { isDark, color } = useTheme();
   const bubbleTheme = bubbleColors(isDark);
-  const recordingState = useAudioStore((s) => s.recordingState);
-  const resetAudioState = useAudioStore((s) => s.resetAudioState);
-  const bubbleEnabled = useSettingsStore((s) => s.bubbleEnabled);
+  const recordingState = useSelector(() => audio$.recordingState.get());
+  const { resetAudioState } = audioActions;
+  const bubbleEnabled = useSelector(() => settings$.bubbleEnabled.get());
 
   const { handleBubbleTap } = useBubble();
 

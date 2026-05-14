@@ -1,3 +1,4 @@
+import { useSelector } from '@legendapp/state/react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronDown, ArrowDownUp } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -6,29 +7,27 @@ import {
   Text,
   ScrollView,
   ActivityIndicator,
-  Alert,
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Button, ScreenHeader, LanguagePickerSheet } from '@/components/ui';
+import { LanguagePickerSheet } from '@/components';
+import { Button, Card, ScreenHeader } from '@/components/ui';
 import { getLanguageName, FLAG_MAP } from '@/constants/languages';
-import { useTranslation } from '@/hooks';
-import { useClipboard } from '@/hooks';
-import { useTheme } from '@/hooks';
-import { useHistoryStore, useSettingsStore } from '@/store';
+import { useTranslation, useClipboard, useTheme } from '@/hooks';
+import { historyActions, settings$, settingsActions } from '@/store';
+import { AppAlert } from '@/utils/alert';
 
 export default function TranslateScreen(): React.JSX.Element {
   const params = useLocalSearchParams();
   const router = useRouter();
   const { text, detectedLang = 'und' } = params;
 
-
   // Store & Settings
-  const addEntry = useHistoryStore((s) => s.addEntry);
-  const defaultTargetLang = useSettingsStore((s) => s.targetLanguage);
-  const pinnedLanguages = useSettingsStore((s) => s.pinnedLanguages);
-  const setPinnedLanguages = useSettingsStore((s) => s.setPinnedLanguages);
+  const { addEntry } = historyActions;
+  const defaultTargetLang = useSelector(() => settings$.targetLanguage.get());
+  const pinnedLanguages = useSelector(() => settings$.pinnedLanguages.get());
+  const { setPinnedLanguages } = settingsActions;
 
   const { isDark, color } = useTheme();
   const primaryColor = color.primary;
@@ -97,7 +96,7 @@ export default function TranslateScreen(): React.JSX.Element {
         sourceApp: 'shared-text',
       });
     } catch {
-      Alert.alert('Translation Failed', 'Try again in a moment.');
+      AppAlert.error('Translation Failed', 'Try again in a moment.');
     } finally {
       setIsTranslating(false);
     }
@@ -135,7 +134,7 @@ export default function TranslateScreen(): React.JSX.Element {
               >
                 <Text className="font-bodyMed text-xs uppercase tracking-widest text-muted dark:text-muted-dark mr-1">
                   {(detectedLang as string) !== 'und' &&
-                    sourceLang === (detectedLang as string)
+                  sourceLang === (detectedLang as string)
                     ? 'DETECTED · '
                     : 'SOURCE · '}
                   {getLanguageName(sourceLang)} {FLAG_MAP[sourceLang] || ''}
@@ -143,11 +142,11 @@ export default function TranslateScreen(): React.JSX.Element {
                 <ChevronDown size={14} color={mutedColor} />
               </Pressable>
             </View>
-            <View className="bg-card dark:bg-card-dark p-6 rounded-[20px] border border-border dark:border-border-dark">
+            <Card style={{ padding: 24, borderRadius: 20 }}>
               <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground-dark">
                 {text}
               </Text>
-            </View>
+            </Card>
           </View>
 
           {/* Divider & Target Language Selector */}
@@ -180,11 +179,11 @@ export default function TranslateScreen(): React.JSX.Element {
                   TRANSLATED · {getLanguageName(targetLang)}
                 </Text>
               </View>
-              <View className="bg-primary/5 dark:bg-primary-dark/10 p-6 rounded-[20px] border border-primary/20 dark:border-primary-dark/30">
+              <Card variant="accent" style={{ padding: 24, borderRadius: 20 }}>
                 <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground-dark">
                   {translation}
                 </Text>
-              </View>
+              </Card>
             </View>
           ) : (
             <View className="items-center py-6 mt-4">

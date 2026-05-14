@@ -8,7 +8,9 @@ export interface ScreenHeaderProps {
   title: string;
 }
 
-export const ScreenHeader = ({ title }: ScreenHeaderProps): React.ReactElement => {
+export const ScreenHeader = ({
+  title,
+}: ScreenHeaderProps): React.ReactElement => {
   const router = useRouter();
 
   return (

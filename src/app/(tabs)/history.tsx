@@ -1,21 +1,18 @@
+import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { FlashList } from '@shopify/flash-list';
 import React, { useMemo, useState } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
-import Animated, {
-  FadeInUp,
-  FadeInDown,
-} from 'react-native-reanimated';
+import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CloseIcon } from '@/assets/icons/CloseIcon';
 import { DrumIcon } from '@/assets/icons/DrumIcon';
 import { SearchIcon } from '@/assets/icons/SearchIcon';
 import { HistoryItem } from '@/components';
-import { useHistory } from '@/hooks';
-import { useTheme } from '@/hooks';
-import { HistoryEntry } from '@/store/historySlice';
+import { EmptyState, IconContainer } from '@/components/ui';
+import { useHistory, useTheme } from '@/hooks';
+import { HistoryEntry } from '@/store';
 
 export default function HistoryScreen(): React.JSX.Element {
   const router = useRouter();
@@ -78,7 +75,7 @@ export default function HistoryScreen(): React.JSX.Element {
     return data;
   }, [sections]);
 
-  const renderItem = ({ item }: { item: ListItem }) => {
+  const renderItem = ({ item }: { item: ListItem }): React.ReactElement => {
     if (item.type === 'header') {
       return (
         <Text className="font-bodyMed text-[11px] uppercase tracking-[0.15em] px-2 pt-6 pb-3 text-muted dark:text-zinc-500">
@@ -149,17 +146,19 @@ export default function HistoryScreen(): React.JSX.Element {
             className="flex-1 px-8 items-center justify-center pb-20"
           >
             <View className="w-full bg-card dark:bg-card-dark p-10 rounded-[32px] items-center border border-dashed border-border dark:border-zinc-800/80">
-              <View className="w-16 h-16 bg-primary/10 rounded-full items-center justify-center mb-6">
-                <DrumIcon size={32} color={color.primary} />
-              </View>
-              <Text className="font-display text-xl text-foreground dark:text-foreground-dark text-center mb-2">
-                {query.length > 0 ? 'No Matches Found' : 'Silent Library'}
-              </Text>
-              <Text className="font-body text-sm text-muted dark:text-zinc-500 text-center leading-5">
-                {query.length > 0
-                  ? "We couldn't find any transcripts matching your search."
-                  : 'Your voice note history will appear here.'}
-              </Text>
+              <EmptyState
+                icon={
+                  <IconContainer size="lg">
+                    <DrumIcon size={32} color={color.primary} />
+                  </IconContainer>
+                }
+                title={query.length > 0 ? 'No Matches Found' : 'Silent Library'}
+                subtitle={
+                  query.length > 0
+                    ? "We couldn't find any transcripts matching your search."
+                    : 'Your voice note history will appear here.'
+                }
+              />
             </View>
           </Animated.View>
         ) : (

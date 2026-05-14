@@ -2,19 +2,25 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import {
-  View,
-  Pressable, Text
-} from 'react-native';
+import { View, Pressable, Text } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
-
-import { AuthHeader, AuthFooter, SocialAuthGroup } from '@/components/features/auth';
-import { Input, PasswordInput, Divider, ErrorBanner, Button, AuthShell } from '@/components/ui';
-import { useAuthFlow } from '@/hooks';
-import { useTheme } from '@/hooks';
-import { signInWithPassword, sendOtp } from '@/services/auth';
+import {
+  AuthHeader,
+  AuthFooter,
+  SocialAuthGroup,
+  AuthShell,
+} from '@/components';
+import {
+  Input,
+  PasswordInput,
+  Divider,
+  ErrorBanner,
+  Button,
+} from '@/components/ui';
+import { useAuthFlow, useTheme } from '@/hooks';
 import { loginSchema, LoginForm } from '@/schemas/auth';
+import { signInWithPassword, sendOtp } from '@/services/auth';
 
 export default function LoginScreen(): React.JSX.Element {
   const router = useRouter();
@@ -51,9 +57,7 @@ export default function LoginScreen(): React.JSX.Element {
     <AuthShell>
       <AuthHeader subtitle="Every voice, understood." />
 
-      <Animated.View
-        entering={FadeInDown.duration(600).delay(100).springify()}
-      >
+      <Animated.View entering={FadeInDown.duration(600).delay(100).springify()}>
         <ErrorBanner message={error} />
 
         <View style={{ gap: 12, marginBottom: 12 }}>
@@ -113,10 +117,7 @@ export default function LoginScreen(): React.JSX.Element {
 
         <Divider />
 
-        <SocialAuthGroup
-          onApple={handleApple}
-          onGoogle={handleGoogle}
-        />
+        <SocialAuthGroup onApple={handleApple} onGoogle={handleGoogle} />
 
         <Pressable
           onPress={handleOtpFallback}

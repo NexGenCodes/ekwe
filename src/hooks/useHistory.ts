@@ -1,8 +1,8 @@
+import { useSelector } from '@legendapp/state/react';
 import { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 
-import { useHistoryStore, useSettingsStore } from '@/store';
-import { HistoryEntry } from '@/store/historySlice';
+import { history$, historyActions, settings$, HistoryEntry } from '@/store';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -16,11 +16,9 @@ export interface UseHistoryReturn {
 }
 
 export const useHistory = (): UseHistoryReturn => {
-  const entries = useHistoryStore((s) => s.entries);
-  const runCleanup = useHistoryStore((s) => s.runCleanup);
-  const deleteEntry = useHistoryStore((s) => s.deleteEntry);
-  const clearAll = useHistoryStore((s) => s.clearAll);
-  const retentionDays = useSettingsStore((s) => s.retentionDays);
+  const entries = useSelector(() => history$.entries.get());
+  const retentionDays = useSelector(() => settings$.retentionDays.get());
+  const { runCleanup, deleteEntry, clearAll } = historyActions;
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const cleanupTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -56,7 +54,7 @@ export const useHistory = (): UseHistoryReturn => {
       }
       subscription.remove();
     };
-  }, [retentionDays, runCleanup]);
+  }, [retentionDays]);
 
   // Sort entries newest first
   const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);

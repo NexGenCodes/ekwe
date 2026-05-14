@@ -25,28 +25,36 @@ export default {
     const url = new URL(request.url);
     let response: Response;
 
-    // Auth verification
+    // ─── Auth: Dual-Mode (JWT + App-Key Fallback) ───
     let tier: Tier = 'FREE';
     let userId = 'anonymous';
 
     const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return this.addCorsHeaders(Response.json({ error: 'UNAUTHORIZED' }, { status: 401 }), corsHeaders);
-    }
+    const appKey = request.headers.get('X-Ekwe-Key');
 
-    try {
-      const token = authHeader.split(' ')[1];
-      if (!JWKS) {
-        JWKS = createRemoteJWKSet(new URL(`${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`));
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      // Mode 1: JWT authentication (main app with session)
+      try {
+        const token = authHeader.split(' ')[1];
+        if (!JWKS) {
+          JWKS = createRemoteJWKSet(new URL(`${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`));
+        }
+        const { payload } = await jwtVerify(token, JWKS);
+        const meta = payload as JWTPayloadWithMeta;
+        userId = meta.sub || 'anonymous';
+        if (meta.app_metadata?.is_pro) {
+          tier = 'PREMIUM';
+        }
+      } catch (err) {
+        return this.addCorsHeaders(Response.json({ error: 'INVALID_TOKEN' }, { status: 401 }), corsHeaders);
       }
-      const { payload } = await jwtVerify(token, JWKS);
-      const meta = payload as JWTPayloadWithMeta;
-      userId = meta.sub || 'anonymous';
-      if (meta.app_metadata?.is_pro) {
-        tier = 'PREMIUM';
-      }
-    } catch (err) {
-      return this.addCorsHeaders(Response.json({ error: 'INVALID_TOKEN' }, { status: 401 }), corsHeaders);
+    } else if (appKey && appKey === env.EKWE_APP_KEY) {
+      // Mode 2: App-key fallback (share extension without session)
+      // Proceeds as anonymous FREE — rate-limited by IP via RATE_LIMITER binding
+      userId = 'app-anonymous';
+    } else {
+      // Mode 3: No credentials — block completely
+      return this.addCorsHeaders(Response.json({ error: 'UNAUTHORIZED' }, { status: 401 }), corsHeaders);
     }
 
     // ─── 1. PRE-FLIGHT CHECK (ATOMIC COOLDOWN) ───

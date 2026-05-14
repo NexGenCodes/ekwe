@@ -1,6 +1,7 @@
 import { EkweError } from '@/constants/errors';
 import { LANGUAGES } from '@/constants/languages';
-import { useAuthStore } from '@/store/authStore';
+import { supabase } from '@/services/supabase';
+import { authActions } from '@/store';
 import { Result, ok, err } from '@/types/Result';
 import { fetchWithRetry } from '@/utils/networkUtils';
 
@@ -37,10 +38,20 @@ class TranslationServiceClass {
     const targetName = this.getLanguageName(targetLang);
     const sourceName = this.getLanguageName(sourceLang);
 
+    // Get auth token
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
     try {
       const response = await fetchWithRetry(`${workerUrl}/translate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          'X-Ekwe-Key': process.env.EXPO_PUBLIC_EKWE_APP_KEY ?? '',
+        },
         body: JSON.stringify({
           text,
           targetLang: targetName,
@@ -68,7 +79,7 @@ class TranslationServiceClass {
       };
 
       if (data.transaction) {
-        useAuthStore.getState().updateBilling(data.transaction);
+        authActions.updateBilling(data.transaction);
       }
 
       if (

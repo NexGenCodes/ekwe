@@ -1,11 +1,11 @@
 export const logger = {
-  info: (data: Record<string, unknown>) => {
-    console.log(JSON.stringify({ level: 'INFO', timestamp: new Date().toISOString(), ...data }));
+  info: (message: string, data?: Record<string, unknown>) => {
+    console.log(JSON.stringify({ level: 'INFO', timestamp: new Date().toISOString(), message, ...data }));
   },
-  error: (data: Record<string, unknown>) => {
-    console.error(JSON.stringify({ level: 'ERROR', timestamp: new Date().toISOString(), ...data }));
+  error: (message: string, data?: Record<string, unknown>) => {
+    console.error(JSON.stringify({ level: 'ERROR', timestamp: new Date().toISOString(), message, ...data }));
   },
-  warn: (data: Record<string, unknown>) => {
-    console.warn(JSON.stringify({ level: 'WARN', timestamp: new Date().toISOString(), ...data }));
+  warn: (message: string, data?: Record<string, unknown>) => {
+    console.warn(JSON.stringify({ level: 'WARN', timestamp: new Date().toISOString(), message, ...data }));
   }
 };
