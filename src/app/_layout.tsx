@@ -1,16 +1,9 @@
 import '../../global.css';
-
-import NetInfo from '@react-native-community/netinfo';
 import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
 } from '@react-navigation/native';
-import {
-  QueryClient,
-  QueryClientProvider,
-  onlineManager,
-} from '@tanstack/react-query';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as Linking from 'expo-linking';
 import { Stack, useRouter } from 'expo-router';
@@ -21,15 +14,13 @@ import { useEffect } from 'react';
 import { AppState, Platform, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
-
 import { useSelector } from '@legendapp/state/react';
-
 import { ErrorBoundary } from '@/components';
 import { colors } from '@/constants/colors';
 import { useShareIntentHandler, useTheme, useTripleExclusivity } from '@/hooks';
 import { ShareIntentProvider } from '@/providers/ShareIntentProvider';
 import { initAuth } from '@/services/auth';
-import { settings$, auth$, syncQueueActions } from '@/store';
+import { settings$, auth$ } from '@/store';
 import { mmkv } from '@/store/mmkvStorage';
 import {
   configureNotifications,
@@ -37,16 +28,15 @@ import {
 } from '@/utils/IosNotification';
 
 // ─── Sync Theme Bootstrap ────────────────────────────────────────
-// Read the persisted settings from MMKV synchronously at module scope.
-// This runs BEFORE React mounts, ensuring NativeWind starts with the
-// correct color scheme from frame 0 — no flash-of-wrong-theme.
-// Legend-State rehydrates and takes over for reactivity.
-// Key must match the persist config in store.
 const _raw = mmkv.getString('ekwe-settings');
 if (_raw) {
   try {
-    const _pref = (JSON.parse(_raw) as { state?: { themePreference?: string } })
-      ?.state?.themePreference;
+    const parsed = JSON.parse(_raw) as {
+      themePreference?: string;
+      state?: { themePreference?: string };
+    };
+    // Legend-State saves directly at root, Zustand used `.state`
+    const _pref = parsed?.themePreference ?? parsed?.state?.themePreference;
     if (_pref === 'light' || _pref === 'dark' || _pref === 'system') {
       colorScheme.set(_pref);
     }
@@ -55,21 +45,6 @@ if (_raw) {
   }
 }
 // ─────────────────────────────────────────────────────────────────
-
-// Initialize React Query Client
-const queryClient = new QueryClient();
-
-// Configure React Query to pause/resume mutations automatically when offline/online
-onlineManager.setEventListener((setOnline): (() => void) => {
-  const unsubscribe = NetInfo.addEventListener((state) => {
-    const isConnected = !!state.isConnected;
-    setOnline(isConnected);
-    if (isConnected) {
-      syncQueueActions.flushQueue();
-    }
-  });
-  return (): void => unsubscribe();
-});
 
 SplashScreen.preventAutoHideAsync();
 
@@ -132,6 +107,8 @@ function InnerLayout(): React.ReactElement {
       background: color.background,
     },
   };
+
+  const user = useSelector(() => auth$.user.get());
 
   useEffect((): void => {
     if (isInitialized) {
@@ -211,16 +188,14 @@ function RootLayout(): React.ReactElement {
     initAuth();
 
     return (): void => {
-      deactivateKeepAwake().catch(() => {});
+      deactivateKeepAwake().catch(() => { });
     };
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <ShareIntentProvider>
-        <InnerLayout />
-      </ShareIntentProvider>
-    </QueryClientProvider>
+    <ShareIntentProvider>
+      <InnerLayout />
+    </ShareIntentProvider>
   );
 }
 

@@ -30,7 +30,7 @@ export default function HistoryScreen(): React.JSX.Element {
 
   const sections = useMemo(() => {
     const filtered = entries.filter((e) =>
-      e.transcript.toLowerCase().includes(debouncedQuery.toLowerCase()),
+      (e.transcript ?? '').toLowerCase().includes(debouncedQuery.toLowerCase()),
     );
 
     const now = Date.now();
@@ -97,7 +97,7 @@ export default function HistoryScreen(): React.JSX.Element {
     ({ item }: { item: ListItem }): React.ReactElement => {
       if (item.type === 'header') {
         return (
-          <Text className="font-bodyMed text-[11px] uppercase tracking-[0.15em] px-2 pt-6 pb-3 text-muted dark:text-zinc-500">
+          <Text className="font-bodyMed text-xs uppercase tracking-[0.15em] px-2 pt-6 pb-3 text-muted dark:text-muted">
             {item.title}
           </Text>
         );
@@ -120,21 +120,21 @@ export default function HistoryScreen(): React.JSX.Element {
   return (
     <SafeAreaView
       edges={['top']}
-      className="flex-1 bg-background dark:bg-background-dark"
+      className="flex-1 bg-background"
     >
       <View className="px-6 py-4">
-        <Text className="font-display text-[28px] tracking-tight text-foreground dark:text-foreground-dark">
+        <Text className="font-display text-[32px] tracking-tight text-foreground dark:text-foreground">
           History
         </Text>
 
         {/* Search */}
         <Animated.View
           entering={FadeInDown.duration(400).springify()}
-          className="flex-row items-center px-5 h-14 rounded-[20px] mt-4 border bg-card dark:bg-card-dark border-border/50 dark:border-zinc-800/80 shadow-sm"
+          className="flex-row items-center px-5 h-14 rounded-[20px] mt-4 border bg-card border-border/50 shadow-sm"
         >
           <SearchIcon size={20} color={mutedColor} />
           <TextInput
-            className="flex-1 ml-3 font-body text-[15px] text-foreground dark:text-foreground-dark"
+            className="flex-1 ml-3 font-body text-base text-foreground"
             placeholder="Search transcripts..."
             placeholderTextColor={mutedColor}
             value={query}
@@ -146,7 +146,8 @@ export default function HistoryScreen(): React.JSX.Element {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setQuery('');
               }}
-              className="p-2"
+              hitSlop={12}
+              className="p-2 active:scale-95 transition-all duration-200"
             >
               <CloseIcon size={18} color={mutedColor} />
             </Pressable>
@@ -154,13 +155,13 @@ export default function HistoryScreen(): React.JSX.Element {
         </Animated.View>
       </View>
 
-      <View className="flex-1 bg-background dark:bg-background-dark">
+      <View className="flex-1 bg-background">
         {sections.length === 0 ? (
           <Animated.View
             entering={FadeInUp.duration(600).springify()}
             className="flex-1 px-8 items-center justify-center pb-20"
           >
-            <View className="w-full bg-card dark:bg-card-dark p-10 rounded-[32px] items-center border border-dashed border-border dark:border-zinc-800/80">
+            <View className="w-full bg-card p-10 rounded-[32px] items-center border border-dashed border-border">
               <EmptyState
                 icon={
                   <IconContainer size="lg">
@@ -182,6 +183,9 @@ export default function HistoryScreen(): React.JSX.Element {
               data={flatData}
               renderItem={renderItem}
               getItemType={(item) => item.type}
+              keyExtractor={(item, index) => 
+                item.type === 'header' ? `header-${item.title}` : `entry-${item.data.id || index}`
+              }
               // @ts-expect-error - FlashList 2.0.2 typing issue
               estimatedItemSize={100}
               contentContainerStyle={{ paddingBottom: 40 }}

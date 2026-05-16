@@ -15,25 +15,25 @@ import { LanguagePickerSheet } from '@/components';
 import { Button, Card, ScreenHeader } from '@/components/ui';
 import { getLanguageName, FLAG_MAP } from '@/constants/languages';
 import { useTranslation, useClipboard, useTheme } from '@/hooks';
-import { historyActions, settings$, settingsActions } from '@/store';
+import { settings$, settingsActions, auth$ } from '@/store';
+import { HistoryService } from '@/services/HistoryService';
 import { AppAlert } from '@/utils/alert';
 
 export default function TranslateScreen(): React.JSX.Element {
   const params = useLocalSearchParams();
-  const router = useRouter();
   const { text, detectedLang = 'und' } = params;
 
   // Store & Settings
-  const { addEntry } = historyActions;
+  const userSession = useSelector(() => auth$.session.get());
   const defaultTargetLang = useSelector(() => settings$.targetLanguage.get());
   const pinnedLanguages = useSelector(() => settings$.pinnedLanguages.get());
   const { setPinnedLanguages } = settingsActions;
 
-  const { isDark, color } = useTheme();
+  const { color } = useTheme();
   const primaryColor = color.primary;
   const mutedColor = color.muted;
   const { copied, copy } = useClipboard();
-  const { mutateAsync: translate } = useTranslation();
+  const { translate } = useTranslation();
 
   // Local State
   const [sourceLang, setSourceLang] = useState<string>(
@@ -77,24 +77,32 @@ export default function TranslateScreen(): React.JSX.Element {
     if (!text) return;
     setIsTranslating(true);
     try {
-      const result = await translate({
-        text: text as string,
+      const result = await translate(
+        text as string,
         sourceLang,
         targetLang,
-      });
-      setTranslation(result.translation);
+      );
 
-      // Save to history
-      addEntry({
-        id: `tex_${Date.now()}`,
-        sourceLang,
-        targetLang,
-        transcript: text as string,
-        translation: result.translation,
-        timestamp: Date.now(),
-        duration: 0,
-        sourceApp: 'shared-text',
-      });
+      if (!result.ok) {
+        throw new Error(result.error);
+      }
+
+      const translationText = result.value.translation;
+      setTranslation(translationText);
+
+      // Save to history via HistoryService
+      await HistoryService.recordTranslation(
+        {
+          sourceLang,
+          targetLang,
+          transcript: text as string,
+          translation: translationText,
+          duration: 0,
+          sourceApp: 'shared-text',
+          provider: 'gemini',
+        },
+        userSession as any,
+      );
     } catch {
       AppAlert.error('Translation Failed', 'Try again in a moment.');
     } finally {
@@ -115,13 +123,13 @@ export default function TranslateScreen(): React.JSX.Element {
   return (
     <SafeAreaView
       edges={['top']}
-      className="flex-1 bg-background dark:bg-background-dark"
+      className="flex-1 bg-background dark:bg-background"
     >
       {/* Header */}
       <ScreenHeader title="Translate" />
 
       <ScrollView
-        className="flex-1 px-6 bg-background dark:bg-background-dark"
+        className="flex-1 px-6 bg-background dark:bg-background"
         contentContainerStyle={{ paddingBottom: 40 }}
       >
         <View className="mt-8">
@@ -132,9 +140,9 @@ export default function TranslateScreen(): React.JSX.Element {
                 onPress={() => openPicker('source')}
                 className="flex-row items-center active:opacity-60"
               >
-                <Text className="font-bodyMed text-xs uppercase tracking-widest text-muted dark:text-muted-dark mr-1">
+                <Text className="font-bodyMed text-xs uppercase tracking-widest text-muted dark:text-muted mr-1">
                   {(detectedLang as string) !== 'und' &&
-                  sourceLang === (detectedLang as string)
+                    sourceLang === (detectedLang as string)
                     ? 'DETECTED · '
                     : 'SOURCE · '}
                   {getLanguageName(sourceLang)} {FLAG_MAP[sourceLang] || ''}
@@ -143,7 +151,7 @@ export default function TranslateScreen(): React.JSX.Element {
               </Pressable>
             </View>
             <Card style={{ padding: 24, borderRadius: 20 }}>
-              <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground-dark">
+              <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground">
                 {text}
               </Text>
             </Card>
@@ -153,18 +161,18 @@ export default function TranslateScreen(): React.JSX.Element {
           <View className="flex-row items-center justify-between mt-2 mb-6 px-2">
             <Pressable
               onPress={handleSwap}
-              className="p-3 rounded-full bg-card dark:bg-card-dark border border-border dark:border-border-dark active:scale-95"
+              className="p-3 rounded-full bg-card dark:bg-card border border-border dark:border-border active:scale-95"
             >
               <ArrowDownUp size={20} color={mutedColor} />
             </Pressable>
 
-            <View className="flex-1 h-[1px] bg-border dark:bg-border-dark mx-4" />
+            <View className="flex-1 h-[1px] bg-border dark:bg-border mx-4" />
 
             <Pressable
               onPress={() => openPicker('target')}
-              className="flex-row items-center bg-card dark:bg-card-dark border border-border dark:border-border-dark px-4 py-3 rounded-full active:scale-95"
+              className="flex-row items-center bg-card dark:bg-card border border-border dark:border-border px-4 py-3 rounded-full active:scale-95"
             >
-              <Text className="font-bodyMed text-base text-foreground dark:text-foreground-dark mr-2">
+              <Text className="font-bodyMed text-base text-foreground dark:text-foreground mr-2">
                 {getLanguageName(targetLang)} {FLAG_MAP[targetLang] || ''}
               </Text>
               <ChevronDown size={16} color={mutedColor} />
@@ -175,12 +183,12 @@ export default function TranslateScreen(): React.JSX.Element {
           {translation ? (
             <View className="mt-2 mb-8">
               <View className="flex-row justify-between items-center mb-3">
-                <Text className="font-bodyMed text-xs uppercase tracking-widest text-primary dark:text-primary-dark">
+                <Text className="font-bodyMed text-xs uppercase tracking-widest text-primary dark:text-primary">
                   TRANSLATED · {getLanguageName(targetLang)}
                 </Text>
               </View>
               <Card variant="accent" style={{ padding: 24, borderRadius: 20 }}>
-                <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground-dark">
+                <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground">
                   {translation}
                 </Text>
               </Card>
@@ -205,7 +213,7 @@ export default function TranslateScreen(): React.JSX.Element {
 
       {/* Global Action Bar */}
       {!isTranslating && translation && (
-        <View className="px-6 py-8 border-t border-border dark:border-border-dark bg-background dark:bg-background-dark">
+        <View className="px-6 py-8 border-t border-border dark:border-border bg-background dark:bg-background">
           <Button
             variant="secondary"
             size="large"

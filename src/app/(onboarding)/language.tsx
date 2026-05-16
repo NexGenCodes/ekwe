@@ -71,11 +71,11 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-background dark:bg-background-dark">
+    <SafeAreaView className="flex-1 bg-background dark:bg-background">
       <View className="px-6 pt-10 pb-4">
         <Animated.Text
           entering={FadeInDown.duration(600).springify()}
-          className="text-3xl font-display text-foreground dark:text-foreground-dark tracking-tight mb-2"
+          className="text-3xl font-display text-foreground dark:text-foreground tracking-tight mb-2"
         >
           What languages do you use?
         </Animated.Text>
@@ -143,7 +143,7 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
         </Animated.View>
       </ScrollView>
 
-      <View className="px-6 pb-12 pt-4 border-t border-border dark:border-zinc-800 bg-background dark:bg-background-dark">
+      <View className="px-6 pb-12 pt-4 border-t border-border dark:border-zinc-800 bg-background dark:bg-background">
         <Button
           variant="primary"
           size="large"

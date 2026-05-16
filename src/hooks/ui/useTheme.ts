@@ -1,5 +1,5 @@
 import { useColorScheme } from 'nativewind';
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { useColorScheme as useSystemColorScheme } from 'react-native';
 
 import { getColor, bubbleColors } from '@/constants/colors';
@@ -9,6 +9,7 @@ export interface ThemeTokens {
   setColorScheme: (scheme: 'light' | 'dark' | 'system') => void;
   color: {
     primary: string;
+    secondary: string;
     onPrimary: string;
     foreground: string;
     background: string;
@@ -54,6 +55,7 @@ export const useTheme = (): ThemeTokens => {
   const color = useMemo(
     () => ({
       primary: getColor('primary', isDark),
+      secondary: getColor('secondary', isDark),
       onPrimary: getColor('onPrimary', isDark),
       foreground: getColor('foreground', isDark),
       background: getColor('background', isDark),
@@ -82,11 +84,19 @@ export const useTheme = (): ThemeTokens => {
     [],
   );
 
-  return {
-    colorScheme: colorScheme as 'light' | 'dark' | 'system',
-    setColorScheme,
-    isDark,
-    color,
-    shadow,
-  };
+  const setScheme = useCallback(
+    (scheme: 'light' | 'dark' | 'system') => setColorScheme(scheme),
+    [setColorScheme],
+  );
+
+  return useMemo(
+    () => ({
+      colorScheme: colorScheme as 'light' | 'dark' | 'system',
+      setColorScheme: setScheme,
+      isDark,
+      color,
+      shadow,
+    }),
+    [colorScheme, setScheme, isDark, color, shadow],
+  );
 };

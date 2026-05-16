@@ -26,8 +26,20 @@ const initialAuth: AuthState = {
 
 export const auth$ = observable<AuthState>(initialAuth);
 
-persistObservable(auth$, {
-  local: 'ekwe-auth-billing',
+persistObservable(auth$.isPro, {
+  local: 'ekwe-auth-isPro',
+  pluginLocal: ObservablePersistMMKVCustom,
+});
+persistObservable(auth$.transactionsUsed, {
+  local: 'ekwe-auth-transactions',
+  pluginLocal: ObservablePersistMMKVCustom,
+});
+persistObservable(auth$.activeTier, {
+  local: 'ekwe-auth-tier',
+  pluginLocal: ObservablePersistMMKVCustom,
+});
+persistObservable(auth$.isFallback, {
+  local: 'ekwe-auth-fallback',
   pluginLocal: ObservablePersistMMKVCustom,
 });
 

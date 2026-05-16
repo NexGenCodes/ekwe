@@ -32,6 +32,7 @@ export const Card = ({
   padding = 'md',
   overflow = false,
   style,
+  className,
 }: CardProps): React.ReactElement => {
   const { color } = useTheme();
 
@@ -60,6 +61,7 @@ export const Card = ({
 
   return (
     <View
+      className={className}
       style={[
         {
           borderRadius: 24,

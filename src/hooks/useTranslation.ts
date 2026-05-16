@@ -1,10 +1,12 @@
-import { useSelector } from '@legendapp/state/react';
 import { useCallback, useState } from 'react';
+import { history$ } from '@/store';
+import { supabase } from '@/services/supabase';
 
 import { EkweError } from '@/constants/errors';
 import { TranslationService, TranslationResult } from '@/services/Translation';
-import { audioActions, history$, historyActions } from '@/store';
+import { audioActions } from '@/store';
 import { Result, ok, err } from '@/types/Result';
+import { logger } from '@/utils';
 
 export interface UseTranslationReturn {
   translate: (
@@ -22,7 +24,6 @@ export const useTranslation = (): UseTranslationReturn => {
   const [translation, setTranslation] = useState<string | null>(null);
 
   const { setError } = audioActions;
-  const entries = useSelector(() => history$.entries.get());
 
   const translate = useCallback(
     async (
@@ -48,22 +49,26 @@ export const useTranslation = (): UseTranslationReturn => {
 
       setTranslation(result.value.translation);
 
-      // Update history entry with translation
+      // Update history entry with translation in PowerSync
       if (historyEntryId !== undefined) {
-        const currentEntries = history$.entries.get();
-        const existing = currentEntries.find((e) => e.id === historyEntryId);
-        if (existing !== undefined) {
-          historyActions.updateEntry(historyEntryId, {
-            ...existing,
-            translation: result.value.translation,
-            targetLang,
+        try {
+          history$[historyEntryId].translation.set(result.value.translation);
+          history$[historyEntryId].targetLang.set(targetLang);
+
+          supabase.from('history').update({
+            translation_text: result.value.translation,
+            target_lang: targetLang
+          }).eq('id', historyEntryId).then((res) => {
+            if (res.error) logger.error(res.error);
           });
+        } catch (e) {
+          logger.error('[Translation] Failed to update history entry in local state', e);
         }
       }
 
       return ok(result.value);
     },
-    [entries],
+    [setError],
   );
 
   return { translate, isTranslating, translation };

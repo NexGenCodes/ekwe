@@ -2,6 +2,7 @@ import { useSelector } from '@legendapp/state/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { EkweError } from '@/constants/errors';
+import { HistoryService } from '@/services/HistoryService';
 import { ProcessedAudio } from '@/services/AudioProcessor';
 import {
   TranscriptionService,
@@ -11,14 +12,16 @@ import {
   audio$,
   audioActions,
   settings$,
-  historyActions,
+  auth$,
   RecordingState,
 } from '@/store';
 import { Result, ok, err } from '@/types/Result';
+import { logger } from '@/utils';
 
 export interface UseTranscriptionReturn {
   transcribe: (
     audio: ProcessedAudio,
+    overrideLang?: string,
   ) => Promise<Result<TranscriptionResult, EkweError>>;
   cancelTranscription: () => void;
   isTranscribing: boolean;
@@ -38,11 +41,11 @@ export const useTranscription = (): UseTranscriptionReturn => {
 
   const sourceLang = useSelector(() => audio$.sourceLang.get());
   const sessionId = useSelector(() => audio$.sessionId.get());
+  const userSession = useSelector(() => auth$.session.get());
   const selectedLanguages = useSelector(() =>
     settings$.selectedLanguages.get(),
   );
   const { setError, appendTranscript, setRecordingState } = audioActions;
-  const { addEntry } = historyActions;
 
   const cancelTranscription = useCallback(() => {
     if (abortControllerRef.current) {
@@ -62,6 +65,7 @@ export const useTranscription = (): UseTranscriptionReturn => {
   const transcribe = useCallback(
     async (
       audio: ProcessedAudio,
+      overrideLang?: string,
     ): Promise<Result<TranscriptionResult, EkweError>> => {
       // Cancel previous if any
       cancelTranscription();
@@ -72,7 +76,7 @@ export const useTranscription = (): UseTranscriptionReturn => {
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      const lang = sourceLang ?? selectedLanguages[0] ?? 'en';
+      const lang = overrideLang ?? sourceLang ?? selectedLanguages[0] ?? 'en';
 
       try {
         const result = await TranscriptionService.transcribe(
@@ -105,18 +109,24 @@ export const useTranscription = (): UseTranscriptionReturn => {
           setMismatch({ detected, suggested: lang });
         }
 
-        // Save to history
+        // Save to history via HistoryService
         if (sessionId !== null) {
-          addEntry({
-            id: sessionId,
-            sourceLang: lang,
-            targetLang: selectedLanguages[0] ?? 'en',
-            transcript,
-            translation: null,
-            timestamp: Date.now(),
-            duration: Math.round(audio.durationMs / 1000),
-            sourceApp: null,
-          });
+          if (!userSession) {
+            logger.warn('[Transcription] No user session, skipping history save');
+          } else {
+            HistoryService.recordTranslation(
+              {
+                sourceLang: lang,
+                targetLang: selectedLanguages[0] ?? 'en',
+                transcript,
+                translation: null,
+                duration: Math.round(audio.durationMs / 1000),
+                sourceApp: 'ekwe',
+                provider: 'gemini', // Default or from context
+              },
+              userSession,
+            ).catch((e) => logger.error('Failed to record history', e));
+          }
         }
 
         return ok(result.value);
@@ -131,7 +141,7 @@ export const useTranscription = (): UseTranscriptionReturn => {
         return err(EkweError.TRANSCRIPTION_FAIL);
       }
     },
-    [sourceLang, selectedLanguages, sessionId, cancelTranscription],
+    [sourceLang, selectedLanguages, sessionId, userSession, cancelTranscription, setError, setRecordingState, appendTranscript],
   );
 
   return {

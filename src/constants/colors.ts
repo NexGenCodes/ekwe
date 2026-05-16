@@ -3,16 +3,17 @@
 // Palette: blue primary, black/white, + status colors. That's it.
 
 export const colors = {
-  // WARNING [NATIVE SYNC]: If you change 'primary.dark' (#1A7EC8), you MUST manually
-  // update the hex color in `ShareActivity.kt` down in the `expo.modules.ekwenative` folder.
+  // WARNING [NATIVE SYNC]: If you change 'secondary.DEFAULT' (#1A7EC8), you MUST manually
+  // update the hex color in `ShareActivity.kt` down in the `modules/ekwe-native` folder.
   // Kotlin requires a hardcoded hex for the instant-boot "Echo" native spinner.
-  primary: { DEFAULT: '#09090B', dark: '#3B82F6' }, // Zinc 950 light, Bright Blue dark
-  onPrimary: { DEFAULT: '#FFFFFF', dark: '#FFFFFF' },
-  background: { DEFAULT: '#FFFFFF', dark: '#09090B' }, // Pure white light, premium true OLED-friendly deep Zinc
-  foreground: { DEFAULT: '#09090B', dark: '#F8FAFC' }, // Zinc 950 light, Slate 50 dark
-  card: { DEFAULT: '#F4F4F5', dark: '#18181B' }, // Zinc 100 for light, Zinc 900 for dark
-  muted: { DEFAULT: '#52525B', dark: '#A1A1AA' }, // Zinc 600 light, Zinc 400 dark (High contrast secondary text)
-  border: { DEFAULT: '#E4E4E7', dark: '#27272A' }, // Zinc 200 light, Zinc 800 dark
+  primary: { DEFAULT: '#0A1F30', dark: '#F8FAFC' }, // Navy light, Slate 50 dark
+  secondary: { DEFAULT: '#1A7EC8', dark: '#1A7EC8' }, // Accent Blue
+  onPrimary: { DEFAULT: '#FFFFFF', dark: '#09090B' },
+  background: { DEFAULT: '#FFFFFF', dark: '#09090B' }, // Pure White light, Midnight Noir dark
+  foreground: { DEFAULT: '#09090B', dark: '#F8FAFC' },
+  card: { DEFAULT: '#FAFAFA', dark: '#18181B' }, // Slightly off-white for cards on pure white background
+  muted: { DEFAULT: '#52525B', dark: '#A1A1AA' },
+  border: { DEFAULT: '#E4E4E7', dark: '#27272A' },
   success: { DEFAULT: '#10B981', dark: '#10B981' },
   warning: { DEFAULT: '#F59E0B', dark: '#F59E0B' },
   error: { DEFAULT: '#EF4444', dark: '#EF4444' },

@@ -11,7 +11,8 @@ import EkweNative from '../../../modules/ekwe-native';
 import { AudioCapture } from '@/services/AudioCapture';
 import { TranscriptionService } from '@/services/Transcription';
 import { TranslationService } from '@/services/Translation';
-import { audioActions, settings$, historyActions } from '@/store';
+import { auth$, audioActions, settings$ } from '@/store';
+import { HistoryService } from '@/services/HistoryService';
 import { logger } from '@/utils';
 import { BubbleNative } from '@/utils/BubbleModule';
 import { AppAlert } from '@/utils/alert';
@@ -28,6 +29,7 @@ const handleEchoSession = async (
   echoSessionAbort?.abort();
   echoSessionAbort = new AbortController();
   const signal = echoSessionAbort.signal;
+  const userSession = auth$.session.get();
 
   logger.info(
     `[EkweEcho] App in background — transcribing voice from ${sourceApp}`,
@@ -72,18 +74,20 @@ const handleEchoSession = async (
       if (signal.aborted) return;
 
       // 4. Persistence to History (Crucial: Background sessions must be saved)
-      historyActions.addEntry({
-        id: crypto.randomUUID(),
-        sourceLang: data.sourceLang,
-        targetLang,
-        transcript: data.transcript,
-        translation: translationResult.ok
-          ? translationResult.value.translation
-          : null,
-        timestamp: Date.now(),
-        duration: data.durationSeconds,
-        sourceApp,
-      });
+      await HistoryService.recordTranslation(
+        {
+          sourceLang: data.sourceLang,
+          targetLang,
+          transcript: data.transcript,
+          translation: translationResult.ok
+            ? translationResult.value.translation
+            : null,
+          duration: data.durationSeconds,
+          sourceApp,
+          provider: 'gemini',
+        },
+        userSession as any,
+      );
 
       // 5. Dismiss Overlay
       BubbleNative.dismissOverlay();

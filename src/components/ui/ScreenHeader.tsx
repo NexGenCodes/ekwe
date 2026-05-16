@@ -14,8 +14,8 @@ export const ScreenHeader = ({
   const router = useRouter();
 
   return (
-    <View className="px-6 py-4 flex-row justify-between items-center bg-background dark:bg-background-dark border-b border-border dark:border-border-dark">
-      <Text className="font-display text-xl text-foreground dark:text-foreground-dark">
+    <View className="px-6 py-4 flex-row justify-between items-center bg-background dark:bg-background border-b border-border dark:border-border">
+      <Text className="font-display text-xl text-foreground dark:text-foreground">
         {title}
       </Text>
       <Button

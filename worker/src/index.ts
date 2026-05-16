@@ -39,7 +39,10 @@ export default {
         if (!JWKS) {
           JWKS = createRemoteJWKSet(new URL(`${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`));
         }
-        const { payload } = await jwtVerify(token, JWKS);
+        const { payload } = await jwtVerify(token, JWKS, {
+          issuer: `${env.SUPABASE_URL}/auth/v1`,
+          audience: 'authenticated'
+        });
         const meta = payload as JWTPayloadWithMeta;
         userId = meta.sub || 'anonymous';
         if (meta.app_metadata?.is_pro) {

@@ -20,7 +20,7 @@ export const PageDots = ({
             key={i}
             className={`h-1.5 rounded-full ${
               isActive
-                ? 'w-8 bg-primary dark:bg-primary-dark'
+                ? 'w-8 bg-primary dark:bg-primary'
                 : 'w-1.5 bg-zinc-300 dark:bg-zinc-800'
             }`}
           />

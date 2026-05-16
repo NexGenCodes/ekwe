@@ -1,13 +1,15 @@
-import { useSelector } from '@legendapp/state/react';
+
 import { File as ExpoFile } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useSelector } from '@legendapp/state/react';
 
 import { useTranscription } from '../useTranscription';
 import { useTranslation } from '../useTranslation';
 
 import { ErrorMessages } from '@/constants/errors';
-import { history$, historyActions, settings$ } from '@/store';
+import { settings$, auth$, HistoryEntry, history$ } from '@/store';
+import { HistoryService } from '@/services/HistoryService';
 import { AppAlert } from '@/utils/alert';
 
 export interface UseResultPipelineProps {
@@ -39,14 +41,11 @@ export const useResultPipeline = ({
   initialTargetLang,
   isHistoryReplay = false,
 }: UseResultPipelineProps): UseResultPipelineReturn => {
-  // Targeted selector: only re-renders when THIS specific entry changes,
-  // not when any other history entry is added/modified.
-  const foundEntry = useSelector(() =>
-    entryId
-      ? (history$.entries.get().find((e) => e.id === entryId) ?? null)
-      : null,
-  );
-  const { addEntry } = historyActions;
+  const userSession = useSelector(() => auth$.session.get());
+  
+  // Watch for the specific entry if entryId exists
+  const foundEntry = useSelector(() => (entryId ? history$[entryId].get() : null)) as HistoryEntry | null;
+
   const defaultSourceLang = useSelector(() =>
     settings$.selectedLanguages[0].get(),
   );
@@ -102,17 +101,20 @@ export const useResultPipeline = ({
           /* file may not exist */
         }
 
-        // Save to history using perfectly detected language
-        addEntry({
-          id: entryId ? String(entryId) : `res_${Date.now()}`,
-          sourceLang: txResult.detectedLang,
-          targetLang,
-          transcript: txResult.transcript,
-          translation: null,
-          timestamp: Date.now(),
-          duration: 0,
-          sourceApp: 'ekwe',
-        });
+        // Save to history via HistoryService
+        await HistoryService.recordTranslation(
+          {
+            sourceLang: txResult.detectedLang,
+            targetLang,
+            transcript: txResult.transcript,
+            translation: null,
+            duration: 0,
+            sourceApp: 'ekwe',
+            provider: 'gemini',
+          },
+          userSession as any,
+        );
+
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setHasPolished(true);
       } catch (err) {
@@ -126,7 +128,7 @@ export const useResultPipeline = ({
         setIsProcessing(false);
       }
     },
-    [addEntry, sourceLang, targetLang, entryId, transcribe],
+    [sourceLang, targetLang, entryId, transcribe, userSession],
   );
 
   useEffect(() => {
@@ -143,6 +145,7 @@ export const useResultPipeline = ({
         transcript,
         sourceLang,
         targetLang,
+        entryId
       );
 
       if (!trResultResponse.ok) {

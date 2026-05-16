@@ -34,7 +34,7 @@ export const SettingsRow = ({
         }
       }}
       disabled={!onPress && !isLocked}
-      className={`flex-row items-center justify-between px-5 py-4 border-b bg-card dark:bg-card-dark border-border dark:border-zinc-800/60 ${
+      className={`flex-row items-center justify-between px-5 py-4 border-b bg-card dark:bg-card border-border dark:border-zinc-800/60 ${
         onPress && !isLocked
           ? 'active:opacity-70 transition-opacity duration-200'
           : ''

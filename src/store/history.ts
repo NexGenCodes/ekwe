@@ -13,46 +13,14 @@ export interface HistoryEntry {
   duration: number;
   sourceApp: string | null;
   provider?: string;
+  deleted?: boolean;
 }
 
-export interface HistoryState {
-  entries: HistoryEntry[];
-}
+// ─── Local State ───
+// This observable replaces the PowerSync SQLite table.
+export const history$ = observable<Record<string, HistoryEntry>>({});
 
-export const history$ = observable<HistoryState>({
-  entries: [],
-});
-
-// Persist history to MMKV (uses global plugin configured in store/index.ts)
 persistObservable(history$, {
   local: 'ekwe-history',
   pluginLocal: ObservablePersistMMKVCustom,
 });
-
-// Actions
-export const historyActions = {
-  addEntry: (entry: HistoryEntry): void => {
-    history$.entries.unshift(entry);
-  },
-  updateEntry: (id: string, updates: Partial<HistoryEntry>): void => {
-    const entries = history$.entries.get();
-    const index = entries.findIndex((e) => e.id === id);
-    if (index !== -1) {
-      history$.entries[index].assign(updates);
-    }
-  },
-  deleteEntry: (id: string): void => {
-    const entries = history$.entries.get();
-    history$.entries.set(entries.filter((e) => e.id !== id));
-  },
-  clearAll: (): void => {
-    history$.entries.set([]);
-  },
-  runCleanup: (retentionMs: number): void => {
-    const now = Date.now();
-    const entries = history$.entries.get();
-    history$.entries.set(
-      entries.filter((e) => now - e.timestamp <= retentionMs),
-    );
-  },
-};

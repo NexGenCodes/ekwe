@@ -42,7 +42,7 @@ export default function ResultScreen(): React.JSX.Element {
   return (
     <SafeAreaView
       edges={['top']}
-      className="flex-1 bg-background dark:bg-background-dark"
+      className="flex-1 bg-background dark:bg-background"
     >
       {/* Header */}
       <ScreenHeader
@@ -50,7 +50,7 @@ export default function ResultScreen(): React.JSX.Element {
       />
 
       <ScrollView
-        className="flex-1 px-6 bg-background dark:bg-background-dark"
+        className="flex-1 px-6 bg-background dark:bg-background"
         contentContainerStyle={{ paddingBottom: 40 }}
       >
         {/* Status Indicator */}
@@ -58,10 +58,10 @@ export default function ResultScreen(): React.JSX.Element {
           <View className="items-center py-12 space-y-4">
             <ActivityIndicator size="large" color={primaryColor} />
             <View className="items-center">
-              <Text className="font-display text-lg text-foreground dark:text-foreground-dark">
+              <Text className="font-display text-lg text-foreground dark:text-foreground">
                 Processing Audio
               </Text>
-              <Text className="font-body text-sm text-muted dark:text-muted-dark mt-1">
+              <Text className="font-body text-sm text-muted dark:text-muted mt-1">
                 This usually takes a few seconds...
               </Text>
             </View>
@@ -74,7 +74,7 @@ export default function ResultScreen(): React.JSX.Element {
             {/* Original Text */}
             <View className="mb-8">
               <View className="flex-row justify-between items-center mb-3">
-                <Text className="font-bodyMed text-xs uppercase tracking-widest text-muted dark:text-muted-dark">
+                <Text className="font-bodyMed text-xs uppercase tracking-widest text-muted dark:text-muted">
                   ORIGINAL · {getLanguageName(sourceLang)}{' '}
                   {isProcessing && '✨ POLISHING'}
                 </Text>
@@ -88,7 +88,7 @@ export default function ResultScreen(): React.JSX.Element {
                 </View>
               </View>
               <Card style={{ padding: 24, borderRadius: 20 }}>
-                <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground-dark">
+                <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground">
                   {transcript}
                 </Text>
               </Card>
@@ -98,7 +98,7 @@ export default function ResultScreen(): React.JSX.Element {
             {translation ? (
               <View className="mb-8">
                 <View className="flex-row justify-between items-center mb-3">
-                  <Text className="font-bodyMed text-xs uppercase tracking-widest text-primary dark:text-primary-dark">
+                  <Text className="font-bodyMed text-xs uppercase tracking-widest text-primary dark:text-primary">
                     TRANSLATED · {getLanguageName(targetLang)}
                   </Text>
                 </View>
@@ -106,7 +106,7 @@ export default function ResultScreen(): React.JSX.Element {
                   variant="accent"
                   style={{ padding: 24, borderRadius: 20 }}
                 >
-                  <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground-dark">
+                  <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground">
                     {translation}
                   </Text>
                 </Card>
@@ -131,7 +131,7 @@ export default function ResultScreen(): React.JSX.Element {
         {/* Replay context if history */}
         {isHistoryReplay && !isProcessing && (
           <Card style={{ padding: 24, borderRadius: 20 }}>
-            <Text className="font-bodyMed text-xs text-muted dark:text-muted-dark mb-4 uppercase tracking-widest">
+            <Text className="font-bodyMed text-xs text-muted dark:text-muted mb-4 uppercase tracking-widest">
               Voice Architecture
             </Text>
             <AudioWaveform
@@ -147,7 +147,7 @@ export default function ResultScreen(): React.JSX.Element {
 
       {/* Global Action Bar */}
       {!isProcessing && translation && (
-        <View className="px-6 py-8 border-t border-border dark:border-border-dark bg-background dark:bg-background-dark">
+        <View className="px-6 py-8 border-t border-border dark:border-border bg-background dark:bg-background">
           <Button
             variant="secondary"
             size="large"

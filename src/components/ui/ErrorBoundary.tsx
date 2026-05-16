@@ -38,7 +38,7 @@ export class ErrorBoundary extends Component<Props, State> {
   public render(): ReactNode {
     if (this.state.hasError) {
       return (
-        <SafeAreaView className="flex-1 bg-background dark:bg-background-dark items-center justify-center px-8">
+        <SafeAreaView className="flex-1 bg-background dark:bg-background items-center justify-center px-8">
           <View className="items-center mb-8">
             <View className="w-20 h-20 rounded-full bg-red-100 dark:bg-red-950/30 items-center justify-center mb-6">
               <AlertCircle
@@ -47,10 +47,10 @@ export class ErrorBoundary extends Component<Props, State> {
                 strokeWidth={2}
               />
             </View>
-            <Text className="text-2xl font-display text-foreground dark:text-foreground-dark text-center mb-3">
+            <Text className="text-2xl font-display text-foreground dark:text-foreground text-center mb-3">
               Something went wrong
             </Text>
-            <Text className="text-base font-body text-muted dark:text-muted-dark text-center leading-6">
+            <Text className="text-base font-body text-muted dark:text-muted text-center leading-6">
               An unexpected error occurred. Our team has been notified.
             </Text>
           </View>

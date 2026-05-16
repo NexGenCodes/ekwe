@@ -1,8 +1,8 @@
 import { useSelector } from '@legendapp/state/react';
-import { useEffect, useMemo, useRef } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { useMemo } from 'react';
 
-import { history$, historyActions, settings$, HistoryEntry } from '@/store';
+import { HistoryEntry, history$ } from '@/store';
+import { supabase } from '@/services/supabase';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -11,72 +11,55 @@ export interface UseHistoryReturn {
   todayEntries: HistoryEntry[];
   yesterdayEntries: HistoryEntry[];
   earlierEntries: HistoryEntry[];
-  deleteEntry: (id: string) => void;
-  clearAll: () => void;
+  deleteEntry: (id: string) => Promise<void>;
+  clearAll: () => Promise<void>;
 }
 
 export const useHistory = (): UseHistoryReturn => {
-  const entries = useSelector(() => history$.entries.get());
-  const retentionDays = useSelector(() => settings$.retentionDays.get());
-  const { runCleanup, deleteEntry, clearAll } = historyActions;
+  // Read all history entries from the local MMKV state
+  const historyRecord = useSelector(() => history$.get());
 
-  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-  const cleanupTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Convert the Record<string, HistoryEntry> into an array, filter out deleted items, and sort newest first
+  const entries: HistoryEntry[] = useMemo(() => {
+    return Object.values(historyRecord || {})
+      .filter((entry) => !entry.deleted)
+      .sort((a, b) => b.timestamp - a.timestamp);
+  }, [historyRecord]);
 
-  // Run cleanup when app comes to foreground
-  // and on a daily timer while app is active
-  useEffect(() => {
-    const retentionMs = retentionDays * MS_PER_DAY;
-
-    // Initial cleanup on mount
-    runCleanup(retentionMs);
-
-    // Daily cleanup timer
-    cleanupTimerRef.current = setInterval(
-      () => runCleanup(retentionMs),
-      MS_PER_DAY,
-    );
-
-    // Cleanup on app state change
-    const subscription = AppState.addEventListener(
-      'change',
-      (nextState: AppStateStatus): void => {
-        if (appStateRef.current !== 'active' && nextState === 'active') {
-          runCleanup(retentionMs);
-        }
-        appStateRef.current = nextState;
-      },
-    );
-
-    return (): void => {
-      if (cleanupTimerRef.current !== null) {
-        clearInterval(cleanupTimerRef.current);
-      }
-      subscription.remove();
-    };
-  }, [retentionDays]);
-
-  // Sort entries newest first — only recomputes when entries array changes
-  const sorted = useMemo(
-    () => [...entries].sort((a, b) => b.timestamp - a.timestamp),
-    [entries],
-  );
-
-  // Section by calendar day — recomputes only when sorted order changes
+  // Section by calendar day
   const { todayEntries, yesterdayEntries, earlierEntries } = useMemo(() => {
     const todayStart = new Date().setHours(0, 0, 0, 0);
     const yesterdayStart = todayStart - MS_PER_DAY;
     return {
-      todayEntries: sorted.filter((e) => e.timestamp >= todayStart),
-      yesterdayEntries: sorted.filter(
+      todayEntries: entries.filter((e) => e.timestamp >= todayStart),
+      yesterdayEntries: entries.filter(
         (e) => e.timestamp >= yesterdayStart && e.timestamp < todayStart,
       ),
-      earlierEntries: sorted.filter((e) => e.timestamp < yesterdayStart),
+      earlierEntries: entries.filter((e) => e.timestamp < yesterdayStart),
     };
-  }, [sorted]);
+  }, [entries]);
+
+  // Perform a "soft delete" to ensure offline sync knows it was deleted
+  const deleteEntry = async (id: string): Promise<void> => {
+    history$[id].deleted.set(true);
+    supabase.from('history').update({ deleted: true }).eq('id', id).then((res) => {
+      if (res.error) console.error(res.error);
+    });
+  };
+
+  const clearAll = async (): Promise<void> => {
+    const ids = Object.keys(historyRecord || {});
+    // Perform bulk soft-delete locally
+    ids.forEach((id) => {
+      history$[id].deleted.set(true);
+    });
+    supabase.from('history').update({ deleted: true }).in('id', ids).then((res) => {
+      if (res.error) console.error(res.error);
+    });
+  };
 
   return {
-    entries: sorted,
+    entries,
     todayEntries,
     yesterdayEntries,
     earlierEntries,

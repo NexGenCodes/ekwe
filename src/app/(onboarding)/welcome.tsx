@@ -62,10 +62,10 @@ const FeatureCard = ({
 
   return (
     <Animated.View
-      className="flex-row items-center p-5 rounded-[24px] border border-border dark:border-zinc-800/80 bg-card dark:bg-card-dark shadow-sm"
+      className="flex-row items-center p-5 rounded-[24px] border border-border dark:border-zinc-800/80 bg-card dark:bg-card shadow-sm"
       style={animatedStyle}
     >
-      <View className="w-12 h-12 rounded-2xl items-center justify-center mr-4 bg-background dark:bg-background-dark border border-zinc-100 dark:border-zinc-800">
+      <View className="w-12 h-12 rounded-2xl items-center justify-center mr-4 bg-background dark:bg-background border border-zinc-100 dark:border-zinc-800">
         {icon}
       </View>
       <View className="flex-1">
@@ -131,7 +131,7 @@ export default function WelcomeScreen(): React.ReactElement {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-background dark:bg-background-dark">
+    <SafeAreaView className="flex-1 bg-background dark:bg-background">
       <View className="flex-1 px-6">
         <Animated.View
           className="items-center mb-10"
@@ -140,7 +140,7 @@ export default function WelcomeScreen(): React.ReactElement {
           <View className="mb-6">
             <EkweWordmark size={100} color={logoColor} />
           </View>
-          <Text className="text-[34px] text-center leading-[40px] font-display text-foreground dark:text-foreground-dark tracking-tight px-4">
+          <Text className="text-[34px] text-center leading-[40px] font-display text-foreground dark:text-foreground tracking-tight px-4">
             Every voice understood.
           </Text>
         </Animated.View>

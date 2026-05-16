@@ -6,13 +6,13 @@ import { Button } from '@/components/ui';
 
 export default function NotFoundScreen(): React.ReactElement {
   return (
-    <SafeAreaView className="flex-1 bg-background dark:bg-background-dark">
+    <SafeAreaView className="flex-1 bg-background dark:bg-background">
       <Stack.Screen options={{ title: 'Oops!' }} />
       <View className="flex-1 items-center justify-center p-5">
-        <Text className="text-2xl font-display text-foreground dark:text-foreground-dark mb-2">
+        <Text className="text-2xl font-display text-foreground dark:text-foreground mb-2">
           This screen doesn't exist.
         </Text>
-        <Text className="text-base text-center font-body text-muted dark:text-muted-dark mb-8">
+        <Text className="text-base text-center font-body text-muted dark:text-muted mb-8">
           The link you followed may be broken, or the page may have been
           removed.
         </Text>

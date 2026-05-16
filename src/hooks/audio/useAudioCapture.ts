@@ -1,3 +1,4 @@
+import * as Crypto from 'expo-crypto';
 import { useSelector } from '@legendapp/state/react';
 import { useCallback, useEffect } from 'react';
 
@@ -70,7 +71,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
 
-    const sessionId = crypto.randomUUID();
+    const sessionId = Crypto.randomUUID();
     setSessionId(sessionId);
     setRecordingState(RecordingState.Recording);
 

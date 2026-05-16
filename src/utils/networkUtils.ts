@@ -35,8 +35,14 @@ export async function fetchWithRetry(
 
   for (let i = 0; i < retries; i++) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-    const onAbort = (): void => controller.abort();
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      controller.abort();
+    }, timeout);
+    const onAbort = (): void => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
     signal?.addEventListener('abort', onAbort);
 
     try {

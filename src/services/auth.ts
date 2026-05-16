@@ -6,6 +6,7 @@
  */
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { Platform } from 'react-native';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 import { supabase } from '@/services/supabase';
 import { authActions } from '@/store';
@@ -30,20 +31,6 @@ export const initAuth = (): void => {
   supabase.auth.onAuthStateChange((event, session) => {
     logger.info(`Auth state changed: ${event}`, session?.user?.id);
     authActions.setSession(session);
-    authActions.setInitialized(true);
-  });
-
-  supabase.auth.getSession().then(({ data, error }) => {
-    if (error) {
-      logger.error('Error fetching auth session', error);
-      authActions.setInitialized(true);
-      return;
-    }
-
-    if (data?.session) {
-      authActions.setSession(data.session);
-    }
-
     authActions.setInitialized(true);
   });
 };
@@ -214,10 +201,6 @@ let googleConfigured = false;
 const configureGoogleSignIn = (): void => {
   if (googleConfigured) return;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const {
-      GoogleSignin,
-    } = require('@react-native-google-signin/google-signin');
     GoogleSignin.configure({
       webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
       scopes: ['openid', 'email', 'profile'],
@@ -230,10 +213,6 @@ const configureGoogleSignIn = (): void => {
 
 export const signInWithGoogle = async (): Promise<AuthResult> => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const {
-      GoogleSignin,
-    } = require('@react-native-google-signin/google-signin');
     configureGoogleSignIn();
 
     await GoogleSignin.hasPlayServices();

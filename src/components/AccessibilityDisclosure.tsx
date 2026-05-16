@@ -22,7 +22,7 @@ export const AccessibilityDisclosure: React.FC<
   const primaryColor = color.primary;
 
   return (
-    <View className="flex-1 bg-background dark:bg-background-dark">
+    <View className="flex-1 bg-background dark:bg-background">
       <View className="px-6 pt-4 pb-2 z-10">
         <TouchableOpacity
           onPress={onDeny}
@@ -37,7 +37,7 @@ export const AccessibilityDisclosure: React.FC<
           entering={FadeInDown.duration(500).springify()}
           className="mt-4 mb-8"
         >
-          <Text className="font-display text-[32px] text-foreground dark:text-foreground-dark tracking-tight leading-[38px]">
+          <Text className="font-display text-[32px] text-foreground dark:text-foreground tracking-tight leading-[38px]">
             Accessibility Service Disclosure
           </Text>
           <View className="mt-4 p-4 rounded-[16px] bg-primary/10 border border-primary/20">
@@ -63,10 +63,10 @@ export const AccessibilityDisclosure: React.FC<
               <LucideZap size={24} color={primaryColor} />
             </View>
             <View className="flex-1 pr-2">
-              <Text className="font-display text-[16px] text-foreground dark:text-foreground-dark mb-1">
+              <Text className="font-display text-[16px] text-foreground dark:text-foreground mb-1">
                 Contextual App Detection
               </Text>
-              <Text className="font-body text-sm text-muted dark:text-muted-dark leading-5">
+              <Text className="font-body text-sm text-muted dark:text-muted leading-5">
                 We strictly monitor top-level window transitions to identify
                 when a target messaging app is launched. We do NOT read your
                 chat messages.
@@ -79,10 +79,10 @@ export const AccessibilityDisclosure: React.FC<
               <LucideBatteryCharging size={24} color="#22C55E" />
             </View>
             <View className="flex-1 pr-2">
-              <Text className="font-display text-[16px] text-foreground dark:text-foreground-dark mb-1">
+              <Text className="font-display text-[16px] text-foreground dark:text-foreground mb-1">
                 Battery Optimized
               </Text>
-              <Text className="font-body text-sm text-muted dark:text-muted-dark leading-5">
+              <Text className="font-body text-sm text-muted dark:text-muted leading-5">
                 Utilizing native Accessibility signals prevents aggressive
                 background polling, ensuring your phone's battery isn't drained.
               </Text>
@@ -94,10 +94,10 @@ export const AccessibilityDisclosure: React.FC<
               <LucideShieldCheck size={24} color="#3B82F6" />
             </View>
             <View className="flex-1 pr-2">
-              <Text className="font-display text-[16px] text-foreground dark:text-foreground-dark mb-1">
+              <Text className="font-display text-[16px] text-foreground dark:text-foreground mb-1">
                 Zero Data Collection
               </Text>
-              <Text className="font-body text-sm text-muted dark:text-muted-dark leading-5">
+              <Text className="font-body text-sm text-muted dark:text-muted leading-5">
                 We{' '}
                 <Text className="font-display">
                   do not collect, store, transmit, or share
@@ -111,7 +111,7 @@ export const AccessibilityDisclosure: React.FC<
       </ScrollView>
 
       {/* Fixed Bottom Action Bar */}
-      <View className="absolute bottom-0 left-0 right-0 bg-background dark:bg-background-dark pt-4 pb-10 px-6 border-t border-border dark:border-zinc-800/80">
+      <View className="absolute bottom-0 left-0 right-0 bg-background dark:bg-background pt-4 pb-10 px-6 border-t border-border dark:border-zinc-800/80">
         <TouchableOpacity
           onPress={onAgree}
           style={{ backgroundColor: primaryColor }}

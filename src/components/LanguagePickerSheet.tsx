@@ -39,6 +39,7 @@ export interface LanguagePickerSheetProps {
     pinnedLanguages: string[],
   ) => void;
   onClose: () => void;
+  singleSelect?: boolean;
 }
 
 // Row component for the section list
@@ -58,7 +59,7 @@ const LanguageRow = ({
   return (
     <Pressable
       onPress={onToggleSelect}
-      className="h-[52px] flex-row items-center px-4 bg-background dark:bg-background-dark active:opacity-60"
+      className="h-[52px] flex-row items-center px-4 bg-background dark:bg-background active:opacity-60"
     >
       <View className="flex-1 flex-row items-center">
         <Text className="text-xl mr-3">{FLAG_MAP[item.code] || '🌐'}</Text>
@@ -88,7 +89,7 @@ const LanguageRow = ({
         <View
           className={`w-[22px] h-[22px] rounded-full ml-3 items-center justify-center ${
             isSelected
-              ? 'bg-primary dark:bg-primary-dark border-0'
+              ? 'bg-primary dark:bg-primary border-0'
               : 'bg-transparent border-[1.5px] border-zinc-300 dark:border-zinc-700'
           }`}
         >
@@ -107,6 +108,7 @@ export const LanguagePickerSheet = ({
   pinnedLanguages,
   onSelectionChange,
   onClose,
+  singleSelect = false,
 }: LanguagePickerSheetProps): React.ReactElement => {
   const { color } = useTheme();
   const isPro = useSelector(() => auth$.isPro.get());
@@ -164,17 +166,24 @@ export const LanguagePickerSheet = ({
   );
 
   const renderFooter = useCallback(
-    (props: BottomSheetFooterProps) => (
-      <BottomSheetFooter {...props} bottomInset={16}>
-        <View className="px-4 py-3 border-t-[0.5px] border-zinc-200 dark:border-zinc-800 bg-background dark:bg-background-dark">
-          <Button label="Confirm" onPress={onClose} variant="primary" />
-        </View>
-      </BottomSheetFooter>
-    ),
-    [onClose],
+    (props: BottomSheetFooterProps) => {
+      if (singleSelect) return null;
+      return (
+        <BottomSheetFooter {...props} bottomInset={16}>
+          <View className="px-4 py-3 border-t-[0.5px] border-zinc-200 dark:border-zinc-800 bg-background dark:bg-background">
+            <Button label="Confirm" onPress={onClose} variant="primary" />
+          </View>
+        </BottomSheetFooter>
+      );
+    },
+    [onClose, singleSelect],
   );
 
   const toggleSelection = (code: string): void => {
+    if (singleSelect) {
+      onSelectionChange([code], pinnedLanguages);
+      return;
+    }
     const next = selectedLanguages.includes(code)
       ? selectedLanguages.filter((c) => c !== code)
       : [...selectedLanguages, code];
@@ -207,10 +216,10 @@ export const LanguagePickerSheet = ({
         width: 40,
       }}
     >
-      <View className="z-10 bg-background dark:bg-background-dark">
+      <View className="z-10 bg-background dark:bg-background">
         {/* Search */}
         <View className="px-4 pb-2">
-          <View className="h-11 border-[0.5px] border-zinc-200 dark:border-zinc-800 rounded-xl flex-row items-center px-3 bg-card dark:bg-card-dark">
+          <View className="h-11 border-[0.5px] border-zinc-200 dark:border-zinc-800 rounded-xl flex-row items-center px-3 bg-card dark:bg-card">
             <Search size={18} color={mutedColor} style={{ marginRight: 8 }} />
             <BottomSheetTextInput
               className="flex-1 h-11 text-base font-body text-zinc-950 dark:text-zinc-50"
@@ -230,7 +239,7 @@ export const LanguagePickerSheet = ({
         {/* Fixed Pinned Section */}
         {pinnedItems.length > 0 && (
           <View>
-            <View className="px-4 py-3 bg-card dark:bg-card-dark">
+            <View className="px-4 py-3 bg-card dark:bg-card">
               <Text className="font-semibold tracking-[0.5px] text-zinc-500 dark:text-zinc-400 text-xs">
                 PINNED
               </Text>
@@ -249,7 +258,7 @@ export const LanguagePickerSheet = ({
         )}
 
         {/* Fixed "All Languages" Header */}
-        <View className="px-4 py-3 bg-card dark:bg-card-dark">
+        <View className="px-4 py-3 bg-card dark:bg-card">
           <Text className="font-semibold tracking-[0.5px] text-zinc-500 dark:text-zinc-400 text-xs">
             {searchQuery ? 'RESULTS' : 'ALL LANGUAGES'}
           </Text>

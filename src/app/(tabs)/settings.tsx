@@ -1,5 +1,6 @@
 import { useSelector } from '@legendapp/state/react';
 import Constants from 'expo-constants';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { LogOut, ChevronRight, UserCircle } from 'lucide-react-native';
 import React, { useState } from 'react';
@@ -86,16 +87,16 @@ export default function SettingsScreen(): React.JSX.Element {
   return (
     <SafeAreaView
       edges={['top']}
-      className="flex-1 bg-background dark:bg-background-dark"
+      className="flex-1 bg-background dark:bg-background"
     >
       <View className="px-6 py-4 flex-row justify-between items-center">
-        <Text className="font-display text-[28px] tracking-tight text-foreground dark:text-foreground-dark">
+        <Text className="font-display text-[32px] tracking-tight text-foreground dark:text-foreground">
           Settings
         </Text>
       </View>
 
       <ScrollView
-        className="flex-1 bg-background dark:bg-background-dark"
+        className="flex-1 bg-background dark:bg-background"
         showsVerticalScrollIndicator={false}
       >
         {/* Profile Card */}
@@ -104,7 +105,8 @@ export default function SettingsScreen(): React.JSX.Element {
           className="px-4 mt-2"
         >
           <Card
-            style={{ flexDirection: 'row', alignItems: 'center', padding: 20 }}
+            padding="none"
+            className="flex-row items-center p-5"
           >
             <View className="w-14 h-14 rounded-full bg-primary/10 items-center justify-center mr-4 border border-primary/20">
               <Text className="text-xl font-display text-primary">
@@ -116,10 +118,10 @@ export default function SettingsScreen(): React.JSX.Element {
               </Text>
             </View>
             <View className="flex-1">
-              <Text className="font-display text-[17px] text-foreground dark:text-zinc-50 mb-0.5">
+              <Text className="font-display text-[20px] text-foreground dark:text-foreground mb-0.5">
                 {userName}
               </Text>
-              <Text className="font-body text-[13px] text-muted dark:text-zinc-400">
+              <Text className="font-body text-sm text-muted dark:text-muted">
                 {userEmail || 'hello@ekwe.app'}
               </Text>
             </View>
@@ -134,7 +136,7 @@ export default function SettingsScreen(): React.JSX.Element {
           entering={FadeInDown.duration(600).delay(100).springify()}
         >
           <SectionHeader title="Configuration" />
-          <Card padding="none" overflow style={{ marginHorizontal: 16 }}>
+          <Card padding="none" overflow className="mx-4">
             <SettingsRow
               label="Haptic Feedback"
               value={
@@ -155,7 +157,7 @@ export default function SettingsScreen(): React.JSX.Element {
           </Card>
 
           <SectionHeader title="Smart Features" />
-          <Card padding="none" overflow style={{ marginHorizontal: 16 }}>
+          <Card padding="none" overflow className="mx-4">
             <SettingsRow
               label="Auto-copy to Clipboard"
               isLocked={userTier !== 'pro'}
@@ -193,7 +195,7 @@ export default function SettingsScreen(): React.JSX.Element {
               }
             />
             <View className="px-5 py-4 bg-muted/5">
-              <Text className="font-body text-[12px] text-muted dark:text-zinc-400 leading-5">
+              <Text className="font-body text-xs text-muted dark:text-muted leading-5">
                 Context Awareness uses a battery-efficient Accessibility Service
                 to seamlessly activate Ekwe when typing in messaging apps like
                 WhatsApp.
@@ -202,13 +204,16 @@ export default function SettingsScreen(): React.JSX.Element {
           </Card>
 
           <SectionHeader title="Languages" />
-          <Card padding="none" overflow style={{ marginHorizontal: 16 }}>
+          <Card padding="none" overflow className="mx-4">
             <SettingsRow
               label="Edit Selection Grid"
-              onPress={() => setSheetVisible(true)}
+              onPress={async () => {
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setSheetVisible(true);
+              }}
               value={
                 <View className="flex-row items-center gap-2">
-                  <Text className="font-body text-sm text-muted dark:text-zinc-400">
+                  <Text className="font-body text-sm text-muted dark:text-muted">
                     {selectedLanguages.length}/5 active
                   </Text>
                   <ChevronRight size={16} color={color.muted} />
@@ -221,30 +226,36 @@ export default function SettingsScreen(): React.JSX.Element {
           <Card
             padding="none"
             overflow
-            style={{ marginHorizontal: 16, marginBottom: 24 }}
+            className="mx-4 mb-6"
           >
             <Pressable
-              onPress={handleLogout}
-              className="px-5 py-4 flex-row items-center gap-3 border-b border-border dark:border-zinc-800/60 active:bg-red-500/10 transition-colors"
+              onPress={async () => {
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                handleLogout();
+              }}
+              className="px-5 py-4 flex-row items-center gap-3 border-b border-border dark:border-border active:bg-red-500/10 active:scale-95 transition-all duration-200"
             >
               <LogOut size={18} color={color.foreground} />
-              <Text className="font-bodyMed text-[15px] text-foreground dark:text-zinc-100">
+              <Text className="font-bodyMed text-base text-foreground dark:text-foreground">
                 Log out
               </Text>
             </Pressable>
             <Pressable
-              onPress={handleDeleteAccount}
-              className="px-5 py-4 flex-row items-center gap-3 active:bg-red-500/10 transition-colors"
+              onPress={async () => {
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                handleDeleteAccount();
+              }}
+              className="px-5 py-4 flex-row items-center gap-3 active:bg-red-500/10 active:scale-95 transition-all duration-200"
             >
               <LogOut size={18} color="#EF4444" />
-              <Text className="font-bodyMed text-[15px] text-red-500">
+              <Text className="font-bodyMed text-base text-red-500">
                 Delete Account
               </Text>
             </Pressable>
           </Card>
 
           <View className="pb-16 items-center flex-row justify-center gap-2">
-            <Text className="font-body text-[12px] text-muted dark:text-zinc-500">
+            <Text className="font-body text-xs text-muted dark:text-muted">
               Ekwe v{Constants.expoConfig?.version ?? '1.0.0'} (Build{' '}
               {Constants.expoConfig?.android?.versionCode ??
                 Constants.expoConfig?.ios?.buildNumber ??

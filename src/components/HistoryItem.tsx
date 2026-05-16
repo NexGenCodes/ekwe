@@ -30,7 +30,7 @@ export const HistoryItem = React.memo(({
   const primaryColor = color.primary;
 
   const renderRightActions = (): React.ReactElement => (
-    <View className="w-20 bg-error/10 dark:bg-error-dark/20 justify-center">
+    <View className="w-20 bg-error/10 dark:bg-error/20 justify-center">
       <Pressable
         testID="delete-button"
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -59,7 +59,7 @@ export const HistoryItem = React.memo(({
           Haptics.selectionAsync();
           onPress(entry);
         }}
-        className="flex-row items-center px-4 border-b bg-card dark:bg-card-dark border-border dark:border-border-dark active:scale-95 transition-transform duration-200"
+        className="flex-row items-center px-4 border-b bg-card dark:bg-card border-border dark:border-border active:scale-95 transition-transform duration-200"
         style={style}
       >
         <View className="flex-1 py-4">
@@ -71,7 +71,7 @@ export const HistoryItem = React.memo(({
             )}
             <Text
               numberOfLines={1}
-              className="ml-2 font-bodyMed text-[10px] text-primary dark:text-primary-dark tracking-[1.5px]"
+              className="ml-2 font-bodyMed text-[10px] text-primary dark:text-primary tracking-[1.5px]"
             >
               {`${getLanguageName(entry.sourceLang)} → ${getLanguageName(
                 entry.targetLang,
@@ -81,19 +81,19 @@ export const HistoryItem = React.memo(({
           <Text
             numberOfLines={1}
             ellipsizeMode="tail"
-            className="font-body text-base text-foreground dark:text-foreground-dark"
+            className="font-body text-base text-foreground dark:text-foreground"
           >
-            {entry.transcript.split('\n')[0] ?? ''}
+            {entry.transcript?.split('\n')[0] ?? ''}
           </Text>
         </View>
 
         <View className="ml-3 items-end">
-          <Text className="font-body text-[11px] text-muted dark:text-muted-dark mb-1">
+          <Text className="font-body text-[11px] text-muted dark:text-muted mb-1">
             {getRelativeTime(entry.timestamp)}
           </Text>
           {entry.duration > 0 && (
-            <View className="bg-muted/10 dark:bg-muted-dark/10 px-2 py-0.5 rounded-full border border-border/50 dark:border-border-dark/50">
-              <Text className="font-bodyMed text-[9px] text-muted dark:text-muted-dark">
+            <View className="bg-muted/10 dark:bg-muted/10 px-2 py-0.5 rounded-full border border-border/50 dark:border-border/50">
+              <Text className="font-bodyMed text-[9px] text-muted dark:text-muted">
                 {Math.round(entry.duration / 1000)}s
               </Text>
             </View>

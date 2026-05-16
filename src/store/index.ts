@@ -4,4 +4,3 @@ export * from './audio';
 export * from './history';
 export * from './settings';
 export * from './auth';
-export * from './syncQueue';

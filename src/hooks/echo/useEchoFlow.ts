@@ -9,8 +9,8 @@ import { Platform, AppState } from 'react-native';
 import { useEchoIntentResolver } from './useEchoIntentResolver';
 import { preWarmAudioEngine } from '../audio/useSharedAudioPlayer';
 
-import { useTranscription } from '@/hooks/api/useTranscription';
-import { useTranslation } from '@/hooks/api/useTranslation';
+import { useTranscription } from '../useTranscription';
+import { useTranslation } from '../useTranslation';
 import { HistoryService } from '@/services/HistoryService';
 import { IntentService } from '@/services/IntentService';
 import { settings$, auth$ } from '@/store';
@@ -131,9 +131,9 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     };
   }, []);
 
-  // API mutations via React Query
-  const { mutateAsync: transcribe } = useTranscription();
-  const { mutateAsync: translate } = useTranslation();
+  // API calls
+  const { transcribe } = useTranscription();
+  const { translate } = useTranslation();
 
   // ── URI Resolution Pipeline ──────────────────────────────────────────
   const {
@@ -192,9 +192,9 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       // Audio is already decoded and pre-warmed during the Intent Resolution phase
       const safeUri = audioUri;
 
-      // Transcription Mutation via React Query
-      const trResult = await transcribe({
-        audio: {
+      // Transcription Mutation
+      const trResult = await transcribe(
+        {
           uri: safeUri,
           durationMs: durationSeconds * 1000,
           averageDb: -40,
@@ -203,14 +203,18 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
           hasSpeech: true,
           meteringData: waveform,
         },
-        sourceLang: state.selectedLang,
-      });
+        state.selectedLang,
+      );
 
-      const detectedLang = trResult.detectedLang;
+      if (!trResult.ok) {
+        throw new Error(trResult.error);
+      }
+
+      const detectedLang = trResult.value.detectedLang;
 
       dispatch({
         type: 'SET_TRANSCRIPTION',
-        payload: { text: trResult.transcript, provider: trResult.provider },
+        payload: { text: trResult.value.transcript, provider: trResult.value.provider },
       });
 
       let finalLang = state.selectedLang;
@@ -264,18 +268,22 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     let translationResultText = null;
 
     try {
-      const trResult = await translate({
-        text: textToTranslate,
-        sourceLang: source,
-        targetLang: target,
-      });
+      const trResult = await translate(
+        textToTranslate,
+        source,
+        target,
+      );
 
-      translationResultText = trResult.translation;
+      if (!trResult.ok) {
+        throw new Error(trResult.error);
+      }
+
+      translationResultText = trResult.value.translation;
       dispatch({
         type: 'SET_TRANSLATION',
         payload: {
           text: translationResultText,
-          provider: trResult.provider,
+          provider: trResult.value.provider,
         },
       });
 

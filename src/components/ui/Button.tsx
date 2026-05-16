@@ -90,32 +90,32 @@ export const Button = ({
     switch (variant) {
       case 'primary':
         return {
-          container: 'bg-primary dark:bg-primary-dark',
+          container: 'bg-primary dark:bg-primary',
           text: 'text-white',
           spinner: color.onPrimary,
         };
       case 'secondary':
         return {
-          container: 'bg-card dark:bg-card-dark',
-          text: 'text-foreground dark:text-foreground-dark',
+          container: 'bg-card dark:bg-card',
+          text: 'text-foreground dark:text-foreground',
           spinner: color.foreground,
         };
       case 'outline':
         return {
           container:
-            'bg-transparent border-[1.5px] border-primary dark:border-primary-dark',
-          text: 'text-primary dark:text-primary-dark',
+            'bg-transparent border-[1.5px] border-primary dark:border-primary',
+          text: 'text-primary dark:text-primary',
           spinner: color.primary,
         };
       case 'ghost':
         return {
           container: 'bg-transparent',
-          text: 'text-muted dark:text-muted-dark',
+          text: 'text-muted dark:text-muted',
           spinner: color.muted,
         };
       default:
         return {
-          container: 'bg-primary dark:bg-primary-dark',
+          container: 'bg-primary dark:bg-primary',
           text: 'text-white',
           spinner: color.onPrimary,
         };

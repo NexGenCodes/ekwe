@@ -35,7 +35,7 @@ export const AccountAvatar = (): React.JSX.Element => {
   return (
     <Pressable
       onPress={handlePress}
-      className="w-10 h-10 rounded-full items-center justify-center bg-card dark:bg-card-dark border border-border dark:border-zinc-800 active:scale-95 transition-transform overflow-hidden"
+      className="w-10 h-10 rounded-full items-center justify-center bg-card dark:bg-card border border-border dark:border-zinc-800 active:scale-95 transition-transform overflow-hidden"
     >
       {imageUrl ? (
         <Image
@@ -44,7 +44,7 @@ export const AccountAvatar = (): React.JSX.Element => {
           resizeMode="cover"
         />
       ) : initials ? (
-        <Text className="font-bodyMed text-sm text-primary dark:text-primary-dark">
+        <Text className="font-bodyMed text-sm text-primary dark:text-primary">
           {initials}
         </Text>
       ) : (

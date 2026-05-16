@@ -3,6 +3,32 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --primary: #0a1f30;
+    --secondary: #1a7ec8;
+    --on-primary: #ffffff;
+    --background: #fafafa;
+    --foreground: #09090b;
+    --card: #ffffff;
+    --muted: #52525b;
+    --border: #e4e4e7;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #ef4444;
+    --info: #3b82f6;
+  }
+
+  .dark {
+    --primary: #f8fafc;
+    --secondary: #1a7ec8;
+    --on-primary: #ffffff;
+    --background: #09090b;
+    --foreground: #f8fafc;
+    --card: #18181b;
+    --muted: #a1a1aa;
+    --border: #27272a;
+  }
+
   /* Sub-pixel anti-aliasing for dark mode */
   .dark body {
     -webkit-font-smoothing: antialiased;
