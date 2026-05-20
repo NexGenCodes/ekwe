@@ -1,5 +1,6 @@
 import { Env, Tier, TranscribeResult } from './types';
 import { logger } from './logger';
+import { guardAudioSize, guardAutoDetect, guardLanguageCode } from './security';
 import * as witai from './providers/witai';
 import * as groq from './providers/groq';
 import * as deepgram from './providers/deepgram';
@@ -51,6 +52,16 @@ export async function handleTranscribe(
   const lang = formData.get('lang') as string | null;
 
   if (!file) return Response.json({ error: 'MISSING_FILE' }, { status: 400 });
+
+  // ── Security Guards (centralized in security.ts) ──
+  const sizeGuard = guardAudioSize(file.size, tier);
+  if (!sizeGuard.allowed) return sizeGuard.response;
+
+  const autoGuard = guardAutoDetect(lang, tier);
+  if (!autoGuard.allowed) return autoGuard.response;
+
+  const langGuard = guardLanguageCode(lang, 'lang');
+  if (!langGuard.allowed) return langGuard.response;
 
   // ── Magic Byte Sniffer for WhatsApp / Android Edge Cases ──
   // Always sniff the first 4 bytes. React Native often assigns 'audio/m4a' 

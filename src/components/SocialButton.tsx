@@ -46,6 +46,8 @@ export const SocialButton = ({
         borderWidth: 1,
         borderColor: color.border,
       }}
+      accessibilityRole="button"
+      accessibilityLabel={LABELS[provider][action]}
     >
       <Text style={{ fontSize: 20, color: color.foreground }}>
         {provider === 'apple' ? '' : 'G'}

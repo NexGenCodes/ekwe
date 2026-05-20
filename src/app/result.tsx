@@ -1,11 +1,17 @@
+import { BlurView } from 'expo-blur';
 import { useLocalSearchParams } from 'expo-router';
 import React from 'react';
-import { View, Text, ScrollView, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  ActivityIndicator,
+  StyleSheet,
+} from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AudioWaveform } from '@/components';
-import { Button, Card, ScreenHeader } from '@/components/ui';
+import { Button, Card } from '@/components/ui';
 import { getLanguageName } from '@/constants/languages';
 import { useClipboard, useResultPipeline, useTheme } from '@/hooks';
 
@@ -31,7 +37,7 @@ export default function ResultScreen(): React.JSX.Element {
     isHistoryReplay: params.isHistoryReplay === 'true',
   });
 
-  const { color } = useTheme();
+  const { color, isDark } = useTheme();
   const primaryColor = color.primary;
   const staticProgress = useSharedValue(0);
 
@@ -39,29 +45,30 @@ export default function ResultScreen(): React.JSX.Element {
     await copy(text);
   };
 
-  return (
-    <SafeAreaView
-      edges={['top']}
-      className="flex-1 bg-background dark:bg-background"
-    >
-      {/* Header */}
-      <ScreenHeader
-        title={isHistoryReplay ? 'History Record' : 'Translation Result'}
-      />
+  const Container = process.env.EXPO_OS === 'ios' ? BlurView : View;
+  const containerProps =
+    process.env.EXPO_OS === 'ios'
+      ? { intensity: 80, tint: isDark ? ('dark' as const) : ('light' as const) }
+      : { style: { flex: 1, backgroundColor: color.background } };
 
+  return (
+    <Container {...containerProps} style={styles.flex1}>
       <ScrollView
-        className="flex-1 px-6 bg-background dark:bg-background"
+        style={styles.scrollView}
         contentContainerStyle={{ paddingBottom: 40 }}
+        contentInsetAdjustmentBehavior="automatic"
       >
         {/* Status Indicator */}
         {isProcessing && !transcript && (
-          <View className="items-center py-12 space-y-4">
+          <View style={styles.processingContainer}>
             <ActivityIndicator size="large" color={primaryColor} />
-            <View className="items-center">
-              <Text className="font-display text-lg text-foreground dark:text-foreground">
+            <View style={styles.processingTextContainer}>
+              <Text
+                style={[styles.processingTitle, { color: color.foreground }]}
+              >
                 Processing Audio
               </Text>
-              <Text className="font-body text-sm text-muted dark:text-muted mt-1">
+              <Text style={[styles.processingSubtitle, { color: color.muted }]}>
                 This usually takes a few seconds...
               </Text>
             </View>
@@ -70,15 +77,15 @@ export default function ResultScreen(): React.JSX.Element {
 
         {/* Content Blocks */}
         {transcript.length > 0 && (
-          <View className="mt-8">
+          <View style={styles.blocksContainer}>
             {/* Original Text */}
-            <View className="mb-8">
-              <View className="flex-row justify-between items-center mb-3">
-                <Text className="font-bodyMed text-xs uppercase tracking-widest text-muted dark:text-muted">
+            <View style={styles.block}>
+              <View style={styles.blockHeader}>
+                <Text style={[styles.blockLabel, { color: color.muted }]}>
                   ORIGINAL · {getLanguageName(sourceLang)}{' '}
                   {isProcessing && '✨ POLISHING'}
                 </Text>
-                <View className="flex-row gap-2">
+                <View style={styles.headerActions}>
                   <Button
                     variant="ghost"
                     size="small"
@@ -88,7 +95,7 @@ export default function ResultScreen(): React.JSX.Element {
                 </View>
               </View>
               <Card style={{ padding: 24, borderRadius: 20 }}>
-                <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground">
+                <Text style={[styles.cardText, { color: color.foreground }]}>
                   {transcript}
                 </Text>
               </Card>
@@ -96,9 +103,9 @@ export default function ResultScreen(): React.JSX.Element {
 
             {/* Translation Text (Result) */}
             {translation ? (
-              <View className="mb-8">
-                <View className="flex-row justify-between items-center mb-3">
-                  <Text className="font-bodyMed text-xs uppercase tracking-widest text-primary dark:text-primary">
+              <View style={styles.block}>
+                <View style={styles.blockHeader}>
+                  <Text style={[styles.blockLabel, { color: primaryColor }]}>
                     TRANSLATED · {getLanguageName(targetLang)}
                   </Text>
                 </View>
@@ -106,13 +113,13 @@ export default function ResultScreen(): React.JSX.Element {
                   variant="accent"
                   style={{ padding: 24, borderRadius: 20 }}
                 >
-                  <Text className="font-body text-lg leading-7 text-foreground dark:text-foreground">
+                  <Text style={[styles.cardText, { color: color.foreground }]}>
                     {translation}
                   </Text>
                 </Card>
               </View>
             ) : (
-              <View className="items-center py-6">
+              <View style={styles.translateActionContainer}>
                 {isTranslating ? (
                   <ActivityIndicator color={primaryColor} />
                 ) : (
@@ -131,7 +138,7 @@ export default function ResultScreen(): React.JSX.Element {
         {/* Replay context if history */}
         {isHistoryReplay && !isProcessing && (
           <Card style={{ padding: 24, borderRadius: 20 }}>
-            <Text className="font-bodyMed text-xs text-muted dark:text-muted mb-4 uppercase tracking-widest">
+            <Text style={[styles.voiceArchLabel, { color: color.muted }]}>
               Voice Architecture
             </Text>
             <AudioWaveform
@@ -147,7 +154,12 @@ export default function ResultScreen(): React.JSX.Element {
 
       {/* Global Action Bar */}
       {!isProcessing && translation && (
-        <View className="px-6 py-8 border-t border-border dark:border-border bg-background dark:bg-background">
+        <View
+          style={[
+            styles.actionBar,
+            { borderTopColor: color.border, backgroundColor: color.background },
+          ]}
+        >
           <Button
             variant="secondary"
             size="large"
@@ -156,6 +168,44 @@ export default function ResultScreen(): React.JSX.Element {
           />
         </View>
       )}
-    </SafeAreaView>
+    </Container>
   );
 }
+
+const styles = StyleSheet.create({
+  flex1: { flex: 1 },
+  scrollView: { flex: 1, paddingHorizontal: 24 },
+  processingContainer: { alignItems: 'center', paddingVertical: 48, gap: 16 },
+  processingTextContainer: { alignItems: 'center' },
+  processingTitle: { fontFamily: 'Outfit-Medium', fontSize: 18 },
+  processingSubtitle: {
+    fontFamily: 'Outfit-Regular',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  blocksContainer: { marginTop: 32 },
+  block: { marginBottom: 32 },
+  blockHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  blockLabel: {
+    fontFamily: 'Outfit-Medium',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+  },
+  headerActions: { flexDirection: 'row', gap: 8 },
+  cardText: { fontFamily: 'Outfit-Regular', fontSize: 18, lineHeight: 28 },
+  translateActionContainer: { alignItems: 'center', paddingVertical: 24 },
+  voiceArchLabel: {
+    fontFamily: 'Outfit-Medium',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    marginBottom: 16,
+  },
+  actionBar: { paddingHorizontal: 24, paddingVertical: 32, borderTopWidth: 1 },
+});

@@ -1,6 +1,6 @@
 import { useSelector } from '@legendapp/state/react';
 import React, { useEffect, useRef, useMemo } from 'react';
-import { Dimensions, View } from 'react-native';
+import { Dimensions, View, StyleSheet } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
@@ -271,7 +271,7 @@ export function LensBubble(): React.ReactElement | null {
   if (!bubbleEnabled) return null;
 
   return (
-    <View className="absolute inset-0 pointer-events-none">
+    <View style={styles.container}>
       <Animated.View
         style={[
           {
@@ -305,7 +305,7 @@ export function LensBubble(): React.ReactElement | null {
             <MicrophoneIcon size={20} color={onPrimaryColor} />
           )}
           {recordingState === RecordingState.Recording && (
-            <View className="flex-row items-center gap-0.5">
+            <View style={styles.meterContainer}>
               {history.map((h, i) => (
                 <MeterBar key={i} value={h} color={onPrimaryColor} />
               ))}
@@ -329,3 +329,15 @@ export function LensBubble(): React.ReactElement | null {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    pointerEvents: 'none',
+  },
+  meterContainer: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+});

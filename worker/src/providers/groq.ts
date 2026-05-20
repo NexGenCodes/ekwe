@@ -26,12 +26,16 @@ export async function transcribe(
       body.append('response_format', 'json');
       body.append('temperature', '0');
 
-      return fetch(GROQ_TRANSCRIBE, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}` },
-        body,
+      return fetchWithTimeout(
+        GROQ_TRANSCRIBE,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${key}` },
+          body,
+        },
+        TIMEOUT_FAST,
         signal,
-      });
+      );
     },
     signal,
   );

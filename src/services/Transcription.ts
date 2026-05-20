@@ -5,7 +5,8 @@ import { ProcessedAudio } from '@/services/AudioProcessor';
 import { supabase } from '@/services/supabase';
 import { authActions } from '@/store';
 import { Result, ok, err } from '@/types/Result';
-import { logger } from '@/utils';
+import { fetchWithRetry } from '@/utils/networkUtils';
+import logger from '@/utils/logger';
 
 const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? '';
 
@@ -76,41 +77,43 @@ class TranscriptionServiceClass {
       formData.append('lang', sourceLang || 'auto');
       formData.append('timestamp_granularities', 'word');
 
-      // Use standard fetch API (natively supports binary streaming and AbortSignal in SDK 55)
-      const fetchResponse = await fetch(`${workerUrl}/transcribe`, {
+      const fetchResponse = await fetchWithRetry(`${workerUrl}/transcribe`, {
         method: 'POST',
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          'X-Ekwe-Key': process.env.EXPO_PUBLIC_EKWE_APP_KEY ?? '',
         },
         body: formData,
         signal,
+        retries: 2,
+        backoff: 1000,
+        timeout: 30000,
       });
 
-      const bodyText = await fetchResponse.text();
-
-      const response = {
-        ok: fetchResponse.ok,
-        status: fetchResponse.status,
-        body: bodyText,
-      };
-
-      if (!response.ok) {
-        let body: { error?: string } = {};
+      if (!fetchResponse.ok) {
+        let errorCode = 'EKWE_TRANSCRIPTION_FAIL';
         try {
-          body = JSON.parse(response.body);
+          const errorBody = await fetchResponse.text();
+          const parsed = JSON.parse(errorBody) as { error?: string };
+          errorCode = parsed.error ?? errorCode;
         } catch {
-          /* empty */
+          /* ignore parse failures on error body */
         }
         logger.error(
           '[Transcription] FAIL: non-ok response',
-          response.status,
-          body,
+          fetchResponse.status,
+          errorCode,
         );
-        return this.mapErrorCode(body.error ?? 'EKWE_TRANSCRIPTION_FAIL');
+
+        if (fetchResponse.status === 429) {
+          return err(EkweError.RATE_LIMITED);
+        }
+        if (fetchResponse.status === 401) {
+          return err(EkweError.TRANSCRIPTION_FAIL);
+        }
+        return this.mapErrorCode(errorCode);
       }
 
-      const data = JSON.parse(response.body) as {
+      const data = (await fetchResponse.json()) as {
         text: string;
         words?: { word: string; start: number; end: number }[];
         language?: string;
@@ -135,8 +138,18 @@ class TranscriptionServiceClass {
         data.provider,
       );
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Unknown error';
-      logger.error('[Transcription] FAIL: exception', message);
+      if (e instanceof Error) {
+        if (e.name === 'AbortError') {
+          logger.info('[Transcription] Request was aborted');
+          return err(EkweError.INTERRUPTED);
+        }
+        if (e.message === 'CLIENT_ABORTED') {
+          return err(EkweError.INTERRUPTED);
+        }
+        logger.error('[Transcription] FAIL: exception', e.message);
+      } else {
+        logger.error('[Transcription] FAIL: unknown error', String(e));
+      }
       return err(EkweError.NETWORK_LOST);
     }
   }
@@ -204,6 +217,8 @@ class TranscriptionServiceClass {
       EKWE_EMPTY_TRANSCRIPT: EkweError.EMPTY_TRANSCRIPT,
       EKWE_TRANSCRIPTION_FAIL: EkweError.TRANSCRIPTION_FAIL,
       EKWE_TRANSCRIBE_TIMEOUT: EkweError.TRANSCRIBE_TIMEOUT,
+      EKWE_FILE_TOO_LARGE: EkweError.FILE_TOO_LARGE,
+      EKWE_RATE_LIMITED: EkweError.RATE_LIMITED,
     };
     return err(map[code] ?? EkweError.TRANSCRIPTION_FAIL);
   }

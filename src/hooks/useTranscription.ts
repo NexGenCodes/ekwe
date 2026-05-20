@@ -2,8 +2,8 @@ import { useSelector } from '@legendapp/state/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { EkweError } from '@/constants/errors';
-import { HistoryService } from '@/services/HistoryService';
 import { ProcessedAudio } from '@/services/AudioProcessor';
+import { HistoryService } from '@/services/HistoryService';
 import {
   TranscriptionService,
   TranscriptionResult,
@@ -112,7 +112,9 @@ export const useTranscription = (): UseTranscriptionReturn => {
         // Save to history via HistoryService
         if (sessionId !== null) {
           if (!userSession) {
-            logger.warn('[Transcription] No user session, skipping history save');
+            logger.warn(
+              '[Transcription] No user session, skipping history save',
+            );
           } else {
             HistoryService.recordTranslation(
               {
@@ -120,6 +122,7 @@ export const useTranscription = (): UseTranscriptionReturn => {
                 targetLang: selectedLanguages[0] ?? 'en',
                 transcript,
                 translation: null,
+                transliteration: null,
                 duration: Math.round(audio.durationMs / 1000),
                 sourceApp: 'ekwe',
                 provider: 'gemini', // Default or from context
@@ -141,7 +144,16 @@ export const useTranscription = (): UseTranscriptionReturn => {
         return err(EkweError.TRANSCRIPTION_FAIL);
       }
     },
-    [sourceLang, selectedLanguages, sessionId, userSession, cancelTranscription, setError, setRecordingState, appendTranscript],
+    [
+      sourceLang,
+      selectedLanguages,
+      sessionId,
+      userSession,
+      cancelTranscription,
+      setError,
+      setRecordingState,
+      appendTranscript,
+    ],
   );
 
   return {

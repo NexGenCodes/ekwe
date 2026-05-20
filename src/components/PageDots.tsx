@@ -1,5 +1,5 @@
 import React from 'react';
-import { View } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 
 interface PageDotsProps {
   total: number;
@@ -11,21 +11,32 @@ export const PageDots = ({
   active,
 }: PageDotsProps): React.ReactElement => {
   return (
-    <View className="flex-row items-center justify-center gap-3">
+    <View style={styles.container}>
       {Array.from({ length: total }).map((_, i) => {
         const isActive = i === active;
 
         return (
           <View
             key={i}
-            className={`h-1.5 rounded-full ${
-              isActive
-                ? 'w-8 bg-primary dark:bg-primary'
-                : 'w-1.5 bg-zinc-300 dark:bg-zinc-800'
-            }`}
+            style={[
+              styles.dot,
+              isActive ? styles.activeDot : styles.inactiveDot,
+            ]}
           />
         );
       })}
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  dot: { height: 6, borderRadius: 3 },
+  activeDot: { width: 32, backgroundColor: '#3B82F6' }, // default primary, though should ideally useTheme if needed
+  inactiveDot: { width: 6, backgroundColor: '#D4D4D8' },
+});

@@ -9,6 +9,7 @@ export interface HistoryEntry {
   targetLang: string;
   transcript: string;
   translation: string | null;
+  transliteration?: string | null;
   timestamp: number;
   duration: number;
   sourceApp: string | null;

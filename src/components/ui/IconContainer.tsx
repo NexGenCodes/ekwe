@@ -5,8 +5,8 @@ import { useTheme } from '@/hooks';
 
 export interface IconContainerProps {
   children: React.ReactNode;
-  /** Diameter preset */
-  size?: 'sm' | 'md' | 'lg';
+  /** Diameter preset or custom number */
+  size?: 'sm' | 'md' | 'lg' | 'xl' | number;
   /** Background tint color */
   variant?: 'primary' | 'muted' | 'custom';
   /** Custom background color (when variant='custom') */
@@ -14,13 +14,13 @@ export interface IconContainerProps {
   /** Shape */
   rounded?: 'full' | 'lg';
   style?: StyleProp<ViewStyle>;
-  className?: string;
 }
 
 const SIZE_MAP = {
   sm: 36,
   md: 40,
   lg: 48,
+  xl: 64,
 } as const;
 
 /**
@@ -34,7 +34,6 @@ export const IconContainer = ({
   backgroundColor,
   rounded = 'full',
   style,
-  className,
 }: IconContainerProps): React.ReactElement => {
   const { color } = useTheme();
 
@@ -44,11 +43,10 @@ export const IconContainer = ({
     return `${color.primary}15`;
   })();
 
-  const dimension = SIZE_MAP[size];
+  const dimension = typeof size === 'number' ? size : SIZE_MAP[size];
 
   return (
     <View
-      className={className}
       style={[
         {
           width: dimension,

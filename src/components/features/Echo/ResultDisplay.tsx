@@ -40,9 +40,9 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
     );
 
     const { color } = useTheme();
-    const brandPrimary = color.primary;
+    const brandPrimary = color.secondary;
     const textSecondary = color.muted;
-    const bgMain = color.background;
+    const bgMain = color.surface;
     const handleHex = color.border;
 
     const handleTabPress = React.useCallback(
@@ -151,7 +151,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tabLabel: {
-    fontSize: 12,
-    fontWeight: '700',
+    fontFamily: 'Outfit-Bold',
+    fontSize: 13,
+    letterSpacing: -0.2,
   },
 });

@@ -1,15 +1,14 @@
-
+import { useSelector } from '@legendapp/state/react';
 import { File as ExpoFile } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { useSelector } from '@legendapp/state/react';
 
 import { useTranscription } from '../useTranscription';
 import { useTranslation } from '../useTranslation';
 
 import { ErrorMessages } from '@/constants/errors';
-import { settings$, auth$, HistoryEntry, history$ } from '@/store';
 import { HistoryService } from '@/services/HistoryService';
+import { settings$, auth$, HistoryEntry, history$ } from '@/store';
 import { AppAlert } from '@/utils/alert';
 
 export interface UseResultPipelineProps {
@@ -42,9 +41,11 @@ export const useResultPipeline = ({
   isHistoryReplay = false,
 }: UseResultPipelineProps): UseResultPipelineReturn => {
   const userSession = useSelector(() => auth$.session.get());
-  
+
   // Watch for the specific entry if entryId exists
-  const foundEntry = useSelector(() => (entryId ? history$[entryId].get() : null)) as HistoryEntry | null;
+  const foundEntry = useSelector(() =>
+    entryId ? history$[entryId].get() : null,
+  ) as HistoryEntry | null;
 
   const defaultSourceLang = useSelector(() =>
     settings$.selectedLanguages[0].get(),
@@ -108,6 +109,7 @@ export const useResultPipeline = ({
             targetLang,
             transcript: txResult.transcript,
             translation: null,
+            transliteration: null,
             duration: 0,
             sourceApp: 'ekwe',
             provider: 'gemini',
@@ -145,7 +147,7 @@ export const useResultPipeline = ({
         transcript,
         sourceLang,
         targetLang,
-        entryId
+        entryId,
       );
 
       if (!trResultResponse.ok) {

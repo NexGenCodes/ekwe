@@ -15,13 +15,16 @@ export interface Env {
   [key: string]: unknown;
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
-  EKWE_APP_KEY: string;
   EKWE_KV: KVNamespace;
   AI: AiBinding;
   RATE_LIMITER: {
     limit: (options: { key: string }) => Promise<{ success: boolean }>;
   };
-  EVASION_HEADERS?: Record<string, string>;
+
+  // ─── Payment Webhook Secrets ──────────────────────────────────────
+  PAYSTACK_SECRET_KEY?: string;
+  FLUTTERWAVE_SECRET_HASH?: string;
+  REVENUECAT_WEBHOOK_SECRET?: string;
 }
 
 export type Tier = 'PREMIUM' | 'CAPPED_PREMIUM' | 'FREE';

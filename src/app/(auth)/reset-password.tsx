@@ -59,8 +59,8 @@ export default function ResetPasswordScreen(): React.JSX.Element {
           <KeyRound size={28} color={primary} />
         </View>
         <Text
-          className="font-display"
           style={{
+            fontFamily: 'Outfit-Medium',
             fontSize: 28,
             color: fg,
             letterSpacing: -0.5,

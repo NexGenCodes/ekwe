@@ -107,7 +107,8 @@
       ],
       "./modules/ekwe-native/app.plugin.js",
       "expo-router",
-      "@react-native-google-signin/google-signin/app.plugin.js"
+      "@react-native-google-signin/google-signin/app.plugin.js",
+      "expo-image"
     ],
     "assetBundlePatterns": [
       "assets/fonts/*"

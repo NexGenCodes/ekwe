@@ -1,8 +1,8 @@
 import { Env, TranslateResult } from '../types';
-import { rotateKeys, fetchWithTimeout, TIMEOUT_FAST } from '../utils';
+import { rotateKeys, fetchWithTimeout, getEvasionHeaders, TIMEOUT_FAST } from '../utils';
 import { logger } from '../logger';
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 /**
  * Google Gemini 1.5 Flash — Multi-key rotation support.
@@ -27,7 +27,7 @@ export async function translate(
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(env.EVASION_HEADERS || {}),
+            ...getEvasionHeaders(),
           },
           body: JSON.stringify({
             contents: [{
@@ -55,7 +55,7 @@ export async function translate(
       return null;
     }
 
-    return { translation, provider: 'gemini-2.0-flash' };
+    return { translation, provider: 'gemini-2.5-flash' };
   } catch (e) {
     logger.error('[gemini] Translate exception', { error: e instanceof Error ? e.message : String(e) });
     return null;

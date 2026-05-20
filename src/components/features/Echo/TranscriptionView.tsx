@@ -1,5 +1,8 @@
 import React from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
+
+import { fonts } from '@/constants/fonts';
+import { useTheme } from '@/hooks';
 
 interface Props {
   transcript: string;
@@ -10,16 +13,23 @@ export const TranscriptionView = ({
   transcript,
   isLive = false,
 }: Props): React.JSX.Element => {
+  const { color } = useTheme();
+
   return (
-    <View className="rounded-3xl p-6 border border-border bg-card min-h-[140px] shadow-sm">
-      <Text className="font-body text-xl leading-9 text-foreground">
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: color.card, borderColor: color.border },
+      ]}
+    >
+      <Text style={[styles.transcriptText, { color: color.foreground }]}>
         {transcript || (isLive ? 'Listening...' : 'Waiting for audio...')}
       </Text>
 
       {isLive && (
-        <View className="flex-row items-center mt-6">
-          <View className="w-2.5 h-2.5 rounded-full mr-2.5 bg-primary animate-pulse" />
-          <Text className="font-bodyMed text-xs uppercase tracking-widest text-muted">
+        <View style={styles.liveContainer}>
+          <View style={[styles.pulseDot, { backgroundColor: color.primary }]} />
+          <Text style={[styles.liveText, { color: color.muted }]}>
             Live Stream
           </Text>
         </View>
@@ -27,3 +37,26 @@ export const TranscriptionView = ({
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    minHeight: 140,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  transcriptText: { fontFamily: fonts.body, fontSize: 20, lineHeight: 36 },
+  liveContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 24 },
+  pulseDot: { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
+  liveText: {
+    fontFamily: fonts.bodyMed,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+  },
+});

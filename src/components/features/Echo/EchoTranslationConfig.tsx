@@ -10,6 +10,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 import { AnimatedCopyButton, ScrollableTextBox } from '@/components';
+import { fonts } from '@/constants/fonts';
 import { LANGUAGES, FLAG_MAP } from '@/constants/languages';
 import { useTheme } from '@/hooks';
 
@@ -38,11 +39,11 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
       handleTranslate,
     }) => {
       const { color } = useTheme();
-      const bgHex = color.card;
+      const bgHex = color.surface;
       const handleHex = color.border;
-      const textPrimary = color.foreground;
+      const textPrimary = color.primary;
       const textSecondary = color.muted;
-      const brandPrimary = color.primary;
+      const brandPrimary = color.secondary;
       const brandWarning = color.warning;
 
       const isMismatch =
@@ -249,8 +250,8 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   mismatchText: {
+    fontFamily: fonts.bodyBold,
     fontSize: 11,
-    fontWeight: '700',
     letterSpacing: 0.3,
     textTransform: 'uppercase',
   },
@@ -272,15 +273,15 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   pillLabel: {
+    fontFamily: fonts.bodyMed,
     fontSize: 10,
-    fontWeight: '600',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
     marginBottom: 1,
   },
   pillValue: {
+    fontFamily: fonts.bodyBold,
     fontSize: 14,
-    fontWeight: '800',
   },
   loadingContainer: {
     alignItems: 'center',
@@ -288,12 +289,17 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   loadingTxt: {
+    fontFamily: fonts.bodyBold,
     fontSize: 17,
-    fontWeight: '800',
     marginTop: 24,
     marginBottom: 8,
   },
-  targetLangTitle: { fontSize: 14, fontWeight: '700', marginBottom: 12 },
+  targetLangTitle: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 16,
+    marginBottom: 12,
+    letterSpacing: -0.3,
+  },
   chipsScroll: { marginBottom: 24 },
   chip: {
     flexDirection: 'row',
@@ -306,7 +312,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   chipFlag: { fontSize: 14 },
-  chipText: { fontSize: 14, fontWeight: '600' },
+  chipText: { fontFamily: fonts.bodyMed, fontSize: 14 },
   footerActions: { flexDirection: 'row', gap: 12 },
   secAction: {
     flex: 1,
@@ -318,5 +324,9 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderRadius: 16,
   },
-  secActionTxt: { fontWeight: '700', fontSize: 14 },
+  secActionTxt: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 15,
+    letterSpacing: -0.2,
+  },
 });

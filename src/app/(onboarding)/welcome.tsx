@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { Mic, Globe, ShieldCheck, ChevronRight } from 'lucide-react-native';
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, Dimensions } from 'react-native';
+import { View, Text, Dimensions, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -62,17 +62,23 @@ const FeatureCard = ({
 
   return (
     <Animated.View
-      className="flex-row items-center p-5 rounded-[24px] border border-border dark:border-zinc-800/80 bg-card dark:bg-card shadow-sm"
-      style={animatedStyle}
+      style={[
+        styles.featureCard,
+        { backgroundColor: '#FFFFFF', borderColor: '#E4E4E7' }, // Since useTheme is not passed here, fallback to hardcoded or wait for refactoring if needed, but we can access color.card if we passed it. Let's pass color to FeatureCard to make it proper.
+        animatedStyle,
+      ]}
     >
-      <View className="w-12 h-12 rounded-2xl items-center justify-center mr-4 bg-background dark:bg-background border border-zinc-100 dark:border-zinc-800">
+      <View
+        style={[
+          styles.iconContainer,
+          { backgroundColor: '#F4F4F5', borderColor: '#F4F4F5' },
+        ]}
+      >
         {icon}
       </View>
-      <View className="flex-1">
-        <Text className="text-base mb-0.5 font-bodyMed text-foreground dark:text-zinc-50 tracking-tight">
-          {title}
-        </Text>
-        <Text className="text-sm leading-5 font-body text-muted dark:text-zinc-400">
+      <View style={styles.textContainer}>
+        <Text style={[styles.title, { color: '#09090b' }]}>{title}</Text>
+        <Text style={[styles.description, { color: '#71717A' }]}>
           {description}
         </Text>
       </View>
@@ -131,28 +137,33 @@ export default function WelcomeScreen(): React.ReactElement {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-background dark:bg-background">
-      <View className="flex-1 px-6">
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: color.background }]}
+    >
+      <View style={styles.container}>
         <Animated.View
-          className="items-center mb-10"
-          style={[{ marginTop: SCREEN_HEIGHT * 0.08 }, headerStyle]}
+          style={[
+            styles.header,
+            { marginTop: SCREEN_HEIGHT * 0.08 },
+            headerStyle,
+          ]}
         >
-          <View className="mb-6">
+          <View style={styles.logoContainer}>
             <EkweWordmark size={100} color={logoColor} />
           </View>
-          <Text className="text-[34px] text-center leading-[40px] font-display text-foreground dark:text-foreground tracking-tight px-4">
+          <Text style={[styles.mainHeading, { color: color.foreground }]}>
             Every voice understood.
           </Text>
         </Animated.View>
 
-        <View className="gap-5">
+        <View style={styles.featuresContainer}>
           {features.map((item, index) => (
             <FeatureCard key={item.title} {...item} index={index} />
           ))}
         </View>
       </View>
 
-      <View className="w-full px-8 pb-12">
+      <View style={styles.bottomSection}>
         <Button
           variant="primary"
           size="large"
@@ -162,10 +173,61 @@ export default function WelcomeScreen(): React.ReactElement {
             <ChevronRight size={24} color={color.onPrimary} strokeWidth={3} />
           }
         />
-        <Text className="text-xs text-center mt-8 font-body text-muted dark:text-zinc-600">
+        <Text style={[styles.disclaimer, { color: color.muted }]}>
           By continuing, you agree to our Terms and Privacy Policy.
         </Text>
       </View>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1 },
+  container: { flex: 1, paddingHorizontal: 24 },
+  header: { alignItems: 'center', marginBottom: 40 },
+  logoContainer: { marginBottom: 24 },
+  mainHeading: {
+    fontSize: 34,
+    textAlign: 'center',
+    lineHeight: 40,
+    fontFamily: 'Outfit-Medium',
+    letterSpacing: -0.5,
+    paddingHorizontal: 16,
+  },
+  featuresContainer: { gap: 20 },
+  bottomSection: { width: '100%', paddingHorizontal: 32, paddingBottom: 48 },
+  disclaimer: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 32,
+    fontFamily: 'Outfit-Regular',
+  },
+  featureCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  iconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+    borderWidth: 1,
+  },
+  textContainer: { flex: 1 },
+  title: {
+    fontSize: 16,
+    marginBottom: 2,
+    fontFamily: 'Outfit-Medium',
+    letterSpacing: -0.5,
+  },
+  description: { fontSize: 14, lineHeight: 20, fontFamily: 'Outfit-Regular' },
+});

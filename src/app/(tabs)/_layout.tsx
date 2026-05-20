@@ -1,12 +1,8 @@
 import { Tabs } from 'expo-router';
+import { Home, History, User, Settings } from 'lucide-react-native';
 import React from 'react';
 
-import { HistoryIcon } from '@/assets/icons/HistoryIcon';
-import { HomeIcon } from '@/assets/icons/HomeIcon';
-import { SettingsIcon } from '@/assets/icons/SettingsIcon';
 import { useTheme } from '@/hooks';
-
-const TAB_BAR_HEIGHT = 64;
 
 export default function TabLayout(): React.ReactElement {
   const { color } = useTheme();
@@ -14,23 +10,28 @@ export default function TabLayout(): React.ReactElement {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false,
-        tabBarStyle: {
+        headerTransparent: false,
+        headerStyle: {
           backgroundColor: color.background,
-          borderTopWidth: 0.2,
+        },
+        headerShadowVisible: false,
+        headerTitleStyle: {
+          fontFamily: 'Outfit-Bold',
+          color: color.foreground,
+        },
+        headerTintColor: color.primary,
+        tabBarStyle: {
+          backgroundColor: color.card,
           borderTopColor: color.border,
-          height: TAB_BAR_HEIGHT,
-          paddingBottom: 12,
+          height: 60,
+          paddingBottom: 8,
           paddingTop: 8,
-          elevation: 0,
-          shadowOpacity: 0,
         },
         tabBarActiveTintColor: color.primary,
         tabBarInactiveTintColor: color.muted,
         tabBarLabelStyle: {
-          fontFamily: 'Outfit-Regular',
+          fontFamily: 'Outfit-Medium',
           fontSize: 12,
-          marginTop: 2,
         },
       }}
     >
@@ -38,43 +39,35 @@ export default function TabLayout(): React.ReactElement {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => (
-            <HomeIcon size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          href: null,
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="history"
         options={{
           title: 'History',
+          headerShown: true,
           tabBarIcon: ({ color, size }) => (
-            <HistoryIcon size={size} color={color} />
+            <History size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="billing"
+        name="profile"
         options={{
-          title: 'Billing',
-          tabBarIcon: ({ color, size }) => {
-            // Let's use a standard icon from lucide-react-native if we don't have a custom one
-            const { CreditCard } = require('lucide-react-native');
-            return <CreditCard size={size} color={color} />;
-          },
+          title: 'Profile',
+          headerShown: true,
+          tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
+          headerShown: true,
           tabBarIcon: ({ color, size }) => (
-            <SettingsIcon size={size} color={color} />
+            <Settings size={size} color={color} />
           ),
         }}
       />

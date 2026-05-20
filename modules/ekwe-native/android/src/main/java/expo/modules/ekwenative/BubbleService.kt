@@ -170,7 +170,7 @@ class BubbleService : Service() {
         val bubble = FrameLayout(this).apply {
             val inner = View(context).apply {
                 id = 1337
-                setBackgroundColor(Color.parseColor("#1A7EC8"))
+                setBackgroundColor(Color.parseColor("#3B82F6"))
                 layoutParams = FrameLayout.LayoutParams(140, 140)
             }
             addView(inner)
@@ -226,7 +226,7 @@ class BubbleService : Service() {
         inner.setBackgroundColor(when(mode) {
             "MAGIC" -> Color.parseColor("#22C55E")
             "RECORD" -> Color.parseColor("#EF4444")
-            else -> Color.parseColor("#1A7EC8")
+            else -> Color.parseColor("#3B82F6")
         })
     }
 

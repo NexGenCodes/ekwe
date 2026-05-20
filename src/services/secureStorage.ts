@@ -1,5 +1,6 @@
-import { logger } from '@/utils';
 import { setItem, getItem, deleteItem } from 'react-native-sensitive-info';
+
+import { logger } from '@/utils';
 
 // Configuration for sensitive-info v6 (Nitro)
 const secureStoreConfig = {
@@ -14,7 +15,7 @@ export const secureStorage = {
       return item?.value || null;
     } catch {
       // Keystore corrupted or locked: purge it to prevent infinite logout loops
-      await deleteItem(key, secureStoreConfig).catch(() => { });
+      await deleteItem(key, secureStoreConfig).catch(() => {});
       return null;
     }
   },
@@ -24,7 +25,7 @@ export const secureStorage = {
     } catch (e) {
       logger.error('[secureStorage] Failed to set item:', e);
       // Fallback: purge if corrupted
-      await deleteItem(key, secureStoreConfig).catch(() => { });
+      await deleteItem(key, secureStoreConfig).catch(() => {});
     }
   },
   removeItem: async (key: string): Promise<void> => {

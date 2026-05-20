@@ -1,7 +1,8 @@
+import { Image as ExpoImage } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { Lock } from 'lucide-react-native';
 import React from 'react';
-import { Pressable, View, Text } from 'react-native';
+import { Pressable, View, Text, StyleSheet } from 'react-native';
 
 import { useTheme } from '@/hooks';
 
@@ -25,7 +26,6 @@ export const SettingsRow = ({
       onPress={() => {
         if (isLocked) {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          // Show upgrade modal logic here in future
           return;
         }
         if (onPress) {
@@ -34,20 +34,52 @@ export const SettingsRow = ({
         }
       }}
       disabled={!onPress && !isLocked}
-      className={`flex-row items-center justify-between px-5 py-4 border-b bg-card dark:bg-card border-border dark:border-zinc-800/60 ${
-        onPress && !isLocked
-          ? 'active:opacity-70 transition-opacity duration-200'
-          : ''
-      }`}
-      style={{ opacity: isLocked ? 0.5 : 1 }}
+      accessibilityRole="button"
+      accessibilityLabel={isLocked ? `${label}. Locked. Upgrade required.` : label}
+      accessibilityState={isLocked ? { disabled: true } : undefined}
+      style={({ pressed }) => [
+        styles.row,
+        {
+          backgroundColor: color.card,
+          borderBottomColor: color.border,
+          opacity: isLocked ? 0.5 : pressed && onPress && !isLocked ? 0.7 : 1,
+        },
+      ]}
     >
-      <View className="flex-row items-center gap-2">
-        <Text className="font-bodyMed text-[15px] text-foreground dark:text-zinc-100">
-          {label}
-        </Text>
-        {isLocked && <Lock size={14} color={color.muted} />}
+      <View style={styles.leftContent}>
+        <Text style={[styles.label, { color: color.foreground }]}>{label}</Text>
+        {isLocked &&
+          (process.env.EXPO_OS === 'ios' ? (
+            <ExpoImage
+              source="sf:lock.fill"
+              style={{ width: 14, height: 14 }}
+              tintColor={color.muted}
+            />
+          ) : (
+            <Lock size={14} color={color.muted} />
+          ))}
       </View>
       {value}
     </Pressable>
   );
 };
+
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  leftContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  label: {
+    fontFamily: 'Outfit-Medium',
+    fontSize: 15,
+  },
+});

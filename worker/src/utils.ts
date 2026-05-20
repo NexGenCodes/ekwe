@@ -38,13 +38,24 @@ export function getUserAgent(): string {
   return randomUserAgents[Math.floor(Math.random() * randomUserAgents.length)];
 }
 
-export function getEvasionHeaders(request: Request): Record<string, string> {
-  const clientIp = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || '1.1.1.1';
+export function getEvasionHeaders(): Record<string, string> {
+  const uaPool = [
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
+    'Mozilla/5.0 (Linux; Android 12; Pixel 6 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  ];
+  const localePool = ['en-US,en;q=0.9', 'en-GB,en;q=0.8', 'en-NG,en;q=0.9', 'en;q=0.8', 'en-US,en;q=0.9,es;q=0.7'];
+  const octet = () => Math.floor(Math.random() * 255);
+  const fakeIp = `10.${octet()}.${octet()}.${octet()}`;
+
   return {
-    'User-Agent': getUserAgent(),
-    'X-Forwarded-For': clientIp,
-    'X-Real-IP': clientIp,
-    'CF-Connecting-IP': clientIp
+    'User-Agent': uaPool[Math.floor(Math.random() * uaPool.length)],
+    'Accept-Language': localePool[Math.floor(Math.random() * localePool.length)],
+    'X-Forwarded-For': fakeIp,
+    'X-Real-IP': fakeIp,
   };
 }
 
@@ -115,7 +126,7 @@ export async function abortableDelay(ms: number, signal: AbortSignal): Promise<v
 
 // ─── Generic Key Rotation ─────────────────────────────────────────
 
-async function hashKey(key: string): Promise<string> {
+export async function hashKey(key: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
   return Array.from(new Uint8Array(buf))
     .map(b => b.toString(16).padStart(2, '0'))
@@ -151,6 +162,9 @@ export async function rotateKeys(
 
     const res = await execute(key);
 
+    // 2xx → success, return immediately
+    if (res.ok) return res;
+
     if (res.status === 429) {
       await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, 'true', { expirationTtl: 60 });
       logger.info(`[${namespace}] Key blacklisted for 60s (429)`);
@@ -160,9 +174,29 @@ export async function rotateKeys(
       continue;
     }
 
-    if (res.status >= 500 || res.status === 401) continue;
+    // Permanently dead key: invalid credentials or account suspended → blacklist 24h
+    if (res.status === 401 || res.status === 403) {
+      await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, 'true', { expirationTtl: 86400 });
+      logger.warn(`[${namespace}] Key permanently blacklisted for 24h (${res.status})`);
+      continue;
+    }
 
-    return res;
+    // 400 can signal a permanent org/account restriction (e.g. Groq organization_restricted).
+    // Clone the response so we can inspect the body without consuming it.
+    if (res.status === 400) {
+      try {
+        const body = await res.clone().text();
+        const PERMANENT_CODES = ['organization_restricted', 'invalid_api_key', 'account_deactivated', 'account_suspended'];
+        if (PERMANENT_CODES.some(code => body.includes(code))) {
+          await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, 'true', { expirationTtl: 86400 });
+          logger.warn(`[${namespace}] Key permanently blacklisted for 24h (400 permanent error)`);
+        }
+      } catch { /* ignore body parse errors */ }
+      continue;
+    }
+
+    // Everything else (500, 502, 503, etc.) → try next key without blacklisting
+    continue;
   }
 
   return null;
@@ -181,7 +215,7 @@ export interface PreflightResponse {
 
 export async function checkPreflight(env: Env, userId: string, requestedTier: Tier): Promise<PreflightResponse> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-    return { allowed: true, tier_active: requestedTier, is_fallback: false, transactions_used: 0 };
+    return { allowed: false, tier_active: requestedTier, is_fallback: false, transactions_used: 0, reason: 'PREFLIGHT_CONFIG_ERROR' };
   }
 
   try {
@@ -199,16 +233,16 @@ export async function checkPreflight(env: Env, userId: string, requestedTier: Ti
       return await res.json() as PreflightResponse;
     }
   } catch (err) {
-    logger.error('[preflight] check failed', { error: err });
+    logger.error('[preflight] check failed, failing closed', { error: err });
   }
-  return { allowed: true, tier_active: requestedTier, is_fallback: false, transactions_used: 0 };
+  return { allowed: false, tier_active: requestedTier, is_fallback: false, transactions_used: 0, reason: 'PREFLIGHT_UNAVAILABLE' };
 }
 
-export async function postflightDeduction(env: Env, userId: string, cost: number): Promise<void> {
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return;
+export async function postflightDeduction(env: Env, userId: string, cost: number): Promise<Record<string, unknown> | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return null;
 
   try {
-    await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/postflight_deduction`, {
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/postflight_deduction`, {
       method: 'POST',
       headers: {
         'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
@@ -217,7 +251,11 @@ export async function postflightDeduction(env: Env, userId: string, cost: number
       },
       body: JSON.stringify({ p_user_id: userId, p_cost: cost })
     });
+    if (res.ok) {
+      return await res.json() as Record<string, unknown>;
+    }
   } catch {
-    // Silently fail to not interrupt user flow
+    logger.error('[postflight] deduction failed');
   }
+  return null;
 }

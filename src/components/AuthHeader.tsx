@@ -44,8 +44,8 @@ export const AuthHeader = ({
         />
       </View>
       <Text
-        className="font-display"
         style={{
+          fontFamily: 'Outfit-Medium', // font-display
           fontSize: 36,
           color: color.foreground,
           letterSpacing: -0.5,

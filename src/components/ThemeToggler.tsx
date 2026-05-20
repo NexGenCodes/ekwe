@@ -56,8 +56,23 @@ export const ThemeToggler = ({
   return (
     <Pressable
       onPress={handlePress}
-      style={style}
-      className="w-12 h-12 rounded-full items-center justify-center border border-zinc-200/50 dark:border-zinc-800/80 bg-zinc-100/80 dark:bg-zinc-950/40 active:scale-95 transition-all duration-200 ease-in-out"
+      style={[
+        style,
+        {
+          width: 48,
+          height: 48,
+          borderRadius: 24,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 1,
+          borderColor: isDark
+            ? 'rgba(39, 39, 42, 0.8)'
+            : 'rgba(228, 228, 231, 0.5)',
+          backgroundColor: isDark
+            ? 'rgba(9, 9, 11, 0.4)'
+            : 'rgba(244, 244, 245, 0.8)',
+        },
+      ]}
       accessibilityRole="button"
       accessibilityLabel={
         accessibilityLabel || `Switch to ${isDark ? 'light' : 'dark'} mode`

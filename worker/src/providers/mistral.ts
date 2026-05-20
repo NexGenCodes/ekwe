@@ -1,5 +1,5 @@
 import { Env, TranslateResult } from '../types';
-import { rotateKeys, getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from '../utils';
+import { rotateKeys, fetchWithTimeout, getEvasionHeaders, TIMEOUT_FAST } from '../utils';
 import { logger } from '../logger';
 
 const MISTRAL_CHAT = 'https://api.mistral.ai/v1/chat/completions';
@@ -25,8 +25,7 @@ export async function translate(
         headers: {
           'Authorization': `Bearer ${key}`,
           'Content-Type': 'application/json',
-          'User-Agent': getUserAgent(),
-          ...(env.EVASION_HEADERS || {}),
+          ...getEvasionHeaders(),
         },
         body: JSON.stringify({
           model: 'mistral-small-latest',

@@ -1,8 +1,9 @@
-import { useColorScheme } from 'nativewind';
+import { useSelector } from '@legendapp/state/react';
 import { useMemo, useCallback } from 'react';
 import { useColorScheme as useSystemColorScheme } from 'react-native';
 
 import { getColor, bubbleColors } from '@/constants/colors';
+import { settings$, ThemePreference } from '@/store/settings';
 
 export interface ThemeTokens {
   colorScheme: 'light' | 'dark' | 'system';
@@ -11,10 +12,12 @@ export interface ThemeTokens {
     primary: string;
     secondary: string;
     onPrimary: string;
+    onSecondary: string;
     foreground: string;
     background: string;
     card: string;
     muted: string;
+    surface: string;
     border: string;
     success: string;
     warning: string;
@@ -40,27 +43,29 @@ export interface ThemeTokens {
 }
 
 export const useTheme = (): ThemeTokens => {
-  const { colorScheme, setColorScheme } = useColorScheme();
   const systemColorScheme = useSystemColorScheme();
+  // Read preference from Legend-State — ALL hook instances react to this simultaneously
+  const preference = useSelector(() => settings$.themePreference.get()) as
+    | 'light'
+    | 'dark'
+    | 'system';
 
-  // Cast to string to avoid TS error: NativeWind types this strictly as light/dark,
-  // but we still want a safety net in case it holds 'system' temporarily.
-  const resolvedColorScheme =
-    (colorScheme as string) === 'system' ? systemColorScheme : colorScheme;
-  const isDark = resolvedColorScheme === 'dark';
+  const resolvedScheme =
+    preference === 'system' ? systemColorScheme : preference;
+  const isDark = resolvedScheme === 'dark';
 
   // Stable reference: only recomputes when theme actually switches.
-  // Without this, every useTheme() consumer gets a new object on every render,
-  // defeating React.memo and causing cascade re-renders across the entire tree.
   const color = useMemo(
     () => ({
       primary: getColor('primary', isDark),
       secondary: getColor('secondary', isDark),
       onPrimary: getColor('onPrimary', isDark),
+      onSecondary: getColor('onSecondary', isDark as any),
       foreground: getColor('foreground', isDark),
       background: getColor('background', isDark),
       card: getColor('card', isDark),
       muted: getColor('muted', isDark),
+      surface: getColor('surface', isDark),
       border: getColor('border', isDark),
       success: getColor('success', isDark),
       warning: getColor('warning', isDark),
@@ -84,19 +89,18 @@ export const useTheme = (): ThemeTokens => {
     [],
   );
 
-  const setScheme = useCallback(
-    (scheme: 'light' | 'dark' | 'system') => setColorScheme(scheme),
-    [setColorScheme],
-  );
+  const setColorScheme = useCallback((scheme: 'light' | 'dark' | 'system') => {
+    settings$.themePreference.set(scheme as ThemePreference);
+  }, []);
 
   return useMemo(
     () => ({
-      colorScheme: colorScheme as 'light' | 'dark' | 'system',
-      setColorScheme: setScheme,
+      colorScheme: preference,
+      setColorScheme,
       isDark,
       color,
       shadow,
     }),
-    [colorScheme, setScheme, isDark, color, shadow],
+    [preference, setColorScheme, isDark, color, shadow],
   );
 };

@@ -4,9 +4,9 @@
  * Every auth screen calls these functions instead of touching supabase.auth directly.
  * This keeps screens thin and auth logic testable + swappable.
  */
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { Platform } from 'react-native';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 import { supabase } from '@/services/supabase';
 import { authActions } from '@/store';
@@ -23,16 +23,25 @@ export interface AuthResult {
 // ── Initialization ─────────────────────────────────────────────────
 
 let _authInitialized = false;
+let _authSubscription: { data: { subscription: any }; unsubscribe: () => void } | null = null;
 
 export const initAuth = (): void => {
   if (_authInitialized) return;
   _authInitialized = true;
 
-  supabase.auth.onAuthStateChange((event, session) => {
+  _authSubscription = supabase.auth.onAuthStateChange((event, session) => {
     logger.info(`Auth state changed: ${event}`, session?.user?.id);
     authActions.setSession(session);
     authActions.setInitialized(true);
-  });
+  }) as { data: { subscription: any }; unsubscribe: () => void };
+};
+
+export const cleanupAuth = (): void => {
+  if (_authSubscription) {
+    _authSubscription.unsubscribe();
+    _authSubscription = null;
+  }
+  _authInitialized = false;
 };
 
 // ── Email + Password ─────────────────────────────────────────────
@@ -263,5 +272,40 @@ export const setSessionFromDeepLink = async (url: string): Promise<boolean> => {
   } catch (err) {
     logger.error('[Auth] setSessionFromDeepLink error:', err);
     return false;
+  }
+};
+
+// ── Account Management ──────────────────────────────────────────
+
+export const signOut = async (): Promise<AuthResult> => {
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  } catch (err) {
+    logger.error('[Auth] signOut error:', err);
+    return { ok: false, error: 'An unexpected error occurred.' };
+  }
+};
+
+export const deleteAccount = async (): Promise<AuthResult> => {
+  try {
+    const { error } = await supabase.rpc('delete_user');
+    if (error) {
+      logger.error('[Auth] delete_user RPC error:', error);
+      return {
+        ok: false,
+        error:
+          'Please contact support at support@ekwe.app to complete account deletion.',
+      };
+    }
+    await supabase.auth.signOut();
+    return { ok: true };
+  } catch (err) {
+    logger.error('[Auth] deleteAccount error:', err);
+    return {
+      ok: false,
+      error: 'An unexpected error occurred. Please contact support.',
+    };
   }
 };

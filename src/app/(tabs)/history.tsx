@@ -1,13 +1,19 @@
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
+import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, ViewStyle } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  ViewStyle,
+  StyleSheet,
+} from 'react-native';
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CloseIcon } from '@/assets/icons/CloseIcon';
-import { DrumIcon } from '@/assets/icons/DrumIcon';
 import { SearchIcon } from '@/assets/icons/SearchIcon';
 import { HistoryItem } from '@/components';
 import { EmptyState, IconContainer } from '@/components/ui';
@@ -22,11 +28,12 @@ export default function HistoryScreen(): React.JSX.Element {
 
   // Debounce search input at 150ms to avoid recomputing sections on every keystroke
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query), 150);
-    return () => clearTimeout(t);
+    const t = setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 150);
+    return (): void => clearTimeout(t);
   }, [query]);
   const { color } = useTheme();
-  const mutedColor = color.muted;
 
   const sections = useMemo(() => {
     const filtered = entries.filter((e) =>
@@ -53,19 +60,22 @@ export default function HistoryScreen(): React.JSX.Element {
     ].filter((s) => s.data.length > 0);
   }, [entries, debouncedQuery]);
 
-  const handleEntryPress = useCallback((entry: HistoryEntry): void => {
-    router.push({
-      pathname: '/result',
-      params: {
-        sessionId: entry.id,
-        transcript: entry.transcript,
-        sourceLang: entry.sourceLang,
-        targetLang: entry.targetLang,
-        duration: entry.duration,
-        isHistoryReplay: 'true',
-      },
-    });
-  }, [router]);
+  const handleEntryPress = useCallback(
+    (entry: HistoryEntry): void => {
+      router.push({
+        pathname: '/result',
+        params: {
+          sessionId: entry.id,
+          transcript: entry.transcript,
+          sourceLang: entry.sourceLang,
+          targetLang: entry.targetLang,
+          duration: entry.duration,
+          isHistoryReplay: 'true',
+        },
+      });
+    },
+    [router],
+  );
 
   type ListItem =
     | { type: 'header'; title: string }
@@ -87,7 +97,6 @@ export default function HistoryScreen(): React.JSX.Element {
       borderRadius: 20,
       borderWidth: 1,
       borderColor: color.border,
-      borderBottomWidth: 1,
       overflow: 'hidden',
     }),
     [color.border],
@@ -97,14 +106,14 @@ export default function HistoryScreen(): React.JSX.Element {
     ({ item }: { item: ListItem }): React.ReactElement => {
       if (item.type === 'header') {
         return (
-          <Text className="font-bodyMed text-xs uppercase tracking-[0.15em] px-2 pt-6 pb-3 text-muted dark:text-muted">
+          <Text style={[styles.headerText, { color: color.muted }]}>
             {item.title}
           </Text>
         );
       }
 
       return (
-        <View className="mb-3">
+        <View style={styles.entryContainer}>
           <HistoryItem
             entry={item.data}
             onPress={handleEntryPress}
@@ -114,29 +123,24 @@ export default function HistoryScreen(): React.JSX.Element {
         </View>
       );
     },
-    [handleEntryPress, deleteEntry, itemStyle],
+    [handleEntryPress, deleteEntry, itemStyle, color.muted],
   );
 
   return (
-    <SafeAreaView
-      edges={['top']}
-      className="flex-1 bg-background"
-    >
-      <View className="px-6 py-4">
-        <Text className="font-display text-[32px] tracking-tight text-foreground dark:text-foreground">
-          History
-        </Text>
-
-        {/* Search */}
+    <View style={[styles.flex1, { backgroundColor: color.background }]}>
+      <View style={styles.topSection}>
         <Animated.View
           entering={FadeInDown.duration(400).springify()}
-          className="flex-row items-center px-5 h-14 rounded-[20px] mt-4 border bg-card border-border/50 shadow-sm"
+          style={[
+            styles.searchContainer,
+            { backgroundColor: color.card, borderColor: color.border },
+          ]}
         >
-          <SearchIcon size={20} color={mutedColor} />
+          <SearchIcon size={20} color={color.secondary} />
           <TextInput
-            className="flex-1 ml-3 font-body text-base text-foreground"
+            style={[styles.searchInput, { color: color.foreground }]}
             placeholder="Search transcripts..."
-            placeholderTextColor={mutedColor}
+            placeholderTextColor={color.muted}
             value={query}
             onChangeText={setQuery}
           />
@@ -147,53 +151,123 @@ export default function HistoryScreen(): React.JSX.Element {
                 setQuery('');
               }}
               hitSlop={12}
-              className="p-2 active:scale-95 transition-all duration-200"
+              style={({ pressed }) => [
+                styles.clearButton,
+                pressed && styles.clearButtonPressed,
+              ]}
             >
-              <CloseIcon size={18} color={mutedColor} />
+              <CloseIcon size={18} color={color.muted} />
             </Pressable>
           )}
         </Animated.View>
       </View>
 
-      <View className="flex-1 bg-background">
-        {sections.length === 0 ? (
-          <Animated.View
-            entering={FadeInUp.duration(600).springify()}
-            className="flex-1 px-8 items-center justify-center pb-20"
+      {sections.length === 0 ? (
+        <Animated.View
+          entering={FadeInUp.duration(600).springify()}
+          style={styles.emptyStateContainer}
+        >
+          <View
+            style={[
+              styles.emptyStateCard,
+              { backgroundColor: color.card, borderColor: color.border },
+            ]}
           >
-            <View className="w-full bg-card p-10 rounded-[32px] items-center border border-dashed border-border">
-              <EmptyState
-                icon={
-                  <IconContainer size="lg">
-                    <DrumIcon size={32} color={color.primary} />
-                  </IconContainer>
-                }
-                title={query.length > 0 ? 'No Matches Found' : 'Silent Library'}
-                subtitle={
-                  query.length > 0
-                    ? "We couldn't find any transcripts matching your search."
-                    : 'Your voice note history will appear here.'
-                }
-              />
-            </View>
-          </Animated.View>
-        ) : (
-          <View className="flex-1 px-4">
-            <FlashList
-              data={flatData}
-              renderItem={renderItem}
-              getItemType={(item) => item.type}
-              keyExtractor={(item, index) => 
-                item.type === 'header' ? `header-${item.title}` : `entry-${item.data.id || index}`
+            <EmptyState
+              icon={
+                <IconContainer size="lg" backgroundColor={`${color.primary}15`}>
+                  {process.env.EXPO_OS === 'ios' ? (
+                    <ExpoImage
+                      source="sf:clock.fill"
+                      style={{ width: 32, height: 32 }}
+                      tintColor={color.primary}
+                    />
+                  ) : (
+                    <ExpoImage
+                      source={require('@/assets/icons/DrumIcon').DrumIcon}
+                      style={{ width: 32, height: 32 }}
+                    />
+                  )}
+                </IconContainer>
               }
-              // @ts-expect-error - FlashList 2.0.2 typing issue
-              estimatedItemSize={100}
-              contentContainerStyle={{ paddingBottom: 40 }}
-              showsVerticalScrollIndicator={false}
+              title={query.length > 0 ? 'No Matches Found' : 'Silent Library'}
+              subtitle={
+                query.length > 0
+                  ? "We couldn't find any transcripts matching your search."
+                  : 'Your voice note history will appear here.'
+              }
             />
           </View>
-        )}
-      </View>
-    </SafeAreaView>
+        </Animated.View>
+      ) : (
+        <View style={styles.listContainer}>
+          <FlashList
+            data={flatData}
+            renderItem={renderItem}
+            getItemType={(item) => item.type}
+            keyExtractor={(item, index) =>
+              item.type === 'header'
+                ? `header-${item.title}`
+                : `entry-${item.data.id || index}`
+            }
+            ListFooterComponent={<View style={{ height: 40 }} />}
+            showsVerticalScrollIndicator={false}
+            contentInsetAdjustmentBehavior="automatic"
+          />
+        </View>
+      )}
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  flex1: { flex: 1 },
+  headerText: {
+    fontFamily: 'Outfit-Bold',
+    fontSize: 13,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    paddingHorizontal: 8,
+    paddingTop: 32,
+    paddingBottom: 16,
+  },
+  entryContainer: { marginBottom: 12 },
+  topSection: { paddingHorizontal: 16, paddingBottom: 16 },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    height: 56,
+    borderRadius: 20,
+    marginTop: 16,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 12,
+    fontFamily: 'Outfit-Regular',
+    fontSize: 16,
+  },
+  clearButton: { padding: 8 },
+  clearButtonPressed: { transform: [{ scale: 0.95 }] },
+  emptyStateContainer: {
+    flex: 1,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 80,
+  },
+  emptyStateCard: {
+    width: '100%',
+    padding: 40,
+    borderRadius: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  listContainer: { flex: 1, paddingHorizontal: 16 },
+});

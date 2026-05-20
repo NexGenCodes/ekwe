@@ -1,7 +1,8 @@
 import * as Haptics from 'expo-haptics';
 import { Loader } from 'lucide-react-native';
-import React, { useMemo } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
+  Animated,
   Pressable,
   StyleProp,
   Text,
@@ -9,15 +10,8 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withRepeat,
-  cancelAnimation,
-  Easing,
-} from 'react-native-reanimated';
 
+import { fonts } from '@/constants/fonts';
 import { useTheme } from '@/hooks';
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost';
@@ -33,15 +27,12 @@ export interface ButtonProps {
   disabled?: boolean;
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
-  className?: string;
   labelStyle?: StyleProp<TextStyle>;
-  labelClassName?: string;
   accessibilityLabel?: string;
   accessibilityHint?: string;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-const AnimatedLoader = Animated.createAnimatedComponent(Loader);
 
 export const Button = ({
   label,
@@ -52,117 +43,96 @@ export const Button = ({
   loading = false,
   disabled = false,
   onPress,
-  style,
-  className = '',
   labelStyle,
-  labelClassName = '',
   accessibilityLabel,
+  accessibilityHint,
 }: ButtonProps): React.ReactElement => {
-  const scale = useSharedValue(1);
-  const { isDark, color } = useTheme();
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const [spinDeg, setSpinDeg] = useState(0);
+  const { color } = useTheme();
 
-  // Animated style for press feedback
-  const animatedStyle = useAnimatedStyle(
-    (): { transform: { scale: number }[] } => ({
-      transform: [{ scale: scale.value }],
-    }),
-  );
+  useEffect(() => {
+    if (!loading) {
+      setSpinDeg(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setSpinDeg((prev) => (prev + 360) % 360);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const handlePressIn = (): void => {
-    if (!disabled && !loading) {
-      scale.value = withTiming(0.97, {
-        duration: 120,
-        easing: Easing.out(Easing.cubic),
-      });
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
+    if (disabled || loading) return;
+    Animated.timing(scaleAnim, {
+      toValue: 0.97,
+      duration: 120,
+      useNativeDriver: true,
+    }).start();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handlePressOut = (): void => {
-    scale.value = withTiming(1, {
+    Animated.timing(scaleAnim, {
+      toValue: 1,
       duration: 120,
-      easing: Easing.out(Easing.cubic),
-    });
+      useNativeDriver: true,
+    }).start();
   };
 
-  // Resolve styles based on variant and size
-  const variantStyles = useMemo(() => {
+  const variantStyles = (() => {
     switch (variant) {
       case 'primary':
         return {
-          container: 'bg-primary dark:bg-primary',
-          text: 'text-white',
+          container: { backgroundColor: color.primary },
+          text: { color: '#ffffff' },
           spinner: color.onPrimary,
         };
       case 'secondary':
         return {
-          container: 'bg-card dark:bg-card',
-          text: 'text-foreground dark:text-foreground',
+          container: { backgroundColor: color.card },
+          text: { color: color.foreground },
           spinner: color.foreground,
         };
       case 'outline':
         return {
-          container:
-            'bg-transparent border-[1.5px] border-primary dark:border-primary',
-          text: 'text-primary dark:text-primary',
+          container: {
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            borderColor: color.primary,
+          },
+          text: { color: color.primary },
           spinner: color.primary,
         };
       case 'ghost':
         return {
-          container: 'bg-transparent',
-          text: 'text-muted dark:text-muted',
+          container: { backgroundColor: 'transparent' },
+          text: { color: color.muted },
           spinner: color.muted,
         };
-      default:
-        return {
-          container: 'bg-primary dark:bg-primary',
-          text: 'text-white',
-          spinner: color.onPrimary,
-        };
     }
-  }, [variant, isDark]);
+  })();
 
-  const sizeStyles = useMemo(() => {
+  const sizeStyles = (() => {
     switch (size) {
       case 'small':
         return {
-          container: 'py-1 px-3 min-h-[48px]',
-          text: 'text-base',
+          container: { paddingVertical: 4, paddingHorizontal: 12, minHeight: 48 },
+          text: { fontSize: 16 },
         };
       case 'large':
         return {
-          container: 'py-4 px-6 min-h-[56px]',
-          text: 'text-[28px] leading-[34px] tracking-[-0.5px]',
+          container: { paddingVertical: 16, paddingHorizontal: 24, minHeight: 56 },
+          text: { fontSize: 28, lineHeight: 34, letterSpacing: -0.5 },
         };
       case 'medium':
       default:
         return {
-          container: 'py-2 px-4 min-h-[48px]',
-          text: 'text-base',
+          container: { paddingVertical: 8, paddingHorizontal: 16, minHeight: 48 },
+          text: { fontSize: 16 },
         };
     }
-  }, [size]);
-
-  // Spinner rotation
-  const rotation = useSharedValue(0);
-  React.useEffect(() => {
-    if (loading) {
-      rotation.value = withRepeat(
-        withTiming(360, { duration: 1000, easing: Easing.linear }),
-        -1, // infinite
-        false, // no reverse
-      );
-    } else {
-      cancelAnimation(rotation);
-      rotation.value = 0;
-    }
-  }, [loading]);
-
-  const spinStyle = useAnimatedStyle(
-    (): { transform: { rotate: string }[] } => ({
-      transform: [{ rotate: `${rotation.value}deg` }],
-    }),
-  );
+  })();
 
   return (
     <AnimatedPressable
@@ -170,30 +140,49 @@ export const Button = ({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       disabled={disabled || loading}
-      style={[style, animatedStyle]}
-      className={`flex-row items-center justify-center rounded-full ${variantStyles.container} ${sizeStyles.container} ${disabled ? 'opacity-50' : ''} ${className}`}
+      style={[
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 9999,
+          opacity: disabled ? 0.5 : 1,
+          transform: [{ scale: scaleAnim }],
+        },
+        variantStyles.container,
+        sizeStyles.container,
+      ]}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || label}
+      accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled, busy: loading }}
       hitSlop={8}
     >
       {loading ? (
-        <AnimatedLoader
-          size={size === 'small' ? 16 : 20}
-          color={variantStyles.spinner}
-          style={spinStyle}
-          strokeWidth={2.5}
-        />
+        <Animated.View style={{ transform: [{ rotate: `${spinDeg}deg` }] }}>
+          <Loader
+            size={size === 'small' ? 16 : 20}
+            color={variantStyles.spinner}
+            strokeWidth={2.5}
+          />
+        </Animated.View>
       ) : (
-        <View className="flex-row items-center">
-          {leftIcon && <View className="mr-2">{leftIcon}</View>}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {leftIcon && <View style={{ marginRight: 8 }}>{leftIcon}</View>}
           <Text
-            style={labelStyle}
-            className={`text-center font-display ${variantStyles.text} ${sizeStyles.text} ${labelClassName}`}
+            style={[
+              {
+                textAlign: 'center',
+                fontFamily: fonts.bodyMed,
+              },
+              variantStyles.text,
+              sizeStyles.text,
+              labelStyle,
+            ]}
           >
             {label}
           </Text>
-          {rightIcon && <View className="ml-2">{rightIcon}</View>}
+          {rightIcon && <View style={{ marginLeft: 8 }}>{rightIcon}</View>}
         </View>
       )}
     </AnimatedPressable>

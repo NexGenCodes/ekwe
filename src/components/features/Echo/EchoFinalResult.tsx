@@ -27,15 +27,14 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
     translation,
     sourceLang,
     targetLang,
-    audioDuration,
     isDark,
     setStep,
     handleClose,
   }) => {
     const { color } = useTheme();
-    const brandPrimary = color.primary;
+    const brandPrimary = color.secondary;
     const handleHex = color.border;
-    const textPrimary = color.foreground;
+    const textPrimary = color.primary;
 
     const [activeTab, setActiveTab] = React.useState<
       'Translation' | 'Transcription'
@@ -135,5 +134,9 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderRadius: 16,
   },
-  secActionTxt: { fontWeight: '700', fontSize: 14 },
+  secActionTxt: {
+    fontFamily: 'Outfit-Bold',
+    fontSize: 15,
+    letterSpacing: -0.2,
+  },
 });

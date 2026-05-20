@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { Text, StyleSheet } from 'react-native';
 
 export interface SectionHeaderProps {
   title: string;
@@ -8,7 +8,18 @@ export interface SectionHeaderProps {
 export const SectionHeader = ({
   title,
 }: SectionHeaderProps): React.ReactElement => (
-  <Text className="font-display text-xs uppercase tracking-[0.15em] px-6 pt-8 pb-3 text-muted dark:text-zinc-500">
-    {title}
-  </Text>
+  <Text style={styles.header}>{title}</Text>
 );
+
+const styles = StyleSheet.create({
+  header: {
+    fontFamily: 'Outfit-Medium', // approx for font-display
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1.8,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 12,
+    color: '#71717A', // zinc-500
+  },
+});

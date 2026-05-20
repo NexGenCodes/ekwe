@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useCallback } from 'react';
 
-import { supabase } from '@/services/supabase';
+import { signOut } from '@/services/auth';
 import { AppAlert } from '@/utils/alert';
 import logger from '@/utils/logger';
 
@@ -16,12 +16,11 @@ export const useLogout = (): UseLogoutReturn => {
   const router = useRouter();
 
   const logout = useCallback(async (): Promise<void> => {
-    try {
-      await supabase.auth.signOut();
-    } catch (e) {
-      logger.warn('[Auth] signOut error:', e);
+    const result = await signOut();
+    if (!result.ok) {
+      logger.warn('[Auth] signOut error:', result.error);
     }
-    router.replace('/');
+    router.replace('/(auth)/login');
   }, [router]);
 
   const confirmLogout = useCallback((): void => {

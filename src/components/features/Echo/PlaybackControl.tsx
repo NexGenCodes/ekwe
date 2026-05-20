@@ -10,6 +10,7 @@ import {
 import { SharedValue } from 'react-native-reanimated';
 
 import { AudioWaveform as ReanimatedWaveform } from '@/components/ui';
+import { fonts } from '@/constants/fonts';
 import { useTheme } from '@/hooks';
 import { formatDuration } from '@/utils/echo';
 
@@ -43,16 +44,11 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
 
   const { color } = useTheme();
 
-  const brandPrimary = color.primary;
-  const textSecondary = color.muted;
-  const bgMain = color.background;
-  const handleHex = color.border;
-
   return (
     <View
       style={[
         styles.playerBox,
-        { backgroundColor: bgMain, borderColor: handleHex },
+        { backgroundColor: color.background, borderColor: color.border },
       ]}
     >
       <View style={styles.playerRow}>
@@ -61,15 +57,23 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
           disabled={isDecoding}
           style={[
             styles.playBtn,
-            { backgroundColor: brandPrimary, opacity: isDecoding ? 0.5 : 1 },
+            { backgroundColor: color.secondary, opacity: isDecoding ? 0.5 : 1 },
           ]}
         >
           {isDecoding ? (
-            <ActivityIndicator size="small" color="#FFF" />
+            <ActivityIndicator size="small" color={color.primary} />
           ) : isPlaying ? (
-            <Pause size={18} color="#FFF" fill="#FFF" />
+            <Pause
+              size={18}
+              color={color.onSecondary}
+              fill={color.onSecondary}
+            />
           ) : (
-            <Play size={18} color="#FFF" fill="#FFF" />
+            <Play
+              size={18}
+              color={color.onSecondary}
+              fill={color.onSecondary}
+            />
           )}
         </TouchableOpacity>
 
@@ -89,7 +93,7 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
           />
         </View>
 
-        <Text style={[styles.timeTxt, { color: textSecondary }]}>
+        <Text style={[styles.timeTxt, { color: color.secondary }]}>
           {formatDuration(scrubTime !== null ? scrubTime : progress)}
         </Text>
       </View>
@@ -123,8 +127,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   timeTxt: {
+    fontFamily: fonts.bodyBold,
     fontSize: 12,
-    fontWeight: '800',
     width: 50,
     textAlign: 'right',
   },

@@ -1,3 +1,4 @@
+import { Image as ExpoImage } from 'expo-image';
 import {
   LucideShieldCheck,
   LucideBatteryCharging,
@@ -5,7 +6,13 @@ import {
   LucideChevronLeft,
 } from 'lucide-react-native';
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { useTheme } from '@/hooks';
@@ -22,31 +29,34 @@ export const AccessibilityDisclosure: React.FC<
   const primaryColor = color.primary;
 
   return (
-    <View className="flex-1 bg-background dark:bg-background">
-      <View className="px-6 pt-4 pb-2 z-10">
-        <TouchableOpacity
-          onPress={onDeny}
-          className="w-10 h-10 items-center justify-center rounded-full bg-muted/10 active:scale-95"
-        >
-          <LucideChevronLeft size={24} color={color.foreground} />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView className="flex-1 px-6" showsVerticalScrollIndicator={false}>
+    <View style={[styles.container, { backgroundColor: color.background }]}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="automatic"
+      >
         <Animated.View
           entering={FadeInDown.duration(500).springify()}
-          className="mt-4 mb-8"
+          style={styles.titleSection}
         >
-          <Text className="font-display text-[32px] text-foreground dark:text-foreground tracking-tight leading-[38px]">
+          <Text style={[styles.title, { color: color.foreground }]}>
             Accessibility Service Disclosure
           </Text>
-          <View className="mt-4 p-4 rounded-[16px] bg-primary/10 border border-primary/20">
-            <Text className="font-display text-[15px] text-primary mb-1">
+          <View
+            style={[
+              styles.infoBox,
+              {
+                backgroundColor: `${primaryColor}1A`,
+                borderColor: `${primaryColor}33`,
+              },
+            ]}
+          >
+            <Text style={[styles.infoBoxTitle, { color: primaryColor }]}>
               Google Play Policy Requirement
             </Text>
-            <Text className="font-body text-[14px] text-foreground dark:text-zinc-300 leading-6">
+            <Text style={[styles.infoBoxBody, { color: color.foreground }]}>
               This app uses the{' '}
-              <Text className="font-display">AccessibilityService API</Text> to
+              <Text style={styles.boldText}>AccessibilityService API</Text> to
               detect when you open messaging applications (like WhatsApp or
               Tinder). This allows Ekwe to automatically display the floating
               translation tool over your screen exactly when you need it.
@@ -56,17 +66,30 @@ export const AccessibilityDisclosure: React.FC<
 
         <Animated.View
           entering={FadeInDown.duration(500).delay(100).springify()}
-          className="gap-6 mb-32"
+          style={styles.featuresSection}
         >
-          <View className="flex-row items-start gap-4">
-            <View className="p-3 rounded-[16px] bg-primary/10">
-              <LucideZap size={24} color={primaryColor} />
+          <View style={styles.featureRow}>
+            <View
+              style={[
+                styles.featureIcon,
+                { backgroundColor: `${primaryColor}1A` },
+              ]}
+            >
+              {process.env.EXPO_OS === 'ios' ? (
+                <ExpoImage
+                  source="sf:bolt.fill"
+                  style={{ width: 24, height: 24 }}
+                  tintColor={primaryColor}
+                />
+              ) : (
+                <LucideZap size={24} color={primaryColor} />
+              )}
             </View>
-            <View className="flex-1 pr-2">
-              <Text className="font-display text-[16px] text-foreground dark:text-foreground mb-1">
+            <View style={styles.featureTextContainer}>
+              <Text style={[styles.featureTitle, { color: color.foreground }]}>
                 Contextual App Detection
               </Text>
-              <Text className="font-body text-sm text-muted dark:text-muted leading-5">
+              <Text style={[styles.featureBody, { color: color.muted }]}>
                 We strictly monitor top-level window transitions to identify
                 when a target messaging app is launched. We do NOT read your
                 chat messages.
@@ -74,32 +97,58 @@ export const AccessibilityDisclosure: React.FC<
             </View>
           </View>
 
-          <View className="flex-row items-start gap-4">
-            <View className="p-3 rounded-[16px] bg-green-500/10">
-              <LucideBatteryCharging size={24} color="#22C55E" />
+          <View style={styles.featureRow}>
+            <View
+              style={[
+                styles.featureIcon,
+                { backgroundColor: 'rgba(34, 197, 94, 0.1)' },
+              ]}
+            >
+              {process.env.EXPO_OS === 'ios' ? (
+                <ExpoImage
+                  source="sf:battery.100.bolt"
+                  style={{ width: 24, height: 24 }}
+                  tintColor="#22C55E"
+                />
+              ) : (
+                <LucideBatteryCharging size={24} color="#22C55E" />
+              )}
             </View>
-            <View className="flex-1 pr-2">
-              <Text className="font-display text-[16px] text-foreground dark:text-foreground mb-1">
+            <View style={styles.featureTextContainer}>
+              <Text style={[styles.featureTitle, { color: color.foreground }]}>
                 Battery Optimized
               </Text>
-              <Text className="font-body text-sm text-muted dark:text-muted leading-5">
+              <Text style={[styles.featureBody, { color: color.muted }]}>
                 Utilizing native Accessibility signals prevents aggressive
                 background polling, ensuring your phone's battery isn't drained.
               </Text>
             </View>
           </View>
 
-          <View className="flex-row items-start gap-4">
-            <View className="p-3 rounded-[16px] bg-blue-500/10">
-              <LucideShieldCheck size={24} color="#3B82F6" />
+          <View style={styles.featureRow}>
+            <View
+              style={[
+                styles.featureIcon,
+                { backgroundColor: 'rgba(59, 130, 246, 0.1)' },
+              ]}
+            >
+              {process.env.EXPO_OS === 'ios' ? (
+                <ExpoImage
+                  source="sf:shield.fill"
+                  style={{ width: 24, height: 24 }}
+                  tintColor="#3B82F6"
+                />
+              ) : (
+                <LucideShieldCheck size={24} color="#3B82F6" />
+              )}
             </View>
-            <View className="flex-1 pr-2">
-              <Text className="font-display text-[16px] text-foreground dark:text-foreground mb-1">
+            <View style={styles.featureTextContainer}>
+              <Text style={[styles.featureTitle, { color: color.foreground }]}>
                 Zero Data Collection
               </Text>
-              <Text className="font-body text-sm text-muted dark:text-muted leading-5">
+              <Text style={[styles.featureBody, { color: color.muted }]}>
                 We{' '}
-                <Text className="font-display">
+                <Text style={styles.boldText}>
                   do not collect, store, transmit, or share
                 </Text>{' '}
                 any data, text, or inputs captured by this service. The
@@ -111,21 +160,78 @@ export const AccessibilityDisclosure: React.FC<
       </ScrollView>
 
       {/* Fixed Bottom Action Bar */}
-      <View className="absolute bottom-0 left-0 right-0 bg-background dark:bg-background pt-4 pb-10 px-6 border-t border-border dark:border-zinc-800/80">
+      <View
+        style={[
+          styles.bottomBar,
+          { backgroundColor: color.background, borderTopColor: color.border },
+        ]}
+      >
         <TouchableOpacity
           onPress={onAgree}
-          style={{ backgroundColor: primaryColor }}
-          className="w-full py-4 rounded-[16px] items-center active:scale-[0.98] transition-transform"
+          style={[styles.primaryButton, { backgroundColor: primaryColor }]}
+          accessibilityRole="button"
+          accessibilityLabel="I agree to accessibility permissions"
         >
-          <Text className="text-white font-display text-[16px]">I Agree</Text>
+          <Text style={styles.primaryButtonText}>I Agree</Text>
         </TouchableOpacity>
         <TouchableOpacity
           onPress={onDeny}
-          className="w-full py-4 mt-1 items-center active:bg-muted/5 rounded-[16px]"
+          style={styles.secondaryButton}
+          accessibilityRole="button"
+          accessibilityLabel="Decline accessibility permissions"
         >
-          <Text className="text-muted font-bodyMed text-[15px]">Decline</Text>
+          <Text style={[styles.secondaryButtonText, { color: color.muted }]}>
+            Decline
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  scrollView: { flex: 1, paddingHorizontal: 24 },
+  titleSection: { marginTop: 32, marginBottom: 32 },
+  title: {
+    fontFamily: 'Outfit-Medium',
+    fontSize: 32,
+    letterSpacing: -0.5,
+    lineHeight: 38,
+  },
+  infoBox: { marginTop: 16, padding: 16, borderRadius: 16, borderWidth: 1 },
+  infoBoxTitle: { fontFamily: 'Outfit-Medium', fontSize: 15, marginBottom: 4 },
+  infoBoxBody: { fontFamily: 'Outfit-Regular', fontSize: 14, lineHeight: 24 },
+  boldText: { fontFamily: 'Outfit-Medium' },
+  featuresSection: { gap: 24, marginBottom: 160 },
+  featureRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },
+  featureIcon: { padding: 12, borderRadius: 16 },
+  featureTextContainer: { flex: 1, paddingRight: 8 },
+  featureTitle: { fontFamily: 'Outfit-Medium', fontSize: 16, marginBottom: 4 },
+  featureBody: { fontFamily: 'Outfit-Regular', fontSize: 14, lineHeight: 20 },
+  bottomBar: {
+    paddingTop: 16,
+    paddingBottom: 40,
+    paddingHorizontal: 24,
+    borderTopWidth: 1,
+  },
+  primaryButton: {
+    width: '100%',
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: '#ffffff',
+    fontFamily: 'Outfit-Medium',
+    fontSize: 16,
+  },
+  secondaryButton: {
+    width: '100%',
+    paddingVertical: 16,
+    marginTop: 4,
+    alignItems: 'center',
+    borderRadius: 16,
+  },
+  secondaryButtonText: { fontFamily: 'Outfit-Medium', fontSize: 15 },
+});

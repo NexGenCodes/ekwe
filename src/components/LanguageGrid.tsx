@@ -5,8 +5,9 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 import { ECHO_CONSTANTS } from '@/constants/echo';
 import { LANGUAGES, FLAG_MAP } from '@/constants/languages';
-import { useTheme } from '@/hooks';
+import { useTheme, usePermissions } from '@/hooks';
 import { settings$ } from '@/store';
+import { AppAlert } from '@/utils';
 
 interface LanguageGridProps {
   selectedLang: string;
@@ -26,10 +27,8 @@ export const LanguageGrid: React.FC<LanguageGridProps> = ({
     settings$.selectedLanguages.get(),
   );
   const { color } = useTheme();
-  const textPrimary = color.foreground;
-  const brandPrimary = color.primary;
-  const bgMain = color.background;
-  const handleHex = color.border;
+  const permissions = usePermissions();
+  const canUseAuto = permissions.autoLanguageDetect;
 
   const topLanguages = useMemo(() => {
     return selectedLanguages
@@ -47,32 +46,51 @@ export const LanguageGrid: React.FC<LanguageGridProps> = ({
           style={[
             styles.card,
             {
-              backgroundColor: bgMain,
+              backgroundColor: color.background,
               borderColor:
-                selectedLang === lang!.code ? brandPrimary : handleHex,
+                selectedLang === lang!.code ? color.secondary : color.border,
             },
           ]}
         >
           <Text style={styles.flag}>{FLAG_MAP[lang!.code] || '🌐'}</Text>
-          <Text style={[styles.name, { color: textPrimary }]}>
+          <Text style={[styles.name, { color: color.foreground }]}>
             {lang!.englishName}
           </Text>
         </TouchableOpacity>
       ))}
 
       <TouchableOpacity
-        onPress={() => onSelect('auto')}
+        onPress={() => {
+          if (canUseAuto) {
+            onSelect('auto');
+          } else {
+            AppAlert.info(
+              'Ekwe Pro',
+              'Auto-detecting languages is a premium feature. Upgrade to Pro to use this.',
+            );
+          }
+        }}
         style={[
           styles.card,
           styles.autoCard,
           {
-            backgroundColor: bgMain,
-            borderColor: selectedLang === 'auto' ? brandPrimary : handleHex,
+            backgroundColor: color.background,
+            borderColor: color.primary,
+            opacity: canUseAuto ? 1 : 0.5,
           },
         ]}
       >
-        <Globe size={24} color={brandPrimary} style={{ marginBottom: 4 }} />
-        <Text style={[styles.autoText, { color: brandPrimary }]}>
+        <Globe
+          size={24}
+          color={canUseAuto ? color.primary : color.primary}
+          style={{ marginBottom: 4 }}
+        />
+        <Text
+          style={[
+            styles.autoText,
+            { color: canUseAuto ? color.primary : color.primary },
+          ]}
+        >
           Auto-Detect
         </Text>
       </TouchableOpacity>

@@ -1,5 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { Platform, Linking } from 'react-native';
+import { AudioContext } from 'react-native-audio-api';
 
 import AudioService from './AudioService';
 
@@ -30,8 +31,10 @@ class AudioCaptureClass {
   private meteringInterval: ReturnType<typeof setInterval> | null = null;
   private currentSessionId: string | null = null;
   private currentMeteringData: number[] = []; // Track during session
+  private maxDurationTimeout: ReturnType<typeof setTimeout> | null = null;
   private listeners: ((amplitude: number) => void)[] = [];
   private statusListeners: ((status: 'started' | 'stopped') => void)[] = [];
+  private onAutoStopCallback: (() => void) | null = null;
   private isStartingParams = false;
 
   /**
@@ -77,10 +80,18 @@ class AudioCaptureClass {
   /**
    * Starts a new recording session safely.
    */
-  async startRecording(sessionId: string): Promise<Result<void, EkweError>> {
-    // Concurrency Lock: Prevent multiple calls bridging
-    if (this.isStartingParams || AudioService.isRecording()) {
-      return err(EkweError.AUDIO_RECORD_FAIL);
+  async startRecording(
+    sessionId: string,
+    onAutoStop?: () => void,
+  ): Promise<Result<void, EkweError>> {
+    // If starting or already recording, try to recover instead of failing immediately
+    if (this.isStartingParams) return err(EkweError.AUDIO_RECORD_FAIL);
+
+    if (AudioService.isRecording()) {
+      logger.info(
+        'AudioCapture: Native recorder already active, stopping before restart...',
+      );
+      await this.stopRecording().catch(() => {});
     }
 
     this.isStartingParams = true;
@@ -96,6 +107,7 @@ class AudioCaptureClass {
 
       this.currentSessionId = sessionId;
       this.currentMeteringData = []; // Reset for new session
+      this.onAutoStopCallback = onAutoStop ?? null;
       await AudioService.startRecording();
       this.notifyStatusListeners('started');
 
@@ -107,8 +119,8 @@ class AudioCaptureClass {
 
       // Begin metering and silence detection loop
       let silenceStartTime: number | null = null;
-      const SILENCE_THRESHOLD_DB = -50;
-      const SILENCE_DURATION_MS = 5000;
+      const SILENCE_THRESHOLD_DB = -45; // Slightly less sensitive to low-level hum
+      const SILENCE_DURATION_MS = 8000; // 8 seconds of absolute silence before auto-stop
 
       this.meteringInterval = setInterval(async () => {
         if (!this.currentSessionId) return;
@@ -128,7 +140,14 @@ class AudioCaptureClass {
               this.meteringInterval = null;
             }
 
-            await this.stopRecording();
+            // Distinct haptic for auto-stop — Warning tells user the mic cut off by itself
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+
+            if (this.onAutoStopCallback) {
+              this.onAutoStopCallback();
+            } else {
+              await this.stopRecording();
+            }
             return;
           }
         } else {
@@ -142,6 +161,20 @@ class AudioCaptureClass {
           this.notifyListeners(normalized);
         }
       }, 32);
+
+      // --- Max Duration Safety Net (60s Absolute Cap) ---
+      this.maxDurationTimeout = setTimeout(async () => {
+        if (this.isRecording()) {
+          logger.info(
+            'AudioCapture: Max duration safety cap reached (60s), auto-stopping',
+          );
+          if (this.onAutoStopCallback) {
+            this.onAutoStopCallback();
+          } else {
+            await this.stopRecording();
+          }
+        }
+      }, 60000);
 
       this.isStartingParams = false;
       return ok(undefined);
@@ -166,6 +199,11 @@ class AudioCaptureClass {
     if (this.meteringInterval !== null) {
       clearInterval(this.meteringInterval);
       this.meteringInterval = null;
+    }
+
+    if (this.maxDurationTimeout !== null) {
+      clearTimeout(this.maxDurationTimeout);
+      this.maxDurationTimeout = null;
     }
 
     try {
@@ -204,29 +242,38 @@ class AudioCaptureClass {
   }
 
   /**
-   * Cancels the current recording.
+   * Cancels the current recording and returns the path to the partial file for cleanup.
    */
-  async cancelRecording(): Promise<Result<void, EkweError>> {
+  async cancelRecording(): Promise<Result<string | null, EkweError>> {
+    let path: string | null = null;
     if (this.meteringInterval !== null) {
       clearInterval(this.meteringInterval);
       this.meteringInterval = null;
     }
 
+    if (this.maxDurationTimeout !== null) {
+      clearTimeout(this.maxDurationTimeout);
+      this.maxDurationTimeout = null;
+    }
+
     try {
-      await AudioService.stopRecording();
+      const result = await AudioService.stopRecording();
+      path = result.path;
       this.notifyStatusListeners('stopped');
     } catch {
       // Ignore errors during cancel
     }
 
     this.currentSessionId = null;
+    this.currentMeteringData = [];
+    this.notifyListeners(0); // Reset UI waveform
     await VolumeManager.restoreVolume();
 
     if (Platform.OS === 'android') {
       await releaseAudioEffects();
     }
 
-    return ok(undefined);
+    return ok(path);
   }
 
   /**
@@ -242,16 +289,25 @@ class AudioCaptureClass {
     >
   > {
     const validationResult = await validateSharedAudio(uri, mimeType);
-
-    if (validationResult.ok) {
-      return ok({
-        uri: validationResult.value.uri,
-        durationMs: 0,
-        meteringData: [],
-      });
+    if (!validationResult.ok) {
+      return err(validationResult.error);
     }
 
-    return err(validationResult.error);
+    let durationMs = 0;
+    try {
+      const context = new AudioContext();
+      const decoded = await context.decodeAudioData(uri);
+      durationMs = Math.round(decoded.duration * 1000);
+      await context.close();
+    } catch {
+      // Non-critical — duration defaults to 0 if we can't decode
+    }
+
+    return ok({
+      uri: validationResult.value.uri,
+      durationMs,
+      meteringData: [],
+    });
   }
 
   /**

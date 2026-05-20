@@ -33,6 +33,9 @@ export const PasswordInput = forwardRef<
           justifyContent: 'center',
         }}
         hitSlop={12}
+        accessibilityRole="button"
+        accessibilityLabel={visible ? 'Hide password' : 'Show password'}
+        accessibilityState={{ selected: visible }}
       >
         {visible ? (
           <Eye size={20} color={color.muted} />

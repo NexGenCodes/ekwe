@@ -5,7 +5,7 @@ import { logger } from '../logger';
 const GLADIA_UPLOAD = 'https://api.gladia.io/v2/upload';
 const GLADIA_TRANSCRIPTION = 'https://api.gladia.io/v2/pre-recorded';
 const POLL_INTERVAL = 2000;
-const MAX_POLLS = 10; // 20s max wait
+const MAX_POLLS = 4; // 8s max wait
 
 /**
  * Gladia pre-recorded transcription — async upload → poll pattern.

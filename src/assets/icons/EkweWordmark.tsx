@@ -23,9 +23,9 @@ export const EkweWordmark = ({
 
   return (
     <Text
-      className="font-display"
       style={[
         {
+          fontFamily: 'Outfit-Medium',
           fontSize: size,
           color: color || defaultColor,
           textAlign: centred ? 'center' : 'auto',

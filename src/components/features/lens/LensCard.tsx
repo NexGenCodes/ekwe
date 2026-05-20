@@ -1,21 +1,42 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { Text, StyleSheet } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
+
+import { useTheme } from '@/hooks';
 
 interface LensCardProps {
   transcript: string;
 }
 
 export function LensCard({ transcript }: LensCardProps): React.ReactElement {
+  const { color } = useTheme();
+
   return (
     <Animated.View
       entering={FadeInDown}
       exiting={FadeOutUp}
-      className="p-5 bg-card dark:bg-card rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 shadow-2xl shadow-zinc-950/20"
+      style={[
+        styles.container,
+        { backgroundColor: color.card, borderColor: color.border },
+      ]}
     >
-      <Text className="font-body text-base text-zinc-950 dark:text-zinc-50 leading-6">
+      <Text style={[styles.text, { color: color.foreground }]}>
         {transcript}
       </Text>
     </Animated.View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    padding: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    shadowColor: '#09090b',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  text: { fontFamily: 'Outfit-Regular', fontSize: 16, lineHeight: 24 },
+});

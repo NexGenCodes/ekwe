@@ -154,12 +154,12 @@ class ShareActivity : ReactActivity() {
             layoutParams = LinearLayout.LayoutParams(dp(80), dp(80)).apply { bottomMargin = dp(24); gravity = Gravity.CENTER_HORIZONTAL }
         }
         val pulseRing = View(this).apply {
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setStroke(dp(2), Color.parseColor("#1A7EC8")) }
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setStroke(dp(2), Color.parseColor("#3B82F6")) }
             layoutParams = FrameLayout.LayoutParams(dp(60), dp(60)).apply { gravity = Gravity.CENTER }
         }
         pulseContainer.addView(pulseRing)
         pulseContainer.addView(View(this).apply {
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#1A7EC8")) }
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#3B82F6")) }
             layoutParams = FrameLayout.LayoutParams(dp(16), dp(16)).apply { gravity = Gravity.CENTER }
         })
         card.addView(pulseContainer)

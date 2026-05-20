@@ -9,10 +9,10 @@ import { AppState, Platform } from 'react-native';
 import EkweNative from '../../../modules/ekwe-native';
 
 import { AudioCapture } from '@/services/AudioCapture';
+import { HistoryService } from '@/services/HistoryService';
 import { TranscriptionService } from '@/services/Transcription';
 import { TranslationService } from '@/services/Translation';
 import { auth$, audioActions, settings$ } from '@/store';
-import { HistoryService } from '@/services/HistoryService';
 import { logger } from '@/utils';
 import { BubbleNative } from '@/utils/BubbleModule';
 import { AppAlert } from '@/utils/alert';
@@ -30,6 +30,14 @@ const handleEchoSession = async (
   echoSessionAbort = new AbortController();
   const signal = echoSessionAbort.signal;
   const userSession = auth$.session.get();
+
+  if (!userSession) {
+    logger.warn(
+      '[EkweEcho] Aborting background transcription: User is not authenticated',
+    );
+    BubbleNative.dismissOverlay();
+    return;
+  }
 
   logger.info(
     `[EkweEcho] App in background — transcribing voice from ${sourceApp}`,
@@ -82,6 +90,7 @@ const handleEchoSession = async (
           translation: translationResult.ok
             ? translationResult.value.translation
             : null,
+          transliteration: null,
           duration: data.durationSeconds,
           sourceApp,
           provider: 'gemini',
@@ -134,6 +143,20 @@ export const useShareIntentHandler = (): void => {
     async (event: { audioPath: string; sourceApp: string }): Promise<void> => {
       logger.info(`[ShareIntent] Native Intent Received: ${event.audioPath}`);
 
+      const userSession = auth$.session.get();
+      if (!userSession) {
+        logger.warn('[ShareIntent] User not authenticated. Rejecting intent.');
+        AppAlert.info(
+          'Login Required',
+          'Please open Ekwe to log in before translating shared items.',
+        );
+        BubbleNative.dismissOverlay();
+        if (AppState.currentState === 'active') {
+          router.replace('/(auth)');
+        }
+        return;
+      }
+
       let filePath = event.audioPath;
       if (Platform.OS === 'android' && filePath.startsWith('content://')) {
         const resolved = await BubbleNative.resolveContentUri(filePath);
@@ -170,15 +193,18 @@ export const useShareIntentHandler = (): void => {
     if (!navigationState?.key && !isBackground) return;
 
     if (hasShareIntent && shareIntent.type) {
-      if (!onboardingCompleted) {
+      const userSession = auth$.session.get();
+
+      if (!onboardingCompleted || !userSession) {
         logger.warn(
-          '[ShareIntent] User not onboarded. Skipping share processing.',
+          '[ShareIntent] User not authenticated or not onboarded. Skipping share processing.',
         );
         AppAlert.info(
           'Login Required',
           'Please open Ekwe to log in before translating shared items.',
         );
         resetShareIntent();
+        router.replace('/(auth)');
         return;
       }
 

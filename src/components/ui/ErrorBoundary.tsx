@@ -1,6 +1,6 @@
 import { AlertCircle, RotateCcw } from 'lucide-react-native';
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from './Button';
@@ -38,24 +38,22 @@ export class ErrorBoundary extends Component<Props, State> {
   public render(): ReactNode {
     if (this.state.hasError) {
       return (
-        <SafeAreaView className="flex-1 bg-background dark:bg-background items-center justify-center px-8">
-          <View className="items-center mb-8">
-            <View className="w-20 h-20 rounded-full bg-red-100 dark:bg-red-950/30 items-center justify-center mb-6">
+        <SafeAreaView style={styles.container}>
+          <View style={styles.content}>
+            <View style={styles.iconContainer}>
               <AlertCircle
                 size={40}
                 color={colors.error.DEFAULT}
                 strokeWidth={2}
               />
             </View>
-            <Text className="text-2xl font-display text-foreground dark:text-foreground text-center mb-3">
-              Something went wrong
-            </Text>
-            <Text className="text-base font-body text-muted dark:text-muted text-center leading-6">
+            <Text style={styles.title}>Something went wrong</Text>
+            <Text style={styles.subtitle}>
               An unexpected error occurred. Our team has been notified.
             </Text>
           </View>
 
-          <View className="w-full gap-4">
+          <View style={styles.buttonContainer}>
             <Button
               label="Try again"
               variant="primary"
@@ -65,8 +63,8 @@ export class ErrorBoundary extends Component<Props, State> {
           </View>
 
           {__DEV__ && (
-            <View className="mt-12 p-4 rounded-xl bg-zinc-100 dark:bg-zinc-900 w-full">
-              <Text className="text-xs font-mono text-zinc-500 dark:text-zinc-400">
+            <View style={styles.devErrorContainer}>
+              <Text style={styles.devErrorText}>
                 {this.state.error?.toString()}
               </Text>
             </View>
@@ -78,3 +76,44 @@ export class ErrorBoundary extends Component<Props, State> {
     return this.props.children;
   }
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  content: { alignItems: 'center', marginBottom: 32 },
+  iconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(254, 226, 226, 1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 24,
+    fontFamily: 'Outfit-Medium',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  subtitle: {
+    fontSize: 16,
+    fontFamily: 'Outfit-Regular',
+    color: '#71717a',
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  buttonContainer: { width: '100%', gap: 16 },
+  devErrorContainer: {
+    marginTop: 48,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#f4f4f5',
+    width: '100%',
+  },
+  devErrorText: { fontSize: 12, color: '#71717a' },
+});

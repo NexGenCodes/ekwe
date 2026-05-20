@@ -1,4 +1,5 @@
-import '../../global.css';
+import { useSelector } from '@legendapp/state/react';
+import NetInfo from '@react-native-community/netinfo';
 import {
   DarkTheme,
   DefaultTheme,
@@ -6,68 +7,33 @@ import {
 } from '@react-navigation/native';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as Linking from 'expo-linking';
-import { Stack, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
+import { Stack } from 'expo-router/stack';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { colorScheme } from 'nativewind';
-import { useEffect } from 'react';
-import { AppState, Platform, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
-import { useSelector } from '@legendapp/state/react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 import { ErrorBoundary } from '@/components';
 import { colors } from '@/constants/colors';
 import { useShareIntentHandler, useTheme, useTripleExclusivity } from '@/hooks';
 import { ShareIntentProvider } from '@/providers/ShareIntentProvider';
+import { HistoryService } from '@/services/HistoryService';
 import { initAuth } from '@/services/auth';
-import { settings$, auth$ } from '@/store';
-import { mmkv } from '@/store/mmkvStorage';
+import { auth$ } from '@/store';
 import {
   configureNotifications,
   registerNotificationCategories,
 } from '@/utils/IosNotification';
 
-// ─── Sync Theme Bootstrap ────────────────────────────────────────
-const _raw = mmkv.getString('ekwe-settings');
-if (_raw) {
-  try {
-    const parsed = JSON.parse(_raw) as {
-      themePreference?: string;
-      state?: { themePreference?: string };
-    };
-    // Legend-State saves directly at root, Zustand used `.state`
-    const _pref = parsed?.themePreference ?? parsed?.state?.themePreference;
-    if (_pref === 'light' || _pref === 'dark' || _pref === 'system') {
-      colorScheme.set(_pref);
-    }
-  } catch {
-    // Corrupted data — fall through to system default
-  }
-}
-// ─────────────────────────────────────────────────────────────────
-
 SplashScreen.preventAutoHideAsync();
 
 function InnerLayout(): React.ReactElement {
   const router = useRouter();
-  const { setColorScheme, isDark, color } = useTheme();
-  const themePreference = useSelector(() => settings$.themePreference.get());
-
-  // Sync user preference to NativeWind v4.
-  // Also re-apply when the app resumes from background, because NativeWind
-  // can silently revert to the system default while backgrounded.
-  useEffect(() => {
-    setColorScheme(themePreference);
-
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        setColorScheme(themePreference);
-      }
-    });
-
-    return (): void => sub.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [themePreference]);
+  const { isDark, color } = useTheme();
 
   const isInitialized = useSelector(() => auth$.isInitialized.get());
 
@@ -108,8 +74,6 @@ function InnerLayout(): React.ReactElement {
     },
   };
 
-  const user = useSelector(() => auth$.user.get());
-
   useEffect((): void => {
     if (isInitialized) {
       SplashScreen.hideAsync();
@@ -128,7 +92,7 @@ function InnerLayout(): React.ReactElement {
       >
         <ErrorBoundary>
           <View style={{ flex: 1 }}>
-            <StatusBar style="auto" />
+            <StatusBar style={isDark ? 'light' : 'dark'} />
 
             <Stack
               screenOptions={{
@@ -144,17 +108,53 @@ function InnerLayout(): React.ReactElement {
               <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
               <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
               <Stack.Screen
+                name="accessibility-disclosure"
+                options={{
+                  presentation: 'formSheet',
+                  sheetGrabberVisible: true,
+                  headerShown: true,
+                  title: 'Disclosure',
+                  contentStyle: { backgroundColor: 'transparent' },
+                }}
+              />
+              <Stack.Screen
                 name="result"
                 options={{
-                  presentation: 'modal',
-                  animation: 'slide_from_bottom',
+                  presentation: 'formSheet',
+                  sheetGrabberVisible: true,
+                  headerShown: true,
+                  title: 'Translation',
+                  contentStyle: { backgroundColor: 'transparent' },
                 }}
               />
               <Stack.Screen
                 name="translate"
                 options={{
-                  presentation: 'modal',
-                  animation: 'slide_from_bottom',
+                  presentation: 'formSheet',
+                  sheetGrabberVisible: true,
+                  headerShown: true,
+                  title: 'Translate',
+                  contentStyle: { backgroundColor: 'transparent' },
+                }}
+              />
+              <Stack.Screen
+                name="legal"
+                options={{
+                  presentation: 'formSheet',
+                  sheetGrabberVisible: true,
+                  headerShown: true,
+                  title: 'Legal',
+                  contentStyle: { backgroundColor: 'transparent' },
+                }}
+              />
+              <Stack.Screen
+                name="billing"
+                options={{
+                  presentation: 'formSheet',
+                  sheetGrabberVisible: true,
+                  headerShown: true,
+                  title: 'Ekwe Pro',
+                  contentStyle: { backgroundColor: 'transparent' },
                 }}
               />
             </Stack>
@@ -167,7 +167,7 @@ function InnerLayout(): React.ReactElement {
 
 function RootLayout(): React.ReactElement {
   useEffect((): void => {
-    if (Platform.OS === 'ios') {
+    if (process.env.EXPO_OS === 'ios') {
       const setupNotifications = async (): Promise<void> => {
         configureNotifications();
         await registerNotificationCategories();
@@ -186,16 +186,27 @@ function RootLayout(): React.ReactElement {
     };
     activate();
     initAuth();
+    HistoryService.cleanupLocalHistory();
+
+    // Drain the sync queue on connectivity restore
+    const netSub = NetInfo.addEventListener((state) => {
+      if (state.isConnected) {
+        HistoryService.drainSyncQueue();
+      }
+    });
 
     return (): void => {
-      deactivateKeepAwake().catch(() => { });
+      deactivateKeepAwake().catch(() => {});
+      netSub();
     };
   }, []);
 
   return (
-    <ShareIntentProvider>
-      <InnerLayout />
-    </ShareIntentProvider>
+    <SafeAreaProvider>
+      <ShareIntentProvider>
+        <InnerLayout />
+      </ShareIntentProvider>
+    </SafeAreaProvider>
   );
 }
 

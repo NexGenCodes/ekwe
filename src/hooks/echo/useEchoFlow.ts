@@ -8,9 +8,10 @@ import { Platform, AppState } from 'react-native';
 
 import { useEchoIntentResolver } from './useEchoIntentResolver';
 import { preWarmAudioEngine } from '../audio/useSharedAudioPlayer';
-
 import { useTranscription } from '../useTranscription';
 import { useTranslation } from '../useTranslation';
+
+import { usePermissions } from '@/hooks/usePermissions';
 import { HistoryService } from '@/services/HistoryService';
 import { IntentService } from '@/services/IntentService';
 import { settings$, auth$ } from '@/store';
@@ -90,7 +91,9 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
   }, []);
 
   const themePreference = useSelector(() => settings$.themePreference.get());
-  const autoCopy = useSelector(() => settings$.autoCopy.get());
+  const permissions = usePermissions();
+  const autoCopySetting = useSelector(() => settings$.autoCopy.get());
+  const autoCopy = permissions.autoCopy ? autoCopySetting : false;
   const session = useSelector(() => auth$.session.get());
 
   const isIOS = Platform.OS === 'ios';
@@ -173,6 +176,17 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
 
     if (!audioUri) return;
 
+    // Enforce Plan Limits for Audio Duration
+    if (durationSeconds * 1000 > permissions.dictationDurationMs) {
+      const limitSec = permissions.dictationDurationMs / 1000;
+      dispatch({
+        type: 'SET_ERROR',
+        payload: `Audio exceeds your plan limit (${limitSec}s). Please upgrade to Pro for longer files.`,
+      });
+      dispatch({ type: 'SET_STEP', payload: 'Error' });
+      return;
+    }
+
     Haptics.selectionAsync();
     dispatch({ type: 'SET_STEP', payload: 'Transcribing' });
     IntentService.updateBubbleMode('MAGIC');
@@ -214,7 +228,10 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
 
       dispatch({
         type: 'SET_TRANSCRIPTION',
-        payload: { text: trResult.value.transcript, provider: trResult.value.provider },
+        payload: {
+          text: trResult.value.transcript,
+          provider: trResult.value.provider,
+        },
       });
 
       let finalLang = state.selectedLang;
@@ -268,11 +285,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     let translationResultText = null;
 
     try {
-      const trResult = await translate(
-        textToTranslate,
-        source,
-        target,
-      );
+      const trResult = await translate(textToTranslate, source, target);
 
       if (!trResult.ok) {
         throw new Error(trResult.error);
@@ -305,6 +318,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
         targetLang: target,
         transcript: textToTranslate,
         translation: translationResultText,
+        transliteration: null,
         duration: state.audioDuration,
         sourceApp,
         provider: stt || 'unknown',

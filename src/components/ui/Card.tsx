@@ -12,7 +12,6 @@ export interface CardProps {
   /** Clip children to card bounds (needed for grouped rows) */
   overflow?: boolean;
   style?: StyleProp<ViewStyle>;
-  className?: string;
 }
 
 const PADDING_MAP = {
@@ -32,7 +31,6 @@ export const Card = ({
   padding = 'md',
   overflow = false,
   style,
-  className,
 }: CardProps): React.ReactElement => {
   const { color } = useTheme();
 
@@ -61,12 +59,12 @@ export const Card = ({
 
   return (
     <View
-      className={className}
       style={[
         {
           borderRadius: 24,
           padding: PADDING_MAP[padding],
           overflow: overflow ? 'hidden' : undefined,
+          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
         },
         variantStyles,
         style,

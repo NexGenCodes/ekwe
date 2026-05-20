@@ -24,8 +24,6 @@ export interface EchoConfigStepProps {
 export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
   ({ player, isResolving, onTranscribe, children }) => {
     const { color } = useTheme();
-    const brandPrimary = color.primary;
-
     return (
       <View>
         <PlaybackControl
@@ -52,7 +50,7 @@ export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
           style={[
             styles.primaryAction,
             {
-              backgroundColor: brandPrimary,
+              backgroundColor: color.secondary,
               opacity: isResolving ? 0.6 : 1,
             },
           ]}
@@ -60,12 +58,12 @@ export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
           {isResolving && (
             <ActivityIndicator
               size="small"
-              color="#FFF"
+              color={color.onPrimary}
               style={{ marginRight: 8 }}
             />
           )}
-          <Zap size={18} color="#FFF" fill="#FFF" />
-          <Text style={styles.primaryActionTxt}>
+          <Zap size={18} color={color.onPrimary} fill={color.onPrimary} />
+          <Text style={[styles.primaryActionTxt, { color: color.onPrimary }]}>
             {isResolving ? 'Preparing Audio...' : 'Transcribe'}
           </Text>
         </TouchableOpacity>
@@ -79,9 +77,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     paddingVertical: 18,
-    borderRadius: 20,
+    borderRadius: 24,
   },
-  primaryActionTxt: { fontSize: 16, fontWeight: '800', color: '#FFF' },
+  primaryActionTxt: {
+    fontFamily: 'Outfit-Bold',
+    fontSize: 17,
+    letterSpacing: -0.2,
+  },
 });

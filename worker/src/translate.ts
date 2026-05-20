@@ -1,5 +1,6 @@
 import { Env, Tier, TranslateResult } from './types';
 import { logger } from './logger';
+import { guardTextLength, guardAutoDetect, guardLanguageCode, safeParseJSON, sanitizeTranslationText, getLanguageName } from './security';
 import * as groq from './providers/groq';
 import * as mistral from './providers/mistral';
 import * as openrouter from './providers/openrouter';
@@ -44,24 +45,40 @@ export async function handleTranslate(
   tier: Tier,
   signal: AbortSignal,
 ): Promise<Response> {
-  const body = (await request.json()) as {
-    text: string;
-    targetLang: string;
-    sourceLang?: string;
-  };
+  // ── Safe JSON parsing (prevents 500 on malformed body) ──
+  const parsed = await safeParseJSON<{ text: string; targetLang: string; sourceLang?: string }>(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   if (!body.text?.trim()) {
     return Response.json({ error: 'EKWE_EMPTY_TRANSCRIPT' }, { status: 400 });
   }
+
+  // ── Security Guards (centralized in security.ts) ──
+  const textGuard = guardTextLength(body.text, tier);
+  if (!textGuard.allowed) return textGuard.response;
+
+  const autoGuard = guardAutoDetect(body.sourceLang, tier);
+  if (!autoGuard.allowed) return autoGuard.response;
+
+  const srcLangGuard = guardLanguageCode(body.sourceLang, 'sourceLang');
+  if (!srcLangGuard.allowed) return srcLangGuard.response;
+
+  const tgtLangGuard = guardLanguageCode(body.targetLang, 'targetLang');
+  if (!tgtLangGuard.allowed) return tgtLangGuard.response;
+
+  // ── Prompt Injection Defense (silent strip) ──
+  const cleanText = sanitizeTranslationText(body.text);
 
   const pipeline = tier === 'PREMIUM' ? PREMIUM_PIPELINE : FREE_PIPELINE;
 
   for (const provider of pipeline) {
     try {
       if (signal.aborted) throw new Error('CLIENT_ABORTED');
-      logger.info(`[translate] Trying ${provider.name}`, { tier });
+      const targetName = getLanguageName(body.targetLang);
+      const sourceName = getLanguageName(body.sourceLang);
 
-      const result = await provider.fn(body.text, body.targetLang, body.sourceLang, env, signal);
+      const result = await provider.fn(cleanText, targetName, sourceName, env, signal);
       if (result) {
         logger.info(`[translate] Success: ${provider.name}`, { provider: result.provider });
         return Response.json(result);

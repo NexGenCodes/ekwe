@@ -4,11 +4,13 @@ import { supabase } from '@/services/supabase';
 import { authActions } from '@/store';
 import { Result, ok, err } from '@/types/Result';
 import { fetchWithRetry } from '@/utils/networkUtils';
+import logger from '@/utils/logger';
 
 const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? '';
 
 export interface TranslationResult {
   translation: string;
+  transliteration?: string;
   sourceLang: string;
   targetLang: string;
   provider?: string;
@@ -34,10 +36,6 @@ class TranslationServiceClass {
       return err(EkweError.EMPTY_TRANSCRIPT);
     }
 
-    // Resolve language names for the prompt
-    const targetName = this.getLanguageName(targetLang);
-    const sourceName = this.getLanguageName(sourceLang);
-
     // Get auth token
     const {
       data: { session },
@@ -50,26 +48,34 @@ class TranslationServiceClass {
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          'X-Ekwe-Key': process.env.EXPO_PUBLIC_EKWE_APP_KEY ?? '',
         },
         body: JSON.stringify({
           text,
-          targetLang: targetName,
-          sourceLang: sourceName,
+          targetLang,
+          sourceLang,
         }),
         retries: 2, // Translations are smaller, don't need heavy retries
         signal,
       });
 
       if (!response.ok) {
-        const body = (await response.json()) as {
-          error?: string;
-        };
-        return this.mapErrorCode(body.error ?? 'EKWE_TRANSLATION_FAIL');
+        let errorCode = 'EKWE_TRANSLATION_FAIL';
+        try {
+          const errorBody = (await response.json()) as { error?: string };
+          errorCode = errorBody.error ?? errorCode;
+        } catch {
+          /* ignore parse failures on error body */
+        }
+
+        if (response.status === 429) {
+          return err(EkweError.RATE_LIMITED);
+        }
+        return this.mapErrorCode(errorCode);
       }
 
       const data = (await response.json()) as {
         translation: string;
+        transliteration?: string;
         provider?: string;
         transaction?: {
           transactions_used: number;
@@ -91,17 +97,20 @@ class TranslationServiceClass {
 
       return ok({
         translation: data.translation.trim(),
+        transliteration: data.transliteration?.trim(),
         sourceLang,
         targetLang,
         provider: data.provider,
       });
-    } catch {
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        if (e.name === 'AbortError') {
+          throw e;
+        }
+        logger.error('[Translation] FAIL:', e.message);
+      }
       return err(EkweError.NETWORK_LOST);
     }
-  }
-
-  private getLanguageName(code: string): string {
-    return LANGUAGES.find((l) => l.code === code)?.englishName ?? code;
   }
 
   private mapErrorCode(code: string): Result<never, EkweError> {

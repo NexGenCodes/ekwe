@@ -1,39 +1,43 @@
 import { Env, Tier, JWTPayloadWithMeta } from './types';
 import { handleTranscribe } from './transcribe';
 import { handleTranslate } from './translate';
-import { checkPreflight, postflightDeduction, getEvasionHeaders } from './utils';
+import { checkPreflight, postflightDeduction } from './utils';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 import type { ExecutionContext } from '@cloudflare/workers-types';
+import { logger } from './logger';
+import { guardContentType } from './security';
+import { handleWebhook } from './webhook';
 
 let JWKS: ReturnType<typeof createRemoteJWKSet>;
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    // ─── IP Evasion & Anti-Ban Setup ───
-    env.EVASION_HEADERS = getEvasionHeaders(request);
-
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    };
-
     if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, { headers: CORS_HEADERS });
     }
 
     const url = new URL(request.url);
     let response: Response;
 
-    // ─── Auth: Dual-Mode (JWT + App-Key Fallback) ───
+    // ─── Webhook Route (no JWT auth — uses signature verification) ───
+    if (request.method === 'POST' && url.pathname === '/webhook') {
+      response = await handleWebhook(request, env);
+      return this.addCorsHeaders(response, CORS_HEADERS);
+    }
+
+    // ─── Auth: Strict JWT Only ───
     let tier: Tier = 'FREE';
-    let userId = 'anonymous';
+    let userId = '';
 
     const authHeader = request.headers.get('Authorization');
-    const appKey = request.headers.get('X-Ekwe-Key');
 
     if (authHeader && authHeader.startsWith('Bearer ')) {
-      // Mode 1: JWT authentication (main app with session)
       try {
         const token = authHeader.split(' ')[1];
         if (!JWKS) {
@@ -44,20 +48,35 @@ export default {
           audience: 'authenticated'
         });
         const meta = payload as JWTPayloadWithMeta;
-        userId = meta.sub || 'anonymous';
+        userId = meta.sub || '';
+        
+        if (!userId) throw new Error('Missing sub in JWT');
+
         if (meta.app_metadata?.is_pro) {
           tier = 'PREMIUM';
         }
       } catch (err) {
-        return this.addCorsHeaders(Response.json({ error: 'INVALID_TOKEN' }, { status: 401 }), corsHeaders);
+        return this.addCorsHeaders(Response.json({ error: 'INVALID_TOKEN' }, { status: 401 }), CORS_HEADERS);
       }
-    } else if (appKey && appKey === env.EKWE_APP_KEY) {
-      // Mode 2: App-key fallback (share extension without session)
-      // Proceeds as anonymous FREE — rate-limited by IP via RATE_LIMITER binding
-      userId = 'app-anonymous';
     } else {
-      // Mode 3: No credentials — block completely
-      return this.addCorsHeaders(Response.json({ error: 'UNAUTHORIZED' }, { status: 401 }), corsHeaders);
+      // No valid JWT provided — block completely
+      return this.addCorsHeaders(Response.json({ error: 'UNAUTHORIZED' }, { status: 401 }), CORS_HEADERS);
+    }
+
+    // ─── SECURITY GATING: Cloudflare Rate Limiting ───
+    // Protects against API spam on a per-user basis, with IP-level fallback
+    if (env.RATE_LIMITER) {
+      const clientIp = request.headers.get('CF-Connecting-IP') || '';
+      const rateLimitKey = clientIp ? `${userId}::${clientIp}` : userId;
+
+      const { success } = await env.RATE_LIMITER.limit({ key: rateLimitKey });
+      if (!success) {
+        logger.warn(`[rate-limiter] Blocked request for key: ${rateLimitKey}`);
+        return this.addCorsHeaders(
+          Response.json({ error: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please slow down.' }, { status: 429 }),
+          CORS_HEADERS
+        );
+      }
     }
 
     // ─── 1. PRE-FLIGHT CHECK (ATOMIC COOLDOWN) ───
@@ -65,15 +84,19 @@ export default {
     if (!preflight.allowed) {
       return this.addCorsHeaders(
         Response.json({ error: 'EKWE_RATE_LIMIT', message: `Please wait ${Math.ceil(preflight.cooldown_remaining || 0)} seconds.` }, { status: 429 }),
-        corsHeaders
+        CORS_HEADERS
       );
     }
 
     // ─── 2. EXECUTION ───
     try {
       if (request.method === 'POST' && url.pathname === '/transcribe') {
+        const ctGuard = guardContentType(request, 'multipart');
+        if (!ctGuard.allowed) return this.addCorsHeaders(ctGuard.response, CORS_HEADERS);
         response = await handleTranscribe(request, env, preflight.tier_active, request.signal);
       } else if (request.method === 'POST' && url.pathname === '/translate') {
+        const ctGuard = guardContentType(request, 'json');
+        if (!ctGuard.allowed) return this.addCorsHeaders(ctGuard.response, CORS_HEADERS);
         response = await handleTranslate(request, env, preflight.tier_active, request.signal);
       } else {
         response = Response.json({ error: 'NOT_FOUND' }, { status: 404 });
@@ -81,24 +104,18 @@ export default {
 
       // ─── 3. POST-FLIGHT DEDUCTION ───
       if (response.ok) {
-        // Clone the response so we can read the JSON body
+        // Read the response body first
         const resBody = await response.clone().json() as Record<string, unknown>;
-        
+
         // 1 Half Transaction = 1 Credit
-        const cost = 1; 
-        
-        // Deduct in the background using ctx.waitUntil to prevent blocking the user response
-        ctx.waitUntil(postflightDeduction(env, userId, cost));
+        const cost = 1;
 
-        // Inject transaction metadata
-        resBody.transaction = {
-          cost,
-          transactions_used: preflight.transactions_used + cost,
-          tier_active: preflight.tier_active,
-          is_fallback: preflight.is_fallback
-        };
+        // Deduct inline (blocking) to guarantee billing accuracy.
+        // ctx.waitUntil is NOT used because the deduction must complete before
+        // the response is sent — otherwise rapid requests race past the cooldown.
+        const deductionResult = await postflightDeduction(env, userId, cost);
 
-        response = Response.json(resBody, { status: response.status });
+        response = Response.json({ ...resBody, transaction: deductionResult }, { status: response.status });
       }
 
     } catch (e: unknown) {
@@ -112,12 +129,12 @@ export default {
       );
     }
 
-    return this.addCorsHeaders(response, corsHeaders);
+    return this.addCorsHeaders(response, CORS_HEADERS);
   },
 
-  addCorsHeaders(response: Response, corsHeaders: Record<string, string>): Response {
+  addCorsHeaders(response: Response, CORS_HEADERS: Record<string, string>): Response {
     const newHeaders = new Headers(response.headers);
-    Object.entries(corsHeaders).forEach(([k, v]) => newHeaders.set(k, v));
+    Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
     return new Response(response.body, {
       status: response.status,
       headers: newHeaders,

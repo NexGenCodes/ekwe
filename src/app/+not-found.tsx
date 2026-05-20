@@ -1,18 +1,23 @@
 import { Link, Stack } from 'expo-router';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui';
+import { useTheme } from '@/hooks';
 
 export default function NotFoundScreen(): React.ReactElement {
+  const { color } = useTheme();
+
   return (
-    <SafeAreaView className="flex-1 bg-background dark:bg-background">
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: color.background }]}
+    >
       <Stack.Screen options={{ title: 'Oops!' }} />
-      <View className="flex-1 items-center justify-center p-5">
-        <Text className="text-2xl font-display text-foreground dark:text-foreground mb-2">
+      <View style={styles.content}>
+        <Text style={[styles.title, { color: color.foreground }]}>
           This screen doesn't exist.
         </Text>
-        <Text className="text-base text-center font-body text-muted dark:text-muted mb-8">
+        <Text style={[styles.subtitle, { color: color.muted }]}>
           The link you followed may be broken, or the page may have been
           removed.
         </Text>
@@ -31,3 +36,20 @@ export default function NotFoundScreen(): React.ReactElement {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  content: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  title: { fontSize: 24, fontFamily: 'Outfit-Medium', marginBottom: 8 },
+  subtitle: {
+    fontSize: 16,
+    fontFamily: 'Outfit-Regular',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+});

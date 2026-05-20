@@ -15,12 +15,13 @@ import React, {
   useCallback,
   useEffect,
 } from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
 
 import { Button } from '@/components/ui';
 import { LANGUAGES, Language, FLAG_MAP } from '@/constants/languages';
-import { useTheme } from '@/hooks';
+import { useTheme, usePermissions } from '@/hooks';
 import { auth$ } from '@/store';
+import { AppAlert } from '@/utils';
 
 interface LanguageRowProps {
   item: Language;
@@ -52,49 +53,42 @@ const LanguageRow = ({
 }: LanguageRowProps): React.ReactElement => {
   const { color } = useTheme();
 
-  const mutedColor = color.muted;
-  const primaryColor = color.primary;
-  const onPrimaryColor = color.onPrimary;
-
   return (
     <Pressable
       onPress={onToggleSelect}
-      className="h-[52px] flex-row items-center px-4 bg-background dark:bg-background active:opacity-60"
+      style={[styles.rowContainer, { backgroundColor: color.background }]}
     >
-      <View className="flex-1 flex-row items-center">
-        <Text className="text-xl mr-3">{FLAG_MAP[item.code] || '🌐'}</Text>
+      <View style={styles.rowLeft}>
+        <Text style={styles.flagText}>{FLAG_MAP[item.code] || '🌐'}</Text>
         <View>
-          <Text className="text-base font-body text-zinc-950 dark:text-zinc-50">
+          <Text style={[styles.englishName, { color: color.foreground }]}>
             {item.englishName}
           </Text>
-          <Text className="text-xs mt-0.5 font-body text-zinc-500 dark:text-zinc-400">
+          <Text style={[styles.nativeName, { color: color.muted }]}>
             {item.nativeName}
           </Text>
         </View>
       </View>
 
-      <View className="flex-row items-center">
-        <Pressable
-          onPress={onTogglePin}
-          hitSlop={8}
-          className="p-2 active:opacity-60"
-        >
+      <View style={styles.rowRight}>
+        <Pressable onPress={onTogglePin} hitSlop={8} style={styles.pinButton}>
           <Star
             size={20}
-            color={isPinned ? primaryColor : mutedColor}
-            fill={isPinned ? primaryColor : 'transparent'}
+            color={isPinned ? color.secondary : color.muted}
+            fill={isPinned ? color.secondary : 'transparent'}
           />
         </Pressable>
 
         <View
-          className={`w-[22px] h-[22px] rounded-full ml-3 items-center justify-center ${
+          style={[
+            styles.checkCircle,
             isSelected
-              ? 'bg-primary dark:bg-primary border-0'
-              : 'bg-transparent border-[1.5px] border-zinc-300 dark:border-zinc-700'
-          }`}
+              ? { backgroundColor: color.secondary, borderWidth: 0 }
+              : { backgroundColor: 'transparent', borderColor: color.border },
+          ]}
         >
           {isSelected && (
-            <Check size={12} color={onPrimaryColor} strokeWidth={3} />
+            <Check size={12} color={color.onSecondary} strokeWidth={3} />
           )}
         </View>
       </View>
@@ -112,6 +106,8 @@ export const LanguagePickerSheet = ({
 }: LanguagePickerSheetProps): React.ReactElement => {
   const { color } = useTheme();
   const isPro = useSelector(() => auth$.isPro.get());
+  const permissions = usePermissions();
+  const maxLanguages = permissions.maxPinnedLanguages;
   const sheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['85%'], []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -170,7 +166,15 @@ export const LanguagePickerSheet = ({
       if (singleSelect) return null;
       return (
         <BottomSheetFooter {...props} bottomInset={16}>
-          <View className="px-4 py-3 border-t-[0.5px] border-zinc-200 dark:border-zinc-800 bg-background dark:bg-background">
+          <View
+            style={[
+              styles.footerContainer,
+              {
+                backgroundColor: color.background,
+                borderTopColor: color.border,
+              },
+            ]}
+          >
             <Button label="Confirm" onPress={onClose} variant="primary" />
           </View>
         </BottomSheetFooter>
@@ -184,14 +188,33 @@ export const LanguagePickerSheet = ({
       onSelectionChange([code], pinnedLanguages);
       return;
     }
-    const next = selectedLanguages.includes(code)
+
+    const isCurrentlySelected = selectedLanguages.includes(code);
+    if (!isCurrentlySelected && selectedLanguages.length >= maxLanguages) {
+      AppAlert.info(
+        'Language Limit Reached',
+        `You can only select up to ${maxLanguages} languages on your current plan. Upgrade to Pro for more.`,
+      );
+      return;
+    }
+
+    const next = isCurrentlySelected
       ? selectedLanguages.filter((c) => c !== code)
       : [...selectedLanguages, code];
     onSelectionChange(next, pinnedLanguages);
   };
 
   const togglePin = (code: string): void => {
-    const next = pinnedLanguages.includes(code)
+    const isCurrentlyPinned = pinnedLanguages.includes(code);
+    if (!isCurrentlyPinned && pinnedLanguages.length >= maxLanguages) {
+      AppAlert.info(
+        'Language Limit Reached',
+        `You can only pin up to ${maxLanguages} languages on your current plan. Upgrade to Pro for more.`,
+      );
+      return;
+    }
+
+    const next = isCurrentlyPinned
       ? pinnedLanguages.filter((c) => c !== code)
       : [...pinnedLanguages, code];
     onSelectionChange(selectedLanguages, next);
@@ -216,13 +239,18 @@ export const LanguagePickerSheet = ({
         width: 40,
       }}
     >
-      <View className="z-10 bg-background dark:bg-background">
+      <View style={{ zIndex: 10, backgroundColor: bgColor }}>
         {/* Search */}
-        <View className="px-4 pb-2">
-          <View className="h-11 border-[0.5px] border-zinc-200 dark:border-zinc-800 rounded-xl flex-row items-center px-3 bg-card dark:bg-card">
+        <View style={styles.searchContainer}>
+          <View
+            style={[
+              styles.searchInputWrapper,
+              { backgroundColor: color.card, borderColor: color.border },
+            ]}
+          >
             <Search size={18} color={mutedColor} style={{ marginRight: 8 }} />
             <BottomSheetTextInput
-              className="flex-1 h-11 text-base font-body text-zinc-950 dark:text-zinc-50"
+              style={[styles.searchInput, { color: color.foreground }]}
               placeholder="Search languages"
               placeholderTextColor={mutedColor}
               value={searchQuery}
@@ -239,8 +267,10 @@ export const LanguagePickerSheet = ({
         {/* Fixed Pinned Section */}
         {pinnedItems.length > 0 && (
           <View>
-            <View className="px-4 py-3 bg-card dark:bg-card">
-              <Text className="font-semibold tracking-[0.5px] text-zinc-500 dark:text-zinc-400 text-xs">
+            <View
+              style={[styles.sectionHeader, { backgroundColor: color.surface }]}
+            >
+              <Text style={[styles.sectionHeaderText, { color: color.muted }]}>
                 PINNED
               </Text>
             </View>
@@ -258,8 +288,10 @@ export const LanguagePickerSheet = ({
         )}
 
         {/* Fixed "All Languages" Header */}
-        <View className="px-4 py-3 bg-card dark:bg-card">
-          <Text className="font-semibold tracking-[0.5px] text-zinc-500 dark:text-zinc-400 text-xs">
+        <View
+          style={[styles.sectionHeader, { backgroundColor: color.surface }]}
+        >
+          <Text style={[styles.sectionHeaderText, { color: color.muted }]}>
             {searchQuery ? 'RESULTS' : 'ALL LANGUAGES'}
           </Text>
         </View>
@@ -284,3 +316,54 @@ export const LanguagePickerSheet = ({
     </BottomSheet>
   );
 };
+
+const styles = StyleSheet.create({
+  rowContainer: {
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  rowLeft: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  flagText: { fontSize: 20, marginRight: 12 },
+  englishName: { fontSize: 16, fontFamily: 'Outfit-Regular' },
+  nativeName: { fontSize: 12, marginTop: 2, fontFamily: 'Outfit-Regular' },
+  rowRight: { flexDirection: 'row', alignItems: 'center' },
+  pinButton: { padding: 8 },
+  checkCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    marginLeft: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+  },
+  footerContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 0.5,
+  },
+  searchContainer: { paddingHorizontal: 16, paddingBottom: 8 },
+  searchInputWrapper: {
+    height: 44,
+    borderWidth: 0.5,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  searchInput: {
+    flex: 1,
+    height: 44,
+    fontSize: 16,
+    fontFamily: 'Outfit-Regular',
+  },
+  sectionHeader: { paddingHorizontal: 16, paddingVertical: 12 },
+  sectionHeaderText: {
+    fontFamily: 'Outfit-Medium',
+    letterSpacing: 0.5,
+    color: '#71717A',
+    fontSize: 12,
+  },
+});

@@ -1,192 +1,330 @@
 import { useSelector } from '@legendapp/state/react';
+import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
+import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
+import * as StoreReview from 'expo-store-review';
 import {
-  User,
+  LogOut,
+  CreditCard,
+  History,
+  Trash2,
+  ChevronRight,
   Mail,
   Shield,
-  Crown,
-  LogOut,
-  ChevronLeft,
-  Settings,
-  CreditCard,
+  FileText,
+  Star,
 } from 'lucide-react-native';
-import React from 'react';
-import { View, Text, ScrollView, Image, Pressable, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  Linking,
+  Platform,
+} from 'react-native';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 
-import { Button } from '@/components/ui';
-import { useLogout, useTheme } from '@/hooks';
-import { auth$ } from '@/store';
+import {
+  AvatarPickerModal,
+  AVATAR_ICONS,
+  ProfileRow,
+  ProfileSection,
+  ProfileIdentity,
+} from '@/components';
+import { useLogout, useTheme, usePermissions } from '@/hooks';
+import { deleteAccount } from '@/services/auth';
+import { supabase } from '@/services/supabase';
+import { auth$, authActions } from '@/store';
 import { AppAlert } from '@/utils/alert';
+import logger from '@/utils/logger';
+
+// ─── ProfileScreen ────────────────────────────────────────────────────────────
 
 export default function ProfileScreen(): React.JSX.Element {
   const user = useSelector(() => auth$.user.get());
   const isPro = useSelector(() => auth$.isPro.get());
   const router = useRouter();
   const { color } = useTheme();
+  const permissions = usePermissions();
   const { confirmLogout } = useLogout();
 
-  const primaryColor = color.primary;
-  const mutedColor = color.muted;
+  const rawName =
+    user?.user_metadata?.full_name || user?.user_metadata?.name || '';
+  const userEmail = user?.email || '';
+  // Fallback to the first part of their email if name is completely empty
+  const fallbackName = userEmail.split('@')[0] || 'User';
+  const userName = rawName ? rawName.split(' ')[0] : fallbackName;
 
-  const userTier = isPro ? 'pro' : 'free';
-  const rawName = user?.user_metadata?.full_name || user?.user_metadata?.name;
-  const userEmail = user?.email;
-  const userName =
-    rawName || (userEmail ? userEmail.split('@')[0] : 'Ekwe User');
+  const [isIconModalVisible, setIsIconModalVisible] = useState(false);
 
-  const handleLogout = confirmLogout;
+  const currentIconData = user?.user_metadata?.avatar_icon
+    ? AVATAR_ICONS.find((i) => i.name === user?.user_metadata?.avatar_icon)
+    : null;
 
-  const renderInfoRow = (
-    icon: React.ReactNode,
-    label: string,
-    value: string,
-  ): React.ReactElement => (
-    <View className="flex-row items-center py-4 border-b border-border dark:border-border">
-      <View className="w-10 h-10 rounded-full bg-card dark:bg-card items-center justify-center mr-4">
-        {icon}
-      </View>
-      <View className="flex-1">
-        <Text className="text-xs font-body text-muted dark:text-muted uppercase tracking-widest mb-0.5">
-          {label}
-        </Text>
-        <Text className="text-base font-bodyMed text-foreground dark:text-zinc-100">
-          {value}
-        </Text>
-      </View>
-    </View>
-  );
+  const handleUpdateIcon = async (iconName: string): Promise<void> => {
+    setIsIconModalVisible(false);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: { avatar_icon: iconName || null },
+      });
+      if (error) throw error;
+      if (data.user) authActions.setUser(data.user);
+    } catch (e) {
+      logger.error('Failed to update avatar icon:', e);
+      AppAlert.error('Error', 'Could not update your avatar.');
+    }
+  };
+
+  const handleDeleteAccount = async (): Promise<void> => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    AppAlert.confirm(
+      'Delete Account',
+      'This will permanently delete your account and all associated data. This action cannot be undone. Are you sure?',
+      async () => {
+        const result = await deleteAccount();
+        if (!result.ok) {
+          AppAlert.error(
+            'Action Required',
+            result.error || 'Failed to delete account.',
+          );
+        } else {
+          router.replace('/(auth)/login');
+        }
+      },
+      { confirmText: 'Delete Permanently', isDestructive: true },
+    );
+  };
 
   return (
-    <SafeAreaView className="flex-1 bg-background dark:bg-background">
-      <StatusBar style="auto" />
-
-      {/* Header */}
-      <View className="px-6 py-4 flex-row items-center justify-between border-b border-border dark:border-border">
-        <Pressable
-          onPress={async () => {
-            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.back();
+    <View style={[styles.flex1, { backgroundColor: color.background }]}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 32 }}
+      >
+        <ProfileIdentity
+          user={user}
+          isPro={isPro}
+          currentIconData={currentIconData}
+          userName={userName}
+          userEmail={userEmail}
+          rawName={rawName}
+          onEditAvatar={() => {
+            if (permissions.customAvatarIcons) {
+              setIsIconModalVisible(true);
+            } else {
+              AppAlert.info(
+                'Ekwe Pro',
+                'Custom avatar icons are a premium feature. Upgrade to Pro to customize your profile.',
+              );
+            }
           }}
-          hitSlop={8}
-          className="w-10 h-10 items-center justify-center rounded-full active:bg-card dark:active:bg-card active:scale-95 transition-all duration-200"
-        >
-          <ChevronLeft size={24} color={color.foreground} />
-        </Pressable>
-        <Text className="font-display text-xl text-foreground dark:text-foreground">
-          Profile
-        </Text>
-        <Pressable
-          onPress={async () => {
-            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push('/(tabs)/settings');
-          }}
-          hitSlop={8}
-          className="w-10 h-10 items-center justify-center rounded-full active:bg-card dark:active:bg-card active:scale-95 transition-all duration-200"
-        >
-          <Settings size={22} color={color.foreground} />
-        </Pressable>
-      </View>
+        />
 
-      <ScrollView className="flex-1 px-6" showsVerticalScrollIndicator={false}>
-        {/* Profile Header */}
-        <View className="items-center py-10">
-          <View className="w-24 h-24 rounded-full border-4 border-card dark:border-card shadow-sm overflow-hidden mb-4">
-            {user?.user_metadata?.avatar_url ? (
-              <Image
-                source={{ uri: user.user_metadata.avatar_url }}
-                className="w-full h-full"
-              />
-            ) : (
-              <View className="w-full h-full bg-primary/10 items-center justify-center">
-                <Text className="text-3xl font-display text-primary">
-                  {rawName?.[0] || userName[0]?.toUpperCase() || 'U'}
-                </Text>
-              </View>
-            )}
-          </View>
-          <Text className="text-2xl font-display text-foreground dark:text-foreground">
-            {userName}
-          </Text>
-          <View className="flex-row items-center mt-2 px-3 py-1 rounded-full bg-primary/10 dark:bg-primary/20 border border-primary/20">
-            <Crown size={14} color={primaryColor} />
-            <Text className="ml-1.5 text-xs font-bodyMed text-primary dark:text-primary uppercase tracking-wider">
-              {userTier === 'pro' ? 'Pro Member' : 'Free Plan'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Account Details */}
-        <View className="mb-8">
-          <Text className="text-xs font-bodyMed text-muted dark:text-muted uppercase tracking-[0.2em] mb-4">
-            Account Details
-          </Text>
-          <View className="bg-card dark:bg-card rounded-[24px] px-5 border border-border dark:border-border overflow-hidden">
-            {renderInfoRow(
-              <User size={20} color={mutedColor} />,
-              'Full Name',
-              rawName || 'Not set',
-            )}
-            {renderInfoRow(
-              <Mail size={20} color={mutedColor} />,
-              'Email Address',
-              userEmail || 'Not set',
-            )}
-            {renderInfoRow(
-              <Shield size={20} color={mutedColor} />,
-              'Account Type',
-              userTier === 'pro' ? 'Premium' : 'Standard',
-            )}
-          </View>
-        </View>
-
-        {/* Subscription / Plan */}
-        <View className="mb-8">
-          <Text className="text-xs font-bodyMed text-muted dark:text-muted uppercase tracking-[0.2em] mb-4">
-            Plan & Billing
-          </Text>
-          <Pressable
-            className="bg-primary/5 dark:bg-primary/5 p-6 rounded-[24px] border border-primary/20 dark:border-primary/30 flex-row items-center justify-between active:scale-95 transition-all duration-200"
+        {/* Activity & Plan */}
+        <ProfileSection title="Activity & Plan" delay={300}>
+          <ProfileRow
+            icon={History}
+            sfIcon="clock.fill"
+            iconColor={color.primary}
+            title="Translation History"
+            subtitle="Review your recent translations"
+            hasDivider
             onPress={async () => {
               await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              AppAlert.info('Billing', 'Subscription management coming soon.');
+              router.push('/(tabs)/history');
             }}
-          >
-            <View className="flex-row items-center">
-              <CreditCard size={24} color={primaryColor} />
-              <View className="ml-4">
-                <Text className="text-lg font-bodyMed text-foreground dark:text-foreground">
-                  {userTier === 'pro' ? 'Ekwe Pro' : 'Free Tier'}
-                </Text>
-                <Text className="text-sm font-body text-muted dark:text-zinc-500">
-                  {userTier === 'pro'
-                    ? 'Unlimited translations'
-                    : 'Standard daily limits'}
-                </Text>
-              </View>
-            </View>
-            {userTier !== 'pro' && (
-              <View className="bg-primary px-3 py-1.5 rounded-lg">
-                <Text className="text-white text-xs font-bodyMed">Upgrade</Text>
-              </View>
-            )}
-          </Pressable>
-        </View>
-
-        {/* Logout Button */}
-        <View className="pb-12">
-          <Button
-            variant="ghost"
-            size="large"
-            label="Log Out"
-            onPress={handleLogout}
-            leftIcon={<LogOut size={20} color="#EF4444" />}
-            labelStyle={{ color: '#EF4444' }}
           />
-        </View>
+          <ProfileRow
+            icon={CreditCard}
+            sfIcon="creditcard.fill"
+            iconColor={color.primary}
+            title={isPro ? 'Ekwe Pro' : 'Plan & Billing'}
+            subtitle={
+              isPro ? 'Unlimited translations' : 'Free Tier · Standard limits'
+            }
+            onPress={async () => {
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/billing');
+            }}
+            trailing={
+              isPro ? (
+                process.env.EXPO_OS === 'ios' ? (
+                  <ExpoImage
+                    source="sf:chevron.right"
+                    style={{ width: 14, height: 14 }}
+                    tintColor={color.muted}
+                  />
+                ) : (
+                  <ChevronRight size={20} color={color.muted} />
+                )
+              ) : (
+                <View
+                  style={[
+                    styles.upgradeBadge,
+                    { backgroundColor: color.primary },
+                  ]}
+                >
+                  <Text
+                    style={[styles.upgradeText, { color: color.onPrimary }]}
+                  >
+                    Upgrade
+                  </Text>
+                </View>
+              )
+            }
+          />
+        </ProfileSection>
+
+        {/* Help & Legal */}
+        <ProfileSection title="Help & Legal" delay={350}>
+          <ProfileRow
+            icon={Mail}
+            sfIcon="envelope.fill"
+            iconColor={color.primary}
+            title="Contact Support"
+            hasDivider
+            onPress={async () => {
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              Linking.openURL('mailto:emmanuelztrd@gmail.com');
+            }}
+          />
+          <ProfileRow
+            icon={Star}
+            sfIcon="star.fill"
+            iconColor={color.primary}
+            title="Rate Us"
+            hasDivider
+            onPress={async () => {
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              let hasNativeAction = false;
+              try {
+                hasNativeAction = await StoreReview.hasAction();
+              } catch {
+                logger.warn(
+                  'StoreReview native module not found, falling back to Linking',
+                );
+              }
+
+              if (hasNativeAction) {
+                try {
+                  await StoreReview.requestReview();
+                  return;
+                } catch {
+                  logger.warn(
+                    'StoreReview request failed, falling back to Linking',
+                  );
+                }
+              }
+
+              // Fallback to deep link
+              const ITUNES_ITEM_ID = '123456789'; // TODO: Replace with your actual numeric iOS App ID when published to App Store Connect
+              const ANDROID_PACKAGE_NAME =
+                Constants.expoConfig?.android?.package ?? 'com.anonymous.ekwe';
+
+              const url =
+                Platform.OS === 'ios'
+                  ? `itms-apps://itunes.apple.com/app/viewContentsUserReviews?id=${ITUNES_ITEM_ID}&action=write-review`
+                  : `market://details?id=${ANDROID_PACKAGE_NAME}`;
+              Linking.openURL(url).catch(() => {
+                AppAlert.error('Error', 'Could not open the app store.');
+              });
+            }}
+          />
+          <ProfileRow
+            icon={Shield}
+            sfIcon="shield.fill"
+            iconColor={color.primary}
+            title="Privacy Policy"
+            hasDivider
+            onPress={async () => {
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/legal/privacy');
+            }}
+          />
+          <ProfileRow
+            icon={FileText}
+            sfIcon="doc.text.fill"
+            iconColor={color.primary}
+            title="Terms of Service"
+            onPress={async () => {
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/legal/terms');
+            }}
+          />
+        </ProfileSection>
+
+        {/* Danger Zone */}
+        <ProfileSection
+          title="Danger Zone"
+          titleColor={color.error}
+          delay={400}
+        >
+          <ProfileRow
+            icon={LogOut}
+            sfIcon="rectangle.portrait.and.arrow.right"
+            iconColor={color.error}
+            title="Log Out"
+            subtitle="Sign out of your session"
+            hasDivider
+            onPress={async () => {
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              confirmLogout();
+            }}
+            trailing={null}
+          />
+          <ProfileRow
+            icon={Trash2}
+            sfIcon="trash.fill"
+            iconColor={color.error}
+            title="Delete Account"
+            subtitle="Permanently delete your data"
+            onPress={handleDeleteAccount}
+            trailing={null}
+          />
+        </ProfileSection>
+
+        {/* Footer */}
+        <Animated.View
+          entering={FadeInUp.delay(450).duration(400)}
+          style={styles.footer}
+        >
+          <Text style={[styles.footerText, { color: color.muted }]}>
+            Built with ❤️ by EKWE team
+          </Text>
+          <Text style={[styles.versionText, { color: color.muted }]}>
+            v{Constants.expoConfig?.version ?? '1.0.0'}
+          </Text>
+        </Animated.View>
       </ScrollView>
-    </SafeAreaView>
+
+      <AvatarPickerModal
+        visible={isIconModalVisible}
+        onClose={() => setIsIconModalVisible(false)}
+        onSelect={handleUpdateIcon}
+        currentIcon={user?.user_metadata?.avatar_icon}
+      />
+    </View>
   );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  flex1: { flex: 1 },
+  scrollView: { flex: 1 },
+  upgradeBadge: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  upgradeText: { fontFamily: 'Outfit-Medium', fontSize: 12 },
+  footer: { alignItems: 'center', paddingBottom: 32 },
+  footerText: { fontFamily: 'Outfit-Medium', fontSize: 12, opacity: 0.6 },
+  versionText: {
+    fontFamily: 'Outfit-Regular',
+    fontSize: 10,
+    opacity: 0.4,
+    marginTop: 4,
+  },
+});

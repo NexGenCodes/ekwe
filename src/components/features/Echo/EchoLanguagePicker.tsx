@@ -14,11 +14,10 @@ export interface EchoLanguagePickerProps {
 export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
   ({ selectedLang, onSelect }) => {
     const { color } = useTheme();
-    const textPrimary = color.foreground;
 
     return (
       <View>
-        <Text style={[styles.stepTitle, { color: textPrimary }]}>
+        <Text style={[styles.stepTitle, { color: color.foreground }]}>
           {STEP_METADATA.PickLanguage.title}
         </Text>
         <BottomSheetScrollView showsVerticalScrollIndicator={false}>
@@ -30,5 +29,10 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
 );
 
 const styles = StyleSheet.create({
-  stepTitle: { fontSize: 18, fontWeight: '800', marginBottom: 20 },
+  stepTitle: {
+    fontSize: 22,
+    fontFamily: 'Outfit-Bold',
+    marginBottom: 24,
+    letterSpacing: -0.5,
+  },
 });

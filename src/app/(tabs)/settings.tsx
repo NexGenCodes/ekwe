@@ -4,13 +4,19 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { LogOut, ChevronRight, UserCircle } from 'lucide-react-native';
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Switch, Pressable } from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  Switch,
+  Pressable,
+  StyleSheet,
+} from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LanguagePickerSheet, ThemeToggler, SettingsRow } from '@/components';
 import { Card, Badge, SectionHeader } from '@/components/ui';
-import { useForegroundApp, useLogout, useTheme } from '@/hooks';
+import { useForegroundApp, useLogout, useTheme, usePermissions } from '@/hooks';
 import { supabase } from '@/services/supabase';
 import { settings$, settingsActions, auth$ } from '@/store';
 import { AppAlert } from '@/utils/alert';
@@ -40,6 +46,7 @@ export default function SettingsScreen(): React.JSX.Element {
   const userName =
     rawName || (userEmail ? userEmail.split('@')[0] : 'Ekwe User');
   const userTier = isPro ? 'pro' : 'free';
+  const permissions = usePermissions();
 
   const { hasPermission } = useForegroundApp();
 
@@ -85,31 +92,29 @@ export default function SettingsScreen(): React.JSX.Element {
   };
 
   return (
-    <SafeAreaView
-      edges={['top']}
-      className="flex-1 bg-background dark:bg-background"
-    >
-      <View className="px-6 py-4 flex-row justify-between items-center">
-        <Text className="font-display text-[32px] tracking-tight text-foreground dark:text-foreground">
-          Settings
-        </Text>
-      </View>
-
+    <View style={[styles.flex1, { backgroundColor: color.background }]}>
       <ScrollView
-        className="flex-1 bg-background dark:bg-background"
+        style={[styles.scrollView, { backgroundColor: color.background }]}
         showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ paddingBottom: 64 }}
       >
         {/* Profile Card */}
         <Animated.View
           entering={FadeInUp.duration(600).springify()}
-          className="px-4 mt-2"
+          style={styles.profileCardContainer}
         >
-          <Card
-            padding="none"
-            className="flex-row items-center p-5"
-          >
-            <View className="w-14 h-14 rounded-full bg-primary/10 items-center justify-center mr-4 border border-primary/20">
-              <Text className="text-xl font-display text-primary">
+          <Card padding="none" style={styles.profileCard}>
+            <View
+              style={[
+                styles.avatarContainer,
+                {
+                  backgroundColor: `${primaryColor}1A`,
+                  borderColor: `${primaryColor}33`,
+                },
+              ]}
+            >
+              <Text style={[styles.avatarText, { color: primaryColor }]}>
                 {rawName ? (
                   rawName[0].toUpperCase()
                 ) : (
@@ -117,11 +122,11 @@ export default function SettingsScreen(): React.JSX.Element {
                 )}
               </Text>
             </View>
-            <View className="flex-1">
-              <Text className="font-display text-[20px] text-foreground dark:text-foreground mb-0.5">
+            <View style={styles.profileInfo}>
+              <Text style={[styles.profileName, { color: color.foreground }]}>
                 {userName}
               </Text>
-              <Text className="font-body text-sm text-muted dark:text-muted">
+              <Text style={[styles.profileEmail, { color: color.muted }]}>
                 {userEmail || 'hello@ekwe.app'}
               </Text>
             </View>
@@ -136,7 +141,7 @@ export default function SettingsScreen(): React.JSX.Element {
           entering={FadeInDown.duration(600).delay(100).springify()}
         >
           <SectionHeader title="Configuration" />
-          <Card padding="none" overflow className="mx-4">
+          <Card padding="none" overflow style={styles.cardSection}>
             <SettingsRow
               label="Haptic Feedback"
               value={
@@ -157,13 +162,13 @@ export default function SettingsScreen(): React.JSX.Element {
           </Card>
 
           <SectionHeader title="Smart Features" />
-          <Card padding="none" overflow className="mx-4">
+          <Card padding="none" overflow style={styles.cardSection}>
             <SettingsRow
               label="Auto-copy to Clipboard"
-              isLocked={userTier !== 'pro'}
+              isLocked={!permissions.autoCopy}
               value={
                 <Switch
-                  value={userTier === 'pro' ? autoCopy : false}
+                  value={permissions.autoCopy ? autoCopy : false}
                   onValueChange={(val) => {
                     setAutoCopy(val);
                   }}
@@ -172,13 +177,13 @@ export default function SettingsScreen(): React.JSX.Element {
                     false: color.border,
                   }}
                   thumbColor="#FFFFFF"
-                  disabled={userTier !== 'pro'}
+                  disabled={!permissions.autoCopy}
                 />
               }
             />
             <SettingsRow
               label="App-Context Awareness"
-              isLocked={userTier !== 'pro'}
+              isLocked={!permissions.contextAwareness}
               value={
                 <Switch
                   value={!!hasPermission}
@@ -190,12 +195,19 @@ export default function SettingsScreen(): React.JSX.Element {
                     false: color.border,
                   }}
                   thumbColor="#FFFFFF"
-                  disabled={userTier !== 'pro'}
+                  disabled={!permissions.contextAwareness}
                 />
               }
             />
-            <View className="px-5 py-4 bg-muted/5">
-              <Text className="font-body text-xs text-muted dark:text-muted leading-5">
+            <View
+              style={[
+                styles.contextAwarenessInfo,
+                { backgroundColor: `${color.muted}0D` },
+              ]}
+            >
+              <Text
+                style={[styles.contextAwarenessText, { color: color.muted }]}
+              >
                 Context Awareness uses a battery-efficient Accessibility Service
                 to seamlessly activate Ekwe when typing in messaging apps like
                 WhatsApp.
@@ -204,7 +216,7 @@ export default function SettingsScreen(): React.JSX.Element {
           </Card>
 
           <SectionHeader title="Languages" />
-          <Card padding="none" overflow className="mx-4">
+          <Card padding="none" overflow style={styles.cardSection}>
             <SettingsRow
               label="Edit Selection Grid"
               onPress={async () => {
@@ -212,8 +224,10 @@ export default function SettingsScreen(): React.JSX.Element {
                 setSheetVisible(true);
               }}
               value={
-                <View className="flex-row items-center gap-2">
-                  <Text className="font-body text-sm text-muted dark:text-muted">
+                <View style={styles.languageCountContainer}>
+                  <Text
+                    style={[styles.languageCountText, { color: color.muted }]}
+                  >
                     {selectedLanguages.length}/5 active
                   </Text>
                   <ChevronRight size={16} color={color.muted} />
@@ -223,20 +237,22 @@ export default function SettingsScreen(): React.JSX.Element {
           </Card>
 
           <SectionHeader title="Account" />
-          <Card
-            padding="none"
-            overflow
-            className="mx-4 mb-6"
-          >
+          <Card padding="none" overflow style={styles.cardSection}>
             <Pressable
               onPress={async () => {
                 await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 handleLogout();
               }}
-              className="px-5 py-4 flex-row items-center gap-3 border-b border-border dark:border-border active:bg-red-500/10 active:scale-95 transition-all duration-200"
+              style={({ pressed }) => [
+                styles.actionButton,
+                { borderBottomColor: color.border },
+                pressed && styles.actionButtonPressed,
+              ]}
             >
               <LogOut size={18} color={color.foreground} />
-              <Text className="font-bodyMed text-base text-foreground dark:text-foreground">
+              <Text
+                style={[styles.actionButtonText, { color: color.foreground }]}
+              >
                 Log out
               </Text>
             </Pressable>
@@ -245,17 +261,20 @@ export default function SettingsScreen(): React.JSX.Element {
                 await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 handleDeleteAccount();
               }}
-              className="px-5 py-4 flex-row items-center gap-3 active:bg-red-500/10 active:scale-95 transition-all duration-200"
+              style={({ pressed }) => [
+                styles.actionButton,
+                pressed && styles.actionButtonPressed,
+              ]}
             >
               <LogOut size={18} color="#EF4444" />
-              <Text className="font-bodyMed text-base text-red-500">
+              <Text style={[styles.actionButtonText, { color: '#EF4444' }]}>
                 Delete Account
               </Text>
             </Pressable>
           </Card>
 
-          <View className="pb-16 items-center flex-row justify-center gap-2">
-            <Text className="font-body text-xs text-muted dark:text-muted">
+          <View style={styles.footer}>
+            <Text style={[styles.footerText, { color: color.muted }]}>
               Ekwe v{Constants.expoConfig?.version ?? '1.0.0'} (Build{' '}
               {Constants.expoConfig?.android?.versionCode ??
                 Constants.expoConfig?.ios?.buildNumber ??
@@ -276,6 +295,57 @@ export default function SettingsScreen(): React.JSX.Element {
           setPinnedLanguages(pins);
         }}
       />
-    </SafeAreaView>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  flex1: { flex: 1 },
+  scrollView: { flex: 1 },
+  profileCardContainer: { paddingHorizontal: 16, marginTop: 8 },
+  profileCard: { flexDirection: 'row', alignItems: 'center', padding: 20 },
+  avatarContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+    borderWidth: 1,
+  },
+  avatarText: { fontFamily: 'Outfit-Medium', fontSize: 20 },
+  profileInfo: { flex: 1 },
+  profileName: { fontFamily: 'Outfit-Medium', fontSize: 20, marginBottom: 2 },
+  profileEmail: { fontFamily: 'Outfit-Regular', fontSize: 14 },
+  cardSection: { marginHorizontal: 16, marginBottom: 24 },
+  contextAwarenessInfo: { paddingHorizontal: 20, paddingVertical: 16 },
+  contextAwarenessText: {
+    fontFamily: 'Outfit-Regular',
+    fontSize: 12,
+    lineHeight: 20,
+  },
+  languageCountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  languageCountText: { fontFamily: 'Outfit-Regular', fontSize: 14 },
+  actionButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  actionButtonPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  actionButtonText: { fontFamily: 'Outfit-Medium', fontSize: 16 },
+  footer: {
+    paddingBottom: 64,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  footerText: { fontFamily: 'Outfit-Regular', fontSize: 12 },
+});

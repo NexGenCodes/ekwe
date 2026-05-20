@@ -5,7 +5,7 @@ import { logger } from '../logger';
 const ASSEMBLYAI_UPLOAD = 'https://api.assemblyai.com/v2/upload';
 const ASSEMBLYAI_TRANSCRIPT = 'https://api.assemblyai.com/v2/transcript';
 const POLL_INTERVAL = 2000;
-const MAX_POLLS = 10; // 20s max wait
+const MAX_POLLS = 4; // 8s max wait
 
 /**
  * AssemblyAI — async upload → poll pattern.
@@ -44,7 +44,10 @@ export async function transcribe(
 
       // Step 2: Create transcript
       const isAuto = !lang || lang === 'auto';
-      const createBody: Record<string, unknown> = { audio_url: upload_url };
+      const createBody: Record<string, unknown> = {
+        audio_url: upload_url,
+        speech_models: ['universal-3-pro', 'universal-2'],
+      };
       if (isAuto) {
         createBody.language_detection = true;
       } else {

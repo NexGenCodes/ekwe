@@ -1,10 +1,10 @@
 import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
+import { useSelector } from '@legendapp/state/react';
 import { X, AlertCircle, RefreshCw } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
-  ActivityIndicator,
   StyleSheet,
   useColorScheme,
   TouchableOpacity,
@@ -15,11 +15,13 @@ import { EchoFinalResult } from './EchoFinalResult';
 import { EchoLanguagePicker } from './EchoLanguagePicker';
 import { EchoTranslationConfig } from './EchoTranslationConfig';
 
-import { Badge, IconContainer } from '@/components/ui';
+import { Badge, IconContainer, SkeletonBox } from '@/components/ui';
+import { fonts } from '@/constants/fonts';
 import { STEP_METADATA } from '@/constants/echo';
 import { LANGUAGES } from '@/constants/languages';
 import { useEchoFlow, useTheme, useSharedAudioPlayer } from '@/hooks';
 import { initAuth } from '@/services/auth';
+import { auth$ } from '@/store';
 import { EchoProps, EchoStep } from '@/types/echo';
 import { formatSourceApp } from '@/utils';
 
@@ -36,6 +38,8 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     initAuth();
   }, []);
 
+  const userSession = useSelector(() => auth$.session.get());
+
   const {
     step,
     setStep,
@@ -49,7 +53,6 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     audioUri,
     sourceApp,
     isResolving,
-    themePreference,
     handleTranscribe,
     handleTranslate,
     audioDuration,
@@ -57,11 +60,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     onDismiss,
   } = useEchoFlow(props);
 
-  const { color } = useTheme();
-  const systemScheme = useColorScheme();
-  const isDark =
-    themePreference === 'dark' ||
-    (themePreference === 'system' && systemScheme === 'dark');
+  const { color, isDark } = useTheme();
 
   // Preload audio as soon as audioUri is available (e.g. during PickLanguage step)
   const player = useSharedAudioPlayer(audioUri || null);
@@ -122,6 +121,34 @@ export const Echo = (props: EchoProps): React.ReactElement => {
 
   // ── Step-based content renderer ──────────────────────────────────────
   const renderStepContent = (currentStep: EchoStep): React.ReactElement => {
+    if (!userSession) {
+      return (
+        <View style={[styles.loadingContainer, { paddingVertical: 48 }]}>
+          <AlertCircle
+            size={48}
+            color={color.error}
+            style={{ marginBottom: 16 }}
+          />
+          <Text
+            style={[
+              styles.loadingTitle,
+              { color: color.foreground, textAlign: 'center' },
+            ]}
+          >
+            Login Required
+          </Text>
+          <Text
+            style={[
+              styles.loadingSubtitle,
+              { color: color.muted, textAlign: 'center', marginTop: 8 },
+            ]}
+          >
+            Please open the Ekwe app and log in to translate shared files.
+          </Text>
+        </View>
+      );
+    }
+
     switch (currentStep) {
       case 'PickLanguage':
         return (
@@ -139,11 +166,13 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             isDark={isDark}
             onTranscribe={handleTranscribe}
           >
-            <View style={[styles.metaRow, { borderTopColor: color.border }]}>
+            <View
+              style={[styles.metaRow, { borderTopColor: color.background }]}
+            >
               <Text style={[styles.metaLabel, { color: color.muted }]}>
                 {selectedLang === 'auto' ? 'Language: ' : 'Source Language: '}
               </Text>
-              <Text style={[styles.metaValue, { color: color.foreground }]}>
+              <Text style={[styles.metaValue, { color: color.secondary }]}>
                 {selectedLangName}
               </Text>
               <TouchableOpacity
@@ -156,8 +185,12 @@ export const Echo = (props: EchoProps): React.ReactElement => {
                     borderWidth: 1,
                   },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel="Change language"
               >
-                <Text style={[styles.changeLabel, { color: color.primary }]}>
+                <Text
+                  style={[styles.changeLabel, { color: color.primary }]}
+                >
                   Change
                 </Text>
               </TouchableOpacity>
@@ -168,13 +201,21 @@ export const Echo = (props: EchoProps): React.ReactElement => {
       case 'Transcribing':
         return (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={color.primary} />
             <Text style={[styles.loadingTitle, { color: color.foreground }]}>
               {STEP_METADATA.Transcribing.title}
             </Text>
             <Text style={[styles.loadingSubtitle, { color: color.muted }]}>
               Processing your audio...
             </Text>
+            <View style={{ width: '100%', gap: 12, marginTop: 24, paddingHorizontal: 16 }}>
+              <SkeletonBox width="100%" height={12} borderRadius={6} />
+              <SkeletonBox width="85%" height={12} borderRadius={6} />
+              <SkeletonBox width="70%" height={12} borderRadius={6} />
+              <SkeletonBox width="90%" height={12} borderRadius={6} />
+              <View style={{ height: 4 }} />
+              <SkeletonBox width="60%" height={12} borderRadius={6} />
+              <SkeletonBox width="45%" height={12} borderRadius={6} />
+            </View>
           </View>
         );
 
@@ -196,13 +237,18 @@ export const Echo = (props: EchoProps): React.ReactElement => {
       case 'Translating':
         return (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={color.primary} />
             <Text style={[styles.loadingTitle, { color: color.foreground }]}>
               Echo is translating...
             </Text>
             <Text style={[styles.loadingSubtitle, { color: color.muted }]}>
               Please wait while we process the translation.
             </Text>
+            <View style={{ width: '100%', gap: 12, marginTop: 24, paddingHorizontal: 16 }}>
+              <SkeletonBox width="100%" height={12} borderRadius={6} />
+              <SkeletonBox width="75%" height={12} borderRadius={6} />
+              <SkeletonBox width="90%" height={12} borderRadius={6} />
+              <SkeletonBox width="60%" height={12} borderRadius={6} />
+            </View>
           </View>
         );
 
@@ -239,6 +285,8 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             <TouchableOpacity
               onPress={() => setStep('PickLanguage')}
               style={[styles.retryBtn, { backgroundColor: color.primary }]}
+              accessibilityRole="button"
+              accessibilityLabel="Start over"
             >
               <RefreshCw size={16} color="#FFF" />
               <Text style={styles.retryBtnText}>Start Over</Text>
@@ -250,6 +298,8 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     }
   };
 
+  const isProcessing = step === 'Transcribing' || step === 'Translating';
+
   const stepMeta = STEP_METADATA[step];
 
   return (
@@ -258,9 +308,9 @@ export const Echo = (props: EchoProps): React.ReactElement => {
         ref={bottomSheetRef}
         snapPoints={snapPoints}
         index={sheetIndex}
-        enablePanDownToClose={false}
-        enableHandlePanningGesture={false}
-        enableContentPanningGesture={false}
+        enablePanDownToClose={!isProcessing}
+        enableHandlePanningGesture={!isProcessing}
+        enableContentPanningGesture={!isProcessing}
         onClose={onDismiss}
         backgroundStyle={[
           styles.sheetBackground,
@@ -283,7 +333,12 @@ export const Echo = (props: EchoProps): React.ReactElement => {
               </Text>
             </View>
 
-            <TouchableOpacity onPress={handleClose}>
+            <TouchableOpacity
+              onPress={handleClose}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close Echo"
+            >
               <IconContainer size="sm" variant="muted">
                 <X size={16} color={color.foreground} />
               </IconContainer>
@@ -338,9 +393,9 @@ const styles = StyleSheet.create({
   headerBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   badge: { width: 8, height: 8, borderRadius: 4 },
   sourceLabel: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+    fontFamily: fonts.bodyBold,
+    fontSize: 13,
+    letterSpacing: 1,
     textTransform: 'uppercase',
   },
   metaRow: {
@@ -350,8 +405,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     marginTop: 8,
   },
-  metaLabel: { fontSize: 15, fontWeight: '500' },
-  metaValue: { fontSize: 15, fontWeight: '700', flex: 1, marginLeft: 6 },
+  metaLabel: { fontFamily: fonts.bodyMed, fontSize: 15 },
+  metaValue: { fontFamily: fonts.bodyBold, fontSize: 15, flex: 1, marginLeft: 6 },
   changeBtn: {
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -362,18 +417,20 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  changeLabel: { fontSize: 13, fontWeight: '700' },
+  changeLabel: { fontFamily: fonts.bodyBold, fontSize: 13 },
   loadingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 48,
   },
   loadingTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    marginTop: 20,
+    fontFamily: fonts.bodyBold,
+    fontSize: 20,
+    marginTop: 24,
+    letterSpacing: -0.5,
   },
   loadingSubtitle: {
+    fontFamily: fonts.body,
     fontSize: 14,
     marginTop: 6,
   },
@@ -391,13 +448,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   errorTitle: {
+    fontFamily: fonts.bodyBold,
     fontSize: 16,
-    fontWeight: '700',
     textAlign: 'center',
     marginBottom: 8,
     paddingHorizontal: 20,
   },
   errorSubtitle: {
+    fontFamily: fonts.body,
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 24,
@@ -412,7 +470,7 @@ const styles = StyleSheet.create({
   },
   retryBtnText: {
     color: '#FFF',
+    fontFamily: fonts.bodyBold,
     fontSize: 15,
-    fontWeight: '700',
   },
 });

@@ -2,7 +2,13 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,24 +16,6 @@ import { Button } from '@/components/ui';
 import { LANGUAGES, FLAG_MAP } from '@/constants/languages';
 import { useTheme } from '@/hooks';
 import { settingsActions, auth$ } from '@/store';
-
-const POPULAR_LANGS = [
-  'en',
-  'es',
-  'fr',
-  'de',
-  'it',
-  'pt',
-  'zh',
-  'ja',
-  'ko',
-  'ar',
-  'ru',
-  'hi',
-  'tr',
-  'nl',
-  'pl',
-];
 
 export default function OnboardingLanguagesScreen(): React.ReactElement {
   const router = useRouter();
@@ -55,13 +43,12 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
   };
 
   const handleContinue = (): void => {
-    if (selected.length === 0) return;
+    if (selected.length !== 5) return;
 
     setSelectedLanguages(selected);
-    setTargetLanguage(selected[0]); // Primary language is the first choice
+    setTargetLanguage(selected[0]);
     setOnboardingCompleted(true);
 
-    // Check session synchronously from observable
     const session = auth$.session.get();
     if (session) {
       router.replace('/(tabs)');
@@ -71,87 +58,132 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-background dark:bg-background">
-      <View className="px-6 pt-10 pb-4">
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: color.background }]}
+    >
+      <View style={styles.header}>
         <Animated.Text
-          entering={FadeInDown.duration(600).springify()}
-          className="text-3xl font-display text-foreground dark:text-foreground tracking-tight mb-2"
+          entering={FadeInDown.duration(400)}
+          style={[styles.title, { color: color.foreground }]}
         >
-          What languages do you use?
+          Choose your 5 languages
         </Animated.Text>
         <Animated.Text
-          entering={FadeInDown.duration(600).delay(100).springify()}
-          className="text-base font-body text-muted dark:text-zinc-400"
+          entering={FadeInDown.duration(400).delay(100)}
+          style={[styles.subtitle, { color: color.muted }]}
         >
-          Select up to 5 languages for your quick-switch grid. The first one you
-          tap will be your primary target.
+          Select exactly 5 languages to use in your studio. You can change these
+          later in settings.
         </Animated.Text>
       </View>
 
-      <ScrollView className="flex-1 px-6" showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+      >
         <Animated.View
-          entering={FadeInUp.duration(800).delay(200).springify()}
-          className="flex-row flex-wrap justify-between pt-4 pb-10"
+          entering={FadeInUp.duration(600).delay(100)}
+          style={styles.gridContainer}
         >
-          {POPULAR_LANGS.map((code) => {
+          {LANGUAGES.map((lang, index) => {
+            const code = lang.code;
             const isSelected = selected.includes(code);
-            const langData = LANGUAGES.find((l) => l.code === code);
-            if (!langData) return null;
 
             return (
-              <TouchableOpacity
+              <Animated.View
                 key={code}
-                activeOpacity={0.7}
-                onPress={() => toggleLanguage(code)}
-                style={[
-                  {
-                    width: '48%',
-                    aspectRatio: 2.2,
-                    backgroundColor: isSelected ? brandPrimary : bgMain,
-                    borderColor: isSelected ? brandPrimary : handleHex,
-                    borderWidth: 2,
-                    borderRadius: 20,
-                    marginBottom: 16,
-                    paddingHorizontal: 16,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                  },
-                ]}
+                entering={FadeInDown.duration(300).delay(index * 30)}
+                style={{ width: '48%', marginBottom: 16 }}
               >
-                <Text style={{ fontSize: 24, marginRight: 10 }}>
-                  {FLAG_MAP[code] || '🌐'}
-                </Text>
-                <Text
-                  style={{
-                    flex: 1,
-                    fontSize: 15,
-                    fontFamily: 'Outfit-Medium',
-                    color: isSelected ? '#FFFFFF' : color.foreground,
-                  }}
-                  numberOfLines={1}
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => toggleLanguage(code)}
+                  style={[
+                    {
+                      width: '100%',
+                      aspectRatio: 2.2,
+                      backgroundColor: isSelected ? brandPrimary : bgMain,
+                      borderColor: isSelected ? brandPrimary : handleHex,
+                      borderWidth: 2,
+                      borderRadius: 20,
+                      marginBottom: 16,
+                      paddingHorizontal: 16,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                    },
+                  ]}
                 >
-                  {langData.englishName}
-                </Text>
-                {isSelected && (
-                  <View className="ml-1">
-                    <Check size={18} color="#FFFFFF" strokeWidth={3} />
-                  </View>
-                )}
-              </TouchableOpacity>
+                  <Text style={{ fontSize: 24, marginRight: 10 }}>
+                    {FLAG_MAP[code] || '🌐'}
+                  </Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 15,
+                      fontFamily: 'Outfit-Medium',
+                      color: isSelected ? '#FFFFFF' : color.foreground,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {lang.englishName}
+                  </Text>
+                  {isSelected && (
+                    <View style={styles.checkIcon}>
+                      <Check size={18} color="#FFFFFF" strokeWidth={3} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
             );
           })}
         </Animated.View>
       </ScrollView>
 
-      <View className="px-6 pb-12 pt-4 border-t border-border dark:border-zinc-800 bg-background dark:bg-background">
+      <View
+        style={[
+          styles.bottomSection,
+          { borderTopColor: color.border, backgroundColor: color.background },
+        ]}
+      >
         <Button
           variant="primary"
           size="large"
-          label={`Continue ${selected.length > 0 ? `(${selected.length}/5)` : ''}`}
-          disabled={selected.length === 0}
+          label={
+            selected.length === 5
+              ? 'Start Translating'
+              : `Select ${5 - selected.length} more`
+          }
+          disabled={selected.length !== 5}
           onPress={handleContinue}
         />
       </View>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1 },
+  header: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 16 },
+  title: {
+    fontSize: 30,
+    fontFamily: 'Outfit-Medium',
+    letterSpacing: -0.5,
+    marginBottom: 8,
+  },
+  subtitle: { fontSize: 16, fontFamily: 'Outfit-Regular' },
+  scrollView: { flex: 1, paddingHorizontal: 24 },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingTop: 16,
+    paddingBottom: 40,
+  },
+  checkIcon: { marginLeft: 4 },
+  bottomSection: {
+    paddingHorizontal: 24,
+    paddingBottom: 48,
+    paddingTop: 16,
+    borderTopWidth: 1,
+  },
+});

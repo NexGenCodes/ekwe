@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import {
   useSharedValue,
   cancelAnimation,
-  withTiming,
   SharedValue,
 } from 'react-native-reanimated';
 
@@ -21,11 +20,11 @@ export const useMetering = (): SharedValue<number> => {
   const amplitude = useSharedValue(0);
 
   useEffect(() => {
-    // Subscribe to the 60fps stream from AudioCapture.
-    // withTiming(16ms) schedules the update on the Reanimated UI thread
-    // within a single frame — near-zero latency.
+    // Set amplitude directly on the UI thread — no smoothing here.
+    // Consumers (WaveBar) apply their own withTiming for the wave effect.
+    // Double-wrapping withTiming causes animation conflicts.
     const unsubscribe = AudioCapture.addListener((val) => {
-      amplitude.value = withTiming(val, { duration: 16 });
+      amplitude.value = val;
     });
 
     return (): void => {

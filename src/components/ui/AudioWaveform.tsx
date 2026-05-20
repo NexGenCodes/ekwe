@@ -77,7 +77,7 @@ export const AudioWaveform = ({
   const composed = Gesture.Exclusive(gesture, tap);
 
   const TERTIARY_COLOR = color.border;
-  const PRIMARY_BRAND_COLOR = color.primary;
+  const PRIMARY_BRAND_COLOR = color.secondary;
 
   const progressStyle = useAnimatedStyle(() => {
     const normalizedProgress = duration > 0 ? progressSV.value / duration : 0;

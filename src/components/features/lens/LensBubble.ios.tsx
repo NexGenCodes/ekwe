@@ -1,6 +1,6 @@
 import { useSelector } from '@legendapp/state/react';
 import React, { useEffect, useMemo } from 'react';
-import { Text } from 'react-native';
+import { Text, StyleSheet } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   withSpring,
@@ -92,13 +92,35 @@ export function LensBubble(): React.ReactElement | null {
 
   return (
     <Animated.View
-      className="absolute top-15 self-center rounded-full flex-row items-center gap-2 px-3 py-1"
-      style={[{ backgroundColor: stateColor }, pillAnimatedStyle]}
+      style={[
+        styles.container,
+        { backgroundColor: stateColor },
+        pillAnimatedStyle,
+      ]}
     >
       <MicrophoneIcon size={14} color={onPrimaryColor} />
-      <Text className="uppercase tracking-widest text-white font-medium text-xs">
-        {stateLabel}
-      </Text>
+      <Text style={styles.label}>{stateLabel}</Text>
     </Animated.View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    top: 60,
+    alignSelf: 'center',
+    borderRadius: 9999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  label: {
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    color: '#ffffff',
+    fontWeight: '500',
+    fontSize: 12,
+  },
+});

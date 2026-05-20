@@ -890,8 +890,17 @@ export const LANGUAGES: Language[] = [
  * Resolves a language code to its English display name.
  * Canonical implementation — use this everywhere instead of inline LANGUAGES.find().
  */
-export const getLanguageName = (code: string): string =>
-  LANGUAGES.find((l) => l.code === code)?.englishName ?? code;
+export const getLanguageName = (code: string): string => {
+  if (code === 'auto') return 'Auto';
+  return LANGUAGES.find((l) => l.code === code)?.englishName ?? code;
+};
+
+export const getLanguageAbbreviation = (code: string): string => {
+  if (code === 'auto') return 'AUTO';
+  const lang = LANGUAGES.find((l) => l.code === code);
+  if (!lang) return code.toUpperCase();
+  return lang.englishName.substring(0, 3).toUpperCase();
+};
 
 export const FLAG_MAP: Record<string, string> = {
   en: '🇬🇧',
