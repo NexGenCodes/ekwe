@@ -82,7 +82,6 @@ async function processPaystackEvent(event: Record<string, unknown>, env: Env): P
         return Response.json({ received: true, action: 'skipped' });
       }
 
-      // TODO: Call Supabase to flip is_pro = true for this user
       await activateSubscription(env, email, reference);
 
       logger.info(`[webhook:paystack] charge.success processed for ${email}`);
@@ -93,7 +92,6 @@ async function processPaystackEvent(event: Record<string, unknown>, env: Env): P
     case 'subscription.not_renew': {
       const email = (data?.customer as Record<string, unknown>)?.email as string;
       if (email) {
-        // TODO: Call Supabase to flip is_pro = false
         await deactivateSubscription(env, email);
         logger.info(`[webhook:paystack] Subscription ended for ${email}`);
       }
@@ -128,7 +126,6 @@ async function processFlutterwaveEvent(event: Record<string, unknown>, env: Env)
         return Response.json({ received: true, action: 'skipped' });
       }
 
-      // TODO: Call Supabase to flip is_pro = true
       await activateSubscription(env, email, txRef);
 
       logger.info(`[webhook:flutterwave] Payment successful for ${email}`);
@@ -168,14 +165,12 @@ async function processRevenueCatEvent(event: Record<string, unknown>, env: Env):
   }
 
   if (activationEvents.has(eventType)) {
-    // TODO: Call Supabase to flip is_pro = true
     await activateSubscription(env, appUserId);
     logger.info(`[webhook:revenuecat] Subscription activated for ${appUserId}`);
     return Response.json({ received: true, action: 'activated' });
   }
 
   if (deactivationEvents.has(eventType)) {
-    // TODO: Call Supabase to flip is_pro = false
     await deactivateSubscription(env, appUserId);
     logger.info(`[webhook:revenuecat] Subscription ended for ${appUserId}`);
     return Response.json({ received: true, action: 'deactivated' });

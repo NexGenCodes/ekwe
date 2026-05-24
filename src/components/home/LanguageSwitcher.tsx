@@ -1,17 +1,16 @@
 import { useSelector } from '@legendapp/state/react';
-import * as Haptics from 'expo-haptics';
-import { ArrowRightLeft } from 'lucide-react-native';
 import React from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
-import Animated, {
+import { View, StyleSheet } from 'react-native';
+import {
   useAnimatedStyle,
-  withTiming,
 } from 'react-native-reanimated';
 
 import { LanguageDropdown } from '../LanguageDropdown';
 import { LanguagePill } from '../LanguagePill';
+import { SwapButton } from './SwapButton';
 
 import { PLAN_LIMITS } from '@/constants/billing';
+import { borderRadius, spacing } from '@/constants/designTokens';
 import { useTheme, useLanguageSwitcher } from '@/hooks';
 import { auth$ } from '@/store';
 
@@ -48,12 +47,6 @@ export function LanguageSwitcher({
     onTargetChange,
   });
 
-  const animatedSwapStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ rotate: `${swapRotation.value}deg` }],
-    };
-  });
-
   const animatedDropdownStyle = useAnimatedStyle(() => {
     return {
       transform: [{ scale: dropdownScale.value }],
@@ -69,7 +62,12 @@ export function LanguageSwitcher({
   const sourceOptions = canUseAuto ? ['auto', ...myLanguages] : myLanguages;
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: color.surface, borderColor: color.border },
+      ]}
+    >
       <LanguageDropdown
         visible={!!activeDropdown}
         onClose={closeDropdown}
@@ -78,6 +76,7 @@ export function LanguageSwitcher({
         oppositeLang={activeDropdown === 'source' ? targetLang : sourceLang}
         onSelect={handleSelect}
         animatedStyle={animatedDropdownStyle}
+        showAutoLocked={activeDropdown === 'source' && !canUseAuto}
       />
 
       <LanguagePill
@@ -85,31 +84,12 @@ export function LanguageSwitcher({
         onPress={() => openDropdown('source')}
       />
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Swap languages"
-        onPress={async () => {
-          if (sourceLang === 'auto') {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            return;
-          }
-          swapRotation.value = withTiming(swapRotation.value + 180, {
-            duration: 250,
-          });
-          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          onSwap();
-        }}
-        style={({ pressed }) => [
-          styles.swapBtn,
-          { backgroundColor: color.primary },
-          (pressed || sourceLang === 'auto') && { opacity: 0.5 },
-          pressed && sourceLang !== 'auto' && { transform: [{ scale: 0.9 }] },
-        ]}
-      >
-        <Animated.View style={animatedSwapStyle}>
-          <ArrowRightLeft size={18} color={color.onPrimary} strokeWidth={2.5} />
-        </Animated.View>
-      </Pressable>
+      <SwapButton
+        sourceLang={sourceLang}
+        targetLang={targetLang}
+        onSwap={onSwap}
+        swapRotation={swapRotation}
+      />
 
       <LanguagePill
         langCode={targetLang}
@@ -125,13 +105,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     zIndex: 100,
-  },
-  swapBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 8,
+    borderRadius: borderRadius['2xl'],
+    borderWidth: 1,
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[2],
   },
 });

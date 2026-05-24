@@ -38,6 +38,12 @@ const PREMIUM_PIPELINE: PipelineEntry[] = [
   { name: 'cloudflare', skipOnAuto: false, fn: cloudflare.transcribe },
 ];
 
+async function sha256Bytes(buffer: ArrayBuffer): Promise<string> {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 // ─── Orchestrator ─────────────────────────────────────────────────
 
 export async function handleTranscribe(
@@ -62,6 +68,26 @@ export async function handleTranscribe(
 
   const langGuard = guardLanguageCode(lang, 'lang');
   if (!langGuard.allowed) return langGuard.response;
+
+  // ── KV Cache Lookup (Fail-Closed) ──
+  let cacheKey: string;
+  try {
+    const audioBuffer = await file.arrayBuffer();
+    const audioHash = await sha256Bytes(audioBuffer);
+    cacheKey = `transcribe:${audioHash}:${lang || 'auto'}`;
+    const cached = await env.EKWE_KV.get(cacheKey);
+    if (cached) {
+      logger.info(`[transcribe] KV Cache Hit for audio hash ${audioHash}`);
+      const cachedResult = JSON.parse(cached) as TranscribeResult;
+      return Response.json(cachedResult);
+    }
+  } catch (err) {
+    logger.error(`[transcribe] KV cache lookup error (Failing closed)`, { error: String(err) });
+    return Response.json(
+      { error: 'EKWE_ALL_PROVIDERS_FAIL', message: 'Service temporarily unavailable. Please try again later.' },
+      { status: 503 }
+    );
+  }
 
   // ── Magic Byte Sniffer for WhatsApp / Android Edge Cases ──
   // Always sniff the first 4 bytes. React Native often assigns 'audio/m4a' 
@@ -98,6 +124,18 @@ export async function handleTranscribe(
       const result = await provider.fn(audioBlob, effectiveLang, env, signal);
       if (result) {
         logger.info(`[transcribe] Success: ${provider.name}`, { lang: result.language, provider: result.provider });
+        
+        // Write to cache (Fail-Closed for security - if write fails, block return)
+        try {
+          await env.EKWE_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: 30 * 24 * 60 * 60 }); // 30 days
+        } catch (err) {
+          logger.error(`[transcribe] KV cache write error (Failing closed)`, { error: String(err) });
+          return Response.json(
+            { error: 'EKWE_ALL_PROVIDERS_FAIL', message: 'Service temporarily unavailable. Please try again later.' },
+            { status: 503 }
+          );
+        }
+
         return Response.json(result);
       }
 

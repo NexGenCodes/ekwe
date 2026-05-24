@@ -1,5 +1,4 @@
 import { useSelector } from '@legendapp/state/react';
-import NetInfo from '@react-native-community/netinfo';
 import {
   DarkTheme,
   DefaultTheme,
@@ -11,23 +10,21 @@ import { useRouter } from 'expo-router';
 import { Stack } from 'expo-router/stack';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { ErrorBoundary } from '@/components';
+import { ErrorBoundary, ToastContainer, AppAlertModal } from '@/components';
 import { colors } from '@/constants/colors';
 import { useShareIntentHandler, useTheme, useTripleExclusivity } from '@/hooks';
 import { ShareIntentProvider } from '@/providers/ShareIntentProvider';
 import { HistoryService } from '@/services/HistoryService';
+import { SyncService } from '@/services/SyncService';
 import { initAuth } from '@/services/auth';
 import { auth$ } from '@/store';
-import {
-  configureNotifications,
-  registerNotificationCategories,
-} from '@/utils/IosNotification';
+import logger from '@/utils/logger';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -38,8 +35,6 @@ function InnerLayout(): React.ReactElement {
   const isInitialized = useSelector(() => auth$.isInitialized.get());
 
   // ─── Deep Link: Password Reset ──────────────────────────────
-  // When user clicks reset link in email → ekwe://reset-password?tokens...
-  // We intercept, set the Supabase session, and navigate to reset screen.
   useEffect(() => {
     const handleDeepLink = async ({ url }: { url: string }): Promise<void> => {
       if (!url.includes('reset-password')) return;
@@ -51,32 +46,37 @@ function InnerLayout(): React.ReactElement {
       }
     };
 
-    // Handle link that opened the app (cold start)
-    Linking.getInitialURL().then((url) => {
-      if (url) handleDeepLink({ url });
-    });
+    Linking.getInitialURL()
+      .then((url) => {
+        if (url) handleDeepLink({ url });
+      })
+      .catch((err) => {
+        logger.error('[deepLink] Failed to get initial URL', err);
+      });
 
-    // Handle link while app is running (warm)
     const linkSub = Linking.addEventListener('url', handleDeepLink);
     return (): void => linkSub.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [router]);
 
   // Real-time Exclusivity Guard & Share Intent Listener
   useTripleExclusivity();
   useShareIntentHandler();
 
-  const theme = {
-    ...(isDark ? DarkTheme : DefaultTheme),
-    colors: {
-      ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
-      background: color.background,
-    },
-  };
+  const theme = useMemo(
+    () => ({
+      ...(isDark ? DarkTheme : DefaultTheme),
+      colors: {
+        ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+        background: color.background,
+      },
+    }),
+    [isDark, color.background],
+  );
 
   useEffect((): void => {
     if (isInitialized) {
       SplashScreen.hideAsync();
+      HistoryService.cleanupLocalHistory();
     }
   }, [isInitialized]);
 
@@ -150,14 +150,14 @@ function InnerLayout(): React.ReactElement {
               <Stack.Screen
                 name="billing"
                 options={{
-                  presentation: 'formSheet',
-                  sheetGrabberVisible: true,
                   headerShown: true,
                   title: 'Ekwe Pro',
-                  contentStyle: { backgroundColor: 'transparent' },
+                  headerBackTitle: 'Back',
                 }}
               />
             </Stack>
+            <ToastContainer />
+            <AppAlertModal />
           </View>
         </ErrorBoundary>
       </GestureHandlerRootView>
@@ -166,16 +166,6 @@ function InnerLayout(): React.ReactElement {
 }
 
 function RootLayout(): React.ReactElement {
-  useEffect((): void => {
-    if (process.env.EXPO_OS === 'ios') {
-      const setupNotifications = async (): Promise<void> => {
-        configureNotifications();
-        await registerNotificationCategories();
-      };
-      setupNotifications();
-    }
-  }, []);
-
   useEffect(() => {
     const activate = async (): Promise<void> => {
       try {
@@ -186,18 +176,11 @@ function RootLayout(): React.ReactElement {
     };
     activate();
     initAuth();
-    HistoryService.cleanupLocalHistory();
-
-    // Drain the sync queue on connectivity restore
-    const netSub = NetInfo.addEventListener((state) => {
-      if (state.isConnected) {
-        HistoryService.drainSyncQueue();
-      }
-    });
+    SyncService.start();
 
     return (): void => {
       deactivateKeepAwake().catch(() => {});
-      netSub();
+      SyncService.stop();
     };
   }, []);
 

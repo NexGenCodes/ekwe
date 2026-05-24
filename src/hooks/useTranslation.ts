@@ -1,30 +1,30 @@
 import { useSelector } from '@legendapp/state/react';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Keyboard } from 'react-native';
 
+import { PLAN_LIMITS } from '@/constants/billing';
 import { EkweError } from '@/constants/errors';
+import { translationSchema } from '@/schemas/translation';
 import { HistoryService } from '@/services/HistoryService';
 import { TranslationService, TranslationResult } from '@/services/Translation';
 import { supabase } from '@/services/supabase';
 import { history$, audioActions, settings$, auth$ } from '@/store';
+import { AppToast } from '@/utils';
 import { Result, ok, err } from '@/types/Result';
 import { logger } from '@/utils';
-import { AppAlert } from '@/utils/alert';
 
 export interface UseTranslationReturn {
   translate: (
     transcript: string,
     sourceLang: string,
     targetLang: string,
-    historyEntryId?: string,
     signal?: AbortSignal,
   ) => Promise<Result<TranslationResult, EkweError>>;
   isTranslating: boolean;
   translation: string | null;
   transliteration: string | null;
 
-  // Extended state for UI controllers
   sourceText: string;
   setSourceText: (text: string) => void;
   sourceLang: string;
@@ -37,6 +37,7 @@ export interface UseTranslationReturn {
   handleTranslate: (textOverride?: string) => Promise<void>;
   handleClear: () => Promise<void>;
   handleSwap: () => Promise<void>;
+  canTranslate: boolean;
 }
 
 export const useTranslation = (): UseTranslationReturn => {
@@ -48,20 +49,44 @@ export const useTranslation = (): UseTranslationReturn => {
   const [transliteration, setTransliteration] = useState<string | null>(null);
 
   const [sourceText, setSourceText] = useState('');
-  const [sourceLang, setSourceLang] = useState<string>('auto');
-  const [targetLang, setTargetLang] = useState<string>(
-    defaultTargetLang || 'es',
-  );
+
+  // Free users cannot use auto-detect — default to their first selected language
+  const isPro = useSelector(() => auth$.isPro.get());
+  const canUseAuto = isPro
+    ? PLAN_LIMITS.pro.autoLanguageDetect
+    : PLAN_LIMITS.free.autoLanguageDetect;
+  const defaultSelectedLangs =
+    useSelector(() => settings$.selectedLanguages.get()) || [];
+  const defaultSourceLang = canUseAuto
+    ? 'auto'
+    : defaultSelectedLangs[0] || 'en';
+
+  const initialSourceLang = defaultSourceLang;
+  const initialTargetLang =
+    (defaultTargetLang || 'es') === initialSourceLang &&
+      initialSourceLang !== 'auto'
+      ? ''
+      : defaultTargetLang || 'es';
+
+  const [sourceLang, setSourceLang] = useState<string>(initialSourceLang);
+  const [targetLang, setTargetLang] = useState<string>(initialTargetLang);
+
+  // Sync auth state changes (if they load in slightly after mount) so Pro users always get Auto-Detect by default
+  useEffect(() => {
+    if (canUseAuto && sourceLang !== 'auto') {
+      setSourceLang('auto');
+    }
+  }, [canUseAuto]); // Intentional: We only want to push them to auto if their permission state changes to true
 
   const { setError } = audioActions;
   const translationAbortRef = useRef<AbortController | null>(null);
+  const lastRequestRef = useRef<string | null>(null);
 
   const translate = useCallback(
     async (
       transcript: string,
       sourceLang: string,
       targetLang: string,
-      historyEntryId?: string,
       signal?: AbortSignal,
     ): Promise<Result<TranslationResult, EkweError>> => {
       setIsTranslating(true);
@@ -81,34 +106,6 @@ export const useTranslation = (): UseTranslationReturn => {
         setTranslation(result.value.translation);
         setTransliteration(result.value.transliteration ?? null);
 
-        // Update history entry with translation
-        if (historyEntryId !== undefined) {
-          try {
-            history$[historyEntryId].translation.set(result.value.translation);
-            history$[historyEntryId].transliteration.set(
-              result.value.transliteration ?? null,
-            );
-            history$[historyEntryId].targetLang.set(targetLang);
-
-            supabase
-              .from('history')
-              .update({
-                translation_text: result.value.translation,
-                transliteration_text: result.value.transliteration ?? null,
-                target_lang: targetLang,
-              })
-              .eq('id', historyEntryId)
-              .then((res) => {
-                if (res.error) logger.error(res.error);
-              });
-          } catch (e) {
-            logger.error(
-              '[Translation] Failed to update history entry in local state',
-              e,
-            );
-          }
-        }
-
         return ok(result.value);
       } finally {
         setIsTranslating(false);
@@ -120,6 +117,7 @@ export const useTranslation = (): UseTranslationReturn => {
   const handleClear = useCallback(async () => {
     translationAbortRef.current?.abort();
     translationAbortRef.current = null;
+    lastRequestRef.current = null;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSourceText('');
     setTranslation(null);
@@ -128,8 +126,10 @@ export const useTranslation = (): UseTranslationReturn => {
   }, []);
 
   const handleSwap = useCallback(async () => {
-    if (sourceLang === 'auto') return;
+    if (sourceLang === 'auto' || targetLang === 'none' || targetLang === '')
+      return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    lastRequestRef.current = null;
 
     setSourceLang(targetLang);
     setTargetLang(sourceLang);
@@ -145,16 +145,35 @@ export const useTranslation = (): UseTranslationReturn => {
   }, [sourceLang, targetLang, translation, sourceText]);
 
   const handleTranslate = useCallback(
-    async (textOverride?: string | any) => {
+    async (textOverride?: string) => {
       const textToTranslate = (
         typeof textOverride === 'string' ? textOverride : sourceText
       ).trim();
       if (!textToTranslate) return;
+
+      const requestSignature = `${textToTranslate}|${sourceLang}|${targetLang}`;
+
+      const validation = translationSchema.safeParse({
+        text: textToTranslate,
+        sourceLang,
+        targetLang,
+      });
+
+      if (!validation.success) {
+        AppToast.error((validation.error.issues?.[0]?.message) ?? 'Please check your input.');
+        return;
+      }
+
       Keyboard.dismiss();
 
       translationAbortRef.current?.abort();
       const controller = new AbortController();
       translationAbortRef.current = controller;
+
+      if (lastRequestRef.current === requestSignature && translation) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return;
+      }
 
       setIsTranslating(true);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -163,33 +182,70 @@ export const useTranslation = (): UseTranslationReturn => {
           textToTranslate,
           sourceLang,
           targetLang,
-          undefined,
           controller.signal,
         );
 
         if (controller.signal.aborted) return;
         if (!result.ok) throw new Error(result.error);
 
+        lastRequestRef.current = requestSignature;
+
         await Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success,
         );
 
-        await HistoryService.recordTranslation(
-          {
-            sourceLang,
-            targetLang,
-            transcript: textToTranslate,
-            translation: result.value.translation,
-            transliteration: result.value.transliteration || null,
-            duration: 0,
-            sourceApp: 'ekwe-home',
-            provider: 'gemini',
-          },
-          userSession,
-        );
+        // Look up a pending history entry (dictation that saved transcript but no translation yet)
+        const allHistory = history$.get();
+        const pendingId = Object.keys(allHistory)
+          .filter(
+            (id) =>
+              allHistory[id].transcript === textToTranslate &&
+              allHistory[id].translation === null,
+          )
+          .sort(
+            (a, b) => allHistory[b].timestamp - allHistory[a].timestamp,
+          )[0];
+
+        if (pendingId) {
+          // Update existing entry with translation
+          history$[pendingId].translation.set(result.value.translation);
+          history$[pendingId].transliteration.set(
+            result.value.transliteration ?? null,
+          );
+          history$[pendingId].targetLang.set(targetLang);
+
+          supabase
+            .from('history')
+            .update({
+              translation_text: result.value.translation,
+              transliteration_text: result.value.transliteration ?? null,
+              target_lang: targetLang,
+            })
+            .eq('id', pendingId)
+            .then((res) => {
+              if (res.error) logger.error(res.error);
+            });
+        } else {
+          // No pending entry — create a new one (text input flow)
+          await HistoryService.recordTranslation(
+            {
+              sourceLang,
+              targetLang,
+              transcript: textToTranslate,
+              translation: result.value.translation,
+              transliteration: result.value.transliteration || null,
+              duration: 0,
+              sourceApp: 'ekwe-home',
+              provider: 'gemini',
+            },
+            userSession,
+          );
+        }
       } catch (e: unknown) {
         if (e instanceof Error && e.name === 'AbortError') return;
-        AppAlert.error('Translation Failed', 'Please try again.');
+        AppToast.error('Translation Failed', {
+          description: 'Something went wrong. Please try again.',
+        });
       } finally {
         if (!translationAbortRef.current?.signal.aborted) {
           setIsTranslating(false);
@@ -198,6 +254,8 @@ export const useTranslation = (): UseTranslationReturn => {
     },
     [sourceText, sourceLang, targetLang, userSession, translate],
   );
+
+  const canTranslate = sourceText.trim().length > 0;
 
   return {
     translate,
@@ -215,5 +273,6 @@ export const useTranslation = (): UseTranslationReturn => {
     handleTranslate,
     handleClear,
     handleSwap,
+    canTranslate,
   };
 };

@@ -50,6 +50,17 @@ async function computeHMAC(
  * the appropriate cryptographic signature (or hash match) to verify
  * the authenticity of the webhook payload.
  */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const aBuf = new TextEncoder().encode(a);
+  const bBuf = new TextEncoder().encode(b);
+  let result = 0;
+  for (let i = 0; i < aBuf.length; i++) {
+    result |= aBuf[i] ^ bBuf[i];
+  }
+  return result === 0;
+}
+
 export async function verifyWebhook(
   request: Request,
   rawBody: string,
@@ -70,7 +81,7 @@ export async function verifyWebhook(
       return { isValid: false, provider: 'paystack', error: 'Server misconfiguration' };
     }
     const computed = await computeHMAC(env.PAYSTACK_SECRET_KEY, rawBody, 'SHA-512');
-    const isValid = computed === paystackSig;
+    const isValid = timingSafeEqual(computed, paystackSig);
     if (!isValid) logger.warn('[webhook] Paystack signature mismatch');
     return { isValid, provider: 'paystack' };
   }
@@ -82,7 +93,7 @@ export async function verifyWebhook(
       logger.error('Missing FLUTTERWAVE_SECRET_HASH in environment');
       return { isValid: false, provider: 'flutterwave', error: 'Server misconfiguration' };
     }
-    const isValid = flutterwaveSig === env.FLUTTERWAVE_SECRET_HASH;
+    const isValid = timingSafeEqual(flutterwaveSig, env.FLUTTERWAVE_SECRET_HASH);
     if (!isValid) logger.warn('[webhook] Flutterwave signature mismatch');
     return { isValid, provider: 'flutterwave' };
   }
@@ -96,7 +107,7 @@ export async function verifyWebhook(
       return { isValid: false, provider: 'revenuecat', error: 'Server misconfiguration' };
     }
     const computed = await computeHMAC(env.REVENUECAT_WEBHOOK_SECRET, rawBody, 'SHA-256');
-    const isValid = computed === revenueCatSig;
+    const isValid = timingSafeEqual(computed, revenueCatSig);
     if (!isValid) logger.warn('[webhook] RevenueCat signature mismatch');
     return { isValid, provider: 'revenuecat' };
   }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleProp, ViewStyle } from 'react-native';
 
+import { borderRadius, spacing, typography } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
 
 export interface BadgeProps {
@@ -44,11 +45,11 @@ export const Badge = ({
         {
           flexDirection: 'row',
           alignItems: 'center',
-          paddingHorizontal: size === 'sm' ? 8 : 12,
-          paddingVertical: size === 'sm' ? 3 : 5,
-          borderRadius: 20,
+          paddingHorizontal: size === 'sm' ? spacing[2] : spacing[3],
+          paddingVertical: size === 'sm' ? spacing[1] - 1 : spacing[1],
+          borderRadius: borderRadius['2xl'],
           backgroundColor: bgColor,
-          gap: 4,
+          gap: spacing[1],
         },
         style,
       ]}
@@ -56,7 +57,10 @@ export const Badge = ({
       {icon}
       <Text
         style={{
-          fontSize: size === 'sm' ? 11 : 13,
+          fontSize:
+            size === 'sm'
+              ? typography.caption.size - 1
+              : typography.bodySmall.size - 1,
           fontWeight: '700',
           color: textColor,
           textTransform: 'uppercase',

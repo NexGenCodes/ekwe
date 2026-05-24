@@ -107,7 +107,8 @@ export const LanguagePickerSheet = ({
   const { color } = useTheme();
   const isPro = useSelector(() => auth$.isPro.get());
   const permissions = usePermissions();
-  const maxLanguages = permissions.maxPinnedLanguages;
+  const maxPinnedLanguages = permissions.maxPinnedLanguages;
+  const maxSelectedLanguages = permissions.maxSelectedLanguages;
   const sheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['85%'], []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -190,10 +191,13 @@ export const LanguagePickerSheet = ({
     }
 
     const isCurrentlySelected = selectedLanguages.includes(code);
-    if (!isCurrentlySelected && selectedLanguages.length >= maxLanguages) {
+    if (
+      !isCurrentlySelected &&
+      selectedLanguages.length >= maxSelectedLanguages
+    ) {
       AppAlert.info(
         'Language Limit Reached',
-        `You can only select up to ${maxLanguages} languages on your current plan. Upgrade to Pro for more.`,
+        `You can only select up to ${maxSelectedLanguages} languages on your current plan. Upgrade to Pro for more.`,
       );
       return;
     }
@@ -206,10 +210,10 @@ export const LanguagePickerSheet = ({
 
   const togglePin = (code: string): void => {
     const isCurrentlyPinned = pinnedLanguages.includes(code);
-    if (!isCurrentlyPinned && pinnedLanguages.length >= maxLanguages) {
+    if (!isCurrentlyPinned && pinnedLanguages.length >= maxPinnedLanguages) {
       AppAlert.info(
         'Language Limit Reached',
-        `You can only pin up to ${maxLanguages} languages on your current plan. Upgrade to Pro for more.`,
+        `You can only pin up to ${maxPinnedLanguages} languages on your current plan. Upgrade to Pro for more.`,
       );
       return;
     }
@@ -219,6 +223,49 @@ export const LanguagePickerSheet = ({
       : [...pinnedLanguages, code];
     onSelectionChange(selectedLanguages, next);
   };
+
+  const sections = useMemo(() => {
+    const list = [];
+    if (pinnedItems.length > 0) {
+      list.push({ title: 'PINNED', data: pinnedItems, isPinnedSection: true });
+    }
+    list.push({
+      title: searchQuery ? 'RESULTS' : 'ALL LANGUAGES',
+      data: otherItems,
+      isPinnedSection: false,
+    });
+    return list;
+  }, [pinnedItems, otherItems, searchQuery]);
+
+  const renderSectionHeader = useCallback(
+    ({ section: { title } }: { section: { title: string } }) => (
+      <View style={[styles.sectionHeader, { backgroundColor: color.surface }]}>
+        <Text style={[styles.sectionHeaderText, { color: color.muted }]}>
+          {title}
+        </Text>
+      </View>
+    ),
+    [color],
+  );
+
+  const renderItem = useCallback(
+    ({
+      item,
+      section,
+    }: {
+      item: Language;
+      section: { title: string; data: Language[]; isPinnedSection: boolean };
+    }) => (
+      <LanguageRow
+        item={item}
+        isSelected={selectedLanguages.includes(item.code)}
+        isPinned={section.isPinnedSection}
+        onToggleSelect={() => toggleSelection(item.code)}
+        onTogglePin={() => togglePin(item.code)}
+      />
+    ),
+    [selectedLanguages, toggleSelection, togglePin],
+  );
 
   return (
     <BottomSheet
@@ -263,54 +310,13 @@ export const LanguagePickerSheet = ({
             )}
           </View>
         </View>
-
-        {/* Fixed Pinned Section */}
-        {pinnedItems.length > 0 && (
-          <View>
-            <View
-              style={[styles.sectionHeader, { backgroundColor: color.surface }]}
-            >
-              <Text style={[styles.sectionHeaderText, { color: color.muted }]}>
-                PINNED
-              </Text>
-            </View>
-            {pinnedItems.map((item) => (
-              <LanguageRow
-                key={`pinned-${item.code}`}
-                item={item}
-                isSelected={selectedLanguages.includes(item.code)}
-                isPinned
-                onToggleSelect={() => toggleSelection(item.code)}
-                onTogglePin={() => togglePin(item.code)}
-              />
-            ))}
-          </View>
-        )}
-
-        {/* Fixed "All Languages" Header */}
-        <View
-          style={[styles.sectionHeader, { backgroundColor: color.surface }]}
-        >
-          <Text style={[styles.sectionHeaderText, { color: color.muted }]}>
-            {searchQuery ? 'RESULTS' : 'ALL LANGUAGES'}
-          </Text>
-        </View>
       </View>
 
       <BottomSheetSectionList
-        sections={[{ title: '', data: otherItems }]}
-        keyExtractor={(item: Language, index: number) =>
-          `${item.code}-${index}`
-        }
-        renderItem={({ item }: { item: Language }) => (
-          <LanguageRow
-            item={item}
-            isSelected={selectedLanguages.includes(item.code)}
-            isPinned={false}
-            onToggleSelect={() => toggleSelection(item.code)}
-            onTogglePin={() => togglePin(item.code)}
-          />
-        )}
+        sections={sections}
+        keyExtractor={(item: Language) => item.code}
+        renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
         contentContainerStyle={{ paddingBottom: 100 }}
       />
     </BottomSheet>

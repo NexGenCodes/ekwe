@@ -1,16 +1,12 @@
 import React, { useEffect } from 'react';
-import {
-  View,
-  DimensionValue,
-  StyleSheet,
-} from 'react-native';
+import { View, DimensionValue, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
-  withSequence,
   withTiming,
   Easing,
+  interpolate,
 } from 'react-native-reanimated';
 
 import { useTheme } from '@/hooks';
@@ -29,31 +25,64 @@ export function SkeletonBox({
   style,
 }: SkeletonBoxProps): React.ReactElement {
   const { color } = useTheme();
-  const opacity = useSharedValue(0.1);
+  const shimmerProgress = useSharedValue(0);
+  const layoutWidth = useSharedValue(0);
 
   useEffect(() => {
-    opacity.value = withRepeat(
-      withSequence(
-        withTiming(0.25, { duration: 800, easing: Easing.inOut(Easing.ease) }),
-        withTiming(0.1, { duration: 800, easing: Easing.inOut(Easing.ease) }),
-      ),
+    shimmerProgress.value = withRepeat(
+      withTiming(1, {
+        duration: 1500,
+        easing: Easing.bezier(0.3, 0, 0.7, 1),
+      }),
       -1,
-      true,
+      false,
     );
-  }, [opacity]);
+  }, [shimmerProgress]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-  }));
+  const animatedStyle = useAnimatedStyle(() => {
+    const w = layoutWidth.value || 300;
+    const translateX = interpolate(
+      shimmerProgress.value,
+      [0, 1],
+      [-w * 0.6, w * 1.4],
+    );
+    return {
+      transform: [{ translateX }, { skewX: '-20deg' }],
+    };
+  });
 
   return (
-    <Animated.View
+    <View
+      onLayout={(e) => {
+        layoutWidth.value = e.nativeEvent.layout.width;
+      }}
       style={[
-        { width, height, backgroundColor: color.onSecondary, borderRadius },
-        animatedStyle,
+        {
+          width,
+          height,
+          borderRadius,
+          overflow: 'hidden',
+          position: 'relative',
+        },
         style,
       ]}
-    />
+    >
+      {/* Base Background */}
+      <View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: color.onSecondary, opacity: 0.12 },
+        ]}
+      />
+      {/* Shimmer Sweep Overlay */}
+      <Animated.View
+        style={[
+          styles.shimmerBar,
+          { backgroundColor: color.onSecondary, opacity: 0.35 },
+          animatedStyle,
+        ]}
+      />
+    </View>
   );
 }
 
@@ -74,7 +103,9 @@ export function SkeletonHistoryRow(): React.ReactElement {
 export function SkeletonTranslationPreview(): React.ReactElement {
   const { color } = useTheme();
   return (
-    <View style={[styles.translationContainer, { backgroundColor: color.card }]}>
+    <View
+      style={[styles.translationContainer, { backgroundColor: color.card }]}
+    >
       <View style={styles.translationHeader}>
         <SkeletonBox width={100} height={14} borderRadius={6} />
         <SkeletonBox width={70} height={14} borderRadius={6} />
@@ -95,6 +126,12 @@ export function SkeletonTranslationPreview(): React.ReactElement {
 }
 
 const styles = StyleSheet.create({
+  shimmerBar: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: '45%',
+  },
   historyRow: {
     flexDirection: 'row',
     alignItems: 'center',

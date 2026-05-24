@@ -1,5 +1,5 @@
-import { Image as ExpoImage } from 'expo-image';
 import * as Haptics from 'expo-haptics';
+import { Image as ExpoImage } from 'expo-image';
 import { Lock } from 'lucide-react-native';
 import React from 'react';
 import { Pressable, View, Text, StyleSheet } from 'react-native';
@@ -35,7 +35,9 @@ export const SettingsRow = ({
       }}
       disabled={!onPress && !isLocked}
       accessibilityRole="button"
-      accessibilityLabel={isLocked ? `${label}. Locked. Upgrade required.` : label}
+      accessibilityLabel={
+        isLocked ? `${label}. Locked. Upgrade required.` : label
+      }
       accessibilityState={isLocked ? { disabled: true } : undefined}
       style={({ pressed }) => [
         styles.row,

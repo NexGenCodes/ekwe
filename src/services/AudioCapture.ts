@@ -2,10 +2,11 @@ import * as Haptics from 'expo-haptics';
 import { Platform, Linking } from 'react-native';
 import { AudioContext } from 'react-native-audio-api';
 
-import AudioService from './AudioService';
-
+import { PLAN_LIMITS } from '@/constants/billing';
 import { EkweError } from '@/constants/errors';
+import AudioService from '@/services/AudioService';
 import { VolumeManager } from '@/services/VolumeManager';
+import { auth$ } from '@/store';
 import { Result, ok, err } from '@/types/Result';
 import {
   attachAudioEffects,
@@ -86,6 +87,7 @@ class AudioCaptureClass {
   ): Promise<Result<void, EkweError>> {
     // If starting or already recording, try to recover instead of failing immediately
     if (this.isStartingParams) return err(EkweError.AUDIO_RECORD_FAIL);
+    this.onAutoStopCallback = null;
 
     if (AudioService.isRecording()) {
       logger.info(
@@ -155,18 +157,23 @@ class AudioCaptureClass {
         }
 
         // --- Metering UI Update ---
+        const normalized = Math.max(0, Math.min(1, (db + 60) / 60));
+        this.currentMeteringData.push(db); // Store raw dB for accurate post-processing analysis
         if (this.listeners.length > 0) {
-          const normalized = Math.max(0, Math.min(1, (db + 60) / 60));
-          this.currentMeteringData.push(normalized); // Store for result
           this.notifyListeners(normalized);
         }
       }, 32);
 
-      // --- Max Duration Safety Net (60s Absolute Cap) ---
+      // --- Max Duration Safety Net (Dynamic Cap based on plan) ---
+      const isPro = auth$.isPro.get();
+      const safetyCapMs = isPro
+        ? PLAN_LIMITS.pro.dictationDurationMs
+        : PLAN_LIMITS.free.dictationDurationMs;
+
       this.maxDurationTimeout = setTimeout(async () => {
         if (this.isRecording()) {
           logger.info(
-            'AudioCapture: Max duration safety cap reached (60s), auto-stopping',
+            `AudioCapture: Max duration safety cap reached (${safetyCapMs / 1000}s), auto-stopping`,
           );
           if (this.onAutoStopCallback) {
             this.onAutoStopCallback();
@@ -174,7 +181,7 @@ class AudioCaptureClass {
             await this.stopRecording();
           }
         }
-      }, 60000);
+      }, safetyCapMs);
 
       this.isStartingParams = false;
       return ok(undefined);
@@ -205,6 +212,8 @@ class AudioCaptureClass {
       clearTimeout(this.maxDurationTimeout);
       this.maxDurationTimeout = null;
     }
+
+    this.onAutoStopCallback = null;
 
     try {
       const { path, duration } = await AudioService.stopRecording();
@@ -246,6 +255,8 @@ class AudioCaptureClass {
    */
   async cancelRecording(): Promise<Result<string | null, EkweError>> {
     let path: string | null = null;
+    this.onAutoStopCallback = null;
+
     if (this.meteringInterval !== null) {
       clearInterval(this.meteringInterval);
       this.meteringInterval = null;

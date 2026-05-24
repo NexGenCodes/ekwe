@@ -6,28 +6,14 @@ import type {
   PersistOptionsLocal,
 } from '@legendapp/state';
 
-import { mmkv } from './mmkvStorage';
-
+import { Db } from '@/services/db';
 import { logger } from '@/utils';
 
 const { safeParse, safeStringify } = internal;
 const MetadataSuffix = '__m';
 
-/**
- * Custom Legend-State persistence plugin wrapping our pre-initialised MMKV
- * instance from mmkvStorage.ts.
- *
- * Why custom:  @legendapp/state/persist-plugins/mmkv uses `new MMKV()` from
- * the old react-native-mmkv v3 API.  Our project uses v4 (Nitro Modules)
- * which exports `createMMKV()` — the MMKV class constructor does not exist,
- * causing "Cannot read property 'prototype' of undefined" at boot.
- *
- * v4 API used here: getString / set / remove (NOT delete).
- */
-export class ObservablePersistMMKVCustom implements ObservablePersistLocal {
+export class ObservablePersistSQLite implements ObservablePersistLocal {
   private data: Record<string, unknown> = {};
-
-  // ─── Reads ────────────────────────────────────────────────────────────────
 
   getTable<T = unknown>(
     table: string,
@@ -36,10 +22,10 @@ export class ObservablePersistMMKVCustom implements ObservablePersistLocal {
   ): T {
     if (this.data[table] === undefined) {
       try {
-        const raw = mmkv.getString(table);
+        const raw = Db.getStore(table);
         this.data[table] = raw ? safeParse(raw) : init;
       } catch {
-        logger.error('[ekwe-store] MMKV failed to parse key:', table);
+        logger.error('[sqlitePlugin] Failed to parse key:', table);
         this.data[table] = init;
       }
     }
@@ -49,8 +35,6 @@ export class ObservablePersistMMKVCustom implements ObservablePersistLocal {
   getMetadata(table: string, config: PersistOptionsLocal): PersistMetadata {
     return this.getTable<PersistMetadata>(table + MetadataSuffix, config, {});
   }
-
-  // ─── Writes ───────────────────────────────────────────────────────────────
 
   set(table: string, changes: Change[], _config: PersistOptionsLocal): void {
     if (this.data[table] === undefined) {
@@ -76,29 +60,25 @@ export class ObservablePersistMMKVCustom implements ObservablePersistLocal {
     this.save(table + MetadataSuffix);
   }
 
-  // ─── Deletes ──────────────────────────────────────────────────────────────
-
   deleteTable(table: string, _config: PersistOptionsLocal): void {
     delete this.data[table];
-    mmkv.remove(table); // v4 API: remove, not delete
+    Db.removeStore(table);
   }
 
   deleteMetadata(table: string, config: PersistOptionsLocal): void {
     this.deleteTable(table + MetadataSuffix, config);
   }
 
-  // ─── Private ──────────────────────────────────────────────────────────────
-
   private save(table: string): void {
     const v = this.data[table];
     if (v !== undefined) {
       try {
-        mmkv.set(table, safeStringify(v));
+        Db.setStore(table, safeStringify(v));
       } catch (err) {
-        logger.error('[ekwe-store] MMKV failed to save key:', table, err);
+        logger.error('[sqlitePlugin] Failed to save key:', table, err);
       }
     } else {
-      mmkv.remove(table); // v4 API
+      Db.removeStore(table);
     }
   }
 }

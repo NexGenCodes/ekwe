@@ -60,7 +60,7 @@ export const useTheme = (): ThemeTokens => {
       primary: getColor('primary', isDark),
       secondary: getColor('secondary', isDark),
       onPrimary: getColor('onPrimary', isDark),
-      onSecondary: getColor('onSecondary', isDark as any),
+      onSecondary: getColor('onSecondary', isDark),
       foreground: getColor('foreground', isDark),
       background: getColor('background', isDark),
       card: getColor('card', isDark),

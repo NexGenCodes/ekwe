@@ -8,6 +8,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { AuthShell } from '@/components';
 import { PasswordInput, ErrorBanner, Button } from '@/components/ui';
+import { borderRadius, spacing, typography } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
 import { resetPasswordSchema, ResetPasswordForm } from '@/schemas/auth';
 import { updatePassword } from '@/services/auth';
@@ -43,17 +44,17 @@ export default function ResetPasswordScreen(): React.JSX.Element {
     <AuthShell>
       <Animated.View
         entering={FadeInDown.duration(600).springify()}
-        style={{ alignItems: 'center', marginBottom: 40 }}
+        style={{ alignItems: 'center', marginBottom: spacing[10] }}
       >
         <View
           style={{
             width: 64,
             height: 64,
-            borderRadius: 32,
+            borderRadius: borderRadius['2xl'],
             backgroundColor: `${primary}15`,
             alignItems: 'center',
             justifyContent: 'center',
-            marginBottom: 16,
+            marginBottom: spacing[4],
           }}
         >
           <KeyRound size={28} color={primary} />
@@ -61,7 +62,7 @@ export default function ResetPasswordScreen(): React.JSX.Element {
         <Text
           style={{
             fontFamily: 'Outfit-Medium',
-            fontSize: 28,
+            fontSize: typography.heading1.size,
             color: fg,
             letterSpacing: -0.5,
             textAlign: 'center',
@@ -72,11 +73,11 @@ export default function ResetPasswordScreen(): React.JSX.Element {
         <Text
           style={{
             fontFamily: 'Outfit-Regular',
-            fontSize: 15,
+            fontSize: typography.body.size - 1,
             color: muted,
-            marginTop: 8,
+            marginTop: spacing[2],
             textAlign: 'center',
-            lineHeight: 22,
+            lineHeight: typography.body.lineHeight,
           }}
         >
           Choose a strong password for your Ekwe account.
@@ -84,7 +85,7 @@ export default function ResetPasswordScreen(): React.JSX.Element {
       </Animated.View>
       <Animated.View entering={FadeInDown.duration(600).delay(100).springify()}>
         <ErrorBanner message={error} />
-        <View style={{ gap: 12, marginBottom: 8 }}>
+        <View style={{ gap: spacing[3], marginBottom: spacing[2] }}>
           <Controller
             control={control}
             name="password"
@@ -119,10 +120,10 @@ export default function ResetPasswordScreen(): React.JSX.Element {
         <Text
           style={{
             fontFamily: 'Outfit-Regular',
-            fontSize: 13,
+            fontSize: typography.bodySmall.size + 1,
             color: muted,
-            marginBottom: 20,
-            paddingHorizontal: 4,
+            marginBottom: spacing[5],
+            paddingHorizontal: spacing[1],
           }}
         >
           Password must be at least 8 characters

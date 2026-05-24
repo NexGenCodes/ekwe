@@ -1,17 +1,28 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 
+import { typography, spacing } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
 
 export interface EmptyStateProps {
   /** Icon element rendered above the title */
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   /** Primary message */
   title: string;
   /** Secondary description */
   subtitle?: string;
   /** Optional action element (button, link, etc.) below subtitle */
   action?: React.ReactNode;
+  /** Enable subtle pulse animation on icon */
+  animate?: boolean;
 }
 
 /**
@@ -23,26 +34,52 @@ export const EmptyState = ({
   title,
   subtitle,
   action,
+  animate = false,
 }: EmptyStateProps): React.ReactElement => {
   const { color } = useTheme();
+  const scale = useSharedValue(1);
+
+  useEffect(() => {
+    if (animate) {
+      scale.value = withRepeat(
+        withSequence(
+          withTiming(1.05, {
+            duration: 1500,
+            easing: Easing.inOut(Easing.ease),
+          }),
+          withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
+        ),
+        -1,
+        true,
+      );
+    }
+  }, [animate, scale]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   return (
     <View
       style={{
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 40,
-        paddingHorizontal: 24,
+        paddingVertical: spacing[10],
+        paddingHorizontal: spacing[6],
       }}
     >
-      <View style={{ marginBottom: 16 }}>{icon}</View>
+      <Animated.View
+        style={[animate && animatedStyle, { marginBottom: spacing[4] }]}
+      >
+        {icon}
+      </Animated.View>
       <Text
         style={{
-          fontSize: 20,
+          fontSize: typography.heading3.size,
           fontFamily: 'Outfit-Bold',
-          color: color.foreground,
+          color: color.muted,
           textAlign: 'center',
-          marginBottom: subtitle ? 8 : 0,
+          marginBottom: subtitle ? spacing[2] : 0,
         }}
       >
         {title}
@@ -50,17 +87,17 @@ export const EmptyState = ({
       {subtitle && (
         <Text
           style={{
-            fontSize: 14,
+            fontSize: typography.bodySmall.size,
             fontFamily: 'Outfit-Regular',
             color: color.muted,
             textAlign: 'center',
-            lineHeight: 20,
+            lineHeight: typography.bodySmall.lineHeight,
           }}
         >
           {subtitle}
         </Text>
       )}
-      {action && <View style={{ marginTop: 20 }}>{action}</View>}
+      {action && <View style={{ marginTop: spacing[5] }}>{action}</View>}
     </View>
   );
 };

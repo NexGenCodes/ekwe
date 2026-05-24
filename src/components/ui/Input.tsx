@@ -3,9 +3,10 @@
  *
  * Supports field-level error display from react-hook-form.
  */
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useState } from 'react';
 import { View, Text, TextInput, TextInputProps } from 'react-native';
 
+import { borderRadius, spacing, typography } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
 
 export interface InputProps extends TextInputProps {
@@ -16,6 +17,7 @@ export interface InputProps extends TextInputProps {
 export const Input = forwardRef<TextInput, InputProps>(
   ({ error, style, ...props }, ref) => {
     const { color } = useTheme();
+    const [isFocused, setIsFocused] = useState(false);
 
     return (
       <View>
@@ -24,16 +26,28 @@ export const Input = forwardRef<TextInput, InputProps>(
           autoCapitalize="none"
           autoCorrect={false}
           placeholderTextColor={color.muted}
+          onFocus={(e) => {
+            setIsFocused(true);
+            props.onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setIsFocused(false);
+            props.onBlur?.(e);
+          }}
           style={[
             {
               backgroundColor: color.card,
-              borderRadius: 16,
-              padding: 18,
+              borderRadius: borderRadius.xl,
+              padding: spacing[4] + 2,
               color: color.foreground,
               fontFamily: 'Outfit-Regular',
-              fontSize: 16,
-              borderWidth: error ? 1 : 0,
-              borderColor: error ? '#EF4444' : 'transparent',
+              fontSize: typography.body.size,
+              borderWidth: 1.5,
+              borderColor: error
+                ? '#EF4444'
+                : isFocused
+                  ? color.secondary
+                  : color.border,
             },
             style,
           ]}
@@ -44,9 +58,9 @@ export const Input = forwardRef<TextInput, InputProps>(
             style={{
               color: '#EF4444',
               fontFamily: 'Outfit-Regular',
-              fontSize: 13,
-              marginTop: 4,
-              paddingHorizontal: 4,
+              fontSize: typography.bodySmall.size - 1,
+              marginTop: spacing[1],
+              paddingHorizontal: spacing[1],
             }}
           >
             {error}

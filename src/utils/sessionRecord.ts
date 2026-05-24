@@ -1,6 +1,5 @@
-import { createMMKV } from 'react-native-mmkv';
+import { Db } from '@/services/db';
 
-const storage = createMMKV({ id: 'ekwe-sessions' });
 const SESSION_KEY = 'interrupted_session';
 
 export interface InterruptedSession {
@@ -13,10 +12,10 @@ export interface InterruptedSession {
 
 export const SessionRecord = {
   save: (session: InterruptedSession): void => {
-    storage.set(SESSION_KEY, JSON.stringify(session));
+    Db.setStore(SESSION_KEY, JSON.stringify(session));
   },
   get: (): InterruptedSession | null => {
-    const raw = storage.getString(SESSION_KEY);
+    const raw = Db.getStore(SESSION_KEY);
     if (!raw) return null;
     try {
       return JSON.parse(raw) as InterruptedSession;
@@ -25,6 +24,6 @@ export const SessionRecord = {
     }
   },
   clear: (): void => {
-    storage.remove(SESSION_KEY);
+    Db.removeStore(SESSION_KEY);
   },
 };

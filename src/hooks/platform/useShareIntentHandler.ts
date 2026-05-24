@@ -57,9 +57,6 @@ const handleEchoSession = async (
         uri,
         durationMs: 0,
         averageDb: -40,
-        trimStartMs: 0,
-        trimEndMs: 0,
-        hasSpeech: true,
         meteringData: [],
       },
       'auto',
@@ -95,7 +92,7 @@ const handleEchoSession = async (
           sourceApp,
           provider: 'gemini',
         },
-        userSession as any,
+        userSession as Parameters<typeof HistoryService.recordTranslation>[1],
       );
 
       // 5. Dismiss Overlay

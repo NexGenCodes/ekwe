@@ -18,6 +18,7 @@ import {
   ErrorBanner,
   Button,
 } from '@/components/ui';
+import { spacing, typography } from '@/constants/designTokens';
 import { useAuthFlow, useTheme } from '@/hooks';
 import { loginSchema, LoginForm } from '@/schemas/auth';
 import { signInWithPassword, sendOtp } from '@/services/auth';
@@ -60,7 +61,7 @@ export default function LoginScreen(): React.JSX.Element {
       <Animated.View entering={FadeInDown.duration(600).delay(100).springify()}>
         <ErrorBanner message={error} />
 
-        <View style={{ gap: 12, marginBottom: 12 }}>
+        <View style={{ gap: spacing[3], marginBottom: spacing[3] }}>
           <Controller
             control={control}
             name="email"
@@ -96,12 +97,12 @@ export default function LoginScreen(): React.JSX.Element {
 
         <Pressable
           onPress={() => router.push('/(auth)/forgot-password')}
-          style={{ alignItems: 'flex-end', marginBottom: 20 }}
+          style={{ alignItems: 'flex-end', marginBottom: spacing[5] }}
         >
           <Text
             style={{
               fontFamily: 'Outfit-Medium',
-              fontSize: 14,
+              fontSize: typography.bodySmall.size,
               color: color.primary,
             }}
           >
@@ -122,12 +123,12 @@ export default function LoginScreen(): React.JSX.Element {
         <Pressable
           onPress={handleOtpFallback}
           disabled={isLoading}
-          style={{ alignItems: 'center', marginTop: 20 }}
+          style={{ alignItems: 'center', marginTop: spacing[5] }}
         >
           <Text
             style={{
               fontFamily: 'Outfit-Medium',
-              fontSize: 14,
+              fontSize: typography.bodySmall.size,
               color: color.muted,
             }}
           >

@@ -12,6 +12,7 @@ import { useSharedValue } from 'react-native-reanimated';
 
 import { AudioWaveform } from '@/components';
 import { Button, Card } from '@/components/ui';
+import { spacing, typography } from '@/constants/designTokens';
 import { getLanguageName } from '@/constants/languages';
 import { useClipboard, useResultPipeline, useTheme } from '@/hooks';
 
@@ -174,38 +175,56 @@ export default function ResultScreen(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
-  scrollView: { flex: 1, paddingHorizontal: 24 },
-  processingContainer: { alignItems: 'center', paddingVertical: 48, gap: 16 },
+  scrollView: { flex: 1, paddingHorizontal: spacing[6] },
+  processingContainer: {
+    alignItems: 'center',
+    paddingVertical: spacing[12],
+    gap: spacing[4],
+  },
   processingTextContainer: { alignItems: 'center' },
-  processingTitle: { fontFamily: 'Outfit-Medium', fontSize: 18 },
+  processingTitle: {
+    fontFamily: 'Outfit-Medium',
+    fontSize: typography.bodyLarge.size,
+  },
   processingSubtitle: {
     fontFamily: 'Outfit-Regular',
-    fontSize: 14,
-    marginTop: 4,
+    fontSize: typography.bodySmall.size,
+    marginTop: spacing[1],
   },
-  blocksContainer: { marginTop: 32 },
-  block: { marginBottom: 32 },
+  blocksContainer: { marginTop: spacing[8] },
+  block: { marginBottom: spacing[8] },
   blockHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: spacing[3],
   },
   blockLabel: {
     fontFamily: 'Outfit-Medium',
-    fontSize: 12,
+    fontSize: typography.caption.size,
     textTransform: 'uppercase',
     letterSpacing: 1.5,
   },
-  headerActions: { flexDirection: 'row', gap: 8 },
-  cardText: { fontFamily: 'Outfit-Regular', fontSize: 18, lineHeight: 28 },
-  translateActionContainer: { alignItems: 'center', paddingVertical: 24 },
+  headerActions: { flexDirection: 'row', gap: spacing[2] },
+  cardText: {
+    fontFamily: 'Outfit-Regular',
+    fontSize: typography.bodyLarge.size,
+    lineHeight: typography.bodyLarge.lineHeight + 2,
+  },
+  translateActionContainer: {
+    alignItems: 'center',
+    paddingVertical: spacing[6],
+  },
   voiceArchLabel: {
     fontFamily: 'Outfit-Medium',
-    fontSize: 12,
+    fontSize: typography.caption.size,
     textTransform: 'uppercase',
     letterSpacing: 1.5,
-    marginBottom: 16,
+    marginBottom: spacing[4],
   },
-  actionBar: { paddingHorizontal: 24, paddingVertical: 32, borderTopWidth: 1 },
+  actionBar: {
+    paddingHorizontal: spacing[6],
+    paddingVertical: spacing[8],
+    borderTopWidth: 1,
+  },
 });

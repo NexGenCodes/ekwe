@@ -16,7 +16,20 @@ import { auth$ } from '@/store';
  * unlock the UI frontend. The Cloudflare Worker validates their tier securely
  * via the signed Supabase JWT payload and enforces 2MB audio limits & rate caps.
  */
-export function usePermissions() {
+interface PlanLimits {
+  maxPinnedLanguages: number;
+  maxSelectedLanguages: number;
+  dictationDurationMs: number;
+  historyLocalTtlDays: number;
+  historyRemoteTtlDays: number;
+  textTranslationMaxChars: number;
+  autoLanguageDetect: boolean;
+  customAvatarIcons: boolean;
+  autoCopy: boolean;
+  contextAwareness: boolean;
+}
+
+export function usePermissions(): PlanLimits {
   // We use Legend-State to reactively track the user's pro status.
   // This is set securely on login via session.user.app_metadata.is_pro
   const isPro = useSelector(() => auth$.isPro.get());

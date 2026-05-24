@@ -7,6 +7,7 @@ port = 8787
 
 [vars]
 SUPABASE_URL = "https://zsjcgebczzbmaarfcdny.supabase.co"
+ALLOWED_ORIGINS = ""  # Comma-separated: "https://ekwe.app,https://www.ekwe.app"
 
 [[kv_namespaces]]
 binding = "EKWE_KV"
@@ -15,7 +16,7 @@ id = "2a61656b51414ff4ae7cbc13a53fb459"
 [[ratelimits]]
 name = "RATE_LIMITER"
 namespace_id = "1"
-simple = { limit = 100, period = 60 } # 100 requests per minute
+simple = { limit = 500, period = 60 } # 500 requests per minute - global edge guard
 
 [ai]
 binding = "AI"

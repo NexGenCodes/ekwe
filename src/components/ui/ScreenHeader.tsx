@@ -25,7 +25,7 @@ export const ScreenHeader = ({
   const router = useRouter();
   const { color } = useTheme();
 
-  const handleLeftAction = async () => {
+  const handleLeftAction = async (): Promise<void> => {
     if (leftAction === 'none') return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (onBack) {
@@ -35,7 +35,7 @@ export const ScreenHeader = ({
     }
   };
 
-  const handleRightAction = async () => {
+  const handleRightAction = async (): Promise<void> => {
     if (rightAction === 'none') return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
@@ -122,5 +122,9 @@ const styles = StyleSheet.create({
   },
   headerButtonPressed: { opacity: 0.7, transform: [{ scale: 0.95 }] },
   headerButtonPlaceholder: { width: 40, height: 40 },
-  headerTitle: { fontFamily: 'Outfit-Medium', fontSize: 20 },
+  headerTitle: {
+    fontFamily: 'DMSerifDisplay-Regular',
+    fontSize: 24,
+    letterSpacing: -0.2,
+  },
 });

@@ -76,7 +76,7 @@ export const AudioWaveform = ({
 
   const composed = Gesture.Exclusive(gesture, tap);
 
-  const TERTIARY_COLOR = color.border;
+  const TERTIARY_COLOR = color.foreground;
   const PRIMARY_BRAND_COLOR = color.secondary;
 
   const progressStyle = useAnimatedStyle(() => {
@@ -103,6 +103,7 @@ export const AudioWaveform = ({
             height: h,
             borderRadius: 1.5,
             backgroundColor: TERTIARY_COLOR,
+            opacity: 0.15, // Perfect crisp faint contrast against both backgrounds
           }}
         />
       )),

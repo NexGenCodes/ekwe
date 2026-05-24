@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest';
-import { isHallucination, sanitizeKey, getEvasionHeaders, fetchWithTimeout, abortableDelay } from '../src/utils';
+import { isHallucination, sanitizeKey, getClientHeaders, fetchWithTimeout, abortableDelay } from '../src/utils';
 import { mockEnv, jsonResponse, mockFetch } from './setup';
 
 // ─── sanitizeKey ───────────────────────────────────────────────────
@@ -85,26 +85,27 @@ describe('isHallucination', () => {
   });
 });
 
-// ─── getEvasionHeaders ─────────────────────────────────────────────
+// ─── getClientHeaders ─────────────────────────────────────────────
 
-describe('getEvasionHeaders', () => {
-  test('returns all required headers', () => {
-    const h = getEvasionHeaders();
-    expect(h['User-Agent']).toBeTruthy();
-    expect(h['Accept-Language']).toBeTruthy();
-    expect(h['X-Forwarded-For']).toBeTruthy();
-    expect(h['X-Real-IP']).toBeTruthy();
+describe('getClientHeaders', () => {
+  test('returns Accept-Language by default', () => {
+    const h = getClientHeaders();
+    expect(h['Accept-Language']).toBe('en-US,en;q=0.9');
+    expect(h['User-Agent']).toBeFalsy();
+    expect(h['X-Forwarded-For']).toBeFalsy();
   });
 
-  test('IP is always 10.x.x.x', () => {
-    for (let i = 0; i < 20; i++) {
-      expect(getEvasionHeaders()['X-Forwarded-For']).toMatch(/^10\.\d+\.\d+\.\d+$/);
-    }
-  });
-
-  test('User-Agent varies between calls', () => {
-    const agents = new Set(Array.from({ length: 10 }, () => getEvasionHeaders()['User-Agent']));
-    expect(agents.size).toBeGreaterThan(1);
+  test('forwards headers from request when provided', () => {
+    const req = new Request('http://test', {
+      headers: {
+        'X-Forwarded-For': '1.2.3.4',
+        'X-Real-IP': '5.6.7.8',
+      },
+    });
+    const h = getClientHeaders(req);
+    expect(h['X-Forwarded-For']).toBe('1.2.3.4');
+    expect(h['X-Real-IP']).toBe('5.6.7.8');
+    expect(h['Accept-Language']).toBe('en-US,en;q=0.9');
   });
 });
 

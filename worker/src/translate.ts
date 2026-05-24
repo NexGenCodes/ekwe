@@ -37,6 +37,13 @@ const FREE_PIPELINE: Array<{ name: string; fn: TranslateFn }> = [
   { name: 'cloudflare', fn: cloudflare.translate },
 ];
 
+async function sha256(message: string): Promise<string> {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 // ─── Orchestrator ─────────────────────────────────────────────────
 
 export async function handleTranslate(
@@ -70,6 +77,25 @@ export async function handleTranslate(
   // ── Prompt Injection Defense (silent strip) ──
   const cleanText = sanitizeTranslationText(body.text);
 
+  // ── KV Cache Lookup (Fail-Closed) ──
+  let cacheKey: string;
+  try {
+    const textHash = await sha256(`${cleanText}_${body.sourceLang || 'auto'}_${body.targetLang}`);
+    cacheKey = `trans:${textHash}`;
+    const cached = await env.EKWE_KV.get(cacheKey);
+    if (cached) {
+      logger.info(`[translate] KV Cache Hit for hash ${textHash}`);
+      const cachedResult = JSON.parse(cached) as TranslateResult;
+      return Response.json(cachedResult);
+    }
+  } catch (err) {
+    logger.error(`[translate] KV cache lookup error (Failing closed)`, { error: String(err) });
+    return Response.json(
+      { error: 'EKWE_ALL_PROVIDERS_FAIL', message: 'Service temporarily unavailable. Please try again later.' },
+      { status: 503 }
+    );
+  }
+
   const pipeline = tier === 'PREMIUM' ? PREMIUM_PIPELINE : FREE_PIPELINE;
 
   for (const provider of pipeline) {
@@ -81,6 +107,18 @@ export async function handleTranslate(
       const result = await provider.fn(cleanText, targetName, sourceName, env, signal);
       if (result) {
         logger.info(`[translate] Success: ${provider.name}`, { provider: result.provider });
+        
+        // Write to cache (Fail-Closed for security - if write fails, block return)
+        try {
+          await env.EKWE_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: 30 * 24 * 60 * 60 }); // 30 days
+        } catch (err) {
+          logger.error(`[translate] KV cache write error (Failing closed)`, { error: String(err) });
+          return Response.json(
+            { error: 'EKWE_ALL_PROVIDERS_FAIL', message: 'Service temporarily unavailable. Please try again later.' },
+            { status: 503 }
+          );
+        }
+
         return Response.json(result);
       }
 

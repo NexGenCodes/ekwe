@@ -1,8 +1,9 @@
 import * as Haptics from 'expo-haptics';
 import { Loader } from 'lucide-react-native';
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   Animated,
+  Easing,
   Pressable,
   StyleProp,
   Text,
@@ -11,11 +12,12 @@ import {
   ViewStyle,
 } from 'react-native';
 
+import { borderRadius } from '@/constants/designTokens';
 import { fonts } from '@/constants/fonts';
 import { useTheme } from '@/hooks';
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost';
-type ButtonSize = 'small' | 'medium' | 'large';
+type ButtonSize = 'small' | 'medium' | 'large' | 'md';
 
 export interface ButtonProps {
   label: string;
@@ -48,24 +50,35 @@ export const Button = ({
   accessibilityHint,
 }: ButtonProps): React.ReactElement => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const [spinDeg, setSpinDeg] = useState(0);
+  const spinAnim = useRef(new Animated.Value(0)).current;
   const { color } = useTheme();
 
   useEffect(() => {
     if (!loading) {
-      setSpinDeg(0);
+      spinAnim.setValue(0);
       return;
     }
-    const interval = setInterval(() => {
-      setSpinDeg((prev) => (prev + 360) % 360);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [loading]);
+    const animation = Animated.loop(
+      Animated.timing(spinAnim, {
+        toValue: 1,
+        duration: 1000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    animation.start();
+    return (): void => animation.stop();
+  }, [loading, spinAnim]);
+
+  const spinDeg = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   const handlePressIn = (): void => {
     if (disabled || loading) return;
     Animated.timing(scaleAnim, {
-      toValue: 0.97,
+      toValue: 0.95,
       duration: 120,
       useNativeDriver: true,
     }).start();
@@ -80,12 +93,23 @@ export const Button = ({
     }).start();
   };
 
-  const variantStyles = (() => {
+  interface VariantStyles {
+    container: object;
+    text: object;
+    spinner: string;
+  }
+
+  interface SizeStyles {
+    container: object;
+    text: object;
+  }
+
+  const variantStyles = function (): VariantStyles {
     switch (variant) {
       case 'primary':
         return {
           container: { backgroundColor: color.primary },
-          text: { color: '#ffffff' },
+          text: { color: color.onPrimary },
           spinner: color.onPrimary,
         };
       case 'secondary':
@@ -111,28 +135,46 @@ export const Button = ({
           spinner: color.muted,
         };
     }
-  })();
+  };
 
-  const sizeStyles = (() => {
+  const sizeStyles = function (): SizeStyles {
     switch (size) {
       case 'small':
         return {
-          container: { paddingVertical: 4, paddingHorizontal: 12, minHeight: 48 },
-          text: { fontSize: 16 },
+          container: {
+            paddingVertical: 4,
+            paddingHorizontal: 12,
+            minHeight: 48,
+          },
+          text: { fontSize: 16, fontFamily: fonts.bodyMed },
         };
       case 'large':
         return {
-          container: { paddingVertical: 16, paddingHorizontal: 24, minHeight: 56 },
-          text: { fontSize: 28, lineHeight: 34, letterSpacing: -0.5 },
+          container: {
+            paddingVertical: 16,
+            paddingHorizontal: 24,
+            minHeight: 56,
+          },
+          text: {
+            fontSize: 18,
+            lineHeight: 24,
+            letterSpacing: -0.2,
+            fontFamily: fonts.bodyBold,
+          },
         };
       case 'medium':
+      case 'md':
       default:
         return {
-          container: { paddingVertical: 8, paddingHorizontal: 16, minHeight: 48 },
-          text: { fontSize: 16 },
+          container: {
+            paddingVertical: 8,
+            paddingHorizontal: 16,
+            minHeight: 48,
+          },
+          text: { fontSize: 16, fontFamily: fonts.bodyMed },
         };
     }
-  })();
+  };
 
   return (
     <AnimatedPressable
@@ -145,12 +187,12 @@ export const Button = ({
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
-          borderRadius: 9999,
+          borderRadius: borderRadius.xl,
           opacity: disabled ? 0.5 : 1,
           transform: [{ scale: scaleAnim }],
         },
-        variantStyles.container,
-        sizeStyles.container,
+        variantStyles().container,
+        sizeStyles().container,
       ]}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || label}
@@ -159,10 +201,10 @@ export const Button = ({
       hitSlop={8}
     >
       {loading ? (
-        <Animated.View style={{ transform: [{ rotate: `${spinDeg}deg` }] }}>
+        <Animated.View style={{ transform: [{ rotate: spinDeg }] }}>
           <Loader
             size={size === 'small' ? 16 : 20}
-            color={variantStyles.spinner}
+            color={variantStyles().spinner}
             strokeWidth={2.5}
           />
         </Animated.View>
@@ -173,10 +215,9 @@ export const Button = ({
             style={[
               {
                 textAlign: 'center',
-                fontFamily: fonts.bodyMed,
               },
-              variantStyles.text,
-              sizeStyles.text,
+              variantStyles().text,
+              sizeStyles().text,
               labelStyle,
             ]}
           >

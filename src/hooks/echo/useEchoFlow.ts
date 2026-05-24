@@ -1,5 +1,4 @@
 import { useSelector } from '@legendapp/state/react';
-import NetInfo from '@react-native-community/netinfo';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -18,6 +17,7 @@ import { settings$, auth$ } from '@/store';
 import { EchoStep, EchoProps, UseEchoFlowResult } from '@/types/echo';
 import { logger } from '@/utils';
 import { cleanEchoCache } from '@/utils/echo';
+import { checkIsOnline } from '@/utils/netInfo';
 
 interface EchoState {
   step: EchoStep;
@@ -191,8 +191,8 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     dispatch({ type: 'SET_STEP', payload: 'Transcribing' });
     IntentService.updateBubbleMode('MAGIC');
 
-    const netState = await NetInfo.fetch();
-    if (!netState.isConnected) {
+    const isOnline = await checkIsOnline();
+    if (!isOnline) {
       dispatch({
         type: 'SET_ERROR',
         payload: 'Transcription requires an active internet connection.',
@@ -212,9 +212,6 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
           uri: safeUri,
           durationMs: durationSeconds * 1000,
           averageDb: -40,
-          trimStartMs: 0,
-          trimEndMs: 0,
-          hasSpeech: true,
           meteringData: waveform,
         },
         state.selectedLang,
@@ -272,8 +269,8 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     dispatch({ type: 'SET_TRANSLATION', payload: { text: null } });
     dispatch({ type: 'SET_STEP', payload: 'Translating' });
 
-    const netState = await NetInfo.fetch();
-    if (!netState.isConnected) {
+    const isOnline = await checkIsOnline();
+    if (!isOnline) {
       dispatch({
         type: 'SET_ERROR',
         payload: 'Translation requires an active internet connection.',

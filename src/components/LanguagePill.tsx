@@ -27,25 +27,36 @@ export function LanguagePill({
   return (
     <Pressable
       onPress={onPress}
+      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
       style={({ pressed }) => [
         styles.pill,
-        { backgroundColor: color.surface },
-        pressed && { opacity: 0.8 },
+        {
+          backgroundColor: color.card,
+          borderColor: color.border,
+        },
+        pressed && { transform: [{ scale: 0.96 }] },
         style,
       ]}
     >
       <Text style={styles.pillFlag}>
-        {langCode === 'auto' ? '🌐' : FLAG_MAP[langCode] || '🏳️'}
+        {!langCode
+          ? '🔍'
+          : langCode === 'auto'
+            ? '🌐'
+            : FLAG_MAP[langCode] || '🏳️'}
       </Text>
       <Text
-        style={[styles.langText, { color: color.foreground }]}
+        style={[
+          styles.langText,
+          { color: !langCode ? color.muted : color.foreground },
+        ]}
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.7}
       >
-        {getLanguageAbbreviation(langCode)}
+        {!langCode ? 'Select' : getLanguageAbbreviation(langCode)}
       </Text>
-      <ChevronDown size={18} color={color.muted} strokeWidth={2.5} />
+      <ChevronDown size={14} color={color.muted} strokeWidth={2.5} />
     </Pressable>
   );
 }
@@ -54,22 +65,26 @@ const styles = StyleSheet.create({
   pill: {
     flex: 1,
     flexDirection: 'row',
-    gap: 8,
-    height: 48,
-    borderRadius: 24,
+    gap: 6,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 10,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   pillFlag: {
-    fontSize: 16,
-    marginRight: 4,
+    fontSize: 15,
   },
   langText: {
-    flex: 1,
     fontFamily: 'Outfit-Bold',
-    fontSize: 14,
+    fontSize: 13,
     letterSpacing: 0.3,
-    marginRight: 4,
+    marginRight: 2,
   },
 });

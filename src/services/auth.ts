@@ -8,6 +8,8 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { Platform } from 'react-native';
 
+import { TranscriptionService } from '@/services/Transcription';
+import { TranslationService } from '@/services/Translation';
 import { supabase } from '@/services/supabase';
 import { authActions } from '@/store';
 import logger from '@/utils/logger';
@@ -23,17 +25,24 @@ export interface AuthResult {
 // ── Initialization ─────────────────────────────────────────────────
 
 let _authInitialized = false;
-let _authSubscription: { data: { subscription: any }; unsubscribe: () => void } | null = null;
+let _authSubscription: { unsubscribe: () => void } | null = null;
 
 export const initAuth = (): void => {
   if (_authInitialized) return;
   _authInitialized = true;
 
-  _authSubscription = supabase.auth.onAuthStateChange((event, session) => {
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((event, session) => {
     logger.info(`Auth state changed: ${event}`, session?.user?.id);
     authActions.setSession(session);
     authActions.setInitialized(true);
-  }) as { data: { subscription: any }; unsubscribe: () => void };
+    if (event === 'SIGNED_OUT') {
+      TranslationService.clearCache();
+      TranscriptionService.clearCache();
+    }
+  });
+  _authSubscription = subscription;
 };
 
 export const cleanupAuth = (): void => {

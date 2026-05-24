@@ -1,5 +1,5 @@
-import { Image as ExpoImage } from 'expo-image';
 import * as Haptics from 'expo-haptics';
+import { Image as ExpoImage } from 'expo-image';
 import React, { useRef, useCallback, useMemo } from 'react';
 import { View, Text, Pressable, ViewStyle, StyleSheet } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';

@@ -2,6 +2,8 @@ import { Platform, Linking } from 'react-native';
 
 import EkweNative from '../../modules/ekwe-native';
 
+import logger from '@/utils/logger';
+
 export const IntentService = {
   resolveToFileUri: async (rawUri: string): Promise<string | null> => {
     if (Platform.OS === 'android' && rawUri.startsWith('content://')) {
@@ -19,7 +21,9 @@ export const IntentService = {
   updateBubbleMode: (mode: 'IDLE' | 'MAGIC' | 'RECORD'): void => {
     try {
       EkweNative?.updateBubbleMode?.(mode);
-    } catch {}
+    } catch (err) {
+      logger.warn('[IntentService] updateBubbleMode failed', err);
+    }
   },
 
   dismissAndRedirect: (resetShareIntent: (clear: boolean) => void): void => {

@@ -70,4 +70,8 @@ Thumbs.db
 .wrangler/
 skills-lock.json
 
+# MCP configuration
+mcp_config.json
+
+
 

@@ -22,3 +22,5 @@ export * from './ScrollableTextBox';
 export * from './LanguagePill';
 export * from './LanguageDropdown';
 export * from './profile';
+export * from './CustomTabBar';
+export * from './CustomTabBarItem';

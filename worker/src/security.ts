@@ -24,18 +24,18 @@ import { logger } from './logger';
 const TIER_LIMITS = {
   FREE: {
     maxTextChars: 3_000,          // ~500 words
-    maxAudioBytes: 2 * 1024 * 1024,  // 2MB (~30s)
+    maxAudioBytes: 4 * 1024 * 1024,  // 4MB (~60s)
     autoDetectAllowed: false,
   },
   PREMIUM: {
     maxTextChars: 10_000,         // ~1,500 words
-    maxAudioBytes: 5 * 1024 * 1024,  // 5MB (~60s)
+    maxAudioBytes: 10 * 1024 * 1024, // 10MB (~120s)
     autoDetectAllowed: true,
   },
   // CAPPED_PREMIUM users are silently downgraded
   CAPPED_PREMIUM: {
     maxTextChars: 5_000,
-    maxAudioBytes: 3 * 1024 * 1024,
+    maxAudioBytes: 6 * 1024 * 1024,  // 6MB (~72s)
     autoDetectAllowed: true,
   },
 } as const;

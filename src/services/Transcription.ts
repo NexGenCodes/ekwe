@@ -1,12 +1,42 @@
 import { File as ExpoFile } from 'expo-file-system';
+import { z } from 'zod';
 
 import { EkweError } from '@/constants/errors';
 import { ProcessedAudio } from '@/services/AudioProcessor';
 import { supabase } from '@/services/supabase';
 import { authActions } from '@/store';
 import { Result, ok, err } from '@/types/Result';
-import { fetchWithRetry } from '@/utils/networkUtils';
 import logger from '@/utils/logger';
+import { fetchWithRetry } from '@/utils/networkUtils';
+
+const transcriptionResponseSchema = z.object({
+  text: z.string(),
+  words: z
+    .array(
+      z.object({
+        word: z.string(),
+        start: z.number(),
+        end: z.number(),
+      }),
+    )
+    .optional(),
+  language: z.string().optional(),
+  provider: z.string().optional(),
+  transaction: z
+    .object({
+      transactions_used: z.unknown().transform((v) => Number(v) || 0),
+      tier_active: z
+        .unknown()
+        .transform((v) =>
+          typeof v === 'string' && v.toUpperCase() === 'PREMIUM'
+            ? 'PREMIUM'
+            : 'FREE',
+        ),
+      is_fallback: z.unknown().transform((v) => Boolean(v)),
+    })
+    .nullish()
+    .catch(undefined),
+});
 
 const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? '';
 
@@ -29,6 +59,14 @@ export interface TranscriptionResult {
 }
 
 class TranscriptionServiceClass {
+  private readonly CACHE_TTL_MS = 5 * 60 * 1000;
+  private cache = new Map<string, { value: Result<TranscriptionResult, EkweError>; timestamp: number }>();
+
+  clearCache(): void {
+    this.cache.clear();
+    logger.info('[Transcription] Cache cleared');
+  }
+
   /**
    * Transcribes a processed audio recording.
    * Sends the file to the Worker /transcribe endpoint.
@@ -38,6 +76,14 @@ class TranscriptionServiceClass {
     sourceLang: string,
     signal?: AbortSignal,
   ): Promise<Result<TranscriptionResult, EkweError>> {
+    const cacheKey = `${audio.uri}_${sourceLang || 'auto'}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
+      logger.info('[Transcription] Frontend Cache Hit');
+      return cached.value;
+    }
+    if (cached) this.cache.delete(cacheKey);
+
     try {
       const file = new ExpoFile(audio.uri);
       if (!file.exists) {
@@ -113,23 +159,23 @@ class TranscriptionServiceClass {
         return this.mapErrorCode(errorCode);
       }
 
-      const data = (await fetchResponse.json()) as {
-        text: string;
-        words?: { word: string; start: number; end: number }[];
-        language?: string;
-        provider?: string;
-        transaction?: {
-          transactions_used: number;
-          tier_active: 'FREE' | 'PREMIUM';
-          is_fallback: boolean;
-        };
-      };
+      const json = await fetchResponse.json();
+      const parsed = transcriptionResponseSchema.safeParse(json);
+      if (!parsed.success) {
+        logger.error(
+          '[Transcription] Response validation failed:',
+          parsed.error.message,
+        );
+        return err(EkweError.TRANSCRIPTION_FAIL);
+      }
+
+      const data = parsed.data;
 
       if (data.transaction) {
         authActions.updateBilling(data.transaction);
       }
 
-      return this.processTranscript(
+      const resultValue = this.processTranscript(
         data.text,
         data.words ?? [],
         data.language ?? sourceLang,
@@ -137,6 +183,18 @@ class TranscriptionServiceClass {
         audio,
         data.provider,
       );
+
+      if (resultValue.ok) {
+        this.cache.set(cacheKey, { value: resultValue, timestamp: Date.now() });
+        if (this.cache.size > 100) {
+          const firstKey = this.cache.keys().next().value;
+          if (firstKey !== undefined) {
+            this.cache.delete(firstKey);
+          }
+        }
+      }
+
+      return resultValue;
     } catch (e: unknown) {
       if (e instanceof Error) {
         if (e.name === 'AbortError') {
@@ -190,12 +248,10 @@ class TranscriptionServiceClass {
           ? sourceLang
           : 'en';
 
-    // Adjust word timestamps for trim offset
-    const trimOffsetSeconds = audio.trimStartMs / 1000;
     const adjustedWords: WordTimestamp[] = words.map((w) => ({
       word: w.word,
-      start: w.start + trimOffsetSeconds,
-      end: w.end + trimOffsetSeconds,
+      start: w.start,
+      end: w.end,
     }));
 
     return ok({

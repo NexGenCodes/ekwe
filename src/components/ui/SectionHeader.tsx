@@ -1,6 +1,8 @@
 import React from 'react';
 import { Text, StyleSheet } from 'react-native';
 
+import { spacing, typography } from '@/constants/designTokens';
+
 export interface SectionHeaderProps {
   title: string;
 }
@@ -13,13 +15,13 @@ export const SectionHeader = ({
 
 const styles = StyleSheet.create({
   header: {
-    fontFamily: 'Outfit-Medium', // approx for font-display
-    fontSize: 12,
+    fontFamily: 'Outfit-Medium',
+    fontSize: typography.caption.size,
     textTransform: 'uppercase',
     letterSpacing: 1.8,
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    paddingBottom: 12,
-    color: '#71717A', // zinc-500
+    paddingHorizontal: spacing[6],
+    paddingTop: spacing[8],
+    paddingBottom: spacing[3],
+    color: '#71717A',
   },
 });

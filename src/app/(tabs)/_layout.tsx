@@ -1,14 +1,31 @@
-import { Tabs } from 'expo-router';
-import { Home, History, User, Settings } from 'lucide-react-native';
-import React from 'react';
+import { useSelector } from '@legendapp/state/react';
+import { Tabs, useRouter } from 'expo-router';
+import { Home, History, User } from 'lucide-react-native';
+import React, { useEffect } from 'react';
 
+import { CustomTabBar } from '@/components/CustomTabBar';
 import { useTheme } from '@/hooks';
+import { settings$ } from '@/store';
 
-export default function TabLayout(): React.ReactElement {
+export default function TabLayout(): React.ReactElement | null {
   const { color } = useTheme();
+  const router = useRouter();
+
+  const onboardingCompleted = useSelector(() =>
+    settings$.onboardingCompleted.get(),
+  );
+
+  useEffect(() => {
+    if (!onboardingCompleted) {
+      router.replace('/(onboarding)/language');
+    }
+  }, [onboardingCompleted, router]);
+
+  if (!onboardingCompleted) return null;
 
   return (
     <Tabs
+      tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
         headerTransparent: false,
         headerStyle: {
@@ -20,19 +37,6 @@ export default function TabLayout(): React.ReactElement {
           color: color.foreground,
         },
         headerTintColor: color.primary,
-        tabBarStyle: {
-          backgroundColor: color.card,
-          borderTopColor: color.border,
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 8,
-        },
-        tabBarActiveTintColor: color.primary,
-        tabBarInactiveTintColor: color.muted,
-        tabBarLabelStyle: {
-          fontFamily: 'Outfit-Medium',
-          fontSize: 12,
-        },
       }}
     >
       <Tabs.Screen
@@ -59,16 +63,6 @@ export default function TabLayout(): React.ReactElement {
           title: 'Profile',
           headerShown: true,
           tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: 'Settings',
-          headerShown: true,
-          tabBarIcon: ({ color, size }) => (
-            <Settings size={size} color={color} />
-          ),
         }}
       />
     </Tabs>

@@ -2,13 +2,7 @@ import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { useSelector } from '@legendapp/state/react';
 import { X, AlertCircle, RefreshCw } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  useColorScheme,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
 import { EchoConfigStep } from './EchoConfig';
 import { EchoFinalResult } from './EchoFinalResult';
@@ -16,8 +10,8 @@ import { EchoLanguagePicker } from './EchoLanguagePicker';
 import { EchoTranslationConfig } from './EchoTranslationConfig';
 
 import { Badge, IconContainer, SkeletonBox } from '@/components/ui';
-import { fonts } from '@/constants/fonts';
 import { STEP_METADATA } from '@/constants/echo';
+import { fonts } from '@/constants/fonts';
 import { LANGUAGES } from '@/constants/languages';
 import { useEchoFlow, useTheme, useSharedAudioPlayer } from '@/hooks';
 import { initAuth } from '@/services/auth';
@@ -188,9 +182,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
                 accessibilityRole="button"
                 accessibilityLabel="Change language"
               >
-                <Text
-                  style={[styles.changeLabel, { color: color.primary }]}
-                >
+                <Text style={[styles.changeLabel, { color: color.primary }]}>
                   Change
                 </Text>
               </TouchableOpacity>
@@ -207,7 +199,14 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             <Text style={[styles.loadingSubtitle, { color: color.muted }]}>
               Processing your audio...
             </Text>
-            <View style={{ width: '100%', gap: 12, marginTop: 24, paddingHorizontal: 16 }}>
+            <View
+              style={{
+                width: '100%',
+                gap: 12,
+                marginTop: 24,
+                paddingHorizontal: 16,
+              }}
+            >
               <SkeletonBox width="100%" height={12} borderRadius={6} />
               <SkeletonBox width="85%" height={12} borderRadius={6} />
               <SkeletonBox width="70%" height={12} borderRadius={6} />
@@ -243,7 +242,14 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             <Text style={[styles.loadingSubtitle, { color: color.muted }]}>
               Please wait while we process the translation.
             </Text>
-            <View style={{ width: '100%', gap: 12, marginTop: 24, paddingHorizontal: 16 }}>
+            <View
+              style={{
+                width: '100%',
+                gap: 12,
+                marginTop: 24,
+                paddingHorizontal: 16,
+              }}
+            >
               <SkeletonBox width="100%" height={12} borderRadius={6} />
               <SkeletonBox width="75%" height={12} borderRadius={6} />
               <SkeletonBox width="90%" height={12} borderRadius={6} />
@@ -406,7 +412,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   metaLabel: { fontFamily: fonts.bodyMed, fontSize: 15 },
-  metaValue: { fontFamily: fonts.bodyBold, fontSize: 15, flex: 1, marginLeft: 6 },
+  metaValue: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 15,
+    flex: 1,
+    marginLeft: 6,
+  },
   changeBtn: {
     paddingVertical: 6,
     paddingHorizontal: 12,

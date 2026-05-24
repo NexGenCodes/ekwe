@@ -173,20 +173,17 @@ jest.mock('react-native-safe-area-context', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  react-native-mmkv                                                  */
+/*  @op-engineering/op-sqlite                                         */
 /* ------------------------------------------------------------------ */
-jest.mock('react-native-mmkv', () => {
-  const mockInstance = {
-    getString: jest.fn(),
-    set: jest.fn(),
-    delete: jest.fn(),
-    clearAll: jest.fn(),
-  };
-  return {
-    MMKV: jest.fn().mockImplementation(() => mockInstance),
-    createMMKV: jest.fn().mockReturnValue(mockInstance),
-  };
-});
+const mockOpDb = {
+  executeSync: jest.fn(() => ({ rows: [], rowsAffected: 0 })),
+  execute: jest.fn(() => Promise.resolve({ rows: [], rowsAffected: 0 })),
+  close: jest.fn(),
+};
+jest.mock('@op-engineering/op-sqlite', () => ({
+  open: jest.fn(() => mockOpDb),
+  openAsync: jest.fn(() => Promise.resolve(mockOpDb)),
+}));
 
 /* ------------------------------------------------------------------ */
 /*  expo-linking                                                       */
@@ -321,35 +318,33 @@ jest.mock('./modules/ekwe-native', () => ({
 }));
 
 /* ------------------------------------------------------------------ */
-/*  @/store/authStore & Supabase                                      */
+/*  @/services/supabase & @/store                                     */
 /* ------------------------------------------------------------------ */
-jest.mock('@/lib/supabase', () => ({
+jest.mock('@/services/supabase', () => ({
   supabase: {
     auth: {
       getSession: jest.fn().mockResolvedValue({ data: { session: { access_token: 'mock-token', user: { id: 'user_123' } } } }),
       onAuthStateChange: jest.fn(() => ({ data: { subscription: { unsubscribe: jest.fn() } } })),
+      startAutoRefresh: jest.fn(),
+      stopAutoRefresh: jest.fn(),
     },
     from: jest.fn().mockReturnThis(),
     insert: jest.fn().mockResolvedValue({ error: null }),
   },
+  appStateSubscription: { remove: jest.fn() },
 }));
 
-jest.mock('@/store/authStore', () => ({
-  useAuthStore: Object.assign(
-    () => ({
-      session: { access_token: 'mock-token', user: { id: 'user_123' } },
-      user: { id: 'user_123' },
-      isPro: true,
-      isInitialized: true,
-    }),
-    {
-      getState: () => ({
-        session: { access_token: 'mock-token', user: { id: 'user_123' } },
-        setSession: jest.fn(),
-        setInitialized: jest.fn(),
-      }),
-    }
-  ),
+jest.mock('@/store', () => ({
+  auth$: { get: () => ({ session: null, user: null, isPro: false, isInitialized: true }) },
+  authActions: {
+    setSession: jest.fn(),
+    setUser: jest.fn(),
+    setIsPro: jest.fn(),
+    clearAuth: jest.fn(),
+  },
+  settings$: { get: () => ({ onboardingCompleted: false }) },
+  history$: { get: () => ({}) },
+  audio$: { get: () => ({}) },
 }));
 
 /* ------------------------------------------------------------------ */

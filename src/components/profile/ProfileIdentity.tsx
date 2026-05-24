@@ -7,10 +7,15 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { useTheme } from '@/hooks';
 
+interface AvatarIconData {
+  icon: React.ComponentType<{ color: string; size: number }>;
+  color: string;
+}
+
 interface ProfileIdentityProps {
   user: User;
   isPro: boolean;
-  currentIconData: any;
+  currentIconData: AvatarIconData | null;
   userName: string;
   userEmail: string;
   rawName: string;

@@ -15,10 +15,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-AppState.addEventListener('change', (state) => {
+const appStateSubscription = AppState.addEventListener('change', (state) => {
   if (state === 'active') {
     supabase.auth.startAutoRefresh();
   } else {
     supabase.auth.stopAutoRefresh();
   }
 });
+
+// Keep subscription reference to prevent garbage collection
+// In typical React Native apps, this runs for app lifetime which is correct
+export { appStateSubscription };

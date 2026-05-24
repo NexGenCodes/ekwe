@@ -38,25 +38,19 @@ export function getUserAgent(): string {
   return randomUserAgents[Math.floor(Math.random() * randomUserAgents.length)];
 }
 
-export function getEvasionHeaders(): Record<string, string> {
-  const uaPool = [
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
-    'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-    'Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
-    'Mozilla/5.0 (Linux; Android 12; Pixel 6 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-  ];
-  const localePool = ['en-US,en;q=0.9', 'en-GB,en;q=0.8', 'en-NG,en;q=0.9', 'en;q=0.8', 'en-US,en;q=0.9,es;q=0.7'];
-  const octet = () => Math.floor(Math.random() * 255);
-  const fakeIp = `10.${octet()}.${octet()}.${octet()}`;
-
-  return {
-    'User-Agent': uaPool[Math.floor(Math.random() * uaPool.length)],
-    'Accept-Language': localePool[Math.floor(Math.random() * localePool.length)],
-    'X-Forwarded-For': fakeIp,
-    'X-Real-IP': fakeIp,
+export function getClientHeaders(request?: Request): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Accept-Language': 'en-US,en;q=0.9',
   };
+
+  if (request) {
+    const forwardedFor = request.headers.get('X-Forwarded-For');
+    const realIp = request.headers.get('X-Real-IP');
+    if (forwardedFor) headers['X-Forwarded-For'] = forwardedFor;
+    if (realIp) headers['X-Real-IP'] = realIp;
+  }
+
+  return headers;
 }
 
 /**
@@ -191,7 +185,9 @@ export async function rotateKeys(
           await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, 'true', { expirationTtl: 86400 });
           logger.warn(`[${namespace}] Key permanently blacklisted for 24h (400 permanent error)`);
         }
-      } catch { /* ignore body parse errors */ }
+      } catch (err) {
+        logger.warn(`[${namespace}] Failed to parse error body for blacklist check`, { error: err });
+      }
       continue;
     }
 

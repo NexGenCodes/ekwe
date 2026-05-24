@@ -1,50 +1,49 @@
-import * as Haptics from 'expo-haptics';
-import { Bell } from 'lucide-react-native';
+import { useSelector } from '@legendapp/state/react';
 import React from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 
 import { EkweLogo } from '@/components/EkweLogo';
+import { AccountStatusPill } from '@/components/ui/AccountStatusPill';
+import { spacing } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
-import { AppAlert } from '@/utils/alert';
+import { SyncService } from '@/services/SyncService';
 
 export function HomeHeader(): React.ReactElement {
   const { color } = useTheme();
+  const pendingCount = useSelector(() => SyncService.pendingCount.get());
 
   return (
     <View style={styles.container}>
-      <View style={StyleSheet.absoluteFill}>
-        <View style={styles.watermarkContainer}>
-          <EkweLogo size={240} color={color.primary} opacity={0.05} />
-        </View>
-      </View>
       <View style={styles.leftGroup}>
         <View style={[styles.iconBox, { backgroundColor: color.primary }]}>
           <EkweLogo size={40} color={color.onPrimary} strokeWidth={2.5} />
         </View>
         <View>
-          <Text style={[styles.title, { color: color.foreground }]}>Ekwe</Text>
-          <Text style={[styles.subtitle, { color: color.muted }]}>
-            Ready to translate.
+          <Text
+            accessibilityRole="header"
+            style={[styles.title, { color: color.foreground }]}
+          >
+            Ekwe
           </Text>
+          <View style={styles.subtitleRow}>
+            <Text
+              accessibilityRole="header"
+              style={[styles.subtitle, { color: color.muted }]}
+            >
+              Ready to translate.
+            </Text>
+            {pendingCount > 0 && (
+              <View style={[styles.syncBadge, { backgroundColor: color.primary }]}>
+                <Text style={[styles.syncBadgeText, { color: color.onPrimary }]}>
+                  {pendingCount}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
       </View>
 
-      <Pressable
-        onPress={async () => {
-          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          AppAlert.info('Notifications', 'You have no new notifications.');
-        }}
-        style={({ pressed }) => [
-          styles.bellButton,
-          { backgroundColor: color.card, borderColor: color.border },
-          pressed && styles.bellButtonPressed,
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Notifications"
-      >
-        <Bell size={22} color={color.primary} />
-        <View style={[styles.badgeDot, { backgroundColor: color.error }]} />
-      </Pressable>
+      <AccountStatusPill />
     </View>
   );
 }
@@ -54,21 +53,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 0,
-    paddingTop: 16,
-    paddingBottom: 32,
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[4],
+    paddingBottom: spacing[4],
+    marginBottom: spacing[8],
     overflow: 'hidden',
-  },
-  watermarkContainer: {
-    position: 'absolute',
-    top: -40,
-    right: -80,
-    transform: [{ rotate: '15deg' }],
   },
   leftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: spacing[4],
   },
   iconBox: {
     width: 64,
@@ -78,34 +72,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   title: {
-    fontFamily: 'Outfit-Bold',
-    fontSize: 28,
-    letterSpacing: -0.5,
+    fontFamily: 'DMSerifDisplay-Regular',
+    fontSize: 32,
+    letterSpacing: -0.2,
+  },
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    marginTop: spacing[2],
   },
   subtitle: {
     fontFamily: 'Outfit-Medium',
     fontSize: 16,
-    marginTop: 2,
+    fontWeight: '400',
+    lineHeight: 24,
   },
-  bellButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  syncBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    position: 'relative',
   },
-  bellButtonPressed: {
-    opacity: 0.7,
-    transform: [{ scale: 0.95 }],
-  },
-  badgeDot: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  syncBadgeText: {
+    fontFamily: 'Outfit-Bold',
+    fontSize: 11,
   },
 });

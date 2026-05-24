@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleProp, ViewStyle } from 'react-native';
 
+import { borderRadius } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
 
 export interface IconContainerProps {
@@ -51,7 +52,7 @@ export const IconContainer = ({
         {
           width: dimension,
           height: dimension,
-          borderRadius: rounded === 'full' ? dimension / 2 : 16,
+          borderRadius: rounded === 'full' ? dimension / 2 : borderRadius.xl,
           backgroundColor: bg,
           alignItems: 'center',
           justifyContent: 'center',

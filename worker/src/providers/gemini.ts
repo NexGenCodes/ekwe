@@ -1,5 +1,5 @@
 import { Env, TranslateResult } from '../types';
-import { rotateKeys, fetchWithTimeout, getEvasionHeaders, TIMEOUT_FAST } from '../utils';
+import { rotateKeys, fetchWithTimeout, getClientHeaders, TIMEOUT_FAST } from '../utils';
 import { logger } from '../logger';
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
@@ -27,7 +27,7 @@ export async function translate(
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...getEvasionHeaders(),
+            ...getClientHeaders(),
           },
           body: JSON.stringify({
             contents: [{

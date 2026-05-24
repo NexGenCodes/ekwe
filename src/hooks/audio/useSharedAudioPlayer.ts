@@ -90,9 +90,6 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
     }
     bufferRef.current = null;
     setIsPlaying(false);
-    if (contextRef.current && contextRef.current.state !== 'closed') {
-      contextRef.current.suspend().catch(() => {});
-    }
     AudioManager.setAudioSessionActivity(false).catch(() => {});
   }, [stopProgressTimer]);
 

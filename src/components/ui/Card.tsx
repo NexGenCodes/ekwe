@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, ViewStyle, StyleProp } from 'react-native';
 
+import { borderRadius, shadows } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
 
 export interface CardProps {
@@ -61,10 +62,10 @@ export const Card = ({
     <View
       style={[
         {
-          borderRadius: 24,
+          borderRadius: borderRadius.xl,
           padding: PADDING_MAP[padding],
           overflow: overflow ? 'hidden' : undefined,
-          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+          ...(variant === 'default' ? shadows.soft : {}),
         },
         variantStyles,
         style,

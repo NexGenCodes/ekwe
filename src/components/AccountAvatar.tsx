@@ -4,7 +4,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { UserCircle } from 'lucide-react-native';
 import React, { useCallback, useMemo } from 'react';
-import { Image, Text, Pressable, StyleSheet } from 'react-native';
+import { Text, Pressable, StyleSheet } from 'react-native';
 
 import { useTheme } from '@/hooks';
 import { auth$ } from '@/store';

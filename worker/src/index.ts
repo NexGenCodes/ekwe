@@ -10,16 +10,34 @@ import { handleWebhook } from './webhook';
 
 let JWKS: ReturnType<typeof createRemoteJWKSet>;
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
+function getCorsHeaders(request: Request, env: Env): Record<string, string> {
+  const origin = request.headers.get('Origin') || request.headers.get('origin');
+  const allowedOrigins = env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) || [];
+
+  const isAllowed = origin && (
+    allowedOrigins.includes(origin) ||
+    origin.startsWith('exp://') ||
+    origin.includes('.expo.dev') ||
+    origin.includes('.expo.io') ||
+    origin.startsWith('http://localhost') ||
+    origin.startsWith('http://127.0.0.1')
+  );
+
+  return {
+    ...(isAllowed && { 'Access-Control-Allow-Origin': origin }),
+    ...(isAllowed && { 'Access-Control-Allow-Credentials': 'true' }),
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Vary': 'Origin',
+  };
+}
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const corsHeaders = getCorsHeaders(request, env);
+
     if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: CORS_HEADERS });
+      return new Response(null, { headers: corsHeaders });
     }
 
     const url = new URL(request.url);
@@ -28,7 +46,7 @@ export default {
     // ─── Webhook Route (no JWT auth — uses signature verification) ───
     if (request.method === 'POST' && url.pathname === '/webhook') {
       response = await handleWebhook(request, env);
-      return this.addCorsHeaders(response, CORS_HEADERS);
+      return this.addCorsHeaders(response, corsHeaders);
     }
 
     // ─── Auth: Strict JWT Only ───
@@ -56,11 +74,11 @@ export default {
           tier = 'PREMIUM';
         }
       } catch (err) {
-        return this.addCorsHeaders(Response.json({ error: 'INVALID_TOKEN' }, { status: 401 }), CORS_HEADERS);
+        return this.addCorsHeaders(Response.json({ error: 'INVALID_TOKEN' }, { status: 401 }), corsHeaders);
       }
     } else {
       // No valid JWT provided — block completely
-      return this.addCorsHeaders(Response.json({ error: 'UNAUTHORIZED' }, { status: 401 }), CORS_HEADERS);
+      return this.addCorsHeaders(Response.json({ error: 'UNAUTHORIZED' }, { status: 401 }), corsHeaders);
     }
 
     // ─── SECURITY GATING: Cloudflare Rate Limiting ───
@@ -74,17 +92,34 @@ export default {
         logger.warn(`[rate-limiter] Blocked request for key: ${rateLimitKey}`);
         return this.addCorsHeaders(
           Response.json({ error: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please slow down.' }, { status: 429 }),
-          CORS_HEADERS
+          corsHeaders
         );
       }
     }
+
+    // ─── KV-BASED PER-USER RATE LIMITING (EDGE LAYER) ───
+    // Fast per-user protection using Cloudflare KV - 50 requests/minute per user
+    const kvRateLimitKey = `ratelimit:user:${userId}`;
+    const currentCount = await env.EKWE_KV.get(kvRateLimitKey);
+    const requestCount = parseInt(currentCount || '0', 10);
+    
+    if (requestCount >= 50) {
+      logger.warn(`[kv-ratelimit] User ${userId} exceeded 50 req/min`);
+      return this.addCorsHeaders(
+        Response.json({ error: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please slow down.' }, { status: 429 }),
+        corsHeaders
+      );
+    }
+    
+    // Increment counter with 60-second TTL
+    await env.EKWE_KV.put(kvRateLimitKey, String(requestCount + 1), { expirationTtl: 60 });
 
     // ─── 1. PRE-FLIGHT CHECK (ATOMIC COOLDOWN) ───
     const preflight = await checkPreflight(env, userId, tier);
     if (!preflight.allowed) {
       return this.addCorsHeaders(
         Response.json({ error: 'EKWE_RATE_LIMIT', message: `Please wait ${Math.ceil(preflight.cooldown_remaining || 0)} seconds.` }, { status: 429 }),
-        CORS_HEADERS
+        corsHeaders
       );
     }
 
@@ -92,11 +127,11 @@ export default {
     try {
       if (request.method === 'POST' && url.pathname === '/transcribe') {
         const ctGuard = guardContentType(request, 'multipart');
-        if (!ctGuard.allowed) return this.addCorsHeaders(ctGuard.response, CORS_HEADERS);
+        if (!ctGuard.allowed) return this.addCorsHeaders(ctGuard.response, corsHeaders);
         response = await handleTranscribe(request, env, preflight.tier_active, request.signal);
       } else if (request.method === 'POST' && url.pathname === '/translate') {
         const ctGuard = guardContentType(request, 'json');
-        if (!ctGuard.allowed) return this.addCorsHeaders(ctGuard.response, CORS_HEADERS);
+        if (!ctGuard.allowed) return this.addCorsHeaders(ctGuard.response, corsHeaders);
         response = await handleTranslate(request, env, preflight.tier_active, request.signal);
       } else {
         response = Response.json({ error: 'NOT_FOUND' }, { status: 404 });
@@ -115,6 +150,14 @@ export default {
         // the response is sent — otherwise rapid requests race past the cooldown.
         const deductionResult = await postflightDeduction(env, userId, cost);
 
+        if (!deductionResult) {
+          logger.error('[postflight] deduction failed — billing bypass prevented');
+          return this.addCorsHeaders(
+            Response.json({ error: 'BILLING_FAILED', message: 'Transaction could not be processed. Please try again.' }, { status: 502 }),
+            corsHeaders
+          );
+        }
+
         response = Response.json({ ...resBody, transaction: deductionResult }, { status: response.status });
       }
 
@@ -129,12 +172,12 @@ export default {
       );
     }
 
-    return this.addCorsHeaders(response, CORS_HEADERS);
+    return this.addCorsHeaders(response, corsHeaders);
   },
 
-  addCorsHeaders(response: Response, CORS_HEADERS: Record<string, string>): Response {
+  addCorsHeaders(response: Response, corsHeaders: Record<string, string>): Response {
     const newHeaders = new Headers(response.headers);
-    Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
+    Object.entries(corsHeaders).forEach(([k, v]) => newHeaders.set(k, v));
     return new Response(response.body, {
       status: response.status,
       headers: newHeaders,

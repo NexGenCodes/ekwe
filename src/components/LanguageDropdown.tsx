@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react-native';
+import { Check, Lock } from 'lucide-react-native';
 import React from 'react';
 import {
   View,
@@ -21,7 +21,8 @@ export interface LanguageDropdownProps {
   currentLang: string;
   oppositeLang?: string;
   onSelect: (code: string) => void;
-  animatedStyle?: any;
+  animatedStyle?: object;
+  showAutoLocked?: boolean;
 }
 
 export function LanguageDropdown({
@@ -32,6 +33,7 @@ export function LanguageDropdown({
   oppositeLang,
   onSelect,
   animatedStyle,
+  showAutoLocked = false,
 }: LanguageDropdownProps): React.ReactElement | null {
   const { color } = useTheme();
 
@@ -53,7 +55,48 @@ export function LanguageDropdown({
               animatedStyle,
             ]}
           >
-            <ScrollView bounces={false}>
+            {/* Header label */}
+            <View style={styles.cardHeader}>
+              <Text style={[styles.cardHeaderText, { color: color.muted }]}>
+                Select Language
+              </Text>
+            </View>
+
+            <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+              {/* Locked 'Auto' row for free users */}
+              {showAutoLocked && (
+                <View
+                  style={[
+                    styles.dropdownItem,
+                    styles.lockedItem,
+                    {
+                      backgroundColor: color.surface,
+                      borderColor: color.border,
+                    },
+                  ]}
+                >
+                  <Text style={styles.flagIcon}>🌐</Text>
+                  <Text
+                    style={[styles.dropdownItemText, { color: color.muted }]}
+                  >
+                    Auto-detect
+                  </Text>
+                  <View
+                    style={[
+                      styles.proBadge,
+                      { backgroundColor: color.primary + '22' },
+                    ]}
+                  >
+                    <Lock size={10} color={color.primary} strokeWidth={2.5} />
+                    <Text
+                      style={[styles.proBadgeText, { color: color.primary }]}
+                    >
+                      Pro
+                    </Text>
+                  </View>
+                </View>
+              )}
+
               {options.map((code) => {
                 const isSelected = currentLang === code;
                 const isOtherLang = code === oppositeLang && code !== 'auto';
@@ -108,36 +151,66 @@ export function LanguageDropdown({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   dropdownCard: {
     width: '80%',
-    maxHeight: '50%',
+    maxHeight: '55%',
     borderRadius: 20,
     borderWidth: 1,
-    padding: 8,
+    padding: 4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  cardHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  cardHeaderText: {
+    fontFamily: 'Outfit-Medium',
+    fontSize: 11,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   dropdownItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
     borderRadius: 12,
-    marginVertical: 2,
-    gap: 12,
+    marginVertical: 1,
+    gap: 10,
+  },
+  lockedItem: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    opacity: 0.65,
+  },
+  proBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  proBadgeText: {
+    fontFamily: 'Outfit-Bold',
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   flagIcon: {
-    fontSize: 20,
+    fontSize: 18,
   },
   dropdownItemText: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: 'Outfit-Medium',
   },
 });

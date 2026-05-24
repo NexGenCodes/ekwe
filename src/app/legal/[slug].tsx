@@ -13,7 +13,9 @@ export default function LegalScreen(): React.JSX.Element {
   const doc = LEGAL_DOCUMENTS[slug || ''];
 
   const Container = View;
-  const containerProps = { style: { flex: 1, backgroundColor: color.background } };
+  const containerProps = {
+    style: { flex: 1, backgroundColor: color.background },
+  };
 
   if (!doc) {
     return (

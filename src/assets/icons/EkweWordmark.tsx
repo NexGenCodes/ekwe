@@ -25,10 +25,11 @@ export const EkweWordmark = ({
     <Text
       style={[
         {
-          fontFamily: 'Outfit-Medium',
+          fontFamily: 'DMSerifDisplay-Regular',
           fontSize: size,
           color: color || defaultColor,
           textAlign: centred ? 'center' : 'auto',
+          letterSpacing: -0.2,
         },
         style,
       ]}

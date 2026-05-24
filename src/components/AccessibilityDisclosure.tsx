@@ -3,7 +3,6 @@ import {
   LucideShieldCheck,
   LucideBatteryCharging,
   LucideZap,
-  LucideChevronLeft,
 } from 'lucide-react-native';
 import React from 'react';
 import {

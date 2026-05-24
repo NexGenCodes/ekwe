@@ -1,11 +1,13 @@
-import { useObserveEffect } from '@legendapp/state/react';
-import { useCallback, useState } from 'react';
+import { useSelector } from '@legendapp/state/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { supabase } from '@/services/supabase';
+import { Db } from '@/services/db';
 import { HistoryEntry, history$ } from '@/store';
 import logger from '@/utils/logger';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const PAGE_SIZE = 50;
 
 export interface UseHistoryReturn {
   entries: HistoryEntry[];
@@ -14,6 +16,8 @@ export interface UseHistoryReturn {
   earlierEntries: HistoryEntry[];
   deleteEntry: (id: string) => Promise<void>;
   clearAll: () => Promise<void>;
+  loadMore: () => Promise<void>;
+  hasMore: boolean;
 }
 
 interface HistorySnapshot {
@@ -44,29 +48,43 @@ function computeSnapshot(record: Record<string, HistoryEntry> | undefined): Hist
   return { entries: sorted, todayEntries, yesterdayEntries, earlierEntries };
 }
 
-function snapshotChanged(a: HistorySnapshot, b: HistorySnapshot): boolean {
-  const len = a.entries.length;
-  if (len !== b.entries.length) return true;
-  for (let i = 0; i < len; i++) {
-    if (a.entries[i].id !== b.entries[i].id) return true;
-    if (a.entries[i].timestamp !== b.entries[i].timestamp) return true;
-    if (a.entries[i].deleted !== b.entries[i].deleted) return true;
-  }
-  return false;
-}
-
 export const useHistory = (): UseHistoryReturn => {
-  const [snapshot, setSnapshot] = useState<HistorySnapshot>(() =>
-    computeSnapshot(history$.get()),
-  );
+  const snapshot = useSelector(() => computeSnapshot(history$.get()));
+  const [hasMore, setHasMore] = useState(true);
+  const loadedCountRef = useRef(0);
 
-  useObserveEffect(() => {
-    const next = computeSnapshot(history$.get());
-    setSnapshot((prev) => (snapshotChanged(prev, next) ? next : prev));
-  });
+  useEffect(() => {
+    loadedCountRef.current = Object.values(history$.get() || {}).filter((e) => !e.deleted).length;
+  }, [snapshot.entries.length]);
+
+  const loadMore = useCallback(async () => {
+    const rows = Db.getHistoryPage(PAGE_SIZE, loadedCountRef.current);
+    if (rows.length < PAGE_SIZE) {
+      setHasMore(false);
+    }
+    for (const row of rows) {
+      if (!history$[row.id].get()) {
+        history$[row.id].set({
+          id: row.id,
+          sourceLang: row.source_lang,
+          targetLang: row.target_lang,
+          transcript: row.transcript,
+          translation: row.translation_text,
+          transliteration: row.transliteration_text,
+          duration: row.duration,
+          sourceApp: row.source_app,
+          provider: row.provider,
+          timestamp: new Date(row.created_at).getTime(),
+          deleted: row.deleted === 1,
+        });
+      }
+    }
+    loadedCountRef.current += rows.length;
+  }, []);
 
   const deleteEntry = useCallback(async (id: string): Promise<void> => {
     history$[id].deleted.set(true);
+    Db.softDeleteHistory(id);
     supabase
       .from('history')
       .update({ deleted: true })
@@ -81,6 +99,7 @@ export const useHistory = (): UseHistoryReturn => {
     ids.forEach((id) => {
       history$[id].deleted.set(true);
     });
+    Db.softDeleteHistoryBatch(ids);
     supabase
       .from('history')
       .update({ deleted: true })
@@ -90,5 +109,5 @@ export const useHistory = (): UseHistoryReturn => {
       });
   }, []);
 
-  return { ...snapshot, deleteEntry, clearAll };
+  return { ...snapshot, deleteEntry, clearAll, loadMore, hasMore };
 };

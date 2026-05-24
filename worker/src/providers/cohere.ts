@@ -1,5 +1,5 @@
 import { Env, TranslateResult } from '../types';
-import { rotateKeys, fetchWithTimeout, getEvasionHeaders, TIMEOUT_FAST } from '../utils';
+import { rotateKeys, fetchWithTimeout, getClientHeaders, TIMEOUT_FAST } from '../utils';
 import { logger } from '../logger';
 
 const COHERE_CHAT = 'https://api.cohere.ai/v2/chat';
@@ -25,7 +25,7 @@ export async function translate(
         headers: {
           'Authorization': `Bearer ${key}`,
           'Content-Type': 'application/json',
-          ...getEvasionHeaders(),
+          ...getClientHeaders(),
         },
         body: JSON.stringify({
           model: 'command-r7b-12-2024',

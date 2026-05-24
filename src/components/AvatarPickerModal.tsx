@@ -92,7 +92,9 @@ export function AvatarPickerModal({
                   onPress={() => onSelect(item.name)}
                   accessibilityRole="button"
                   accessibilityLabel={`Select ${item.name} avatar`}
-                  accessibilityState={isSelected ? { selected: true } : undefined}
+                  accessibilityState={
+                    isSelected ? { selected: true } : undefined
+                  }
                 >
                   <item.icon size={32} color={item.color} />
                 </Pressable>

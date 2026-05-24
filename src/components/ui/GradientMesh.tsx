@@ -1,11 +1,12 @@
-import React, { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { AppState, StyleSheet, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withTiming,
   withSequence,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import Svg, { Defs, RadialGradient, Stop, Rect } from 'react-native-svg';
 
@@ -13,13 +14,50 @@ import { useTheme } from '@/hooks';
 
 export const GradientMesh = (): React.JSX.Element => {
   const { color, isDark } = useTheme();
-  
   const x = useSharedValue(0);
   const y = useSharedValue(0);
+  const isAnimating = useRef(true);
 
   useEffect(() => {
-    x.value = withRepeat(withSequence(withTiming(100, { duration: 5000 }), withTiming(0, { duration: 5000 })), -1);
-    y.value = withRepeat(withSequence(withTiming(100, { duration: 7000 }), withTiming(0, { duration: 7000 })), -1);
+    const startAnimations = () => {
+      if (!isAnimating.current) return;
+      x.value = withRepeat(
+        withSequence(
+          withTiming(100, { duration: 5000 }),
+          withTiming(0, { duration: 5000 }),
+        ),
+        -1,
+      );
+      y.value = withRepeat(
+        withSequence(
+          withTiming(100, { duration: 7000 }),
+          withTiming(0, { duration: 7000 }),
+        ),
+        -1,
+      );
+    };
+
+    const stopAnimations = () => {
+      cancelAnimation(x);
+      cancelAnimation(y);
+    };
+
+    startAnimations();
+
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        isAnimating.current = true;
+        startAnimations();
+      } else {
+        isAnimating.current = false;
+        stopAnimations();
+      }
+    });
+
+    return () => {
+      stopAnimations();
+      sub.remove();
+    };
   }, []);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -27,11 +65,14 @@ export const GradientMesh = (): React.JSX.Element => {
   }));
 
   return (
-    <View style={StyleSheet.absoluteFill}>
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <Svg height="100%" width="100%" style={StyleSheet.absoluteFill}>
         <Defs>
           <RadialGradient id="grad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-            <Stop offset="0%" stopColor={isDark ? `${color.primary}20` : `${color.primary}10`} />
+            <Stop
+              offset="0%"
+              stopColor={isDark ? `${color.primary}20` : `${color.primary}10`}
+            />
             <Stop offset="100%" stopColor="transparent" />
           </RadialGradient>
         </Defs>

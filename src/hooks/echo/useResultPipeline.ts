@@ -1,15 +1,14 @@
 import { useSelector } from '@legendapp/state/react';
 import { File as ExpoFile } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 
 import { useTranscription } from '../useTranscription';
 import { useTranslation } from '../useTranslation';
 
-import { ErrorMessages } from '@/constants/errors';
 import { HistoryService } from '@/services/HistoryService';
 import { settings$, auth$, HistoryEntry, history$ } from '@/store';
-import { AppAlert } from '@/utils/alert';
+import { AppToast } from '@/utils';
 
 export interface UseResultPipelineProps {
   uri?: string;
@@ -80,9 +79,6 @@ export const useResultPipeline = ({
         const txResultResponse = await transcribe({
           uri: audioUri,
           durationMs: 0,
-          trimStartMs: 0,
-          trimEndMs: 0,
-          hasSpeech: true,
           averageDb: -40,
           meteringData: [],
         });
@@ -114,18 +110,15 @@ export const useResultPipeline = ({
             sourceApp: 'ekwe',
             provider: 'gemini',
           },
-          userSession as any,
+          userSession as Parameters<typeof HistoryService.recordTranslation>[1],
         );
 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setHasPolished(true);
       } catch (err) {
-        const error = err as Error;
-        AppAlert.error(
-          'Transcription Failed',
-          ErrorMessages[error.message as keyof typeof ErrorMessages] ??
-            'Could not process the voice note.',
-        );
+        AppToast.error('Translation failed', {
+          description: err instanceof Error ? err.message : 'Unknown error',
+        });
       } finally {
         setIsProcessing(false);
       }
@@ -147,7 +140,6 @@ export const useResultPipeline = ({
         transcript,
         sourceLang,
         targetLang,
-        entryId,
       );
 
       if (!trResultResponse.ok) {
@@ -157,7 +149,7 @@ export const useResultPipeline = ({
       setTranslation(trResultResponse.value.translation);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      AppAlert.error('Translation Failed', 'Try again in a moment.');
+      AppToast.error('Translation Failed', { description: 'Try again in a moment.' });
     } finally {
       setIsTranslating(false);
     }

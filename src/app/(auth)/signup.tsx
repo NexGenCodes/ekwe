@@ -18,6 +18,7 @@ import {
   ErrorBanner,
   Button,
 } from '@/components/ui';
+import { spacing, typography } from '@/constants/designTokens';
 import { useAuthFlow, useTheme } from '@/hooks';
 import { signupSchema, SignupForm } from '@/schemas/auth';
 import { signUpWithPassword } from '@/services/auth';
@@ -64,7 +65,7 @@ export default function SignupScreen(): React.JSX.Element {
       <Animated.View entering={FadeInDown.duration(600).delay(100).springify()}>
         <ErrorBanner message={error} />
 
-        <View style={{ gap: 12, marginBottom: 8 }}>
+        <View style={{ gap: spacing[3], marginBottom: spacing[2] }}>
           <Controller
             control={control}
             name="email"
@@ -116,10 +117,10 @@ export default function SignupScreen(): React.JSX.Element {
         <Text
           style={{
             fontFamily: 'Outfit-Regular',
-            fontSize: 13,
+            fontSize: typography.bodySmall.size + 1,
             color: color.muted,
-            marginBottom: 20,
-            paddingHorizontal: 4,
+            marginBottom: spacing[5],
+            paddingHorizontal: spacing[1],
           }}
         >
           Password must be at least 8 characters

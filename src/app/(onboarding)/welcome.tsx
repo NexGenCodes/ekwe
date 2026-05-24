@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EkweWordmark } from '@/assets/icons/EkweWordmark';
 import { Button } from '@/components/ui';
+import { borderRadius, spacing, typography } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -30,6 +31,7 @@ const FeatureCard = ({
   description,
   index,
 }: FeatureItemProps): React.ReactElement => {
+  const { color } = useTheme();
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(30);
   const scale = useSharedValue(0.95);
@@ -64,21 +66,21 @@ const FeatureCard = ({
     <Animated.View
       style={[
         styles.featureCard,
-        { backgroundColor: '#FFFFFF', borderColor: '#E4E4E7' }, // Since useTheme is not passed here, fallback to hardcoded or wait for refactoring if needed, but we can access color.card if we passed it. Let's pass color to FeatureCard to make it proper.
+        { backgroundColor: color.card, borderColor: color.border },
         animatedStyle,
       ]}
     >
       <View
         style={[
           styles.iconContainer,
-          { backgroundColor: '#F4F4F5', borderColor: '#F4F4F5' },
+          { backgroundColor: color.surface, borderColor: color.border },
         ]}
       >
         {icon}
       </View>
       <View style={styles.textContainer}>
-        <Text style={[styles.title, { color: '#09090b' }]}>{title}</Text>
-        <Text style={[styles.description, { color: '#71717A' }]}>
+        <Text style={[styles.title, { color: color.foreground }]}>{title}</Text>
+        <Text style={[styles.description, { color: color.muted }]}>
           {description}
         </Text>
       </View>
@@ -183,30 +185,34 @@ export default function WelcomeScreen(): React.ReactElement {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  container: { flex: 1, paddingHorizontal: 24 },
-  header: { alignItems: 'center', marginBottom: 40 },
-  logoContainer: { marginBottom: 24 },
+  container: { flex: 1, paddingHorizontal: spacing[6] },
+  header: { alignItems: 'center', marginBottom: spacing[10] },
+  logoContainer: { marginBottom: spacing[6] },
   mainHeading: {
-    fontSize: 34,
+    fontSize: 38,
     textAlign: 'center',
-    lineHeight: 40,
-    fontFamily: 'Outfit-Medium',
+    lineHeight: 44,
+    fontFamily: 'DMSerifDisplay-Regular',
     letterSpacing: -0.5,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing[4],
   },
-  featuresContainer: { gap: 20 },
-  bottomSection: { width: '100%', paddingHorizontal: 32, paddingBottom: 48 },
+  featuresContainer: { gap: spacing[5] },
+  bottomSection: {
+    width: '100%',
+    paddingHorizontal: spacing[8],
+    paddingBottom: spacing[12],
+  },
   disclaimer: {
-    fontSize: 12,
+    fontSize: typography.caption.size,
     textAlign: 'center',
-    marginTop: 32,
+    marginTop: spacing[8],
     fontFamily: 'Outfit-Regular',
   },
   featureCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    borderRadius: 24,
+    padding: spacing[5],
+    borderRadius: borderRadius['2xl'],
     borderWidth: 1,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -216,18 +222,22 @@ const styles = StyleSheet.create({
   iconContainer: {
     width: 48,
     height: 48,
-    borderRadius: 16,
+    borderRadius: borderRadius.xl,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
+    marginRight: spacing[4],
     borderWidth: 1,
   },
   textContainer: { flex: 1 },
   title: {
-    fontSize: 16,
-    marginBottom: 2,
+    fontSize: typography.body.size,
+    marginBottom: spacing[1] - 2,
     fontFamily: 'Outfit-Medium',
     letterSpacing: -0.5,
   },
-  description: { fontSize: 14, lineHeight: 20, fontFamily: 'Outfit-Regular' },
+  description: {
+    fontSize: typography.bodySmall.size,
+    lineHeight: typography.bodySmall.lineHeight,
+    fontFamily: 'Outfit-Regular',
+  },
 });

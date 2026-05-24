@@ -2,7 +2,7 @@ import { observable } from '@legendapp/state';
 import { persistObservable } from '@legendapp/state/persist';
 import { Session, User } from '@supabase/supabase-js';
 
-import { ObservablePersistMMKVCustom } from '@/store/mmkvPlugin';
+import { ObservablePersistSQLite } from '@/store/sqlitePlugin';
 
 interface AuthState {
   session: Session | null;
@@ -28,19 +28,19 @@ export const auth$ = observable<AuthState>(initialAuth);
 
 persistObservable(auth$.isPro, {
   local: 'ekwe-auth-isPro',
-  pluginLocal: ObservablePersistMMKVCustom,
+  pluginLocal: ObservablePersistSQLite,
 });
 persistObservable(auth$.transactionsUsed, {
   local: 'ekwe-auth-transactions',
-  pluginLocal: ObservablePersistMMKVCustom,
+  pluginLocal: ObservablePersistSQLite,
 });
 persistObservable(auth$.activeTier, {
   local: 'ekwe-auth-tier',
-  pluginLocal: ObservablePersistMMKVCustom,
+  pluginLocal: ObservablePersistSQLite,
 });
 persistObservable(auth$.isFallback, {
   local: 'ekwe-auth-fallback',
-  pluginLocal: ObservablePersistMMKVCustom,
+  pluginLocal: ObservablePersistSQLite,
 });
 
 // Actions
@@ -71,6 +71,7 @@ export const authActions = {
       transactionsUsed: data.transactions_used,
       activeTier: data.tier_active,
       isFallback: data.is_fallback,
+      isPro: data.tier_active === 'PREMIUM',
     });
   },
 };

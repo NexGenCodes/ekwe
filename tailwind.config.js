@@ -34,6 +34,11 @@ module.exports = {
         bodyMed: ['Outfit-Medium', 'sans-serif'],
         mono: ['SpaceMono-Regular', 'monospace'],
       },
+      boxShadow: {
+        'soft': '0 4px 20px 0 rgba(0, 0, 0, 0.05)',
+        'soft-lg': '0 10px 30px 0 rgba(0, 0, 0, 0.08)',
+        'dark-ring': 'inset 0 0 0 1px rgba(255, 255, 255, 0.1)',
+      },
     },
   },
   plugins: [],

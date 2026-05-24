@@ -18,7 +18,13 @@ export function EkweLogo({
   const sw = strokeWidth * 3.125;
 
   return (
-    <Svg width={size} height={size} viewBox="0 0 100 100" fill="none" opacity={opacity}>
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      fill="none"
+      opacity={opacity}
+    >
       {/* Central Solid Pill Capsule */}
       <Rect x="38" y="20" width="24" height="44" rx="12" fill={color} />
 

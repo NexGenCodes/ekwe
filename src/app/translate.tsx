@@ -14,11 +14,12 @@ import {
 
 import { LanguagePickerSheet } from '@/components';
 import { Button, Card } from '@/components/ui';
+import { borderRadius, spacing, typography } from '@/constants/designTokens';
 import { getLanguageName, FLAG_MAP } from '@/constants/languages';
 import { useTranslation, useClipboard, useTheme } from '@/hooks';
 import { HistoryService } from '@/services/HistoryService';
 import { settings$, settingsActions, auth$ } from '@/store';
-import { AppAlert } from '@/utils/alert';
+import { AppToast } from '@/utils';
 
 export default function TranslateScreen(): React.JSX.Element {
   const params = useLocalSearchParams();
@@ -101,8 +102,10 @@ export default function TranslateScreen(): React.JSX.Element {
         },
         userSession,
       );
-    } catch {
-      AppAlert.error('Translation Failed', 'Try again in a moment.');
+    } catch (error) {
+      AppToast.error('Translation Failed', {
+        description: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       setIsTranslating(false);
     }
@@ -110,6 +113,7 @@ export default function TranslateScreen(): React.JSX.Element {
 
   const handleCopy = async (copyText: string): Promise<void> => {
     await copy(copyText);
+    AppToast.success('Text copied to clipboard');
   };
 
   const handleSwap = (): void => {
@@ -265,47 +269,59 @@ const styles = StyleSheet.create({
   pickerTrigger: { flexDirection: 'row', alignItems: 'center' },
   pickerTriggerText: {
     fontFamily: 'Outfit-Medium',
-    fontSize: 12,
+    fontSize: typography.caption.size,
     textTransform: 'uppercase',
     letterSpacing: 1.5,
-    marginRight: 4,
+    marginRight: spacing[1],
   },
-  cardText: { fontFamily: 'Outfit-Regular', fontSize: 18, lineHeight: 28 },
+  cardText: {
+    fontFamily: 'Outfit-Regular',
+    fontSize: typography.bodyLarge.size,
+    lineHeight: typography.bodyLarge.lineHeight + 2,
+  },
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 8,
-    marginBottom: 24,
-    paddingHorizontal: 8,
+    marginTop: spacing[2],
+    marginBottom: spacing[6],
+    paddingHorizontal: spacing[2],
   },
-  swapButton: { padding: 12, borderRadius: 9999, borderWidth: 1 },
-  divider: { flex: 1, height: 1, marginHorizontal: 16 },
+  swapButton: {
+    padding: spacing[3],
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  divider: { flex: 1, height: 1, marginHorizontal: spacing[3] },
   targetPickerButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 9999,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    borderRadius: borderRadius.full,
     borderWidth: 1,
   },
   targetPickerText: {
     fontFamily: 'Outfit-Medium',
-    fontSize: 16,
-    marginRight: 8,
+    fontSize: typography.body.size,
+    marginRight: spacing[2],
   },
-  resultBlock: { marginTop: 8, marginBottom: 32 },
+  resultBlock: { marginTop: spacing[2], marginBottom: spacing[8] },
   blockLabel: {
     fontFamily: 'Outfit-Medium',
-    fontSize: 12,
+    fontSize: typography.caption.size,
     textTransform: 'uppercase',
     letterSpacing: 1.5,
   },
   translateActionContainer: {
     alignItems: 'center',
-    paddingVertical: 24,
-    marginTop: 16,
+    paddingVertical: spacing[6],
+    marginTop: spacing[4],
   },
   translateButton: { width: '100%', maxWidth: 280 },
-  actionBar: { paddingHorizontal: 24, paddingVertical: 32, borderTopWidth: 1 },
+  actionBar: {
+    paddingHorizontal: spacing[6],
+    paddingVertical: spacing[8],
+    borderTopWidth: 1,
+  },
 });

@@ -20,6 +20,7 @@ export interface Env {
   RATE_LIMITER: {
     limit: (options: { key: string }) => Promise<{ success: boolean }>;
   };
+  ALLOWED_ORIGINS?: string;
 
   // ─── Payment Webhook Secrets ──────────────────────────────────────
   PAYSTACK_SECRET_KEY?: string;

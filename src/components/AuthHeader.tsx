@@ -5,6 +5,7 @@ import React from 'react';
 import { View, Text, Image } from 'react-native';
 import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
 
+import { spacing, typography } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -26,7 +27,7 @@ export const AuthHeader = ({
     <Animated.View
       layout={Layout.springify()}
       entering={FadeInDown.duration(600).springify()}
-      style={{ alignItems: 'center', marginBottom: 40 }}
+      style={{ alignItems: 'center', marginBottom: spacing[10] }}
     >
       <View
         style={{
@@ -34,7 +35,7 @@ export const AuthHeader = ({
           height: 64,
           borderRadius: 18,
           overflow: 'hidden',
-          marginBottom: 12,
+          marginBottom: spacing[3],
         }}
       >
         <Image
@@ -45,10 +46,10 @@ export const AuthHeader = ({
       </View>
       <Text
         style={{
-          fontFamily: 'Outfit-Medium', // font-display
-          fontSize: 36,
+          fontFamily: 'DMSerifDisplay-Regular',
+          fontSize: typography.display.size + 8,
           color: color.foreground,
-          letterSpacing: -0.5,
+          letterSpacing: -0.2,
         }}
       >
         Ekwe
@@ -56,9 +57,9 @@ export const AuthHeader = ({
       <Text
         style={{
           fontFamily: 'Outfit-Regular',
-          fontSize: 16,
+          fontSize: typography.body.size,
           color: color.muted,
-          marginTop: 8,
+          marginTop: spacing[2],
           textAlign: 'center',
         }}
       >
@@ -68,9 +69,9 @@ export const AuthHeader = ({
         <Text
           style={{
             fontFamily: 'Outfit-Regular',
-            fontSize: 14,
+            fontSize: typography.bodySmall.size,
             color: color.muted,
-            marginTop: 4,
+            marginTop: spacing[1],
             textAlign: 'center',
           }}
         >

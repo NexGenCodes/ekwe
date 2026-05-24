@@ -5,6 +5,7 @@ import React from 'react';
 import { Pressable, Text } from 'react-native';
 import Animated, { FadeInDown, Layout } from 'react-native-reanimated';
 
+import { spacing, typography } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
 
 interface AuthFooterProps {
@@ -32,14 +33,14 @@ export const AuthFooter = ({
           flexDirection: 'row',
           justifyContent: 'center',
           alignItems: 'center',
-          gap: 4,
-          marginTop: 24,
+          gap: spacing[1],
+          marginTop: spacing[6],
         }}
       >
         <Text
           style={{
             fontFamily: 'Outfit-Regular',
-            fontSize: 14,
+            fontSize: typography.bodySmall.size,
             color: mutedColor,
           }}
         >
@@ -48,7 +49,7 @@ export const AuthFooter = ({
         <Text
           style={{
             fontFamily: 'Outfit-Medium',
-            fontSize: 14,
+            fontSize: typography.bodySmall.size,
             color: primaryColor,
           }}
         >
@@ -60,15 +61,15 @@ export const AuthFooter = ({
         <Animated.View
           layout={Layout.springify()}
           entering={FadeInDown.duration(600).delay(200).springify()}
-          style={{ marginTop: 40, paddingBottom: 24 }}
+          style={{ marginTop: spacing[10], paddingBottom: spacing[6] }}
         >
           <Text
             style={{
               fontFamily: 'Outfit-Regular',
-              fontSize: 12,
+              fontSize: typography.caption.size,
               color: mutedColor,
               textAlign: 'center',
-              lineHeight: 18,
+              lineHeight: typography.bodySmall.lineHeight - 2,
             }}
           >
             By continuing, you agree to our{'\n'}

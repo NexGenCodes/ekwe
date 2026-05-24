@@ -1,6 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useRouter } from 'expo-router';
-import { ChevronLeft, Mail, CheckCircle2 } from 'lucide-react-native';
+import { Mail, CheckCircle2 } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { View, Text, Pressable, Linking, Platform } from 'react-native';
@@ -8,12 +7,12 @@ import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
 
 import { AuthShell } from '@/components';
 import { Input, ErrorBanner, Button } from '@/components/ui';
+import { borderRadius, spacing, typography } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
 import { forgotPasswordSchema, ForgotPasswordForm } from '@/schemas/auth';
 import { sendPasswordReset } from '@/services/auth';
 
 export default function ForgotPasswordScreen(): React.JSX.Element {
-  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [sent, setSent] = useState(false);
@@ -40,17 +39,17 @@ export default function ForgotPasswordScreen(): React.JSX.Element {
     <AuthShell showBackButton>
       <Animated.View
         entering={FadeInDown.duration(600).springify()}
-        style={{ alignItems: 'center', marginBottom: 40 }}
+        style={{ alignItems: 'center', marginBottom: spacing[10] }}
       >
         <View
           style={{
             width: 64,
             height: 64,
-            borderRadius: 32,
+            borderRadius: borderRadius['2xl'],
             backgroundColor: `${primary}15`,
             alignItems: 'center',
             justifyContent: 'center',
-            marginBottom: 16,
+            marginBottom: spacing[4],
           }}
         >
           <Mail size={28} color={primary} />
@@ -58,7 +57,7 @@ export default function ForgotPasswordScreen(): React.JSX.Element {
         <Text
           style={{
             fontFamily: 'Outfit-Medium',
-            fontSize: 28,
+            fontSize: typography.heading1.size,
             color: fg,
             letterSpacing: -0.5,
             textAlign: 'center',
@@ -69,11 +68,11 @@ export default function ForgotPasswordScreen(): React.JSX.Element {
         <Text
           style={{
             fontFamily: 'Outfit-Regular',
-            fontSize: 15,
+            fontSize: typography.body.size - 1,
             color: muted,
-            marginTop: 8,
+            marginTop: spacing[2],
             textAlign: 'center',
-            lineHeight: 22,
+            lineHeight: typography.body.lineHeight,
           }}
         >
           {sent
@@ -87,8 +86,8 @@ export default function ForgotPasswordScreen(): React.JSX.Element {
             entering={FadeIn.duration(400)}
             style={{
               backgroundColor: 'rgba(16,185,129,0.08)',
-              borderRadius: 20,
-              padding: 24,
+              borderRadius: borderRadius['2xl'],
+              padding: spacing[6],
               alignItems: 'center',
               borderWidth: 1,
               borderColor: 'rgba(16,185,129,0.15)',
@@ -97,15 +96,15 @@ export default function ForgotPasswordScreen(): React.JSX.Element {
             <CheckCircle2
               size={32}
               color="#10B981"
-              style={{ marginBottom: 12 }}
+              style={{ marginBottom: spacing[3] }}
             />
             <Text
               style={{
                 fontFamily: 'Outfit-Medium',
-                fontSize: 16,
+                fontSize: typography.body.size,
                 color: fg,
                 textAlign: 'center',
-                marginBottom: 4,
+                marginBottom: spacing[1],
               }}
             >
               Check your inbox!
@@ -113,10 +112,10 @@ export default function ForgotPasswordScreen(): React.JSX.Element {
             <Text
               style={{
                 fontFamily: 'Outfit-Regular',
-                fontSize: 14,
+                fontSize: typography.bodySmall.size,
                 color: muted,
                 textAlign: 'center',
-                marginBottom: 16,
+                marginBottom: spacing[4],
               }}
             >
               We sent a reset link to {getValues('email')}
@@ -131,7 +130,7 @@ export default function ForgotPasswordScreen(): React.JSX.Element {
               <Text
                 style={{
                   fontFamily: 'Outfit-Medium',
-                  fontSize: 14,
+                  fontSize: typography.bodySmall.size,
                   color: primary,
                 }}
               >
@@ -142,7 +141,7 @@ export default function ForgotPasswordScreen(): React.JSX.Element {
         ) : (
           <>
             <ErrorBanner message={error} />
-            <View style={{ marginBottom: 20 }}>
+            <View style={{ marginBottom: spacing[5] }}>
               <Controller
                 control={control}
                 name="email"

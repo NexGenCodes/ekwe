@@ -1,7 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import React from 'react';
-import { Pressable, StyleProp, ViewStyle, View } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { Pressable, StyleProp, ViewStyle } from 'react-native';
 
 export interface IconButtonProps {
   icon: React.ReactNode;

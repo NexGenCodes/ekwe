@@ -166,8 +166,8 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 24, paddingTop: 40, paddingBottom: 16 },
   title: {
     fontSize: 30,
-    fontFamily: 'Outfit-Medium',
-    letterSpacing: -0.5,
+    fontFamily: 'DMSerifDisplay-Regular',
+    letterSpacing: -0.2,
     marginBottom: 8,
   },
   subtitle: { fontSize: 16, fontFamily: 'Outfit-Regular' },

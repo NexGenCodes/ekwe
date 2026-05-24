@@ -1,20 +1,12 @@
 import * as Speech from 'expo-speech';
 import { Copy, Volume2, VolumeX, Check } from 'lucide-react-native';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Share,
-  ActivityIndicator,
-} from 'react-native';
-import Animated, {
-  FadeIn,
-  FadeOut,
-} from 'react-native-reanimated';
+import { View, Text, StyleSheet, Share, ActivityIndicator, ScrollView } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import { IconButton, SkeletonBox } from '../ui';
 
+import { spacing, typography, shadows } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
 
 interface ExpressiveOutputProps {
@@ -39,18 +31,7 @@ export const ExpressiveOutput = React.memo(
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isTTSLoading, setIsTTSLoading] = useState(false);
 
-    // Poll Speech.isSpeakingAsync so we can sync state if speech ends naturally.
-    useEffect(() => {
-      if (!isSpeaking) return;
-      const interval = setInterval(async () => {
-        const speaking = await Speech.isSpeakingAsync();
-        if (!speaking) {
-          setIsSpeaking(false);
-          clearInterval(interval);
-        }
-      }, 300);
-      return () => clearInterval(interval);
-    }, [isSpeaking]);
+
 
     // Stop speech when translation changes (e.g. new dictation result)
     useEffect(() => {
@@ -60,7 +41,6 @@ export const ExpressiveOutput = React.memo(
         setIsTTSLoading(false);
       }
       // Only react to translation changes, not isSpeaking changes
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [translation]);
 
     const handleSpeakToggle = useCallback(async (): Promise<void> => {
@@ -92,8 +72,7 @@ export const ExpressiveOutput = React.memo(
             setIsSpeaking(false);
             setIsTTSLoading(false);
           },
-          });
-
+        });
       }
     }, [isSpeaking, isTTSLoading, translation, targetLang]);
 
@@ -102,10 +81,28 @@ export const ExpressiveOutput = React.memo(
       [color.secondary],
     );
 
-    const textStyle = useMemo(
-      () => [styles.text, { color: color.onSecondary }],
-      [color.onSecondary],
-    );
+    const textStyle = useMemo(() => {
+      const length = translation ? translation.length : 0;
+      let fontSize = 36;
+      let lineHeight = 44;
+
+      if (length >= 150) {
+        fontSize = 20;
+        lineHeight = 26;
+      } else if (length >= 50) {
+        fontSize = 26;
+        lineHeight = 32;
+      }
+
+      return [
+        styles.text,
+        {
+          color: color.onSecondary,
+          fontSize,
+          lineHeight,
+        },
+      ];
+    }, [translation, color.onSecondary]);
 
     const transliterationStyle = useMemo(
       () => [styles.transliteration, { color: color.onSecondary }],
@@ -136,20 +133,36 @@ export const ExpressiveOutput = React.memo(
       <View style={containerStyle}>
         {isTranslating ? (
           <View style={styles.skeletonContainer}>
-            <SkeletonBox width="85%" height={44} />
-            <SkeletonBox width="60%" height={44} />
-            <SkeletonBox width="40%" height={44} />
+            <View style={{ gap: spacing[4] }}>
+              <SkeletonBox width="85%" height={44} />
+              <SkeletonBox width="60%" height={44} />
+              <SkeletonBox width="40%" height={44} />
+            </View>
+            <View style={styles.actions}>
+              <View style={styles.actionGroup}>
+                <SkeletonBox width={48} height={48} borderRadius={24} />
+                <SkeletonBox width={40} height={12} />
+              </View>
+              {onCopy ? (
+                <View style={styles.actionGroup}>
+                  <SkeletonBox width={48} height={48} borderRadius={24} />
+                  <SkeletonBox width={36} height={12} />
+                </View>
+              ) : null}
+            </View>
           </View>
         ) : (
           <>
-            <Text style={textStyle} selectable>
-              {translation}
-            </Text>
-            {!!transliteration && (
-              <Text style={transliterationStyle} selectable>
-                {transliteration}
+            <ScrollView style={{ maxHeight: 350 }} showsVerticalScrollIndicator={false}>
+              <Text style={textStyle} selectable>
+                {translation}
               </Text>
-            )}
+              {!!transliteration && (
+                <Text style={transliterationStyle} selectable>
+                  {transliteration}
+                </Text>
+              )}
+            </ScrollView>
             <View style={styles.actions}>
               <View style={styles.actionGroup}>
                 <IconButton
@@ -248,14 +261,10 @@ export const ExpressiveOutput = React.memo(
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 36,
-    padding: 28,
+    borderRadius: 32,
+    padding: spacing[6],
     minHeight: 240,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.15,
-    shadowRadius: 32,
-    elevation: 8,
+    ...shadows.softLg,
   },
   text: {
     fontFamily: 'Outfit-Bold',
@@ -265,21 +274,21 @@ const styles = StyleSheet.create({
   },
   transliteration: {
     fontFamily: 'Outfit-Medium',
-    fontSize: 20,
+    fontSize: typography.heading3.size,
     lineHeight: 28,
-    opacity: 0.7,
-    marginTop: 8,
+    opacity: 0.95,
+    marginTop: spacing[2],
   },
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 16,
-    marginTop: 32,
+    gap: spacing[4],
+    marginTop: spacing[8],
   },
-  actionGroup: { alignItems: 'center', gap: 6 },
+  actionGroup: { alignItems: 'center', gap: spacing[2] },
   skeletonContainer: {
     flex: 1,
-    gap: 16,
-    paddingTop: 8,
+    justifyContent: 'space-between',
+    paddingTop: spacing[2],
   },
 });

@@ -14,6 +14,11 @@ import {
   Shield,
   FileText,
   Star,
+  Moon,
+  Copy,
+  Globe,
+  Eye,
+  Smartphone,
 } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
@@ -23,6 +28,7 @@ import {
   StyleSheet,
   Linking,
   Platform,
+  Switch,
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 
@@ -32,11 +38,14 @@ import {
   ProfileRow,
   ProfileSection,
   ProfileIdentity,
+  ThemeToggler,
+  LanguagePickerSheet,
 } from '@/components';
-import { useLogout, useTheme, usePermissions } from '@/hooks';
+import { borderRadius, spacing, typography } from '@/constants/designTokens';
+import { useLogout, useTheme, usePermissions, useForegroundApp } from '@/hooks';
 import { deleteAccount } from '@/services/auth';
 import { supabase } from '@/services/supabase';
-import { auth$, authActions } from '@/store';
+import { auth$, authActions, settings$, settingsActions } from '@/store';
 import { AppAlert } from '@/utils/alert';
 import logger from '@/utils/logger';
 
@@ -50,6 +59,22 @@ export default function ProfileScreen(): React.JSX.Element {
   const permissions = usePermissions();
   const { confirmLogout } = useLogout();
 
+  const hapticsEnabled = useSelector(() => settings$.hapticsEnabled.get());
+  const {
+    setHapticsEnabled,
+    setAutoCopy,
+    setSelectedLanguages,
+    setPinnedLanguages,
+  } = settingsActions;
+  const selectedLanguages = useSelector(() =>
+    settings$.selectedLanguages.get(),
+  );
+  const pinnedLanguages = useSelector(() => settings$.pinnedLanguages.get());
+  const autoCopy = useSelector(() => settings$.autoCopy.get());
+  const { hasPermission } = useForegroundApp();
+
+  const [sheetVisible, setSheetVisible] = useState(false);
+
   const rawName =
     user?.user_metadata?.full_name || user?.user_metadata?.name || '';
   const userEmail = user?.email || '';
@@ -60,7 +85,8 @@ export default function ProfileScreen(): React.JSX.Element {
   const [isIconModalVisible, setIsIconModalVisible] = useState(false);
 
   const currentIconData = user?.user_metadata?.avatar_icon
-    ? AVATAR_ICONS.find((i) => i.name === user?.user_metadata?.avatar_icon)
+    ? (AVATAR_ICONS.find((i) => i.name === user?.user_metadata?.avatar_icon) ??
+      null)
     : null;
 
   const handleUpdateIcon = async (iconName: string): Promise<void> => {
@@ -147,6 +173,7 @@ export default function ProfileScreen(): React.JSX.Element {
             subtitle={
               isPro ? 'Unlimited translations' : 'Free Tier · Standard limits'
             }
+            hasDivider
             onPress={async () => {
               await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               router.push('/billing');
@@ -178,10 +205,120 @@ export default function ProfileScreen(): React.JSX.Element {
               )
             }
           />
+          <ProfileRow
+            icon={Globe}
+            sfIcon="globe"
+            iconColor={color.primary}
+            title="Edit Language Grid"
+            subtitle={`${selectedLanguages.length}/5 active languages`}
+            onPress={async () => {
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setSheetVisible(true);
+            }}
+          />
+        </ProfileSection>
+
+        {/* Configuration */}
+        <ProfileSection title="Configuration" delay={320}>
+          <ProfileRow
+            icon={Smartphone}
+            sfIcon="hand.tap.fill"
+            iconColor={color.primary}
+            title="Haptic Feedback"
+            subtitle="Vibrate on user actions"
+            onPress={async () => {
+              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setHapticsEnabled(!hapticsEnabled);
+            }}
+            hasDivider
+            trailing={
+              <Switch
+                value={hapticsEnabled}
+                onValueChange={(val) => {
+                  setHapticsEnabled(val);
+                }}
+                trackColor={{
+                  true: color.primary,
+                  false: color.border,
+                }}
+                thumbColor="#FFFFFF"
+              />
+            }
+          />
+          <ProfileRow
+            icon={Moon}
+            sfIcon="moon.fill"
+            iconColor={color.primary}
+            title="App Theme"
+            subtitle="Toggle Light or Dark styling"
+            onPress={() => {}}
+            trailing={<ThemeToggler />}
+          />
+        </ProfileSection>
+
+        {/* Smart Features */}
+        <ProfileSection title="Smart Features" delay={340}>
+          <ProfileRow
+            icon={Copy}
+            sfIcon="doc.on.doc.fill"
+            iconColor={color.primary}
+            title="Auto-copy to Clipboard"
+            subtitle="Copy translation automatically"
+            onPress={async () => {
+              if (permissions.autoCopy) {
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setAutoCopy(!autoCopy);
+              }
+            }}
+            hasDivider
+            trailing={
+              <Switch
+                value={permissions.autoCopy ? autoCopy : false}
+                onValueChange={(val) => {
+                  setAutoCopy(val);
+                }}
+                trackColor={{
+                  true: color.primary,
+                  false: color.border,
+                }}
+                thumbColor="#FFFFFF"
+                disabled={!permissions.autoCopy}
+              />
+            }
+          />
+          <ProfileRow
+            icon={Eye}
+            sfIcon="eye.fill"
+            iconColor={color.primary}
+            title="App-Context Awareness"
+            subtitle="Translate inline in external apps"
+            onPress={async () => {
+              if (permissions.contextAwareness) {
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push('/accessibility-disclosure');
+              }
+            }}
+            trailing={
+              <Switch
+                value={!!hasPermission}
+                onValueChange={async (value) => {
+                  if (value) {
+                    router.push('/accessibility-disclosure');
+                  }
+                }}
+                trackColor={{
+                  true: color.primary,
+                  false: color.border,
+                }}
+                thumbColor="#FFFFFF"
+                disabled={!permissions.contextAwareness}
+              />
+            }
+          />
         </ProfileSection>
 
         {/* Help & Legal */}
-        <ProfileSection title="Help & Legal" delay={350}>
+        <ProfileSection title="Help & Legal" delay={360}>
           <ProfileRow
             icon={Mail}
             sfIcon="envelope.fill"
@@ -222,9 +359,24 @@ export default function ProfileScreen(): React.JSX.Element {
               }
 
               // Fallback to deep link
-              const ITUNES_ITEM_ID = '123456789'; // TODO: Replace with your actual numeric iOS App ID when published to App Store Connect
+              // Get from .env EXPO_PUBLIC_ITUNES_ITEM_ID
+              const ITUNES_ITEM_ID =
+                process.env.EXPO_PUBLIC_ITUNES_ITEM_ID || '';
+              if (!ITUNES_ITEM_ID || ITUNES_ITEM_ID === '123456789') {
+                logger.warn(
+                  '[profile] ITUNES_ITEM_ID not set in .env - App Store review will fail',
+                );
+              }
               const ANDROID_PACKAGE_NAME =
                 Constants.expoConfig?.android?.package ?? 'com.anonymous.ekwe';
+
+              if (!ITUNES_ITEM_ID) {
+                AppAlert.error(
+                  'Error',
+                  'iOS App Store ID not configured. Set EXPO_PUBLIC_ITUNES_ITEM_ID in .env',
+                );
+                return;
+              }
 
               const url =
                 Platform.OS === 'ios'
@@ -262,7 +414,7 @@ export default function ProfileScreen(): React.JSX.Element {
         <ProfileSection
           title="Danger Zone"
           titleColor={color.error}
-          delay={400}
+          delay={380}
         >
           <ProfileRow
             icon={LogOut}
@@ -308,6 +460,17 @@ export default function ProfileScreen(): React.JSX.Element {
         onSelect={handleUpdateIcon}
         currentIcon={user?.user_metadata?.avatar_icon}
       />
+
+      <LanguagePickerSheet
+        isVisible={sheetVisible}
+        onClose={() => setSheetVisible(false)}
+        selectedLanguages={selectedLanguages}
+        pinnedLanguages={pinnedLanguages}
+        onSelectionChange={(sel: string[], pins: string[]) => {
+          setSelectedLanguages(sel);
+          setPinnedLanguages(pins);
+        }}
+      />
     </View>
   );
 }
@@ -317,14 +480,25 @@ export default function ProfileScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
   scrollView: { flex: 1 },
-  upgradeBadge: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
-  upgradeText: { fontFamily: 'Outfit-Medium', fontSize: 12 },
-  footer: { alignItems: 'center', paddingBottom: 32 },
-  footerText: { fontFamily: 'Outfit-Medium', fontSize: 12, opacity: 0.6 },
+  upgradeBadge: {
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.md,
+  },
+  upgradeText: {
+    fontFamily: 'Outfit-Medium',
+    fontSize: typography.caption.size,
+  },
+  footer: { alignItems: 'center', paddingBottom: spacing[8] },
+  footerText: {
+    fontFamily: 'Outfit-Medium',
+    fontSize: typography.caption.size,
+    opacity: 0.6,
+  },
   versionText: {
     fontFamily: 'Outfit-Regular',
     fontSize: 10,
     opacity: 0.4,
-    marginTop: 4,
+    marginTop: spacing[1],
   },
 });

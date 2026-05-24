@@ -14,50 +14,75 @@ import {
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 
 import { CloseIcon } from '@/assets/icons/CloseIcon';
+import { DrumIcon } from '@/assets/icons/DrumIcon';
 import { SearchIcon } from '@/assets/icons/SearchIcon';
 import { HistoryItem } from '@/components';
 import { EmptyState, IconContainer } from '@/components/ui';
+import { borderRadius, spacing, typography } from '@/constants/designTokens';
+import { Db } from '@/services/db';
 import { useHistory, useTheme } from '@/hooks';
 import { HistoryEntry } from '@/store';
 
+const DEBOUNCE_DELAY_MS = 150;
+
+function rowToEntry(row: { id: string; source_lang: string; target_lang: string; transcript: string; translation_text: string | null; transliteration_text: string | null; duration: number; source_app: string; provider: string; created_at: string; deleted: number }): HistoryEntry {
+  return {
+    id: row.id,
+    sourceLang: row.source_lang,
+    targetLang: row.target_lang,
+    transcript: row.transcript,
+    translation: row.translation_text,
+    transliteration: row.transliteration_text,
+    duration: row.duration,
+    sourceApp: row.source_app,
+    provider: row.provider,
+    timestamp: new Date(row.created_at).getTime(),
+    deleted: row.deleted === 1,
+  };
+}
+
+function computeSections(entries: HistoryEntry[]): { title: string; data: HistoryEntry[] }[] {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const today: HistoryEntry[] = [];
+  const yesterday: HistoryEntry[] = [];
+  const earlier: HistoryEntry[] = [];
+
+  entries.forEach((e) => {
+    const diff = now - e.timestamp;
+    if (diff < day) today.push(e);
+    else if (diff < 2 * day) yesterday.push(e);
+    else earlier.push(e);
+  });
+
+  return [
+    { title: 'Today', data: today },
+    { title: 'Yesterday', data: yesterday },
+    { title: 'Earlier', data: earlier },
+  ].filter((s) => s.data.length > 0);
+}
+
 export default function HistoryScreen(): React.JSX.Element {
   const router = useRouter();
-  const { entries, deleteEntry } = useHistory();
+  const { entries, deleteEntry, loadMore, hasMore } = useHistory();
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
 
-  // Debounce search input at 150ms to avoid recomputing sections on every keystroke
   useEffect(() => {
     const t = setTimeout(() => {
       setDebouncedQuery(query);
-    }, 150);
+    }, DEBOUNCE_DELAY_MS);
     return (): void => clearTimeout(t);
   }, [query]);
   const { color } = useTheme();
 
   const sections = useMemo(() => {
-    const filtered = entries.filter((e) =>
-      (e.transcript ?? '').toLowerCase().includes(debouncedQuery.toLowerCase()),
-    );
-
-    const now = Date.now();
-    const day = 24 * 60 * 60 * 1000;
-    const today: HistoryEntry[] = [];
-    const yesterday: HistoryEntry[] = [];
-    const earlier: HistoryEntry[] = [];
-
-    filtered.forEach((e) => {
-      const diff = now - e.timestamp;
-      if (diff < day) today.push(e);
-      else if (diff < 2 * day) yesterday.push(e);
-      else earlier.push(e);
-    });
-
-    return [
-      { title: 'Today', data: today },
-      { title: 'Yesterday', data: yesterday },
-      { title: 'Earlier', data: earlier },
-    ].filter((s) => s.data.length > 0);
+    if (debouncedQuery.trim().length > 0) {
+      const rows = Db.searchHistory(debouncedQuery, 200);
+      return computeSections(rows.map(rowToEntry));
+    }
+    return computeSections(entries);
   }, [entries, debouncedQuery]);
 
   const handleEntryPress = useCallback(
@@ -94,7 +119,7 @@ export default function HistoryScreen(): React.JSX.Element {
 
   const itemStyle = useMemo<ViewStyle>(
     () => ({
-      borderRadius: 20,
+      borderRadius: borderRadius['2xl'],
       borderWidth: 1,
       borderColor: color.border,
       overflow: 'hidden',
@@ -133,7 +158,10 @@ export default function HistoryScreen(): React.JSX.Element {
           entering={FadeInDown.duration(400).springify()}
           style={[
             styles.searchContainer,
-            { backgroundColor: color.card, borderColor: color.border },
+            {
+              backgroundColor: color.card,
+              borderColor: isFocused ? color.secondary : color.border,
+            },
           ]}
         >
           <SearchIcon size={20} color={color.secondary} />
@@ -143,6 +171,8 @@ export default function HistoryScreen(): React.JSX.Element {
             placeholderTextColor={color.muted}
             value={query}
             onChangeText={setQuery}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
           />
           {query.length > 0 && (
             <Pressable
@@ -183,10 +213,7 @@ export default function HistoryScreen(): React.JSX.Element {
                       tintColor={color.primary}
                     />
                   ) : (
-                    <ExpoImage
-                      source={require('@/assets/icons/DrumIcon').DrumIcon}
-                      style={{ width: 32, height: 32 }}
-                    />
+                    <DrumIcon size={32} color={color.primary} />
                   )}
                 </IconContainer>
               }
@@ -213,6 +240,8 @@ export default function HistoryScreen(): React.JSX.Element {
             ListFooterComponent={<View style={{ height: 40 }} />}
             showsVerticalScrollIndicator={false}
             contentInsetAdjustmentBehavior="automatic"
+            onEndReached={loadMore}
+            onEndReachedThreshold={0.5}
           />
         </View>
       )}
@@ -224,23 +253,23 @@ const styles = StyleSheet.create({
   flex1: { flex: 1 },
   headerText: {
     fontFamily: 'Outfit-Bold',
-    fontSize: 13,
+    fontSize: typography.caption.size + 1,
     textTransform: 'uppercase',
     letterSpacing: 1.2,
-    paddingHorizontal: 8,
-    paddingTop: 32,
-    paddingBottom: 16,
+    paddingHorizontal: spacing[2],
+    paddingTop: spacing[8],
+    paddingBottom: spacing[4],
   },
-  entryContainer: { marginBottom: 12 },
-  topSection: { paddingHorizontal: 16, paddingBottom: 16 },
+  entryContainer: { marginBottom: spacing[3] },
+  topSection: { paddingHorizontal: spacing[4], paddingBottom: spacing[4] },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing[5],
     height: 56,
-    borderRadius: 20,
-    marginTop: 16,
-    borderWidth: 1,
+    borderRadius: borderRadius['2xl'],
+    marginTop: spacing[4],
+    borderWidth: 1.5,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
@@ -248,15 +277,15 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: spacing[3],
     fontFamily: 'Outfit-Regular',
-    fontSize: 16,
+    fontSize: typography.body.size,
   },
-  clearButton: { padding: 8 },
+  clearButton: { padding: spacing[2] },
   clearButtonPressed: { transform: [{ scale: 0.95 }] },
   emptyStateContainer: {
     flex: 1,
-    paddingHorizontal: 32,
+    paddingHorizontal: spacing[8],
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: 80,
@@ -264,10 +293,10 @@ const styles = StyleSheet.create({
   emptyStateCard: {
     width: '100%',
     padding: 40,
-    borderRadius: 32,
+    borderRadius: borderRadius['2xl'],
     alignItems: 'center',
     borderWidth: 1,
     borderStyle: 'dashed',
   },
-  listContainer: { flex: 1, paddingHorizontal: 16 },
+  listContainer: { flex: 1, paddingHorizontal: spacing[4] },
 });

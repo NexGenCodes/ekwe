@@ -26,14 +26,18 @@ export interface PlanFeature {
 }
 
 // ─── Feature Limits ──────────────────────────────────────────────────────────
+// Security note: local retention is flat-rate for all users to avoid trusting
+// client-side isPro (which could be tampered with via MMKV on rooted devices).
+// Plan differentiation is cloud-side only, enforced server-side by the
+// cleanup_expired_history Supabase function.
 
 export const PLAN_LIMITS = {
   free: {
     maxPinnedLanguages: 5,
     maxSelectedLanguages: 5,
-    dictationDurationMs: 30_000, // 30 seconds
-    historyLocalTtlDays: 7, // Kept on device for 7 days
-    historyRemoteTtlDays: 14, // Kept in Supabase DB for 14 days
+    dictationDurationMs: 60_000, // 60 seconds
+    historyLocalTtlDays: 7, // Flat for all users (tamper-safe)
+    historyRemoteTtlDays: 30, // Cloud retention — enforced server-side
     textTranslationMaxChars: 3000,
     autoLanguageDetect: false, // Auto detect is Pro only
     customAvatarIcons: false,
@@ -43,9 +47,9 @@ export const PLAN_LIMITS = {
   pro: {
     maxPinnedLanguages: 5,
     maxSelectedLanguages: 5,
-    dictationDurationMs: 60_000, // 60 seconds
-    historyLocalTtlDays: 7, // Still 7 to save device storage
-    historyRemoteTtlDays: 30, // Kept in Supabase DB for 30 days
+    dictationDurationMs: 120_000, // 2 minutes
+    historyLocalTtlDays: 7, // Flat for all users (tamper-safe)
+    historyRemoteTtlDays: 365, // Cloud retention — 1 year for Pro
     textTranslationMaxChars: 10000,
     autoLanguageDetect: true,
     customAvatarIcons: true,
@@ -66,18 +70,18 @@ export const BILLING_PLANS = {
     fallbackPrice: { amount: 0, currency: 'USD', symbol: '$' },
     features: [
       { title: 'Unlimited text translation', included: true },
-      { title: 'Voice dictation (up to 30s)', included: true },
+      { title: 'Voice dictation (up to 60s)', included: true },
       { title: 'Transliteration / romanization', included: true },
       { title: 'Up to 3 active languages', included: true },
-      { title: 'History (7 days on device, 14 days cloud)', included: true },
+      { title: 'History (7 days on device, 30 days cloud)', included: true },
       { title: 'Light & dark mode', included: true },
       { title: 'Ad-free experience', included: false },
-      { title: 'Voice dictation up to 60s', included: false },
+      { title: 'Voice dictation up to 2mins', included: false },
       { title: 'Up to 5 active languages', included: false },
       { title: 'Custom avatar icons', included: false },
       { title: 'Auto-copy on translate', included: false },
       { title: 'App-context awareness (bubble)', included: false },
-      { title: '30-day cloud history', included: false },
+      { title: '1-year cloud history', included: false },
     ] as PlanFeature[],
   },
   pro: {
@@ -99,10 +103,10 @@ export const BILLING_PLANS = {
     productIdAnnual: 'ekwe_pro_annual',
     features: [
       { title: 'Unlimited text translation', included: true },
-      { title: 'Voice dictation up to 60s', included: true },
+      { title: 'Voice dictation up to 2mins', included: true },
       { title: 'Transliteration / romanization', included: true },
       { title: 'Up to 5 active languages', included: true },
-      { title: '30-day cloud history (access anytime)', included: true },
+      { title: '1-year cloud history (access anytime)', included: true },
       { title: 'Light & dark mode', included: true },
       { title: 'Ad-free experience', included: true },
       { title: 'Custom avatar icons', included: true },

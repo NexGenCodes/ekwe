@@ -123,7 +123,7 @@ export const useTranscription = (): UseTranscriptionReturn => {
                 transcript,
                 translation: null,
                 transliteration: null,
-                duration: Math.round(audio.durationMs / 1000),
+                duration: audio.durationMs,
                 sourceApp: 'ekwe',
                 provider: 'gemini', // Default or from context
               },

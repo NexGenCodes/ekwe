@@ -1,5 +1,6 @@
 import * as Haptics from 'expo-haptics';
-import { Alert, AlertButton } from 'react-native';
+import { AlertButton } from 'react-native';
+import { appAlertActions } from '@/store';
 
 import logger from './logger';
 
@@ -35,7 +36,11 @@ export const AppAlert = {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
 
-    Alert.alert(title, message, buttons || [{ text: 'OK', style: 'default' }], {
+    appAlertActions.show({
+      type: 'info',
+      title,
+      message,
+      buttons: buttons || [{ text: 'OK', style: 'default' }],
       cancelable: options?.cancelable ?? true,
     });
   },
@@ -65,12 +70,13 @@ export const AppAlert = {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
 
-    Alert.alert(
+    appAlertActions.show({
+      type: 'error',
       title,
       message,
-      buttons || [{ text: 'Dismiss', style: 'cancel' }],
-      { cancelable: options?.cancelable ?? true },
-    );
+      buttons: buttons || [{ text: 'Dismiss', style: 'cancel' }],
+      cancelable: options?.cancelable ?? true,
+    });
   },
 
   /**
@@ -86,12 +92,13 @@ export const AppAlert = {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
 
-    Alert.alert(
+    appAlertActions.show({
+      type: 'success',
       title,
       message,
-      buttons || [{ text: 'Great', style: 'default' }],
-      { cancelable: options?.cancelable ?? true },
-    );
+      buttons: buttons || [{ text: 'Great', style: 'default' }],
+      cancelable: options?.cancelable ?? true,
+    });
   },
 
   /**
@@ -111,10 +118,11 @@ export const AppAlert = {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
 
-    Alert.alert(
+    appAlertActions.show({
+      type: 'confirm',
       title,
       message,
-      [
+      buttons: [
         {
           text: options?.cancelText || 'Cancel',
           style: 'cancel',
@@ -125,7 +133,7 @@ export const AppAlert = {
           onPress: onConfirm,
         },
       ],
-      { cancelable: options?.cancelable ?? true },
-    );
+      cancelable: options?.cancelable ?? true,
+    });
   },
 };

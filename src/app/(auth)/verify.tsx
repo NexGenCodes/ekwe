@@ -7,6 +7,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { AuthHeader, AuthShell } from '@/components';
 import { Input, ErrorBanner, Button } from '@/components/ui';
+import { spacing, typography } from '@/constants/designTokens';
 import { useTheme } from '@/hooks';
 import { otpSchema, OtpForm } from '@/schemas/auth';
 import { verifyOtp, sendOtp } from '@/services/auth';
@@ -74,7 +75,7 @@ export default function VerifyScreen(): React.JSX.Element {
       <Animated.View entering={FadeInDown.duration(600).delay(100).springify()}>
         <ErrorBanner message={error} />
 
-        <View style={{ marginBottom: 20 }}>
+        <View style={{ marginBottom: spacing[5] }}>
           <Controller
             control={control}
             name="token"
@@ -90,7 +91,7 @@ export default function VerifyScreen(): React.JSX.Element {
                 error={fieldState.error?.message}
                 style={{
                   fontFamily: 'Outfit-Medium',
-                  fontSize: 24,
+                  fontSize: typography.heading2.size,
                   textAlign: 'center',
                   letterSpacing: 8,
                 }}
@@ -108,12 +109,12 @@ export default function VerifyScreen(): React.JSX.Element {
         <Pressable
           onPress={handleResend}
           disabled={cooldown > 0 || isLoading}
-          style={{ alignItems: 'center', marginTop: 28 }}
+          style={{ alignItems: 'center', marginTop: spacing[6] }}
         >
           <Text
             style={{
               fontFamily: 'Outfit-Regular',
-              fontSize: 14,
+              fontSize: typography.bodySmall.size,
               color: color.muted,
             }}
           >
@@ -122,9 +123,9 @@ export default function VerifyScreen(): React.JSX.Element {
           <Text
             style={{
               fontFamily: 'Outfit-Medium',
-              fontSize: 14,
+              fontSize: typography.bodySmall.size,
               color: cooldown > 0 ? color.muted : color.primary,
-              marginTop: 4,
+              marginTop: spacing[1],
             }}
           >
             {cooldown > 0 ? `Resend code (${cooldown}s)` : 'Resend code'}

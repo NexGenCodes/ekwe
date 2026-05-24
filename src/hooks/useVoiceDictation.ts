@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SharedValue } from 'react-native-reanimated';
 
 import { EkweError, ErrorMessages } from '@/constants/errors';
-import { usePermissions } from '@/hooks/usePermissions';
 import { useMetering } from '@/hooks/audio/useMetering';
+import { usePermissions } from '@/hooks/usePermissions';
 import { AudioCapture } from '@/services/AudioCapture';
 import { AudioProcessor } from '@/services/AudioProcessor';
 import { TranscriptionService } from '@/services/Transcription';
@@ -16,6 +16,7 @@ const TIMER_TICK_MS = 100;
 
 export type DictationStatus =
   | 'idle'
+  | 'initializing'
   | 'recording'
   | 'preview'
   | 'processing'
@@ -28,6 +29,7 @@ export interface UseVoiceDictationReturn {
   maxDurationMs: number;
   error: string | null;
   capturedUri: string | null;
+  meteringData: number[];
   startDictation: (sourceLang: string) => Promise<void>;
   stopDictation: () => Promise<string | null>;
   confirmDictation: (sourceLang: string) => Promise<string | null>;
@@ -46,6 +48,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
   };
 
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [meteringData, setMeteringData] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   // Real-time amplitude SharedValue driven by AudioCapture at ~60fps on the UI thread.
@@ -134,6 +137,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     capturedUriRef.current = uri;
     capturedMeteringRef.current = meteringData;
     capturedDurationRef.current = durationMs;
+    setMeteringData(meteringData);
 
     setStatus('preview');
     return uri;
@@ -213,6 +217,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
         setStatus('idle');
         setElapsedMs(0);
+        setMeteringData([]);
         elapsedMsRef.current = 0;
         capturedUriRef.current = null;
         return transcript;
@@ -276,6 +281,9 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
       setError(null);
       elapsedMsRef.current = 0;
       setElapsedMs(0);
+
+      // Explicit Loading State for instant UI feedback without faking a recording
+      setStatus('initializing');
 
       // Request microphone permission (shows OS prompt if needed)
       const permResult = await AudioCapture.requestPermission();
@@ -373,6 +381,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     setStatus('idle');
     setError(null);
     setElapsedMs(0);
+    setMeteringData([]);
     elapsedMsRef.current = 0;
   }, [clearTimers]);
 
@@ -383,6 +392,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     maxDurationMs,
     error,
     capturedUri: capturedUriRef.current,
+    meteringData,
     startDictation,
     stopDictation,
     confirmDictation,

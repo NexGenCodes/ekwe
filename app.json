@@ -10,10 +10,10 @@
     "splash": {
       "image": "./assets/splash-icon-light.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF",
+      "backgroundColor": "#F8FAFC",
       "dark": {
         "image": "./assets/splash-icon.png",
-        "backgroundColor": "#09090B"
+        "backgroundColor": "#0F172A"
       }
     },
     "ios": {
@@ -24,7 +24,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon-light.png",
-        "backgroundColor": "#FFFFFF",
+        "backgroundColor": "#F8FAFC",
         "monochromeImage": "./assets/adaptive-icon.png"
       },
       "package": "com.anonymous.ekwe"
@@ -36,10 +36,10 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#FFFFFF",
+          "backgroundColor": "#F8FAFC",
           "image": "./assets/splash-icon-light.png",
           "dark": {
-            "backgroundColor": "#09090B",
+            "backgroundColor": "#0F172A",
             "image": "./assets/splash-icon.png"
           }
         }
@@ -108,7 +108,8 @@
       "./modules/ekwe-native/app.plugin.js",
       "expo-router",
       "@react-native-google-signin/google-signin/app.plugin.js",
-      "expo-image"
+      "expo-image",
+      "@sentry/react-native"
     ],
     "assetBundlePatterns": [
       "assets/fonts/*"

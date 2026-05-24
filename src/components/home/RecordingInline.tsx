@@ -1,4 +1,4 @@
-import { Square, Trash2, Play, Pause, Send } from 'lucide-react-native';
+import { Play, Pause } from 'lucide-react-native';
 import React, { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Animated, {
@@ -12,67 +12,125 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { borderRadius, spacing, typography } from '@/constants/designTokens';
 import { useTheme, useSharedAudioPlayer } from '@/hooks';
 import type { DictationStatus } from '@/hooks/useVoiceDictation';
 
-const NUM_BARS = 7;
+const TOTAL_BARS = 35;
 
-// Centre bar is tallest, outer bars are shorter — creates a natural wave shape.
-const BAR_SCALES = [0.5, 0.7, 0.85, 1.0, 0.85, 0.7, 0.5];
-// Outer bars animate slower, creating a ripple/wave lag effect.
-const BAR_DURATIONS = [140, 120, 80, 50, 80, 120, 140];
+const getNormalizedWaveform = (
+  data: number[],
+  targetLength: number,
+): number[] => {
+  if (!data || data.length === 0) {
+    // Generate beautiful dome shape
+    return Array.from(
+      { length: targetLength },
+      (_, i) => 0.15 + Math.sin((i / (targetLength - 1)) * Math.PI) * 0.45,
+    );
+  }
 
-/**
- * Individual waveform bar. Reads the shared amplitude directly in
- * useAnimatedStyle — the simplest and most reliable Reanimated pattern.
- * Per-bar scale + timing duration create a ripple wave effect.
- */
-function WaveBar({
-  amplitude,
-  index,
-}: {
-  amplitude: SharedValue<number>;
+  const resampled: number[] = [];
+  let maxVal = 0.01;
+
+  for (let i = 0; i < targetLength; i++) {
+    const dataIndex = Math.floor((i / targetLength) * data.length);
+    const val = Math.abs(data[dataIndex] || 0);
+    if (val > maxVal) maxVal = val;
+    resampled.push(val);
+  }
+
+  return resampled.map((v) => v / maxVal);
+};
+
+interface WaveBarProps {
   index: number;
-}): React.ReactElement {
-  const { color } = useTheme();
-  const scale = BAR_SCALES[index];
-  const duration = BAR_DURATIONS[index];
-
-  const animStyle = useAnimatedStyle(() => {
-    // Scale amplitude per bar — centre bar gets full value, edges get less
-    const targetHeight = interpolate(amplitude.value * scale, [0, 1], [4, 36]);
-    // withTiming inside useAnimatedStyle: standard Reanimated pattern.
-    // Different durations per bar create the wave ripple.
-    return { height: withTiming(targetHeight, { duration }) };
-  });
-
-  return (
-    <Animated.View
-      style={[styles.bar, animStyle, { backgroundColor: color.secondary }]}
-    />
-  );
+  totalBars: number;
+  amplitude: SharedValue<number>;
+  phase: SharedValue<number>;
+  isPreview: boolean;
+  normalizedPeaks: number[];
+  progressSV: SharedValue<number>;
+  duration: number;
 }
 
-function ProcessingBar({ index }: { index: number }): React.ReactElement {
+function WaveBar({
+  index,
+  totalBars,
+  amplitude,
+  phase,
+  isPreview,
+  normalizedPeaks,
+  progressSV,
+  duration,
+}: WaveBarProps): React.ReactElement {
+  const { color } = useTheme();
+
+  const animStyle = useAnimatedStyle(() => {
+    let targetHeight = 4;
+    let isActive = false;
+
+    if (isPreview) {
+      const peak = normalizedPeaks[index] ?? 0.15;
+      targetHeight = interpolate(peak, [0, 1], [4, 36]);
+
+      if (duration > 0) {
+        const playedFraction = progressSV.value / duration;
+        isActive = index / totalBars <= playedFraction;
+      }
+    } else {
+      // Live recording: strictly use true amplitude data so the user sees their voice.
+      // Adding a tiny 5% noise just so it's not perfectly dead flat when silent.
+      const baseJitter = Math.sin(phase.value + index * 0.5) * 0.05 + 0.05;
+      const activeValue = Math.max(amplitude.value, baseJitter);
+      targetHeight = interpolate(activeValue, [0, 1], [4, 36]);
+    }
+
+    const isInactivePreview = isPreview && !isActive;
+
+    return {
+      height: withTiming(targetHeight, { duration: 100 }),
+      backgroundColor: isPreview
+        ? isActive
+          ? color.primary
+          : color.foreground
+        : '#EF4444',
+      opacity: isInactivePreview ? 0.15 : 1,
+    };
+  });
+
+  return <Animated.View style={[styles.bar, animStyle]} />;
+}
+
+function ProcessingBar({
+  index,
+  totalBars,
+}: {
+  index: number;
+  totalBars: number;
+}): React.ReactElement {
   const { color } = useTheme();
   const opacity = useSharedValue(1);
 
   useEffect(() => {
-    const delay = index * 80;
+    const delay = index * 40;
     const timeout = setTimeout(() => {
-      opacity.value = withRepeat(withTiming(0.3, { duration: 500 }), -1, true);
+      opacity.value = withRepeat(withTiming(0.2, { duration: 600 }), -1, true);
     }, delay);
     return (): void => clearTimeout(timeout);
   }, [index, opacity]);
 
-  const animStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    height: 20 + (index % 3) * 6,
-  }));
+  const animStyle = useAnimatedStyle(() => {
+    const waveHeight = 8 + Math.sin((index / (totalBars - 1)) * Math.PI) * 20;
+    return {
+      opacity: opacity.value,
+      height: withTiming(waveHeight, { duration: 200 }),
+    };
+  });
 
   return (
     <Animated.View
-      style={[styles.bar, animStyle, { backgroundColor: color.secondary }]}
+      style={[styles.bar, animStyle, { backgroundColor: color.muted }]}
     />
   );
 }
@@ -82,28 +140,23 @@ interface RecordingInlineProps {
   amplitude: SharedValue<number>;
   elapsedMs: number;
   maxDurationMs: number;
-  onStop: () => void;
-  onCancel: () => void;
-  onConfirm: () => void;
   capturedUri: string | null;
+  meteringData: number[];
 }
 
 export function RecordingInline({
   status,
   amplitude,
   elapsedMs,
-  maxDurationMs,
-  onStop,
-  onCancel,
-  onConfirm,
   capturedUri,
+  meteringData,
 }: RecordingInlineProps): React.ReactElement {
   const { color } = useTheme();
   const isProcessing = status === 'processing';
   const isPreview = status === 'preview';
 
-  // Audio player for the preview phase
   const player = useSharedAudioPlayer(isPreview ? capturedUri : null);
+  const isPlaying = player.isPlaying;
 
   const formatTime = (ms: number): string => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -112,20 +165,72 @@ export function RecordingInline({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const fillRatio = Math.min(elapsedMs / maxDurationMs, 1);
+  const dotOpacity = useSharedValue(1);
+  const phase = useSharedValue(0);
 
-  // Memoize bars array to avoid re-creating on every render
-  const bars = useMemo(
-    () =>
-      BAR_SCALES.map((_, i) =>
-        isProcessing ? (
-          <ProcessingBar key={i} index={i} />
-        ) : (
-          <WaveBar key={i} amplitude={amplitude} index={i} />
-        ),
+  useEffect(() => {
+    if (status === 'recording') {
+      dotOpacity.value = withRepeat(
+        withTiming(0.2, { duration: 600 }),
+        -1,
+        true,
+      );
+      phase.value = withRepeat(
+        withTiming(2 * Math.PI, { duration: 1500 }),
+        -1,
+        false,
+      );
+    } else if (status === 'preview' && isPlaying) {
+      dotOpacity.value = 1;
+      phase.value = withRepeat(
+        withTiming(2 * Math.PI, { duration: 1500 }),
+        -1,
+        false,
+      );
+    } else {
+      dotOpacity.value = 1;
+      phase.value = 0;
+    }
+  }, [status, isPlaying, dotOpacity, phase]);
+
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: dotOpacity.value,
+  }));
+
+  const normalizedPeaks = useMemo(() => {
+    if (!isPreview) return [];
+    const sourcePeaks =
+      player.realWaveform.length > 0 ? player.realWaveform : meteringData;
+    return getNormalizedWaveform(sourcePeaks, TOTAL_BARS);
+  }, [isPreview, player.realWaveform, meteringData]);
+
+  const bars = useMemo(() => {
+    return Array.from({ length: TOTAL_BARS }).map((_, i) =>
+      isProcessing ? (
+        <ProcessingBar key={i} index={i} totalBars={TOTAL_BARS} />
+      ) : (
+        <WaveBar
+          key={i}
+          index={i}
+          totalBars={TOTAL_BARS}
+          amplitude={amplitude}
+          phase={phase}
+          isPreview={isPreview}
+          normalizedPeaks={normalizedPeaks}
+          progressSV={player.progressSV}
+          duration={player.duration}
+        />
       ),
-    [isProcessing, amplitude],
-  );
+    );
+  }, [
+    isProcessing,
+    isPreview,
+    amplitude,
+    phase,
+    normalizedPeaks,
+    player.progressSV,
+    player.duration,
+  ]);
 
   return (
     <Animated.View
@@ -133,105 +238,43 @@ export function RecordingInline({
       exiting={FadeOut.duration(150)}
       style={[styles.container, { backgroundColor: color.surface }]}
     >
-      <View style={styles.left}>
-        <Pressable
-          onPress={onCancel}
-          style={({ pressed }) => [
-            styles.discardBtn,
-            { backgroundColor: color.surface },
-            pressed && { transform: [{ scale: 0.95 }] },
-          ]}
-          hitSlop={{ top: 2, bottom: 2 }}
-          accessibilityRole="button"
-          accessibilityLabel="Discard recording"
-        >
-          <Text
-            style={{
-              color: '#EF4444',
-              fontFamily: 'Outfit-Medium',
-              fontSize: 14,
-            }}
-          >
-            Cancel
-          </Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.center}>
-        {isPreview ? (
+      {isPreview ? (
+        <View style={styles.previewContainer}>
           <Pressable
             onPress={() => (player.isPlaying ? player.pause() : player.play())}
-            style={[styles.playBtn, { backgroundColor: color.surface }]}
+            style={[styles.playBtn, { backgroundColor: color.primary }]}
             accessibilityRole="button"
-            accessibilityLabel={player.isPlaying ? 'Pause playback' : 'Play recording'}
+            accessibilityLabel={
+              player.isPlaying ? 'Pause playback' : 'Play recording'
+            }
           >
             {player.isPlaying ? (
-              <Pause size={22} color={color.primary} fill={color.primary} />
+              <Pause size={22} color={color.onPrimary} fill={color.onPrimary} />
             ) : (
-              <Play size={22} color={color.primary} fill={color.primary} />
+              <Play size={22} color={color.onPrimary} fill={color.onPrimary} />
             )}
           </Pressable>
-        ) : (
           <View style={styles.waveform}>{bars}</View>
-        )}
-        {isProcessing && (
-          <Text style={[styles.processingText, { color: color.muted }]}>
-            Transcribing...
-          </Text>
-        )}
-      </View>
-
-      <View style={styles.right}>
-        {isPreview ? (
-          <Pressable
-            onPress={onConfirm}
-            style={({ pressed }) => [
-              styles.sendBtn,
-              { backgroundColor: color.primary },
-              pressed && { transform: [{ scale: 0.9 }] },
-            ]}
-            hitSlop={{ top: 2, bottom: 2 }}
-            accessibilityRole="button"
-            accessibilityLabel="Use recording for transcription"
-          >
-            <Text
-              style={{
-                color: color.onPrimary,
-                fontFamily: 'Outfit-Medium',
-                fontSize: 14,
-              }}
-            >
-              Use
-            </Text>
-          </Pressable>
-        ) : (
-          <>
+        </View>
+      ) : (
+        <View style={styles.recordingContainer}>
+          <View style={styles.timerContainer}>
+            <Animated.View
+              style={[styles.dot, dotStyle, { backgroundColor: '#EF4444' }]}
+            />
             <Text style={[styles.timer, { color: color.foreground }]}>
               {formatTime(elapsedMs)}
             </Text>
-
-            <Pressable
-              onPress={onStop}
-              disabled={isProcessing}
-              style={({ pressed }) => [
-                styles.stopBtn,
-                { backgroundColor: color.primary },
-                isProcessing && { opacity: 0.5 },
-                pressed && !isProcessing && { transform: [{ scale: 0.9 }] },
-              ]}
-              hitSlop={{ top: 2, bottom: 2, left: 2, right: 2 }}
-              accessibilityRole="button"
-              accessibilityLabel="Stop recording"
-            >
-              <Square
-                size={16}
-                color={color.onPrimary}
-                fill={color.onPrimary}
-              />
-            </Pressable>
-          </>
-        )}
-      </View>
+          </View>
+          {isProcessing ? (
+            <Text style={[styles.processingText, { color: color.muted }]}>
+              Transcribing...
+            </Text>
+          ) : (
+            <View style={styles.waveform}>{bars}</View>
+          )}
+        </View>
+      )}
     </Animated.View>
   );
 }
@@ -241,36 +284,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     height: 72,
-    borderRadius: 36,
-    paddingHorizontal: 16,
-    marginHorizontal: 12,
+    borderRadius: borderRadius['2xl'],
+    paddingHorizontal: spacing[4],
   },
-  left: {
-    width: 90,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-  },
-  discardBtn: {
-    height: 40,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+  previewContainer: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.1)',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing[2],
+  },
+  recordingContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing[2],
+  },
+  timerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   timer: {
     fontFamily: 'Outfit-Medium',
-    fontSize: 14,
-    width: 40,
-    textAlign: 'right',
-  },
-  center: {
-    flex: 1,
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+    fontSize: typography.body.size,
   },
   playBtn: {
     width: 48,
@@ -278,48 +321,25 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
   },
   waveform: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 2,
     height: 40,
   },
   bar: {
-    width: 4,
-    borderRadius: 2,
+    width: 3,
+    borderRadius: 1.5,
   },
   processingText: {
     fontFamily: 'Outfit-Medium',
-    fontSize: 11,
+    fontSize: typography.bodySmall.size,
     letterSpacing: 0.3,
-  },
-  right: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    width: 90,
-    justifyContent: 'flex-end',
-  },
-  stopBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendBtn: {
-    height: 40,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
   },
 });
