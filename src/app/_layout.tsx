@@ -11,14 +11,14 @@ import { Stack } from 'expo-router/stack';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useMemo } from 'react';
-import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ErrorBoundary, ToastContainer, AppAlertModal } from '@/components';
-import { colors } from '@/constants/colors';
+import { Box } from '@/components/ui';
 import { useShareIntentHandler, useTheme, useTripleExclusivity } from '@/hooks';
+import { useAppFonts } from '@/hooks/useFonts';
 import { ShareIntentProvider } from '@/providers/ShareIntentProvider';
 import { HistoryService } from '@/services/HistoryService';
 import { SyncService } from '@/services/SyncService';
@@ -85,13 +85,11 @@ function InnerLayout(): React.ReactElement {
       <GestureHandlerRootView
         style={{
           flex: 1,
-          backgroundColor: isDark
-            ? colors.background.dark
-            : colors.background.DEFAULT,
+          backgroundColor: color.background,
         }}
       >
         <ErrorBoundary>
-          <View style={{ flex: 1 }}>
+          <Box style={{ flex: 1 }}>
             <StatusBar style={isDark ? 'light' : 'dark'} />
 
             <Stack
@@ -120,10 +118,8 @@ function InnerLayout(): React.ReactElement {
               <Stack.Screen
                 name="result"
                 options={{
-                  presentation: 'formSheet',
-                  sheetGrabberVisible: true,
-                  headerShown: true,
-                  title: 'Translation',
+                  presentation: 'transparentModal',
+                  headerShown: false,
                   contentStyle: { backgroundColor: 'transparent' },
                 }}
               />
@@ -158,7 +154,7 @@ function InnerLayout(): React.ReactElement {
             </Stack>
             <ToastContainer />
             <AppAlertModal />
-          </View>
+          </Box>
         </ErrorBoundary>
       </GestureHandlerRootView>
     </ThemeProvider>
@@ -166,6 +162,9 @@ function InnerLayout(): React.ReactElement {
 }
 
 function RootLayout(): React.ReactElement {
+  const fontsLoaded = useAppFonts();
+  const [appReady, setAppReady] = React.useState(false);
+
   useEffect(() => {
     const activate = async (): Promise<void> => {
       try {
@@ -183,6 +182,24 @@ function RootLayout(): React.ReactElement {
       SyncService.stop();
     };
   }, []);
+
+  // Once fonts are loaded, set appReady to true
+  React.useEffect(() => {
+    if (fontsLoaded) {
+      setAppReady(true);
+    }
+  }, [fontsLoaded]);
+
+  if (!appReady) {
+    // Show a simple splash screen while fonts are loading
+    return (
+      <SafeAreaProvider>
+        <Box style={{ flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' }}>
+          <EkweLogo size={120} />
+        </Box>
+      </SafeAreaProvider>
+    );
+  }
 
   return (
     <SafeAreaProvider>
