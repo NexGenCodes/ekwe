@@ -57,10 +57,10 @@ export function useLanguageSwitcher({
   const handleSelect = useCallback(
     (code: string) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      
+
       if (activeDropdown === 'source') {
         onSourceChange(code);
-        
+
         // Handle Collision: Source picked a language that is already Target
         if (code !== 'auto' && code === targetLang) {
           // Can we swap the old source to target?
@@ -74,7 +74,7 @@ export function useLanguageSwitcher({
         }
       } else {
         onTargetChange(code);
-        
+
         // Handle Collision: Target picked a language that is already Source
         if (code === sourceLang) {
           // Can we swap the old target to source?

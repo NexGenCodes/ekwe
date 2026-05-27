@@ -1,24 +1,27 @@
 import * as Haptics from 'expo-haptics';
-import React, { useCallback, useState, useEffect } from 'react';
-import {
-  View,
-  StyleSheet,
-  Keyboard,
-  Platform,
-} from 'react-native';
-import {
-  SharedValue,
-} from 'react-native-reanimated';
-import { LanguageSwitcher } from './LanguageSwitcher';
-import { RecordingInline } from './RecordingInline';
-import { MainTextInput } from './MainTextInput';
-import { InputFooterActions } from './InputFooterActions';
-import { Divider } from '../ui/Divider';
 
-import { borderRadius, spacing } from '@/constants/designTokens';
+import React, { useCallback, useState, useEffect } from 'react';
+import { Keyboard, Dimensions } from 'react-native';
+import Animated, {
+  SharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { isIOS } from '@/utils';
+
+import { InputFooterActions } from './InputFooterActions';
+import { LanguageSwitcher } from './LanguageSwitcher';
+import { MainTextInput } from './MainTextInput';
+import { RecordingInline } from './RecordingInline';
+import { Divider } from '../Divider';
+
+import { Box } from '@/components/ui';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme, usePermissions } from '@/hooks';
-import { AppAlert, AppToast } from '@/utils';
 import type { DictationStatus } from '@/hooks/useVoiceDictation';
+import { AppToast } from '@/utils';
 
 interface ExpressiveInputProps {
   value: string;
@@ -90,12 +93,13 @@ export const ExpressiveInput = React.memo(
     const isActive = isRecording || isProcessing || isPreview;
 
     const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+    const [isFocused, setIsFocused] = useState(false);
 
     useEffect(() => {
       const showEvent =
-        Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        isIOS ? 'keyboardWillShow' : 'keyboardDidShow';
       const hideEvent =
-        Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+        isIOS ? 'keyboardWillHide' : 'keyboardDidHide';
 
       const showSub = Keyboard.addListener(showEvent, (): void =>
         setIsKeyboardVisible(true),
@@ -109,6 +113,16 @@ export const ExpressiveInput = React.memo(
         hideSub.remove();
       };
     }, []);
+
+    const handleFocus = useCallback(() => {
+      setIsFocused(true);
+      onFocus?.();
+    }, [onFocus]);
+
+    const handleBlur = useCallback(() => {
+      setIsFocused(false);
+      onBlur?.();
+    }, [onBlur]);
 
     const handleCancelPress = useCallback(async () => {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -163,17 +177,78 @@ export const ExpressiveInput = React.memo(
     // If there is no text, the button is "Mic" and does NOT need a targetLang.
     const isDisabled =
       value.length > 0
-        ? isGlobalDisabled || !canTranslate || !isTargetLangValid
-        : isGlobalDisabled;
+          ? isGlobalDisabled || !canTranslate || !isTargetLangValid
+          : isGlobalDisabled;
+
+    // Animated scale: card lifts up subtly when focused or active
+    const animatedCardStyle = useAnimatedStyle(() => {
+      const isActiveOrFocused = isRecording || isProcessing || isPreview || isFocused;
+      return {
+        transform: [
+          {
+            scale: withSpring(isActiveOrFocused ? 1.012 : 1, {
+              damping: 18,
+              stiffness: 200,
+            }),
+          },
+        ],
+        // Animated shadow radius widens when active
+        shadowRadius: withTiming(
+          isRecording || isProcessing || isPreview ? 24 : isFocused ? 20 : 12,
+          { duration: 250 },
+        ),
+        shadowOpacity: withTiming(
+          isRecording || isProcessing || isPreview ? 0.18 : isFocused ? 0.14 : 0.05,
+          { duration: 250 },
+        ),
+        elevation: withTiming(
+          isRecording || isProcessing || isPreview ? 8 : isFocused ? 6 : 2,
+          { duration: 250 },
+        ),
+      };
+    });
+
+    // Static per-state accent border color and shadow color (these can't animate in RN)
+    let activeBorderColor = color.border;
+    let activeShadowColor = color.border;
+    if (isRecording) {
+      activeBorderColor = color.error;
+      activeShadowColor = color.error;
+    } else if (isProcessing) {
+      activeBorderColor = color.warning;
+      activeShadowColor = color.warning;
+    } else if (isPreview) {
+      activeBorderColor = color.success;
+      activeShadowColor = color.success;
+    } else if (isFocused) {
+      activeBorderColor = color.secondary;
+      activeShadowColor = color.secondary;
+    }
 
     return (
-      <View
+      <Animated.View
         style={[
-          styles.container,
-          { backgroundColor: color.card, paddingVertical: spacing[4] },
+          {
+            borderRadius: borderRadius['2xl'],
+            borderWidth: 1,
+            borderColor: activeBorderColor,
+            shadowColor: activeShadowColor,
+            shadowOffset: { width: 0, height: 6 },
+            position: 'relative',
+            overflow: 'hidden',
+            backgroundColor: color.card,
+            paddingVertical: spacing.md,
+          },
+          animatedCardStyle,
         ]}
       >
-        <View style={styles.headerSwitcherContainer}>
+        <Box
+          style={{
+            paddingHorizontal: spacing.md,
+            paddingBottom: spacing.sm,
+            width: '100%',
+          }}
+        >
           <LanguageSwitcher
             sourceLang={sourceLang}
             targetLang={targetLang}
@@ -181,10 +256,17 @@ export const ExpressiveInput = React.memo(
             onSourceChange={onSourceChange}
             onTargetChange={onTargetChange}
           />
-        </View>
+        </Box>
 
         {isActive ? (
-          <View style={styles.recordingWrapper}>
+          <Box
+            style={{
+              flex: 1,
+              minHeight: Math.max(120, Dimensions.get('window').height * 0.15),
+              justifyContent: 'center',
+              paddingHorizontal: spacing.lg,
+            }}
+          >
             <RecordingInline
               status={dictationStatus}
               amplitude={amplitude}
@@ -193,18 +275,18 @@ export const ExpressiveInput = React.memo(
               capturedUri={capturedUri}
               meteringData={meteringData}
             />
-          </View>
+          </Box>
         ) : (
           <MainTextInput
             value={value}
             onChangeText={onChangeText}
             maxChars={maxChars}
-            onFocus={onFocus}
-            onBlur={onBlur}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
           />
         )}
 
-        <Divider style={styles.footerDivider} />
+        <Divider style={{ marginVertical: spacing.md }} />
 
         <InputFooterActions
           valueLength={value.length}
@@ -222,38 +304,7 @@ export const ExpressiveInput = React.memo(
           handleClear={handleClear}
           handleRightButtonPress={handleRightButtonPress}
         />
-      </View>
+      </Animated.View>
     );
   },
 );
-
-const styles = StyleSheet.create({
-  container: {
-    borderRadius: borderRadius['2xl'],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.04,
-    shadowRadius: 24,
-    elevation: 4,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  headerSwitcherContainer: {
-    paddingHorizontal: spacing[3],
-    paddingBottom: spacing[2],
-    width: '100%',
-  },
-  headerDivider: {
-    marginVertical: 0,
-    marginBottom: spacing[2],
-  },
-  recordingWrapper: {
-    flex: 1,
-    minHeight: 120,
-    justifyContent: 'center',
-    paddingHorizontal: spacing[6],
-  },
-  footerDivider: {
-    marginVertical: spacing[3],
-  },
-});

@@ -2,6 +2,7 @@ import { observable } from '@legendapp/state';
 import { persistObservable } from '@legendapp/state/persist';
 
 import { ObservablePersistSQLite } from '@/store/sqlitePlugin';
+import { detectDeviceCurrency } from '@/constants/currency';
 
 export enum ThemePreference {
   Light = 'light',
@@ -23,6 +24,7 @@ export interface SettingsState {
   onboardingCompleted: boolean;
   autoCopy: boolean;
   hapticsEnabled: boolean;
+  currency: string;
 }
 
 const initialSettings: SettingsState = {
@@ -39,6 +41,7 @@ const initialSettings: SettingsState = {
   onboardingCompleted: false,
   autoCopy: true,
   hapticsEnabled: true,
+  currency: detectDeviceCurrency(),
 };
 
 export const settings$ = observable<SettingsState>(initialSettings);
@@ -88,5 +91,8 @@ export const settingsActions = {
   },
   setHapticsEnabled: (val: boolean): void => {
     settings$.hapticsEnabled.set(val);
+  },
+  setCurrency: (val: string): void => {
+    settings$.currency.set(val);
   },
 };

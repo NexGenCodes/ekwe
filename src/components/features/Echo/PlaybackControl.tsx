@@ -1,16 +1,12 @@
 import { Play, Pause } from 'lucide-react-native';
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-} from 'react-native';
 import { SharedValue } from 'react-native-reanimated';
 
-import { AudioWaveform as ReanimatedWaveform } from '@/components/ui';
-import { fonts } from '@/constants/fonts';
+import { AudioWaveform as ReanimatedWaveform } from '../../AudioWaveform';
+
+import { Box, Text, Pressable, Spinner } from '@/components/ui';
+import { borderRadius, opacity } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 import { formatDuration } from '@/utils/echo';
 
@@ -45,23 +41,40 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
   const { color } = useTheme();
 
   return (
-    <View
-      style={[
-        styles.playerBox,
-        { backgroundColor: color.background, borderColor: color.border },
-      ]}
+    <Box
+      style={{
+        borderRadius: borderRadius['2xl'],
+        borderWidth: 1.5,
+        overflow: 'hidden',
+        marginBottom: spacing.lg,
+        backgroundColor: color.background,
+        borderColor: color.border,
+      }}
     >
-      <View style={styles.playerRow}>
-        <TouchableOpacity
+      <Box
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          padding: spacing.md,
+          gap: spacing.md,
+        }}
+      >
+        <Pressable
+          feedback="opacity"
           onPress={onTogglePlay}
           disabled={isDecoding}
-          style={[
-            styles.playBtn,
-            { backgroundColor: color.secondary, opacity: isDecoding ? 0.5 : 1 },
-          ]}
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: borderRadius['2xl'],
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: color.secondary,
+            opacity: isDecoding ? opacity.disabled : 1,
+          }}
         >
           {isDecoding ? (
-            <ActivityIndicator size="small" color={color.primary} />
+            <Spinner size="sm" color={color.onSecondary} />
           ) : isPlaying ? (
             <Pause
               size={18}
@@ -75,9 +88,9 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
               fill={color.onSecondary}
             />
           )}
-        </TouchableOpacity>
+        </Pressable>
 
-        <View style={styles.waveformContainer}>
+        <Box style={{ flex: 1, height: 48, justifyContent: 'center' }}>
           <ReanimatedWaveform
             amplitudes={peaks}
             progressSV={progressSV}
@@ -91,45 +104,15 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
               onSeek(targetTime);
             }}
           />
-        </View>
+        </Box>
 
-        <Text style={[styles.timeTxt, { color: color.secondary }]}>
+        <Text
+          variant="caption"
+          style={{ width: 50, textAlign: 'right', color: color.secondary }}
+        >
           {formatDuration(scrubTime !== null ? scrubTime : progress)}
         </Text>
-      </View>
-    </View>
+      </Box>
+    </Box>
   );
 };
-
-const styles = StyleSheet.create({
-  playerBox: {
-    borderRadius: 24,
-    borderWidth: 1.5,
-    overflow: 'hidden',
-    marginBottom: 20,
-  },
-  playerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    gap: 12,
-  },
-  playBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  waveformContainer: {
-    flex: 1,
-    height: 48,
-    justifyContent: 'center',
-  },
-  timeTxt: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 12,
-    width: 50,
-    textAlign: 'right',
-  },
-});

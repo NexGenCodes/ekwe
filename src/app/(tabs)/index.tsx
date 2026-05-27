@@ -1,101 +1,64 @@
 import { useSelector } from '@legendapp/state/react';
 import { useRouter } from 'expo-router';
-import React, { useState, useMemo } from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Speech from 'expo-speech';
+import { useEffect, useState } from 'react';
+import { KeyboardAvoidingView } from 'react-native';
 
-import { HomeHeader, TranslationInterface } from '@/components/home';
-import { GradientMesh } from '@/components/ui';
-import { useTheme } from '@/hooks';
+import { HomeHeader, TranslationInterface, BackgroundFlair } from '@/components/home';
+import { Box, ScrollArea, SafeArea } from '@/components/ui';
+import { spacing } from '@/constants';
 import { settings$ } from '@/store';
+
+import { isIOS } from '@/utils';
 
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
-  const { color } = useTheme();
-  const insets = useSafeAreaInsets();
   const onboardingCompleted = useSelector(() =>
     settings$.onboardingCompleted.get(),
   );
+  const [isInputFocused, setIsInputFocused] = useState(false);
 
-  React.useEffect(() => {
+  // Prewarm the Text-to-Speech engine on mount to eliminate cold-start latency
+  useEffect(() => {
+    const prewarmTTS = async (): Promise<void> => {
+      try {
+        await Speech.speak('.', { volume: 0 });
+      } catch {
+        // Silently ignore prewarm errors
+      }
+    };
+    prewarmTTS();
+  }, []);
+
+  useEffect(() => {
     if (!onboardingCompleted) {
       router.replace('/(onboarding)/language');
     }
   }, [onboardingCompleted, router]);
 
-  const [isInputFocused, setIsInputFocused] = useState(false);
-
-  const containerStyle = useMemo(
-    () => [styles.container, { backgroundColor: color.background }],
-    [color.background]
-  );
-
-  const headerBgStyle = useMemo(
-    () => [
-      styles.headerBackground,
-      { height: insets.top, backgroundColor: color.background },
-    ],
-    [insets.top, color.background]
-  );
-
-  const contentContainerStyle = useMemo(
-    () => [
-      styles.scrollContent,
-      { paddingBottom: insets.bottom + 80 },
-    ],
-    [insets.bottom]
-  );
-
-  if (!onboardingCompleted)
-    return <View style={containerStyle} />;
-
   return (
-    <View style={containerStyle}>
-      <View style={headerBgStyle} />
-      <ScrollView
-        style={styles.scrollView}
-        scrollEnabled={!isInputFocused}
-        contentContainerStyle={contentContainerStyle}
-        contentInsetAdjustmentBehavior="automatic"
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        automaticallyAdjustKeyboardInsets
-        nestedScrollEnabled={true}
+    <SafeArea>
+      <BackgroundFlair />
+      <KeyboardAvoidingView
+        behavior={isIOS ? 'padding' : undefined}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={isIOS ? 0 : 20}
       >
-        <GradientMesh />
-        <View style={{ paddingTop: insets.top }}>
-          <Animated.View entering={FadeInDown.duration(500)}>
+        <ScrollArea
+          contentInsetAdjustmentBehavior="automatic"
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          nestedScrollEnabled
+        >
+          {/* Main content */}
+          <Box style={{ gap: spacing.md }}>
             <HomeHeader />
-          </Animated.View>
-
-          <TranslationInterface 
-            onInputFocusChange={setIsInputFocused}
-          />
-        </View>
-      </ScrollView>
-    </View>
+            <TranslationInterface onInputFocusChange={setIsInputFocused} />
+          </Box>
+        </ScrollArea>
+      </KeyboardAvoidingView>
+    </SafeArea>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  headerBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    gap: 24,
-    flexGrow: 1,
-  },
-});

@@ -1,65 +1,136 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Confirm Your Ekwe Account</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #0a0a0a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #0a0a0a; padding: 40px 20px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="420" cellpadding="0" cellspacing="0" style="background-color: #141414; border-radius: 16px; border: 1px solid #262626; overflow: hidden;">
-          <!-- Header -->
-          <tr>
-            <td style="padding: 32px 32px 0; text-align: center;">
-              <h1 style="margin: 0; font-size: 24px; font-weight: 700; color: #ffffff; letter-spacing: -0.02em;">
-                Ekwe
-              </h1>
-            </td>
-          </tr>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Confirm Your Ekwe Account</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background-color: #0a0a0a;
+      font-family:
+        -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    "
+  >
+    <table
+      role="presentation"
+      width="100%"
+      cellpadding="0"
+      cellspacing="0"
+      style="background-color: #0a0a0a; padding: 40px 20px"
+    >
+      <tr>
+        <td align="center">
+          <table
+            role="presentation"
+            width="420"
+            cellpadding="0"
+            cellspacing="0"
+            style="
+              background-color: #141414;
+              border-radius: 16px;
+              border: 1px solid #262626;
+              overflow: hidden;
+            "
+          >
+            <!-- Header -->
+            <tr>
+              <td style="padding: 32px 32px 0; text-align: center">
+                <h1
+                  style="
+                    margin: 0;
+                    font-size: 24px;
+                    font-weight: 700;
+                    color: #ffffff;
+                    letter-spacing: -0.02em;
+                  "
+                >
+                  Ekwe
+                </h1>
+              </td>
+            </tr>
 
-          <!-- Body -->
-          <tr>
-            <td style="padding: 24px 32px 8px; text-align: center;">
-              <p style="margin: 0; font-size: 15px; color: #a3a3a3; line-height: 1.6;">
-                Welcome! Enter this code to confirm your account:
-              </p>
-            </td>
-          </tr>
+            <!-- Body -->
+            <tr>
+              <td style="padding: 24px 32px 8px; text-align: center">
+                <p
+                  style="
+                    margin: 0;
+                    font-size: 15px;
+                    color: #a3a3a3;
+                    line-height: 1.6;
+                  "
+                >
+                  Welcome! Enter this code to confirm your account:
+                </p>
+              </td>
+            </tr>
 
-          <!-- OTP Code -->
-          <tr>
-            <td style="padding: 16px 32px; text-align: center;">
-              <div style="display: inline-block; background-color: #1a1a1a; border: 1px solid #333333; border-radius: 12px; padding: 20px 40px; letter-spacing: 0.35em;">
-                <span style="font-size: 32px; font-weight: 700; color: #ffffff; font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;">
-                  {{ .Token }}
-                </span>
-              </div>
-            </td>
-          </tr>
+            <!-- OTP Code -->
+            <tr>
+              <td style="padding: 16px 32px; text-align: center">
+                <div
+                  style="
+                    display: inline-block;
+                    background-color: #1a1a1a;
+                    border: 1px solid #333333;
+                    border-radius: 12px;
+                    padding: 20px 40px;
+                    letter-spacing: 0.35em;
+                  "
+                >
+                  <span
+                    style="
+                      font-size: 32px;
+                      font-weight: 700;
+                      color: #ffffff;
+                      font-family:
+                        'SF Mono', 'Fira Code', 'Consolas', monospace;
+                    "
+                  >
+                    {{ .Token }}
+                  </span>
+                </div>
+              </td>
+            </tr>
 
-          <!-- Expiry notice -->
-          <tr>
-            <td style="padding: 8px 32px 32px; text-align: center;">
-              <p style="margin: 0; font-size: 13px; color: #525252; line-height: 1.5;">
-                This code expires in 60 minutes.<br />
-                If you didn't sign up for Ekwe, you can safely ignore this email.
-              </p>
-            </td>
-          </tr>
+            <!-- Expiry notice -->
+            <tr>
+              <td style="padding: 8px 32px 32px; text-align: center">
+                <p
+                  style="
+                    margin: 0;
+                    font-size: 13px;
+                    color: #525252;
+                    line-height: 1.5;
+                  "
+                >
+                  This code expires in 60 minutes.<br />
+                  If you didn't sign up for Ekwe, you can safely ignore this
+                  email.
+                </p>
+              </td>
+            </tr>
 
-          <!-- Footer -->
-          <tr>
-            <td style="padding: 20px 32px; text-align: center; border-top: 1px solid #262626;">
-              <p style="margin: 0; font-size: 12px; color: #404040;">
-                &copy; Ekwe &mdash; Your voice, transcribed.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
+            <!-- Footer -->
+            <tr>
+              <td
+                style="
+                  padding: 20px 32px;
+                  text-align: center;
+                  border-top: 1px solid #262626;
+                "
+              >
+                <p style="margin: 0; font-size: 12px; color: #404040">
+                  &copy; Ekwe &mdash; Your voice, transcribed.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
 </html>

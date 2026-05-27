@@ -1,5 +1,4 @@
 import { observable } from '@legendapp/state';
-
 import { AlertButton } from 'react-native';
 
 export type AlertType = 'info' | 'success' | 'error' | 'confirm';

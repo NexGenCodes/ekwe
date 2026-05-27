@@ -2,17 +2,20 @@ import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
 import { useSelector } from '@legendapp/state/react';
 import { X, AlertCircle, RefreshCw } from 'lucide-react-native';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
 import { EchoConfigStep } from './EchoConfig';
 import { EchoFinalResult } from './EchoFinalResult';
 import { EchoLanguagePicker } from './EchoLanguagePicker';
 import { EchoTranslationConfig } from './EchoTranslationConfig';
+import { Badge } from '../../Badge';
+import { IconContainer } from '../../IconContainer';
+import { SkeletonBox } from '../../SkeletonBox';
 
-import { Badge, IconContainer, SkeletonBox } from '@/components/ui';
+import { Box, Text, Pressable } from '@/components/ui';
 import { STEP_METADATA } from '@/constants/echo';
-import { fonts } from '@/constants/fonts';
 import { LANGUAGES } from '@/constants/languages';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useEchoFlow, useTheme, useSharedAudioPlayer } from '@/hooks';
 import { initAuth } from '@/services/auth';
 import { auth$ } from '@/store';
@@ -117,29 +120,35 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   const renderStepContent = (currentStep: EchoStep): React.ReactElement => {
     if (!userSession) {
       return (
-        <View style={[styles.loadingContainer, { paddingVertical: 48 }]}>
+        <Box
+          style={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingVertical: spacing['3xl'],
+          }}
+        >
           <AlertCircle
             size={48}
             color={color.error}
-            style={{ marginBottom: 16 }}
+            style={{ marginBottom: spacing.md }}
           />
           <Text
-            style={[
-              styles.loadingTitle,
-              { color: color.foreground, textAlign: 'center' },
-            ]}
+            variant="heading3"
+            style={{ marginTop: spacing.lg, textAlign: 'center' }}
           >
             Login Required
           </Text>
           <Text
-            style={[
-              styles.loadingSubtitle,
-              { color: color.muted, textAlign: 'center', marginTop: 8 },
-            ]}
+            variant="bodySmall"
+            style={{
+              color: color.muted,
+              textAlign: 'center',
+              marginTop: spacing.sm,
+            }}
           >
             Please open the Ekwe app and log in to translate shared files.
           </Text>
-        </View>
+        </Box>
       );
     }
 
@@ -160,62 +169,83 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             isDark={isDark}
             onTranscribe={handleTranscribe}
           >
-            <View
-              style={[styles.metaRow, { borderTopColor: color.background }]}
+            <Box
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingVertical: spacing.md,
+                borderTopWidth: 1,
+                marginTop: spacing.sm,
+                borderTopColor: color.border,
+              }}
             >
-              <Text style={[styles.metaLabel, { color: color.muted }]}>
+              <Text variant="bodySmall" style={{ color: color.muted }}>
                 {selectedLang === 'auto' ? 'Language: ' : 'Source Language: '}
               </Text>
-              <Text style={[styles.metaValue, { color: color.secondary }]}>
+              <Text
+                variant="bodySmall"
+                style={{
+                  flex: 1,
+                  marginLeft: spacing.sm,
+                  color: color.secondary,
+                }}
+              >
                 {selectedLangName}
               </Text>
-              <TouchableOpacity
+              <Pressable
+                feedback="opacity"
                 onPress={() => setStep('PickLanguage')}
-                style={[
-                  styles.changeBtn,
-                  {
-                    backgroundColor: color.card,
-                    borderColor: color.border,
-                    borderWidth: 1,
-                  },
-                ]}
-                accessibilityRole="button"
                 accessibilityLabel="Change language"
+                style={{
+                  paddingVertical: spacing.sm,
+                  paddingHorizontal: spacing.md,
+                  borderRadius: borderRadius['2xl'],
+                  backgroundColor: color.secondary,
+                }}
               >
-                <Text style={[styles.changeLabel, { color: color.primary }]}>
+                <Text variant="bodySmall" style={{ color: color.onSecondary }}>
                   Change
                 </Text>
-              </TouchableOpacity>
-            </View>
+              </Pressable>
+            </Box>
           </EchoConfigStep>
         );
 
       case 'Transcribing':
         return (
-          <View style={styles.loadingContainer}>
-            <Text style={[styles.loadingTitle, { color: color.foreground }]}>
+          <Box
+            style={{
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: spacing['3xl'],
+            }}
+          >
+            <Text variant="heading3" style={{ marginTop: spacing.lg }}>
               {STEP_METADATA.Transcribing.title}
             </Text>
-            <Text style={[styles.loadingSubtitle, { color: color.muted }]}>
+            <Text
+              variant="bodySmall"
+              style={{ marginTop: spacing.sm, color: color.muted }}
+            >
               Processing your audio...
             </Text>
-            <View
+            <Box
               style={{
                 width: '100%',
-                gap: 12,
-                marginTop: 24,
-                paddingHorizontal: 16,
+                gap: spacing.md,
+                marginTop: spacing.lg,
+                paddingHorizontal: spacing.md,
               }}
             >
               <SkeletonBox width="100%" height={12} borderRadius={6} />
               <SkeletonBox width="85%" height={12} borderRadius={6} />
               <SkeletonBox width="70%" height={12} borderRadius={6} />
               <SkeletonBox width="90%" height={12} borderRadius={6} />
-              <View style={{ height: 4 }} />
+              <Box style={{ height: 4 }} />
               <SkeletonBox width="60%" height={12} borderRadius={6} />
               <SkeletonBox width="45%" height={12} borderRadius={6} />
-            </View>
-          </View>
+            </Box>
+          </Box>
         );
 
       case 'TranscribeResult':
@@ -235,27 +265,36 @@ export const Echo = (props: EchoProps): React.ReactElement => {
 
       case 'Translating':
         return (
-          <View style={styles.loadingContainer}>
-            <Text style={[styles.loadingTitle, { color: color.foreground }]}>
+          <Box
+            style={{
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: spacing['3xl'],
+            }}
+          >
+            <Text variant="heading3" style={{ marginTop: spacing.lg }}>
               Echo is translating...
             </Text>
-            <Text style={[styles.loadingSubtitle, { color: color.muted }]}>
+            <Text
+              variant="bodySmall"
+              style={{ marginTop: spacing.sm, color: color.muted }}
+            >
               Please wait while we process the translation.
             </Text>
-            <View
+            <Box
               style={{
                 width: '100%',
-                gap: 12,
-                marginTop: 24,
-                paddingHorizontal: 16,
+                gap: spacing.md,
+                marginTop: spacing.lg,
+                paddingHorizontal: spacing.md,
               }}
             >
               <SkeletonBox width="100%" height={12} borderRadius={6} />
               <SkeletonBox width="75%" height={12} borderRadius={6} />
               <SkeletonBox width="90%" height={12} borderRadius={6} />
               <SkeletonBox width="60%" height={12} borderRadius={6} />
-            </View>
-          </View>
+            </Box>
+          </Box>
         );
 
       case 'FullResult':
@@ -273,215 +312,168 @@ export const Echo = (props: EchoProps): React.ReactElement => {
         );
       case 'Error':
         return (
-          <View style={styles.errorContainer}>
-            <View
-              style={[
-                styles.errorIconWrapper,
-                { backgroundColor: `${color.error}15` },
-              ]}
+          <Box
+            style={{
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: spacing.xl,
+            }}
+          >
+            <Box
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: borderRadius['2xl'],
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: spacing.lg,
+                backgroundColor: `${color.error}15`,
+              }}
             >
               <AlertCircle size={32} color={color.error} />
-            </View>
-            <Text style={[styles.errorTitle, { color: color.foreground }]}>
+            </Box>
+            <Text
+              variant="body"
+              style={{
+                textAlign: 'center',
+                marginBottom: spacing.sm,
+                paddingHorizontal: spacing.lg,
+                color: color.foreground,
+              }}
+            >
               {error || 'An unexpected error occurred'}
             </Text>
-            <Text style={[styles.errorSubtitle, { color: color.muted }]}>
+            <Text
+              variant="bodySmall"
+              style={{
+                textAlign: 'center',
+                marginBottom: spacing.lg,
+                color: color.muted,
+              }}
+            >
               Please check your connection and try again.
             </Text>
-            <TouchableOpacity
+            <Pressable
+              feedback="opacity"
               onPress={() => setStep('PickLanguage')}
-              style={[styles.retryBtn, { backgroundColor: color.primary }]}
-              accessibilityRole="button"
               accessibilityLabel="Start over"
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingVertical: spacing.md,
+                paddingHorizontal: spacing.lg,
+                borderRadius: borderRadius['2xl'],
+                gap: spacing.sm,
+                backgroundColor: color.secondary,
+              }}
             >
-              <RefreshCw size={16} color="#FFF" />
-              <Text style={styles.retryBtnText}>Start Over</Text>
-            </TouchableOpacity>
-          </View>
+              <RefreshCw size={16} color={color.onSecondary} />
+              <Text variant="bodySmall" style={{ color: color.onSecondary }}>
+                Start Over
+              </Text>
+            </Pressable>
+          </Box>
         );
       default:
-        return <View />;
+        return <Box />;
     }
   };
-
-  const isProcessing = step === 'Transcribing' || step === 'Translating';
 
   const stepMeta = STEP_METADATA[step];
 
   return (
-    <View style={styles.backdrop}>
+    <Box style={[{ flex: 1 }, { backgroundColor: color.overlay }]}>
       <BottomSheet
         ref={bottomSheetRef}
         snapPoints={snapPoints}
         index={sheetIndex}
-        enablePanDownToClose={!isProcessing}
-        enableHandlePanningGesture={!isProcessing}
-        enableContentPanningGesture={!isProcessing}
+        enablePanDownToClose={false}
+        enableHandlePanningGesture={false}
+        enableContentPanningGesture={false}
         onClose={onDismiss}
-        backgroundStyle={[
-          styles.sheetBackground,
-          { backgroundColor: color.background },
-        ]}
-        handleIndicatorStyle={[
-          styles.handleIndicator,
-          { backgroundColor: color.border },
-        ]}
+        backgroundStyle={{
+          borderTopLeftRadius: borderRadius['2xl'],
+          borderTopRightRadius: borderRadius['2xl'],
+          backgroundColor: color.background,
+        }}
+        handleIndicatorStyle={{
+          width: 40,
+          height: 4,
+          borderRadius: 2,
+          backgroundColor: color.border,
+        }}
       >
-        <BottomSheetView key={step} style={styles.sheetContent}>
+        <BottomSheetView
+          key={step}
+          style={{
+            paddingHorizontal: spacing.lg,
+            paddingBottom: spacing['2xl'],
+            paddingTop: spacing.md,
+          }}
+        >
           {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.headerBadgeRow}>
-              <View
-                style={[styles.badge, { backgroundColor: color.primary }]}
+          <Box
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: spacing.lg,
+              marginTop: spacing.sm,
+            }}
+          >
+            <Box
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: spacing.sm,
+              }}
+            >
+              <Box
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: borderRadius.sm,
+                  backgroundColor: color.secondary,
+                }}
               />
-              <Text style={[styles.sourceLabel, { color: color.muted }]}>
+              <Text variant="bodySmall" style={{ color: color.muted }}>
                 ECHO
               </Text>
-            </View>
+            </Box>
 
-            <TouchableOpacity
+            <Pressable
+              feedback="opacity"
               onPress={handleClose}
               hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-              accessibilityRole="button"
               accessibilityLabel="Close Echo"
             >
               <IconContainer size="sm" variant="muted">
                 <X size={16} color={color.foreground} />
               </IconContainer>
-            </TouchableOpacity>
+            </Pressable>
 
             {stepMeta.showBadge && (
-              <View style={[StyleSheet.absoluteFill, styles.headerCenter]}>
+              <Box
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  pointerEvents: 'none',
+                }}
+              >
                 <Badge label={formatSourceApp(sourceApp)} variant="primary" />
-              </View>
+              </Box>
             )}
-          </View>
+          </Box>
 
           {/* Step Content */}
           {renderStepContent(step)}
         </BottomSheetView>
       </BottomSheet>
-    </View>
+    </Box>
   );
 };
-
-const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  sheetBackground: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-  },
-  handleIndicator: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-  },
-  sheetContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 40,
-    paddingTop: 12, // Notch safety margin
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    marginTop: 8,
-  },
-  headerCenter: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    pointerEvents: 'none',
-  },
-  headerBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  badge: { width: 8, height: 8, borderRadius: 4 },
-  sourceLabel: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 13,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    marginTop: 8,
-  },
-  metaLabel: { fontFamily: fonts.bodyMed, fontSize: 15 },
-  metaValue: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 15,
-    flex: 1,
-    marginLeft: 6,
-  },
-  changeBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  changeLabel: { fontFamily: fonts.bodyBold, fontSize: 13 },
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 48,
-  },
-  loadingTitle: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 20,
-    marginTop: 24,
-    letterSpacing: -0.5,
-  },
-  loadingSubtitle: {
-    fontFamily: fonts.body,
-    fontSize: 14,
-    marginTop: 6,
-  },
-  errorContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 32,
-  },
-  errorIconWrapper: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  errorTitle: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 8,
-    paddingHorizontal: 20,
-  },
-  errorSubtitle: {
-    fontFamily: fonts.body,
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  retryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 24,
-    gap: 8,
-  },
-  retryBtnText: {
-    color: '#FFF',
-    fontFamily: fonts.bodyBold,
-    fontSize: 15,
-  },
-});

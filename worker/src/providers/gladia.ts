@@ -1,5 +1,11 @@
 import { Env, TranscribeResult } from '../types';
-import { isHallucination, fetchWithTimeout, rotateKeys, TIMEOUT_FAST, abortableDelay } from '../utils';
+import {
+  isHallucination,
+  fetchWithTimeout,
+  rotateKeys,
+  TIMEOUT_FAST,
+  abortableDelay,
+} from '../utils';
 import { logger } from '../logger';
 
 const GLADIA_UPLOAD = 'https://api.gladia.io/v2/upload';
@@ -28,7 +34,7 @@ export async function transcribe(
   // We use a workaround: return a synthetic Response from attemptTranscription.
   if (!res?.ok) return null;
 
-  const data = await res.json() as { text?: string; language?: string };
+  const data = (await res.json()) as { text?: string; language?: string };
   if (data.text && !isHallucination(data.text)) {
     return { text: data.text, provider: 'gladia', language: data.language };
   }
@@ -46,19 +52,27 @@ async function attemptTranscription(
   const uploadForm = new FormData();
   uploadForm.append('audio', blob, 'audio.wav');
 
-  const uploadRes = await fetchWithTimeout(GLADIA_UPLOAD, {
-    method: 'POST',
-    headers: { 'x-gladia-key': apiKey },
-    body: uploadForm,
-  }, TIMEOUT_FAST, signal);
+  const uploadRes = await fetchWithTimeout(
+    GLADIA_UPLOAD,
+    {
+      method: 'POST',
+      headers: { 'x-gladia-key': apiKey },
+      body: uploadForm,
+    },
+    TIMEOUT_FAST,
+    signal,
+  );
 
   if (!uploadRes.ok) {
     const err = await uploadRes.text().catch(() => 'No body');
-    logger.error('[gladia] Upload error', { status: uploadRes.status, body: err });
+    logger.error('[gladia] Upload error', {
+      status: uploadRes.status,
+      body: err,
+    });
     return uploadRes;
   }
 
-  const { audio_url } = await uploadRes.json() as { audio_url: string };
+  const { audio_url } = (await uploadRes.json()) as { audio_url: string };
 
   // Step 2: Submit transcription request
   const isAuto = !lang || lang === 'auto';
@@ -69,19 +83,27 @@ async function attemptTranscription(
     transcriptBody.language_config = { languages: [lang] };
   }
 
-  const submitRes = await fetchWithTimeout(GLADIA_TRANSCRIPTION, {
-    method: 'POST',
-    headers: { 'x-gladia-key': apiKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify(transcriptBody),
-  }, TIMEOUT_FAST, signal);
+  const submitRes = await fetchWithTimeout(
+    GLADIA_TRANSCRIPTION,
+    {
+      method: 'POST',
+      headers: { 'x-gladia-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(transcriptBody),
+    },
+    TIMEOUT_FAST,
+    signal,
+  );
 
   if (!submitRes.ok) {
     const err = await submitRes.text().catch(() => 'No body');
-    logger.error('[gladia] Submit error', { status: submitRes.status, body: err });
+    logger.error('[gladia] Submit error', {
+      status: submitRes.status,
+      body: err,
+    });
     return submitRes;
   }
 
-  const { result_url } = await submitRes.json() as { result_url: string };
+  const { result_url } = (await submitRes.json()) as { result_url: string };
 
   // Step 3: Poll for result
   for (let i = 0; i < MAX_POLLS; i++) {
@@ -92,7 +114,7 @@ async function attemptTranscription(
       signal,
     });
 
-    const data = await poll.json() as GladiaResult;
+    const data = (await poll.json()) as GladiaResult;
 
     if (data.status === 'done') {
       const text = data.result?.transcription?.full_transcript || '';
@@ -105,7 +127,10 @@ async function attemptTranscription(
       return Response.json({ error: 'gladia_error' }, { status: 502 });
     }
 
-    logger.info('[gladia] Polling for results...', { attempt: i + 1, status: data.status });
+    logger.info('[gladia] Polling for results...', {
+      attempt: i + 1,
+      status: data.status,
+    });
   }
 
   // Timeout

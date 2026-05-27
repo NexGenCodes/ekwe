@@ -2,34 +2,24 @@ import { useSelector } from '@legendapp/state/react';
 import { useMemo, useCallback } from 'react';
 import { useColorScheme as useSystemColorScheme } from 'react-native';
 
-import { getColor, bubbleColors } from '@/constants/colors';
+import { getTheme, bubbleColors, palette } from '@/constants/colors';
+import type { ColorsKey } from '@/constants/colors';
 import { settings$, ThemePreference } from '@/store/settings';
+
+type ThemeColor = Record<ColorsKey, string> & {
+  bubble: {
+    idle: string;
+    recording: string;
+    processing: string;
+    done: string;
+    error: string;
+  };
+};
 
 export interface ThemeTokens {
   colorScheme: 'light' | 'dark' | 'system';
   setColorScheme: (scheme: 'light' | 'dark' | 'system') => void;
-  color: {
-    primary: string;
-    secondary: string;
-    onPrimary: string;
-    onSecondary: string;
-    foreground: string;
-    background: string;
-    card: string;
-    muted: string;
-    surface: string;
-    border: string;
-    success: string;
-    warning: string;
-    error: string;
-    bubble: {
-      idle: string;
-      recording: string;
-      processing: string;
-      done: string;
-      error: string;
-    };
-  };
+  color: ThemeColor;
   shadow: {
     overlay: {
       shadowColor: string;
@@ -57,19 +47,7 @@ export const useTheme = (): ThemeTokens => {
   // Stable reference: only recomputes when theme actually switches.
   const color = useMemo(
     () => ({
-      primary: getColor('primary', isDark),
-      secondary: getColor('secondary', isDark),
-      onPrimary: getColor('onPrimary', isDark),
-      onSecondary: getColor('onSecondary', isDark),
-      foreground: getColor('foreground', isDark),
-      background: getColor('background', isDark),
-      card: getColor('card', isDark),
-      muted: getColor('muted', isDark),
-      surface: getColor('surface', isDark),
-      border: getColor('border', isDark),
-      success: getColor('success', isDark),
-      warning: getColor('warning', isDark),
-      error: getColor('error', isDark),
+      ...getTheme(isDark),
       bubble: bubbleColors(isDark),
     }),
     [isDark],
@@ -79,7 +57,7 @@ export const useTheme = (): ThemeTokens => {
   const shadow = useMemo(
     () => ({
       overlay: {
-        shadowColor: '#000',
+        shadowColor: palette.neutral950,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.1,
         shadowRadius: 12,

@@ -1,5 +1,5 @@
 import * as MediaLibrary from 'expo-media-library';
-import { Platform } from 'react-native';
+import { isAndroid } from '@/utils';
 
 export interface RecentVoiceNote {
   uri: string;
@@ -16,7 +16,7 @@ export const VoiceNoteScanner = {
   async findRecentVoiceNote(
     packageName: string,
   ): Promise<RecentVoiceNote | null> {
-    if (Platform.OS !== 'android') return null;
+    if (!isAndroid) return null;
 
     const { status } = await MediaLibrary.requestPermissionsAsync();
     if (status !== 'granted') return null;

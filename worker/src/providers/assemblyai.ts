@@ -1,5 +1,11 @@
 import { Env, TranscribeResult } from '../types';
-import { rotateKeys, isHallucination, fetchWithTimeout, TIMEOUT_FAST, abortableDelay } from '../utils';
+import {
+  rotateKeys,
+  isHallucination,
+  fetchWithTimeout,
+  TIMEOUT_FAST,
+  abortableDelay,
+} from '../utils';
 import { logger } from '../logger';
 
 const ASSEMBLYAI_UPLOAD = 'https://api.assemblyai.com/v2/upload';
@@ -22,25 +28,35 @@ export async function transcribe(
     'ASSEMBLYAI_KEY_',
     async (key) => {
       // Step 1: Upload audio
-      const uploadRes = await fetchWithTimeout(ASSEMBLYAI_UPLOAD, {
-        method: 'POST',
-        headers: {
-          'Authorization': key,
-          'Content-Type': 'application/octet-stream',
+      const uploadRes = await fetchWithTimeout(
+        ASSEMBLYAI_UPLOAD,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: key,
+            'Content-Type': 'application/octet-stream',
+          },
+          body: blob,
         },
-        body: blob,
-      }, TIMEOUT_FAST, signal);
+        TIMEOUT_FAST,
+        signal,
+      );
 
       if (!uploadRes.ok) {
         if (uploadRes.status === 402 || uploadRes.status === 403) {
-          logger.error('[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!');
+          logger.error(
+            '[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!',
+          );
         } else {
           const err = await uploadRes.text().catch(() => 'No body');
-          logger.error('[assemblyai] Upload error', { status: uploadRes.status, body: err });
+          logger.error('[assemblyai] Upload error', {
+            status: uploadRes.status,
+            body: err,
+          });
         }
         return new Response(null, { status: uploadRes.status }); // Pass status back to rotateKeys so it can retry
       }
-      const { upload_url } = await uploadRes.json() as { upload_url: string };
+      const { upload_url } = (await uploadRes.json()) as { upload_url: string };
 
       // Step 2: Create transcript
       const isAuto = !lang || lang === 'auto';
@@ -54,39 +70,56 @@ export async function transcribe(
         createBody.language_code = lang;
       }
 
-      const createRes = await fetchWithTimeout(ASSEMBLYAI_TRANSCRIPT, {
-        method: 'POST',
-        headers: {
-          'Authorization': key,
-          'Content-Type': 'application/json',
+      const createRes = await fetchWithTimeout(
+        ASSEMBLYAI_TRANSCRIPT,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(createBody),
         },
-        body: JSON.stringify(createBody),
-      }, TIMEOUT_FAST, signal);
+        TIMEOUT_FAST,
+        signal,
+      );
 
       if (!createRes.ok) {
         if (createRes.status === 402 || createRes.status === 403) {
-          logger.error('[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!');
+          logger.error(
+            '[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!',
+          );
         } else {
           const err = await createRes.text().catch(() => 'No body');
-          logger.error('[assemblyai] Create error', { status: createRes.status, body: err });
+          logger.error('[assemblyai] Create error', {
+            status: createRes.status,
+            body: err,
+          });
         }
         return new Response(null, { status: createRes.status });
       }
-      const { id } = await createRes.json() as { id: string };
+      const { id } = (await createRes.json()) as { id: string };
 
       // Step 3: Poll for result
       for (let i = 0; i < MAX_POLLS; i++) {
         await abortableDelay(POLL_INTERVAL, signal);
 
         const poll = await fetch(`${ASSEMBLYAI_TRANSCRIPT}/${id}`, {
-          headers: { 'Authorization': key },
+          headers: { Authorization: key },
           signal,
         });
 
-        const data = await poll.json() as AssemblyResult;
+        const data = (await poll.json()) as AssemblyResult;
 
         if (data.status === 'completed' && data.text) {
-          return new Response(JSON.stringify({ text: data.text, duration: data.audio_duration, language: data.language_code }), { status: 200 });
+          return new Response(
+            JSON.stringify({
+              text: data.text,
+              duration: data.audio_duration,
+              language: data.language_code,
+            }),
+            { status: 200 },
+          );
         }
         if (data.status === 'error') {
           logger.error('[assemblyai] Processing error', { error: data.error });
@@ -100,9 +133,18 @@ export async function transcribe(
 
   if (!res?.ok) return null;
 
-  const finalData = await res.json() as { text: string; duration?: number; language?: string };
+  const finalData = (await res.json()) as {
+    text: string;
+    duration?: number;
+    language?: string;
+  };
   if (!isHallucination(finalData.text)) {
-    return { text: finalData.text, provider: 'assemblyai', duration: finalData.duration, language: finalData.language };
+    return {
+      text: finalData.text,
+      provider: 'assemblyai',
+      duration: finalData.duration,
+      language: finalData.language,
+    };
   }
 
   return null;

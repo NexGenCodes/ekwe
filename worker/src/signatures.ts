@@ -1,6 +1,10 @@
 import { logger } from './logger';
 
-export type WebhookProvider = 'paystack' | 'flutterwave' | 'revenuecat' | 'unknown';
+export type WebhookProvider =
+  | 'paystack'
+  | 'flutterwave'
+  | 'revenuecat'
+  | 'unknown';
 
 export interface WebhookVerificationResult {
   isValid: boolean;
@@ -13,7 +17,7 @@ export interface WebhookVerificationResult {
  */
 function bufferToHex(buffer: ArrayBuffer): string {
   return Array.from(new Uint8Array(buffer))
-    .map(b => b.toString(16).padStart(2, '0'))
+    .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
@@ -23,7 +27,7 @@ function bufferToHex(buffer: ArrayBuffer): string {
 async function computeHMAC(
   secret: string,
   payload: string,
-  algorithm: 'SHA-256' | 'SHA-512'
+  algorithm: 'SHA-256' | 'SHA-512',
 ): Promise<string> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -31,21 +35,21 @@ async function computeHMAC(
     encoder.encode(secret),
     { name: 'HMAC', hash: algorithm },
     false,
-    ['sign']
+    ['sign'],
   );
-  
+
   const signatureBuffer = await crypto.subtle.sign(
     'HMAC',
     key,
-    encoder.encode(payload)
+    encoder.encode(payload),
   );
-  
+
   return bufferToHex(signatureBuffer);
 }
 
 /**
  * Unified Webhook Signature Verifier
- * 
+ *
  * Analyzes the headers to determine the provider, then computes
  * the appropriate cryptographic signature (or hash match) to verify
  * the authenticity of the webhook payload.
@@ -69,7 +73,7 @@ export async function verifyWebhook(
     FLUTTERWAVE_SECRET_HASH?: string;
     REVENUECAT_WEBHOOK_SECRET?: string;
     [key: string]: any;
-  }
+  },
 ): Promise<WebhookVerificationResult> {
   const headers = request.headers;
 
@@ -78,9 +82,17 @@ export async function verifyWebhook(
   if (paystackSig) {
     if (!env.PAYSTACK_SECRET_KEY) {
       logger.error('Missing PAYSTACK_SECRET_KEY in environment');
-      return { isValid: false, provider: 'paystack', error: 'Server misconfiguration' };
+      return {
+        isValid: false,
+        provider: 'paystack',
+        error: 'Server misconfiguration',
+      };
     }
-    const computed = await computeHMAC(env.PAYSTACK_SECRET_KEY, rawBody, 'SHA-512');
+    const computed = await computeHMAC(
+      env.PAYSTACK_SECRET_KEY,
+      rawBody,
+      'SHA-512',
+    );
     const isValid = timingSafeEqual(computed, paystackSig);
     if (!isValid) logger.warn('[webhook] Paystack signature mismatch');
     return { isValid, provider: 'paystack' };
@@ -91,9 +103,16 @@ export async function verifyWebhook(
   if (flutterwaveSig) {
     if (!env.FLUTTERWAVE_SECRET_HASH) {
       logger.error('Missing FLUTTERWAVE_SECRET_HASH in environment');
-      return { isValid: false, provider: 'flutterwave', error: 'Server misconfiguration' };
+      return {
+        isValid: false,
+        provider: 'flutterwave',
+        error: 'Server misconfiguration',
+      };
     }
-    const isValid = timingSafeEqual(flutterwaveSig, env.FLUTTERWAVE_SECRET_HASH);
+    const isValid = timingSafeEqual(
+      flutterwaveSig,
+      env.FLUTTERWAVE_SECRET_HASH,
+    );
     if (!isValid) logger.warn('[webhook] Flutterwave signature mismatch');
     return { isValid, provider: 'flutterwave' };
   }
@@ -104,9 +123,17 @@ export async function verifyWebhook(
   if (revenueCatSig) {
     if (!env.REVENUECAT_WEBHOOK_SECRET) {
       logger.error('Missing REVENUECAT_WEBHOOK_SECRET in environment');
-      return { isValid: false, provider: 'revenuecat', error: 'Server misconfiguration' };
+      return {
+        isValid: false,
+        provider: 'revenuecat',
+        error: 'Server misconfiguration',
+      };
     }
-    const computed = await computeHMAC(env.REVENUECAT_WEBHOOK_SECRET, rawBody, 'SHA-256');
+    const computed = await computeHMAC(
+      env.REVENUECAT_WEBHOOK_SECRET,
+      rawBody,
+      'SHA-256',
+    );
     const isValid = timingSafeEqual(computed, revenueCatSig);
     if (!isValid) logger.warn('[webhook] RevenueCat signature mismatch');
     return { isValid, provider: 'revenuecat' };
@@ -114,5 +141,9 @@ export async function verifyWebhook(
 
   // ── UNKNOWN PROVIDER ──
   logger.warn('[webhook] Request missing valid webhook signature headers');
-  return { isValid: false, provider: 'unknown', error: 'Missing signature headers' };
+  return {
+    isValid: false,
+    provider: 'unknown',
+    error: 'Missing signature headers',
+  };
 }

@@ -1,6 +1,13 @@
 import { Env, Tier, TranslateResult } from './types';
 import { logger } from './logger';
-import { guardTextLength, guardAutoDetect, guardLanguageCode, safeParseJSON, sanitizeTranslationText, getLanguageName } from './security';
+import {
+  guardTextLength,
+  guardAutoDetect,
+  guardLanguageCode,
+  safeParseJSON,
+  sanitizeTranslationText,
+  getLanguageName,
+} from './security';
 import * as groq from './providers/groq';
 import * as mistral from './providers/mistral';
 import * as openrouter from './providers/openrouter';
@@ -53,7 +60,11 @@ export async function handleTranslate(
   signal: AbortSignal,
 ): Promise<Response> {
   // ── Safe JSON parsing (prevents 500 on malformed body) ──
-  const parsed = await safeParseJSON<{ text: string; targetLang: string; sourceLang?: string }>(request);
+  const parsed = await safeParseJSON<{
+    text: string;
+    targetLang: string;
+    sourceLang?: string;
+  }>(request);
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
 
@@ -80,7 +91,9 @@ export async function handleTranslate(
   // ── KV Cache Lookup (Fail-Closed) ──
   let cacheKey: string;
   try {
-    const textHash = await sha256(`${cleanText}_${body.sourceLang || 'auto'}_${body.targetLang}`);
+    const textHash = await sha256(
+      `${cleanText}_${body.sourceLang || 'auto'}_${body.targetLang}`,
+    );
     cacheKey = `trans:${textHash}`;
     const cached = await env.EKWE_KV.get(cacheKey);
     if (cached) {
@@ -89,10 +102,15 @@ export async function handleTranslate(
       return Response.json(cachedResult);
     }
   } catch (err) {
-    logger.error(`[translate] KV cache lookup error (Failing closed)`, { error: String(err) });
+    logger.error(`[translate] KV cache lookup error (Failing closed)`, {
+      error: String(err),
+    });
     return Response.json(
-      { error: 'EKWE_ALL_PROVIDERS_FAIL', message: 'Service temporarily unavailable. Please try again later.' },
-      { status: 503 }
+      {
+        error: 'EKWE_ALL_PROVIDERS_FAIL',
+        message: 'Service temporarily unavailable. Please try again later.',
+      },
+      { status: 503 },
     );
   }
 
@@ -104,27 +122,44 @@ export async function handleTranslate(
       const targetName = getLanguageName(body.targetLang);
       const sourceName = getLanguageName(body.sourceLang);
 
-      const result = await provider.fn(cleanText, targetName, sourceName, env, signal);
+      const result = await provider.fn(
+        cleanText,
+        targetName,
+        sourceName,
+        env,
+        signal,
+      );
       if (result) {
-        logger.info(`[translate] Success: ${provider.name}`, { provider: result.provider });
-        
+        logger.info(`[translate] Success: ${provider.name}`, {
+          provider: result.provider,
+        });
+
         // Write to cache (Fail-Closed for security - if write fails, block return)
         try {
-          await env.EKWE_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: 30 * 24 * 60 * 60 }); // 30 days
+          await env.EKWE_KV.put(cacheKey, JSON.stringify(result), {
+            expirationTtl: 30 * 24 * 60 * 60,
+          }); // 30 days
         } catch (err) {
-          logger.error(`[translate] KV cache write error (Failing closed)`, { error: String(err) });
+          logger.error(`[translate] KV cache write error (Failing closed)`, {
+            error: String(err),
+          });
           return Response.json(
-            { error: 'EKWE_ALL_PROVIDERS_FAIL', message: 'Service temporarily unavailable. Please try again later.' },
-            { status: 503 }
+            {
+              error: 'EKWE_ALL_PROVIDERS_FAIL',
+              message:
+                'Service temporarily unavailable. Please try again later.',
+            },
+            { status: 503 },
           );
         }
 
         return Response.json(result);
       }
-
     } catch (e: unknown) {
       if (e instanceof Error && e.message === 'CLIENT_ABORTED') throw e;
-      logger.error(`[translate] ${provider.name} failed`, { error: e instanceof Error ? e.message : String(e) });
+      logger.error(`[translate] ${provider.name} failed`, {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 

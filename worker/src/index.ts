@@ -7,33 +7,39 @@ import type { ExecutionContext } from '@cloudflare/workers-types';
 import { logger } from './logger';
 import { guardContentType } from './security';
 import { handleWebhook } from './webhook';
+import { handleCheckoutInitialize } from './checkout';
 
 let JWKS: ReturnType<typeof createRemoteJWKSet>;
 
 function getCorsHeaders(request: Request, env: Env): Record<string, string> {
   const origin = request.headers.get('Origin') || request.headers.get('origin');
-  const allowedOrigins = env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) || [];
+  const allowedOrigins =
+    env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()) || [];
 
-  const isAllowed = origin && (
-    allowedOrigins.includes(origin) ||
-    origin.startsWith('exp://') ||
-    origin.includes('.expo.dev') ||
-    origin.includes('.expo.io') ||
-    origin.startsWith('http://localhost') ||
-    origin.startsWith('http://127.0.0.1')
-  );
+  const isAllowed =
+    origin &&
+    (allowedOrigins.includes(origin) ||
+      origin.startsWith('exp://') ||
+      origin.includes('.expo.dev') ||
+      origin.includes('.expo.io') ||
+      origin.startsWith('http://localhost') ||
+      origin.startsWith('http://127.0.0.1'));
 
   return {
     ...(isAllowed && { 'Access-Control-Allow-Origin': origin }),
     ...(isAllowed && { 'Access-Control-Allow-Credentials': 'true' }),
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Vary': 'Origin',
+    Vary: 'Origin',
   };
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
     const corsHeaders = getCorsHeaders(request, env);
 
     if (request.method === 'OPTIONS') {
@@ -52,6 +58,7 @@ export default {
     // ─── Auth: Strict JWT Only ───
     let tier: Tier = 'FREE';
     let userId = '';
+    let userEmail = '';
 
     const authHeader = request.headers.get('Authorization');
 
@@ -59,26 +66,35 @@ export default {
       try {
         const token = authHeader.split(' ')[1];
         if (!JWKS) {
-          JWKS = createRemoteJWKSet(new URL(`${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`));
+          JWKS = createRemoteJWKSet(
+            new URL(`${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`),
+          );
         }
         const { payload } = await jwtVerify(token, JWKS, {
           issuer: `${env.SUPABASE_URL}/auth/v1`,
-          audience: 'authenticated'
+          audience: 'authenticated',
         });
-        const meta = payload as JWTPayloadWithMeta;
+                const meta = payload as JWTPayloadWithMeta;
         userId = meta.sub || '';
-        
+        userEmail = meta.email || '';
+
         if (!userId) throw new Error('Missing sub in JWT');
 
         if (meta.app_metadata?.is_pro) {
           tier = 'PREMIUM';
         }
       } catch (err) {
-        return this.addCorsHeaders(Response.json({ error: 'INVALID_TOKEN' }, { status: 401 }), corsHeaders);
+        return this.addCorsHeaders(
+          Response.json({ error: 'INVALID_TOKEN' }, { status: 401 }),
+          corsHeaders,
+        );
       }
     } else {
       // No valid JWT provided — block completely
-      return this.addCorsHeaders(Response.json({ error: 'UNAUTHORIZED' }, { status: 401 }), corsHeaders);
+      return this.addCorsHeaders(
+        Response.json({ error: 'UNAUTHORIZED' }, { status: 401 }),
+        corsHeaders,
+      );
     }
 
     // ─── SECURITY GATING: Cloudflare Rate Limiting ───
@@ -91,8 +107,14 @@ export default {
       if (!success) {
         logger.warn(`[rate-limiter] Blocked request for key: ${rateLimitKey}`);
         return this.addCorsHeaders(
-          Response.json({ error: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please slow down.' }, { status: 429 }),
-          corsHeaders
+          Response.json(
+            {
+              error: 'TOO_MANY_REQUESTS',
+              message: 'Rate limit exceeded. Please slow down.',
+            },
+            { status: 429 },
+          ),
+          corsHeaders,
         );
       }
     }
@@ -102,24 +124,38 @@ export default {
     const kvRateLimitKey = `ratelimit:user:${userId}`;
     const currentCount = await env.EKWE_KV.get(kvRateLimitKey);
     const requestCount = parseInt(currentCount || '0', 10);
-    
+
     if (requestCount >= 50) {
       logger.warn(`[kv-ratelimit] User ${userId} exceeded 50 req/min`);
       return this.addCorsHeaders(
-        Response.json({ error: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please slow down.' }, { status: 429 }),
-        corsHeaders
+        Response.json(
+          {
+            error: 'TOO_MANY_REQUESTS',
+            message: 'Rate limit exceeded. Please slow down.',
+          },
+          { status: 429 },
+        ),
+        corsHeaders,
       );
     }
-    
+
     // Increment counter with 60-second TTL
-    await env.EKWE_KV.put(kvRateLimitKey, String(requestCount + 1), { expirationTtl: 60 });
+    await env.EKWE_KV.put(kvRateLimitKey, String(requestCount + 1), {
+      expirationTtl: 60,
+    });
 
     // ─── 1. PRE-FLIGHT CHECK (ATOMIC COOLDOWN) ───
     const preflight = await checkPreflight(env, userId, tier);
     if (!preflight.allowed) {
       return this.addCorsHeaders(
-        Response.json({ error: 'EKWE_RATE_LIMIT', message: `Please wait ${Math.ceil(preflight.cooldown_remaining || 0)} seconds.` }, { status: 429 }),
-        corsHeaders
+        Response.json(
+          {
+            error: 'EKWE_RATE_LIMIT',
+            message: `Please wait ${Math.ceil(preflight.cooldown_remaining || 0)} seconds.`,
+          },
+          { status: 429 },
+        ),
+        corsHeaders,
       );
     }
 
@@ -127,12 +163,30 @@ export default {
     try {
       if (request.method === 'POST' && url.pathname === '/transcribe') {
         const ctGuard = guardContentType(request, 'multipart');
-        if (!ctGuard.allowed) return this.addCorsHeaders(ctGuard.response, corsHeaders);
-        response = await handleTranscribe(request, env, preflight.tier_active, request.signal);
+        if (!ctGuard.allowed)
+          return this.addCorsHeaders(ctGuard.response, corsHeaders);
+        response = await handleTranscribe(
+          request,
+          env,
+          preflight.tier_active,
+          request.signal,
+        );
       } else if (request.method === 'POST' && url.pathname === '/translate') {
         const ctGuard = guardContentType(request, 'json');
-        if (!ctGuard.allowed) return this.addCorsHeaders(ctGuard.response, corsHeaders);
-        response = await handleTranslate(request, env, preflight.tier_active, request.signal);
+        if (!ctGuard.allowed)
+          return this.addCorsHeaders(ctGuard.response, corsHeaders);
+        response = await handleTranslate(
+          request,
+          env,
+          preflight.tier_active,
+          request.signal,
+        );
+      } else if (request.method === 'POST' && url.pathname === '/checkout/initialize') {
+        const ctGuard = guardContentType(request, 'json');
+        if (!ctGuard.allowed)
+          return this.addCorsHeaders(ctGuard.response, corsHeaders);
+        response = await handleCheckoutInitialize(request, env, userId, userEmail);
+        return this.addCorsHeaders(response, corsHeaders);
       } else {
         response = Response.json({ error: 'NOT_FOUND' }, { status: 404 });
       }
@@ -140,7 +194,10 @@ export default {
       // ─── 3. POST-FLIGHT DEDUCTION ───
       if (response.ok) {
         // Read the response body first
-        const resBody = await response.clone().json() as Record<string, unknown>;
+        const resBody = (await response.clone().json()) as Record<
+          string,
+          unknown
+        >;
 
         // 1 Half Transaction = 1 Credit
         const cost = 1;
@@ -151,16 +208,27 @@ export default {
         const deductionResult = await postflightDeduction(env, userId, cost);
 
         if (!deductionResult) {
-          logger.error('[postflight] deduction failed — billing bypass prevented');
+          logger.error(
+            '[postflight] deduction failed — billing bypass prevented',
+          );
           return this.addCorsHeaders(
-            Response.json({ error: 'BILLING_FAILED', message: 'Transaction could not be processed. Please try again.' }, { status: 502 }),
-            corsHeaders
+            Response.json(
+              {
+                error: 'BILLING_FAILED',
+                message:
+                  'Transaction could not be processed. Please try again.',
+              },
+              { status: 502 },
+            ),
+            corsHeaders,
           );
         }
 
-        response = Response.json({ ...resBody, transaction: deductionResult }, { status: response.status });
+        response = Response.json(
+          { ...resBody, transaction: deductionResult },
+          { status: response.status },
+        );
       }
-
     } catch (e: unknown) {
       const errorMsg = e instanceof Error ? e.message : String(e);
       if (errorMsg === 'CLIENT_ABORTED') {
@@ -175,7 +243,10 @@ export default {
     return this.addCorsHeaders(response, corsHeaders);
   },
 
-  addCorsHeaders(response: Response, corsHeaders: Record<string, string>): Response {
+  addCorsHeaders(
+    response: Response,
+    corsHeaders: Record<string, string>,
+  ): Response {
     const newHeaders = new Headers(response.headers);
     Object.entries(corsHeaders).forEach(([k, v]) => newHeaders.set(k, v));
     return new Response(response.body, {

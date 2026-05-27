@@ -109,28 +109,7 @@ export const useTranscription = (): UseTranscriptionReturn => {
           setMismatch({ detected, suggested: lang });
         }
 
-        // Save to history via HistoryService
-        if (sessionId !== null) {
-          if (!userSession) {
-            logger.warn(
-              '[Transcription] No user session, skipping history save',
-            );
-          } else {
-            HistoryService.recordTranslation(
-              {
-                sourceLang: lang,
-                targetLang: selectedLanguages[0] ?? 'en',
-                transcript,
-                translation: null,
-                transliteration: null,
-                duration: audio.durationMs,
-                sourceApp: 'ekwe',
-                provider: 'gemini', // Default or from context
-              },
-              userSession,
-            ).catch((e) => logger.error('Failed to record history', e));
-          }
-        }
+
 
         return ok(result.value);
       } catch (error: unknown) {

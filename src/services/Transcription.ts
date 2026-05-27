@@ -60,7 +60,10 @@ export interface TranscriptionResult {
 
 class TranscriptionServiceClass {
   private readonly CACHE_TTL_MS = 5 * 60 * 1000;
-  private cache = new Map<string, { value: Result<TranscriptionResult, EkweError>; timestamp: number }>();
+  private cache = new Map<
+    string,
+    { value: Result<TranscriptionResult, EkweError>; timestamp: number }
+  >();
 
   clearCache(): void {
     this.cache.clear();
@@ -259,7 +262,11 @@ class TranscriptionServiceClass {
       detectedLang,
       sourceLang,
       wordTimestamps: adjustedWords,
-      durationSeconds: audio.durationMs / 1000,
+      durationSeconds: audio.durationMs > 0
+        ? audio.durationMs / 1000
+        : adjustedWords.length > 0
+          ? adjustedWords[adjustedWords.length - 1].end
+          : 0,
       isLowQuality: audio.averageDb < -60,
       provider,
     });

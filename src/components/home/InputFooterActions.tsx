@@ -1,11 +1,15 @@
+import { Mic, X, Square, Trash2, Send } from 'lucide-react-native';
 import React, { useMemo } from 'react';
-import { View, Pressable, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { StyleProp, ViewStyle } from 'react-native';
 import Animated, { useAnimatedProps } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
-import { Mic, X, Square, Trash2, Send } from 'lucide-react-native';
 
-import { IconButton } from '../ui/IconButton';
-import { spacing, typography } from '@/constants/designTokens';
+import { IconButton } from '../IconButton';
+
+import { Box, Text, Pressable, Spinner } from '@/components/ui';
+import { shadows } from '@/constants';
+import { borderRadius, opacity } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -54,31 +58,45 @@ export const InputFooterActions = React.memo(
       strokeDashoffset: circumference - progress * circumference,
     }));
 
+    // no-op in production; previous dev-only contrast checks were removed per request
+
     const micBtnStyle = useMemo(
-      () => ({ pressed }: { pressed: boolean }) => [
-        styles.micBtn,
-        (valueLength > 0 || isPreview) && styles.translateBtnActive,
-        {
-          backgroundColor:
-            isRecording || isProcessing
-              ? color.error
-              : isPreview
-                ? color.primary
-                : valueLength > 0
-                  ? canTranslate
-                    ? color.primary
-                    : color.border
-                  : color.secondary,
-        },
-        pressed &&
-        !isProcessing &&
-        (isPreview || isRecording || (valueLength > 0 && canTranslate)) && {
-          transform: [{ scale: 0.95 }],
-        },
-        isDisabled && {
-          opacity: 0.5,
-        },
-      ],
+      () =>
+        ({ pressed }: { pressed: boolean }): StyleProp<ViewStyle> => [
+          {
+            width: 52,
+            height: 52,
+            borderRadius: borderRadius['2xl'],
+            alignItems: 'center' as const,
+            justifyContent: 'center' as const,
+            ...shadows.soft,
+          },
+          (valueLength > 0 || isPreview) &&
+            ({
+              width: 'auto',
+              paddingHorizontal: spacing.lg,
+            } as const),
+          {
+            backgroundColor:
+              isRecording || isProcessing
+                ? color.error
+                : isPreview
+                  ? color.secondary
+                  : valueLength > 0
+                    ? canTranslate
+                      ? color.secondary
+                      : color.border
+                    : color.secondary,
+          },
+          pressed &&
+            !isProcessing &&
+            (isPreview || isRecording || (valueLength > 0 && canTranslate)) && {
+              transform: [{ scale: 0.95 }],
+            },
+          isDisabled && {
+            opacity: opacity.disabled,
+          },
+        ],
       [
         valueLength,
         isRecording,
@@ -91,43 +109,59 @@ export const InputFooterActions = React.memo(
     );
 
     return (
-      <View style={styles.footer}>
+      <Box style={{ paddingHorizontal: spacing.lg }}>
         {isActive ? (
-          <View style={styles.actionsRow}>
-            <View style={styles.footerLeft}>
-              <View style={styles.footerAction}>
+          <Box
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'flex-end',
+              width: '100%',
+            }}
+          >
+            <Box style={{ flexDirection: 'row', gap: spacing.md }}>
+              <Box style={{ alignItems: 'center', gap: spacing.xs }}>
                 <IconButton
                   accessibilityLabel="Discard recording"
                   onPress={handleCancelPress}
                   backgroundColor={color.surface}
                   size={52}
-                  icon={<Trash2 size={22} color="#EF4444" strokeWidth={2} />}
+                  icon={
+                    <Trash2 size={22} color={color.error} strokeWidth={2} />
+                  }
                 />
                 {!isKeyboardVisible && (
-                  <Text style={[styles.actionLabel, { color: '#EF4444' }]}>
+                  <Text variant="caption" style={{ color: color.error }}>
                     Cancel
                   </Text>
                 )}
-              </View>
-            </View>
+              </Box>
+            </Box>
 
-            <View style={styles.micContainer}>
+            <Box
+              style={{
+                minWidth: 60,
+                height: 60,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
               {(isRecording || isProcessing) && (
-                <View style={StyleSheet.absoluteFill}>
+                <Box
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                  }}
+                >
                   <Svg width={60} height={60} viewBox="0 0 60 60">
-                    <Circle
-                      cx="30"
-                      cy="30"
-                      r={radius}
-                      stroke="rgba(239, 68, 68, 0.2)"
-                      strokeWidth={strokeWidth}
-                      fill="none"
-                    />
                     <AnimatedCircle
                       cx="30"
                       cy="30"
                       r={radius}
-                      stroke="#EF4444"
+                      stroke={color.error}
                       strokeWidth={strokeWidth}
                       strokeLinecap="round"
                       fill="none"
@@ -136,18 +170,21 @@ export const InputFooterActions = React.memo(
                       transform="rotate(-90 30 30)"
                     />
                   </Svg>
-                </View>
+                </Box>
               )}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={
-                  isPreview ? 'Confirm audio' : 'Stop recording'
-                }
-                style={micBtnStyle}
-                onPress={handleRightButtonPress}
-                disabled={isTranslating || isProcessing || isInitializing}
-                hitSlop={15}
-              >
+               <Pressable
+                 accessibilityLabel={
+                   isPreview
+                     ? 'Confirm audio and transcribe'
+                     : isRecording
+                       ? 'Stop recording'
+                       : 'Recording action'
+                 }
+                 style={micBtnStyle}
+                 onPress={handleRightButtonPress}
+                 disabled={isTranslating || isProcessing || isInitializing}
+                 hitSlop={15}
+               >
                 {isRecording ? (
                   <Square
                     size={22}
@@ -156,19 +193,26 @@ export const InputFooterActions = React.memo(
                     strokeWidth={2.5}
                   />
                 ) : isProcessing ? (
-                  <ActivityIndicator color={color.onPrimary} size="small" />
+                  <Spinner size="sm" color={color.onSecondary} />
                 ) : (
-                  <Send size={18} color={color.onPrimary} strokeWidth={2.5} />
+                  <Send size={18} color={color.onSecondary} strokeWidth={2.5} />
                 )}
               </Pressable>
-            </View>
-          </View>
+            </Box>
+          </Box>
         ) : (
-          <View style={styles.classicFooter}>
-            <View style={styles.actionsRow}>
-              <View style={styles.footerLeft}>
+          <Box style={{ width: '100%' }}>
+            <Box
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'flex-end',
+                width: '100%',
+              }}
+            >
+              <Box style={{ flexDirection: 'row', gap: spacing.md }}>
                 {valueLength > 0 ? (
-                  <View style={styles.footerAction}>
+                  <Box style={{ alignItems: 'center', gap: spacing.xs }}>
                     <IconButton
                       accessibilityLabel="Clear text"
                       onPress={handleClear}
@@ -178,23 +222,29 @@ export const InputFooterActions = React.memo(
                         <X size={22} color={color.muted} strokeWidth={2.5} />
                       }
                     />
-                    <Text
-                      style={[styles.actionLabel, { color: color.muted }]}
-                    >
+                    <Text variant="caption" style={{ color: color.muted }}>
                       Clear
                     </Text>
-                  </View>
+                  </Box>
                 ) : (
-                  <View style={styles.footerActionPlaceholder} />
+                  <Box style={{ width: 52, height: 52 }} />
                 )}
-              </View>
+              </Box>
 
-              <View style={styles.micContainer}>
+              <Box
+                style={{
+                  minWidth: 60,
+                  height: 60,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
                 <Pressable
-                  accessibilityRole="button"
                   accessibilityLabel={
                     valueLength > 0
-                      ? 'Translate text'
+                      ? isTranslating
+                        ? 'Translating'
+                        : 'Translate text'
                       : 'Start voice dictation'
                   }
                   style={micBtnStyle}
@@ -203,23 +253,29 @@ export const InputFooterActions = React.memo(
                   hitSlop={15}
                 >
                   {isInitializing ? (
-                    <ActivityIndicator color={color.onPrimary} size="small" />
+                    <Spinner size="sm" color={color.onSecondary} />
                   ) : valueLength > 0 ? (
-                    <View style={styles.translateRow}>
+                    <Box
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: spacing.sm,
+                      }}
+                    >
                       <Text
-                        style={[
-                          styles.translateText,
-                          { color: color.onPrimary },
-                        ]}
+                        variant="body"
+                        style={{
+                          color: color.onSecondary,
+                        }}
                       >
                         {isTranslating ? 'Translating...' : 'Translate'}
                       </Text>
                       <Send
                         size={18}
-                        color={color.onPrimary}
+                        color={color.onSecondary}
                         strokeWidth={2.5}
                       />
-                    </View>
+                    </Box>
                   ) : (
                     <Mic
                       size={24}
@@ -228,65 +284,11 @@ export const InputFooterActions = React.memo(
                     />
                   )}
                 </Pressable>
-              </View>
-            </View>
-          </View>
+              </Box>
+            </Box>
+          </Box>
         )}
-      </View>
+      </Box>
     );
   },
 );
-
-const styles = StyleSheet.create({
-  footer: {
-    paddingHorizontal: spacing[6],
-  },
-  classicFooter: {
-    width: '100%',
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    width: '100%',
-  },
-  footerLeft: { flexDirection: 'row', gap: spacing[3] },
-  footerAction: { alignItems: 'center', gap: spacing[1] },
-  actionLabel: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: typography.caption.size - 1,
-  },
-  footerActionPlaceholder: { width: 52, height: 52 },
-  micContainer: {
-    minWidth: 60,
-    height: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  micBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  translateBtnActive: {
-    width: 'auto',
-    paddingHorizontal: spacing[6],
-  },
-  translateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  translateText: {
-    fontFamily: 'Outfit-Bold',
-    fontSize: 16,
-    letterSpacing: 0.3,
-  },
-});

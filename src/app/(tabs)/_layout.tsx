@@ -4,6 +4,7 @@ import { Home, History, User } from 'lucide-react-native';
 import React, { useEffect } from 'react';
 
 import { CustomTabBar } from '@/components/CustomTabBar';
+import { typography } from '@/constants/typography';
 import { useTheme } from '@/hooks';
 import { settings$ } from '@/store';
 
@@ -33,7 +34,7 @@ export default function TabLayout(): React.ReactElement | null {
         },
         headerShadowVisible: false,
         headerTitleStyle: {
-          fontFamily: 'Outfit-Bold',
+          fontFamily: typography.heading3.fontFamily,
           color: color.foreground,
         },
         headerTintColor: color.primary,

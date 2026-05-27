@@ -17,7 +17,7 @@ export interface AppToastOptions {
  * Automatically adds Haptics and standardized durations.
  */
 export const AppToast = {
-  info: (title: string, options?: AppToastOptions) => {
+  info: (title: string, options?: AppToastOptions): void => {
     if (options?.haptics !== false) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -27,7 +27,7 @@ export const AppToast = {
     });
   },
 
-  success: (title: string, options?: AppToastOptions) => {
+  success: (title: string, options?: AppToastOptions): void => {
     if (options?.haptics !== false) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
@@ -37,7 +37,10 @@ export const AppToast = {
     });
   },
 
-  error: (title: string, options?: AppToastOptions & { error?: unknown }) => {
+  error: (
+    title: string,
+    options?: AppToastOptions & { error?: unknown },
+  ): void => {
     let description = options?.description;
     const error = options?.error;
 
@@ -50,9 +53,11 @@ export const AppToast = {
         description = String(error.message);
       }
     }
-    
+
     if (description || error) {
-      logger.error(`[AppToast Error] ${title} - ${description || 'Unknown error'}`);
+      logger.error(
+        `[AppToast Error] ${title} - ${description || 'Unknown error'}`,
+      );
     }
 
     if (options?.haptics !== false) {

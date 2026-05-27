@@ -6,19 +6,25 @@ import type { Env } from '../src/types';
 export function mockEnv(overrides: Partial<Env> = {}): Env {
   const kv = {
     _store: new Map<string, string>(),
-    get: vi.fn(async (key: string) => kv._store.get(key) ?? null) as Env['EKWE_KV']['get'],
-    put: vi.fn(async (key: string, value: string, opts?: { expirationTtl?: number }) => {
-      kv._store.set(key, value);
-      if (opts?.expirationTtl) {
-        setTimeout(() => kv._store.delete(key), opts.expirationTtl * 1000);
-      }
-    }) as Env['EKWE_KV']['put'],
+    get: vi.fn(
+      async (key: string) => kv._store.get(key) ?? null,
+    ) as Env['EKWE_KV']['get'],
+    put: vi.fn(
+      async (key: string, value: string, opts?: { expirationTtl?: number }) => {
+        kv._store.set(key, value);
+        if (opts?.expirationTtl) {
+          setTimeout(() => kv._store.delete(key), opts.expirationTtl * 1000);
+        }
+      },
+    ) as Env['EKWE_KV']['put'],
   } as Env['EKWE_KV'];
 
   const ai = {
     run: vi.fn(async (_model: string, inputs: Record<string, unknown>) => {
       if (_model === '@cf/openai/whisper') {
-        const text = Array.isArray(inputs?.audio) ? 'mock whisper transcription' : '';
+        const text = Array.isArray(inputs?.audio)
+          ? 'mock whisper transcription'
+          : '';
         return { text };
       }
       if (_model === '@cf/meta/llama-3-8b-instruct') {
@@ -104,7 +110,10 @@ export function makeAudioBlob(): Blob {
 
 // ─── Mock Fetch Infrastructure ─────────────────────────────────────
 
-type FetchHandler = (url: string, init?: RequestInit) => Response | Promise<Response>;
+type FetchHandler = (
+  url: string,
+  init?: RequestInit,
+) => Response | Promise<Response>;
 
 let currentHandler: FetchHandler | null = null;
 

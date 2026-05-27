@@ -1,9 +1,10 @@
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
 
 import { AccessibilityDisclosure } from '@/components';
+import { Box } from '@/components/ui';
+import { isIOS } from '@/utils';
 import { useForegroundApp, useTheme } from '@/hooks';
 
 export default function AccessibilityDisclosureScreen(): React.ReactElement {
@@ -22,9 +23,9 @@ export default function AccessibilityDisclosureScreen(): React.ReactElement {
     router.back();
   };
 
-  const Container = process.env.EXPO_OS === 'ios' ? BlurView : View;
+  const Container = isIOS ? BlurView : Box;
   const containerProps =
-    process.env.EXPO_OS === 'ios'
+    isIOS
       ? { intensity: 80, tint: isDark ? ('dark' as const) : ('light' as const) }
       : { style: { flex: 1, backgroundColor: color.background } };
 
@@ -35,6 +36,6 @@ export default function AccessibilityDisclosureScreen(): React.ReactElement {
   );
 }
 
-const styles = StyleSheet.create({
-  flex1: { flex: 1 },
-});
+const styles = {
+  flex1: { flex: 1 } as const,
+};

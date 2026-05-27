@@ -1,9 +1,12 @@
 import * as Haptics from 'expo-haptics';
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
-import { ScrollableTextBox } from '@/components';
+import { ScrollableTextBox } from '../../ScrollableTextBox';
+
+import { Box, Text, Pressable } from '@/components/ui';
 import { FLAG_MAP } from '@/constants/languages';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 
 interface ResultDisplayProps {
@@ -41,9 +44,6 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
 
     const { color } = useTheme();
     const brandPrimary = color.secondary;
-    const textSecondary = color.muted;
-    const bgMain = color.surface;
-    const handleHex = color.border;
 
     const handleTabPress = React.useCallback(
       (tab: 'Translation' | 'Transcription'): void => {
@@ -55,34 +55,49 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
     );
 
     return (
-      <View style={styles.container}>
-        <View style={styles.headerRow}>
-          <View
-            style={[
-              styles.segmentContainer,
-              {
-                backgroundColor: bgMain,
-                borderColor: handleHex,
-                borderWidth: 1,
-              },
-            ]}
+      <Box>
+        <Box
+          style={{
+            flexDirection: 'row',
+            alignItems: 'stretch',
+            justifyContent: 'space-between',
+            marginBottom: spacing.md,
+          }}
+        >
+          <Box
+            style={{
+              flexDirection: 'row',
+              borderRadius: borderRadius.xl,
+              padding: spacing.xs,
+              flex: 1,
+              backgroundColor: color.surface,
+              borderColor: color.border,
+              borderWidth: 1,
+            }}
           >
-            <TouchableOpacity
+            <Pressable
+              feedback="none"
               onPress={() => handleTabPress('Translation')}
               style={[
-                styles.segmentBtn,
+                {
+                  flex: 1,
+                  paddingVertical: spacing.md,
+                  borderRadius: borderRadius.lg,
+                  alignItems: 'center',
+                },
                 activeTab === 'Translation' && {
                   backgroundColor: brandPrimary,
                 },
               ]}
             >
               <Text
-                style={[
-                  styles.tabLabel,
-                  {
-                    color: activeTab === 'Translation' ? '#FFF' : textSecondary,
-                  },
-                ]}
+                variant="bodySmall"
+                style={{
+                  color:
+                    activeTab === 'Translation'
+                      ? color.onSecondary
+                      : color.muted,
+                }}
               >
                 Translated (
                 {targetLang
@@ -90,24 +105,30 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
                   : ''}
                 )
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Pressable>
+            <Pressable
+              feedback="none"
               onPress={() => handleTabPress('Transcription')}
               style={[
-                styles.segmentBtn,
+                {
+                  flex: 1,
+                  paddingVertical: spacing.md,
+                  borderRadius: borderRadius.lg,
+                  alignItems: 'center',
+                },
                 activeTab === 'Transcription' && {
                   backgroundColor: brandPrimary,
                 },
               ]}
             >
               <Text
-                style={[
-                  styles.tabLabel,
-                  {
-                    color:
-                      activeTab === 'Transcription' ? '#FFF' : textSecondary,
-                  },
-                ]}
+                variant="bodySmall"
+                style={{
+                  color:
+                    activeTab === 'Transcription'
+                      ? color.onSecondary
+                      : color.muted,
+                }}
               >
                 Original (
                 {sourceLang
@@ -115,9 +136,9 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
                   : ''}
                 )
               </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+            </Pressable>
+          </Box>
+        </Box>
 
         <ScrollableTextBox
           text={activeTab === 'Translation' ? translation : transcription}
@@ -125,34 +146,7 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
           variant="default"
           isLoading={isLoading && activeTab === 'Translation'}
         />
-      </View>
+      </Box>
     );
   },
 );
-
-const styles = StyleSheet.create({
-  container: {},
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  segmentContainer: {
-    flexDirection: 'row',
-    borderRadius: 14,
-    padding: 4,
-    flex: 1,
-  },
-  segmentBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  tabLabel: {
-    fontFamily: 'Outfit-Bold',
-    fontSize: 13,
-    letterSpacing: -0.2,
-  },
-});

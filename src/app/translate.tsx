@@ -3,23 +3,16 @@ import { BlurView } from 'expo-blur';
 import { useLocalSearchParams } from 'expo-router';
 import { ChevronDown, ArrowDownUp } from 'lucide-react-native';
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-} from 'react-native';
 
-import { LanguagePickerSheet } from '@/components';
-import { Button, Card } from '@/components/ui';
-import { borderRadius, spacing, typography } from '@/constants/designTokens';
+import { LanguagePickerSheet, Button, Card } from '@/components';
+import { Box, Text, ScrollArea, Spinner, Pressable } from '@/components/ui';
 import { getLanguageName, FLAG_MAP } from '@/constants/languages';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTranslation, useClipboard, useTheme } from '@/hooks';
 import { HistoryService } from '@/services/HistoryService';
 import { settings$, settingsActions, auth$ } from '@/store';
-import { AppToast } from '@/utils';
+import { AppToast, isIOS } from '@/utils';
 
 export default function TranslateScreen(): React.JSX.Element {
   const params = useLocalSearchParams();
@@ -122,29 +115,34 @@ export default function TranslateScreen(): React.JSX.Element {
     setTranslation(null);
   };
 
-  const Container = process.env.EXPO_OS === 'ios' ? BlurView : View;
+  const Container = isIOS ? BlurView : Box;
   const containerProps =
-    process.env.EXPO_OS === 'ios'
+    isIOS
       ? { intensity: 80, tint: isDark ? ('dark' as const) : ('light' as const) }
       : { style: { flex: 1, backgroundColor: color.background } };
 
   return (
     <Container {...containerProps} style={styles.flex1}>
-      <ScrollView
+      <ScrollArea
         style={styles.scrollView}
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{ paddingBottom: spacing['2xl'] }}
         contentInsetAdjustmentBehavior="automatic"
       >
-        <View style={styles.mainContainer}>
+        <Box style={styles.mainContainer}>
           {/* Source Text Context */}
-          <View style={styles.block}>
-            <View style={styles.blockHeader}>
+          <Box style={styles.block}>
+            <Box style={styles.blockHeader}>
               <Pressable
                 onPress={() => openPicker('source')}
                 style={styles.pickerTrigger}
               >
                 <Text
-                  style={[styles.pickerTriggerText, { color: color.muted }]}
+                  variant="caption"
+                  style={{
+                    textTransform: 'uppercase',
+                    marginRight: spacing.xs,
+                    color: color.muted,
+                  }}
                 >
                   {(detectedLang as string) !== 'und' &&
                   sourceLang === (detectedLang as string)
@@ -154,16 +152,18 @@ export default function TranslateScreen(): React.JSX.Element {
                 </Text>
                 <ChevronDown size={14} color={mutedColor} />
               </Pressable>
-            </View>
-            <Card style={{ padding: 24, borderRadius: 20 }}>
-              <Text style={[styles.cardText, { color: color.foreground }]}>
+            </Box>
+            <Card
+              style={{ padding: spacing.lg, borderRadius: borderRadius['2xl'] }}
+            >
+              <Text variant="bodyLarge" style={{ color: color.foreground }}>
                 {text}
               </Text>
             </Card>
-          </View>
+          </Box>
 
           {/* Divider & Target Language Selector */}
-          <View style={styles.controlsRow}>
+          <Box style={styles.controlsRow}>
             <Pressable
               onPress={handleSwap}
               style={[
@@ -174,7 +174,7 @@ export default function TranslateScreen(): React.JSX.Element {
               <ArrowDownUp size={20} color={mutedColor} />
             </Pressable>
 
-            <View style={[styles.divider, { backgroundColor: color.border }]} />
+            <Box style={[styles.divider, { backgroundColor: color.border }]} />
 
             <Pressable
               onPress={() => openPicker('target')}
@@ -184,32 +184,42 @@ export default function TranslateScreen(): React.JSX.Element {
               ]}
             >
               <Text
-                style={[styles.targetPickerText, { color: color.foreground }]}
+                variant="body"
+                style={{ marginRight: spacing.sm, color: color.foreground }}
               >
                 {getLanguageName(targetLang)} {FLAG_MAP[targetLang] || ''}
               </Text>
               <ChevronDown size={16} color={mutedColor} />
             </Pressable>
-          </View>
+          </Box>
 
           {/* Translation Result or Translate Button */}
           {translation ? (
-            <View style={styles.resultBlock}>
-              <View style={styles.blockHeader}>
-                <Text style={[styles.blockLabel, { color: primaryColor }]}>
+            <Box style={styles.resultBlock}>
+              <Box style={styles.blockHeader}>
+                <Text
+                  variant="caption"
+                  style={{ textTransform: 'uppercase', color: primaryColor }}
+                >
                   TRANSLATED · {getLanguageName(targetLang)}
                 </Text>
-              </View>
-              <Card variant="accent" style={{ padding: 24, borderRadius: 20 }}>
-                <Text style={[styles.cardText, { color: color.foreground }]}>
+              </Box>
+              <Card
+                variant="accent"
+                style={{
+                  padding: spacing.lg,
+                  borderRadius: borderRadius['2xl'],
+                }}
+              >
+                <Text variant="bodyLarge" style={{ color: color.foreground }}>
                   {translation}
                 </Text>
               </Card>
-            </View>
+            </Box>
           ) : (
-            <View style={styles.translateActionContainer}>
+            <Box style={styles.translateActionContainer}>
               {isTranslating ? (
-                <ActivityIndicator size="large" color={primaryColor} />
+                <Spinner size="lg" />
               ) : (
                 <Button
                   variant="primary"
@@ -219,14 +229,14 @@ export default function TranslateScreen(): React.JSX.Element {
                   style={styles.translateButton}
                 />
               )}
-            </View>
+            </Box>
           )}
-        </View>
-      </ScrollView>
+        </Box>
+      </ScrollArea>
 
       {/* Global Action Bar */}
       {!isTranslating && translation && (
-        <View
+        <Box
           style={[
             styles.actionBar,
             { borderTopColor: color.border, backgroundColor: color.background },
@@ -238,7 +248,7 @@ export default function TranslateScreen(): React.JSX.Element {
             label={copied ? 'Copied' : 'Copy Full Translation'}
             onPress={() => handleCopy(`${text}\n\n---\n\n${translation}`)}
           />
-        </View>
+        </Box>
       )}
 
       {/* Reusable Language Picker */}
@@ -255,73 +265,50 @@ export default function TranslateScreen(): React.JSX.Element {
   );
 }
 
-const styles = StyleSheet.create({
-  flex1: { flex: 1 },
-  scrollView: { flex: 1, paddingHorizontal: 24 },
-  mainContainer: { marginTop: 32 },
-  block: { marginBottom: 16 },
+const styles = {
+  flex1: { flex: 1 } as const,
+  scrollView: { flex: 1, paddingHorizontal: spacing.lg } as const,
+  mainContainer: { marginTop: spacing.xl } as const,
+  block: { marginBottom: spacing.md } as const,
   blockHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  pickerTrigger: { flexDirection: 'row', alignItems: 'center' },
-  pickerTriggerText: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: typography.caption.size,
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-    marginRight: spacing[1],
-  },
-  cardText: {
-    fontFamily: 'Outfit-Regular',
-    fontSize: typography.bodyLarge.size,
-    lineHeight: typography.bodyLarge.lineHeight + 2,
-  },
+    marginBottom: spacing.md,
+  } as const,
+  pickerTrigger: { flexDirection: 'row', alignItems: 'center' } as const,
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: spacing[2],
-    marginBottom: spacing[6],
-    paddingHorizontal: spacing[2],
-  },
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.sm,
+  } as const,
   swapButton: {
-    padding: spacing[3],
+    padding: spacing.md,
     borderRadius: borderRadius.full,
     borderWidth: 1,
-  },
-  divider: { flex: 1, height: 1, marginHorizontal: spacing[3] },
+  } as const,
+  divider: { flex: 1, height: 1, marginHorizontal: spacing.md } as const,
   targetPickerButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     borderRadius: borderRadius.full,
     borderWidth: 1,
-  },
-  targetPickerText: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: typography.body.size,
-    marginRight: spacing[2],
-  },
-  resultBlock: { marginTop: spacing[2], marginBottom: spacing[8] },
-  blockLabel: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: typography.caption.size,
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-  },
+  } as const,
+  resultBlock: { marginTop: spacing.sm, marginBottom: spacing.xl } as const,
   translateActionContainer: {
     alignItems: 'center',
-    paddingVertical: spacing[6],
-    marginTop: spacing[4],
-  },
-  translateButton: { width: '100%', maxWidth: 280 },
+    paddingVertical: spacing.lg,
+    marginTop: spacing.md,
+  } as const,
+  translateButton: { width: '100%', maxWidth: 280 } as const,
   actionBar: {
-    paddingHorizontal: spacing[6],
-    paddingVertical: spacing[8],
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
     borderTopWidth: 1,
-  },
-});
+  } as const,
+};

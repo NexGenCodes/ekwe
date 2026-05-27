@@ -1,4 +1,5 @@
-import { Platform, Linking } from 'react-native';
+import { Linking } from 'react-native';
+import { isAndroid } from '@/utils';
 
 import EkweNative from '../../modules/ekwe-native';
 
@@ -6,14 +7,14 @@ import logger from '@/utils/logger';
 
 export const IntentService = {
   resolveToFileUri: async (rawUri: string): Promise<string | null> => {
-    if (Platform.OS === 'android' && rawUri.startsWith('content://')) {
+    if (isAndroid && rawUri.startsWith('content://')) {
       return EkweNative.resolveContentUri(rawUri);
     }
     return rawUri;
   },
 
   dismissNativeLoader: (): void => {
-    if (Platform.OS === 'android') {
+    if (isAndroid) {
       EkweNative.dismissNativeLoader();
     }
   },
@@ -27,7 +28,7 @@ export const IntentService = {
   },
 
   dismissAndRedirect: (resetShareIntent: (clear: boolean) => void): void => {
-    if (Platform.OS === 'android') {
+    if (isAndroid) {
       EkweNative.dismissEcho();
       Linking.openURL('ekwe://');
     } else {
@@ -37,7 +38,7 @@ export const IntentService = {
   },
 
   dismissEcho: (resetShareIntent: (clear: boolean) => void): void => {
-    if (Platform.OS === 'android') {
+    if (isAndroid) {
       EkweNative.dismissEcho();
     } else {
       resetShareIntent(true);

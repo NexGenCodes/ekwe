@@ -34,6 +34,43 @@ if (!IS_DEV && SENTRY_DSN && SENTRY_DSN.startsWith('https://')) {
       environment: process.env.EXPO_PUBLIC_ENV || 'production',
       tracesSampleRate: 0.1,
       integrations: [Sentry.reactNativeTracingIntegration()],
+      // Scrub potentially sensitive user content before sending to Sentry
+      beforeSend: (event: any) => {
+        try {
+          // Remove user-identifiable info
+          if (event.user) {
+            if (event.user.email) delete event.user.email;
+            if (event.user.ip_address) delete event.user.ip_address;
+          }
+
+          // Remove request payloads which may contain transcripts or PII
+          if (event.request) {
+            delete event.request.data;
+            delete event.request.headers;
+          }
+
+          // Remove any tags that might contain raw text
+          if (event.tags) {
+            Object.keys(event.tags).forEach((k) => {
+              if (/transcript|email|phone|text/i.test(k)) delete event.tags[k];
+            });
+          }
+
+          // Remove excessive breadcrumbs that may contain user text
+          if (Array.isArray(event.breadcrumbs)) {
+            event.breadcrumbs = event.breadcrumbs.map((b: any) => {
+              if (b && b.data) {
+                // strip payloads
+                delete b.data;
+              }
+              return b;
+            });
+          }
+        } catch (e) {
+          // If sanitizer fails, do not block error reporting
+        }
+        return event;
+      },
     });
     sentryCaptureException = Sentry.captureException;
     // eslint-disable-next-line no-console

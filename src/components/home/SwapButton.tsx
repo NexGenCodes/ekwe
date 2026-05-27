@@ -1,14 +1,16 @@
 import * as Haptics from 'expo-haptics';
 import { ArrowRightLeft } from 'lucide-react-native';
 import React from 'react';
-import { Pressable, StyleSheet } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   withTiming,
   SharedValue,
 } from 'react-native-reanimated';
 
-import { borderRadius, spacing } from '@/constants/designTokens';
+import { Pressable } from '@/components/ui';
+import { duration, shadows } from '@/constants';
+import { borderRadius, opacity } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 import { AppToast } from '@/utils';
 
@@ -46,7 +48,7 @@ export function SwapButton({
       return;
     }
     swapRotation.value = withTiming(swapRotation.value + 180, {
-      duration: 250,
+      duration: duration.normal,
     });
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onSwap();
@@ -54,35 +56,26 @@ export function SwapButton({
 
   return (
     <Pressable
-      accessibilityRole="button"
       accessibilityLabel="Swap languages"
       onPress={handlePress}
       style={({ pressed }) => [
-        styles.swapBtn,
-        { backgroundColor: color.primary },
-        (pressed || isSwapDisabled) && { opacity: 0.5 },
+        {
+          width: 40,
+          height: 40,
+          borderRadius: borderRadius['2xl'],
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginHorizontal: spacing.xs,
+          ...shadows.soft,
+          backgroundColor: color.secondary,
+        },
+        (pressed || isSwapDisabled) && { opacity: opacity.disabled },
         pressed && !isSwapDisabled && { transform: [{ scale: 0.9 }] },
       ]}
     >
       <Animated.View style={animatedSwapStyle}>
-        <ArrowRightLeft size={16} color={color.onPrimary} strokeWidth={2.5} />
+        <ArrowRightLeft size={16} color={color.onSecondary} strokeWidth={2.5} />
       </Animated.View>
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  swapBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: borderRadius['2xl'],
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: spacing[1],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-});

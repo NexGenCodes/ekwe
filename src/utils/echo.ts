@@ -1,5 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import { Platform } from 'react-native';
+import { isAndroid } from './platform';
 
 import EkweNative from '../../modules/ekwe-native';
 
@@ -30,7 +30,7 @@ export const cleanEchoCache = async (
     }
 
     // 2. Native bridge cleanup
-    if (Platform.OS === 'android') {
+    if (isAndroid) {
       await EkweNative.deleteFile(uri);
     }
   } catch (err) {

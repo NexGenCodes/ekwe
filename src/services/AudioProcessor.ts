@@ -3,9 +3,6 @@ import { File as ExpoFile } from 'expo-file-system';
 import { EkweError } from '@/constants/errors';
 import { Result, ok, err } from '@/types/Result';
 
-const SPEECH_THRESHOLD_DB = -60; // dB threshold for speech presence (lenient for quiet mics)
-const LOW_QUALITY_THRESHOLD_DB = -60; // dB threshold for quality warning
-const SILENCE_PAD_MS = 100; // padding around speech boundaries
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB in bytes
 
 export interface ProcessedAudio {

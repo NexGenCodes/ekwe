@@ -1,8 +1,9 @@
 import * as Haptics from 'expo-haptics';
 import { AlertButton } from 'react-native';
-import { appAlertActions } from '@/store';
 
 import logger from './logger';
+
+import { appAlertActions } from '@/store/appAlert';
 
 export interface AppAlertOptions {
   /**

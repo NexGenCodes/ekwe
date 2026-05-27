@@ -1,15 +1,11 @@
 import { Zap } from 'lucide-react-native';
 import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  ActivityIndicator,
-  StyleSheet,
-} from 'react-native';
 
 import { PlaybackControl } from './PlaybackControl';
 
+import { Box, Text, Pressable, Spinner } from '@/components/ui';
+import { borderRadius, opacity } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 import { SharedAudioPlayer } from '@/hooks/audio/useSharedAudioPlayer';
 
@@ -25,7 +21,7 @@ export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
   ({ player, isResolving, onTranscribe, children }) => {
     const { color } = useTheme();
     return (
-      <View>
+      <Box>
         <PlaybackControl
           isPlaying={player.isPlaying}
           isDecoding={player.isDecoding}
@@ -41,49 +37,37 @@ export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
 
         {children}
 
-        <TouchableOpacity
+        <Pressable
+          feedback="opacity"
           onPress={() => {
             player.cleanup();
             onTranscribe(player.duration, player.realWaveform);
           }}
           disabled={isResolving}
-          style={[
-            styles.primaryAction,
-            {
-              backgroundColor: color.secondary,
-              opacity: isResolving ? 0.6 : 1,
-            },
-          ]}
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: spacing.sm,
+            paddingVertical: spacing.md,
+            borderRadius: borderRadius['2xl'],
+            backgroundColor: color.secondary,
+            opacity: isResolving ? opacity.inactive : 1,
+          }}
         >
           {isResolving && (
-            <ActivityIndicator
-              size="small"
-              color={color.onPrimary}
-              style={{ marginRight: 8 }}
+            <Spinner
+              size="sm"
+              color={color.onSecondary}
+              style={{ marginRight: spacing.sm }}
             />
           )}
-          <Zap size={18} color={color.onPrimary} fill={color.onPrimary} />
-          <Text style={[styles.primaryActionTxt, { color: color.onPrimary }]}>
+          <Zap size={18} color={color.onSecondary} fill={color.onSecondary} />
+          <Text variant="body" style={{ color: color.onSecondary }}>
             {isResolving ? 'Preparing Audio...' : 'Transcribe'}
           </Text>
-        </TouchableOpacity>
-      </View>
+        </Pressable>
+      </Box>
     );
   },
 );
-
-const styles = StyleSheet.create({
-  primaryAction: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 18,
-    borderRadius: 24,
-  },
-  primaryActionTxt: {
-    fontFamily: 'Outfit-Bold',
-    fontSize: 17,
-    letterSpacing: -0.2,
-  },
-});

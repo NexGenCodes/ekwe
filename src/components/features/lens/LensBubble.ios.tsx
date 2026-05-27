@@ -1,13 +1,15 @@
 import { useSelector } from '@legendapp/state/react';
 import React, { useEffect, useMemo } from 'react';
-import { Text, StyleSheet } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   withSpring,
 } from 'react-native-reanimated';
 
 import { MicrophoneIcon } from '@/assets/icons/MicrophoneIcon';
+import { Text } from '@/components/ui';
 import { bubbleColors } from '@/constants/colors';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useMetering, useTheme } from '@/hooks';
 import { audio$, audioActions, settings$, RecordingState } from '@/store';
 
@@ -93,34 +95,31 @@ export function LensBubble(): React.ReactElement | null {
   return (
     <Animated.View
       style={[
-        styles.container,
+        {
+          position: 'absolute',
+          top: spacing['5xl'],
+          alignSelf: 'center',
+          borderRadius: borderRadius.full,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          paddingHorizontal: spacing.md,
+          paddingVertical: 4,
+        },
         { backgroundColor: stateColor },
         pillAnimatedStyle,
       ]}
     >
       <MicrophoneIcon size={14} color={onPrimaryColor} />
-      <Text style={styles.label}>{stateLabel}</Text>
+      <Text
+        variant="caption"
+        style={{
+          textTransform: 'uppercase',
+          color: onPrimaryColor,
+        }}
+      >
+        {stateLabel}
+      </Text>
     </Animated.View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    top: 60,
-    alignSelf: 'center',
-    borderRadius: 9999,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
-  label: {
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-    color: '#ffffff',
-    fontWeight: '500',
-    fontSize: 12,
-  },
-});

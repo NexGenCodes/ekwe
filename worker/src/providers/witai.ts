@@ -1,6 +1,12 @@
 import { logger } from '../logger';
 import { Env, TranscribeResult } from '../types';
-import { sanitizeKey, isHallucination, getUserAgent, fetchWithTimeout, TIMEOUT_SLOW } from '../utils';
+import {
+  sanitizeKey,
+  isHallucination,
+  getUserAgent,
+  fetchWithTimeout,
+  TIMEOUT_SLOW,
+} from '../utils';
 
 const WITAI_DICTATION = 'https://api.wit.ai/dictation?v=20240304';
 
@@ -17,10 +23,16 @@ export async function transcribe(
 ): Promise<TranscribeResult | null> {
   const targetLang = lang.toUpperCase().replace('-', '_');
   const baseLang = targetLang.split('_')[0];
-  const witKey = sanitizeKey(env[`WIT_KEY_${targetLang}`] ?? env[`WIT_KEY_${baseLang}`]);
+  const witKey = sanitizeKey(
+    env[`WIT_KEY_${targetLang}`] ?? env[`WIT_KEY_${baseLang}`],
+  );
 
   if (!witKey) {
-    logger.warn('[witai] Skipping: No API key found', { lang, targetLang, baseLang });
+    logger.warn('[witai] Skipping: No API key found', {
+      lang,
+      targetLang,
+      baseLang,
+    });
     return null;
   }
 
@@ -30,21 +42,34 @@ export async function transcribe(
     return null; // Unsupported MIME — skip
   }
 
-  logger.info('[witai] Sending request', { lang, contentType, blobSize: blob.size, blobType: blob.type });
+  logger.info('[witai] Sending request', {
+    lang,
+    contentType,
+    blobSize: blob.size,
+    blobType: blob.type,
+  });
 
-  const res = await fetchWithTimeout(WITAI_DICTATION, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${witKey}`,
-      'Content-Type': contentType,
-      'User-Agent': getUserAgent(),
+  const res = await fetchWithTimeout(
+    WITAI_DICTATION,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${witKey}`,
+        'Content-Type': contentType,
+        'User-Agent': getUserAgent(),
+      },
+      body: blob,
     },
-    body: blob,
-  }, TIMEOUT_SLOW, signal);
+    TIMEOUT_SLOW,
+    signal,
+  );
 
   if (!res.ok) {
     const errText = await res.text().catch(() => 'Unreadable error body');
-    logger.error(`[witai] HTTP ${res.status} error`, { status: res.status, body: errText });
+    logger.error(`[witai] HTTP ${res.status} error`, {
+      status: res.status,
+      body: errText,
+    });
     return null;
   }
 
@@ -54,7 +79,9 @@ export async function transcribe(
   }
 
   if (data?.text) {
-    logger.warn('[witai] Transcript discarded as hallucination', { text: data.text.substring(0, 50) });
+    logger.warn('[witai] Transcript discarded as hallucination', {
+      text: data.text.substring(0, 50),
+    });
   } else {
     logger.warn('[witai] No transcript returned in stream response');
   }
@@ -73,7 +100,10 @@ async function parseStream(res: Response): Promise<{ text: string } | null> {
   raw = raw.replace(/^\uFEFF/, '');
 
   // Always log the raw response for debugging (clamped to 500 chars)
-  logger.info('[witai] Raw response', { length: raw.length, snippet: raw.substring(0, 500) });
+  logger.info('[witai] Raw response', {
+    length: raw.length,
+    snippet: raw.substring(0, 500),
+  });
 
   if (!raw.trim()) {
     logger.warn('[witai] Empty response body');
@@ -85,7 +115,9 @@ async function parseStream(res: Response): Promise<{ text: string } | null> {
   const jsonMatches = raw.match(/\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}/g);
 
   if (!jsonMatches || jsonMatches.length === 0) {
-    logger.warn('[witai] No JSON objects found in response', { rawSnippet: raw.substring(0, 300) });
+    logger.warn('[witai] No JSON objects found in response', {
+      rawSnippet: raw.substring(0, 300),
+    });
     return null;
   }
 
@@ -94,15 +126,23 @@ async function parseStream(res: Response): Promise<{ text: string } | null> {
   let finalTranscript = '';
   for (const part of jsonMatches) {
     try {
-      const data = JSON.parse(part) as { text?: string; error?: string; is_final?: boolean };
+      const data = JSON.parse(part) as {
+        text?: string;
+        error?: string;
+        is_final?: boolean;
+      };
       if (data.text) {
         finalTranscript = data.text;
-        // Don't break on is_final, because sometimes the final text is in the very last chunk 
+        // Don't break on is_final, because sometimes the final text is in the very last chunk
         // and we want the absolute latest.
       }
-      if (data.error) logger.error('[witai] Stream Error Chunk', { error: data.error });
+      if (data.error)
+        logger.error('[witai] Stream Error Chunk', { error: data.error });
     } catch (e) {
-      logger.error('[witai] Malformed chunk', { chunk: part.substring(0, 50), error: e instanceof Error ? e.message : String(e) });
+      logger.error('[witai] Malformed chunk', {
+        chunk: part.substring(0, 50),
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 

@@ -15,8 +15,9 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { ErrorBoundary, ToastContainer, AppAlertModal } from '@/components';
+import { ErrorBoundary, ToastContainer, AppAlertModal, EkweLogo } from '@/components';
 import { Box } from '@/components/ui';
+import { palette } from '@/constants/colors';
 import { useShareIntentHandler, useTheme, useTripleExclusivity } from '@/hooks';
 import { useAppFonts } from '@/hooks/useFonts';
 import { ShareIntentProvider } from '@/providers/ShareIntentProvider';
@@ -149,6 +150,7 @@ function InnerLayout(): React.ReactElement {
                   headerShown: true,
                   title: 'Ekwe Pro',
                   headerBackTitle: 'Back',
+                  animation: 'slide_from_right',
                 }}
               />
             </Stack>
@@ -194,7 +196,7 @@ function RootLayout(): React.ReactElement {
     // Show a simple splash screen while fonts are loading
     return (
       <SafeAreaProvider>
-        <Box style={{ flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' }}>
+        <Box style={{ flex: 1, backgroundColor: palette.white, justifyContent: 'center', alignItems: 'center' }}>
           <EkweLogo size={120} />
         </Box>
       </SafeAreaProvider>

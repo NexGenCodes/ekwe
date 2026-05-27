@@ -6,13 +6,14 @@
  */
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { Platform } from 'react-native';
+
 
 import { TranscriptionService } from '@/services/Transcription';
 import { TranslationService } from '@/services/Translation';
 import { supabase } from '@/services/supabase';
 import { authActions } from '@/store';
 import logger from '@/utils/logger';
+import { isIOS } from '@/utils';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -134,16 +135,30 @@ export const verifyOtp = async (
 
 // ── Password Reset ──────────────────────────────────────────────
 
-export const sendPasswordReset = async (email: string): Promise<AuthResult> => {
+export const sendPasswordResetOtp = async (email: string): Promise<AuthResult> => {
   try {
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: 'ekwe://reset-password',
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: {
+        shouldCreateUser: false, // Prevent creating an account if email doesn't exist
+      },
     });
-    if (error) return { ok: false, error: error.message };
+
+    if (error) {
+      logger.error('[Auth] sendPasswordResetOtp error:', error);
+      // Pass through rate-limit errors so the user knows they are spamming
+      if (error.status === 429) {
+        return { ok: false, error: 'Please wait a moment before trying again.' };
+      }
+      // Security: Silently succeed for all other errors (like user not found) 
+      // to prevent email enumeration attacks.
+      return { ok: true };
+    }
     return { ok: true };
   } catch (err) {
-    logger.error('[Auth] sendPasswordReset error:', err);
-    return { ok: false, error: 'Failed to send reset link.' };
+    logger.error('[Auth] sendPasswordResetOtp error:', err);
+    // Security: Silently succeed on unexpected exceptions too
+    return { ok: true };
   }
 };
 
@@ -165,7 +180,7 @@ export const updatePassword = async (
 // ── Social: Apple ───────────────────────────────────────────────
 
 export const signInWithApple = async (): Promise<AuthResult> => {
-  if (Platform.OS !== 'ios') {
+  if (!isIOS) {
     return { ok: false, error: 'Apple Sign In is only available on iOS.' };
   }
 
@@ -234,6 +249,7 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
     configureGoogleSignIn();
 
     await GoogleSignin.hasPlayServices();
+    await GoogleSignin.signOut(); // Force account chooser every time
     const userInfo = await GoogleSignin.signIn();
 
     const idToken = userInfo.data?.idToken;
@@ -286,8 +302,17 @@ export const setSessionFromDeepLink = async (url: string): Promise<boolean> => {
 
 // ── Account Management ──────────────────────────────────────────
 
+const signOutGoogle = async (): Promise<void> => {
+  try {
+    await GoogleSignin.signOut();
+  } catch {
+    // Not signed in with Google — ignore
+  }
+};
+
 export const signOut = async (): Promise<AuthResult> => {
   try {
+    await signOutGoogle();
     const { error } = await supabase.auth.signOut();
     if (error) return { ok: false, error: error.message };
     return { ok: true };
@@ -299,6 +324,7 @@ export const signOut = async (): Promise<AuthResult> => {
 
 export const deleteAccount = async (): Promise<AuthResult> => {
   try {
+    await signOutGoogle();
     const { error } = await supabase.rpc('delete_user');
     if (error) {
       logger.error('[Auth] delete_user RPC error:', error);

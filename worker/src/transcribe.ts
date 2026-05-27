@@ -13,7 +13,12 @@ import * as assemblyai from './providers/assemblyai';
 interface PipelineEntry {
   name: string;
   skipOnAuto: boolean;
-  fn: (blob: Blob, lang: string, env: Env, signal: AbortSignal) => Promise<TranscribeResult | null>;
+  fn: (
+    blob: Blob,
+    lang: string,
+    env: Env,
+    signal: AbortSignal,
+  ) => Promise<TranscribeResult | null>;
 }
 
 interface CFFormData {
@@ -52,7 +57,6 @@ export async function handleTranscribe(
   tier: Tier,
   signal: AbortSignal,
 ): Promise<Response> {
-
   const formData = (await request.formData()) as unknown as CFFormData;
   const file = formData.get('file') as File | null;
   const lang = formData.get('lang') as string | null;
@@ -82,15 +86,20 @@ export async function handleTranscribe(
       return Response.json(cachedResult);
     }
   } catch (err) {
-    logger.error(`[transcribe] KV cache lookup error (Failing closed)`, { error: String(err) });
+    logger.error(`[transcribe] KV cache lookup error (Failing closed)`, {
+      error: String(err),
+    });
     return Response.json(
-      { error: 'EKWE_ALL_PROVIDERS_FAIL', message: 'Service temporarily unavailable. Please try again later.' },
-      { status: 503 }
+      {
+        error: 'EKWE_ALL_PROVIDERS_FAIL',
+        message: 'Service temporarily unavailable. Please try again later.',
+      },
+      { status: 503 },
     );
   }
 
   // ── Magic Byte Sniffer for WhatsApp / Android Edge Cases ──
-  // Always sniff the first 4 bytes. React Native often assigns 'audio/m4a' 
+  // Always sniff the first 4 bytes. React Native often assigns 'audio/m4a'
   // as a fallback for content:// URIs that lack extensions, even when the file is an Opus Ogg.
   let mimeType = file.type;
 
@@ -99,7 +108,12 @@ export async function handleTranscribe(
   const headerView = new Uint8Array(headerBuffer);
 
   // ASCII for 'OggS' (Opus is encapsulated in Ogg containers)
-  if (headerView[0] === 0x4f && headerView[1] === 0x67 && headerView[2] === 0x67 && headerView[3] === 0x53) {
+  if (
+    headerView[0] === 0x4f &&
+    headerView[1] === 0x67 &&
+    headerView[2] === 0x67 &&
+    headerView[3] === 0x53
+  ) {
     mimeType = 'audio/ogg';
   } else if (!mimeType || mimeType === 'application/octet-stream') {
     mimeType = 'audio/wav'; // ultimate fallback
@@ -107,7 +121,9 @@ export async function handleTranscribe(
 
   // Wrap the original File stream into a new File object with the correct MIME type.
   // This COMPLETELY avoids loading the 25MB file into RAM via arrayBuffer().
-  const audioBlob = new File([file], file.name || 'audio.wav', { type: mimeType });
+  const audioBlob = new File([file], file.name || 'audio.wav', {
+    type: mimeType,
+  });
   const isAuto = !lang || lang === 'auto';
   const effectiveLang = isAuto ? 'auto' : lang;
 
@@ -119,32 +135,46 @@ export async function handleTranscribe(
 
     try {
       if (signal.aborted) throw new Error('CLIENT_ABORTED');
-      logger.info(`[transcribe] Trying ${provider.name}`, { lang: effectiveLang, tier });
+      logger.info(`[transcribe] Trying ${provider.name}`, {
+        lang: effectiveLang,
+        tier,
+      });
 
       const result = await provider.fn(audioBlob, effectiveLang, env, signal);
       if (result) {
-        logger.info(`[transcribe] Success: ${provider.name}`, { lang: result.language, provider: result.provider });
-        
+        logger.info(`[transcribe] Success: ${provider.name}`, {
+          lang: result.language,
+          provider: result.provider,
+        });
+
         // Write to cache (Fail-Closed for security - if write fails, block return)
         try {
-          await env.EKWE_KV.put(cacheKey, JSON.stringify(result), { expirationTtl: 30 * 24 * 60 * 60 }); // 30 days
+          await env.EKWE_KV.put(cacheKey, JSON.stringify(result), {
+            expirationTtl: 30 * 24 * 60 * 60,
+          }); // 30 days
         } catch (err) {
-          logger.error(`[transcribe] KV cache write error (Failing closed)`, { error: String(err) });
+          logger.error(`[transcribe] KV cache write error (Failing closed)`, {
+            error: String(err),
+          });
           return Response.json(
-            { error: 'EKWE_ALL_PROVIDERS_FAIL', message: 'Service temporarily unavailable. Please try again later.' },
-            { status: 503 }
+            {
+              error: 'EKWE_ALL_PROVIDERS_FAIL',
+              message:
+                'Service temporarily unavailable. Please try again later.',
+            },
+            { status: 503 },
           );
         }
 
         return Response.json(result);
       }
-
     } catch (e: unknown) {
       if (e instanceof Error && e.message === 'CLIENT_ABORTED') throw e;
-      logger.error(`[transcribe] ${provider.name} failed`, { error: e instanceof Error ? e.message : String(e) });
+      logger.error(`[transcribe] ${provider.name} failed`, {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
   return Response.json({ error: 'ALL_PROVIDERS_FAILED' }, { status: 503 });
 }
-

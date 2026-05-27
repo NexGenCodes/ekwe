@@ -323,8 +323,16 @@ jest.mock('./modules/ekwe-native', () => ({
 jest.mock('@/services/supabase', () => ({
   supabase: {
     auth: {
-      getSession: jest.fn().mockResolvedValue({ data: { session: { access_token: 'mock-token', user: { id: 'user_123' } } } }),
-      onAuthStateChange: jest.fn(() => ({ data: { subscription: { unsubscribe: jest.fn() } } })),
+      getSession: jest
+        .fn()
+        .mockResolvedValue({
+          data: {
+            session: { access_token: 'mock-token', user: { id: 'user_123' } },
+          },
+        }),
+      onAuthStateChange: jest.fn(() => ({
+        data: { subscription: { unsubscribe: jest.fn() } },
+      })),
       startAutoRefresh: jest.fn(),
       stopAutoRefresh: jest.fn(),
     },
@@ -335,7 +343,14 @@ jest.mock('@/services/supabase', () => ({
 }));
 
 jest.mock('@/store', () => ({
-  auth$: { get: () => ({ session: null, user: null, isPro: false, isInitialized: true }) },
+  auth$: {
+    get: () => ({
+      session: null,
+      user: null,
+      isPro: false,
+      isInitialized: true,
+    }),
+  },
   authActions: {
     setSession: jest.fn(),
     setUser: jest.fn(),

@@ -1,16 +1,15 @@
 import { useSelector } from '@legendapp/state/react';
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import {
-  useAnimatedStyle,
-} from 'react-native-reanimated';
+import React, { useState } from 'react';
+import Animated, { useAnimatedStyle, LinearTransition } from 'react-native-reanimated';
 
-import { LanguageDropdown } from '../LanguageDropdown';
-import { LanguagePill } from '../LanguagePill';
+import { LanguageDropdown } from './LanguageDropdown';
+import { LanguagePill } from './LanguagePill';
 import { SwapButton } from './SwapButton';
 
+import { Box } from '@/components/ui';
 import { PLAN_LIMITS } from '@/constants/billing';
-import { borderRadius, spacing } from '@/constants/designTokens';
+import { borderRadius, zIndex } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme, useLanguageSwitcher } from '@/hooks';
 import { auth$ } from '@/store';
 
@@ -30,6 +29,7 @@ export function LanguageSwitcher({
   onTargetChange,
 }: LanguageSwitcherProps): React.ReactElement {
   const { color } = useTheme();
+  const [swapped, setSwapped] = useState(false);
 
   const {
     activeDropdown,
@@ -61,12 +61,50 @@ export function LanguageSwitcher({
 
   const sourceOptions = canUseAuto ? ['auto', ...myLanguages] : myLanguages;
 
+  const handleSwapClick = React.useCallback(() => {
+    setSwapped(s => !s);
+    onSwap();
+  }, [onSwap]);
+
+  const items = [
+    <Animated.View key="source-pill" layout={LinearTransition.springify()} style={{ flex: 1 }}>
+      <LanguagePill
+        langCode={sourceLang}
+        onPress={() => openDropdown('source')}
+      />
+    </Animated.View>,
+    <SwapButton
+      key="swap-button"
+      sourceLang={sourceLang}
+      targetLang={targetLang}
+      onSwap={handleSwapClick}
+      swapRotation={swapRotation}
+    />,
+    <Animated.View key="target-pill" layout={LinearTransition.springify()} style={{ flex: 1 }}>
+      <LanguagePill
+        langCode={targetLang}
+        onPress={() => openDropdown('target')}
+      />
+    </Animated.View>
+  ];
+
+  const orderedItems = swapped ? [items[2], items[1], items[0]] : items;
+
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: color.surface, borderColor: color.border },
-      ]}
+    <Animated.View
+      layout={LinearTransition.springify()}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        zIndex: zIndex.dropdown,
+        borderRadius: borderRadius['2xl'],
+        borderWidth: 1,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.sm,
+        backgroundColor: color.background,
+        borderColor: color.border,
+      }}
     >
       <LanguageDropdown
         visible={!!activeDropdown}
@@ -79,35 +117,7 @@ export function LanguageSwitcher({
         showAutoLocked={activeDropdown === 'source' && !canUseAuto}
       />
 
-      <LanguagePill
-        langCode={sourceLang}
-        onPress={() => openDropdown('source')}
-      />
-
-      <SwapButton
-        sourceLang={sourceLang}
-        targetLang={targetLang}
-        onSwap={onSwap}
-        swapRotation={swapRotation}
-      />
-
-      <LanguagePill
-        langCode={targetLang}
-        onPress={() => openDropdown('target')}
-      />
-    </View>
+      {orderedItems}
+    </Animated.View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    zIndex: 100,
-    borderRadius: borderRadius['2xl'],
-    borderWidth: 1,
-    paddingHorizontal: spacing[2],
-    paddingVertical: spacing[2],
-  },
-});

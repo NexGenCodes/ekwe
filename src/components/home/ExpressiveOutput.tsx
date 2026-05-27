@@ -1,12 +1,17 @@
+import { useFocusEffect } from 'expo-router';
 import * as Speech from 'expo-speech';
 import { Copy, Volume2, VolumeX, Check } from 'lucide-react-native';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, Share, ActivityIndicator, ScrollView } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { Share } from 'react-native';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
-import { IconButton, SkeletonBox } from '../ui';
+import { IconButton } from '../IconButton';
+import { SkeletonBox } from '../SkeletonBox';
 
-import { spacing, typography, shadows } from '@/constants/designTokens';
+import { Box, Text, Spinner, ScrollArea } from '@/components/ui';
+import { shadows } from '@/constants/shadows';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 
 interface ExpressiveOutputProps {
@@ -31,8 +36,6 @@ export const ExpressiveOutput = React.memo(
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isTTSLoading, setIsTTSLoading] = useState(false);
 
-
-
     // Stop speech when translation changes (e.g. new dictation result)
     useEffect(() => {
       if (isSpeaking || isTTSLoading) {
@@ -43,141 +46,188 @@ export const ExpressiveOutput = React.memo(
       // Only react to translation changes, not isSpeaking changes
     }, [translation]);
 
+    // Stop speech when the user navigates away from the screen
+    useFocusEffect(
+      useCallback(() => {
+        return () => {
+          Speech.stop();
+          setIsSpeaking(false);
+          setIsTTSLoading(false);
+        };
+      }, [])
+    );
+
     const handleSpeakToggle = useCallback(async (): Promise<void> => {
       if (isTTSLoading) return; // Prevent spam clicking while loading
 
       if (isSpeaking) {
-        await Speech.stop();
+        try {
+          await Speech.stop();
+        } catch (err) {
+          // ignore stop errors
+          console.warn('Speech.stop failed', err);
+        }
         setIsSpeaking(false);
         setIsTTSLoading(false);
-      } else if (translation && targetLang) {
+        return;
+      }
+
+      if (translation && targetLang) {
         // Ensure any existing speech is stopped before starting a new one
-        await Speech.stop();
+        try {
+          await Speech.stop();
+        } catch (err) {
+          console.warn('Speech.stop failed', err);
+        }
+
         setIsTTSLoading(true);
-        Speech.speak(translation, {
-          language: targetLang,
-          onStart: (): void => {
-            setIsTTSLoading(false);
-            setIsSpeaking(true);
-          },
-          onDone: (): void => {
-            setIsSpeaking(false);
-            setIsTTSLoading(false);
-          },
-          onError: (): void => {
-            setIsSpeaking(false);
-            setIsTTSLoading(false);
-          },
-          onStopped: (): void => {
-            setIsSpeaking(false);
-            setIsTTSLoading(false);
-          },
-        });
+        try {
+          Speech.speak(translation, {
+            language: targetLang,
+            onStart: (): void => {
+              setIsTTSLoading(false);
+              setIsSpeaking(true);
+            },
+            onDone: (): void => {
+              setIsSpeaking(false);
+              setIsTTSLoading(false);
+            },
+            onError: (e): void => {
+              setIsSpeaking(false);
+              setIsTTSLoading(false);
+              
+              const errorMsg = e instanceof Error ? e.message : String(e);
+              console.warn('Speech.speak error:', errorMsg);
+
+              // Ignore interruption errors (which happen naturally on stop)
+              if (errorMsg.includes('interrupted') || errorMsg.includes('stopped')) {
+                 return;
+              }
+
+              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              const { AppToast } = require('@/utils');
+              AppToast.error('Speech Unavailable', { 
+                description: 'Your device does not support text-to-speech for this language, or the voice is not downloaded.' 
+              });
+            },
+            onStopped: (): void => {
+              setIsSpeaking(false);
+              setIsTTSLoading(false);
+            },
+          });
+        } catch (err) {
+          setIsSpeaking(false);
+          setIsTTSLoading(false);
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          console.warn('Speech.speak threw exception:', errorMsg);
+          
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { AppToast } = require('@/utils');
+          AppToast.error('Speech Unavailable', { 
+             description: 'Your device does not support text-to-speech for this language.' 
+          });
+        }
       }
     }, [isSpeaking, isTTSLoading, translation, targetLang]);
 
-    const containerStyle = useMemo(
-      () => [styles.container, { backgroundColor: color.secondary }],
-      [color.secondary],
-    );
-
-    const textStyle = useMemo(() => {
-      const length = translation ? translation.length : 0;
-      let fontSize = 36;
-      let lineHeight = 44;
-
-      if (length >= 150) {
-        fontSize = 20;
-        lineHeight = 26;
-      } else if (length >= 50) {
-        fontSize = 26;
-        lineHeight = 32;
-      }
-
-      return [
-        styles.text,
-        {
-          color: color.onSecondary,
-          fontSize,
-          lineHeight,
-        },
-      ];
-    }, [translation, color.onSecondary]);
-
     const transliterationStyle = useMemo(
-      () => [styles.transliteration, { color: color.onSecondary }],
+      () => ({ paddingTop: spacing.sm, color: `${color.onSecondary}CC` }),
       [color.onSecondary],
     );
 
     const listenLabelStyle = useMemo(
       () => ({
-        fontFamily: 'Outfit-Medium',
-        fontSize: 11,
-        color: isSpeaking ? color.primary : color.onSecondary,
+        color: isSpeaking ? color.onSecondary : `${color.onSecondary}CC`,
       }),
-      [isSpeaking, color.primary, color.onSecondary],
+      [isSpeaking, color.onSecondary],
     );
 
     const copyLabelStyle = useMemo(
       () => ({
-        fontFamily: 'Outfit-Medium',
-        fontSize: 11,
-        color: copied ? color.primary : color.onSecondary,
+        color: copied ? color.onSecondary : `${color.onSecondary}CC`,
       }),
-      [copied, color.primary, color.onSecondary],
+      [copied, color.onSecondary],
     );
 
     if (!translation && !isTranslating) return null;
 
     return (
-      <View style={containerStyle}>
+      <Animated.View
+        layout={LinearTransition.springify()}
+        style={{
+          borderRadius: borderRadius['2xl'],
+          padding: spacing.lg,
+          ...shadows.soft,
+          backgroundColor: color.secondary,
+        }}
+      >
         {isTranslating ? (
-          <View style={styles.skeletonContainer}>
-            <View style={{ gap: spacing[4] }}>
-              <SkeletonBox width="85%" height={44} />
-              <SkeletonBox width="60%" height={44} />
-              <SkeletonBox width="40%" height={44} />
-            </View>
-            <View style={styles.actions}>
-              <View style={styles.actionGroup}>
-                <SkeletonBox width={48} height={48} borderRadius={24} />
+          <Box>
+            <Box style={{ gap: spacing.md }}>
+              <SkeletonBox width="85%" height={20} borderRadius={6} />
+              <SkeletonBox width="60%" height={20} borderRadius={6} />
+              <SkeletonBox width="40%" height={20} borderRadius={6} />
+            </Box>
+            <Box
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'flex-end',
+                gap: spacing.md,
+                marginTop: spacing.xl,
+              }}
+            >
+              <Box style={{ alignItems: 'center', gap: spacing.sm }}>
+                <SkeletonBox width={64} height={64} borderRadius={32} />
                 <SkeletonBox width={40} height={12} />
-              </View>
+              </Box>
               {onCopy ? (
-                <View style={styles.actionGroup}>
-                  <SkeletonBox width={48} height={48} borderRadius={24} />
+                <Box style={{ alignItems: 'center', gap: spacing.sm }}>
+                  <SkeletonBox width={64} height={64} borderRadius={32} />
                   <SkeletonBox width={36} height={12} />
-                </View>
+                </Box>
               ) : null}
-            </View>
-          </View>
+            </Box>
+          </Box>
         ) : (
           <>
-            <ScrollView style={{ maxHeight: 350 }} showsVerticalScrollIndicator={false}>
-              <Text style={textStyle} selectable>
+            <ScrollArea>
+              <Text
+                variant="bodyLarge"
+                selectable
+                style={{ color: color.onSecondary }}
+              >
                 {translation}
               </Text>
               {!!transliteration && (
-                <Text style={transliterationStyle} selectable>
+                <Text variant="body" style={transliterationStyle} selectable>
                   {transliteration}
                 </Text>
               )}
-            </ScrollView>
-            <View style={styles.actions}>
-              <View style={styles.actionGroup}>
+            </ScrollArea>
+            <Box
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'flex-end',
+                gap: spacing.md,
+                marginTop: spacing.xl,
+              }}
+            >
+              <Box style={{ alignItems: 'center', gap: spacing.sm }}>
                 <IconButton
                   accessibilityLabel={
                     isSpeaking ? 'Stop speaking' : 'Listen to translation'
                   }
                   onPress={handleSpeakToggle}
-                  backgroundColor={isSpeaking ? color.primary : color.surface}
+                  backgroundColor={
+                    isSpeaking ? color.onSecondary : `${color.onSecondary}33`
+                  }
                   icon={
                     isTTSLoading ? (
                       <Animated.View
                         entering={FadeIn.duration(150)}
                         exiting={FadeOut.duration(150)}
                       >
-                        <ActivityIndicator size="small" color={color.muted} />
+                        <Spinner size="sm" color={isSpeaking ? color.secondary : color.onSecondary} />
                       </Animated.View>
                     ) : isSpeaking ? (
                       <Animated.View
@@ -186,7 +236,7 @@ export const ExpressiveOutput = React.memo(
                       >
                         <VolumeX
                           size={24}
-                          color={color.onPrimary}
+                          color={color.secondary}
                           strokeWidth={2.5}
                         />
                       </Animated.View>
@@ -197,20 +247,20 @@ export const ExpressiveOutput = React.memo(
                       >
                         <Volume2
                           size={24}
-                          color={color.muted}
+                          color={color.onSecondary}
                           strokeWidth={2.5}
                         />
                       </Animated.View>
                     )
                   }
                 />
-                <Text style={listenLabelStyle}>
+                <Text variant="caption" style={listenLabelStyle}>
                   {isSpeaking ? 'Stop' : 'Listen'}
                 </Text>
-              </View>
+              </Box>
 
               {onCopy ? (
-                <View style={styles.actionGroup}>
+                <Box style={{ alignItems: 'center', gap: spacing.sm }}>
                   <IconButton
                     accessibilityLabel={copied ? 'Copied' : 'Copy translation'}
                     onPress={onCopy}
@@ -219,7 +269,9 @@ export const ExpressiveOutput = React.memo(
                         await Share.share({ message: translation });
                       }
                     }}
-                    backgroundColor={color.surface}
+                    backgroundColor={
+                      copied ? color.onSecondary : `${color.onSecondary}33`
+                    }
                     icon={
                       copied ? (
                         <Animated.View
@@ -228,7 +280,7 @@ export const ExpressiveOutput = React.memo(
                         >
                           <Check
                             size={24}
-                            color={color.primary}
+                            color={color.secondary}
                             strokeWidth={3}
                           />
                         </Animated.View>
@@ -239,56 +291,22 @@ export const ExpressiveOutput = React.memo(
                         >
                           <Copy
                             size={24}
-                            color={color.muted}
+                            color={color.onSecondary}
                             strokeWidth={2.5}
                           />
                         </Animated.View>
                       )
                     }
                   />
-                  <Text style={copyLabelStyle}>
+                  <Text variant="caption" style={copyLabelStyle}>
                     {copied ? 'Copied' : 'Copy'}
                   </Text>
-                </View>
+                </Box>
               ) : null}
-            </View>
+            </Box>
           </>
         )}
-      </View>
+      </Animated.View>
     );
   },
 );
-
-const styles = StyleSheet.create({
-  container: {
-    borderRadius: 32,
-    padding: spacing[6],
-    minHeight: 240,
-    ...shadows.softLg,
-  },
-  text: {
-    fontFamily: 'Outfit-Bold',
-    fontSize: 36,
-    lineHeight: 44,
-    flex: 1,
-  },
-  transliteration: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: typography.heading3.size,
-    lineHeight: 28,
-    opacity: 0.95,
-    marginTop: spacing[2],
-  },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: spacing[4],
-    marginTop: spacing[8],
-  },
-  actionGroup: { alignItems: 'center', gap: spacing[2] },
-  skeletonContainer: {
-    flex: 1,
-    justifyContent: 'space-between',
-    paddingTop: spacing[2],
-  },
-});

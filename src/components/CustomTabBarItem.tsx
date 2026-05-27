@@ -1,6 +1,5 @@
 import * as Haptics from 'expo-haptics';
 import React, { useEffect } from 'react';
-import { Pressable, Text } from 'react-native';
 import Animated, {
   interpolate,
   interpolateColor,
@@ -10,6 +9,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { Pressable, Text } from '@/components/ui';
+import { duration, spring } from '@/constants';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 
 interface TabBarIconProps {
@@ -46,19 +49,15 @@ export function CustomTabBarItem({
   const pressScale = useSharedValue(1);
 
   useEffect(() => {
-    progress.value = withSpring(isFocused ? 1 : 0, {
-      damping: 18,
-      stiffness: 200,
-      mass: 0.6,
-    });
+    progress.value = withSpring(isFocused ? 1 : 0, spring.snappy);
   }, [isFocused, progress]);
 
   const handlePressIn = (): void => {
-    pressScale.value = withTiming(0.93, { duration: 120 });
+    pressScale.value = withTiming(0.93, { duration: duration.fast });
   };
 
   const handlePressOut = (): void => {
-    pressScale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    pressScale.value = withSpring(1, spring.snappy);
   };
 
   // Outer container: flex expands to reveal label space
@@ -72,7 +71,7 @@ export function CustomTabBarItem({
     backgroundColor: interpolateColor(
       progress.value,
       [0, 1],
-      ['transparent', `${color.primary}22`],
+      ['transparent', `${color.secondary}22`],
     ),
     paddingHorizontal: interpolate(progress.value, [0, 1], [12, 18]),
   }));
@@ -90,17 +89,20 @@ export function CustomTabBarItem({
   }));
 
   const Icon = options.tabBarIcon;
-  const iconColor = isFocused ? color.primary : color.muted;
+  const iconColor = isFocused ? color.secondary : color.muted;
 
   return (
     <Animated.View
       style={[
-        { alignItems: 'center', justifyContent: 'center', marginHorizontal: 4 },
+        {
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginHorizontal: spacing.xs,
+        },
         containerStyle,
       ]}
     >
       <Pressable
-        accessibilityRole="button"
         accessibilityState={isFocused ? { selected: true } : {}}
         accessibilityLabel={options.tabBarAccessibilityLabel}
         testID={options.tabBarTestID}
@@ -113,6 +115,7 @@ export function CustomTabBarItem({
         onLongPress={onLongPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
+        feedback="none"
         style={{
           flex: 1,
           width: '100%',
@@ -127,24 +130,21 @@ export function CustomTabBarItem({
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'center',
-              paddingVertical: 12,
-              borderRadius: 9999,
+              paddingVertical: spacing.md,
+              borderRadius: borderRadius.full,
             },
             pillStyle,
           ]}
         >
-          {/* Icon with independent scale */}
           <Animated.View style={iconStyle}>
             {Icon && <Icon size={22} color={iconColor} focused={isFocused} />}
           </Animated.View>
 
-          {/* Label slides in with overflow clipping */}
           <Animated.View style={[{ overflow: 'hidden' }, labelStyle]}>
             <Text
+              variant="label"
               style={{
-                color: color.primary,
-                fontFamily: 'Outfit-Bold',
-                fontSize: 14,
+                color: color.secondary,
               }}
               numberOfLines={1}
             >

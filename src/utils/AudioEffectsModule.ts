@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { isAndroid } from './platform';
 
 import EkweNative, { AudioEffectsResult } from '../../modules/ekwe-native';
 
@@ -10,7 +10,7 @@ import EkweNative, { AudioEffectsResult } from '../../modules/ekwe-native';
 export const attachAudioEffects = async (
   audioSessionId: number,
 ): Promise<AudioEffectsResult> => {
-  if (Platform.OS !== 'android') {
+  if (!isAndroid) {
     return {
       noiseSuppressor: false,
       echoCanceler: false,
@@ -33,7 +33,7 @@ export const attachAudioEffects = async (
  * No-op on iOS. Never throws.
  */
 export const releaseAudioEffects = async (): Promise<void> => {
-  if (Platform.OS !== 'android') return;
+  if (!isAndroid) return;
   try {
     await EkweNative.releaseEffects();
   } catch {

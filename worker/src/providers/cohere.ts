@@ -1,5 +1,10 @@
 import { Env, TranslateResult } from '../types';
-import { rotateKeys, fetchWithTimeout, getClientHeaders, TIMEOUT_FAST } from '../utils';
+import {
+  rotateKeys,
+  fetchWithTimeout,
+  getClientHeaders,
+  TIMEOUT_FAST,
+} from '../utils';
 import { logger } from '../logger';
 
 const COHERE_CHAT = 'https://api.cohere.ai/v2/chat';
@@ -18,37 +23,43 @@ export async function translate(
   const res = await rotateKeys(
     env,
     'COHERE_KEY_',
-    (key) => fetchWithTimeout(
-      COHERE_CHAT,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-          ...getClientHeaders(),
+    (key) =>
+      fetchWithTimeout(
+        COHERE_CHAT,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            ...getClientHeaders(),
+          },
+          body: JSON.stringify({
+            model: 'command-r7b-12-2024',
+            messages: [
+              { role: 'system', content: buildPrompt(targetLang, sourceLang) },
+              { role: 'user', content: text },
+            ],
+            temperature: 0.1,
+          }),
         },
-        body: JSON.stringify({
-          model: 'command-r7b-12-2024',
-          messages: [
-            { role: 'system', content: buildPrompt(targetLang, sourceLang) },
-            { role: 'user', content: text },
-          ],
-          temperature: 0.1,
-        }),
-      },
-      TIMEOUT_FAST,
-      signal,
-    ),
+        TIMEOUT_FAST,
+        signal,
+      ),
     signal,
   );
 
   if (!res?.ok) {
     const errText = await res?.text().catch(() => 'No response');
-    logger.error('[cohere] Translate HTTP error', { status: res?.status, error: errText });
+    logger.error('[cohere] Translate HTTP error', {
+      status: res?.status,
+      error: errText,
+    });
     return null;
   }
 
-  const data = await res.json() as { message?: { content?: Array<{ text?: string }> } };
+  const data = (await res.json()) as {
+    message?: { content?: Array<{ text?: string }> };
+  };
   const translation = data.message?.content?.[0]?.text?.trim();
   if (!translation) return null;
 
@@ -64,4 +75,3 @@ Rules:
 3. If the text is already in the target language, return it unchanged.
 4. Output ONLY the final translated text and nothing else.`;
 }
-

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
+import { isAndroid } from '@/utils';
 
 import EkweNative from '../../../modules/ekwe-native';
 
@@ -23,7 +24,7 @@ export const useForegroundApp = (
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
   const checkPermission = async (): Promise<boolean | undefined> => {
-    if (Platform.OS !== 'android') return;
+    if (!isAndroid) return;
     const granted = await EkweNative.isAccessibilityEnabled();
     setHasPermission(granted);
     return granted;
@@ -41,7 +42,7 @@ export const useForegroundApp = (
       remove(): void;
     }
     let eventSub: Subscription | undefined;
-    if (Platform.OS === 'android' && enabled) {
+    if (isAndroid && enabled) {
       eventSub = EkweNative.addListener(
         'onForegroundAppChanged',
         ({ packageName }: { packageName: string }) => {

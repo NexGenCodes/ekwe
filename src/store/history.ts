@@ -11,7 +11,6 @@ export interface HistoryEntry {
   duration: number;
   sourceApp: string | null;
   provider?: string;
-  deleted?: boolean;
 }
 
 export const history$ = observable<Record<string, HistoryEntry>>({});

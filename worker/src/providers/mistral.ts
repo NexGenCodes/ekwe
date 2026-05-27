@@ -1,5 +1,10 @@
 import { Env, TranslateResult } from '../types';
-import { rotateKeys, fetchWithTimeout, getClientHeaders, TIMEOUT_FAST } from '../utils';
+import {
+  rotateKeys,
+  fetchWithTimeout,
+  getClientHeaders,
+  TIMEOUT_FAST,
+} from '../utils';
 import { logger } from '../logger';
 
 const MISTRAL_CHAT = 'https://api.mistral.ai/v1/chat/completions';
@@ -18,37 +23,43 @@ export async function translate(
   const res = await rotateKeys(
     env,
     'MISTRAL_KEY_',
-    (key) => fetchWithTimeout(
-      MISTRAL_CHAT,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-          ...getClientHeaders(),
+    (key) =>
+      fetchWithTimeout(
+        MISTRAL_CHAT,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            ...getClientHeaders(),
+          },
+          body: JSON.stringify({
+            model: 'mistral-small-latest',
+            messages: [
+              { role: 'system', content: buildPrompt(targetLang, sourceLang) },
+              { role: 'user', content: text },
+            ],
+            temperature: 0,
+          }),
         },
-        body: JSON.stringify({
-          model: 'mistral-small-latest',
-          messages: [
-            { role: 'system', content: buildPrompt(targetLang, sourceLang) },
-            { role: 'user', content: text },
-          ],
-          temperature: 0,
-        }),
-      },
-      TIMEOUT_FAST,
-      signal,
-    ),
+        TIMEOUT_FAST,
+        signal,
+      ),
     signal,
   );
 
   if (!res?.ok) {
     const errText = await res?.text().catch(() => 'Unreadable error body');
-    logger.error('[mistral] Translate HTTP error', { status: res?.status, body: errText });
+    logger.error('[mistral] Translate HTTP error', {
+      status: res?.status,
+      body: errText,
+    });
     return null;
   }
 
-  const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) return null;
 

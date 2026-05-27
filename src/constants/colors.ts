@@ -1,41 +1,80 @@
-// Single source of truth for the Ekwe color system.
-// Both tailwind.config.js and JS-access (getColor) read from this file.
-// Palette: blue primary, black/white, + status colors. That's it.
-
-export const colors = {
-  // WARNING [NATIVE SYNC]: If you change 'secondary.DEFAULT', update ShareActivity.kt
-  primary: { DEFAULT: '#09090B', dark: '#FAFAFA' }, // Zinc 950 / Zinc 50
-  onPrimary: { DEFAULT: '#FAFAFA', dark: '#09090B' }, // Inverted
-  secondary: { DEFAULT: '#006FEE', dark: '#3B82F6' }, // Vibrant Blue Accent
-  onSecondary: { DEFAULT: '#FFFFFF', dark: '#FFFFFF' }, // Always white text on the vibrant blue
-  background: { DEFAULT: '#FAFAFA', dark: '#09090B' }, // Off-white / True deep dark
-  foreground: { DEFAULT: '#09090B', dark: '#FAFAFA' },
-  card: { DEFAULT: '#FFFFFF', dark: '#18181B' }, // Pure white / Zinc 900
-  muted: { DEFAULT: '#71717A', dark: '#A1A1AA' }, // Zinc 500 / Zinc 400
-  surface: { DEFAULT: '#F4F4F5', dark: '#27272aff' }, // Zinc 100 / Zinc 800
-  border: { DEFAULT: '#E4E4E7', dark: '#27272A' }, // Zinc 200 / Zinc 800
-  success: { DEFAULT: '#17C964', dark: '#4ADE80' }, // Vibrant Green
-  warning: { DEFAULT: '#F5A524', dark: '#FBBF24' }, // Vibrant Orange/Amber
-  error: { DEFAULT: '#F31260', dark: '#F87171' }, // Vibrant Rose/Red
-  info: { DEFAULT: '#006FEE', dark: '#3B82F6' },
+// Palette — raw color values
+export const palette = {
+  white: '#FFFFFF',
+  neutral50: '#FAFAFA',
+  neutral100: '#F4F4F5',
+  neutral200: '#E4E4E7',
+  neutral400: '#A1A1AA',
+  neutral500: '#71717A',
+  neutral800: '#27272A',
+  neutral900: '#18181B',
+  neutral950: '#09090B',
+  blue500: '#3B82F6',
+  blue600: '#006FEE',
+  green400: '#4ADE80',
+  green500: '#17C964',
+  amber400: '#FBBF24',
+  amber500: '#F5A524',
+  rose400: '#F87171',
+  rose500: '#F31260',
+  googleYellow: '#FFC107',
+  googleRed: '#FF3D00',
+  googleGreen: '#4CAF50',
+  googleBlue: '#1976D2',
 } as const;
 
-export type ColorKey = keyof typeof colors;
+// Flat semantic tokens (resolved per theme)
+export const lightColors = {
+  primary: '#09090B',
+  secondary: '#006FEE',
+  onPrimary: '#FAFAFA',
+  onSecondary: '#FFFFFF',
+  foreground: '#09090B',
+  background: '#FAFAFA',
+  card: '#FFFFFF',
+  muted: '#71717A',
+  surface: '#F4F4F5',
+  border: '#C8C8CE',
+  success: '#17C964',
+  warning: '#C58414',
+  error: '#D01358',
+  info: '#006FEE',
+  overlay: 'rgba(0,0,0,0.4)',
+  placeholder: '#A1A1AA',
+  disabled: '#A1A1AA',
+  disabledBackground: '#F4F4F5',
+  caption: '#71717A',
+} as const;
 
-/**
- * Returns the resolved hex color for a given key and mode.
- * Used ONLY where Tailwind classes cannot reach:
- * tab bar tint, Switch trackColor, SVG icon color props.
- */
-export const getColor = (key: ColorKey, isDark: boolean): string => {
-  'worklet';
-  return isDark ? colors[key].dark : colors[key].DEFAULT;
-};
+export const darkColors = {
+  primary: '#FAFAFA',
+  secondary: '#006FEE',
+  onPrimary: '#09090B',
+  onSecondary: '#FFFFFF',
+  foreground: '#FAFAFA',
+  background: '#09090B',
+  card: '#18181B',
+  muted: '#A1A1AA',
+  surface: '#27272A',
+  border: '#3A3A40',
+  success: '#4ADE80',
+  warning: '#FBBF24',
+  error: '#F87171',
+  info: '#006FEE',
+  overlay: 'rgba(0,0,0,0.6)',
+  placeholder: '#71717A',
+  disabled: '#71717A',
+  disabledBackground: '#27272A',
+  caption: '#A1A1AA',
+} as const;
 
-/**
- * Bubble state colors derived from the palette.
- * Idle = primary, recording = error, processing = warning, done = success.
- */
+export type ColorsKey = keyof typeof lightColors;
+
+export const getTheme = (
+  isDark: boolean,
+): typeof lightColors | typeof darkColors =>
+  isDark ? darkColors : lightColors;
+
 export const bubbleColors = (
   isDark: boolean,
 ): {
@@ -46,11 +85,12 @@ export const bubbleColors = (
   error: string;
 } => {
   'worklet';
+  const t = isDark ? darkColors : lightColors;
   return {
-    idle: getColor('primary', isDark),
-    recording: getColor('error', isDark),
-    processing: getColor('warning', isDark),
-    done: getColor('success', isDark),
-    error: getColor('error', isDark),
+    idle: t.primary,
+    recording: t.error,
+    processing: t.warning,
+    done: t.success,
+    error: t.error,
   };
 };

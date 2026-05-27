@@ -13,10 +13,14 @@ expo-env.d.ts
 .kotlin/
 *.orig.*
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
 *.mobileprovision
+*.apk
+*.aab
+*.ipa
 
 # Metro
 .metro-health-check*
@@ -57,6 +61,7 @@ coverage/
 
 # OS specific
 Thumbs.db
+desktop.ini
 
 # local# Environment
 .env*
@@ -75,6 +80,3 @@ skills-lock.json
 
 # MCP configuration
 mcp_config.json
-
-
-

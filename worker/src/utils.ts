@@ -14,11 +14,11 @@ const HALLUCINATION_PATTERNS: RegExp[] = [
   /^thank\s+you\s+for\s+watching/i,
   /^(please\s+)?(subscribe|like\s+and\s+subscribe)/i,
   /^(music|applause|laughter|silence|blank audio)\s*\.?$/i,
-  /^\[.*\]\s*$/,                       // "[Music]", "[Applause]"
-  /^\.+$/,                             // "..." or "....."
-  /(.{5,})\1{2,}/,                     // same phrase repeated 3+ times
-  /^(you|he|she|they|we|i)\s*$/i,      // single pronoun garbage
-  /^(the|a|an)\s*$/i,                  // single article garbage
+  /^\[.*\]\s*$/, // "[Music]", "[Applause]"
+  /^\.+$/, // "..." or "....."
+  /(.{5,})\1{2,}/, // same phrase repeated 3+ times
+  /^(you|he|she|they|we|i)\s*$/i, // single pronoun garbage
+  /^(the|a|an)\s*$/i, // single article garbage
 ];
 
 // ─── Core Helpers ─────────────────────────────────────────────────
@@ -33,7 +33,7 @@ export function getUserAgent(): string {
     'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
     'Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
     'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-    'Mozilla/5.0 (Linux; Android 12; Pixel 6 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36'
+    'Mozilla/5.0 (Linux; Android 12; Pixel 6 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Mobile Safari/537.36',
   ];
   return randomUserAgents[Math.floor(Math.random() * randomUserAgents.length)];
 }
@@ -67,7 +67,7 @@ export function isHallucination(text: string, durationMs?: number): boolean {
   }
 
   if (durationMs && durationMs > 0) {
-    const words = trimmed.split(/\s+/).filter(w => w.length > 0).length;
+    const words = trimmed.split(/\s+/).filter((w) => w.length > 0).length;
     const durationSeconds = durationMs / 1000;
     const wps = words / durationSeconds;
     if (wps > MAX_WORDS_PER_SECOND) return true;
@@ -103,7 +103,10 @@ export async function fetchWithTimeout(
   }
 }
 
-export async function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+export async function abortableDelay(
+  ms: number,
+  signal: AbortSignal,
+): Promise<void> {
   if (signal.aborted) throw new Error('CLIENT_ABORTED');
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -121,9 +124,12 @@ export async function abortableDelay(ms: number, signal: AbortSignal): Promise<v
 // ─── Generic Key Rotation ─────────────────────────────────────────
 
 export async function hashKey(key: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+  const buf = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(key),
+  );
   return Array.from(new Uint8Array(buf))
-    .map(b => b.toString(16).padStart(2, '0'))
+    .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
@@ -142,9 +148,9 @@ export async function rotateKeys(
 ): Promise<Response | null> {
   const namespace = prefix.replace(/_$/, '').toLowerCase(); // 'GROQ_KEY_' → 'groq_key'
   const keys = Object.keys(env)
-    .filter(k => k.startsWith(prefix))
-    .map(k => sanitizeKey(env[k]))
-    .filter(k => k.length > 10);
+    .filter((k) => k.startsWith(prefix))
+    .map((k) => sanitizeKey(env[k]))
+    .filter((k) => k.length > 10);
 
   const shuffled = [...keys].sort(() => Math.random() - 0.5);
 
@@ -160,18 +166,24 @@ export async function rotateKeys(
     if (res.ok) return res;
 
     if (res.status === 429) {
-      await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, 'true', { expirationTtl: 60 });
+      await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, 'true', {
+        expirationTtl: 60,
+      });
       logger.info(`[${namespace}] Key blacklisted for 60s (429)`);
       // Anti-ban Jitter: Delay 50ms - 150ms before trying the next key
       const jitterMs = Math.floor(Math.random() * 100) + 50;
-      await new Promise(r => setTimeout(r, jitterMs));
+      await new Promise((r) => setTimeout(r, jitterMs));
       continue;
     }
 
     // Permanently dead key: invalid credentials or account suspended → blacklist 24h
     if (res.status === 401 || res.status === 403) {
-      await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, 'true', { expirationTtl: 86400 });
-      logger.warn(`[${namespace}] Key permanently blacklisted for 24h (${res.status})`);
+      await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, 'true', {
+        expirationTtl: 86400,
+      });
+      logger.warn(
+        `[${namespace}] Key permanently blacklisted for 24h (${res.status})`,
+      );
       continue;
     }
 
@@ -180,13 +192,25 @@ export async function rotateKeys(
     if (res.status === 400) {
       try {
         const body = await res.clone().text();
-        const PERMANENT_CODES = ['organization_restricted', 'invalid_api_key', 'account_deactivated', 'account_suspended'];
-        if (PERMANENT_CODES.some(code => body.includes(code))) {
-          await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, 'true', { expirationTtl: 86400 });
-          logger.warn(`[${namespace}] Key permanently blacklisted for 24h (400 permanent error)`);
+        const PERMANENT_CODES = [
+          'organization_restricted',
+          'invalid_api_key',
+          'account_deactivated',
+          'account_suspended',
+        ];
+        if (PERMANENT_CODES.some((code) => body.includes(code))) {
+          await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, 'true', {
+            expirationTtl: 86400,
+          });
+          logger.warn(
+            `[${namespace}] Key permanently blacklisted for 24h (400 permanent error)`,
+          );
         }
       } catch (err) {
-        logger.warn(`[${namespace}] Failed to parse error body for blacklist check`, { error: err });
+        logger.warn(
+          `[${namespace}] Failed to parse error body for blacklist check`,
+          { error: err },
+        );
       }
       continue;
     }
@@ -209,46 +233,69 @@ export interface PreflightResponse {
   cooldown_remaining?: number;
 }
 
-export async function checkPreflight(env: Env, userId: string, requestedTier: Tier): Promise<PreflightResponse> {
+export async function checkPreflight(
+  env: Env,
+  userId: string,
+  requestedTier: Tier,
+): Promise<PreflightResponse> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-    return { allowed: false, tier_active: requestedTier, is_fallback: false, transactions_used: 0, reason: 'PREFLIGHT_CONFIG_ERROR' };
+    return {
+      allowed: false,
+      tier_active: requestedTier,
+      is_fallback: false,
+      transactions_used: 0,
+      reason: 'PREFLIGHT_CONFIG_ERROR',
+    };
   }
 
   try {
     const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/check_preflight`, {
       method: 'POST',
       headers: {
-        'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
-        'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-        'Content-Type': 'application/json'
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ p_user_id: userId, p_tier: requestedTier })
+      body: JSON.stringify({ p_user_id: userId, p_tier: requestedTier }),
     });
 
     if (res.ok) {
-      return await res.json() as PreflightResponse;
+      return (await res.json()) as PreflightResponse;
     }
   } catch (err) {
     logger.error('[preflight] check failed, failing closed', { error: err });
   }
-  return { allowed: false, tier_active: requestedTier, is_fallback: false, transactions_used: 0, reason: 'PREFLIGHT_UNAVAILABLE' };
+  return {
+    allowed: false,
+    tier_active: requestedTier,
+    is_fallback: false,
+    transactions_used: 0,
+    reason: 'PREFLIGHT_UNAVAILABLE',
+  };
 }
 
-export async function postflightDeduction(env: Env, userId: string, cost: number): Promise<Record<string, unknown> | null> {
+export async function postflightDeduction(
+  env: Env,
+  userId: string,
+  cost: number,
+): Promise<Record<string, unknown> | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return null;
 
   try {
-    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/postflight_deduction`, {
-      method: 'POST',
-      headers: {
-        'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
-        'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-        'Content-Type': 'application/json'
+    const res = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/rpc/postflight_deduction`,
+      {
+        method: 'POST',
+        headers: {
+          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ p_user_id: userId, p_cost: cost }),
       },
-      body: JSON.stringify({ p_user_id: userId, p_cost: cost })
-    });
+    );
     if (res.ok) {
-      return await res.json() as Record<string, unknown>;
+      return (await res.json()) as Record<string, unknown>;
     }
   } catch {
     logger.error('[postflight] deduction failed');

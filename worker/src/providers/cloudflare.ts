@@ -24,7 +24,9 @@ export async function transcribe(
       return { text, provider: 'cloudflare' };
     }
   } catch (e) {
-    logger.error('[cloudflare] Transcription error', { error: e instanceof Error ? e.message : String(e) });
+    logger.error('[cloudflare] Transcription error', {
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
 
   return null;
@@ -47,12 +49,15 @@ export async function translate(
       ],
     });
 
-    const response = typeof result?.response === 'string' ? result.response : '';
+    const response =
+      typeof result?.response === 'string' ? result.response : '';
     if (response) {
       return { translation: response, provider: 'cloudflare-ai-llama3' };
     }
   } catch (e) {
-    logger.error('[cloudflare] Translation error', { error: e instanceof Error ? e.message : String(e) });
+    logger.error('[cloudflare] Translation error', {
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
 
   return null;

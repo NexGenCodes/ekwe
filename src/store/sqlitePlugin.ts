@@ -5,9 +5,10 @@ import type {
   PersistMetadata,
   PersistOptionsLocal,
 } from '@legendapp/state';
+import { configureObservablePersistence } from '@legendapp/state/persist';
 
 import { Db } from '@/services/db';
-import { logger } from '@/utils';
+import logger from '@/utils/logger';
 
 const { safeParse, safeStringify } = internal;
 const MetadataSuffix = '__m';
@@ -24,8 +25,9 @@ export class ObservablePersistSQLite implements ObservablePersistLocal {
       try {
         const raw = Db.getStore(table);
         this.data[table] = raw ? safeParse(raw) : init;
-      } catch {
-        logger.error('[sqlitePlugin] Failed to parse key:', table);
+      } catch (err) {
+        logger.error('[sqlitePlugin] Failed to parse key:', table, err);
+        Db.removeStore(table);
         this.data[table] = init;
       }
     }
@@ -82,3 +84,7 @@ export class ObservablePersistSQLite implements ObservablePersistLocal {
     }
   }
 }
+
+configureObservablePersistence({
+  pluginLocal: ObservablePersistSQLite,
+});

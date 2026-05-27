@@ -14,8 +14,4 @@ config.resolver.blockList = Array.isArray(config.resolver.blockList)
   ? [...config.resolver.blockList, workerExclusion]
   : [workerExclusion];
 
-config.watcher.blockList = Array.isArray(config.watcher.blockList)
-  ? [...config.watcher.blockList, workerExclusion]
-  : [workerExclusion];
-
 module.exports = config;

@@ -4,7 +4,7 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useRouter, useRootNavigationState } from 'expo-router';
 import { useShareIntent } from 'expo-share-intent';
 import { useEffect } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 
 import EkweNative from '../../../modules/ekwe-native';
 
@@ -13,7 +13,7 @@ import { HistoryService } from '@/services/HistoryService';
 import { TranscriptionService } from '@/services/Transcription';
 import { TranslationService } from '@/services/Translation';
 import { auth$, audioActions, settings$ } from '@/store';
-import { logger } from '@/utils';
+import { logger, isAndroid } from '@/utils';
 import { BubbleNative } from '@/utils/BubbleModule';
 import { AppAlert } from '@/utils/alert';
 
@@ -91,6 +91,7 @@ const handleEchoSession = async (
           duration: data.durationSeconds,
           sourceApp,
           provider: 'gemini',
+          sessionKey: uri,
         },
         userSession as Parameters<typeof HistoryService.recordTranslation>[1],
       );
@@ -124,7 +125,7 @@ export const useShareIntentHandler = (): void => {
 
   const { hasShareIntent, shareIntent, resetShareIntent, error } =
     useShareIntent({
-      disabled: Platform.OS === 'android',
+      disabled: isAndroid,
     });
 
   useEffect((): void => {
@@ -155,7 +156,7 @@ export const useShareIntentHandler = (): void => {
       }
 
       let filePath = event.audioPath;
-      if (Platform.OS === 'android' && filePath.startsWith('content://')) {
+      if (isAndroid && filePath.startsWith('content://')) {
         const resolved = await BubbleNative.resolveContentUri(filePath);
         if (resolved) filePath = resolved;
       }
@@ -166,12 +167,15 @@ export const useShareIntentHandler = (): void => {
       const result = await AudioCapture.processSharedFile(filePath, mimeType);
 
       if (result.ok) {
-        if (Platform.OS === 'android' && isBackground) {
+        if (isAndroid && isBackground) {
           handleEchoSession(result.value.uri, event.sourceApp);
         } else {
           router.push({
             pathname: '/result',
-            params: { uri: result.value.uri },
+            params: {
+              uri: result.value.uri,
+              sourceApp: event.sourceApp || 'shared',
+            },
           });
         }
       } else {
@@ -228,7 +232,7 @@ export const useShareIntentHandler = (): void => {
         const processFile = async (): Promise<void> => {
           let filePath = file.path;
 
-          if (Platform.OS === 'android' && filePath.startsWith('content://')) {
+          if (isAndroid && filePath.startsWith('content://')) {
             const resolved = await BubbleNative.resolveContentUri(filePath);
             if (resolved) filePath = resolved;
           }
@@ -239,13 +243,16 @@ export const useShareIntentHandler = (): void => {
           );
 
           if (result.ok) {
-            if (Platform.OS === 'android' && isBackgroundApp) {
+            if (isAndroid && isBackgroundApp) {
               BubbleNative.showOverlay(result.value.uri, 'Unknown App');
               handleEchoSession(result.value.uri, 'Unknown App');
             } else {
               router.push({
                 pathname: '/result',
-                params: { uri: result.value.uri },
+                params: {
+                  uri: result.value.uri,
+                  sourceApp: 'shared',
+                },
               });
             }
           } else {

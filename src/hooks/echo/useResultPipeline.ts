@@ -1,14 +1,15 @@
 import { useSelector } from '@legendapp/state/react';
 import { File as ExpoFile } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 import { useTranscription } from '../useTranscription';
 import { useTranslation } from '../useTranslation';
 
 import { HistoryService } from '@/services/HistoryService';
+import { SyncService } from '@/services/SyncService';
 import { settings$, auth$, HistoryEntry, history$ } from '@/store';
-import { AppToast } from '@/utils';
+import { AppToast, logger } from '@/utils';
 
 export interface UseResultPipelineProps {
   uri?: string;
@@ -17,6 +18,7 @@ export interface UseResultPipelineProps {
   initialSourceLang?: string;
   initialTargetLang?: string;
   isHistoryReplay?: boolean;
+  sourceApp?: string;
 }
 
 export interface UseResultPipelineReturn {
@@ -38,6 +40,7 @@ export const useResultPipeline = ({
   initialSourceLang,
   initialTargetLang,
   isHistoryReplay = false,
+  sourceApp,
 }: UseResultPipelineProps): UseResultPipelineReturn => {
   const userSession = useSelector(() => auth$.session.get());
 
@@ -69,6 +72,21 @@ export const useResultPipeline = ({
   const [hasPolished, setHasPolished] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
 
+  // Defer transaction refs
+  const savedRef = useRef(false);
+  const transcriptRef = useRef(transcript);
+  const sourceLangRef = useRef(sourceLang);
+  const targetLangRef = useRef(targetLang);
+  const userSessionRef = useRef(userSession);
+  const durationRef = useRef(0);
+
+  useEffect(() => {
+    transcriptRef.current = transcript;
+    sourceLangRef.current = sourceLang;
+    targetLangRef.current = targetLang;
+    userSessionRef.current = userSession;
+  }, [transcript, sourceLang, targetLang, userSession]);
+
   const { transcribe } = useTranscription();
   const { translate } = useTranslation();
 
@@ -88,7 +106,7 @@ export const useResultPipeline = ({
         }
 
         const txResult = txResultResponse.value;
-
+        durationRef.current = txResult.durationSeconds;
         setTranscript(txResult.transcript);
 
         // Clean up file system
@@ -97,21 +115,6 @@ export const useResultPipeline = ({
         } catch {
           /* file may not exist */
         }
-
-        // Save to history via HistoryService
-        await HistoryService.recordTranslation(
-          {
-            sourceLang: txResult.detectedLang,
-            targetLang,
-            transcript: txResult.transcript,
-            translation: null,
-            transliteration: null,
-            duration: 0,
-            sourceApp: 'ekwe',
-            provider: 'gemini',
-          },
-          userSession as Parameters<typeof HistoryService.recordTranslation>[1],
-        );
 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setHasPolished(true);
@@ -123,7 +126,7 @@ export const useResultPipeline = ({
         setIsProcessing(false);
       }
     },
-    [sourceLang, targetLang, entryId, transcribe, userSession],
+    [transcribe],
   );
 
   useEffect(() => {
@@ -131,6 +134,36 @@ export const useResultPipeline = ({
       processSharedAudio(uri as string);
     }
   }, [uri, hasPolished, isProcessing, isReplay, processSharedAudio]);
+
+  // Save transcription on unmount if it wasn't saved yet
+  useEffect(() => {
+    return (): void => {
+      if (!savedRef.current && transcriptRef.current.trim() && !isReplay) {
+        savedRef.current = true;
+        HistoryService.recordTranslation(
+          {
+            sourceLang: sourceLangRef.current,
+            targetLang: targetLangRef.current,
+            transcript: transcriptRef.current,
+            translation: null,
+            transliteration: null,
+            duration: durationRef.current,
+            sourceApp: sourceApp || 'shared',
+            provider: 'gemini',
+            sessionKey: uri,
+          },
+          userSessionRef.current as Parameters<
+            typeof HistoryService.recordTranslation
+          >[1],
+        ).catch((e) =>
+          logger.error(
+            'Failed to save shared audio transcription on unmount',
+            e,
+          ),
+        );
+      }
+    };
+  }, [isReplay, sourceApp, uri]);
 
   const handleTranslate = async (): Promise<void> => {
     if (!transcript) return;
@@ -146,10 +179,31 @@ export const useResultPipeline = ({
         throw new Error(trResultResponse.error);
       }
 
-      setTranslation(trResultResponse.value.translation);
+      const val = trResultResponse.value;
+      setTranslation(val.translation);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      if (!isReplay) {
+        savedRef.current = true;
+        await HistoryService.recordTranslation(
+          {
+            sourceLang,
+            targetLang,
+            transcript,
+            translation: val.translation,
+            transliteration: val.transliteration ?? null,
+            duration: durationRef.current,
+            sourceApp: sourceApp || 'shared',
+            provider: 'gemini',
+            sessionKey: uri,
+          },
+          userSession as Parameters<typeof HistoryService.recordTranslation>[1],
+        );
+      }
     } catch {
-      AppToast.error('Translation Failed', { description: 'Try again in a moment.' });
+      AppToast.error('Translation Failed', {
+        description: 'Try again in a moment.',
+      });
     } finally {
       setIsTranslating(false);
     }

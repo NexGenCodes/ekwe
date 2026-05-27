@@ -9,6 +9,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { AudioCapture } from '@/services/AudioCapture';
 import { AudioProcessor } from '@/services/AudioProcessor';
 import { TranscriptionService } from '@/services/Transcription';
+import { audioActions, RecordingState } from '@/store';
 import { logger } from '@/utils';
 
 // Timer resolution for elapsed display
@@ -102,7 +103,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
       clearTimers();
       abortControllerRef.current?.abort();
       if (AudioCapture.isRecording()) {
-        AudioCapture.cancelRecording().catch(() => { });
+        AudioCapture.cancelRecording().catch(() => {});
       }
     };
   }, [clearTimers]);
@@ -138,6 +139,9 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     capturedMeteringRef.current = meteringData;
     capturedDurationRef.current = durationMs;
     setMeteringData(meteringData);
+    
+    audioActions.setDuration(durationMs / 1000);
+    audioActions.setRecordingState(RecordingState.Processing);
 
     setStatus('preview');
     return uri;
@@ -209,11 +213,14 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
           );
           setError(msg);
           setStatus('error');
+          audioActions.setError(transcribeResult.error as EkweError);
           return null;
         }
 
         const { transcript } = transcribeResult.value;
         logger.info('[VoiceDictation] Transcription success');
+        audioActions.appendTranscript(transcript);
+        audioActions.setRecordingState(RecordingState.Done);
 
         setStatus('idle');
         setElapsedMs(0);
@@ -256,7 +263,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
         if (capturedUriRef.current) {
           FileSystem.deleteAsync(capturedUriRef.current, {
             idempotent: true,
-          }).catch(() => { });
+          }).catch(() => {});
           capturedUriRef.current = null;
         }
         setStatus('idle');
@@ -296,6 +303,10 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
       // Start native recording (attaches Android audio effects: NS, EC, AGC)
       const sessionId = Crypto.randomUUID();
+      audioActions.setSessionId(sessionId);
+      audioActions.setSourceLang(sourceLang);
+      audioActions.setRecordingState(RecordingState.Recording);
+
       const startResult = await AudioCapture.startRecording(
         sessionId,
         stopDictationRef.current,
@@ -307,7 +318,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
         );
         setError(
           ErrorMessages[startResult.error] ??
-          ErrorMessages[EkweError.AUDIO_RECORD_FAIL],
+            ErrorMessages[EkweError.AUDIO_RECORD_FAIL],
         );
         setStatus('error');
         return;
@@ -374,7 +385,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     if (capturedUriRef.current) {
       FileSystem.deleteAsync(capturedUriRef.current, {
         idempotent: true,
-      }).catch(() => { });
+      }).catch(() => {});
       capturedUriRef.current = null;
     }
 
@@ -383,6 +394,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     setElapsedMs(0);
     setMeteringData([]);
     elapsedMsRef.current = 0;
+    audioActions.resetAudioState();
   }, [clearTimers]);
 
   return {

@@ -3,12 +3,11 @@ import { useRouter } from 'expo-router';
 import { KeyRound } from 'lucide-react-native';
 import React, { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { View, Text } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { AuthShell } from '@/components';
-import { PasswordInput, ErrorBanner, Button } from '@/components/ui';
-import { borderRadius, spacing, typography } from '@/constants/designTokens';
+import { AuthShell, PasswordInput, ErrorBanner, Button } from '@/components';
+import { Box, Text } from '@/components/ui';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 import { resetPasswordSchema, ResetPasswordForm } from '@/schemas/auth';
 import { updatePassword } from '@/services/auth';
@@ -20,7 +19,6 @@ export default function ResetPasswordScreen(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const { color } = useTheme();
-  const fg = color.foreground;
   const muted = color.muted;
   const primary = color.primary;
 
@@ -42,11 +40,8 @@ export default function ResetPasswordScreen(): React.JSX.Element {
 
   return (
     <AuthShell>
-      <Animated.View
-        entering={FadeInDown.duration(600).springify()}
-        style={{ alignItems: 'center', marginBottom: spacing[10] }}
-      >
-        <View
+      <Box style={{ alignItems: 'center', marginBottom: spacing['2xl'] }}>
+        <Box
           style={{
             width: 64,
             height: 64,
@@ -54,38 +49,33 @@ export default function ResetPasswordScreen(): React.JSX.Element {
             backgroundColor: `${primary}15`,
             alignItems: 'center',
             justifyContent: 'center',
-            marginBottom: spacing[4],
+            marginBottom: spacing.md,
           }}
         >
           <KeyRound size={28} color={primary} />
-        </View>
+        </Box>
         <Text
+          variant="heading1"
           style={{
-            fontFamily: 'Outfit-Medium',
-            fontSize: typography.heading1.size,
-            color: fg,
-            letterSpacing: -0.5,
             textAlign: 'center',
           }}
         >
           Create new password
         </Text>
         <Text
+          variant="body"
           style={{
-            fontFamily: 'Outfit-Regular',
-            fontSize: typography.body.size - 1,
             color: muted,
-            marginTop: spacing[2],
+            marginTop: spacing.sm,
             textAlign: 'center',
-            lineHeight: typography.body.lineHeight,
           }}
         >
           Choose a strong password for your Ekwe account.
         </Text>
-      </Animated.View>
-      <Animated.View entering={FadeInDown.duration(600).delay(100).springify()}>
+      </Box>
+      <Box>
         <ErrorBanner message={error} />
-        <View style={{ gap: spacing[3], marginBottom: spacing[2] }}>
+        <Box style={{ gap: spacing.md, marginBottom: spacing.sm }}>
           <Controller
             control={control}
             name="password"
@@ -116,14 +106,13 @@ export default function ResetPasswordScreen(): React.JSX.Element {
               />
             )}
           />
-        </View>
+        </Box>
         <Text
+          variant="bodySmall"
           style={{
-            fontFamily: 'Outfit-Regular',
-            fontSize: typography.bodySmall.size + 1,
             color: muted,
-            marginBottom: spacing[5],
-            paddingHorizontal: spacing[1],
+            marginBottom: spacing.lg,
+            paddingHorizontal: spacing.xs,
           }}
         >
           Password must be at least 8 characters
@@ -133,7 +122,7 @@ export default function ResetPasswordScreen(): React.JSX.Element {
           onPress={handleSubmit(onSubmit)}
           loading={isLoading}
         />
-      </Animated.View>
+      </Box>
     </AuthShell>
   );
 }

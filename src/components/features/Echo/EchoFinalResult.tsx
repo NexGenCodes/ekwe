@@ -1,12 +1,14 @@
 import * as Haptics from 'expo-haptics';
 import { Zap, CheckCircle2 } from 'lucide-react-native';
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 import { ResultDisplay } from './ResultDisplay';
+import { AnimatedCopyButton } from '../../AnimatedCopyButton';
+import { Badge } from '../../Badge';
 
-import { AnimatedCopyButton } from '@/components';
-import { Badge } from '@/components/ui';
+import { Box, Text, Pressable } from '@/components/ui';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 import { EchoStep } from '@/types/echo';
 
@@ -33,8 +35,6 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
   }) => {
     const { color } = useTheme();
     const brandPrimary = color.secondary;
-    const handleHex = color.border;
-    const textPrimary = color.primary;
 
     const [activeTab, setActiveTab] = React.useState<
       'Translation' | 'Transcription'
@@ -59,12 +59,12 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
           targetLang={targetLang}
         />
 
-        <View
+        <Box
           style={{
             flexDirection: 'row',
             flexWrap: 'wrap',
-            gap: 8,
-            marginBottom: 16,
+            gap: spacing.sm,
+            marginBottom: spacing.md,
           }}
         >
           <Badge
@@ -78,65 +78,77 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
               variant="primary"
             />
           )}
-        </View>
+        </Box>
 
-        <View style={styles.footerActions}>
-          <TouchableOpacity
+        <Box style={{ flexDirection: 'row', gap: spacing.md }}>
+          <Pressable
+            feedback="opacity"
             onPress={() => {
               Haptics.selectionAsync();
               setStep('TranscribeResult');
             }}
-            style={[styles.secAction, { borderColor: handleHex }]}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.sm,
+              paddingVertical: spacing.md,
+              borderWidth: 1.5,
+              borderRadius: borderRadius.xl,
+              borderColor: color.border,
+            }}
           >
             <Zap size={16} color={brandPrimary} />
-            <Text style={[styles.secActionTxt, { color: brandPrimary }]}>
+            <Text variant="bodySmall" style={{ color: brandPrimary }}>
               Re-translate
             </Text>
-          </TouchableOpacity>
+          </Pressable>
 
           <AnimatedCopyButton
             textToCopy={
               activeTab === 'Translation' ? translation! : transcription!
             }
             size={16}
-            style={[styles.secAction, { borderColor: handleHex }]}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.sm,
+              paddingVertical: spacing.md,
+              borderWidth: 1.5,
+              borderRadius: borderRadius.xl,
+              borderColor: color.border,
+            }}
           >
-            <Text style={[styles.secActionTxt, { color: textPrimary }]}>
+            <Text variant="bodySmall" style={{ color: color.primary }}>
               Copy
             </Text>
           </AnimatedCopyButton>
 
-          <TouchableOpacity
+          <Pressable
+            feedback="opacity"
             onPress={handleClose}
-            style={[
-              styles.secAction,
-              { backgroundColor: brandPrimary, borderWidth: 0 },
-            ]}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.sm,
+              paddingVertical: spacing.md,
+              borderWidth: 1.5,
+              borderRadius: borderRadius.xl,
+              backgroundColor: brandPrimary,
+            }}
           >
-            <CheckCircle2 size={16} color="#FFF" />
-            <Text style={[styles.secActionTxt, { color: '#FFF' }]}>Done</Text>
-          </TouchableOpacity>
-        </View>
+            <CheckCircle2 size={16} color={color.onSecondary} />
+            <Text variant="bodySmall" style={{ color: color.onSecondary }}>
+              Done
+            </Text>
+          </Pressable>
+        </Box>
       </>
     );
   },
 );
-
-const styles = StyleSheet.create({
-  footerActions: { flexDirection: 'row', gap: 12 },
-  secAction: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 14,
-    borderWidth: 1.5,
-    borderRadius: 16,
-  },
-  secActionTxt: {
-    fontFamily: 'Outfit-Bold',
-    fontSize: 15,
-    letterSpacing: -0.2,
-  },
-});

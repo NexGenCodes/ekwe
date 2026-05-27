@@ -1,7 +1,7 @@
-import { useRouter } from 'expo-router';
+import { useRouter, Link } from 'expo-router';
 import { Mic, Globe, ShieldCheck, ChevronRight } from 'lucide-react-native';
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, Dimensions, StyleSheet } from 'react-native';
+import { useWindowDimensions } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -9,14 +9,10 @@ import Animated, {
   withSpring,
   withDelay,
 } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { EkweWordmark } from '@/assets/icons/EkweWordmark';
-import { Button } from '@/components/ui';
-import { borderRadius, spacing, typography } from '@/constants/designTokens';
-import { useTheme } from '@/hooks';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { Button, EkweLogo, Card, IconContainer } from '@/components';
+import { Box, Text, SafeArea, ScrollArea } from '@/components/ui';
+import { useTheme, useTokens } from '@/hooks';
 
 interface FeatureItemProps {
   icon: React.ReactNode;
@@ -32,6 +28,9 @@ const FeatureCard = ({
   index,
 }: FeatureItemProps): React.ReactElement => {
   const { color } = useTheme();
+  const tokens = useTokens();
+  const { spacing } = tokens;
+
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(30);
   const scale = useSharedValue(0.95);
@@ -63,27 +62,35 @@ const FeatureCard = ({
   }));
 
   return (
-    <Animated.View
-      style={[
-        styles.featureCard,
-        { backgroundColor: color.card, borderColor: color.border },
-        animatedStyle,
-      ]}
-    >
-      <View
-        style={[
-          styles.iconContainer,
-          { backgroundColor: color.surface, borderColor: color.border },
-        ]}
+    <Animated.View style={animatedStyle}>
+      <Card
+        variant="default"
+        padding="lg"
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+        }}
       >
-        {icon}
-      </View>
-      <View style={styles.textContainer}>
-        <Text style={[styles.title, { color: color.foreground }]}>{title}</Text>
-        <Text style={[styles.description, { color: color.muted }]}>
-          {description}
-        </Text>
-      </View>
+        <IconContainer
+          size="lg"
+          variant="primary"
+          rounded="lg"
+          style={{ marginRight: spacing.md }}
+        >
+          {icon}
+        </IconContainer>
+        <Box style={{ flex: 1 }}>
+          <Text
+            variant="body"
+            style={{ marginBottom: spacing.xs - 2, color: color.foreground }}
+          >
+            {title}
+          </Text>
+          <Text variant="bodySmall" style={{ color: color.muted }}>
+            {description}
+          </Text>
+        </Box>
+      </Card>
     </Animated.View>
   );
 };
@@ -91,6 +98,41 @@ const FeatureCard = ({
 export default function WelcomeScreen(): React.ReactElement {
   const router = useRouter();
   const { color } = useTheme();
+  const tokens = useTokens();
+  const { spacing } = tokens;
+
+  const styles = useMemo(
+    () => ({
+      containerContent: {
+        paddingHorizontal: spacing.lg,
+        paddingBottom: spacing.lg,
+        justifyContent: 'space-between',
+      } as const,
+      header: { alignItems: 'center', marginBottom: spacing.xl } as const,
+      mainHeading: {
+        textAlign: 'center',
+        paddingHorizontal: spacing.md,
+      } as const,
+      featuresContainer: { gap: spacing.lg } as const,
+      bottomSection: {
+        width: '100%',
+        paddingBottom: spacing.xl,
+        marginTop: spacing.xl,
+      } as const,
+      disclaimer: {
+        textAlign: 'center',
+        marginTop: spacing.xl,
+        width: '100%',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexWrap: 'nowrap',
+        overflow: 'hidden',
+      } as const,
+    }),
+    [spacing],
+  );
+
   const iconColor = color.primary;
   const logoColor = color.foreground;
 
@@ -138,106 +180,49 @@ export default function WelcomeScreen(): React.ReactElement {
     router.replace('/language');
   };
 
+  const { height: SCREEN_HEIGHT } = useWindowDimensions();
+
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: color.background }]}
-    >
-      <View style={styles.container}>
-        <Animated.View
-          style={[
-            styles.header,
-            { marginTop: SCREEN_HEIGHT * 0.08 },
-            headerStyle,
-          ]}
-        >
-          <View style={styles.logoContainer}>
-            <EkweWordmark size={100} color={logoColor} />
-          </View>
-          <Text style={[styles.mainHeading, { color: color.foreground }]}>
-            Every voice understood.
-          </Text>
-        </Animated.View>
+    <SafeArea style={{ flex: 1, backgroundColor: color.background }}>
+      <ScrollArea
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.containerContent}
+      >
+        <Box>
+          <Animated.View
+            style={[
+              styles.header,
+              { marginTop: SCREEN_HEIGHT * 0.04 },
+              headerStyle,
+            ]}
+          >
+            <Box style={{ marginBottom: spacing.md }}>
+              <EkweLogo size={80} color={color.secondary} />
+            </Box>
+            <Text variant="display" style={styles.mainHeading}>
+              Every voice understood.
+            </Text>
+          </Animated.View>
 
-        <View style={styles.featuresContainer}>
-          {features.map((item, index) => (
-            <FeatureCard key={item.title} {...item} index={index} />
-          ))}
-        </View>
-      </View>
+          <Box style={styles.featuresContainer}>
+            {features.map((item, index) => (
+              <FeatureCard key={item.title} {...item} index={index} />
+            ))}
+          </Box>
+        </Box>
 
-      <View style={styles.bottomSection}>
-        <Button
-          variant="primary"
-          size="large"
-          label="Get started"
-          onPress={handleStart}
-          rightIcon={
-            <ChevronRight size={24} color={color.onPrimary} strokeWidth={3} />
-          }
-        />
-        <Text style={[styles.disclaimer, { color: color.muted }]}>
-          By continuing, you agree to our Terms and Privacy Policy.
-        </Text>
-      </View>
-    </SafeAreaView>
+        <Box style={styles.bottomSection}>
+          <Button
+            variant="primary"
+            size="large"
+            label="Get started"
+            onPress={handleStart}
+            rightIcon={
+              <ChevronRight size={24} color={color.onSecondary} strokeWidth={3} />
+            }
+          />
+        </Box>
+      </ScrollArea>
+    </SafeArea>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  container: { flex: 1, paddingHorizontal: spacing[6] },
-  header: { alignItems: 'center', marginBottom: spacing[10] },
-  logoContainer: { marginBottom: spacing[6] },
-  mainHeading: {
-    fontSize: 38,
-    textAlign: 'center',
-    lineHeight: 44,
-    fontFamily: 'DMSerifDisplay-Regular',
-    letterSpacing: -0.5,
-    paddingHorizontal: spacing[4],
-  },
-  featuresContainer: { gap: spacing[5] },
-  bottomSection: {
-    width: '100%',
-    paddingHorizontal: spacing[8],
-    paddingBottom: spacing[12],
-  },
-  disclaimer: {
-    fontSize: typography.caption.size,
-    textAlign: 'center',
-    marginTop: spacing[8],
-    fontFamily: 'Outfit-Regular',
-  },
-  featureCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing[5],
-    borderRadius: borderRadius['2xl'],
-    borderWidth: 1,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing[4],
-    borderWidth: 1,
-  },
-  textContainer: { flex: 1 },
-  title: {
-    fontSize: typography.body.size,
-    marginBottom: spacing[1] - 2,
-    fontFamily: 'Outfit-Medium',
-    letterSpacing: -0.5,
-  },
-  description: {
-    fontSize: typography.bodySmall.size,
-    lineHeight: typography.bodySmall.lineHeight,
-    fontFamily: 'Outfit-Regular',
-  },
-});

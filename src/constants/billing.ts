@@ -58,62 +58,113 @@ export const PLAN_LIMITS = {
   },
 } as const;
 
-// ─── UI Plan Definitions ─────────────────────────────────────────────────────
+export interface FallbackPrice {
+  amount: number;
+  currency: string;
+  symbol: string;
+}
+
+export const DISPLAY_PRICING: Record<
+  string,
+  {
+    monthly: FallbackPrice;
+    annual: FallbackPrice;
+    annualMonthlyCost: number;
+    annualSavingPercent: number;
+  }
+> = {
+  USD: {
+    monthly: { amount: 2.5, currency: 'USD', symbol: '$' },
+    annual: { amount: 24.0, currency: 'USD', symbol: '$' },
+    annualMonthlyCost: 2.0,
+    annualSavingPercent: 20,
+  },
+  NGN: {
+    monthly: { amount: 2500, currency: 'NGN', symbol: '₦' },
+    annual: { amount: 24000, currency: 'NGN', symbol: '₦' },
+    annualMonthlyCost: 2000,
+    annualSavingPercent: 20,
+  },
+  GBP: {
+    monthly: { amount: 2.5, currency: 'GBP', symbol: '£' },
+    annual: { amount: 24.0, currency: 'GBP', symbol: '£' },
+    annualMonthlyCost: 2.0,
+    annualSavingPercent: 20,
+  },
+  EUR: {
+    monthly: { amount: 2.5, currency: 'EUR', symbol: '€' },
+    annual: { amount: 24.0, currency: 'EUR', symbol: '€' },
+    annualMonthlyCost: 2.0,
+    annualSavingPercent: 20,
+  },
+  GHS: {
+    monthly: { amount: 35.0, currency: 'GHS', symbol: 'GH₵' },
+    annual: { amount: 340.0, currency: 'GHS', symbol: 'GH₵' },
+    annualMonthlyCost: 28.33,
+    annualSavingPercent: 19,
+  },
+  KES: {
+    monthly: { amount: 350.0, currency: 'KES', symbol: 'KSh' },
+    annual: { amount: 3400.0, currency: 'KES', symbol: 'KSh' },
+    annualMonthlyCost: 283.33,
+    annualSavingPercent: 19,
+  },
+  ZAR: {
+    monthly: { amount: 45.0, currency: 'ZAR', symbol: 'R' },
+    annual: { amount: 440.0, currency: 'ZAR', symbol: 'R' },
+    annualMonthlyCost: 36.67,
+    annualSavingPercent: 18,
+  },
+  EGP: {
+    monthly: { amount: 120.0, currency: 'EGP', symbol: 'E£' },
+    annual: { amount: 1200.0, currency: 'EGP', symbol: 'E£' },
+    annualMonthlyCost: 100.0,
+    annualSavingPercent: 16,
+  },
+  XOF: {
+    monthly: { amount: 1500.0, currency: 'XOF', symbol: 'CFA' },
+    annual: { amount: 14000.0, currency: 'XOF', symbol: 'CFA' },
+    annualMonthlyCost: 1166.67,
+    annualSavingPercent: 22,
+  },
+  INR: {
+    monthly: { amount: 200.0, currency: 'INR', symbol: '₹' },
+    annual: { amount: 2000.0, currency: 'INR', symbol: '₹' },
+    annualMonthlyCost: 166.67,
+    annualSavingPercent: 17,
+  },
+};
 
 export const BILLING_PLANS = {
   free: {
     id: 'free' as const,
-    name: 'Free',
+    name: 'Basic',
     tagline: 'The full translation experience, with ads',
     price: 0,
-    // Shown as fallback only — real price comes from RevenueCat priceString
     fallbackPrice: { amount: 0, currency: 'USD', symbol: '$' },
     features: [
       { title: 'Unlimited text translation', included: true },
       { title: 'Voice dictation (up to 60s)', included: true },
-      { title: 'Transliteration / romanization', included: true },
-      { title: 'Up to 3 active languages', included: true },
-      { title: 'History (7 days on device, 30 days cloud)', included: true },
-      { title: 'Light & dark mode', included: true },
+      { title: '30-day cloud history', included: true },
       { title: 'Ad-free experience', included: false },
-      { title: 'Voice dictation up to 2mins', included: false },
-      { title: 'Up to 5 active languages', included: false },
-      { title: 'Custom avatar icons', included: false },
-      { title: 'Auto-copy on translate', included: false },
-      { title: 'App-context awareness (bubble)', included: false },
+      { title: 'Extended voice dictation (120s)', included: false },
       { title: '1-year cloud history', included: false },
+      { title: 'Auto-detect spoken language', included: false },
     ] as PlanFeature[],
   },
   pro: {
     id: 'pro' as const,
     name: 'Pro',
     tagline: 'Zero distractions. Full power.',
-    // ── DISPLAY FALLBACK PRICES (shown before RevenueCat loads) ──────────────
-    // Real prices are returned by RevenueCat's StoreProduct.priceString
-    // These are set per-country in App Store Connect / Google Play Console:
-    //   USA:     $1.99/mo,  $14.99/yr
-    //   UK:      £1.99/mo,  £14.99/yr
-    //   Nigeria: ₦3,000/mo, ₦24,000/yr  (approximate — set in ASC/Play Console)
-    fallbackPriceMonthly: { amount: 1.99, currency: 'USD', symbol: '$' },
-    fallbackPriceAnnual: { amount: 14.99, currency: 'USD', symbol: '$' },
-    annualMonthlyCost: 1.25, // Fallback display only
-    annualSavingPercent: 37,
-    // RevenueCat product identifiers — must match App Store Connect / Play Console
     productIdMonthly: 'ekwe_pro_monthly',
     productIdAnnual: 'ekwe_pro_annual',
     features: [
-      { title: 'Unlimited text translation', included: true },
-      { title: 'Voice dictation up to 2mins', included: true },
-      { title: 'Transliteration / romanization', included: true },
-      { title: 'Up to 5 active languages', included: true },
-      { title: '1-year cloud history (access anytime)', included: true },
-      { title: 'Light & dark mode', included: true },
       { title: 'Ad-free experience', included: true },
+      { title: 'Extended voice dictation (120s)', included: true },
+      { title: '1-year cloud history', included: true },
+      { title: 'Auto-detect spoken language', included: true },
       { title: 'Custom avatar icons', included: true },
-      { title: 'Auto-copy on translate', included: true },
-      { title: 'App-context awareness (bubble)', included: true },
       { title: 'Priority AI processing', included: true },
-      { title: 'Early access to new features', included: true },
     ] as PlanFeature[],
   },
 } as const;

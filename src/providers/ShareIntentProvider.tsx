@@ -1,6 +1,6 @@
 import { ShareIntentProvider as Provider } from 'expo-share-intent';
 import { ReactNode } from 'react';
-import { Platform } from 'react-native';
+import { isAndroid } from '@/utils';
 
 interface Props {
   children: ReactNode;
@@ -13,7 +13,7 @@ interface Props {
  * On iOS, expo-share-intent is still required.
  */
 export function ShareIntentProvider({ children }: Props): ReactNode {
-  if (Platform.OS === 'android') {
+  if (isAndroid) {
     return children;
   }
 

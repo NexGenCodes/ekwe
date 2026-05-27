@@ -1,5 +1,11 @@
 import { Env, TranscribeResult, TranslateResult } from '../types';
-import { isHallucination, getUserAgent, fetchWithTimeout, rotateKeys, TIMEOUT_FAST } from '../utils';
+import {
+  isHallucination,
+  getUserAgent,
+  fetchWithTimeout,
+  rotateKeys,
+  TIMEOUT_FAST,
+} from '../utils';
 import { logger } from '../logger';
 
 const GROQ_TRANSCRIBE = 'https://api.groq.com/openai/v1/audio/transcriptions';
@@ -30,7 +36,7 @@ export async function transcribe(
         GROQ_TRANSCRIBE,
         {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${key}` },
+          headers: { Authorization: `Bearer ${key}` },
           body,
         },
         TIMEOUT_FAST,
@@ -41,20 +47,38 @@ export async function transcribe(
   );
 
   if (!res?.ok) {
-    const errText = await res?.text().catch(() => 'No body') || 'Unknown fetch error';
-    logger.error('[groq] Transcribe HTTP error', { status: res?.status, body: errText });
+    const errText =
+      (await res?.text().catch(() => 'No body')) || 'Unknown fetch error';
+    logger.error('[groq] Transcribe HTTP error', {
+      status: res?.status,
+      body: errText,
+    });
     return null;
   }
 
-  const data = await res.json() as { text?: string; duration?: number; language?: string };
+  const data = (await res.json()) as {
+    text?: string;
+    duration?: number;
+    language?: string;
+  };
   const durationMs = data.duration ? data.duration * 1000 : undefined;
 
   if (data.text && !isHallucination(data.text, durationMs)) {
-    logger.info('[groq] Transcription success', { length: data.text.length, lang: data.language });
-    return { text: data.text, provider: 'groq', duration: data.duration, language: data.language };
+    logger.info('[groq] Transcription success', {
+      length: data.text.length,
+      lang: data.language,
+    });
+    return {
+      text: data.text,
+      provider: 'groq',
+      duration: data.duration,
+      language: data.language,
+    };
   }
 
-  logger.warn('[groq] Transcription empty or hallucinated', { text: data.text });
+  logger.warn('[groq] Transcription empty or hallucinated', {
+    text: data.text,
+  });
   return null;
 }
 
@@ -72,37 +96,44 @@ export async function translate(
   const res = await rotateKeys(
     env,
     'GROQ_KEY_',
-    (key) => fetchWithTimeout(
-      GROQ_CHAT,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-          'User-Agent': getUserAgent(),
+    (key) =>
+      fetchWithTimeout(
+        GROQ_CHAT,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            'User-Agent': getUserAgent(),
+          },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+              { role: 'system', content: buildPrompt(targetLang, sourceLang) },
+              { role: 'user', content: text },
+            ],
+            temperature: 0,
+          }),
         },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [
-            { role: 'system', content: buildPrompt(targetLang, sourceLang) },
-            { role: 'user', content: text },
-          ],
-          temperature: 0,
-        }),
-      },
-      TIMEOUT_FAST,
-      signal,
-    ),
+        TIMEOUT_FAST,
+        signal,
+      ),
     signal,
   );
 
   if (!res?.ok) {
-    const errText = await res?.text().catch(() => 'No body') || 'Unknown fetch error';
-    logger.error('[groq] Translate HTTP error', { status: res?.status, body: errText });
+    const errText =
+      (await res?.text().catch(() => 'No body')) || 'Unknown fetch error';
+    logger.error('[groq] Translate HTTP error', {
+      status: res?.status,
+      body: errText,
+    });
     return null;
   }
 
-  const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) return null;
 

@@ -1,13 +1,13 @@
 import { useSelector } from '@legendapp/state/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { supabase } from '@/services/supabase';
+import { SyncService } from '@/services/SyncService';
 import { Db } from '@/services/db';
-import { HistoryEntry, history$ } from '@/store';
+import { HistoryEntry, history$, auth$ } from '@/store';
 import logger from '@/utils/logger';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 20;
 
 export interface UseHistoryReturn {
   entries: HistoryEntry[];
@@ -27,10 +27,12 @@ interface HistorySnapshot {
   earlierEntries: HistoryEntry[];
 }
 
-function computeSnapshot(record: Record<string, HistoryEntry> | undefined): HistorySnapshot {
-  const sorted = Object.values(record || {})
-    .filter((entry) => !entry.deleted)
-    .sort((a, b) => b.timestamp - a.timestamp);
+function computeSnapshot(
+  record: Record<string, HistoryEntry> | undefined,
+): HistorySnapshot {
+  const sorted = Object.values(record || {}).sort(
+    (a, b) => b.timestamp - a.timestamp,
+  );
 
   const todayStart = new Date().setHours(0, 0, 0, 0);
   const yesterdayStart = todayStart - MS_PER_DAY;
@@ -54,7 +56,9 @@ export const useHistory = (): UseHistoryReturn => {
   const loadedCountRef = useRef(0);
 
   useEffect(() => {
-    loadedCountRef.current = Object.values(history$.get() || {}).filter((e) => !e.deleted).length;
+    const currentCount = Object.values(history$.get() || {}).length;
+    loadedCountRef.current = currentCount;
+    setHasMore(currentCount < Db.getHistoryCount());
   }, [snapshot.entries.length]);
 
   const loadMore = useCallback(async () => {
@@ -75,7 +79,6 @@ export const useHistory = (): UseHistoryReturn => {
           sourceApp: row.source_app,
           provider: row.provider,
           timestamp: new Date(row.created_at).getTime(),
-          deleted: row.deleted === 1,
         });
       }
     }
@@ -83,30 +86,22 @@ export const useHistory = (): UseHistoryReturn => {
   }, []);
 
   const deleteEntry = useCallback(async (id: string): Promise<void> => {
-    history$[id].deleted.set(true);
-    Db.softDeleteHistory(id);
-    supabase
-      .from('history')
-      .update({ deleted: true })
-      .eq('id', id)
-      .then((res) => {
-        if (res.error) logger.error(res.error);
-      });
+    const userId = auth$.user.get()?.id;
+    if (!userId) {
+      logger.warn('[useHistory] Cannot delete entry: no authenticated user');
+      return;
+    }
+    await SyncService.deleteHistory(id, userId);
   }, []);
 
   const clearAll = useCallback(async (): Promise<void> => {
+    const userId = auth$.user.get()?.id;
+    if (!userId) {
+      logger.warn('[useHistory] Cannot clear entries: no authenticated user');
+      return;
+    }
     const ids = Object.keys(history$.get() || {});
-    ids.forEach((id) => {
-      history$[id].deleted.set(true);
-    });
-    Db.softDeleteHistoryBatch(ids);
-    supabase
-      .from('history')
-      .update({ deleted: true })
-      .in('id', ids)
-      .then((res) => {
-        if (res.error) logger.error(res.error);
-      });
+    await SyncService.deleteHistoryBatch(ids, userId);
   }, []);
 
   return { ...snapshot, deleteEntry, clearAll, loadMore, hasMore };

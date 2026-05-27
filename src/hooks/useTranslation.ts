@@ -9,10 +9,9 @@ import { translationSchema } from '@/schemas/translation';
 import { HistoryService } from '@/services/HistoryService';
 import { TranslationService, TranslationResult } from '@/services/Translation';
 import { supabase } from '@/services/supabase';
-import { history$, audioActions, settings$, auth$ } from '@/store';
-import { AppToast } from '@/utils';
+import { history$, audioActions, settings$, auth$, audio$ } from '@/store';
 import { Result, ok, err } from '@/types/Result';
-import { logger } from '@/utils';
+import { AppToast, logger } from '@/utils';
 
 export interface UseTranslationReturn {
   translate: (
@@ -64,7 +63,7 @@ export const useTranslation = (): UseTranslationReturn => {
   const initialSourceLang = defaultSourceLang;
   const initialTargetLang =
     (defaultTargetLang || 'es') === initialSourceLang &&
-      initialSourceLang !== 'auto'
+    initialSourceLang !== 'auto'
       ? ''
       : defaultTargetLang || 'es';
 
@@ -81,6 +80,61 @@ export const useTranslation = (): UseTranslationReturn => {
   const { setError } = audioActions;
   const translationAbortRef = useRef<AbortController | null>(null);
   const lastRequestRef = useRef<string | null>(null);
+
+  // Transaction state refs
+  const sourceLangRef = useRef(sourceLang);
+  const targetLangRef = useRef(targetLang);
+  const userSessionRef = useRef(userSession);
+
+  useEffect(() => {
+    sourceLangRef.current = sourceLang;
+    targetLangRef.current = targetLang;
+    userSessionRef.current = userSession;
+  }, [sourceLang, targetLang, userSession]);
+
+  // Defer save helper for transcription-only
+  const saveTranscriptionOnly = useCallback(() => {
+    const currentTranscript = audio$.transcriptBuffer.get();
+    const duration = audio$.duration.get() || 0;
+    const currentSessionId = audio$.sessionId.get();
+    const isSaved = audio$.isSaved.get();
+
+    if (
+      !isSaved &&
+      currentTranscript.trim() &&
+      duration > 0 &&
+      currentSessionId !== null
+    ) {
+      audioActions.setSaved(true);
+      const detectedSource = audio$.sourceLang.get() || 'en';
+      const resolvedSource =
+        sourceLangRef.current === 'auto'
+          ? detectedSource
+          : sourceLangRef.current;
+
+      HistoryService.recordTranslation(
+        {
+          sourceLang: resolvedSource,
+          targetLang: targetLangRef.current || 'en',
+          transcript: currentTranscript,
+          translation: null,
+          transliteration: null,
+          duration,
+          sourceApp: 'ekwe',
+          provider: 'gemini',
+          sessionKey: currentSessionId,
+        },
+        userSessionRef.current,
+      ).catch((e) => logger.error('Failed to save transcription-only', e));
+    }
+  }, []);
+
+  // Save on unmount
+  useEffect(() => {
+    return (): void => {
+      saveTranscriptionOnly();
+    };
+  }, [saveTranscriptionOnly]);
 
   const translate = useCallback(
     async (
@@ -115,6 +169,7 @@ export const useTranslation = (): UseTranslationReturn => {
   );
 
   const handleClear = useCallback(async () => {
+    saveTranscriptionOnly();
     translationAbortRef.current?.abort();
     translationAbortRef.current = null;
     lastRequestRef.current = null;
@@ -123,7 +178,8 @@ export const useTranslation = (): UseTranslationReturn => {
     setTranslation(null);
     setTransliteration(null);
     setIsTranslating(false);
-  }, []);
+    audioActions.resetAudioState();
+  }, [saveTranscriptionOnly]);
 
   const handleSwap = useCallback(async () => {
     if (sourceLang === 'auto' || targetLang === 'none' || targetLang === '')
@@ -160,7 +216,9 @@ export const useTranslation = (): UseTranslationReturn => {
       });
 
       if (!validation.success) {
-        AppToast.error((validation.error.issues?.[0]?.message) ?? 'Please check your input.');
+        AppToast.error(
+          validation.error.issues?.[0]?.message ?? 'Please check your input.',
+        );
         return;
       }
 
@@ -194,39 +252,31 @@ export const useTranslation = (): UseTranslationReturn => {
           Haptics.NotificationFeedbackType.Success,
         );
 
-        // Look up a pending history entry (dictation that saved transcript but no translation yet)
-        const allHistory = history$.get();
-        const pendingId = Object.keys(allHistory)
-          .filter(
-            (id) =>
-              allHistory[id].transcript === textToTranslate &&
-              allHistory[id].translation === null,
-          )
-          .sort(
-            (a, b) => allHistory[b].timestamp - allHistory[a].timestamp,
-          )[0];
+        const duration = audio$.duration.get() || 0;
+        const currentSessionId = audio$.sessionId.get();
 
-        if (pendingId) {
-          // Update existing entry with translation
-          history$[pendingId].translation.set(result.value.translation);
-          history$[pendingId].transliteration.set(
-            result.value.transliteration ?? null,
+        if (currentSessionId !== null && duration > 0) {
+          // Voice note translation (Full Transaction)
+          audioActions.setSaved(true);
+          await HistoryService.recordTranslation(
+            {
+              sourceLang:
+                sourceLang === 'auto'
+                  ? audio$.sourceLang.get() || 'en'
+                  : sourceLang,
+              targetLang,
+              transcript: textToTranslate,
+              translation: result.value.translation,
+              transliteration: result.value.transliteration || null,
+              duration,
+              sourceApp: 'ekwe',
+              provider: 'gemini',
+              sessionKey: currentSessionId,
+            },
+            userSession,
           );
-          history$[pendingId].targetLang.set(targetLang);
-
-          supabase
-            .from('history')
-            .update({
-              translation_text: result.value.translation,
-              transliteration_text: result.value.transliteration ?? null,
-              target_lang: targetLang,
-            })
-            .eq('id', pendingId)
-            .then((res) => {
-              if (res.error) logger.error(res.error);
-            });
         } else {
-          // No pending entry — create a new one (text input flow)
+          // Pure text translation (Half Transaction)
           await HistoryService.recordTranslation(
             {
               sourceLang,
@@ -252,7 +302,7 @@ export const useTranslation = (): UseTranslationReturn => {
         }
       }
     },
-    [sourceText, sourceLang, targetLang, userSession, translate],
+    [sourceText, sourceLang, targetLang, userSession, translate, translation],
   );
 
   const canTranslate = sourceText.trim().length > 0;

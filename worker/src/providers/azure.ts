@@ -19,30 +19,34 @@ export async function transcribe(
   const res = await rotateKeys(
     env,
     'AZURE_KEY_',
-    (key) => fetchWithTimeout(
-      `https://${region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${azureLang}`,
-      {
-        method: 'POST',
-        headers: {
-          'Ocp-Apim-Subscription-Key': key,
-          'Content-Type': 'audio/ogg; codecs=opus',
-          'Accept': 'application/json',
+    (key) =>
+      fetchWithTimeout(
+        `https://${region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${azureLang}`,
+        {
+          method: 'POST',
+          headers: {
+            'Ocp-Apim-Subscription-Key': key,
+            'Content-Type': 'audio/ogg; codecs=opus',
+            Accept: 'application/json',
+          },
+          body: blob,
         },
-        body: blob,
-      },
-      TIMEOUT_SLOW,
-      signal,
-    ),
+        TIMEOUT_SLOW,
+        signal,
+      ),
     signal,
   );
 
   if (!res?.ok) {
-    const errText = await res?.text().catch(() => '') || 'No response';
-    logger.error('[azure] Transcribe HTTP error', { status: res?.status, body: errText });
+    const errText = (await res?.text().catch(() => '')) || 'No response';
+    logger.error('[azure] Transcribe HTTP error', {
+      status: res?.status,
+      body: errText,
+    });
     return null;
   }
 
-  const data = await res.json() as AzureResponse;
+  const data = (await res.json()) as AzureResponse;
   if (data.RecognitionStatus !== 'Success' || !data.DisplayText?.trim()) {
     return null;
   }
@@ -58,11 +62,26 @@ function resolveAzureLocale(lang: string): string {
   if (!lang || lang === 'auto') return 'en-US';
 
   const localeMap: Record<string, string> = {
-    en: 'en-US', fr: 'fr-FR', es: 'es-ES', de: 'de-DE',
-    pt: 'pt-BR', it: 'it-IT', nl: 'nl-NL', ja: 'ja-JP',
-    ko: 'ko-KR', zh: 'zh-CN', ar: 'ar-SA', hi: 'hi-IN',
-    yo: 'yo-NG', ig: 'ig-NG', ha: 'ha-NG', sw: 'sw-KE',
-    ru: 'ru-RU', tr: 'tr-TR', pl: 'pl-PL', uk: 'uk-UA',
+    en: 'en-US',
+    fr: 'fr-FR',
+    es: 'es-ES',
+    de: 'de-DE',
+    pt: 'pt-BR',
+    it: 'it-IT',
+    nl: 'nl-NL',
+    ja: 'ja-JP',
+    ko: 'ko-KR',
+    zh: 'zh-CN',
+    ar: 'ar-SA',
+    hi: 'hi-IN',
+    yo: 'yo-NG',
+    ig: 'ig-NG',
+    ha: 'ha-NG',
+    sw: 'sw-KE',
+    ru: 'ru-RU',
+    tr: 'tr-TR',
+    pl: 'pl-PL',
+    uk: 'uk-UA',
   };
 
   const base = lang.toLowerCase().split('-')[0];

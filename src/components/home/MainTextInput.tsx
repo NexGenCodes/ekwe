@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
-import { View, TextInput, Text, StyleSheet } from 'react-native';
+import { TextInput } from 'react-native';
 
-import { spacing, typography } from '@/constants/designTokens';
+import { Box, Text } from '@/components/ui';
+import { spacing } from '@/constants/spacing';
+import { typography } from '@/constants/typography';
 import { useTheme } from '@/hooks';
 
 interface MainTextInputProps {
@@ -17,31 +19,22 @@ export const MainTextInput = React.memo(
     const { color } = useTheme();
 
     const inputStyle = useMemo(() => {
-      return [
-        styles.input,
-        {
-          color: color.foreground,
-          fontSize: 18,
-          lineHeight: 26,
-          fontFamily: 'Outfit-Bold',
-          paddingHorizontal: spacing[6],
-          minHeight: 120,
-          maxHeight: 240,
-        },
-      ];
+      return {
+        color: color.foreground,
+        ...typography.bodyLarge,
+        paddingHorizontal: spacing.lg,
+        minHeight: 100,
+        maxHeight: 240,
+        flex: 1,
+        paddingVertical: spacing.sm,
+      };
     }, [color.foreground]);
 
-    const charCountStyle = useMemo(
-      () => [
-        styles.charCount,
-        { color: value.length >= maxChars ? color.error : color.muted },
-      ],
-      [value.length, maxChars, color.error, color.muted],
-    );
-
     return (
-      <View style={styles.inputWrapper}>
+      <Box accessible accessibilityRole="text" style={{ flex: 1, position: 'relative' }}>
         <TextInput
+          accessibilityLabel="Source text input"
+          accessibilityHint="Type or paste text to translate."
           style={inputStyle}
           placeholder="Start typing..."
           placeholderTextColor={color.muted}
@@ -51,38 +44,22 @@ export const MainTextInput = React.memo(
           textAlignVertical="top"
           selectionColor={color.secondary}
           maxLength={maxChars}
-          scrollEnabled={true}
+          scrollEnabled
           onFocus={onFocus}
           onBlur={onBlur}
         />
-        <View style={styles.charCountContainer}>
-          <Text style={charCountStyle}>
+        <Box style={{ paddingHorizontal: spacing.lg, alignItems: 'flex-end' }}>
+          <Text
+            variant="caption"
+            style={{
+              color: value.length >= maxChars ? color.error : color.muted,
+            }}
+            accessibilityLiveRegion="polite"
+          >
             {value.length}/{maxChars}
           </Text>
-        </View>
-      </View>
+        </Box>
+      </Box>
     );
   },
 );
-
-const styles = StyleSheet.create({
-  inputWrapper: {
-    flex: 1,
-    position: 'relative',
-  },
-  input: {
-    fontFamily: 'Outfit-Medium',
-    flex: 1,
-    paddingTop: spacing[3],
-    paddingBottom: spacing[3],
-  },
-  charCountContainer: {
-    paddingHorizontal: spacing[6],
-    alignItems: 'flex-end',
-    marginTop: spacing[1],
-  },
-  charCount: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: typography.caption.size,
-  },
-});

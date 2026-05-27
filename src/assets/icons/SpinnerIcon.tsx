@@ -11,7 +11,7 @@ const AnimatedSvg = Animated.createAnimatedComponent(Svg);
 
 export const SpinnerIcon = ({
   size = 24,
-  color = '#FFFFFF',
+  color = 'currentColor',
   animatedStyle,
 }: IconProps): React.ReactElement => (
   <AnimatedSvg

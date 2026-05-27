@@ -1,6 +1,6 @@
 import { Paths } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
-import { Platform } from 'react-native';
+
 import {
   AudioContext,
   AudioRecorder,
@@ -10,7 +10,7 @@ import {
   FileDirectory,
 } from 'react-native-audio-api';
 
-import { logger } from '@/utils';
+import { logger, isIOS } from '@/utils';
 import { releaseAudioEffects } from '@/utils/AudioEffectsModule';
 
 type PermissionStatus = 'Granted' | 'Denied' | 'Undetermined' | 'Restricted';
@@ -49,12 +49,12 @@ class AudioService {
     this.context = new AudioContext();
 
     // Explicitly resume on creation if needed
-    if (Platform.OS === 'ios') {
+    if (isIOS) {
       await this.context.resume();
     }
 
     // 1. Configure Global Audio Session (iOS)
-    if (Platform.OS === 'ios') {
+    if (isIOS) {
       try {
         await AudioManager.setAudioSessionOptions({
           iosCategory: 'playAndRecord',

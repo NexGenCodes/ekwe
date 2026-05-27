@@ -2,95 +2,78 @@ import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
 import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState, useCallback, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  Pressable,
-  ViewStyle,
-  StyleSheet,
-} from 'react-native';
-import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
+import React, { useCallback, useMemo, useState } from 'react';
+import { TextInput, ScrollView, StyleSheet } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { CloseIcon } from '@/assets/icons/CloseIcon';
 import { DrumIcon } from '@/assets/icons/DrumIcon';
 import { SearchIcon } from '@/assets/icons/SearchIcon';
-import { HistoryItem } from '@/components';
-import { EmptyState, IconContainer } from '@/components/ui';
-import { borderRadius, spacing, typography } from '@/constants/designTokens';
-import { Db } from '@/services/db';
-import { useHistory, useTheme } from '@/hooks';
-import { HistoryEntry } from '@/store';
+import { HistoryItem, EmptyState, IconContainer } from '@/components';
+import { Box, Text, Pressable } from '@/components/ui';
+import { duration, shadows } from '@/constants';
+import { borderRadius, iconSize } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
+import { typography } from '@/constants/typography';
+import { useHistory, useHistorySearch, useTheme } from '@/hooks';
+import { HistoryFilterOption } from '@/hooks/useHistorySearch';
+import { SyncService } from '@/services/SyncService';
+import { HistoryEntry, auth$ } from '@/store';
+import { isIOS, logger } from '@/utils';
 
-const DEBOUNCE_DELAY_MS = 150;
-
-function rowToEntry(row: { id: string; source_lang: string; target_lang: string; transcript: string; translation_text: string | null; transliteration_text: string | null; duration: number; source_app: string; provider: string; created_at: string; deleted: number }): HistoryEntry {
-  return {
-    id: row.id,
-    sourceLang: row.source_lang,
-    targetLang: row.target_lang,
-    transcript: row.transcript,
-    translation: row.translation_text,
-    transliteration: row.transliteration_text,
-    duration: row.duration,
-    sourceApp: row.source_app,
-    provider: row.provider,
-    timestamp: new Date(row.created_at).getTime(),
-    deleted: row.deleted === 1,
-  };
-}
-
-function computeSections(entries: HistoryEntry[]): { title: string; data: HistoryEntry[] }[] {
-  const now = Date.now();
-  const day = 24 * 60 * 60 * 1000;
-  const today: HistoryEntry[] = [];
-  const yesterday: HistoryEntry[] = [];
-  const earlier: HistoryEntry[] = [];
-
-  entries.forEach((e) => {
-    const diff = now - e.timestamp;
-    if (diff < day) today.push(e);
-    else if (diff < 2 * day) yesterday.push(e);
-    else earlier.push(e);
-  });
-
-  return [
-    { title: 'Today', data: today },
-    { title: 'Yesterday', data: yesterday },
-    { title: 'Earlier', data: earlier },
-  ].filter((s) => s.data.length > 0);
-}
+const FILTER_OPTIONS: HistoryFilterOption[] = [
+  'all',
+  'transcription',
+  'translation',
+];
 
 export default function HistoryScreen(): React.JSX.Element {
   const router = useRouter();
-  const { entries, deleteEntry, loadMore, hasMore } = useHistory();
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [isFocused, setIsFocused] = useState(false);
+  const {
+    entries,
+    todayEntries,
+    yesterdayEntries,
+    earlierEntries,
+    deleteEntry,
+    loadMore,
+    hasMore,
+  } = useHistory();
+  const { query, setQuery, filter, setFilter, filteredEntries, isSearching } =
+    useHistorySearch(entries);
+  const [isFocused, setIsFocused] = React.useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setDebouncedQuery(query);
-    }, DEBOUNCE_DELAY_MS);
-    return (): void => clearTimeout(t);
-  }, [query]);
   const { color } = useTheme();
 
-  const sections = useMemo(() => {
-    if (debouncedQuery.trim().length > 0) {
-      const rows = Db.searchHistory(debouncedQuery, 200);
-      return computeSections(rows.map(rowToEntry));
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    const userId = auth$.user.get()?.id;
+    if (userId) {
+      try {
+        await Promise.all([
+          SyncService.pullFromCloud(userId),
+          SyncService.drain(),
+        ]);
+      } catch (err) {
+        logger.error('[history] Pull to refresh failed:', err);
+      }
     }
-    return computeSections(entries);
-  }, [entries, debouncedQuery]);
+
+    setIsRefreshing(false);
+  }, []);
+
+  // When searching/filtering, use filteredEntries flat.
+  // When browsing, use the date-grouped buckets from useHistory.
+  const isGrouped = !isSearching && filter === 'all' && query.length === 0;
 
   const handleEntryPress = useCallback(
     (entry: HistoryEntry): void => {
       router.push({
         pathname: '/result',
         params: {
-          sessionId: entry.id,
+          entryId: entry.id,
           transcript: entry.transcript,
           sourceLang: entry.sourceLang,
           targetLang: entry.targetLang,
@@ -102,118 +85,181 @@ export default function HistoryScreen(): React.JSX.Element {
     [router],
   );
 
+  /** Flat list data: interleave section headers for grouped mode */
   type ListItem =
     | { type: 'header'; title: string }
-    | { type: 'entry'; data: HistoryEntry };
+    | { type: 'entry'; entry: HistoryEntry };
 
-  const flatData = useMemo(() => {
-    const data: ListItem[] = [];
-    sections.forEach((section) => {
-      data.push({ type: 'header', title: section.title });
-      section.data.forEach((entry) => {
-        data.push({ type: 'entry', data: entry });
-      });
-    });
-    return data;
-  }, [sections]);
+  const listData = useMemo((): ListItem[] => {
+    if (isGrouped) {
+      const result: ListItem[] = [];
+      const buckets = [
+        { title: 'Today', data: todayEntries },
+        { title: 'Yesterday', data: yesterdayEntries },
+        { title: 'Earlier', data: earlierEntries },
+      ];
+      for (const bucket of buckets) {
+        if (bucket.data.length === 0) continue;
+        result.push({ type: 'header', title: bucket.title });
+        for (const e of bucket.data) {
+          result.push({ type: 'entry', entry: e });
+        }
+      }
+      return result;
+    }
+    return filteredEntries.map((e) => ({ type: 'entry' as const, entry: e }));
+  }, [
+    isGrouped,
+    todayEntries,
+    yesterdayEntries,
+    earlierEntries,
+    filteredEntries,
+  ]);
 
-  const itemStyle = useMemo<ViewStyle>(
-    () => ({
-      borderRadius: borderRadius['2xl'],
-      borderWidth: 1,
-      borderColor: color.border,
-      overflow: 'hidden',
-    }),
-    [color.border],
-  );
-
-  const renderItem = useCallback(
+  const renderListItem = useCallback(
     ({ item }: { item: ListItem }): React.ReactElement => {
       if (item.type === 'header') {
         return (
-          <Text style={[styles.headerText, { color: color.muted }]}>
-            {item.title}
-          </Text>
+          <Box style={styles.sectionHeader}>
+            <Text
+              variant="label"
+              style={{
+                color: color.muted,
+                textTransform: 'uppercase',
+                letterSpacing: 1,
+              }}
+            >
+              {item.title}
+            </Text>
+          </Box>
         );
       }
-
       return (
-        <View style={styles.entryContainer}>
+        <Box style={styles.entryContainer}>
           <HistoryItem
-            entry={item.data}
+            entry={item.entry}
             onPress={handleEntryPress}
             onDelete={deleteEntry}
-            style={itemStyle}
           />
-        </View>
+        </Box>
       );
     },
-    [handleEntryPress, deleteEntry, itemStyle, color.muted],
+    [handleEntryPress, deleteEntry, color.muted],
   );
 
   return (
-    <View style={[styles.flex1, { backgroundColor: color.background }]}>
-      <View style={styles.topSection}>
-        <Animated.View
-          entering={FadeInDown.duration(400).springify()}
-          style={[
-            styles.searchContainer,
-            {
-              backgroundColor: color.card,
-              borderColor: isFocused ? color.secondary : color.border,
-            },
-          ]}
-        >
-          <SearchIcon size={20} color={color.secondary} />
-          <TextInput
-            style={[styles.searchInput, { color: color.foreground }]}
-            placeholder="Search transcripts..."
-            placeholderTextColor={color.muted}
-            value={query}
-            onChangeText={setQuery}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
-          />
-          {query.length > 0 && (
-            <Pressable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setQuery('');
-              }}
-              hitSlop={12}
-              style={({ pressed }) => [
-                styles.clearButton,
-                pressed && styles.clearButtonPressed,
+    <Box style={[styles.flex1, { backgroundColor: color.background }]}>
+      <Box style={{ paddingHorizontal: spacing.md }}>
+        {/* Search row */}
+        <Box style={styles.searchRow}>
+          <Box
+            style={[
+              styles.searchContainer,
+              {
+                backgroundColor: color.card,
+                borderColor: isFocused ? color.secondary : color.border,
+              },
+            ]}
+          >
+            <SearchIcon size={iconSize.md} color={color.secondary} />
+            <TextInput
+              style={[
+                styles.searchInput,
+                typography.bodySmall,
+                { color: color.foreground },
               ]}
-            >
-              <CloseIcon size={18} color={color.muted} />
-            </Pressable>
-          )}
-        </Animated.View>
-      </View>
+              placeholder="Search transcripts..."
+              placeholderTextColor={color.muted}
+              value={query}
+              onChangeText={setQuery}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+            />
+            {query.length > 0 && (
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setQuery('');
+                }}
+                hitSlop={spacing.md}
+                style={({ pressed }) => [
+                  styles.clearButton,
+                  pressed && styles.clearButtonPressed,
+                ]}
+              >
+                <CloseIcon size={iconSize.sm} color={color.muted} />
+              </Pressable>
+            )}
+          </Box>
+        </Box>
 
-      {sections.length === 0 ? (
+        {/* Horizontal scrollable filter chips */}
+        <Box style={styles.chipsContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsContent}
+          >
+            {FILTER_OPTIONS.map((option) => (
+              <Pressable
+                key={option}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setFilter(option);
+                }}
+                style={[
+                  styles.chip,
+                  filter === option
+                    ? {
+                        backgroundColor: `${color.secondary}15`,
+                        borderColor: color.secondary,
+                      }
+                    : {
+                        backgroundColor: color.card,
+                        borderColor: color.border,
+                      },
+                ]}
+              >
+                <Text
+                  key={option}
+                  variant="label"
+                  style={[
+                    filter === option
+                      ? { color: color.secondary }
+                      : { color: color.primary },
+                  ]}
+                >
+                  {option.charAt(0).toUpperCase() + option.slice(1)}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </Box>
+      </Box>
+
+      {filteredEntries.length === 0 && listData.length === 0 ? (
         <Animated.View
-          entering={FadeInUp.duration(600).springify()}
+          entering={FadeIn.duration(duration.normal)}
           style={styles.emptyStateContainer}
         >
-          <View
+          <Box
             style={[
               styles.emptyStateCard,
               { backgroundColor: color.card, borderColor: color.border },
             ]}
           >
             <EmptyState
+              animate
               icon={
                 <IconContainer size="lg" backgroundColor={`${color.primary}15`}>
-                  {process.env.EXPO_OS === 'ios' ? (
+                  {isIOS ? (
                     <ExpoImage
                       source="sf:clock.fill"
-                      style={{ width: 32, height: 32 }}
+                      style={{ width: iconSize.lg, height: iconSize.lg }}
                       tintColor={color.primary}
                     />
                   ) : (
-                    <DrumIcon size={32} color={color.primary} />
+                    <DrumIcon size={iconSize.lg} color={color.primary} />
                   )}
                 </IconContainer>
               }
@@ -224,79 +270,120 @@ export default function HistoryScreen(): React.JSX.Element {
                   : 'Your voice note history will appear here.'
               }
             />
-          </View>
+          </Box>
         </Animated.View>
       ) : (
-        <View style={styles.listContainer}>
+        <Box style={styles.listContainer}>
           <FlashList
-            data={flatData}
-            renderItem={renderItem}
-            getItemType={(item) => item.type}
+            data={listData}
+            // @ts-ignore — ListItem union type; renderItem handles both branches
+            renderItem={renderListItem}
             keyExtractor={(item, index) =>
               item.type === 'header'
                 ? `header-${item.title}`
-                : `entry-${item.data.id || index}`
+                : `entry-${item.entry.id || index}`
             }
-            ListFooterComponent={<View style={{ height: 40 }} />}
+            getItemType={(item) => item.type}
+            ListFooterComponent={
+              <Box style={styles.listFooter}>
+                {!isSearching && !hasMore && listData.length > 0 && (
+                  <Text variant="caption" style={{ color: color.muted }}>
+                    You've reached the end.
+                  </Text>
+                )}
+              </Box>
+            }
+            onEndReached={!isSearching && hasMore ? loadMore : undefined}
+            onEndReachedThreshold={0.5}
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
             showsVerticalScrollIndicator={false}
             contentInsetAdjustmentBehavior="automatic"
-            onEndReached={loadMore}
-            onEndReachedThreshold={0.5}
+            // @ts-ignore - estimatedItemSize required by FlashList at runtime
+            estimatedItemSize={120}
           />
-        </View>
+        </Box>
       )}
-    </View>
+    </Box>
   );
 }
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
-  headerText: {
-    fontFamily: 'Outfit-Bold',
-    fontSize: typography.caption.size + 1,
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-    paddingHorizontal: spacing[2],
-    paddingTop: spacing[8],
-    paddingBottom: spacing[4],
-  },
-  entryContainer: { marginBottom: spacing[3] },
-  topSection: { paddingHorizontal: spacing[4], paddingBottom: spacing[4] },
-  searchContainer: {
+  entryContainer: { marginBottom: spacing.sm },
+  topSection: { paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
+  searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing[5],
-    height: 56,
-    borderRadius: borderRadius['2xl'],
-    marginTop: spacing[4],
-    borderWidth: 1.5,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    height: spacing['3xl'],
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    ...shadows.soft,
   },
   searchInput: {
     flex: 1,
-    marginLeft: spacing[3],
-    fontFamily: 'Outfit-Regular',
-    fontSize: typography.body.size,
+    marginLeft: spacing.sm,
+    paddingVertical: 0,
   },
-  clearButton: { padding: spacing[2] },
+  clearButton: { padding: spacing.xs },
   clearButtonPressed: { transform: [{ scale: 0.95 }] },
+  chipsContainer: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  chipsContent: {
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  // Pill-shaped filter chips per design system "Language Selectors" spec
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  // Section header (Today / Yesterday / Earlier)
+  sectionHeader: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+  },
   emptyStateContainer: {
     flex: 1,
-    paddingHorizontal: spacing[8],
+    paddingHorizontal: spacing.xl,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingBottom: 80,
+    paddingBottom: spacing['6xl'],
   },
   emptyStateCard: {
     width: '100%',
-    padding: 40,
+    padding: spacing['2xl'],
     borderRadius: borderRadius['2xl'],
     alignItems: 'center',
     borderWidth: 1,
     borderStyle: 'dashed',
   },
-  listContainer: { flex: 1, paddingHorizontal: spacing[4] },
+  listContainer: {
+    flex: 1,
+    padding: spacing.md,
+  },
+  listFooter: {
+    paddingVertical: spacing.xl,
+    paddingBottom: spacing['6xl'],
+    alignItems: 'center',
+  },
+  loadMoreButton: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
 });

@@ -1,5 +1,10 @@
 import { Env, TranslateResult } from '../types';
-import { sanitizeKey, getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from '../utils';
+import {
+  sanitizeKey,
+  getUserAgent,
+  fetchWithTimeout,
+  TIMEOUT_FAST,
+} from '../utils';
 import { logger } from '../logger';
 
 const OPENROUTER_CHAT = 'https://openrouter.ai/api/v1/chat/completions';
@@ -14,7 +19,10 @@ export async function translate(
   env: Env,
   signal: AbortSignal,
 ): Promise<TranslateResult | null> {
-  logger.info('[openrouter] Requesting translation', { targetLang, sourceLang });
+  logger.info('[openrouter] Requesting translation', {
+    targetLang,
+    sourceLang,
+  });
   const apiKey = sanitizeKey(env.OPENROUTER_KEY);
   if (apiKey.length <= 5) {
     logger.warn('[openrouter] Skipping: API key missing');
@@ -26,7 +34,7 @@ export async function translate(
     {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://ekwe.app',
         'X-Title': 'Ekwe',
@@ -47,11 +55,16 @@ export async function translate(
 
   if (!res.ok) {
     const errText = await res.text().catch(() => 'Unreadable error body');
-    logger.error('[openrouter] Translate HTTP error', { status: res.status, body: errText });
+    logger.error('[openrouter] Translate HTTP error', {
+      status: res.status,
+      body: errText,
+    });
     return null;
   }
 
-  const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) return null;
 

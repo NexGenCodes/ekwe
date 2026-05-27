@@ -1,6 +1,6 @@
 import { useSelector } from '@legendapp/state/react';
 import React, { useEffect, useRef, useMemo } from 'react';
-import { Dimensions, View, StyleSheet } from 'react-native';
+import { Dimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
@@ -19,6 +19,7 @@ import { CheckmarkIcon } from '@/assets/icons/CheckmarkIcon';
 import { ExclamationIcon } from '@/assets/icons/ExclamationIcon';
 import { MicrophoneIcon } from '@/assets/icons/MicrophoneIcon';
 import { SpinnerIcon } from '@/assets/icons/SpinnerIcon';
+import { Box } from '@/components/ui';
 import { bubbleColors } from '@/constants/colors';
 import { useBubble, useMetering, useTheme } from '@/hooks';
 import { audio$, audioActions, settings$, RecordingState } from '@/store';
@@ -271,7 +272,16 @@ export function LensBubble(): React.ReactElement | null {
   if (!bubbleEnabled) return null;
 
   return (
-    <View style={styles.container}>
+    <Box
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        pointerEvents: 'none',
+      }}
+    >
       <Animated.View
         style={[
           {
@@ -305,11 +315,11 @@ export function LensBubble(): React.ReactElement | null {
             <MicrophoneIcon size={20} color={onPrimaryColor} />
           )}
           {recordingState === RecordingState.Recording && (
-            <View style={styles.meterContainer}>
+            <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               {history.map((h, i) => (
                 <MeterBar key={i} value={h} color={onPrimaryColor} />
               ))}
-            </View>
+            </Box>
           )}
           {recordingState === RecordingState.Processing && (
             <SpinnerIcon
@@ -326,18 +336,6 @@ export function LensBubble(): React.ReactElement | null {
           )}
         </Animated.View>
       </GestureDetector>
-    </View>
+    </Box>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    pointerEvents: 'none',
-  },
-  meterContainer: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-});

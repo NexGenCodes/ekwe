@@ -2,12 +2,17 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { View, Text, Pressable } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { AuthHeader, AuthShell } from '@/components';
-import { Input, ErrorBanner, Button } from '@/components/ui';
-import { spacing, typography } from '@/constants/designTokens';
+import {
+  AuthHeader,
+  AuthShell,
+  Input,
+  ErrorBanner,
+  Button,
+} from '@/components';
+import { Box, Text, Pressable } from '@/components/ui';
+import { spacing } from '@/constants/spacing';
+import { typography } from '@/constants/typography';
 import { useTheme } from '@/hooks';
 import { otpSchema, OtpForm } from '@/schemas/auth';
 import { verifyOtp, sendOtp } from '@/services/auth';
@@ -46,13 +51,17 @@ export default function VerifyScreen(): React.JSX.Element {
       setIsLoading(false);
 
       if (result.ok) {
-        setOnboardingCompleted(true);
-        router.replace('/(tabs)');
+        if (params.source === 'forgot-password') {
+          router.replace('/(auth)/update-password');
+        } else {
+          setOnboardingCompleted(true);
+          router.replace('/(tabs)');
+        }
       } else if (result.error) {
         setError(result.error);
       }
     },
-    [email, setOnboardingCompleted, router],
+    [email, params.source, setOnboardingCompleted, router],
   );
 
   const handleResend = async (): Promise<void> => {
@@ -72,10 +81,10 @@ export default function VerifyScreen(): React.JSX.Element {
         caption={`We sent a code to ${email}`}
       />
 
-      <Animated.View entering={FadeInDown.duration(600).delay(100).springify()}>
+      <Box>
         <ErrorBanner message={error} />
 
-        <View style={{ marginBottom: spacing[5] }}>
+        <Box style={{ marginBottom: spacing.lg }}>
           <Controller
             control={control}
             name="token"
@@ -89,16 +98,18 @@ export default function VerifyScreen(): React.JSX.Element {
                 onSubmitEditing={handleSubmit(onSubmit)}
                 autoFocus
                 error={fieldState.error?.message}
-                style={{
-                  fontFamily: 'Outfit-Medium',
-                  fontSize: typography.heading2.size,
-                  textAlign: 'center',
-                  letterSpacing: 8,
-                }}
+                style={[
+                  {
+                    ...typography.heading2,
+                    textAlign: 'center',
+                    letterSpacing: 8,
+                    color: color.foreground,
+                  },
+                ]}
               />
             )}
           />
-        </View>
+        </Box>
 
         <Button
           label="Verify Code"
@@ -109,29 +120,22 @@ export default function VerifyScreen(): React.JSX.Element {
         <Pressable
           onPress={handleResend}
           disabled={cooldown > 0 || isLoading}
-          style={{ alignItems: 'center', marginTop: spacing[6] }}
+          style={{ alignItems: 'center', marginTop: spacing.lg }}
         >
-          <Text
-            style={{
-              fontFamily: 'Outfit-Regular',
-              fontSize: typography.bodySmall.size,
-              color: color.muted,
-            }}
-          >
+          <Text variant="bodySmall" style={{ color: color.muted }}>
             Didn't receive it?
           </Text>
           <Text
+            variant="bodySmall"
             style={{
-              fontFamily: 'Outfit-Medium',
-              fontSize: typography.bodySmall.size,
               color: cooldown > 0 ? color.muted : color.primary,
-              marginTop: spacing[1],
+              marginTop: spacing.xs,
             }}
           >
             {cooldown > 0 ? `Resend code (${cooldown}s)` : 'Resend code'}
           </Text>
         </Pressable>
-      </Animated.View>
+      </Box>
     </AuthShell>
   );
 }

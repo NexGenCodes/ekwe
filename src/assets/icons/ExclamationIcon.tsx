@@ -8,7 +8,7 @@ interface IconProps {
 
 export const ExclamationIcon = ({
   size = 24,
-  color = '#FFFFFF',
+  color = 'currentColor',
 }: IconProps): React.ReactElement => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Path

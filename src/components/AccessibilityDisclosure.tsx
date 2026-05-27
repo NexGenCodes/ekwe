@@ -5,16 +5,13 @@ import {
   LucideZap,
 } from 'lucide-react-native';
 import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-} from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { Box, Text, Pressable, ScrollArea } from '@/components/ui';
+import { borderRadius, iconSize } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
+import { isIOS } from '@/utils';
 
 export interface AccessibilityDisclosureProps {
   onAgree: () => void;
@@ -28,209 +25,201 @@ export const AccessibilityDisclosure: React.FC<
   const primaryColor = color.primary;
 
   return (
-    <View style={[styles.container, { backgroundColor: color.background }]}>
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
+    <Box style={{ flex: 1, backgroundColor: color.background }}>
+      <ScrollArea
+        style={{ flex: 1, paddingHorizontal: spacing.lg }}
         contentInsetAdjustmentBehavior="automatic"
       >
         <Animated.View
           entering={FadeInDown.duration(500).springify()}
-          style={styles.titleSection}
+          style={{ marginTop: spacing.xl, marginBottom: spacing.xl }}
         >
-          <Text style={[styles.title, { color: color.foreground }]}>
-            Accessibility Service Disclosure
-          </Text>
-          <View
-            style={[
-              styles.infoBox,
-              {
-                backgroundColor: `${primaryColor}1A`,
-                borderColor: `${primaryColor}33`,
-              },
-            ]}
+          <Text variant="display">Accessibility Service Disclosure</Text>
+          <Box
+            style={{
+              marginTop: spacing.md,
+              padding: spacing.md,
+              borderRadius: borderRadius.xl,
+              borderWidth: 1,
+              backgroundColor: `${primaryColor}1A`,
+              borderColor: `${primaryColor}33`,
+            }}
           >
-            <Text style={[styles.infoBoxTitle, { color: primaryColor }]}>
+            <Text
+              variant="bodySmall"
+              style={{ marginBottom: spacing.xs, color: primaryColor }}
+            >
               Google Play Policy Requirement
             </Text>
-            <Text style={[styles.infoBoxBody, { color: color.foreground }]}>
+            <Text variant="bodySmall">
               This app uses the{' '}
-              <Text style={styles.boldText}>AccessibilityService API</Text> to
+              <Text variant="bodySmall">AccessibilityService API</Text> to
               detect when you open messaging applications (like WhatsApp or
               Tinder). This allows Ekwe to automatically display the floating
               translation tool over your screen exactly when you need it.
             </Text>
-          </View>
+          </Box>
         </Animated.View>
 
         <Animated.View
           entering={FadeInDown.duration(500).delay(100).springify()}
-          style={styles.featuresSection}
+          style={{ gap: spacing.lg, marginBottom: 160 }}
         >
-          <View style={styles.featureRow}>
-            <View
-              style={[
-                styles.featureIcon,
-                { backgroundColor: `${primaryColor}1A` },
-              ]}
+          <Box
+            style={{
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              gap: spacing.md,
+            }}
+          >
+            <Box
+              style={{
+                padding: spacing.md,
+                borderRadius: borderRadius.xl,
+                backgroundColor: `${primaryColor}1A`,
+              }}
             >
-              {process.env.EXPO_OS === 'ios' ? (
+              {isIOS ? (
                 <ExpoImage
                   source="sf:bolt.fill"
-                  style={{ width: 24, height: 24 }}
+                  style={{ width: iconSize.md, height: iconSize.md }}
                   tintColor={primaryColor}
                 />
               ) : (
                 <LucideZap size={24} color={primaryColor} />
               )}
-            </View>
-            <View style={styles.featureTextContainer}>
-              <Text style={[styles.featureTitle, { color: color.foreground }]}>
+            </Box>
+            <Box style={{ flex: 1, paddingRight: spacing.sm }}>
+              <Text variant="body" style={{ marginBottom: spacing.xs }}>
                 Contextual App Detection
               </Text>
-              <Text style={[styles.featureBody, { color: color.muted }]}>
+              <Text variant="bodySmall" style={{ color: color.muted }}>
                 We strictly monitor top-level window transitions to identify
                 when a target messaging app is launched. We do NOT read your
                 chat messages.
               </Text>
-            </View>
-          </View>
+            </Box>
+          </Box>
 
-          <View style={styles.featureRow}>
-            <View
-              style={[
-                styles.featureIcon,
-                { backgroundColor: 'rgba(34, 197, 94, 0.1)' },
-              ]}
+          <Box
+            style={{
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              gap: spacing.md,
+            }}
+          >
+            <Box
+              style={{
+                padding: spacing.md,
+                borderRadius: borderRadius.xl,
+                backgroundColor: `${color.success}1A`,
+              }}
             >
-              {process.env.EXPO_OS === 'ios' ? (
+              {isIOS ? (
                 <ExpoImage
                   source="sf:battery.100.bolt"
-                  style={{ width: 24, height: 24 }}
-                  tintColor="#22C55E"
+                  style={{ width: iconSize.md, height: iconSize.md }}
+                  tintColor={color.success}
                 />
               ) : (
-                <LucideBatteryCharging size={24} color="#22C55E" />
+                <LucideBatteryCharging size={24} color={color.success} />
               )}
-            </View>
-            <View style={styles.featureTextContainer}>
-              <Text style={[styles.featureTitle, { color: color.foreground }]}>
+            </Box>
+            <Box style={{ flex: 1, paddingRight: spacing.sm }}>
+              <Text variant="body" style={{ marginBottom: spacing.xs }}>
                 Battery Optimized
               </Text>
-              <Text style={[styles.featureBody, { color: color.muted }]}>
+              <Text variant="bodySmall" style={{ color: color.muted }}>
                 Utilizing native Accessibility signals prevents aggressive
                 background polling, ensuring your phone's battery isn't drained.
               </Text>
-            </View>
-          </View>
+            </Box>
+          </Box>
 
-          <View style={styles.featureRow}>
-            <View
-              style={[
-                styles.featureIcon,
-                { backgroundColor: 'rgba(59, 130, 246, 0.1)' },
-              ]}
+          <Box
+            style={{
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              gap: spacing.md,
+            }}
+          >
+            <Box
+              style={{
+                padding: spacing.md,
+                borderRadius: borderRadius.xl,
+                backgroundColor: `${color.info}1A`,
+              }}
             >
-              {process.env.EXPO_OS === 'ios' ? (
+              {isIOS ? (
                 <ExpoImage
                   source="sf:shield.fill"
-                  style={{ width: 24, height: 24 }}
-                  tintColor="#3B82F6"
+                  style={{ width: iconSize.md, height: iconSize.md }}
+                  tintColor={color.info}
                 />
               ) : (
-                <LucideShieldCheck size={24} color="#3B82F6" />
+                <LucideShieldCheck size={24} color={color.info} />
               )}
-            </View>
-            <View style={styles.featureTextContainer}>
-              <Text style={[styles.featureTitle, { color: color.foreground }]}>
+            </Box>
+            <Box style={{ flex: 1, paddingRight: spacing.sm }}>
+              <Text variant="body" style={{ marginBottom: spacing.xs }}>
                 Zero Data Collection
               </Text>
-              <Text style={[styles.featureBody, { color: color.muted }]}>
+              <Text variant="bodySmall" style={{ color: color.muted }}>
                 We{' '}
-                <Text style={styles.boldText}>
+                <Text variant="bodySmall">
                   do not collect, store, transmit, or share
                 </Text>{' '}
                 any data, text, or inputs captured by this service. The
                 implementation acts exclusively as a local UI trigger.
               </Text>
-            </View>
-          </View>
+            </Box>
+          </Box>
         </Animated.View>
-      </ScrollView>
+      </ScrollArea>
 
-      {/* Fixed Bottom Action Bar */}
-      <View
-        style={[
-          styles.bottomBar,
-          { backgroundColor: color.background, borderTopColor: color.border },
-        ]}
+      <Box
+        style={{
+          paddingTop: spacing.md,
+          paddingBottom: spacing['2xl'],
+          paddingHorizontal: spacing.lg,
+          borderTopWidth: 1,
+          backgroundColor: color.background,
+          borderTopColor: color.border,
+        }}
       >
-        <TouchableOpacity
+        <Pressable
           onPress={onAgree}
-          style={[styles.primaryButton, { backgroundColor: primaryColor }]}
-          accessibilityRole="button"
+          feedback="none"
+          style={{
+            width: '100%',
+            paddingVertical: spacing.md,
+            borderRadius: borderRadius.xl,
+            alignItems: 'center',
+            backgroundColor: primaryColor,
+          }}
           accessibilityLabel="I agree to accessibility permissions"
         >
-          <Text style={styles.primaryButtonText}>I Agree</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
+          <Text variant="body" style={{ color: color.onPrimary }}>
+            I Agree
+          </Text>
+        </Pressable>
+        <Pressable
           onPress={onDeny}
-          style={styles.secondaryButton}
-          accessibilityRole="button"
+          feedback="none"
+          style={{
+            width: '100%',
+            paddingVertical: spacing.md,
+            marginTop: spacing.xs,
+            alignItems: 'center',
+            borderRadius: borderRadius.xl,
+          }}
           accessibilityLabel="Decline accessibility permissions"
         >
-          <Text style={[styles.secondaryButtonText, { color: color.muted }]}>
+          <Text variant="bodySmall" style={{ color: color.muted }}>
             Decline
           </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+        </Pressable>
+      </Box>
+    </Box>
   );
 };
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollView: { flex: 1, paddingHorizontal: 24 },
-  titleSection: { marginTop: 32, marginBottom: 32 },
-  title: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: 32,
-    letterSpacing: -0.5,
-    lineHeight: 38,
-  },
-  infoBox: { marginTop: 16, padding: 16, borderRadius: 16, borderWidth: 1 },
-  infoBoxTitle: { fontFamily: 'Outfit-Medium', fontSize: 15, marginBottom: 4 },
-  infoBoxBody: { fontFamily: 'Outfit-Regular', fontSize: 14, lineHeight: 24 },
-  boldText: { fontFamily: 'Outfit-Medium' },
-  featuresSection: { gap: 24, marginBottom: 160 },
-  featureRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },
-  featureIcon: { padding: 12, borderRadius: 16 },
-  featureTextContainer: { flex: 1, paddingRight: 8 },
-  featureTitle: { fontFamily: 'Outfit-Medium', fontSize: 16, marginBottom: 4 },
-  featureBody: { fontFamily: 'Outfit-Regular', fontSize: 14, lineHeight: 20 },
-  bottomBar: {
-    paddingTop: 16,
-    paddingBottom: 40,
-    paddingHorizontal: 24,
-    borderTopWidth: 1,
-  },
-  primaryButton: {
-    width: '100%',
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontFamily: 'Outfit-Medium',
-    fontSize: 16,
-  },
-  secondaryButton: {
-    width: '100%',
-    paddingVertical: 16,
-    marginTop: 4,
-    alignItems: 'center',
-    borderRadius: 16,
-  },
-  secondaryButtonText: { fontFamily: 'Outfit-Medium', fontSize: 15 },
-});

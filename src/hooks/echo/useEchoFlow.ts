@@ -2,8 +2,8 @@ import { useSelector } from '@legendapp/state/react';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { useEffect, useCallback, useReducer } from 'react';
-import { Platform, AppState } from 'react-native';
+import { useEffect, useCallback, useReducer, useRef } from 'react';
+import { AppState } from 'react-native';
 
 import { useEchoIntentResolver } from './useEchoIntentResolver';
 import { preWarmAudioEngine } from '../audio/useSharedAudioPlayer';
@@ -15,7 +15,7 @@ import { HistoryService } from '@/services/HistoryService';
 import { IntentService } from '@/services/IntentService';
 import { settings$, auth$ } from '@/store';
 import { EchoStep, EchoProps, UseEchoFlowResult } from '@/types/echo';
-import { logger } from '@/utils';
+import { logger, isIOS } from '@/utils';
 import { cleanEchoCache } from '@/utils/echo';
 import { checkIsOnline } from '@/utils/netInfo';
 
@@ -96,7 +96,6 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
   const autoCopy = permissions.autoCopy ? autoCopySetting : false;
   const session = useSelector(() => auth$.session.get());
 
-  const isIOS = Platform.OS === 'ios';
   const sourceApp = isIOS ? 'iOS' : props.sourceApp || 'Unknown App';
 
   // State Machine via Reducer
@@ -117,6 +116,28 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     (step: EchoStep) => dispatch({ type: 'SET_STEP', payload: step }),
     [],
   );
+
+  // Transaction refs
+  const savedRef = useRef(false);
+  const transcriptRef = useRef(state.transcription);
+  const detectedLangRef = useRef(state.detectedLang);
+  const targetLangRef = useRef(state.targetLang);
+  const sttRef = useRef(state.sttProvider);
+  const durationRef = useRef(state.audioDuration);
+
+  useEffect(() => {
+    transcriptRef.current = state.transcription;
+    detectedLangRef.current = state.detectedLang;
+    targetLangRef.current = state.targetLang;
+    sttRef.current = state.sttProvider;
+    durationRef.current = state.audioDuration;
+  }, [
+    state.transcription,
+    state.detectedLang,
+    state.targetLang,
+    state.sttProvider,
+    state.audioDuration,
+  ]);
   const setSelectedLang = useCallback(
     (lang: string) => dispatch({ type: 'SET_SELECTED_LANG', payload: lang }),
     [],
@@ -152,6 +173,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
   useEffect(() => {
     if (isSubsequentIntent) {
       dispatch({ type: 'RESET' });
+      savedRef.current = false;
       setIsSubsequentIntent(false);
     }
   }, [isSubsequentIntent, setIsSubsequentIntent]);
@@ -223,14 +245,6 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
 
       const detectedLang = trResult.value.detectedLang;
 
-      dispatch({
-        type: 'SET_TRANSCRIPTION',
-        payload: {
-          text: trResult.value.transcript,
-          provider: trResult.value.provider,
-        },
-      });
-
       let finalLang = state.selectedLang;
       if (state.selectedLang === 'auto') {
         finalLang = detectedLang || 'en';
@@ -239,6 +253,14 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       }
 
       dispatch({ type: 'SET_DETECTED_LANG', payload: finalLang });
+
+      dispatch({
+        type: 'SET_TRANSCRIPTION',
+        payload: {
+          text: trResult.value.transcript,
+          provider: trResult.value.provider,
+        },
+      });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       dispatch({ type: 'SET_STEP', payload: 'TranscribeResult' });
@@ -308,7 +330,8 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       return; // Stop flow on translation error
     }
 
-    // Record to history safely using HistoryService
+    // Record to history safely: single "both" write (Full Transaction)
+    savedRef.current = true;
     await HistoryService.recordTranslation(
       {
         sourceLang: source,
@@ -319,6 +342,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
         duration: state.audioDuration,
         sourceApp,
         provider: stt || 'unknown',
+        sessionKey: audioUri || undefined,
       },
       session,
     );
@@ -328,10 +352,32 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
   };
 
   const onDismiss = useCallback((): void => {
+    // If not saved, save as transcription-only (Half Transaction)
+    if (!savedRef.current && transcriptRef.current?.trim()) {
+      savedRef.current = true;
+      HistoryService.recordTranslation(
+        {
+          sourceLang: detectedLangRef.current || 'en',
+          targetLang:
+            targetLangRef.current || settings$.targetLanguage.get() || 'en',
+          transcript: transcriptRef.current,
+          translation: null,
+          transliteration: null,
+          duration: durationRef.current,
+          sourceApp,
+          provider: sttRef.current || 'unknown',
+          sessionKey: audioUri || undefined,
+        },
+        session,
+      ).catch((e) =>
+        logger.error('Failed to save transcription-only on overlay dismiss', e),
+      );
+    }
+
     if (activeResolvedUri.current) cleanEchoCache(activeResolvedUri.current);
     deactivateKeepAwake('echoSession')?.catch?.(() => {});
     IntentService.dismissEcho(resetShareIntent);
-  }, [resetShareIntent]);
+  }, [resetShareIntent, sourceApp, session, audioUri]);
 
   // Clean up and dismiss if the user minimizes the app (backgrounds it)
   useEffect(() => {

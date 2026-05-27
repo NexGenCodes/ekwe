@@ -1,10 +1,13 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CustomTabBarItem } from './CustomTabBarItem';
 
+import { Box } from '@/components/ui';
+import { shadows } from '@/constants';
+import { zIndex } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 
 // Derive the tab bar props type from expo-router's Tabs component
@@ -23,26 +26,21 @@ export function CustomTabBar({
   const insets = useSafeAreaInsets();
 
   return (
-    <View
+    <Box
       style={{
         position: 'absolute',
         left: 0,
         right: 0,
         bottom: 0,
-        zIndex: 10,
+        zIndex: zIndex.sticky,
         flexDirection: 'row',
         backgroundColor: color.card,
         borderTopWidth: 1,
         borderTopColor: color.border,
         paddingBottom: Math.max(insets.bottom, 16),
-        paddingTop: 12,
-        paddingHorizontal: 16,
-        // Android elevation, iOS shadow
-        elevation: 5,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        paddingTop: spacing.sm,
+        paddingHorizontal: spacing.md,
+        ...shadows.soft,
       }}
     >
       {state.routes.map((route: TabRoute, index: number) => {
@@ -86,6 +84,6 @@ export function CustomTabBar({
           />
         );
       })}
-    </View>
+    </Box>
   );
 }

@@ -23,6 +23,7 @@ export type FloatingHeadType = 'none' | 'bubble' | 'card';
 export interface AudioState {
   recordingState: RecordingState;
   transcriptBuffer: string;
+  isSaved: boolean;
   errorCode: EkweError | null;
   sessionId: string | null;
   audioPath: string | null;
@@ -40,6 +41,7 @@ export interface AudioState {
 const initialAudioState: AudioState = {
   recordingState: RecordingState.Idle,
   transcriptBuffer: '',
+  isSaved: false,
   errorCode: null,
   sessionId: null,
   audioPath: null,
@@ -58,6 +60,9 @@ export const audio$ = observable<AudioState>(initialAudioState);
 
 // Actions
 export const audioActions = {
+  setSaved: (saved: boolean): void => {
+    audio$.isSaved.set(saved);
+  },
   setRecordingState: (state: RecordingState): void => {
     audio$.recordingState.set(state);
   },

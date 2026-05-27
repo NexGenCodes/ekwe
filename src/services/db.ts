@@ -29,7 +29,7 @@ export interface OutboxRow {
 }
 
 function migrate(): void {
-  const res = db.executeSync("PRAGMA user_version") as QueryResult;
+  const res = db.executeSync('PRAGMA user_version') as QueryResult;
   const currentVersion = (res.rows?.[0]?.user_version as number) ?? 0;
 
   if (currentVersion < 1) {
@@ -59,39 +59,50 @@ function migrate(): void {
         deleted INTEGER NOT NULL DEFAULT 0
       )
     `);
-    db.executeSync('CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at DESC)');
-    db.executeSync('CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id)');
-    db.executeSync('CREATE INDEX IF NOT EXISTS idx_history_deleted ON history(deleted)');
+    db.executeSync(
+      'CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at DESC)',
+    );
+    db.executeSync(
+      'CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id)',
+    );
+    db.executeSync(
+      'CREATE INDEX IF NOT EXISTS idx_history_deleted ON history(deleted)',
+    );
 
-    db.executeSync(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(
-        transcript, translation_text,
-        content='history',
-        content_rowid='rowid',
-        tokenize='unicode61'
-      )
-    `);
+    try {
+      db.executeSync(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(
+          transcript, translation_text,
+          content='history',
+          content_rowid='rowid',
+          tokenize='unicode61'
+        )
+      `);
 
-    db.executeSync(`
-      CREATE TRIGGER IF NOT EXISTS history_ai AFTER INSERT ON history BEGIN
-        INSERT INTO history_fts(rowid, transcript, translation_text)
-        VALUES (new.rowid, new.transcript, new.translation_text);
-      END
-    `);
-    db.executeSync(`
-      CREATE TRIGGER IF NOT EXISTS history_ad AFTER DELETE ON history BEGIN
-        INSERT INTO history_fts(history_fts, rowid, transcript, translation_text)
-        VALUES ('delete', old.rowid, old.transcript, old.translation_text);
-      END
-    `);
-    db.executeSync(`
-      CREATE TRIGGER IF NOT EXISTS history_au AFTER UPDATE ON history BEGIN
-        INSERT INTO history_fts(history_fts, rowid, transcript, translation_text)
-        VALUES ('delete', old.rowid, old.transcript, old.translation_text);
-        INSERT INTO history_fts(rowid, transcript, translation_text)
-        VALUES (new.rowid, new.transcript, new.translation_text);
-      END
-    `);
+      db.executeSync(`
+        CREATE TRIGGER IF NOT EXISTS history_ai AFTER INSERT ON history BEGIN
+          INSERT INTO history_fts(rowid, transcript, translation_text)
+          VALUES (new.rowid, new.transcript, new.translation_text);
+        END
+      `);
+      db.executeSync(`
+        CREATE TRIGGER IF NOT EXISTS history_ad AFTER DELETE ON history BEGIN
+          INSERT INTO history_fts(history_fts, rowid, transcript, translation_text)
+          VALUES ('delete', old.rowid, old.transcript, old.translation_text);
+        END
+      `);
+      db.executeSync(`
+        CREATE TRIGGER IF NOT EXISTS history_au AFTER UPDATE ON history BEGIN
+          INSERT INTO history_fts(history_fts, rowid, transcript, translation_text)
+          VALUES ('delete', old.rowid, old.transcript, old.translation_text);
+          INSERT INTO history_fts(rowid, transcript, translation_text)
+          VALUES (new.rowid, new.transcript, new.translation_text);
+        END
+      `);
+    } catch {
+      // eslint-disable-next-line no-console
+      console.warn('[db] FTS5 not available, full-text search disabled');
+    }
 
     db.executeSync(`
       CREATE TABLE IF NOT EXISTS outbox (
@@ -105,7 +116,9 @@ function migrate(): void {
           CHECK(status IN ('pending', 'in_flight', 'dead'))
       )
     `);
-    db.executeSync('CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status)');
+    db.executeSync(
+      'CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status)',
+    );
 
     db.executeSync('PRAGMA user_version = 1');
   }
@@ -121,7 +134,9 @@ export function getDb(): DB {
 
 export const Db = {
   getStore: (key: string): string | null => {
-    const res = getDb().executeSync('SELECT value FROM store WHERE key = ?', [key]) as QueryResult;
+    const res = getDb().executeSync('SELECT value FROM store WHERE key = ?', [
+      key,
+    ]) as QueryResult;
     const row = res.rows?.[0];
     return (row?.value as string) ?? null;
   },
@@ -137,68 +152,113 @@ export const Db = {
     getDb().executeSync('DELETE FROM store WHERE key = ?', [key]);
   },
 
-  transaction: (fn: (tx: any) => Promise<void>): Promise<void> => {
-    return getDb().transaction(fn);
+  transaction: (fn: () => void): void => {
+    getDb().executeSync('BEGIN TRANSACTION');
+    try {
+      fn();
+      getDb().executeSync('COMMIT');
+    } catch (e) {
+      getDb().executeSync('ROLLBACK');
+      throw e;
+    }
   },
 
   insertHistory: (row: Omit<HistoryRow, 'deleted'>): void => {
     getDb().executeSync(
-      `INSERT INTO history (id, user_id, source_lang, target_lang, transcript, translation_text,
+      `INSERT OR REPLACE INTO history (id, user_id, source_lang, target_lang, transcript, translation_text,
         transliteration_text, duration, source_app, provider, created_at, deleted)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
-        row.id, row.user_id, row.source_lang, row.target_lang,
-        row.transcript, row.translation_text, row.transliteration_text,
-        row.duration, row.source_app, row.provider, row.created_at,
+        row.id,
+        row.user_id,
+        row.source_lang,
+        row.target_lang,
+        row.transcript,
+        row.translation_text,
+        row.transliteration_text,
+        row.duration,
+        row.source_app,
+        row.provider,
+        row.created_at,
       ],
     );
   },
 
-  updateHistoryTranslation: (id: string, translation: string, transliteration: string | null, targetLang: string): void => {
+  updateHistoryTranslation: (
+    id: string,
+    translation: string,
+    transliteration: string | null,
+    targetLang: string,
+  ): void => {
     getDb().executeSync(
       'UPDATE history SET translation_text = ?, transliteration_text = ?, target_lang = ? WHERE id = ?',
       [translation, transliteration, targetLang, id],
     );
   },
 
-  softDeleteHistory: (id: string): void => {
-    getDb().executeSync('UPDATE history SET deleted = 1 WHERE id = ?', [id]);
+  deleteHistory: (id: string): void => {
+    getDb().executeSync('DELETE FROM history WHERE id = ?', [id]);
   },
 
-  softDeleteHistoryBatch: (ids: string[]): void => {
+  deleteHistoryBatch: (ids: string[]): void => {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
-    getDb().executeSync(`UPDATE history SET deleted = 1 WHERE id IN (${placeholders})`, ids);
+    getDb().executeSync(
+      `DELETE FROM history WHERE id IN (${placeholders})`,
+      ids,
+    );
   },
 
   getRecentHistory: (limit: number = 200): HistoryRow[] => {
     const res = getDb().executeSync(
-      'SELECT * FROM history WHERE deleted = 0 ORDER BY created_at DESC LIMIT ?',
+      'SELECT * FROM history ORDER BY created_at DESC LIMIT ?',
       [limit],
     ) as QueryResult;
     return (res.rows ?? []) as unknown as HistoryRow[];
   },
 
+  getHistoryCount: (): number => {
+    const res = getDb().executeSync(
+      'SELECT COUNT(*) as count FROM history',
+    ) as QueryResult;
+    return (res.rows?.[0]?.count as number) ?? 0;
+  },
+
   getHistoryPage: (limit: number, offset: number): HistoryRow[] => {
     const res = getDb().executeSync(
-      'SELECT * FROM history WHERE deleted = 0 ORDER BY created_at DESC LIMIT ? OFFSET ?',
+      'SELECT * FROM history ORDER BY created_at DESC LIMIT ? OFFSET ?',
       [limit, offset],
     ) as QueryResult;
     return (res.rows ?? []) as unknown as HistoryRow[];
   },
 
   searchHistory: (query: string, limit: number = 100): HistoryRow[] => {
-    const ftsQuery = query.replace(/['"]/g, '').split(/\s+/).filter(Boolean).map(w => `"${w}"`).join(' AND ');
+    const ftsQuery = query
+      .replace(/['"]/g, '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => `"${w}"`)
+      .join(' AND ');
     if (!ftsQuery) return [];
-    const res = getDb().executeSync(
-      `SELECT h.* FROM history h
-       INNER JOIN history_fts fts ON h.rowid = fts.rowid
-       WHERE history_fts MATCH ? AND h.deleted = 0
-       ORDER BY h.created_at DESC
-       LIMIT ?`,
-      [ftsQuery, limit],
-    ) as QueryResult;
-    return (res.rows ?? []) as unknown as HistoryRow[];
+    try {
+      const res = getDb().executeSync(
+        `SELECT h.* FROM history h
+         INNER JOIN history_fts fts ON h.rowid = fts.rowid
+         WHERE history_fts MATCH ?
+         ORDER BY h.created_at DESC
+         LIMIT ?`,
+        [ftsQuery, limit],
+      ) as QueryResult;
+      return (res.rows ?? []) as unknown as HistoryRow[];
+    } catch {
+      const likeQuery = `%${query.replace(/['"]/g, '')}%`;
+      const res = getDb().executeSync(
+        `SELECT * FROM history WHERE (transcript LIKE ? OR translation_text LIKE ?)
+         ORDER BY created_at DESC LIMIT ?`,
+        [likeQuery, likeQuery, limit],
+      ) as QueryResult;
+      return (res.rows ?? []) as unknown as HistoryRow[];
+    }
   },
 
   cleanupExpiredHistory: (ttlDays: number): number => {
@@ -209,9 +269,11 @@ export const Db = {
     return res.rowsAffected ?? 0;
   },
 
-  insertOutbox: (row: Omit<OutboxRow, 'retries' | 'last_attempt' | 'status'>): void => {
+  insertOutbox: (
+    row: Omit<OutboxRow, 'retries' | 'last_attempt' | 'status'>,
+  ): void => {
     getDb().executeSync(
-      `INSERT INTO outbox (id, payload, user_id, retries, last_attempt, created_at, status)
+      `INSERT OR REPLACE INTO outbox (id, payload, user_id, retries, last_attempt, created_at, status)
        VALUES (?, ?, ?, 0, NULL, ?, 'pending')`,
       [row.id, row.payload, row.user_id, row.created_at],
     );
@@ -230,13 +292,15 @@ export const Db = {
 
   incrementOutboxRetry: (id: string): void => {
     getDb().executeSync(
-      'UPDATE outbox SET retries = retries + 1, last_attempt = ?, status = CASE WHEN retries + 1 >= 5 THEN ? ELSE ? END',
-      [Date.now(), 'dead', 'pending'],
+      'UPDATE outbox SET retries = retries + 1, last_attempt = ?, status = CASE WHEN retries + 1 >= 5 THEN ? ELSE ? END WHERE id = ?',
+      [Date.now(), 'dead', 'pending', id],
     );
   },
 
   markOutboxInFlight: (id: string): void => {
-    getDb().executeSync("UPDATE outbox SET status = 'in_flight' WHERE id = ?", [id]);
+    getDb().executeSync("UPDATE outbox SET status = 'in_flight' WHERE id = ?", [
+      id,
+    ]);
   },
 
   cleanupDeadOutbox: (): number => {

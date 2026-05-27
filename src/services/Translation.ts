@@ -43,7 +43,10 @@ export interface TranslationResult {
 
 class TranslationServiceClass {
   private readonly CACHE_TTL_MS = 5 * 60 * 1000;
-  private cache = new Map<string, { value: Result<TranslationResult, EkweError>; timestamp: number }>();
+  private cache = new Map<
+    string,
+    { value: Result<TranslationResult, EkweError>; timestamp: number }
+  >();
 
   clearCache(): void {
     this.cache.clear();

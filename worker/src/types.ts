@@ -4,11 +4,18 @@ import { JWTPayload } from 'jose';
 
 export interface KVNamespace {
   get(key: string): Promise<string | null>;
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
+  put(
+    key: string,
+    value: string,
+    options?: { expirationTtl?: number },
+  ): Promise<void>;
 }
 
 export interface AiBinding {
-  run(model: string, inputs: Record<string, unknown>): Promise<Record<string, unknown>>;
+  run(
+    model: string,
+    inputs: Record<string, unknown>,
+  ): Promise<Record<string, unknown>>;
 }
 
 export interface Env {
@@ -48,5 +55,6 @@ export interface TranslateResult {
 
 export interface JWTPayloadWithMeta extends JWTPayload {
   sub?: string;
+  email?: string;
   app_metadata?: { is_pro?: boolean };
 }

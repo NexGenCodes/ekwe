@@ -15,10 +15,14 @@ import React, {
   useCallback,
   useEffect,
 } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
 
-import { Button } from '@/components/ui';
+import { Button } from './Button';
+
+import { Box, Pressable, Text } from '@/components/ui';
 import { LANGUAGES, Language, FLAG_MAP } from '@/constants/languages';
+import { borderRadius, zIndex } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
+import { typography } from '@/constants/typography';
 import { useTheme, usePermissions } from '@/hooks';
 import { auth$ } from '@/store';
 import { AppAlert } from '@/utils';
@@ -56,22 +60,32 @@ const LanguageRow = ({
   return (
     <Pressable
       onPress={onToggleSelect}
-      style={[styles.rowContainer, { backgroundColor: color.background }]}
+      style={{
+        height: 52,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: spacing.md,
+        backgroundColor: color.background,
+      }}
     >
-      <View style={styles.rowLeft}>
-        <Text style={styles.flagText}>{FLAG_MAP[item.code] || '🌐'}</Text>
-        <View>
-          <Text style={[styles.englishName, { color: color.foreground }]}>
-            {item.englishName}
-          </Text>
-          <Text style={[styles.nativeName, { color: color.muted }]}>
+      <Box style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+        <Text variant="body" style={{ marginRight: spacing.md }}>
+          {FLAG_MAP[item.code] || '🌐'}
+        </Text>
+        <Box>
+          <Text variant="body">{item.englishName}</Text>
+          <Text variant="caption" style={{ marginTop: 4, color: color.muted }}>
             {item.nativeName}
           </Text>
-        </View>
-      </View>
+        </Box>
+      </Box>
 
-      <View style={styles.rowRight}>
-        <Pressable onPress={onTogglePin} hitSlop={8} style={styles.pinButton}>
+      <Box style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Pressable
+          onPress={onTogglePin}
+          hitSlop={8}
+          style={{ padding: spacing.sm }}
+        >
           <Star
             size={20}
             color={isPinned ? color.secondary : color.muted}
@@ -79,9 +93,17 @@ const LanguageRow = ({
           />
         </Pressable>
 
-        <View
+        <Box
           style={[
-            styles.checkCircle,
+            {
+              width: 22,
+              height: 22,
+              borderRadius: borderRadius.lg,
+              marginLeft: spacing.md,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 1.5,
+            },
             isSelected
               ? { backgroundColor: color.secondary, borderWidth: 0 }
               : { backgroundColor: 'transparent', borderColor: color.border },
@@ -90,8 +112,8 @@ const LanguageRow = ({
           {isSelected && (
             <Check size={12} color={color.onSecondary} strokeWidth={3} />
           )}
-        </View>
-      </View>
+        </Box>
+      </Box>
     </Pressable>
   );
 };
@@ -167,9 +189,13 @@ export const LanguagePickerSheet = ({
       if (singleSelect) return null;
       return (
         <BottomSheetFooter {...props} bottomInset={16}>
-          <View
+          <Box
             style={[
-              styles.footerContainer,
+              {
+                paddingHorizontal: spacing.md,
+                paddingVertical: spacing.md,
+                borderTopWidth: 0.5,
+              },
               {
                 backgroundColor: color.background,
                 borderTopColor: color.border,
@@ -177,7 +203,7 @@ export const LanguagePickerSheet = ({
             ]}
           >
             <Button label="Confirm" onPress={onClose} variant="primary" />
-          </View>
+          </Box>
         </BottomSheetFooter>
       );
     },
@@ -239,11 +265,22 @@ export const LanguagePickerSheet = ({
 
   const renderSectionHeader = useCallback(
     ({ section: { title } }: { section: { title: string } }) => (
-      <View style={[styles.sectionHeader, { backgroundColor: color.surface }]}>
-        <Text style={[styles.sectionHeaderText, { color: color.muted }]}>
+      <Box
+        style={{
+          paddingHorizontal: spacing.md,
+          paddingVertical: spacing.md,
+          backgroundColor: color.surface,
+        }}
+      >
+        <Text
+          variant="caption"
+          style={{
+            color: color.muted,
+          }}
+        >
           {title}
         </Text>
-      </View>
+      </Box>
     ),
     [color],
   );
@@ -278,26 +315,42 @@ export const LanguagePickerSheet = ({
       footerComponent={renderFooter}
       backgroundStyle={{
         backgroundColor: bgColor,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
+        borderTopLeftRadius: borderRadius['2xl'],
+        borderTopRightRadius: borderRadius['2xl'],
       }}
       handleIndicatorStyle={{
         backgroundColor: handleColor,
         width: 40,
       }}
     >
-      <View style={{ zIndex: 10, backgroundColor: bgColor }}>
+      <Box style={{ zIndex: zIndex.sticky, backgroundColor: bgColor }}>
         {/* Search */}
-        <View style={styles.searchContainer}>
-          <View
+        <Box
+          style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.sm }}
+        >
+          <Box
             style={[
-              styles.searchInputWrapper,
+              {
+                height: 44,
+                borderWidth: 0.5,
+                borderRadius: borderRadius.lg,
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingHorizontal: spacing.md,
+              },
               { backgroundColor: color.card, borderColor: color.border },
             ]}
           >
-            <Search size={18} color={mutedColor} style={{ marginRight: 8 }} />
+            <Search
+              size={18}
+              color={mutedColor}
+              style={{ marginRight: spacing.sm }}
+            />
             <BottomSheetTextInput
-              style={[styles.searchInput, { color: color.foreground }]}
+              style={[
+                { flex: 1, height: 44, ...typography.body },
+                { color: color.foreground },
+              ]}
               placeholder="Search languages"
               placeholderTextColor={mutedColor}
               value={searchQuery}
@@ -308,9 +361,9 @@ export const LanguagePickerSheet = ({
                 <X size={16} color={mutedColor} />
               </Pressable>
             )}
-          </View>
-        </View>
-      </View>
+          </Box>
+        </Box>
+      </Box>
 
       <BottomSheetSectionList
         sections={sections}
@@ -322,54 +375,3 @@ export const LanguagePickerSheet = ({
     </BottomSheet>
   );
 };
-
-const styles = StyleSheet.create({
-  rowContainer: {
-    height: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  rowLeft: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-  flagText: { fontSize: 20, marginRight: 12 },
-  englishName: { fontSize: 16, fontFamily: 'Outfit-Regular' },
-  nativeName: { fontSize: 12, marginTop: 2, fontFamily: 'Outfit-Regular' },
-  rowRight: { flexDirection: 'row', alignItems: 'center' },
-  pinButton: { padding: 8 },
-  checkCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    marginLeft: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-  },
-  footerContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 0.5,
-  },
-  searchContainer: { paddingHorizontal: 16, paddingBottom: 8 },
-  searchInputWrapper: {
-    height: 44,
-    borderWidth: 0.5,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-  },
-  searchInput: {
-    flex: 1,
-    height: 44,
-    fontSize: 16,
-    fontFamily: 'Outfit-Regular',
-  },
-  sectionHeader: { paddingHorizontal: 16, paddingVertical: 12 },
-  sectionHeaderText: {
-    fontFamily: 'Outfit-Medium',
-    letterSpacing: 0.5,
-    color: '#71717A',
-    fontSize: 12,
-  },
-});

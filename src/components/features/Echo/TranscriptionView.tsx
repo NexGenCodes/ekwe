@@ -1,7 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
 
-import { fonts } from '@/constants/fonts';
+import { Box, Text } from '@/components/ui';
+import { shadows } from '@/constants';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 
 interface Props {
@@ -16,47 +18,43 @@ export const TranscriptionView = ({
   const { color } = useTheme();
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: color.card, borderColor: color.border },
-      ]}
+    <Box
+      style={{
+        borderRadius: borderRadius['2xl'],
+        padding: spacing.lg,
+        borderWidth: 1,
+        minHeight: 140,
+        ...shadows.soft,
+        backgroundColor: color.card,
+        borderColor: color.border,
+      }}
     >
-      <Text style={[styles.transcriptText, { color: color.foreground }]}>
+      <Text variant="heading3" style={{ color: color.foreground }}>
         {transcript || (isLive ? 'Listening...' : 'Waiting for audio...')}
       </Text>
 
       {isLive && (
-        <View style={styles.liveContainer}>
-          <View style={[styles.pulseDot, { backgroundColor: color.primary }]} />
-          <Text style={[styles.liveText, { color: color.muted }]}>
+        <Box
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginTop: spacing.lg,
+          }}
+        >
+          <Box
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: borderRadius.md,
+              marginRight: spacing.sm,
+              backgroundColor: color.primary,
+            }}
+          />
+          <Text variant="caption" style={{ color: color.muted }}>
             Live Stream
           </Text>
-        </View>
+        </Box>
       )}
-    </View>
+    </Box>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    borderRadius: 24,
-    padding: 24,
-    borderWidth: 1,
-    minHeight: 140,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  transcriptText: { fontFamily: fonts.body, fontSize: 20, lineHeight: 36 },
-  liveContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 24 },
-  pulseDot: { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
-  liveText: {
-    fontFamily: fonts.bodyMed,
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-  },
-});

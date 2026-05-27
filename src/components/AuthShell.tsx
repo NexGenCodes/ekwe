@@ -1,17 +1,12 @@
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import React from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardAvoidingView } from 'react-native';
 
-import { spacing, typography } from '@/constants/designTokens';
+import { Text, Pressable, SafeArea, ScrollArea } from '@/components/ui';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
+import { isIOS } from '@/utils';
 
 export interface AuthShellProps {
   showBackButton?: boolean;
@@ -26,27 +21,21 @@ export const AuthShell = ({
   const router = useRouter();
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: color.background }}>
+    <SafeArea style={{ flex: 1, backgroundColor: color.background }}>
       {showBackButton && (
         <Pressable
           onPress={() => router.back()}
           style={{
-            paddingHorizontal: spacing[5],
-            paddingVertical: spacing[3],
+            paddingHorizontal: spacing.lg,
+            paddingVertical: spacing.md,
             flexDirection: 'row',
             alignItems: 'center',
-            gap: spacing[1],
+            gap: spacing.xs,
           }}
           hitSlop={12}
         >
           <ChevronLeft size={20} color={color.foreground} />
-          <Text
-            style={{
-              fontFamily: 'Outfit-Medium',
-              fontSize: typography.body.size,
-              color: color.foreground,
-            }}
-          >
+          <Text variant="body" style={{ color: color.foreground }}>
             Back
           </Text>
         </Pressable>
@@ -54,21 +43,21 @@ export const AuthShell = ({
       <KeyboardAvoidingView
         behavior="padding"
         style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+        keyboardVerticalOffset={isIOS ? 0 : 24}
       >
-        <ScrollView
+        <ScrollArea
           contentContainerStyle={{
             flexGrow: 1,
             justifyContent: 'center',
-            padding: spacing[8],
+            padding: spacing.xl,
           }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
           {children}
-        </ScrollView>
+        </ScrollArea>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </SafeArea>
   );
 };

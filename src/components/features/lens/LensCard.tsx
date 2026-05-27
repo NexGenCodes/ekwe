@@ -1,7 +1,10 @@
 import React from 'react';
-import { Text, StyleSheet } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 
+import { Text } from '@/components/ui';
+import { palette } from '@/constants/colors';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 
 interface LensCardProps {
@@ -16,27 +19,20 @@ export function LensCard({ transcript }: LensCardProps): React.ReactElement {
       entering={FadeInDown}
       exiting={FadeOutUp}
       style={[
-        styles.container,
+        {
+          padding: spacing.lg,
+          borderRadius: borderRadius['2xl'],
+          borderWidth: 1,
+          shadowColor: palette.neutral950,
+          shadowOffset: { width: 0, height: 10 },
+          shadowOpacity: 0.2,
+          shadowRadius: 20,
+          elevation: 15,
+        },
         { backgroundColor: color.card, borderColor: color.border },
       ]}
     >
-      <Text style={[styles.text, { color: color.foreground }]}>
-        {transcript}
-      </Text>
+      <Text variant="body">{transcript}</Text>
     </Animated.View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    padding: 20,
-    borderRadius: 24,
-    borderWidth: 1,
-    shadowColor: '#09090b',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 15,
-  },
-  text: { fontFamily: 'Outfit-Regular', fontSize: 16, lineHeight: 24 },
-});

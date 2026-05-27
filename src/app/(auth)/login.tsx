@@ -2,26 +2,23 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { View, Pressable, Text } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import {
   AuthHeader,
   AuthFooter,
   SocialAuthGroup,
   AuthShell,
-} from '@/components';
-import {
   Input,
   PasswordInput,
   Divider,
   ErrorBanner,
   Button,
-} from '@/components/ui';
-import { spacing, typography } from '@/constants/designTokens';
+} from '@/components';
+import { Box, Text, Pressable } from '@/components/ui';
+import { spacing } from '@/constants/spacing';
 import { useAuthFlow, useTheme } from '@/hooks';
 import { loginSchema, LoginForm } from '@/schemas/auth';
-import { signInWithPassword, sendOtp } from '@/services/auth';
+import { signInWithPassword } from '@/services/auth';
 
 export default function LoginScreen(): React.JSX.Element {
   const router = useRouter();
@@ -39,29 +36,16 @@ export default function LoginScreen(): React.JSX.Element {
     run(() => signInWithPassword(data.email, data.password));
   };
 
-  const handleOtpFallback = async (): Promise<void> => {
-    const email = getValues('email');
-    if (!email) {
-      setError('Enter your email first.');
-      return;
-    }
-    const result = await run(() => sendOtp(email));
-    if (result.ok) {
-      router.push({
-        pathname: '/(auth)/verify',
-        params: { email: email.trim(), source: 'otp' },
-      });
-    }
-  };
+
 
   return (
     <AuthShell>
       <AuthHeader subtitle="Every voice, understood." />
 
-      <Animated.View entering={FadeInDown.duration(600).delay(100).springify()}>
+      <Box>
         <ErrorBanner message={error} />
 
-        <View style={{ gap: spacing[3], marginBottom: spacing[3] }}>
+        <Box style={{ gap: spacing.md, marginBottom: spacing.md }}>
           <Controller
             control={control}
             name="email"
@@ -90,22 +74,17 @@ export default function LoginScreen(): React.JSX.Element {
                 returnKeyType="done"
                 onSubmitEditing={handleSubmit(onSubmit)}
                 error={fieldState.error?.message}
+                showStrength={true}
               />
             )}
           />
-        </View>
+        </Box>
 
         <Pressable
           onPress={() => router.push('/(auth)/forgot-password')}
-          style={{ alignItems: 'flex-end', marginBottom: spacing[5] }}
+          style={{ alignItems: 'flex-end', marginBottom: spacing.lg }}
         >
-          <Text
-            style={{
-              fontFamily: 'Outfit-Medium',
-              fontSize: typography.bodySmall.size,
-              color: color.primary,
-            }}
-          >
+          <Text variant="bodySmall" style={{ color: color.primary }}>
             Forgot password?
           </Text>
         </Pressable>
@@ -118,30 +97,16 @@ export default function LoginScreen(): React.JSX.Element {
 
         <Divider />
 
-        <SocialAuthGroup onApple={handleApple} onGoogle={handleGoogle} />
+        <SocialAuthGroup onApple={handleApple} onGoogle={handleGoogle} disabled={isLoading} />
 
-        <Pressable
-          onPress={handleOtpFallback}
-          disabled={isLoading}
-          style={{ alignItems: 'center', marginTop: spacing[5] }}
-        >
-          <Text
-            style={{
-              fontFamily: 'Outfit-Medium',
-              fontSize: typography.bodySmall.size,
-              color: color.muted,
-            }}
-          >
-            Continue with email code →
-          </Text>
-        </Pressable>
+
 
         <AuthFooter
           text="Don't have an account?"
           linkText="Create one"
           onPress={() => router.push('/(auth)/signup')}
         />
-      </Animated.View>
+      </Box>
     </AuthShell>
   );
 }

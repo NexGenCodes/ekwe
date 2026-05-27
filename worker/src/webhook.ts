@@ -6,9 +6,15 @@ import { verifyWebhook, WebhookProvider } from './signatures';
  * ─── Subscription Lifecycle Management ────────────────────────────
  */
 
-async function setProStatus(env: Env, identifier: { email?: string; userId?: string }, isPro: boolean): Promise<void> {
+async function setProStatus(
+  env: Env,
+  identifier: { email?: string; userId?: string },
+  isPro: boolean,
+): Promise<void> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-    logger.error('[webhook] Missing Supabase credentials to update subscription');
+    logger.error(
+      '[webhook] Missing Supabase credentials to update subscription',
+    );
     return;
   }
 
@@ -19,36 +25,57 @@ async function setProStatus(env: Env, identifier: { email?: string; userId?: str
     const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/set_pro_status`, {
       method: 'POST',
       headers: {
-        'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
-        'Authorization': `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-        'Content-Type': 'application/json'
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         p_email: identifier.email || null,
         p_user_id: identifier.userId || null,
-        p_is_pro: isPro
-      })
+        p_is_pro: isPro,
+      }),
     });
 
     if (!res.ok) {
       const errorText = await res.text();
-      logger.error(`[webhook] Failed to update pro status. Response: ${errorText}`);
+      logger.error(
+        `[webhook] Failed to update pro status. Response: ${errorText}`,
+      );
     } else {
-      logger.info(`[webhook] Successfully set pro status to ${isPro} for ${identifier.email || identifier.userId}`);
+      logger.info(
+        `[webhook] Successfully set pro status to ${isPro} for ${identifier.email || identifier.userId}`,
+      );
     }
   } catch (err) {
-    logger.error(`[webhook] Error updating pro status: ${err instanceof Error ? err.message : String(err)}`);
+    logger.error(
+      `[webhook] Error updating pro status: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
-async function activateSubscription(env: Env, emailOrUserId: string, reference?: string): Promise<void> {
+async function activateSubscription(
+  env: Env,
+  emailOrUserId: string,
+  reference?: string,
+): Promise<void> {
   const isEmail = emailOrUserId.includes('@');
-  await setProStatus(env, isEmail ? { email: emailOrUserId } : { userId: emailOrUserId }, true);
+  await setProStatus(
+    env,
+    isEmail ? { email: emailOrUserId } : { userId: emailOrUserId },
+    true,
+  );
 }
 
-async function deactivateSubscription(env: Env, emailOrUserId: string): Promise<void> {
+async function deactivateSubscription(
+  env: Env,
+  emailOrUserId: string,
+): Promise<void> {
   const isEmail = emailOrUserId.includes('@');
-  await setProStatus(env, isEmail ? { email: emailOrUserId } : { userId: emailOrUserId }, false);
+  await setProStatus(
+    env,
+    isEmail ? { email: emailOrUserId } : { userId: emailOrUserId },
+    false,
+  );
 }
 
 /**
@@ -65,32 +92,49 @@ async function deactivateSubscription(env: Env, emailOrUserId: string): Promise<
 
 // ─── Provider-specific Event Processors ──────────────────────────
 
-async function processPaystackEvent(event: Record<string, unknown>, env: Env): Promise<Response> {
+async function processPaystackEvent(
+  event: Record<string, unknown>,
+  env: Env,
+): Promise<Response> {
   const eventType = event.event as string;
   const data = event.data as Record<string, unknown>;
 
-  logger.info(`[webhook:paystack] Event: ${eventType}`, { reference: data?.reference });
+  logger.info(`[webhook:paystack] Event: ${eventType}`, {
+    reference: data?.reference,
+  });
 
   switch (eventType) {
     case 'charge.success': {
-      // Extract fields for subscription activation
-      const email = (data?.customer as Record<string, unknown>)?.email as string;
+      // Prefer the user_id we embedded in metadata at checkout init time.
+      // This is the reliable path – immune to email typos on the checkout form.
+      const metadata = data?.metadata as Record<string, unknown> | undefined;
+      const userId = metadata?.user_id as string | undefined;
+
+      // Fall back to email only if user_id was not embedded (e.g. manual/dashboard charge)
+      const email = (data?.customer as Record<string, unknown>)
+        ?.email as string | undefined;
       const reference = data?.reference as string;
 
-      if (!email || !reference) {
-        logger.warn('[webhook:paystack] Missing email or reference in charge.success');
+      if (!userId && !email) {
+        logger.warn(
+          '[webhook:paystack] Missing both user_id and email in charge.success',
+        );
         return Response.json({ received: true, action: 'skipped' });
       }
 
-      await activateSubscription(env, email, reference);
+      const identifier = userId ?? email!;
+      await activateSubscription(env, identifier, reference);
 
-      logger.info(`[webhook:paystack] charge.success processed for ${email}`);
+      logger.info(
+        `[webhook:paystack] charge.success processed for ${identifier} (via ${userId ? 'user_id' : 'email'})`,
+      );
       return Response.json({ received: true, action: 'activated' });
     }
 
     case 'subscription.disable':
     case 'subscription.not_renew': {
-      const email = (data?.customer as Record<string, unknown>)?.email as string;
+      const email = (data?.customer as Record<string, unknown>)
+        ?.email as string;
       if (email) {
         await deactivateSubscription(env, email);
         logger.info(`[webhook:paystack] Subscription ended for ${email}`);
@@ -104,11 +148,16 @@ async function processPaystackEvent(event: Record<string, unknown>, env: Env): P
   }
 }
 
-async function processFlutterwaveEvent(event: Record<string, unknown>, env: Env): Promise<Response> {
+async function processFlutterwaveEvent(
+  event: Record<string, unknown>,
+  env: Env,
+): Promise<Response> {
   const eventType = event.event as string;
   const data = event.data as Record<string, unknown>;
 
-  logger.info(`[webhook:flutterwave] Event: ${eventType}`, { txRef: data?.tx_ref });
+  logger.info(`[webhook:flutterwave] Event: ${eventType}`, {
+    txRef: data?.tx_ref,
+  });
 
   switch (eventType) {
     case 'charge.completed': {
@@ -118,17 +167,25 @@ async function processFlutterwaveEvent(event: Record<string, unknown>, env: Env)
         return Response.json({ received: true, action: 'skipped' });
       }
 
-      const email = (data?.customer as Record<string, unknown>)?.email as string;
+      // Prefer user_id embedded in meta at checkout init time
+      const meta = data?.meta as Record<string, unknown> | undefined;
+      const userId = meta?.user_id as string | undefined;
+
+      const email = (data?.customer as Record<string, unknown>)
+        ?.email as string | undefined;
       const txRef = data?.tx_ref as string;
 
-      if (!email || !txRef) {
-        logger.warn('[webhook:flutterwave] Missing email or tx_ref');
+      if (!userId && !email) {
+        logger.warn('[webhook:flutterwave] Missing both user_id and email');
         return Response.json({ received: true, action: 'skipped' });
       }
 
-      await activateSubscription(env, email, txRef);
+      const identifier = userId ?? email!;
+      await activateSubscription(env, identifier, txRef);
 
-      logger.info(`[webhook:flutterwave] Payment successful for ${email}`);
+      logger.info(
+        `[webhook:flutterwave] Payment successful for ${identifier} (via ${userId ? 'user_id' : 'email'})`,
+      );
       return Response.json({ received: true, action: 'activated' });
     }
 
@@ -138,7 +195,10 @@ async function processFlutterwaveEvent(event: Record<string, unknown>, env: Env)
   }
 }
 
-async function processRevenueCatEvent(event: Record<string, unknown>, env: Env): Promise<Response> {
+async function processRevenueCatEvent(
+  event: Record<string, unknown>,
+  env: Env,
+): Promise<Response> {
   const eventData = event.event as Record<string, unknown> | undefined;
   const eventType = eventData?.type as string;
 
@@ -182,16 +242,23 @@ async function processRevenueCatEvent(event: Record<string, unknown>, env: Env):
 
 // ─── Dispatcher ───────────────────────────────────────────────────
 
-const PROCESSORS: Record<WebhookProvider, (event: Record<string, unknown>, env: Env) => Promise<Response>> = {
+const PROCESSORS: Record<
+  WebhookProvider,
+  (event: Record<string, unknown>, env: Env) => Promise<Response>
+> = {
   paystack: processPaystackEvent,
   flutterwave: processFlutterwaveEvent,
   revenuecat: processRevenueCatEvent,
-  unknown: async () => Response.json({ error: 'UNKNOWN_PROVIDER' }, { status: 400 }),
+  unknown: async () =>
+    Response.json({ error: 'UNKNOWN_PROVIDER' }, { status: 400 }),
 };
 
 // ─── Main Webhook Handler ─────────────────────────────────────────
 
-export async function handleWebhook(request: Request, env: Env): Promise<Response> {
+export async function handleWebhook(
+  request: Request,
+  env: Env,
+): Promise<Response> {
   // 1. Read raw body ONCE (needed for signature verification)
   const rawBody = await request.text();
 
@@ -199,9 +266,14 @@ export async function handleWebhook(request: Request, env: Env): Promise<Respons
   const verification = await verifyWebhook(request, rawBody, env);
 
   if (!verification.isValid) {
-    logger.warn(`[webhook] Rejected: provider=${verification.provider}, error=${verification.error || 'signature mismatch'}`);
+    logger.warn(
+      `[webhook] Rejected: provider=${verification.provider}, error=${verification.error || 'signature mismatch'}`,
+    );
     return Response.json(
-      { error: 'INVALID_SIGNATURE', message: 'Webhook signature verification failed.' },
+      {
+        error: 'INVALID_SIGNATURE',
+        message: 'Webhook signature verification failed.',
+      },
       { status: 401 },
     );
   }

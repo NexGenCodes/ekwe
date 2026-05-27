@@ -1,5 +1,11 @@
 import { describe, test, expect, vi } from 'vitest';
-import { isHallucination, sanitizeKey, getClientHeaders, fetchWithTimeout, abortableDelay } from '../src/utils';
+import {
+  isHallucination,
+  sanitizeKey,
+  getClientHeaders,
+  fetchWithTimeout,
+  abortableDelay,
+} from '../src/utils';
 import { mockEnv, jsonResponse, mockFetch } from './setup';
 
 // ─── sanitizeKey ───────────────────────────────────────────────────
@@ -73,7 +79,9 @@ describe('isHallucination', () => {
   });
 
   test('normal speech passes', () => {
-    expect(isHallucination('hello how are you today i am doing great', 5000)).toBe(false);
+    expect(
+      isHallucination('hello how are you today i am doing great', 5000),
+    ).toBe(false);
   });
 
   test('normal text without duration passes', () => {
@@ -127,7 +135,12 @@ describe('fetchWithTimeout', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(
-      fetchWithTimeout('https://httpstat.us/200', { method: 'GET' }, 5000, controller.signal),
+      fetchWithTimeout(
+        'https://httpstat.us/200',
+        { method: 'GET' },
+        5000,
+        controller.signal,
+      ),
     ).rejects.toThrow();
   });
 });
@@ -144,7 +157,9 @@ describe('abortableDelay', () => {
   test('throws on abort', async () => {
     const controller = new AbortController();
     controller.abort();
-    await expect(abortableDelay(1000, controller.signal)).rejects.toThrow('CLIENT_ABORTED');
+    await expect(abortableDelay(1000, controller.signal)).rejects.toThrow(
+      'CLIENT_ABORTED',
+    );
   });
 });
 
@@ -153,13 +168,21 @@ describe('abortableDelay', () => {
 describe('rotateKeys', () => {
   test('returns first 2xx response', async () => {
     const { rotateKeys, hashKey } = await import('../src/utils');
-    const env = mockEnv({ GROQ_KEY_1: 'valid-key-1-abcde', GROQ_KEY_2: 'valid-key-2-abcde' });
+    const env = mockEnv({
+      GROQ_KEY_1: 'valid-key-1-abcde',
+      GROQ_KEY_2: 'valid-key-2-abcde',
+    });
 
     let callCount = 0;
-    const result = await rotateKeys(env, 'GROQ_KEY_', async () => {
-      callCount++;
-      return jsonResponse({ ok: true });
-    }, new AbortController().signal);
+    const result = await rotateKeys(
+      env,
+      'GROQ_KEY_',
+      async () => {
+        callCount++;
+        return jsonResponse({ ok: true });
+      },
+      new AbortController().signal,
+    );
 
     expect(result).not.toBeNull();
     expect(result!.ok).toBe(true);
@@ -168,16 +191,26 @@ describe('rotateKeys', () => {
 
   test('skips blacklisted keys', async () => {
     const { rotateKeys, hashKey } = await import('../src/utils');
-    const env = mockEnv({ GROQ_KEY_1: 'blacklisted-key-abc', GROQ_KEY_2: 'valid-key-2-abcde' });
+    const env = mockEnv({
+      GROQ_KEY_1: 'blacklisted-key-abc',
+      GROQ_KEY_2: 'valid-key-2-abcde',
+    });
 
     const hash1 = await hashKey('blacklisted-key-abc');
-    await env.EKWE_KV.put(`blacklist:groq_key:${hash1}`, 'true', { expirationTtl: 60 });
+    await env.EKWE_KV.put(`blacklist:groq_key:${hash1}`, 'true', {
+      expirationTtl: 60,
+    });
 
     let blacklistKeyAttempted = false;
-    const result = await rotateKeys(env, 'GROQ_KEY_', async (key) => {
-      if (key === 'blacklisted-key-abc') blacklistKeyAttempted = true;
-      return jsonResponse({ ok: true });
-    }, new AbortController().signal);
+    const result = await rotateKeys(
+      env,
+      'GROQ_KEY_',
+      async (key) => {
+        if (key === 'blacklisted-key-abc') blacklistKeyAttempted = true;
+        return jsonResponse({ ok: true });
+      },
+      new AbortController().signal,
+    );
 
     expect(blacklistKeyAttempted).toBe(false);
     expect(result).not.toBeNull();
@@ -185,12 +218,18 @@ describe('rotateKeys', () => {
 
   test('blacklists 429 keys', async () => {
     const { rotateKeys, hashKey } = await import('../src/utils');
-    const env = mockEnv({ GROQ_KEY_1: 'rate-limited-key-abc', GROQ_KEY_2: 'valid-key-2-abcde' });
+    const env = mockEnv({
+      GROQ_KEY_1: 'rate-limited-key-abc',
+    });
 
-    await rotateKeys(env, 'GROQ_KEY_', async (key) => {
-      if (key === 'rate-limited-key-abc') return jsonResponse({}, 429);
-      return jsonResponse({ ok: true });
-    }, new AbortController().signal);
+    await rotateKeys(
+      env,
+      'GROQ_KEY_',
+      async (key) => {
+        return jsonResponse({}, 429);
+      },
+      new AbortController().signal,
+    );
 
     expect(env.EKWE_KV.put).toHaveBeenCalledWith(
       expect.stringContaining('blacklist:groq_key:'),
@@ -201,14 +240,22 @@ describe('rotateKeys', () => {
 
   test('skips 4xx and 5xx errors', async () => {
     const { rotateKeys } = await import('../src/utils');
-    const env = mockEnv({ GROQ_KEY_1: 'fail-key-1-abcde', GROQ_KEY_2: 'valid-key-2-abcde' });
+    const env = mockEnv({
+      GROQ_KEY_1: 'fail-key-1-abcde',
+      GROQ_KEY_2: 'valid-key-2-abcde',
+    });
 
     let callCount = 0;
-    const result = await rotateKeys(env, 'GROQ_KEY_', async (key) => {
-      callCount++;
-      if (key === 'fail-key-1-abcde') return jsonResponse({}, 400);
-      return jsonResponse({ ok: true });
-    }, new AbortController().signal);
+    const result = await rotateKeys(
+      env,
+      'GROQ_KEY_',
+      async (key) => {
+        callCount++;
+        if (key === 'fail-key-1-abcde') return jsonResponse({}, 400);
+        return jsonResponse({ ok: true });
+      },
+      new AbortController().signal,
+    );
 
     expect(callCount).toBeGreaterThanOrEqual(1);
     expect(callCount).toBeLessThanOrEqual(2);
@@ -218,9 +265,17 @@ describe('rotateKeys', () => {
 
   test('returns null when all keys fail', async () => {
     const { rotateKeys } = await import('../src/utils');
-    const env = mockEnv({ GROQ_KEY_1: 'fail-key-1-abcde', GROQ_KEY_2: 'fail-key-2-abcde' });
+    const env = mockEnv({
+      GROQ_KEY_1: 'fail-key-1-abcde',
+      GROQ_KEY_2: 'fail-key-2-abcde',
+    });
 
-    const result = await rotateKeys(env, 'GROQ_KEY_', async () => jsonResponse({}, 500), new AbortController().signal);
+    const result = await rotateKeys(
+      env,
+      'GROQ_KEY_',
+      async () => jsonResponse({}, 500),
+      new AbortController().signal,
+    );
     expect(result).toBeNull();
   });
 
@@ -231,7 +286,12 @@ describe('rotateKeys', () => {
     controller.abort();
 
     await expect(
-      rotateKeys(env, 'GROQ_KEY_', async () => jsonResponse({}), controller.signal),
+      rotateKeys(
+        env,
+        'GROQ_KEY_',
+        async () => jsonResponse({}),
+        controller.signal,
+      ),
     ).rejects.toThrow('CLIENT_ABORTED');
   });
 });

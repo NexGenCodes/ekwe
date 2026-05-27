@@ -1,9 +1,12 @@
 import { useLocalSearchParams, Stack } from 'expo-router';
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
+import { Box, Text, ScrollArea } from '@/components/ui';
 import { LEGAL_DOCUMENTS } from '@/constants/legal';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
+import { typography } from '@/constants/typography';
 import { useTheme } from '@/hooks';
 
 export default function LegalScreen(): React.JSX.Element {
@@ -12,7 +15,7 @@ export default function LegalScreen(): React.JSX.Element {
 
   const doc = LEGAL_DOCUMENTS[slug || ''];
 
-  const Container = View;
+  const Container = Box;
   const containerProps = {
     style: { flex: 1, backgroundColor: color.background },
   };
@@ -20,11 +23,14 @@ export default function LegalScreen(): React.JSX.Element {
   if (!doc) {
     return (
       <Container {...containerProps} style={styles.flex1}>
-        <View style={styles.emptyState}>
-          <Text style={[styles.emptyText, { color: color.muted }]}>
+        <Box style={styles.emptyState}>
+          <Text
+            variant="body"
+            style={[styles.emptyText, { color: color.muted }]}
+          >
             Document not found.
           </Text>
-        </View>
+        </Box>
       </Container>
     );
   }
@@ -41,21 +47,25 @@ export default function LegalScreen(): React.JSX.Element {
           },
           headerShadowVisible: false,
           headerTitleStyle: {
-            fontFamily: 'Outfit-Bold',
+            fontFamily: typography.heading2.fontFamily,
+            fontSize: 24,
+            fontWeight: '400',
             color: color.foreground,
           },
           headerTintColor: color.primary,
         }}
       />
 
-      <ScrollView
+      <ScrollArea
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="automatic"
       >
         <Animated.View entering={FadeInDown.delay(100).duration(400)}>
-          <Text style={[styles.lastUpdated, { color: color.muted }]}>
+          <Text
+            variant="bodySmall"
+            style={[styles.lastUpdated, { color: color.muted }]}
+          >
             Last updated: {doc.lastUpdated}
           </Text>
         </Animated.View>
@@ -69,75 +79,67 @@ export default function LegalScreen(): React.JSX.Element {
               { backgroundColor: color.card, borderColor: color.border },
             ]}
           >
-            <Text style={[styles.sectionTitle, { color: color.foreground }]}>
+            <Text variant="body" style={styles.sectionTitle}>
               {section.title}
             </Text>
-            <Text style={[styles.sectionBody, { color: color.muted }]}>
+            <Text
+              variant="body"
+              style={[styles.sectionBody, { color: color.muted }]}
+            >
               {section.body}
             </Text>
           </Animated.View>
         ))}
 
         {/* Footer */}
-        <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: color.muted }]}>
+        <Box style={styles.footer}>
+          <Text
+            variant="caption"
+            style={[styles.footerText, { color: color.muted }]}
+          >
             © {new Date().getFullYear()} Ekwe. All rights reserved.
           </Text>
-        </View>
-      </ScrollView>
+        </Box>
+      </ScrollArea>
     </Container>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = {
   flex1: {
     flex: 1,
-  },
+  } as const,
   scrollView: {
     flex: 1,
-  },
+  } as const,
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 48,
-    paddingTop: 16,
-  },
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing['3xl'],
+    paddingTop: spacing.md,
+  } as const,
   lastUpdated: {
-    fontFamily: 'Outfit-Regular',
-    fontSize: 13,
-    marginBottom: 20,
+    marginBottom: spacing.lg,
     textAlign: 'center',
-  },
+  } as const,
   sectionCard: {
-    borderRadius: 16,
+    borderRadius: borderRadius.xl,
     borderWidth: 1,
-    padding: 20,
-    marginBottom: 12,
-  },
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+  } as const,
   sectionTitle: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  sectionBody: {
-    fontFamily: 'Outfit-Regular',
-    fontSize: 15,
-    lineHeight: 24,
-  },
+    marginBottom: spacing.sm,
+  } as const,
+  sectionBody: {} as const,
   footer: {
-    paddingVertical: 24,
+    paddingVertical: spacing.lg,
     alignItems: 'center',
-  },
-  footerText: {
-    fontFamily: 'Outfit-Regular',
-    fontSize: 12,
-  },
+  } as const,
+  footerText: {} as const,
   emptyState: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  emptyText: {
-    fontFamily: 'Outfit-Regular',
-    fontSize: 16,
-  },
-});
+  } as const,
+  emptyText: {} as const,
+};

@@ -2,23 +2,21 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { View, Text } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import {
   AuthHeader,
   AuthFooter,
   SocialAuthGroup,
   AuthShell,
-} from '@/components';
-import {
   Input,
   PasswordInput,
   Divider,
   ErrorBanner,
   Button,
-} from '@/components/ui';
-import { spacing, typography } from '@/constants/designTokens';
+  Disclaimer,
+} from '@/components';
+import { Box, Text } from '@/components/ui';
+import { spacing } from '@/constants/spacing';
 import { useAuthFlow, useTheme } from '@/hooks';
 import { signupSchema, SignupForm } from '@/schemas/auth';
 import { signUpWithPassword } from '@/services/auth';
@@ -62,10 +60,10 @@ export default function SignupScreen(): React.JSX.Element {
     <AuthShell showBackButton>
       <AuthHeader subtitle="Create your account" />
 
-      <Animated.View entering={FadeInDown.duration(600).delay(100).springify()}>
+      <Box>
         <ErrorBanner message={error} />
 
-        <View style={{ gap: spacing[3], marginBottom: spacing[2] }}>
+        <Box style={{ gap: spacing.md, marginBottom: spacing.sm }}>
           <Controller
             control={control}
             name="email"
@@ -93,6 +91,7 @@ export default function SignupScreen(): React.JSX.Element {
                 placeholder="Password"
                 returnKeyType="next"
                 error={fieldState.error?.message}
+                showStrength={true}
               />
             )}
           />
@@ -112,19 +111,7 @@ export default function SignupScreen(): React.JSX.Element {
               />
             )}
           />
-        </View>
-
-        <Text
-          style={{
-            fontFamily: 'Outfit-Regular',
-            fontSize: typography.bodySmall.size + 1,
-            color: color.muted,
-            marginBottom: spacing[5],
-            paddingHorizontal: spacing[1],
-          }}
-        >
-          Password must be at least 8 characters
-        </Text>
+        </Box>
 
         <Button
           label="Create Account"
@@ -138,6 +125,7 @@ export default function SignupScreen(): React.JSX.Element {
           onApple={onApple}
           onGoogle={onGoogle}
           action="sign-up"
+          disabled={isLoading}
         />
 
         <AuthFooter
@@ -145,7 +133,9 @@ export default function SignupScreen(): React.JSX.Element {
           linkText="Sign in"
           onPress={() => router.back()}
         />
-      </Animated.View>
+
+        <Disclaimer />
+      </Box>
     </AuthShell>
   );
 }

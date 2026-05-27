@@ -1,51 +1,51 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import Animated, { FadeInUp } from 'react-native-reanimated';
+import Animated, { LinearTransition } from 'react-native-reanimated';
 
+import { Box, Text } from '@/components/ui';
+import { spring } from '@/constants';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 
 export interface ProfileSectionProps {
   title: string;
   titleColor?: string;
-  delay: number;
   children: React.ReactNode;
 }
 
 export function ProfileSection({
   title,
   titleColor,
-  delay,
   children,
 }: ProfileSectionProps): React.JSX.Element {
   const { color } = useTheme();
   return (
-    <Animated.View
-      entering={FadeInUp.delay(delay).duration(400)}
-      style={styles.section}
-    >
-      <Text style={[styles.sectionTitle, { color: titleColor ?? color.muted }]}>
+    <Box style={{ marginBottom: spacing.xl }}>
+      <Text
+        variant="caption"
+        style={{
+          textTransform: 'uppercase',
+          marginBottom: spacing.md,
+          color: titleColor ?? color.muted,
+        }}
+      >
         {title}
       </Text>
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: color.card, borderColor: color.border },
-        ]}
+      <Animated.View
+        layout={LinearTransition.springify()
+          .damping(spring.smooth.damping)
+          .stiffness(spring.smooth.stiffness)
+          .mass(spring.smooth.mass)}
+        style={{
+          borderRadius: borderRadius['2xl'],
+          borderWidth: 1,
+          overflow: 'hidden',
+          backgroundColor: color.card,
+          borderColor: color.border,
+        }}
       >
         {children}
-      </View>
-    </Animated.View>
+      </Animated.View>
+    </Box>
   );
 }
-
-const styles = StyleSheet.create({
-  section: { marginBottom: 32 },
-  sectionTitle: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 2,
-    marginBottom: 16,
-  },
-  card: { borderRadius: 24, borderWidth: 1, overflow: 'hidden' },
-});

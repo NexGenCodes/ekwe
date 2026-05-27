@@ -1,8 +1,7 @@
-import { supabase } from '@/services/supabase';
-import { history$ } from '@/store';
-import { logger } from '@/utils';
-import { Db } from './db';
 import { SyncService } from './SyncService';
+import { Db } from './db';
+
+import { logger } from '@/utils';
 
 export interface HistoryEntryPayload {
   sourceLang: string;
@@ -13,7 +12,10 @@ export interface HistoryEntryPayload {
   duration: number;
   sourceApp: string;
   provider: string;
+  sessionKey?: string;
 }
+
+const sessionMap = new Map<string, string>(); // sessionKey -> historyEntryId
 
 export const HistoryService = {
   recordTranslation: async (
@@ -22,7 +24,25 @@ export const HistoryService = {
   ): Promise<string | undefined> => {
     if (!session?.user) return undefined;
 
+    if (payload.sessionKey) {
+      const existingId = sessionMap.get(payload.sessionKey);
+      if (existingId) {
+        if (payload.translation !== null) {
+          await SyncService.updateHistoryTranslation(
+            existingId,
+            payload.translation,
+            payload.transliteration,
+            payload.targetLang,
+          );
+        }
+        return existingId;
+      }
+    }
+
     const id = await SyncService.writeHistory(payload, session.user.id);
+    if (payload.sessionKey) {
+      sessionMap.set(payload.sessionKey, id);
+    }
     return id;
   },
 
@@ -39,7 +59,9 @@ export const HistoryService = {
       const deletedCount = Db.cleanupExpiredHistory(ttlDays);
 
       if (deletedCount > 0) {
-        logger.info(`[HistoryService] Pruned ${deletedCount} expired local history records.`);
+        logger.info(
+          `[HistoryService] Pruned ${deletedCount} expired local history records.`,
+        );
       }
     } catch (e) {
       logger.error('[HistoryService] Failed to cleanup local history', e);

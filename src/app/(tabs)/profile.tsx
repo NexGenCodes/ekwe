@@ -1,36 +1,38 @@
 import { useSelector } from '@legendapp/state/react';
 import Constants from 'expo-constants';
-import * as Haptics from 'expo-haptics';
 import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as StoreReview from 'expo-store-review';
 import {
   LogOut,
   CreditCard,
-  History,
   Trash2,
   ChevronRight,
   Mail,
   Shield,
   FileText,
   Star,
-  Moon,
+  Palette,
   Copy,
   Globe,
   Eye,
   Smartphone,
+  Check,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react-native';
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  Linking,
-  Platform,
-  Switch,
-} from 'react-native';
-import Animated, { FadeInUp } from 'react-native-reanimated';
+import React, { useState, useEffect } from 'react';
+import { Linking, Switch } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  FadeIn,
+  FadeOut,
+  FadeInDown,
+  ZoomIn,
+} from 'react-native-reanimated';
 
 import {
   AvatarPickerModal,
@@ -38,16 +40,18 @@ import {
   ProfileRow,
   ProfileSection,
   ProfileIdentity,
-  ThemeToggler,
-  LanguagePickerSheet,
+  CurrencyPickerModal,
 } from '@/components';
-import { borderRadius, spacing, typography } from '@/constants/designTokens';
+import { Box, Pressable, Text, ScrollArea } from '@/components/ui';
+import { duration, spring, borderRadius, opacity, spacing, SUPPORTED_CURRENCIES } from '@/constants';
 import { useLogout, useTheme, usePermissions, useForegroundApp } from '@/hooks';
 import { deleteAccount } from '@/services/auth';
 import { supabase } from '@/services/supabase';
 import { auth$, authActions, settings$, settingsActions } from '@/store';
 import { AppAlert } from '@/utils/alert';
+import { triggerHaptic } from '@/utils/haptics';
 import logger from '@/utils/logger';
+import { isIOS } from '@/utils';
 
 // ─── ProfileScreen ────────────────────────────────────────────────────────────
 
@@ -55,25 +59,33 @@ export default function ProfileScreen(): React.JSX.Element {
   const user = useSelector(() => auth$.user.get());
   const isPro = useSelector(() => auth$.isPro.get());
   const router = useRouter();
-  const { color } = useTheme();
+  const { color, colorScheme, setColorScheme } = useTheme();
   const permissions = usePermissions();
   const { confirmLogout } = useLogout();
 
   const hapticsEnabled = useSelector(() => settings$.hapticsEnabled.get());
-  const {
-    setHapticsEnabled,
-    setAutoCopy,
-    setSelectedLanguages,
-    setPinnedLanguages,
-  } = settingsActions;
+  const currency = useSelector(() => settings$.currency.get());
+  const { setHapticsEnabled, setAutoCopy, setCurrency } = settingsActions;
   const selectedLanguages = useSelector(() =>
     settings$.selectedLanguages.get(),
   );
-  const pinnedLanguages = useSelector(() => settings$.pinnedLanguages.get());
   const autoCopy = useSelector(() => settings$.autoCopy.get());
   const { hasPermission } = useForegroundApp();
 
-  const [sheetVisible, setSheetVisible] = useState(false);
+  const [appearanceExpanded, setAppearanceExpanded] = useState(false);
+  const [isCurrencyModalVisible, setIsCurrencyModalVisible] = useState(false);
+  const chevronRotation = useSharedValue(0);
+
+  useEffect(() => {
+    chevronRotation.value = withSpring(
+      appearanceExpanded ? 90 : 0,
+      spring.smooth,
+    );
+  }, [appearanceExpanded]);
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${chevronRotation.value}deg` }],
+  }));
 
   const rawName =
     user?.user_metadata?.full_name || user?.user_metadata?.name || '';
@@ -84,6 +96,16 @@ export default function ProfileScreen(): React.JSX.Element {
 
   const [isIconModalVisible, setIsIconModalVisible] = useState(false);
 
+  const themeOptions: {
+    value: 'light' | 'dark' | 'system';
+    icon: typeof Sun;
+    label: string;
+  }[] = [
+    { value: 'light', icon: Sun, label: 'Light' },
+    { value: 'dark', icon: Moon, label: 'Dark' },
+    { value: 'system', icon: Monitor, label: 'System (Follow Device)' },
+  ];
+
   const currentIconData = user?.user_metadata?.avatar_icon
     ? (AVATAR_ICONS.find((i) => i.name === user?.user_metadata?.avatar_icon) ??
       null)
@@ -91,7 +113,7 @@ export default function ProfileScreen(): React.JSX.Element {
 
   const handleUpdateIcon = async (iconName: string): Promise<void> => {
     setIsIconModalVisible(false);
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await triggerHaptic();
     try {
       const { data, error } = await supabase.auth.updateUser({
         data: { avatar_icon: iconName || null },
@@ -105,7 +127,7 @@ export default function ProfileScreen(): React.JSX.Element {
   };
 
   const handleDeleteAccount = async (): Promise<void> => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await triggerHaptic();
     AppAlert.confirm(
       'Delete Account',
       'This will permanently delete your account and all associated data. This action cannot be undone. Are you sure?',
@@ -125,46 +147,40 @@ export default function ProfileScreen(): React.JSX.Element {
   };
 
   return (
-    <View style={[styles.flex1, { backgroundColor: color.background }]}>
-      <ScrollView
+    <Box style={[styles.flex1, { backgroundColor: color.background }]}>
+      <ScrollArea
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 32 }}
+        contentContainerStyle={{
+          paddingHorizontal: spacing.lg,
+          paddingBottom: spacing.xl,
+        }}
       >
-        <ProfileIdentity
-          user={user}
-          isPro={isPro}
-          currentIconData={currentIconData}
-          userName={userName}
-          userEmail={userEmail}
-          rawName={rawName}
-          onEditAvatar={() => {
-            if (permissions.customAvatarIcons) {
-              setIsIconModalVisible(true);
-            } else {
-              AppAlert.info(
-                'Ekwe Pro',
-                'Custom avatar icons are a premium feature. Upgrade to Pro to customize your profile.',
-              );
-            }
-          }}
-        />
-
-        {/* Activity & Plan */}
-        <ProfileSection title="Activity & Plan" delay={300}>
-          <ProfileRow
-            icon={History}
-            sfIcon="clock.fill"
-            iconColor={color.primary}
-            title="Translation History"
-            subtitle="Review your recent translations"
-            hasDivider
-            onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push('/(tabs)/history');
+        <Animated.View entering={FadeInDown.duration(duration.normal)}>
+          <ProfileIdentity
+            user={user}
+            isPro={isPro}
+            currentIconData={currentIconData}
+            userName={userName}
+            userEmail={userEmail}
+            rawName={rawName}
+            onEditAvatar={() => {
+              if (permissions.customAvatarIcons) {
+                setIsIconModalVisible(true);
+              } else {
+                AppAlert.info(
+                  'Ekwe Pro',
+                  'Custom avatar icons are a premium feature. Upgrade to Pro to customize your profile.',
+                );
+              }
             }}
           />
+        </Animated.View>
+
+        {/* Account & Subscription */}
+        <Animated.View entering={FadeInDown.duration(duration.normal).delay(100)}>
+          <ProfileSection title="Account & Subscription">
           <ProfileRow
             icon={CreditCard}
             sfIcon="creditcard.fill"
@@ -173,14 +189,13 @@ export default function ProfileScreen(): React.JSX.Element {
             subtitle={
               isPro ? 'Unlimited translations' : 'Free Tier · Standard limits'
             }
-            hasDivider
             onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              triggerHaptic();
               router.push('/billing');
             }}
             trailing={
               isPro ? (
-                process.env.EXPO_OS === 'ios' ? (
+                isIOS ? (
                   <ExpoImage
                     source="sf:chevron.right"
                     style={{ width: 14, height: 14 }}
@@ -190,36 +205,37 @@ export default function ProfileScreen(): React.JSX.Element {
                   <ChevronRight size={20} color={color.muted} />
                 )
               ) : (
-                <View
+                <Box
                   style={[
                     styles.upgradeBadge,
-                    { backgroundColor: color.primary },
+                    { backgroundColor: color.secondary },
                   ]}
                 >
-                  <Text
-                    style={[styles.upgradeText, { color: color.onPrimary }]}
-                  >
+                  <Text variant="caption" style={{ color: color.onSecondary }}>
                     Upgrade
                   </Text>
-                </View>
+                </Box>
               )
             }
           />
+        </ProfileSection>
+        </Animated.View>
+
+        {/* App Preferences */}
+        <Animated.View entering={FadeInDown.duration(duration.normal).delay(150)}>
+        <ProfileSection title="App Preferences">
           <ProfileRow
             icon={Globe}
             sfIcon="globe"
             iconColor={color.primary}
             title="Edit Language Grid"
             subtitle={`${selectedLanguages.length}/5 active languages`}
+            hasDivider
             onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setSheetVisible(true);
+              triggerHaptic();
+              router.push('/edit-languages');
             }}
           />
-        </ProfileSection>
-
-        {/* Configuration */}
-        <ProfileSection title="Configuration" delay={320}>
           <ProfileRow
             icon={Smartphone}
             sfIcon="hand.tap.fill"
@@ -227,7 +243,7 @@ export default function ProfileScreen(): React.JSX.Element {
             title="Haptic Feedback"
             subtitle="Vibrate on user actions"
             onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              await triggerHaptic();
               setHapticsEnabled(!hapticsEnabled);
             }}
             hasDivider
@@ -241,23 +257,118 @@ export default function ProfileScreen(): React.JSX.Element {
                   true: color.primary,
                   false: color.border,
                 }}
-                thumbColor="#FFFFFF"
+                thumbColor={color.card}
               />
             }
           />
           <ProfileRow
-            icon={Moon}
-            sfIcon="moon.fill"
+            icon={Globe}
+            sfIcon="globe"
             iconColor={color.primary}
-            title="App Theme"
-            subtitle="Toggle Light or Dark styling"
-            onPress={() => {}}
-            trailing={<ThemeToggler />}
+            title="Display Currency"
+            subtitle="Choose your preferred currency"
+            hasDivider
+            onPress={async () => {
+              await triggerHaptic();
+              setIsCurrencyModalVisible(true);
+            }}
+            trailing={
+              <Box style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text
+                  variant="body"
+                  style={{ color: color.muted, marginRight: spacing.sm }}
+                >
+                  {SUPPORTED_CURRENCIES.find((c) => c.code === currency)?.code || currency}
+                </Text>
+                <ChevronRight size={16} color={color.muted} />
+              </Box>
+            }
           />
+          <ProfileRow
+            icon={Palette}
+            sfIcon="paintpalette.fill"
+            iconColor={color.primary}
+            title="Appearance"
+            subtitle="Light, Dark, or System"
+            onPress={async () => {
+              await triggerHaptic();
+              setAppearanceExpanded(!appearanceExpanded);
+            }}
+            trailing={
+              <Box style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text
+                  variant="body"
+                  style={{ color: color.muted, marginRight: spacing.sm }}
+                >
+                  {colorScheme === 'light'
+                    ? 'Light'
+                    : colorScheme === 'dark'
+                      ? 'Dark'
+                      : 'System'}
+                </Text>
+                <Animated.View style={chevronStyle}>
+                  <ChevronRight size={16} color={color.muted} />
+                </Animated.View>
+              </Box>
+            }
+          />
+          {appearanceExpanded && (
+            <Animated.View
+              entering={FadeIn.duration(duration.normal)}
+              exiting={FadeOut.duration(duration.normal)}
+              style={{ backgroundColor: color.surface }}
+            >
+              {themeOptions.map((option) => {
+                const isActive = colorScheme === option.value;
+                return (
+                  <Pressable
+                    key={option.value}
+                    onPress={async () => {
+                      await triggerHaptic();
+                      setColorScheme(option.value);
+                      setAppearanceExpanded(false);
+                    }}
+                    style={({ pressed }) => [
+                      {
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingLeft: spacing['4xl'],
+                        paddingVertical: spacing.md,
+                        paddingRight: spacing.lg,
+                        borderTopWidth: 0.5,
+                        borderTopColor: color.border,
+                      },
+                      pressed && {
+                        backgroundColor: `${color.primary}1A`,
+                      },
+                    ]}
+                  >
+                    <option.icon
+                      size={18}
+                      color={isActive ? color.primary : color.muted}
+                    />
+                    <Text
+                      variant="body"
+                      style={{
+                        flex: 1,
+                        marginLeft: spacing.md,
+                        color: isActive ? color.primary : color.foreground,
+                      }}
+                    >
+                      {option.label}
+                    </Text>
+                    {isActive && <Check size={18} color={color.primary} />}
+                  </Pressable>
+                );
+              })}
+            </Animated.View>
+          )}
         </ProfileSection>
+        </Animated.View>
 
         {/* Smart Features */}
-        <ProfileSection title="Smart Features" delay={340}>
+        <Animated.View entering={FadeInDown.duration(duration.normal).delay(200)}>
+        <ProfileSection title="Smart Features">
           <ProfileRow
             icon={Copy}
             sfIcon="doc.on.doc.fill"
@@ -265,8 +376,16 @@ export default function ProfileScreen(): React.JSX.Element {
             title="Auto-copy to Clipboard"
             subtitle="Copy translation automatically"
             onPress={async () => {
+              if (!isPro) {
+                AppAlert.info(
+                  'Ekwe Pro Required',
+                  'Auto-copy is a premium feature. Please upgrade to use this.',
+                );
+                router.push('/billing');
+                return;
+              }
               if (permissions.autoCopy) {
-                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                await triggerHaptic();
                 setAutoCopy(!autoCopy);
               }
             }}
@@ -281,7 +400,7 @@ export default function ProfileScreen(): React.JSX.Element {
                   true: color.primary,
                   false: color.border,
                 }}
-                thumbColor="#FFFFFF"
+                thumbColor={color.card}
                 disabled={!permissions.autoCopy}
               />
             }
@@ -290,11 +409,11 @@ export default function ProfileScreen(): React.JSX.Element {
             icon={Eye}
             sfIcon="eye.fill"
             iconColor={color.primary}
-            title="App-Context Awareness"
+            title="Floating Translation Bubble"
             subtitle="Translate inline in external apps"
             onPress={async () => {
               if (permissions.contextAwareness) {
-                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                await triggerHaptic();
                 router.push('/accessibility-disclosure');
               }
             }}
@@ -310,15 +429,17 @@ export default function ProfileScreen(): React.JSX.Element {
                   true: color.primary,
                   false: color.border,
                 }}
-                thumbColor="#FFFFFF"
+                thumbColor={color.card}
                 disabled={!permissions.contextAwareness}
               />
             }
           />
         </ProfileSection>
+        </Animated.View>
 
         {/* Help & Legal */}
-        <ProfileSection title="Help & Legal" delay={360}>
+        <Animated.View entering={FadeInDown.duration(duration.normal).delay(250)}>
+        <ProfileSection title="Help & Legal">
           <ProfileRow
             icon={Mail}
             sfIcon="envelope.fill"
@@ -326,7 +447,7 @@ export default function ProfileScreen(): React.JSX.Element {
             title="Contact Support"
             hasDivider
             onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              await triggerHaptic();
               Linking.openURL('mailto:emmanuelztrd@gmail.com');
             }}
           />
@@ -337,7 +458,7 @@ export default function ProfileScreen(): React.JSX.Element {
             title="Rate Us"
             hasDivider
             onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              await triggerHaptic();
               let hasNativeAction = false;
               try {
                 hasNativeAction = await StoreReview.hasAction();
@@ -379,7 +500,7 @@ export default function ProfileScreen(): React.JSX.Element {
               }
 
               const url =
-                Platform.OS === 'ios'
+                isIOS
                   ? `itms-apps://itunes.apple.com/app/viewContentsUserReviews?id=${ITUNES_ITEM_ID}&action=write-review`
                   : `market://details?id=${ANDROID_PACKAGE_NAME}`;
               Linking.openURL(url).catch(() => {
@@ -394,7 +515,7 @@ export default function ProfileScreen(): React.JSX.Element {
             title="Privacy Policy"
             hasDivider
             onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              triggerHaptic();
               router.push('/legal/privacy');
             }}
           />
@@ -404,18 +525,16 @@ export default function ProfileScreen(): React.JSX.Element {
             iconColor={color.primary}
             title="Terms of Service"
             onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              triggerHaptic();
               router.push('/legal/terms');
             }}
           />
         </ProfileSection>
+        </Animated.View>
 
         {/* Danger Zone */}
-        <ProfileSection
-          title="Danger Zone"
-          titleColor={color.error}
-          delay={380}
-        >
+        <Animated.View entering={FadeInDown.duration(duration.normal).delay(300)}>
+        <ProfileSection title="Danger Zone" titleColor={color.error}>
           <ProfileRow
             icon={LogOut}
             sfIcon="rectangle.portrait.and.arrow.right"
@@ -424,7 +543,7 @@ export default function ProfileScreen(): React.JSX.Element {
             subtitle="Sign out of your session"
             hasDivider
             onPress={async () => {
-              await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              await triggerHaptic();
               confirmLogout();
             }}
             trailing={null}
@@ -439,20 +558,30 @@ export default function ProfileScreen(): React.JSX.Element {
             trailing={null}
           />
         </ProfileSection>
+        </Animated.View>
 
         {/* Footer */}
-        <Animated.View
-          entering={FadeInUp.delay(450).duration(400)}
-          style={styles.footer}
-        >
-          <Text style={[styles.footerText, { color: color.muted }]}>
+        <Animated.View entering={FadeInDown.duration(duration.normal).delay(350)}>
+        <Box style={styles.footer}>
+          <Text
+            variant="caption"
+            style={{ opacity: opacity.inactive, color: color.muted }}
+          >
             Built with ❤️ by EKWE team
           </Text>
-          <Text style={[styles.versionText, { color: color.muted }]}>
+          <Text
+            variant="caption"
+            style={{
+              opacity: opacity.scrim,
+              marginTop: spacing.xs,
+              color: color.muted,
+            }}
+          >
             v{Constants.expoConfig?.version ?? '1.0.0'}
           </Text>
+        </Box>
         </Animated.View>
-      </ScrollView>
+      </ScrollArea>
 
       <AvatarPickerModal
         visible={isIconModalVisible}
@@ -461,44 +590,32 @@ export default function ProfileScreen(): React.JSX.Element {
         currentIcon={user?.user_metadata?.avatar_icon}
       />
 
-      <LanguagePickerSheet
-        isVisible={sheetVisible}
-        onClose={() => setSheetVisible(false)}
-        selectedLanguages={selectedLanguages}
-        pinnedLanguages={pinnedLanguages}
-        onSelectionChange={(sel: string[], pins: string[]) => {
-          setSelectedLanguages(sel);
-          setPinnedLanguages(pins);
+      <CurrencyPickerModal
+        visible={isCurrencyModalVisible}
+        onClose={() => setIsCurrencyModalVisible(false)}
+        onSelect={async (code) => {
+          await triggerHaptic();
+          setCurrency(code);
+          setIsCurrencyModalVisible(false);
         }}
+        currentCurrency={currency}
       />
-    </View>
+    </Box>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const styles = {
   flex1: { flex: 1 },
   scrollView: { flex: 1 },
   upgradeBadge: {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,
   },
-  upgradeText: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: typography.caption.size,
+  footer: {
+    alignItems: 'center' as const,
+    paddingVertical: spacing.xl,
   },
-  footer: { alignItems: 'center', paddingBottom: spacing[8] },
-  footerText: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: typography.caption.size,
-    opacity: 0.6,
-  },
-  versionText: {
-    fontFamily: 'Outfit-Regular',
-    fontSize: 10,
-    opacity: 0.4,
-    marginTop: spacing[1],
-  },
-});
+};

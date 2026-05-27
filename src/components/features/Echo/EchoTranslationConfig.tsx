@@ -7,11 +7,14 @@ import {
   Languages,
 } from 'lucide-react-native';
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
-import { AnimatedCopyButton, ScrollableTextBox } from '@/components';
-import { fonts } from '@/constants/fonts';
+import { AnimatedCopyButton } from '../../AnimatedCopyButton';
+import { ScrollableTextBox } from '../../ScrollableTextBox';
+
+import { Box, Text, Pressable } from '@/components/ui';
 import { LANGUAGES, FLAG_MAP } from '@/constants/languages';
+import { borderRadius, opacity } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 
 interface EchoTranslationConfigProps {
@@ -39,10 +42,6 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
       handleTranslate,
     }) => {
       const { color } = useTheme();
-      const bgHex = color.surface;
-      const handleHex = color.border;
-      const textPrimary = color.primary;
-      const textSecondary = color.muted;
       const brandPrimary = color.secondary;
       const brandWarning = color.warning;
 
@@ -62,97 +61,110 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
       const detectedFlag = detectedLang ? FLAG_MAP[detectedLang] || '🌐' : '🌐';
 
       return (
-        <View>
+        <Box>
           {/* Language Pills */}
-          <View style={styles.langSection}>
+          <Box style={{ marginBottom: spacing.md, gap: spacing.sm }}>
             {isMismatch && (
-              <View
-                style={[
-                  styles.mismatchBadge,
-                  {
-                    backgroundColor: `${brandWarning}15`,
-                    borderColor: `${brandWarning}30`,
-                  },
-                ]}
+              <Box
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  alignSelf: 'flex-start',
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: spacing.xs,
+                  borderRadius: borderRadius['2xl'],
+                  borderWidth: 1,
+                  gap: spacing.xs,
+                  backgroundColor: color.surface,
+                  borderColor: brandWarning,
+                }}
               >
                 <AlertCircle size={12} color={brandWarning} />
-                <Text style={[styles.mismatchText, { color: brandWarning }]}>
+                <Text variant="caption" style={{ color: brandWarning }}>
                   Language mismatch
                 </Text>
-              </View>
+              </Box>
             )}
 
-            <View style={styles.pillRow}>
+            <Box style={{ flexDirection: 'row', alignItems: 'center' }}>
               {/* Selected pill */}
-              <View
-                style={[
-                  styles.langPill,
-                  {
-                    backgroundColor: isMismatch
-                      ? `${brandWarning}10`
-                      : `${brandPrimary}10`,
-                    borderColor: isMismatch
-                      ? `${brandWarning}25`
-                      : `${brandPrimary}20`,
-                  },
-                ]}
+              <Box
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: spacing.sm,
+                  borderRadius: borderRadius.xl,
+                  borderWidth: 1,
+                  gap: spacing.sm,
+                  backgroundColor: color.surface,
+                  borderColor: isMismatch ? brandWarning : color.border,
+                }}
               >
                 <Languages
                   size={13}
                   color={isMismatch ? brandWarning : brandPrimary}
                 />
-                <Text style={styles.pillFlag}>{selectedFlag}</Text>
-                <View>
+                <Text variant="body">{selectedFlag}</Text>
+                <Box>
                   <Text
-                    style={[
-                      styles.pillLabel,
-                      {
-                        color: isMismatch ? `${brandWarning}` : textSecondary,
-                      },
-                    ]}
+                    variant="caption"
+                    style={{
+                      marginBottom: 4,
+                      color: isMismatch ? brandWarning : color.muted,
+                    }}
                   >
                     Selected
                   </Text>
                   <Text
-                    style={[
-                      styles.pillValue,
-                      { color: isMismatch ? brandWarning : textPrimary },
-                    ]}
+                    variant="bodySmall"
+                    style={{
+                      color: isMismatch ? brandWarning : color.primary,
+                    }}
                   >
                     {selectedName}
                   </Text>
-                </View>
-              </View>
+                </Box>
+              </Box>
 
               <ArrowRight
                 size={14}
-                color={textSecondary}
-                style={{ marginHorizontal: 4 }}
+                color={color.muted}
+                style={{ marginHorizontal: spacing.xs }}
               />
 
               {/* Detected pill */}
-              <View
-                style={[
-                  styles.langPill,
-                  {
-                    backgroundColor: `${brandPrimary}10`,
-                    borderColor: `${brandPrimary}20`,
-                  },
-                ]}
+              <Box
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: spacing.sm,
+                  borderRadius: borderRadius.xl,
+                  borderWidth: 1,
+                  gap: spacing.sm,
+                  backgroundColor: color.surface,
+                  borderColor: color.border,
+                }}
               >
                 <Ear size={13} color={brandPrimary} />
-                <Text style={styles.pillFlag}>{detectedFlag}</Text>
-                <View>
-                  <Text style={[styles.pillLabel, { color: textSecondary }]}>
+                <Text variant="body">{detectedFlag}</Text>
+                <Box>
+                  <Text
+                    variant="caption"
+                    style={{ marginBottom: 4, color: color.muted }}
+                  >
                     Detected
                   </Text>
-                  <Text style={[styles.pillValue, { color: textPrimary }]}>
+                  <Text variant="bodySmall" style={{ color: color.primary }}>
                     {detectedName}
                   </Text>
-                </View>
-              </View>
-            </View>
-          </View>
+                </Box>
+              </Box>
+            </Box>
+          </Box>
 
           <ScrollableTextBox
             text={transcription}
@@ -160,173 +172,99 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
             variant="default"
           />
 
-          <View>
-            <Text style={[styles.targetLangTitle, { color: textPrimary }]}>
+          <Box>
+            <Text
+              variant="body"
+              style={{ marginBottom: spacing.md, color: color.foreground }}
+            >
               Translate to:
             </Text>
             <BottomSheetScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={styles.chipsScroll}
+              style={{ marginBottom: spacing.lg }}
             >
               {availableTargetList.map((lang) => (
-                <TouchableOpacity
+                <Pressable
                   key={lang.code}
+                  feedback="opacity"
                   onPress={() => setTargetLang(lang.code)}
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor:
-                        targetLang === lang.code ? brandPrimary : bgHex,
-                      borderColor:
-                        targetLang === lang.code ? brandPrimary : handleHex,
-                    },
-                  ]}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    borderWidth: 1,
+                    borderRadius: borderRadius['2xl'],
+                    paddingVertical: spacing.sm,
+                    paddingHorizontal: spacing.md,
+                    marginRight: spacing.sm,
+                    gap: spacing.sm,
+                    backgroundColor:
+                      targetLang === lang.code ? brandPrimary : color.surface,
+                    borderColor:
+                      targetLang === lang.code ? brandPrimary : color.border,
+                  }}
                 >
-                  <Text style={styles.chipFlag}>
-                    {FLAG_MAP[lang.code] || '🌐'}
-                  </Text>
+                  <Text variant="body">{FLAG_MAP[lang.code] || '🌐'}</Text>
                   <Text
-                    style={[
-                      styles.chipText,
-                      {
-                        color: targetLang === lang.code ? '#FFF' : textPrimary,
-                      },
-                    ]}
+                    variant="bodySmall"
+                    style={{
+                      color:
+                        targetLang === lang.code
+                          ? color.onSecondary
+                          : color.primary,
+                    }}
                   >
                     {lang.englishName}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               ))}
             </BottomSheetScrollView>
 
-            <View style={styles.footerActions}>
+            <Box style={{ flexDirection: 'row', gap: spacing.md }}>
               <AnimatedCopyButton
                 textToCopy={transcription!}
                 size={16}
-                style={[styles.secAction, { borderColor: handleHex }]}
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: spacing.sm,
+                  paddingVertical: spacing.md,
+                  borderWidth: 1.5,
+                  borderRadius: borderRadius.xl,
+                  borderColor: color.border,
+                }}
               >
-                <Text style={[styles.secActionTxt, { color: textPrimary }]}>
+                <Text variant="bodySmall" style={{ color: color.primary }}>
                   Copy
                 </Text>
               </AnimatedCopyButton>
-              <TouchableOpacity
+              <Pressable
+                feedback="opacity"
                 onPress={handleTranslate}
                 disabled={!targetLang}
-                style={[
-                  styles.secAction,
-                  {
-                    backgroundColor: brandPrimary,
-                    borderWidth: 0,
-                    opacity: targetLang ? 1 : 0.5,
-                  },
-                ]}
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: spacing.sm,
+                  paddingVertical: spacing.md,
+                  borderWidth: 1.5,
+                  borderRadius: borderRadius.xl,
+                  backgroundColor: brandPrimary,
+                  opacity: targetLang ? 1 : opacity.disabled,
+                }}
               >
-                <Zap size={16} color="#FFF" />
-                <Text style={[styles.secActionTxt, { color: '#FFF' }]}>
+                <Zap size={16} color={color.onSecondary} />
+                <Text variant="bodySmall" style={{ color: color.onSecondary }}>
                   Translate
                 </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+              </Pressable>
+            </Box>
+          </Box>
+        </Box>
       );
     },
   );
-
-const styles = StyleSheet.create({
-  langSection: {
-    marginBottom: 16,
-    gap: 8,
-  },
-  mismatchBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    borderWidth: 1,
-    gap: 5,
-  },
-  mismatchText: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 11,
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-  },
-  pillRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  langPill: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 8,
-  },
-  pillFlag: {
-    fontSize: 18,
-  },
-  pillLabel: {
-    fontFamily: fonts.bodyMed,
-    fontSize: 10,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    marginBottom: 1,
-  },
-  pillValue: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 14,
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40,
-  },
-  loadingTxt: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 17,
-    marginTop: 24,
-    marginBottom: 8,
-  },
-  targetLangTitle: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 16,
-    marginBottom: 12,
-    letterSpacing: -0.3,
-  },
-  chipsScroll: { marginBottom: 24 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginRight: 8,
-    gap: 6,
-  },
-  chipFlag: { fontSize: 14 },
-  chipText: { fontFamily: fonts.bodyMed, fontSize: 14 },
-  footerActions: { flexDirection: 'row', gap: 12 },
-  secAction: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 14,
-    borderWidth: 1.5,
-    borderRadius: 16,
-  },
-  secActionTxt: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 15,
-    letterSpacing: -0.2,
-  },
-});

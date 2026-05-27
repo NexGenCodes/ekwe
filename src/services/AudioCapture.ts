@@ -1,5 +1,6 @@
 import * as Haptics from 'expo-haptics';
-import { Platform, Linking } from 'react-native';
+import { Linking } from 'react-native';
+import { isAndroid } from '@/utils';
 import { AudioContext } from 'react-native-audio-api';
 
 import { PLAN_LIMITS } from '@/constants/billing';
@@ -115,7 +116,7 @@ class AudioCaptureClass {
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      if (Platform.OS === 'android') {
+      if (isAndroid) {
         await attachAudioEffects(0);
       }
 
@@ -200,6 +201,8 @@ class AudioCaptureClass {
     const sessionId = this.currentSessionId;
     const isRecording = AudioService.isRecording();
     if (!isRecording || !sessionId) {
+      this.currentSessionId = null;
+      this.currentMeteringData = [];
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
 
@@ -220,6 +223,8 @@ class AudioCaptureClass {
       this.notifyStatusListeners('stopped');
 
       if (duration < 500) {
+        this.currentSessionId = null;
+        this.currentMeteringData = [];
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         return err(EkweError.TOO_SHORT);
       }
@@ -236,7 +241,7 @@ class AudioCaptureClass {
 
       await VolumeManager.restoreVolume();
 
-      if (Platform.OS === 'android') {
+      if (isAndroid) {
         await releaseAudioEffects();
       }
 
@@ -280,7 +285,7 @@ class AudioCaptureClass {
     this.notifyListeners(0); // Reset UI waveform
     await VolumeManager.restoreVolume();
 
-    if (Platform.OS === 'android') {
+    if (isAndroid) {
       await releaseAudioEffects();
     }
 

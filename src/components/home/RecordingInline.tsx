@@ -1,6 +1,5 @@
 import { Play, Pause } from 'lucide-react-native';
 import React, { useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Animated, {
   FadeIn,
   FadeOut,
@@ -12,7 +11,10 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
-import { borderRadius, spacing, typography } from '@/constants/designTokens';
+import { Box, Text, Pressable } from '@/components/ui';
+import { shadows } from '@/constants';
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme, useSharedAudioPlayer } from '@/hooks';
 import type { DictationStatus } from '@/hooks/useVoiceDictation';
 
@@ -92,14 +94,14 @@ function WaveBar({
       height: withTiming(targetHeight, { duration: 100 }),
       backgroundColor: isPreview
         ? isActive
-          ? color.primary
+          ? color.secondary
           : color.foreground
-        : '#EF4444',
+        : color.error,
       opacity: isInactivePreview ? 0.15 : 1,
     };
   });
 
-  return <Animated.View style={[styles.bar, animStyle]} />;
+  return <Animated.View style={[{ width: 3, borderRadius: 1.5 }, animStyle]} />;
 }
 
 function ProcessingBar({
@@ -130,7 +132,11 @@ function ProcessingBar({
 
   return (
     <Animated.View
-      style={[styles.bar, animStyle, { backgroundColor: color.muted }]}
+      style={[
+        { width: 3, borderRadius: 1.5 },
+        animStyle,
+        { backgroundColor: color.muted },
+      ]}
     />
   );
 }
@@ -236,110 +242,115 @@ export function RecordingInline({
     <Animated.View
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(150)}
-      style={[styles.container, { backgroundColor: color.surface }]}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        height: 72,
+        borderRadius: borderRadius['2xl'],
+        paddingHorizontal: spacing.md,
+        backgroundColor: color.surface,
+      }}
     >
       {isPreview ? (
-        <View style={styles.previewContainer}>
+        <Box
+          style={{
+            flex: 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: spacing.sm,
+          }}
+        >
           <Pressable
             onPress={() => (player.isPlaying ? player.pause() : player.play())}
-            style={[styles.playBtn, { backgroundColor: color.primary }]}
-            accessibilityRole="button"
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: borderRadius['2xl'],
+              alignItems: 'center',
+              justifyContent: 'center',
+              ...shadows.soft,
+              backgroundColor: color.secondary,
+            }}
             accessibilityLabel={
               player.isPlaying ? 'Pause playback' : 'Play recording'
             }
           >
             {player.isPlaying ? (
-              <Pause size={22} color={color.onPrimary} fill={color.onPrimary} />
+              <Pause
+                size={22}
+                color={color.onSecondary}
+                fill={color.onSecondary}
+              />
             ) : (
-              <Play size={22} color={color.onPrimary} fill={color.onPrimary} />
+              <Play
+                size={22}
+                color={color.onSecondary}
+                fill={color.onSecondary}
+              />
             )}
           </Pressable>
-          <View style={styles.waveform}>{bars}</View>
-        </View>
+          <Box
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              height: 40,
+              marginLeft: spacing.md,
+            }}
+          >
+            {bars}
+          </Box>
+        </Box>
       ) : (
-        <View style={styles.recordingContainer}>
-          <View style={styles.timerContainer}>
+        <Box
+          style={{
+            flex: 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: spacing.sm,
+          }}
+        >
+          <Box
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: spacing.sm,
+            }}
+          >
             <Animated.View
-              style={[styles.dot, dotStyle, { backgroundColor: '#EF4444' }]}
+              style={[
+                { width: 8, height: 8, borderRadius: borderRadius.sm },
+                dotStyle,
+                { backgroundColor: color.error },
+              ]}
             />
-            <Text style={[styles.timer, { color: color.foreground }]}>
+            <Text variant="body" style={{ color: color.foreground }}>
               {formatTime(elapsedMs)}
             </Text>
-          </View>
+          </Box>
           {isProcessing ? (
-            <Text style={[styles.processingText, { color: color.muted }]}>
+            <Text variant="bodySmall" style={{ color: color.muted }}>
               Transcribing...
             </Text>
           ) : (
-            <View style={styles.waveform}>{bars}</View>
+            <Box
+              style={{
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                height: 40,
+                marginLeft: spacing.md,
+              }}
+            >
+              {bars}
+            </Box>
           )}
-        </View>
+        </Box>
       )}
     </Animated.View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 72,
-    borderRadius: borderRadius['2xl'],
-    paddingHorizontal: spacing[4],
-  },
-  previewContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[2],
-  },
-  recordingContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[2],
-  },
-  timerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  timer: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: typography.body.size,
-  },
-  playBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  waveform: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    height: 40,
-  },
-  bar: {
-    width: 3,
-    borderRadius: 1.5,
-  },
-  processingText: {
-    fontFamily: 'Outfit-Medium',
-    fontSize: typography.bodySmall.size,
-    letterSpacing: 0.3,
-  },
-});

@@ -1,6 +1,6 @@
 import { useSelector } from '@legendapp/state/react';
 import { useCallback, useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { isAndroid } from '@/utils';
 
 import { useAudioCapture } from '../audio';
 import { useForegroundApp } from '../platform';
@@ -100,7 +100,7 @@ export const useBubble = (): UseBubbleReturn => {
   const enableBubble = useCallback(async (): Promise<
     Result<void, EkweError>
   > => {
-    if (Platform.OS === 'android') {
+    if (isAndroid) {
       const hasPermission = await BubbleNative.hasOverlayPermission();
       if (!hasPermission) {
         await BubbleNative.requestOverlayPermission();
@@ -136,7 +136,7 @@ export const useBubble = (): UseBubbleReturn => {
   const disableBubble = useCallback(async (): Promise<void> => {
     setBubbleEnabled(false);
     setActiveFloatingHead('none');
-    if (Platform.OS === 'android') {
+    if (isAndroid) {
       await BubbleNative.dismissBubble();
     }
   }, [setBubbleEnabled, setActiveFloatingHead]);
@@ -163,7 +163,7 @@ export const useBubble = (): UseBubbleReturn => {
 
     if (
       strategy.recommendedMode === 'SYSTEM_AUDIO' &&
-      Platform.OS === 'android'
+      isAndroid
     ) {
       if (recordingState === RecordingState.Recording) {
         await BubbleNative.stopAudioCapture();

@@ -1,17 +1,10 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ViewStyle,
-  TextStyle,
-  StyleProp,
-  ActivityIndicator,
-  ScrollView,
-} from 'react-native';
+import type { ViewStyle, TextStyle, StyleProp } from 'react-native';
 
-import { Card } from './ui/Card';
+import { Card } from './Card';
 
+import { Box, Text, Spinner, ScrollArea } from '@/components/ui';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 
 interface ScrollableTextBoxProps {
@@ -42,59 +35,41 @@ export const ScrollableTextBox: React.FC<ScrollableTextBoxProps> = ({
 }) => {
   const { color } = useTheme();
   const activeBrandPrimary = brandPrimary || color.primary;
-  const activeTextColor = color.foreground;
 
   return (
     <Card
       variant={variant}
       padding="none"
-      style={[styles.cardOverride, containerStyle]}
+      style={[{ marginBottom: spacing.lg }, containerStyle]}
       overflow
     >
-      <ScrollView
+      <ScrollArea
         style={{ height }}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ padding: spacing.md }}
       >
         {isLoading ? (
-          <View style={[styles.loadingBox, { height: height - 32 }]}>
-            <ActivityIndicator color={activeBrandPrimary} />
-            <Text style={[styles.loadingTxt, { color: color.muted }]}>
+          <Box
+            style={{
+              flex: 1,
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: height - 32,
+            }}
+          >
+            <Spinner color={activeBrandPrimary} />
+            <Text
+              variant="bodySmall"
+              style={{ color: color.muted, marginTop: spacing.md }}
+            >
               Translating...
             </Text>
-          </View>
+          </Box>
         ) : (
-          <Text style={[styles.text, { color: activeTextColor }, textStyle]}>
+          <Text variant="body" style={textStyle}>
             {text}
           </Text>
         )}
-      </ScrollView>
+      </ScrollArea>
     </Card>
   );
 };
-
-const styles = StyleSheet.create({
-  cardOverride: {
-    marginBottom: 24,
-  },
-  scrollContent: {
-    padding: 16,
-  },
-  text: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontWeight: '500',
-    fontFamily: 'Outfit-Regular',
-  },
-  loadingBox: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingTxt: {
-    marginTop: 12,
-    fontSize: 14,
-    fontWeight: '600',
-    fontFamily: 'Outfit-Regular',
-  },
-});

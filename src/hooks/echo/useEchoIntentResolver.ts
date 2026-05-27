@@ -9,7 +9,7 @@ import {
   SetStateAction,
   useMemo,
 } from 'react';
-import { Platform } from 'react-native';
+import { isIOS, isAndroid } from '@/utils';
 
 import { AudioCapture } from '@/services/AudioCapture';
 import { IntentService } from '@/services/IntentService';
@@ -30,7 +30,7 @@ export const useEchoIntentResolver = (props: {
   resetShareIntent: (clearIntent?: boolean) => void;
 } => {
   const { resetShareIntent } = useShareIntent({
-    disabled: Platform.OS === 'android',
+    disabled: isAndroid,
   });
 
   const onboardingCompleted = useSelector(() =>
@@ -39,7 +39,6 @@ export const useEchoIntentResolver = (props: {
   const isInitialized = useSelector(() => auth$.isInitialized.get());
   const session = useSelector(() => auth$.session.get());
 
-  const isIOS = Platform.OS === 'ios';
   const hasIOSFiles = isIOS && props.value && props.value.length > 0;
 
   const [audioUri, setAudioUri] = useState<string | undefined>(undefined);

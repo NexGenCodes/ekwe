@@ -23,19 +23,19 @@ import { logger } from './logger';
 
 const TIER_LIMITS = {
   FREE: {
-    maxTextChars: 3_000,          // ~500 words
-    maxAudioBytes: 4 * 1024 * 1024,  // 4MB (~60s)
+    maxTextChars: 3_000, // ~500 words
+    maxAudioBytes: 4 * 1024 * 1024, // 4MB (~60s)
     autoDetectAllowed: false,
   },
   PREMIUM: {
-    maxTextChars: 10_000,         // ~1,500 words
+    maxTextChars: 10_000, // ~1,500 words
     maxAudioBytes: 10 * 1024 * 1024, // 10MB (~120s)
     autoDetectAllowed: true,
   },
   // CAPPED_PREMIUM users are silently downgraded
   CAPPED_PREMIUM: {
     maxTextChars: 5_000,
-    maxAudioBytes: 6 * 1024 * 1024,  // 6MB (~72s)
+    maxAudioBytes: 6 * 1024 * 1024, // 6MB (~72s)
     autoDetectAllowed: true,
   },
 } as const;
@@ -52,16 +52,99 @@ function getLimits(tier: Tier): LimitsFor {
 
 const VALID_LANG_CODES = new Set([
   'auto',
-  'en', 'es', 'it', 'de', 'zh', 'fr', 'pt', 'ru', 'ja', 'ko',
-  'ar', 'hi', 'nl', 'pl', 'tr', 'sv', 'da', 'fi', 'nb', 'cs',
-  'sk', 'ro', 'hu', 'uk', 'el', 'he', 'th', 'vi', 'id', 'ms',
-  'bg', 'hr', 'sr', 'ca', 'lt', 'lv', 'et', 'sl', 'sq', 'mk',
-  'af', 'bn', 'fa', 'ur', 'sw', 'tl', 'ta', 'te', 'ml', 'mr',
-  'gu', 'pa', 'ne', 'si', 'km', 'lo', 'my', 'ka', 'yo', 'ig',
-  'ha', 'zu', 'so', 'am', 'az', 'uz', 'kk', 'mn', 'hy', 'jv',
-  'su', 'bs', 'is', 'ga', 'cy', 'gd', 'gl', 'eu', 'mt', 'xh',
-  'sn', 'st', 'ny', 'rw', 'mg', 'tk', 'ky', 'tg', 'ps', 'sd',
-  'mni', 'as', 'or',
+  'en',
+  'es',
+  'it',
+  'de',
+  'zh',
+  'fr',
+  'pt',
+  'ru',
+  'ja',
+  'ko',
+  'ar',
+  'hi',
+  'nl',
+  'pl',
+  'tr',
+  'sv',
+  'da',
+  'fi',
+  'nb',
+  'cs',
+  'sk',
+  'ro',
+  'hu',
+  'uk',
+  'el',
+  'he',
+  'th',
+  'vi',
+  'id',
+  'ms',
+  'bg',
+  'hr',
+  'sr',
+  'ca',
+  'lt',
+  'lv',
+  'et',
+  'sl',
+  'sq',
+  'mk',
+  'af',
+  'bn',
+  'fa',
+  'ur',
+  'sw',
+  'tl',
+  'ta',
+  'te',
+  'ml',
+  'mr',
+  'gu',
+  'pa',
+  'ne',
+  'si',
+  'km',
+  'lo',
+  'my',
+  'ka',
+  'yo',
+  'ig',
+  'ha',
+  'zu',
+  'so',
+  'am',
+  'az',
+  'uz',
+  'kk',
+  'mn',
+  'hy',
+  'jv',
+  'su',
+  'bs',
+  'is',
+  'ga',
+  'cy',
+  'gd',
+  'gl',
+  'eu',
+  'mt',
+  'xh',
+  'sn',
+  'st',
+  'ny',
+  'rw',
+  'mg',
+  'tk',
+  'ky',
+  'tg',
+  'ps',
+  'sd',
+  'mni',
+  'as',
+  'or',
 ]);
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -190,8 +273,13 @@ const INJECTION_PATTERNS: RegExp[] = [
 
 // ─── Guard Results ───────────────────────────────────────────────
 
-interface GuardPass { allowed: true }
-interface GuardFail { allowed: false; response: Response }
+interface GuardPass {
+  allowed: true;
+}
+interface GuardFail {
+  allowed: false;
+  response: Response;
+}
 type GuardResult = GuardPass | GuardFail;
 
 // ─── Reusable Guard Functions ────────────────────────────────────
@@ -206,16 +294,22 @@ export function guardContentType(
   expected: 'json' | 'multipart',
 ): GuardResult {
   const ct = request.headers.get('Content-Type') || '';
-  const valid = expected === 'json'
-    ? ct.includes('application/json')
-    : ct.includes('multipart/form-data');
+  const valid =
+    expected === 'json'
+      ? ct.includes('application/json')
+      : ct.includes('multipart/form-data');
 
   if (!valid) {
-    logger.warn(`[security] Invalid Content-Type: "${ct}", expected: ${expected}`);
+    logger.warn(
+      `[security] Invalid Content-Type: "${ct}", expected: ${expected}`,
+    );
     return {
       allowed: false,
       response: Response.json(
-        { error: 'INVALID_CONTENT_TYPE', message: `Expected ${expected === 'json' ? 'application/json' : 'multipart/form-data'}` },
+        {
+          error: 'INVALID_CONTENT_TYPE',
+          message: `Expected ${expected === 'json' ? 'application/json' : 'multipart/form-data'}`,
+        },
         { status: 415 },
       ),
     };
@@ -229,7 +323,9 @@ export function guardContentType(
  * Returns the parsed body or a 400 response on malformed input.
  * Used by: /translate
  */
-export async function safeParseJSON<T>(request: Request): Promise<{ ok: true; data: T } | { ok: false; response: Response }> {
+export async function safeParseJSON<T>(
+  request: Request,
+): Promise<{ ok: true; data: T } | { ok: false; response: Response }> {
   try {
     const data = (await request.json()) as T;
     return { ok: true, data };
@@ -253,11 +349,16 @@ export function guardTextLength(text: string, tier: Tier): GuardResult {
   const { maxTextChars } = getLimits(tier);
 
   if (text.length > maxTextChars) {
-    logger.warn(`[security] Rejected text for tier ${tier}. Length: ${text.length} > Max: ${maxTextChars}`);
+    logger.warn(
+      `[security] Rejected text for tier ${tier}. Length: ${text.length} > Max: ${maxTextChars}`,
+    );
     return {
       allowed: false,
       response: Response.json(
-        { error: 'TEXT_TOO_LONG', message: `Text exceeds the ${maxTextChars} character limit.` },
+        {
+          error: 'TEXT_TOO_LONG',
+          message: `Text exceeds the ${maxTextChars} character limit.`,
+        },
         { status: 413 },
       ),
     };
@@ -274,11 +375,16 @@ export function guardAudioSize(fileSize: number, tier: Tier): GuardResult {
   const { maxAudioBytes } = getLimits(tier);
 
   if (fileSize > maxAudioBytes) {
-    logger.warn(`[security] Rejected audio for tier ${tier}. Size: ${fileSize} > Max: ${maxAudioBytes}`);
+    logger.warn(
+      `[security] Rejected audio for tier ${tier}. Size: ${fileSize} > Max: ${maxAudioBytes}`,
+    );
     return {
       allowed: false,
       response: Response.json(
-        { error: 'FILE_TOO_LARGE', message: `Audio file exceeds the ${Math.round(maxAudioBytes / 1024 / 1024)}MB limit for your plan.` },
+        {
+          error: 'FILE_TOO_LARGE',
+          message: `Audio file exceeds the ${Math.round(maxAudioBytes / 1024 / 1024)}MB limit for your plan.`,
+        },
         { status: 413 },
       ),
     };
@@ -291,7 +397,10 @@ export function guardAudioSize(fileSize: number, tier: Tier): GuardResult {
  * Rejects auto-detect language requests from non-Pro users.
  * Used by: /transcribe AND /translate
  */
-export function guardAutoDetect(lang: string | undefined | null, tier: Tier): GuardResult {
+export function guardAutoDetect(
+  lang: string | undefined | null,
+  tier: Tier,
+): GuardResult {
   const { autoDetectAllowed } = getLimits(tier);
   const isAuto = !lang || lang === 'auto';
 
@@ -300,7 +409,10 @@ export function guardAutoDetect(lang: string | undefined | null, tier: Tier): Gu
     return {
       allowed: false,
       response: Response.json(
-        { error: 'AUTO_DETECT_PRO_ONLY', message: 'Auto-detect language is a Pro feature.' },
+        {
+          error: 'AUTO_DETECT_PRO_ONLY',
+          message: 'Auto-detect language is a Pro feature.',
+        },
         { status: 403 },
       ),
     };
@@ -315,16 +427,24 @@ export function guardAutoDetect(lang: string | undefined | null, tier: Tier): Gu
  * cause unexpected behavior or token waste).
  * Used by: /translate AND /transcribe
  */
-export function guardLanguageCode(code: string | undefined | null, fieldName: string): GuardResult {
+export function guardLanguageCode(
+  code: string | undefined | null,
+  fieldName: string,
+): GuardResult {
   // undefined/null are valid (means "not specified" or "auto")
   if (!code) return { allowed: true };
 
   if (!VALID_LANG_CODES.has(code)) {
-    logger.warn(`[security] Invalid language code: "${code}" for field: ${fieldName}`);
+    logger.warn(
+      `[security] Invalid language code: "${code}" for field: ${fieldName}`,
+    );
     return {
       allowed: false,
       response: Response.json(
-        { error: 'INVALID_LANGUAGE', message: `Unsupported language code: ${code}` },
+        {
+          error: 'INVALID_LANGUAGE',
+          message: `Unsupported language code: ${code}`,
+        },
         { status: 400 },
       ),
     };

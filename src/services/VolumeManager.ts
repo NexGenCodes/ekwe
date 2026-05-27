@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { isIOS } from '@/utils';
 import { AudioManager } from 'react-native-audio-api';
 
 import { EkweError } from '@/constants/errors';
@@ -73,7 +73,7 @@ class VolumeManagerClass {
    */
   async forceToSpeaker(): Promise<Result<void, EkweError>> {
     try {
-      if (Platform.OS === 'ios') {
+      if (isIOS) {
         AudioManager.setAudioSessionOptions({
           iosCategory: 'playAndRecord',
           iosOptions: ['defaultToSpeaker', 'allowBluetoothHFP'],
@@ -99,7 +99,7 @@ class VolumeManagerClass {
 
       // Determine route based on current output names/categories
       const output =
-        Platform.OS === 'ios' && info.currentOutputs.length > 0
+        isIOS && info.currentOutputs.length > 0
           ? info.currentOutputs[0]
           : info.availableOutputs[0];
 
