@@ -1,13 +1,13 @@
 /**
  * AuthHeader — Brand lockup for auth screens.
  */
-import React from 'react';
+import React from "react";
 
-import { EkweLogo } from './EkweLogo';
+import { EkweLogo } from "./EkweLogo";
 
-import { Box, Text } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 interface AuthHeaderProps {
   subtitle: string;
@@ -21,21 +21,19 @@ export const AuthHeader = ({
   const { color } = useTheme();
 
   return (
-    <Box style={{ alignItems: 'center', marginBottom: spacing['2xl'] }}>
+    <Box style={{ alignItems: "center", marginBottom: spacing["2xl"] }}>
       <Box
         style={{
-          marginBottom: spacing.md,
+          marginBottom: spacing.lg,
         }}
       >
         <EkweLogo size={64} color={color.secondary} />
       </Box>
-      <Text variant="display">Ekwe</Text>
       <Text
         variant="body"
         style={{
           color: color.muted,
-          marginTop: spacing.sm,
-          textAlign: 'center',
+          textAlign: "center",
         }}
       >
         {subtitle}
@@ -46,7 +44,7 @@ export const AuthHeader = ({
           style={{
             color: color.muted,
             marginTop: spacing.xs,
-            textAlign: 'center',
+            textAlign: "center",
           }}
         >
           {caption}

@@ -1,16 +1,16 @@
-import * as Haptics from 'expo-haptics';
-import { Zap, CheckCircle2 } from 'lucide-react-native';
-import React from 'react';
+import * as Haptics from "expo-haptics";
+import { Zap, CheckCircle2 } from "lucide-react-native";
+import React from "react";
 
-import { ResultDisplay } from './ResultDisplay';
-import { AnimatedCopyButton } from '../../AnimatedCopyButton';
-import { Badge } from '../../Badge';
+import { ResultDisplay } from "./ResultDisplay";
+import { AnimatedCopyButton } from "../../AnimatedCopyButton";
+import { Badge } from "../../Badge";
 
-import { Box, Text, Pressable } from '@/components/ui';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
-import { EchoStep } from '@/types/echo';
+import { Box, Text, Pressable } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { EchoStep } from "@/types/echo";
 
 interface EchoFinalResultProps {
   transcription: string | null;
@@ -37,11 +37,11 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
     const brandPrimary = color.secondary;
 
     const [activeTab, setActiveTab] = React.useState<
-      'Translation' | 'Transcription'
-    >('Translation');
+      "Translation" | "Transcription"
+    >("Translation");
 
     const handleTabChange = React.useCallback(
-      (tab: 'Translation' | 'Transcription') => {
+      (tab: "Translation" | "Transcription") => {
         setActiveTab(tab);
       },
       [],
@@ -61,8 +61,8 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
 
         <Box
           style={{
-            flexDirection: 'row',
-            flexWrap: 'wrap',
+            flexDirection: "row",
+            flexWrap: "wrap",
             gap: spacing.sm,
             marginBottom: spacing.md,
           }}
@@ -80,21 +80,21 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
           )}
         </Box>
 
-        <Box style={{ flexDirection: 'row', gap: spacing.md }}>
+        <Box style={{ flexDirection: "row", gap: spacing.md }}>
           <Pressable
             feedback="opacity"
             onPress={() => {
               Haptics.selectionAsync();
-              setStep('TranscribeResult');
+              setStep("TranscribeResult");
             }}
             style={{
               flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
               gap: spacing.sm,
               paddingVertical: spacing.md,
-              borderWidth: 1.5,
+              borderWidth: 1,
               borderRadius: borderRadius.xl,
               borderColor: color.border,
             }}
@@ -107,17 +107,17 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
 
           <AnimatedCopyButton
             textToCopy={
-              activeTab === 'Translation' ? translation! : transcription!
+              activeTab === "Translation" ? translation! : transcription!
             }
             size={16}
             style={{
               flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
               gap: spacing.sm,
               paddingVertical: spacing.md,
-              borderWidth: 1.5,
+              borderWidth: 1,
               borderRadius: borderRadius.xl,
               borderColor: color.border,
             }}
@@ -132,12 +132,12 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
             onPress={handleClose}
             style={{
               flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
               gap: spacing.sm,
               paddingVertical: spacing.md,
-              borderWidth: 1.5,
+              borderWidth: 1,
               borderRadius: borderRadius.xl,
               backgroundColor: brandPrimary,
             }}

@@ -1,15 +1,27 @@
-import React, { forwardRef } from 'react';
-import {
-  Image as RNImage,
-  type ImageProps as RNImageProps,
-} from 'react-native';
+import { Image as ExpoImage } from "expo-image";
+import type {
+  ImageContentFit,
+  ImageContentPosition,
+  ImageSource,
+} from "expo-image";
+import React, { forwardRef } from "react";
+import type { ImageStyle, StyleProp } from "react-native";
 
-export type ImageProps = RNImageProps;
+export interface ImageProps {
+  source: ImageSource;
+  style?: StyleProp<ImageStyle>;
+  contentFit?: ImageContentFit;
+  contentPosition?: ImageContentPosition;
+  transition?: number;
+  tintColor?: string;
+  priority?: "low" | "normal" | "high";
+  cachePolicy?: "disk" | "memory" | "memory-disk";
+}
 
 export const Image = React.memo(
-  forwardRef<RNImage, ImageProps>(({ style, ...props }, ref) => (
-    <RNImage ref={ref} accessibilityRole="image" style={style} {...props} />
+  forwardRef<ExpoImage, ImageProps>((props, ref) => (
+    <ExpoImage ref={ref} {...props} />
   )),
 );
 
-Image.displayName = 'Image';
+Image.displayName = "Image";

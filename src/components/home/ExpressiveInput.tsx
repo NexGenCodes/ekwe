@@ -1,27 +1,25 @@
-import * as Haptics from 'expo-haptics';
-
-import React, { useCallback, useState, useEffect } from 'react';
-import { Keyboard, Dimensions } from 'react-native';
+import * as Haptics from "expo-haptics";
+import React, { useCallback, useState, useEffect } from "react";
+import { Keyboard, Dimensions } from "react-native";
 import Animated, {
   SharedValue,
   useAnimatedStyle,
   withSpring,
   withTiming,
-} from 'react-native-reanimated';
-import { isIOS } from '@/utils';
+} from "react-native-reanimated";
 
-import { InputFooterActions } from './InputFooterActions';
-import { LanguageSwitcher } from './LanguageSwitcher';
-import { MainTextInput } from './MainTextInput';
-import { RecordingInline } from './RecordingInline';
-import { Divider } from '../Divider';
+import { InputFooterActions } from "./InputFooterActions";
+import { LanguageSwitcher } from "./LanguageSwitcher";
+import { MainTextInput } from "./MainTextInput";
+import { RecordingInline } from "./RecordingInline";
+import { Divider } from "../Divider";
 
-import { Box } from '@/components/ui';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme, usePermissions } from '@/hooks';
-import type { DictationStatus } from '@/hooks/useVoiceDictation';
-import { AppToast } from '@/utils';
+import { Box } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme, usePermissions } from "@/hooks";
+import type { DictationStatus } from "@/hooks/useVoiceDictation";
+import { isIOS, AppToast } from "@/utils";
 
 interface ExpressiveInputProps {
   value: string;
@@ -86,20 +84,18 @@ export const ExpressiveInput = React.memo(
       meteringData = [],
     } = dictationState;
 
-    const isInitializing = dictationStatus === 'initializing';
-    const isRecording = dictationStatus === 'recording';
-    const isProcessing = dictationStatus === 'processing';
-    const isPreview = dictationStatus === 'preview';
+    const isInitializing = dictationStatus === "initializing";
+    const isRecording = dictationStatus === "recording";
+    const isProcessing = dictationStatus === "processing";
+    const isPreview = dictationStatus === "preview";
     const isActive = isRecording || isProcessing || isPreview;
 
     const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
     const [isFocused, setIsFocused] = useState(false);
 
     useEffect(() => {
-      const showEvent =
-        isIOS ? 'keyboardWillShow' : 'keyboardDidShow';
-      const hideEvent =
-        isIOS ? 'keyboardWillHide' : 'keyboardDidHide';
+      const showEvent = isIOS ? "keyboardWillShow" : "keyboardDidShow";
+      const hideEvent = isIOS ? "keyboardWillHide" : "keyboardDidHide";
 
       const showSub = Keyboard.addListener(showEvent, (): void =>
         setIsKeyboardVisible(true),
@@ -145,11 +141,11 @@ export const ExpressiveInput = React.memo(
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         onConfirm();
       } else if (value.length > 0) {
-        const isTargetLangValid = targetLang !== 'none' && targetLang !== '';
+        const isTargetLangValid = targetLang !== "none" && targetLang !== "";
         if (!isTargetLangValid) {
           await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          AppToast.error('Target Language Required', {
-            description: 'Please select a language to translate into.',
+          AppToast.error("Target Language Required", {
+            description: "Please select a language to translate into.",
             duration: 3000,
           });
           return;
@@ -170,19 +166,20 @@ export const ExpressiveInput = React.memo(
       onMicPress,
     ]);
 
-    const isTargetLangValid = targetLang !== 'none' && targetLang !== '';
+    const isTargetLangValid = targetLang !== "none" && targetLang !== "";
     const isGlobalDisabled = isTranslating || isProcessing || isInitializing;
 
     // If there is text, the button is "Translate" and needs a valid targetLang.
     // If there is no text, the button is "Mic" and does NOT need a targetLang.
     const isDisabled =
       value.length > 0
-          ? isGlobalDisabled || !canTranslate || !isTargetLangValid
-          : isGlobalDisabled;
+        ? isGlobalDisabled || !canTranslate || !isTargetLangValid
+        : isGlobalDisabled;
 
     // Animated scale: card lifts up subtly when focused or active
     const animatedCardStyle = useAnimatedStyle(() => {
-      const isActiveOrFocused = isRecording || isProcessing || isPreview || isFocused;
+      const isActiveOrFocused =
+        isRecording || isProcessing || isPreview || isFocused;
       return {
         transform: [
           {
@@ -198,7 +195,11 @@ export const ExpressiveInput = React.memo(
           { duration: 250 },
         ),
         shadowOpacity: withTiming(
-          isRecording || isProcessing || isPreview ? 0.18 : isFocused ? 0.14 : 0.05,
+          isRecording || isProcessing || isPreview
+            ? 0.18
+            : isFocused
+              ? 0.14
+              : 0.05,
           { duration: 250 },
         ),
         elevation: withTiming(
@@ -229,13 +230,13 @@ export const ExpressiveInput = React.memo(
       <Animated.View
         style={[
           {
-            borderRadius: borderRadius['2xl'],
+            borderRadius: borderRadius["2xl"],
             borderWidth: 1,
             borderColor: activeBorderColor,
             shadowColor: activeShadowColor,
             shadowOffset: { width: 0, height: 6 },
-            position: 'relative',
-            overflow: 'hidden',
+            position: "relative",
+            overflow: "hidden",
             backgroundColor: color.card,
             paddingVertical: spacing.md,
           },
@@ -246,7 +247,7 @@ export const ExpressiveInput = React.memo(
           style={{
             paddingHorizontal: spacing.md,
             paddingBottom: spacing.sm,
-            width: '100%',
+            width: "100%",
           }}
         >
           <LanguageSwitcher
@@ -262,8 +263,8 @@ export const ExpressiveInput = React.memo(
           <Box
             style={{
               flex: 1,
-              minHeight: Math.max(120, Dimensions.get('window').height * 0.15),
-              justifyContent: 'center',
+              minHeight: Math.max(120, Dimensions.get("window").height * 0.15),
+              justifyContent: "center",
               paddingHorizontal: spacing.lg,
             }}
           >

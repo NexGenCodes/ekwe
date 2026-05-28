@@ -1,10 +1,10 @@
-import React from 'react';
-import { StyleSheet } from 'react-native';
+import React from "react";
+import { StyleSheet } from "react-native";
 
-import { Button } from '@/components';
-import { Box } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Button } from "@/components";
+import { Box } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 export interface ResultActionBarProps {
   onCopyAll: () => void;
@@ -17,17 +17,20 @@ export function ResultActionBar({
 }: ResultActionBarProps): React.JSX.Element {
   const { color } = useTheme();
 
+  const actionBarStyle = React.useMemo(
+    () => [
+      styles.actionBar,
+      { borderTopColor: color.border, backgroundColor: color.background },
+    ],
+    [color.border, color.background],
+  );
+
   return (
-    <Box
-      style={[
-        styles.actionBar,
-        { borderTopColor: color.border, backgroundColor: color.background },
-      ]}
-    >
+    <Box style={actionBarStyle}>
       <Button
         variant="secondary"
         size="large"
-        label={isCopied ? 'Copied' : 'Copy Full Translation'}
+        label={isCopied ? "Copied" : "Copy Full Translation"}
         onPress={onCopyAll}
       />
     </Box>

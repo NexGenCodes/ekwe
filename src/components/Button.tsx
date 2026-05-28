@@ -1,22 +1,27 @@
-import * as Haptics from 'expo-haptics';
-import { Loader } from 'lucide-react-native';
-import React, { useRef, useEffect } from 'react';
+import * as Haptics from "expo-haptics";
+import { Loader } from "lucide-react-native";
+import React, { useRef, useEffect } from "react";
 import {
   Animated,
   Easing,
   StyleProp,
   TextStyle,
   ViewStyle,
-} from 'react-native';
+} from "react-native";
 
-import { Box, Pressable, Text } from '@/components/ui';
-import { borderRadius, opacity, interaction, spinnerSize } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { typography } from '@/constants/typography';
-import { useTheme } from '@/hooks';
+import { Box, Pressable, Text } from "@/components/ui";
+import {
+  borderRadius,
+  opacity,
+  interaction,
+  spinnerSize,
+} from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { typography } from "@/constants/typography";
+import { useTheme } from "@/hooks";
 
-type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost';
-type ButtonSize = 'small' | 'medium' | 'large' | 'md';
+type ButtonVariant = "primary" | "secondary" | "outline" | "ghost";
+type ButtonSize = "small" | "medium" | "large" | "md";
 
 export interface ButtonProps {
   label: string;
@@ -37,13 +42,14 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export const Button = ({
   label,
-  variant = 'primary',
-  size = 'medium',
+  variant = "primary",
+  size = "medium",
   leftIcon,
   rightIcon,
   loading = false,
   disabled = false,
   onPress,
+  style,
   labelStyle,
   accessibilityLabel,
   accessibilityHint,
@@ -71,7 +77,7 @@ export const Button = ({
 
   const spinDeg = spinAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
+    outputRange: ["0deg", "360deg"],
   });
 
   const handlePressIn = (): void => {
@@ -105,31 +111,31 @@ export const Button = ({
 
   const variantStyles = function (): VariantStyles {
     switch (variant) {
-      case 'primary':
+      case "primary":
         return {
           container: { backgroundColor: color.secondary },
           text: { color: color.onSecondary },
           spinner: color.onSecondary,
         };
-      case 'secondary':
+      case "secondary":
         return {
           container: { backgroundColor: `${color.secondary}1A` },
           text: { color: color.secondary },
           spinner: color.secondary,
         };
-      case 'outline':
+      case "outline":
         return {
           container: {
-            backgroundColor: 'transparent',
-            borderWidth: 1.5,
+            backgroundColor: "transparent",
+            borderWidth: 1,
             borderColor: color.secondary,
           },
           text: { color: color.secondary },
           spinner: color.secondary,
         };
-      case 'ghost':
+      case "ghost":
         return {
-          container: { backgroundColor: 'transparent' },
+          container: { backgroundColor: "transparent" },
           text: { color: color.secondary },
           spinner: color.secondary,
         };
@@ -138,7 +144,7 @@ export const Button = ({
 
   const sizeStyles = function (): SizeStyles {
     switch (size) {
-      case 'small':
+      case "small":
         return {
           container: {
             paddingVertical: spacing.sm,
@@ -147,7 +153,7 @@ export const Button = ({
           },
           text: { fontFamily: typography.label.fontFamily },
         };
-      case 'large':
+      case "large":
         return {
           container: {
             paddingVertical: spacing.md,
@@ -160,8 +166,8 @@ export const Button = ({
             letterSpacing: -0.2,
           },
         };
-      case 'medium':
-      case 'md':
+      case "medium":
+      case "md":
       default:
         return {
           container: {
@@ -182,15 +188,16 @@ export const Button = ({
       disabled={disabled || loading}
       style={[
         {
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
           borderRadius: borderRadius.xl,
           opacity: disabled ? opacity.disabled : 1,
           transform: [{ scale: scaleAnim }],
         },
         variantStyles().container,
         sizeStyles().container,
+        style,
       ]}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || label}
@@ -201,20 +208,20 @@ export const Button = ({
       {loading ? (
         <Animated.View style={{ transform: [{ rotate: spinDeg }] }}>
           <Loader
-            size={size === 'small' ? spinnerSize.sm : spinnerSize.md}
+            size={size === "small" ? spinnerSize.sm : spinnerSize.md}
             color={variantStyles().spinner}
             strokeWidth={spinnerSize.strokeWidth}
           />
         </Animated.View>
       ) : (
-        <Box style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Box style={{ flexDirection: "row", alignItems: "center" }}>
           {leftIcon && (
             <Box style={{ marginRight: spacing.sm }}>{leftIcon}</Box>
           )}
           <Text
-            variant={size === 'large' ? 'bodyLarge' : 'body'}
+            variant={size === "large" ? "bodyLarge" : "body"}
             style={[
-              { textAlign: 'center' },
+              { textAlign: "center" },
               variantStyles().text,
               sizeStyles().text,
               labelStyle,

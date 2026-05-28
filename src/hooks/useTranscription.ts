@@ -1,22 +1,12 @@
-import { useSelector } from '@legendapp/state/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSelector } from "@legendapp/state/react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { EkweError } from '@/constants/errors';
-import { ProcessedAudio } from '@/services/AudioProcessor';
-import { HistoryService } from '@/services/HistoryService';
-import {
-  TranscriptionService,
-  TranscriptionResult,
-} from '@/services/Transcription';
-import {
-  audio$,
-  audioActions,
-  settings$,
-  auth$,
-  RecordingState,
-} from '@/store';
-import { Result, ok, err } from '@/types/Result';
-import { logger } from '@/utils';
+import { EkweError } from "@/constants/errors";
+import { useTranscribeMutation } from "@/hooks/queries/useTranscribeMutation";
+import { ProcessedAudio } from "@/services/AudioProcessor";
+import { TranscriptionResult } from "@/services/transcribeAudio";
+import { audio$, audioActions, settings$, RecordingState } from "@/store";
+import { Result, ok, err } from "@/types/Result";
 
 export interface UseTranscriptionReturn {
   transcribe: (
@@ -30,7 +20,7 @@ export interface UseTranscriptionReturn {
 }
 
 export const useTranscription = (): UseTranscriptionReturn => {
-  const [isTranscribing, setIsTranscribing] = useState(false);
+  const transcribeMutation = useTranscribeMutation();
   const [detectedLang, setDetectedLang] = useState<string | null>(null);
   const [mismatch, setMismatch] = useState<{
     detected: string;
@@ -40,8 +30,6 @@ export const useTranscription = (): UseTranscriptionReturn => {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const sourceLang = useSelector(() => audio$.sourceLang.get());
-  const sessionId = useSelector(() => audio$.sessionId.get());
-  const userSession = useSelector(() => auth$.session.get());
   const selectedLanguages = useSelector(() =>
     settings$.selectedLanguages.get(),
   );
@@ -52,7 +40,6 @@ export const useTranscription = (): UseTranscriptionReturn => {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    setIsTranscribing(false);
   }, []);
 
   // Cleanup on unmount
@@ -70,27 +57,24 @@ export const useTranscription = (): UseTranscriptionReturn => {
       // Cancel previous if any
       cancelTranscription();
 
-      setIsTranscribing(true);
       setMismatch(null);
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      const lang = overrideLang ?? sourceLang ?? selectedLanguages[0] ?? 'en';
+      const lang = overrideLang ?? sourceLang ?? selectedLanguages[0] ?? "en";
 
       try {
-        const result = await TranscriptionService.transcribe(
+        const result = await transcribeMutation.mutateAsync({
           audio,
-          lang,
-          controller.signal,
-        );
+          sourceLang: lang,
+          signal: controller.signal,
+        });
 
         // Clear controller if we finished naturally
         if (abortControllerRef.current === controller) {
           abortControllerRef.current = null;
         }
-
-        setIsTranscribing(false);
 
         if (!result.ok) {
           setError(result.error);
@@ -105,17 +89,14 @@ export const useTranscription = (): UseTranscriptionReturn => {
         setRecordingState(RecordingState.Done);
 
         // Language mismatch detection
-        if (detected !== 'und' && detected !== lang && detected.length > 0) {
+        if (detected !== "und" && detected !== lang && detected.length > 0) {
           setMismatch({ detected, suggested: lang });
         }
 
-
-
         return ok(result.value);
       } catch (error: unknown) {
-        setIsTranscribing(false);
-        const errType = error instanceof Error ? error.name : '';
-        if (errType === 'AbortError') {
+        const errType = error instanceof Error ? error.name : "";
+        if (errType === "AbortError") {
           // Silent failure for aborted requests
           return err(EkweError.NETWORK_LOST);
         }
@@ -126,19 +107,18 @@ export const useTranscription = (): UseTranscriptionReturn => {
     [
       sourceLang,
       selectedLanguages,
-      sessionId,
-      userSession,
       cancelTranscription,
       setError,
       setRecordingState,
       appendTranscript,
+      transcribeMutation,
     ],
   );
 
   return {
     transcribe,
     cancelTranscription,
-    isTranscribing,
+    isTranscribing: transcribeMutation.isPending,
     detectedLang,
     mismatch,
   };

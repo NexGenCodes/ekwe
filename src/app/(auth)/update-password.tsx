@@ -1,21 +1,21 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Lock } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "expo-router";
+import { Lock } from "lucide-react-native";
+import React, { useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 
-import { AuthShell, ErrorBanner, Button, PasswordInput } from '@/components';
-import { Box, Text } from '@/components/ui';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
-import { resetPasswordSchema, ResetPasswordForm } from '@/schemas/auth';
-import { updatePassword } from '@/services/auth';
-import { settingsActions } from '@/store';
+import { AuthShell, ErrorBanner, Button, PasswordInput } from "@/components";
+import { Box, Text } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { resetPasswordSchema, ResetPasswordForm } from "@/schemas/auth";
+import { updatePassword } from "@/services/auth";
+import { settingsActions } from "@/store";
 
 export default function UpdatePasswordScreen(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const { color } = useTheme();
   const primary = color.primary;
   const router = useRouter();
@@ -23,18 +23,18 @@ export default function UpdatePasswordScreen(): React.JSX.Element {
 
   const { control, handleSubmit } = useForm<ResetPasswordForm>({
     resolver: zodResolver(resetPasswordSchema),
-    defaultValues: { password: '', confirmPassword: '' },
+    defaultValues: { password: "", confirmPassword: "" },
   });
 
   const onSubmit = async (data: ResetPasswordForm): Promise<void> => {
     setIsLoading(true);
-    setError('');
+    setError("");
     const r = await updatePassword(data.password);
     setIsLoading(false);
-    
+
     if (r.ok) {
       setOnboardingCompleted(true);
-      router.replace('/(tabs)');
+      router.replace("/(tabs)");
     } else if (r.error) {
       setError(r.error);
     }
@@ -42,15 +42,15 @@ export default function UpdatePasswordScreen(): React.JSX.Element {
 
   return (
     <AuthShell>
-      <Box style={{ alignItems: 'center', marginBottom: spacing['2xl'] }}>
+      <Box style={{ alignItems: "center", marginBottom: spacing["2xl"] }}>
         <Box
           style={{
             width: 64,
             height: 64,
-            borderRadius: borderRadius['2xl'],
+            borderRadius: borderRadius["2xl"],
             backgroundColor: `${primary}15`,
-            alignItems: 'center',
-            justifyContent: 'center',
+            alignItems: "center",
+            justifyContent: "center",
             marginBottom: spacing.md,
           }}
         >
@@ -59,26 +59,26 @@ export default function UpdatePasswordScreen(): React.JSX.Element {
         <Text
           variant="heading1"
           style={{
-            textAlign: 'center',
+            textAlign: "center",
           }}
         >
-          Create new password
+          Choose a new password
         </Text>
         <Text
           variant="body"
           style={{
             marginTop: spacing.sm,
-            textAlign: 'center',
+            textAlign: "center",
             color: color.muted,
           }}
         >
-          Your new password must be different from previous passwords.
+          Pick something you haven't used before.
         </Text>
       </Box>
 
       <Box>
         <ErrorBanner message={error} />
-        
+
         <Box style={{ gap: spacing.md, marginBottom: spacing.lg }}>
           <Controller
             control={control}
@@ -91,7 +91,7 @@ export default function UpdatePasswordScreen(): React.JSX.Element {
                 placeholder="New password"
                 returnKeyType="next"
                 error={fieldState.error?.message}
-                showStrength={true}
+                showStrength
                 autoFocus
               />
             )}

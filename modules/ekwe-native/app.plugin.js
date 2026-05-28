@@ -296,6 +296,36 @@ const withTranslucentStyle = (config) => {
 };
 
 /**
+ * Android: Removes the autofill highlight color from TextInputs
+ * so system autofill doesn't add a background tint on paste.
+ * Uses tools:targetApi to avoid build failure on minSdk < 26.
+ */
+const withAutofillHighlightFix = (config) => {
+  return withAndroidStyles(config, (config) => {
+    const styles = config.modResults.resources.style || [];
+    const resources = config.modResults.resources;
+
+    if (!resources.$) resources.$ = {};
+    resources.$['xmlns:tools'] = 'http://schemas.android.com/tools';
+
+    styles.forEach((style) => {
+      const parent = style.$.parent || '';
+      if (parent.includes('Theme.AppCompat') || parent.includes('Theme.Material')) {
+        if (!style.item) style.item = [];
+        if (!style.item.some((i) => i.$.name === 'android:autofilledHighlight')) {
+          style.item.push({
+            $: { name: 'android:autofilledHighlight' },
+            _: '@android:color/transparent',
+          });
+          style.$['tools:targetApi'] = '26';
+        }
+      }
+    });
+    return config;
+  });
+};
+
+/**
  * Combined plugin for managing all custom native Ekwe logic.
  */
 const withEkweNativePermissionsAndServices = (config) => {
@@ -349,7 +379,7 @@ const withEkweNativePermissionsAndServices = (config) => {
   updatedConfig = withIosAppGroup(updatedConfig);
   updatedConfig = withIosShareExtension(updatedConfig);
   updatedConfig = withNitroIOSAppDelegate(updatedConfig);
-
+  updatedConfig = withAutofillHighlightFix(updatedConfig);
   return updatedConfig;
 };
 

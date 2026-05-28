@@ -1,30 +1,30 @@
-import { FlashList } from '@shopify/flash-list';
-import * as Haptics from 'expo-haptics';
-import { Image as ExpoImage } from 'expo-image';
-import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
-import { TextInput, ScrollView, StyleSheet } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import { FlashList } from "@shopify/flash-list";
+import * as Haptics from "expo-haptics";
+import { Image as ExpoImage } from "expo-image";
+import { useRouter } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
+import { TextInput, ScrollView, StyleSheet } from "react-native";
+import Animated, { FadeIn } from "react-native-reanimated";
 
-import { CloseIcon } from '@/assets/icons/CloseIcon';
-import { DrumIcon } from '@/assets/icons/DrumIcon';
-import { SearchIcon } from '@/assets/icons/SearchIcon';
-import { HistoryItem, EmptyState, IconContainer } from '@/components';
-import { Box, Text, Pressable } from '@/components/ui';
-import { duration, shadows } from '@/constants';
-import { borderRadius, iconSize } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { typography } from '@/constants/typography';
-import { useHistory, useHistorySearch, useTheme } from '@/hooks';
-import { HistoryFilterOption } from '@/hooks/useHistorySearch';
-import { SyncService } from '@/services/SyncService';
-import { HistoryEntry, auth$ } from '@/store';
-import { isIOS, logger } from '@/utils';
+import { CloseIcon } from "@/assets/icons/CloseIcon";
+import { DrumIcon } from "@/assets/icons/DrumIcon";
+import { SearchIcon } from "@/assets/icons/SearchIcon";
+import { HistoryItem, EmptyState, IconContainer } from "@/components";
+import { Box, Text, Pressable } from "@/components/ui";
+import { duration, shadows } from "@/constants";
+import { borderRadius, iconSize } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { typography } from "@/constants/typography";
+import { useHistory, useHistorySearch, useTheme } from "@/hooks";
+import { HistoryFilterOption } from "@/hooks/useHistorySearch";
+import { SyncService } from "@/services/SyncService";
+import { HistoryEntry, auth$ } from "@/store";
+import { isIOS, logger } from "@/utils";
 
 const FILTER_OPTIONS: HistoryFilterOption[] = [
-  'all',
-  'transcription',
-  'translation',
+  "all",
+  "transcription",
+  "translation",
 ];
 
 export default function HistoryScreen(): React.JSX.Element {
@@ -57,7 +57,7 @@ export default function HistoryScreen(): React.JSX.Element {
           SyncService.drain(),
         ]);
       } catch (err) {
-        logger.error('[history] Pull to refresh failed:', err);
+        logger.error("[history] Pull to refresh failed:", err);
       }
     }
 
@@ -66,19 +66,19 @@ export default function HistoryScreen(): React.JSX.Element {
 
   // When searching/filtering, use filteredEntries flat.
   // When browsing, use the date-grouped buckets from useHistory.
-  const isGrouped = !isSearching && filter === 'all' && query.length === 0;
+  const isGrouped = !isSearching && filter === "all" && query.length === 0;
 
   const handleEntryPress = useCallback(
     (entry: HistoryEntry): void => {
       router.push({
-        pathname: '/result',
+        pathname: "/result",
         params: {
           entryId: entry.id,
           transcript: entry.transcript,
           sourceLang: entry.sourceLang,
           targetLang: entry.targetLang,
           duration: entry.duration,
-          isHistoryReplay: 'true',
+          isHistoryReplay: "true",
         },
       });
     },
@@ -87,27 +87,27 @@ export default function HistoryScreen(): React.JSX.Element {
 
   /** Flat list data: interleave section headers for grouped mode */
   type ListItem =
-    | { type: 'header'; title: string }
-    | { type: 'entry'; entry: HistoryEntry };
+    | { type: "header"; title: string }
+    | { type: "entry"; entry: HistoryEntry };
 
   const listData = useMemo((): ListItem[] => {
     if (isGrouped) {
       const result: ListItem[] = [];
       const buckets = [
-        { title: 'Today', data: todayEntries },
-        { title: 'Yesterday', data: yesterdayEntries },
-        { title: 'Earlier', data: earlierEntries },
+        { title: "Today", data: todayEntries },
+        { title: "Yesterday", data: yesterdayEntries },
+        { title: "Earlier", data: earlierEntries },
       ];
       for (const bucket of buckets) {
         if (bucket.data.length === 0) continue;
-        result.push({ type: 'header', title: bucket.title });
+        result.push({ type: "header", title: bucket.title });
         for (const e of bucket.data) {
-          result.push({ type: 'entry', entry: e });
+          result.push({ type: "entry", entry: e });
         }
       }
       return result;
     }
-    return filteredEntries.map((e) => ({ type: 'entry' as const, entry: e }));
+    return filteredEntries.map((e) => ({ type: "entry" as const, entry: e }));
   }, [
     isGrouped,
     todayEntries,
@@ -118,14 +118,14 @@ export default function HistoryScreen(): React.JSX.Element {
 
   const renderListItem = useCallback(
     ({ item }: { item: ListItem }): React.ReactElement => {
-      if (item.type === 'header') {
+      if (item.type === "header") {
         return (
           <Box style={styles.sectionHeader}>
             <Text
               variant="label"
               style={{
                 color: color.muted,
-                textTransform: 'uppercase',
+                textTransform: "uppercase",
                 letterSpacing: 1,
               }}
             >
@@ -145,6 +145,19 @@ export default function HistoryScreen(): React.JSX.Element {
       );
     },
     [handleEntryPress, deleteEntry, color.muted],
+  );
+
+  const listFooter = useCallback(
+    (): React.ReactElement => (
+      <Box style={styles.listFooter}>
+        {!isSearching && !hasMore && listData.length > 0 ? (
+          <Text variant="caption" style={{ color: color.muted }}>
+            You've reached the end.
+          </Text>
+        ) : null}
+      </Box>
+    ),
+    [isSearching, hasMore, listData.length, color.muted],
   );
 
   return (
@@ -179,7 +192,7 @@ export default function HistoryScreen(): React.JSX.Element {
               <Pressable
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setQuery('');
+                  setQuery("");
                 }}
                 hitSlop={spacing.md}
                 style={({ pressed }) => [
@@ -263,44 +276,33 @@ export default function HistoryScreen(): React.JSX.Element {
                   )}
                 </IconContainer>
               }
-              title={query.length > 0 ? 'No Matches Found' : 'Silent Library'}
+              title={query.length > 0 ? "No Matches Found" : "Silent Library"}
               subtitle={
                 query.length > 0
                   ? "We couldn't find any transcripts matching your search."
-                  : 'Your voice note history will appear here.'
+                  : "Your voice note history will appear here."
               }
             />
           </Box>
         </Animated.View>
       ) : (
         <Box style={styles.listContainer}>
-          <FlashList
+          <FlashList<ListItem>
             data={listData}
-            // @ts-ignore — ListItem union type; renderItem handles both branches
             renderItem={renderListItem}
             keyExtractor={(item, index) =>
-              item.type === 'header'
+              item.type === "header"
                 ? `header-${item.title}`
                 : `entry-${item.entry.id || index}`
             }
             getItemType={(item) => item.type}
-            ListFooterComponent={
-              <Box style={styles.listFooter}>
-                {!isSearching && !hasMore && listData.length > 0 && (
-                  <Text variant="caption" style={{ color: color.muted }}>
-                    You've reached the end.
-                  </Text>
-                )}
-              </Box>
-            }
+            ListFooterComponent={listFooter}
             onEndReached={!isSearching && hasMore ? loadMore : undefined}
             onEndReachedThreshold={0.5}
             refreshing={isRefreshing}
             onRefresh={onRefresh}
             showsVerticalScrollIndicator={false}
             contentInsetAdjustmentBehavior="automatic"
-            // @ts-ignore - estimatedItemSize required by FlashList at runtime
-            estimatedItemSize={120}
           />
         </Box>
       )}
@@ -313,17 +315,17 @@ const styles = StyleSheet.create({
   entryContainer: { marginBottom: spacing.sm },
   topSection: { paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
   searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.sm,
     marginTop: spacing.xs,
   },
   searchContainer: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: spacing.md,
-    height: spacing['3xl'],
+    height: spacing["3xl"],
     borderRadius: borderRadius.lg,
     borderWidth: 1,
     ...shadows.soft,
@@ -359,17 +361,17 @@ const styles = StyleSheet.create({
   emptyStateContainer: {
     flex: 1,
     paddingHorizontal: spacing.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: spacing['6xl'],
+    alignItems: "center",
+    justifyContent: "center",
+    paddingBottom: spacing["6xl"],
   },
   emptyStateCard: {
-    width: '100%',
-    padding: spacing['2xl'],
-    borderRadius: borderRadius['2xl'],
-    alignItems: 'center',
+    width: "100%",
+    padding: spacing["2xl"],
+    borderRadius: borderRadius["2xl"],
+    alignItems: "center",
     borderWidth: 1,
-    borderStyle: 'dashed',
+    borderStyle: "dashed",
   },
   listContainer: {
     flex: 1,
@@ -377,8 +379,8 @@ const styles = StyleSheet.create({
   },
   listFooter: {
     paddingVertical: spacing.xl,
-    paddingBottom: spacing['6xl'],
-    alignItems: 'center',
+    paddingBottom: spacing["6xl"],
+    alignItems: "center",
   },
   loadMoreButton: {
     paddingVertical: spacing.sm,

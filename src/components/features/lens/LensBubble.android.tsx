@@ -1,7 +1,7 @@
-import { useSelector } from '@legendapp/state/react';
-import React, { useEffect, useRef, useMemo } from 'react';
-import { Dimensions } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useSelector } from "@legendapp/state/react";
+import React, { useEffect, useRef, useMemo } from "react";
+import { Dimensions } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -13,20 +13,20 @@ import Animated, {
   runOnJS,
   useAnimatedReaction,
   SharedValue,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { CheckmarkIcon } from '@/assets/icons/CheckmarkIcon';
-import { ExclamationIcon } from '@/assets/icons/ExclamationIcon';
-import { MicrophoneIcon } from '@/assets/icons/MicrophoneIcon';
-import { SpinnerIcon } from '@/assets/icons/SpinnerIcon';
-import { Box } from '@/components/ui';
-import { bubbleColors } from '@/constants/colors';
-import { useBubble, useMetering, useTheme } from '@/hooks';
-import { audio$, audioActions, settings$, RecordingState } from '@/store';
-import { BubbleNative } from '@/utils/BubbleModule';
+import { CheckmarkIcon } from "@/assets/icons/CheckmarkIcon";
+import { ExclamationIcon } from "@/assets/icons/ExclamationIcon";
+import { MicrophoneIcon } from "@/assets/icons/MicrophoneIcon";
+import { SpinnerIcon } from "@/assets/icons/SpinnerIcon";
+import { Box } from "@/components/ui";
+import { bubbleColors } from "@/constants/colors";
+import { useBubble, useMetering, useTheme } from "@/hooks";
+import { audio$, audioActions, settings$, RecordingState } from "@/store";
+import { BubbleNative } from "@/utils/BubbleModule";
 
 const BUBBLE_SIZE = 52;
-const SCREEN = Dimensions.get('window');
+const SCREEN = Dimensions.get("window");
 const DEFAULT_X = SCREEN.width - BUBBLE_SIZE - 16;
 const DEFAULT_Y = SCREEN.height * 0.3;
 
@@ -274,22 +274,22 @@ export function LensBubble(): React.ReactElement | null {
   return (
     <Box
       style={{
-        position: 'absolute',
+        position: "absolute",
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        pointerEvents: 'none',
+        pointerEvents: "none",
       }}
     >
       <Animated.View
         style={[
           {
-            position: 'absolute',
+            position: "absolute",
             width: BUBBLE_SIZE,
             height: BUBBLE_SIZE,
             borderRadius: BUBBLE_SIZE / 2,
-            borderWidth: 1.5,
+            borderWidth: 1,
             borderColor: bubbleColorValue,
           },
           bubbleAnimatedStyle,
@@ -300,13 +300,13 @@ export function LensBubble(): React.ReactElement | null {
         <Animated.View
           style={[
             {
-              position: 'absolute',
+              position: "absolute",
               width: BUBBLE_SIZE,
               height: BUBBLE_SIZE,
               borderRadius: BUBBLE_SIZE / 2,
               backgroundColor: bubbleColorValue,
-              alignItems: 'center',
-              justifyContent: 'center',
+              alignItems: "center",
+              justifyContent: "center",
             },
             bubbleAnimatedStyle,
           ]}
@@ -315,7 +315,7 @@ export function LensBubble(): React.ReactElement | null {
             <MicrophoneIcon size={20} color={onPrimaryColor} />
           )}
           {recordingState === RecordingState.Recording && (
-            <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Box style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
               {history.map((h, i) => (
                 <MeterBar key={i} value={h} color={onPrimaryColor} />
               ))}

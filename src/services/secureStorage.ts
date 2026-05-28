@@ -1,38 +1,39 @@
-import { setItem, getItem, deleteItem } from 'react-native-sensitive-info';
+import * as SecureStore from "expo-secure-store";
 
-import { logger } from '@/utils';
+import { logger } from "@/utils";
 
-// Configuration for sensitive-info v6 (Nitro)
-const secureStoreConfig = {
-  service: 'ekwe_secure_storage',
-  accessControl: 'none' as const, // Use 'none' to avoid biometric prompts on every app boot/auth check
+const secureStoreOptions: SecureStore.SecureStoreOptions = {
+  keychainService: "ekwe_secure_storage",
 };
 
 export const secureStorage = {
   getItem: async (key: string): Promise<string | null> => {
     try {
-      const item = await getItem(key, secureStoreConfig);
-      return item?.value || null;
+      return await SecureStore.getItemAsync(key, secureStoreOptions);
     } catch {
       // Keystore corrupted or locked: purge it to prevent infinite logout loops
-      await deleteItem(key, secureStoreConfig).catch(() => {});
+      await SecureStore.deleteItemAsync(key, secureStoreOptions).catch(
+        () => {},
+      );
       return null;
     }
   },
   setItem: async (key: string, value: string): Promise<void> => {
     try {
-      await setItem(key, value, secureStoreConfig);
+      await SecureStore.setItemAsync(key, value, secureStoreOptions);
     } catch (e) {
-      logger.error('[secureStorage] Failed to set item:', e);
+      logger.error("[secureStorage] Failed to set item:", e);
       // Fallback: purge if corrupted
-      await deleteItem(key, secureStoreConfig).catch(() => {});
+      await SecureStore.deleteItemAsync(key, secureStoreOptions).catch(
+        () => {},
+      );
     }
   },
   removeItem: async (key: string): Promise<void> => {
     try {
-      await deleteItem(key, secureStoreConfig);
+      await SecureStore.deleteItemAsync(key, secureStoreOptions);
     } catch (e) {
-      logger.error('[secureStorage] Failed to remove item:', e);
+      logger.error("[secureStorage] Failed to remove item:", e);
     }
   },
 };

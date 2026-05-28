@@ -1,15 +1,15 @@
-import { useSelector } from '@legendapp/state/react';
-import { Globe } from 'lucide-react-native';
-import React, { useMemo } from 'react';
+import { useSelector } from "@legendapp/state/react";
+import { Globe } from "lucide-react-native";
+import React, { useMemo } from "react";
 
-import { Box, Text, Pressable } from '@/components/ui';
-import { ECHO_CONSTANTS } from '@/constants/echo';
-import { LANGUAGES, FLAG_MAP } from '@/constants/languages';
-import { iconSize, opacity } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme, usePermissions } from '@/hooks';
-import { settings$ } from '@/store';
-import { AppAlert } from '@/utils';
+import { Box, Text, Pressable } from "@/components/ui";
+import { ECHO_CONSTANTS } from "@/constants/echo";
+import { LANGUAGES, FLAG_MAP } from "@/constants/languages";
+import { iconSize, opacity } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme, usePermissions } from "@/hooks";
+import { settings$ } from "@/store";
+import { AppAlert } from "@/utils";
 
 interface LanguageGridProps {
   selectedLang: string;
@@ -42,8 +42,8 @@ export const LanguageGrid: React.FC<LanguageGridProps> = ({
   return (
     <Box
       style={{
-        flexDirection: 'row',
-        flexWrap: 'wrap',
+        flexDirection: "row",
+        flexWrap: "wrap",
         gap: ECHO_CONSTANTS.LANGUAGE_GRID.GAP,
       }}
     >
@@ -53,12 +53,12 @@ export const LanguageGrid: React.FC<LanguageGridProps> = ({
           feedback="opacity"
           onPress={() => onSelect(lang!.code)}
           style={{
-            width: '30%',
+            width: "30%",
             aspectRatio: 1,
             borderRadius: ECHO_CONSTANTS.LANGUAGE_GRID.CARD_RADIUS,
-            borderWidth: 1.5,
-            alignItems: 'center',
-            justifyContent: 'center',
+            borderWidth: 1,
+            alignItems: "center",
+            justifyContent: "center",
             padding: spacing.md,
             backgroundColor: color.background,
             borderColor:
@@ -66,11 +66,11 @@ export const LanguageGrid: React.FC<LanguageGridProps> = ({
           }}
         >
           <Text variant="heading2" style={{ marginBottom: spacing.xs }}>
-            {FLAG_MAP[lang!.code] || '🌐'}
+            {FLAG_MAP[lang!.code] || "🌐"}
           </Text>
           <Text
             variant="caption"
-            style={{ textAlign: 'center', color: color.foreground }}
+            style={{ textAlign: "center", color: color.foreground }}
           >
             {lang!.englishName}
           </Text>
@@ -81,23 +81,23 @@ export const LanguageGrid: React.FC<LanguageGridProps> = ({
         feedback="opacity"
         onPress={() => {
           if (canUseAuto) {
-            onSelect('auto');
+            onSelect("auto");
           } else {
             AppAlert.info(
-              'Ekwe Pro',
-              'Auto-detecting languages is a premium feature. Upgrade to Pro to use this.',
+              "Ekwe Pro",
+              "Auto-detecting languages is a premium feature. Upgrade to Pro to use this.",
             );
           }
         }}
         style={{
-          width: '30%',
+          width: "30%",
           aspectRatio: 1,
           borderRadius: ECHO_CONSTANTS.LANGUAGE_GRID.CARD_RADIUS,
-          borderWidth: 1.5,
-          alignItems: 'center',
-          justifyContent: 'center',
+          borderWidth: 1,
+          alignItems: "center",
+          justifyContent: "center",
           padding: spacing.md,
-          borderStyle: 'dashed',
+          borderStyle: "dashed",
           backgroundColor: color.background,
           borderColor: color.secondary,
           opacity: canUseAuto ? 1 : opacity.disabled,
@@ -110,7 +110,7 @@ export const LanguageGrid: React.FC<LanguageGridProps> = ({
         />
         <Text
           variant="caption"
-          style={{ textAlign: 'center', color: color.secondary }}
+          style={{ textAlign: "center", color: color.secondary }}
         >
           Auto-Detect
         </Text>

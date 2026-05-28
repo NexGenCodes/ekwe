@@ -1,18 +1,18 @@
-import { useRouter, Link } from 'expo-router';
-import { Mic, Globe, ShieldCheck, ChevronRight } from 'lucide-react-native';
-import React, { useEffect, useMemo } from 'react';
-import { useWindowDimensions } from 'react-native';
+import { useRouter, Link } from "expo-router";
+import { Mic, Globe, ShieldCheck, ChevronRight } from "lucide-react-native";
+import React, { useEffect, useMemo } from "react";
+import { useWindowDimensions } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   withSpring,
   withDelay,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { Button, EkweLogo, Card, IconContainer } from '@/components';
-import { Box, Text, SafeArea, ScrollArea } from '@/components/ui';
-import { useTheme, useTokens } from '@/hooks';
+import { Button, EkweLogo, Card, IconContainer } from "@/components";
+import { Box, Text, ScrollArea } from "@/components/ui";
+import { useTheme, useTokens } from "@/hooks";
 
 interface FeatureItemProps {
   icon: React.ReactNode;
@@ -67,8 +67,8 @@ const FeatureCard = ({
         variant="default"
         padding="lg"
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
+          flexDirection: "row",
+          alignItems: "center",
         }}
       >
         <IconContainer
@@ -106,28 +106,28 @@ export default function WelcomeScreen(): React.ReactElement {
       containerContent: {
         paddingHorizontal: spacing.lg,
         paddingBottom: spacing.lg,
-        justifyContent: 'space-between',
+        justifyContent: "space-between",
       } as const,
-      header: { alignItems: 'center', marginBottom: spacing.xl } as const,
+      header: { alignItems: "center", marginBottom: spacing.xl } as const,
       mainHeading: {
-        textAlign: 'center',
+        textAlign: "center",
         paddingHorizontal: spacing.md,
       } as const,
       featuresContainer: { gap: spacing.lg } as const,
       bottomSection: {
-        width: '100%',
+        width: "100%",
         paddingBottom: spacing.xl,
         marginTop: spacing.xl,
       } as const,
       disclaimer: {
-        textAlign: 'center',
+        textAlign: "center",
         marginTop: spacing.xl,
-        width: '100%',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexWrap: 'nowrap',
-        overflow: 'hidden',
+        width: "100%",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        flexWrap: "nowrap",
+        overflow: "hidden",
       } as const,
     }),
     [spacing],
@@ -158,18 +158,18 @@ export default function WelcomeScreen(): React.ReactElement {
     () => [
       {
         icon: <Mic size={22} color={iconColor} strokeWidth={2.5} />,
-        title: 'Neural Capture',
-        description: 'Ultra-low latency voice note translation.',
+        title: "Speak Freely",
+        description: "Your words, translated as you speak.",
       },
       {
         icon: <Globe size={22} color={iconColor} strokeWidth={2.5} />,
-        title: 'Global Bridge',
-        description: 'Support for 100+ languages across all apps.',
+        title: "Any Language",
+        description: "Speak to anyone, anywhere — 100+ languages.",
       },
       {
         icon: <ShieldCheck size={22} color={iconColor} strokeWidth={2.5} />,
-        title: 'Obsidian Security',
-        description: 'On-device processing for absolute privacy.',
+        title: "Private by Design",
+        description: "Everything stays on your device. No cloud, no copies.",
       },
     ],
     [iconColor],
@@ -177,13 +177,13 @@ export default function WelcomeScreen(): React.ReactElement {
 
   const handleStart = (): void => {
     // Navigate to Language Selection; onboarding is NOT complete until Auth is finalized
-    router.replace('/language');
+    router.replace("/language");
   };
 
   const { height: SCREEN_HEIGHT } = useWindowDimensions();
 
   return (
-    <SafeArea style={{ flex: 1, backgroundColor: color.background }}>
+    <Box style={{ flex: 1, backgroundColor: color.background }}>
       <ScrollArea
         style={{ flex: 1 }}
         contentContainerStyle={styles.containerContent}
@@ -218,11 +218,15 @@ export default function WelcomeScreen(): React.ReactElement {
             label="Get started"
             onPress={handleStart}
             rightIcon={
-              <ChevronRight size={24} color={color.onSecondary} strokeWidth={3} />
+              <ChevronRight
+                size={24}
+                color={color.onSecondary}
+                strokeWidth={3}
+              />
             }
           />
         </Box>
       </ScrollArea>
-    </SafeArea>
+    </Box>
   );
 }

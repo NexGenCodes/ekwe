@@ -18,7 +18,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.ekwe",
+      "bundleIdentifier": "com.ekwe.app",
       "userInterfaceStyle": "automatic"
     },
     "android": {
@@ -27,7 +27,7 @@
         "backgroundColor": "#F8FAFC",
         "monochromeImage": "./assets/adaptive-icon.png"
       },
-      "package": "com.anonymous.ekwe"
+      "package": "com.ekwe.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -44,15 +44,6 @@
           }
         }
       ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/notification-icon-light.png",
-          "color": "#2563EB"
-        }
-      ],
-
-      "expo-widgets",
       [
         "expo-build-properties",
         {
@@ -94,7 +85,6 @@
       ],
       "./modules/ekwe-native/app.plugin.js",
       "expo-router",
-      "@react-native-google-signin/google-signin/app.plugin.js",
       "expo-image",
       "@sentry/react-native"
     ],

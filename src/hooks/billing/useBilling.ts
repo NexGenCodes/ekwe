@@ -1,11 +1,13 @@
-import { useSelector } from '@legendapp/state/react';
-import * as WebBrowser from 'expo-web-browser';
-import { useState, useMemo } from 'react';
+import { useSelector } from "@legendapp/state/react";
+import { useMutation } from "@tanstack/react-query";
+import * as WebBrowser from "expo-web-browser";
+import { useState, useMemo } from "react";
 
-import { BILLING_PLANS, DISPLAY_PRICING } from '@/constants/billing';
-import { supabase } from '@/services/supabase';
-import { auth$, settings$ } from '@/store';
-import { AppAlert } from '@/utils/alert';
+import { BILLING_PLANS, DISPLAY_PRICING } from "@/constants/billing";
+import { supabase } from "@/services/supabase";
+import { auth$, settings$ } from "@/store";
+import { AppAlert } from "@/utils/alert";
+import { fetchWithRetry } from "@/utils/networkUtils";
 
 export interface UseBillingReturn {
   isPro: boolean;
@@ -23,43 +25,44 @@ export function useBilling(): UseBillingReturn {
   const isPro = useSelector(() => auth$.isPro.get());
   const currency = useSelector(() => settings$.currency.get());
   const [isAnnual, setIsAnnual] = useState(true);
-  const [loading, setLoading] = useState(false);
 
   const activePricing = useMemo(() => {
     return DISPLAY_PRICING[currency] || DISPLAY_PRICING.USD;
   }, [currency]);
 
-  const handleUpgrade = async (): Promise<void> => {
-    const session = auth$.session.get();
-    if (!session) {
-      AppAlert.info(
-        'Account Required',
-        'Please sign in or create an account to upgrade to Ekwe Pro.',
-      );
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const workerUrl = process.env.EXPO_PUBLIC_WORKER_URL ?? '';
+  const checkoutMutation = useMutation({
+    mutationFn: async ({
+      planId,
+      currency,
+      accessToken,
+    }: {
+      planId: string;
+      currency: string;
+      accessToken: string;
+    }) => {
+      const workerUrl = process.env.EXPO_PUBLIC_WORKER_URL ?? "";
       if (!workerUrl) {
-        throw new Error('API server configuration is missing.');
+        throw new Error("API server configuration is missing.");
       }
 
-      const response = await fetch(`${workerUrl}/checkout/initialize`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
+      const response = await fetchWithRetry(
+        `${workerUrl}/checkout/initialize`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            plan_id: planId,
+            currency,
+          }),
+          retries: 2,
         },
-        body: JSON.stringify({
-          plan_id: isAnnual ? 'pro_annual' : 'pro_monthly',
-          currency,
-        }),
-      });
+      );
 
       if (!response.ok) {
-        let errMessage = 'Failed to initialize secure checkout';
+        let errMessage = "Failed to initialize secure checkout";
         try {
           const body = (await response.json()) as { message?: string };
           if (body.message) {
@@ -76,45 +79,62 @@ export function useBilling(): UseBillingReturn {
         reference: string;
       };
       if (!resData.url) {
-        throw new Error('Invalid checkout URL received from server.');
+        throw new Error("Invalid checkout URL received from server.");
       }
 
-      // Open the payment gateway URL in the in-app WebBrowser
-      await WebBrowser.openBrowserAsync(resData.url, {
+      return resData;
+    },
+  });
+
+  const handleUpgrade = async (): Promise<void> => {
+    const session = auth$.session.get();
+    if (!session) {
+      AppAlert.info(
+        "Account Required",
+        "Please sign in or create an account to upgrade to Ekwe Pro.",
+      );
+      return;
+    }
+
+    try {
+      const data = await checkoutMutation.mutateAsync({
+        planId: isAnnual ? "pro_annual" : "pro_monthly",
+        currency,
+        accessToken: session.access_token,
+      });
+
+      await WebBrowser.openBrowserAsync(data.url, {
         showTitle: true,
         enableBarCollapsing: true,
       });
 
-      // After user closes the checkout browser, refresh their Supabase session to sync is_pro state
-      const { data, error } = await supabase.auth.refreshSession();
+      const { data: sessionData, error } = await supabase.auth.refreshSession();
       if (error) {
         throw error;
       }
 
-      const updatedIsPro = data.session?.user?.app_metadata?.is_pro === true;
+      const updatedIsPro =
+        sessionData.session?.user?.app_metadata?.is_pro === true;
       if (updatedIsPro) {
         AppAlert.success(
-          'Welcome to Pro!',
-          'Your payment was processed successfully. Thank you for supporting Ekwe!',
+          "Welcome to Pro!",
+          "Your payment was processed successfully. Thank you for supporting Ekwe!",
         );
       } else {
-        // Fallback info if the webhook hasn't finished processing or failed
         AppAlert.info(
-          'Syncing Status',
-          'We are verifying your transaction. If your account is not upgraded in a minute, please contact support.',
+          "Syncing Status",
+          "We are verifying your transaction. If your account is not upgraded in a minute, please contact support.",
         );
       }
     } catch (err: unknown) {
-      AppAlert.error('Upgrade Failed', err);
-    } finally {
-      setLoading(false);
+      AppAlert.error("Upgrade Failed", err);
     }
   };
 
   const handleManage = async (): Promise<void> => {
     AppAlert.info(
-      'Manage Subscription',
-      'You can manage your subscription from your device settings or contact support at support@ekwe.app.',
+      "Manage Subscription",
+      "You can manage your subscription from your device settings or contact support at support@ekwe.app.",
     );
   };
 
@@ -140,6 +160,6 @@ export function useBilling(): UseBillingReturn {
     freePlan,
     proPlan,
     currentPrice,
-    loading,
+    loading: checkoutMutation.isPending,
   };
 }

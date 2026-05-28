@@ -1,5 +1,5 @@
-import * as Haptics from 'expo-haptics';
-import React, { useEffect } from 'react';
+import * as Haptics from "expo-haptics";
+import React, { useEffect } from "react";
 import Animated, {
   interpolate,
   interpolateColor,
@@ -7,13 +7,13 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { Pressable, Text } from '@/components/ui';
-import { duration, spring } from '@/constants';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Pressable, Text } from "@/components/ui";
+import { duration, spring } from "@/constants";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 interface TabBarIconProps {
   color: string;
@@ -71,7 +71,7 @@ export function CustomTabBarItem({
     backgroundColor: interpolateColor(
       progress.value,
       [0, 1],
-      ['transparent', `${color.secondary}22`],
+      ["transparent", `${color.secondary}22`],
     ),
     paddingHorizontal: interpolate(progress.value, [0, 1], [12, 18]),
   }));
@@ -95,8 +95,8 @@ export function CustomTabBarItem({
     <Animated.View
       style={[
         {
-          alignItems: 'center',
-          justifyContent: 'center',
+          alignItems: "center",
+          justifyContent: "center",
           marginHorizontal: spacing.xs,
         },
         containerStyle,
@@ -118,18 +118,18 @@ export function CustomTabBarItem({
         feedback="none"
         style={{
           flex: 1,
-          width: '100%',
+          width: "100%",
           minHeight: 48,
-          justifyContent: 'center',
-          alignItems: 'center',
+          justifyContent: "center",
+          alignItems: "center",
         }}
       >
         <Animated.View
           style={[
             {
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
               paddingVertical: spacing.md,
               borderRadius: borderRadius.full,
             },
@@ -137,10 +137,12 @@ export function CustomTabBarItem({
           ]}
         >
           <Animated.View style={iconStyle}>
-            {Icon && <Icon size={22} color={iconColor} focused={isFocused} />}
+            {Icon ? (
+              <Icon size={22} color={iconColor} focused={isFocused} />
+            ) : null}
           </Animated.View>
 
-          <Animated.View style={[{ overflow: 'hidden' }, labelStyle]}>
+          <Animated.View style={[{ overflow: "hidden" }, labelStyle]}>
             <Text
               variant="label"
               style={{

@@ -1,5 +1,5 @@
-import { Tier } from './types';
-import { logger } from './logger';
+import { logger } from "./logger";
+import { Tier } from "./types";
 
 /**
  * ─── Ekwe Worker Security Module ──────────────────────────────────
@@ -51,196 +51,196 @@ function getLimits(tier: Tier): LimitsFor {
 // set is rejected before it reaches an LLM provider.
 
 const VALID_LANG_CODES = new Set([
-  'auto',
-  'en',
-  'es',
-  'it',
-  'de',
-  'zh',
-  'fr',
-  'pt',
-  'ru',
-  'ja',
-  'ko',
-  'ar',
-  'hi',
-  'nl',
-  'pl',
-  'tr',
-  'sv',
-  'da',
-  'fi',
-  'nb',
-  'cs',
-  'sk',
-  'ro',
-  'hu',
-  'uk',
-  'el',
-  'he',
-  'th',
-  'vi',
-  'id',
-  'ms',
-  'bg',
-  'hr',
-  'sr',
-  'ca',
-  'lt',
-  'lv',
-  'et',
-  'sl',
-  'sq',
-  'mk',
-  'af',
-  'bn',
-  'fa',
-  'ur',
-  'sw',
-  'tl',
-  'ta',
-  'te',
-  'ml',
-  'mr',
-  'gu',
-  'pa',
-  'ne',
-  'si',
-  'km',
-  'lo',
-  'my',
-  'ka',
-  'yo',
-  'ig',
-  'ha',
-  'zu',
-  'so',
-  'am',
-  'az',
-  'uz',
-  'kk',
-  'mn',
-  'hy',
-  'jv',
-  'su',
-  'bs',
-  'is',
-  'ga',
-  'cy',
-  'gd',
-  'gl',
-  'eu',
-  'mt',
-  'xh',
-  'sn',
-  'st',
-  'ny',
-  'rw',
-  'mg',
-  'tk',
-  'ky',
-  'tg',
-  'ps',
-  'sd',
-  'mni',
-  'as',
-  'or',
+  "auto",
+  "en",
+  "es",
+  "it",
+  "de",
+  "zh",
+  "fr",
+  "pt",
+  "ru",
+  "ja",
+  "ko",
+  "ar",
+  "hi",
+  "nl",
+  "pl",
+  "tr",
+  "sv",
+  "da",
+  "fi",
+  "nb",
+  "cs",
+  "sk",
+  "ro",
+  "hu",
+  "uk",
+  "el",
+  "he",
+  "th",
+  "vi",
+  "id",
+  "ms",
+  "bg",
+  "hr",
+  "sr",
+  "ca",
+  "lt",
+  "lv",
+  "et",
+  "sl",
+  "sq",
+  "mk",
+  "af",
+  "bn",
+  "fa",
+  "ur",
+  "sw",
+  "tl",
+  "ta",
+  "te",
+  "ml",
+  "mr",
+  "gu",
+  "pa",
+  "ne",
+  "si",
+  "km",
+  "lo",
+  "my",
+  "ka",
+  "yo",
+  "ig",
+  "ha",
+  "zu",
+  "so",
+  "am",
+  "az",
+  "uz",
+  "kk",
+  "mn",
+  "hy",
+  "jv",
+  "su",
+  "bs",
+  "is",
+  "ga",
+  "cy",
+  "gd",
+  "gl",
+  "eu",
+  "mt",
+  "xh",
+  "sn",
+  "st",
+  "ny",
+  "rw",
+  "mg",
+  "tk",
+  "ky",
+  "tg",
+  "ps",
+  "sd",
+  "mni",
+  "as",
+  "or",
 ]);
 
 const LANGUAGE_NAMES: Record<string, string> = {
-  en: 'English',
-  es: 'Spanish',
-  it: 'Italian',
-  de: 'German',
-  zh: 'Chinese (Simplified)',
-  fr: 'French',
-  pt: 'Portuguese',
-  ru: 'Russian',
-  ja: 'Japanese',
-  ko: 'Korean',
-  ar: 'Arabic',
-  hi: 'Hindi',
-  nl: 'Dutch',
-  pl: 'Polish',
-  tr: 'Turkish',
-  sv: 'Swedish',
-  da: 'Danish',
-  fi: 'Finnish',
-  nb: 'Norwegian',
-  cs: 'Czech',
-  sk: 'Slovak',
-  ro: 'Romanian',
-  hu: 'Hungarian',
-  uk: 'Ukrainian',
-  el: 'Greek',
-  he: 'Hebrew',
-  th: 'Thai',
-  vi: 'Vietnamese',
-  id: 'Indonesian',
-  ms: 'Malay',
-  bg: 'Bulgarian',
-  hr: 'Croatian',
-  sr: 'Serbian',
-  ca: 'Catalan',
-  lt: 'Lithuanian',
-  lv: 'Latvian',
-  et: 'Estonian',
-  sl: 'Slovenian',
-  sq: 'Albanian',
-  mk: 'Macedonian',
-  af: 'Afrikaans',
-  bn: 'Bengali',
-  fa: 'Persian',
-  ur: 'Urdu',
-  sw: 'Swahili',
-  tl: 'Filipino',
-  ta: 'Tamil',
-  te: 'Telugu',
-  ml: 'Malayalam',
-  mr: 'Marathi',
-  gu: 'Gujarati',
-  pa: 'Punjabi',
-  ne: 'Nepali',
-  si: 'Sinhala',
-  km: 'Khmer',
-  lo: 'Lao',
-  my: 'Burmese',
-  ka: 'Georgian',
-  yo: 'Yoruba',
-  ig: 'Igbo',
-  ha: 'Hausa',
-  zu: 'Zulu',
-  so: 'Somali',
-  am: 'Amharic',
-  az: 'Azerbaijani',
-  uz: 'Uzbek',
-  kk: 'Kazakh',
-  mn: 'Mongolian',
-  hy: 'Armenian',
-  jv: 'Javanese',
-  su: 'Sundanese',
-  bs: 'Bosnian',
-  is: 'Icelandic',
-  ga: 'Irish',
-  cy: 'Welsh',
-  gd: 'Scottish Gaelic',
-  gl: 'Galician',
-  eu: 'Basque',
-  mt: 'Maltese',
-  xh: 'Xhosa',
-  sn: 'Shona',
-  st: 'Sesotho',
-  ny: 'Chichewa',
-  rw: 'Kinyarwanda',
-  mg: 'Malagasy',
-  tk: 'Turkmen',
-  ky: 'Kyrgyz',
-  tg: 'Tajik',
-  ps: 'Pashto',
-  sd: 'Sindhi',
-  mni: 'Meiteilon (Manipuri)',
-  as: 'Assamese',
-  or: 'Odia',
+  en: "English",
+  es: "Spanish",
+  it: "Italian",
+  de: "German",
+  zh: "Chinese (Simplified)",
+  fr: "French",
+  pt: "Portuguese",
+  ru: "Russian",
+  ja: "Japanese",
+  ko: "Korean",
+  ar: "Arabic",
+  hi: "Hindi",
+  nl: "Dutch",
+  pl: "Polish",
+  tr: "Turkish",
+  sv: "Swedish",
+  da: "Danish",
+  fi: "Finnish",
+  nb: "Norwegian",
+  cs: "Czech",
+  sk: "Slovak",
+  ro: "Romanian",
+  hu: "Hungarian",
+  uk: "Ukrainian",
+  el: "Greek",
+  he: "Hebrew",
+  th: "Thai",
+  vi: "Vietnamese",
+  id: "Indonesian",
+  ms: "Malay",
+  bg: "Bulgarian",
+  hr: "Croatian",
+  sr: "Serbian",
+  ca: "Catalan",
+  lt: "Lithuanian",
+  lv: "Latvian",
+  et: "Estonian",
+  sl: "Slovenian",
+  sq: "Albanian",
+  mk: "Macedonian",
+  af: "Afrikaans",
+  bn: "Bengali",
+  fa: "Persian",
+  ur: "Urdu",
+  sw: "Swahili",
+  tl: "Filipino",
+  ta: "Tamil",
+  te: "Telugu",
+  ml: "Malayalam",
+  mr: "Marathi",
+  gu: "Gujarati",
+  pa: "Punjabi",
+  ne: "Nepali",
+  si: "Sinhala",
+  km: "Khmer",
+  lo: "Lao",
+  my: "Burmese",
+  ka: "Georgian",
+  yo: "Yoruba",
+  ig: "Igbo",
+  ha: "Hausa",
+  zu: "Zulu",
+  so: "Somali",
+  am: "Amharic",
+  az: "Azerbaijani",
+  uz: "Uzbek",
+  kk: "Kazakh",
+  mn: "Mongolian",
+  hy: "Armenian",
+  jv: "Javanese",
+  su: "Sundanese",
+  bs: "Bosnian",
+  is: "Icelandic",
+  ga: "Irish",
+  cy: "Welsh",
+  gd: "Scottish Gaelic",
+  gl: "Galician",
+  eu: "Basque",
+  mt: "Maltese",
+  xh: "Xhosa",
+  sn: "Shona",
+  st: "Sesotho",
+  ny: "Chichewa",
+  rw: "Kinyarwanda",
+  mg: "Malagasy",
+  tk: "Turkmen",
+  ky: "Kyrgyz",
+  tg: "Tajik",
+  ps: "Pashto",
+  sd: "Sindhi",
+  mni: "Meiteilon (Manipuri)",
+  as: "Assamese",
+  or: "Odia",
 };
 
 /**
@@ -248,7 +248,7 @@ const LANGUAGE_NAMES: Record<string, string> = {
  * Used to provide context to LLM translation prompts.
  */
 export function getLanguageName(code: string | undefined | null): string {
-  if (!code || code === 'auto') return 'auto-detected language';
+  if (!code || code === "auto") return "auto-detected language";
   return LANGUAGE_NAMES[code] ?? code;
 }
 
@@ -291,13 +291,13 @@ type GuardResult = GuardPass | GuardFail;
  */
 export function guardContentType(
   request: Request,
-  expected: 'json' | 'multipart',
+  expected: "json" | "multipart",
 ): GuardResult {
-  const ct = request.headers.get('Content-Type') || '';
+  const ct = request.headers.get("Content-Type") || "";
   const valid =
-    expected === 'json'
-      ? ct.includes('application/json')
-      : ct.includes('multipart/form-data');
+    expected === "json"
+      ? ct.includes("application/json")
+      : ct.includes("multipart/form-data");
 
   if (!valid) {
     logger.warn(
@@ -307,8 +307,8 @@ export function guardContentType(
       allowed: false,
       response: Response.json(
         {
-          error: 'INVALID_CONTENT_TYPE',
-          message: `Expected ${expected === 'json' ? 'application/json' : 'multipart/form-data'}`,
+          error: "INVALID_CONTENT_TYPE",
+          message: `Expected ${expected === "json" ? "application/json" : "multipart/form-data"}`,
         },
         { status: 415 },
       ),
@@ -330,11 +330,11 @@ export async function safeParseJSON<T>(
     const data = (await request.json()) as T;
     return { ok: true, data };
   } catch {
-    logger.warn('[security] Malformed JSON in request body');
+    logger.warn("[security] Malformed JSON in request body");
     return {
       ok: false,
       response: Response.json(
-        { error: 'INVALID_JSON', message: 'Request body is not valid JSON.' },
+        { error: "INVALID_JSON", message: "Request body is not valid JSON." },
         { status: 400 },
       ),
     };
@@ -356,7 +356,7 @@ export function guardTextLength(text: string, tier: Tier): GuardResult {
       allowed: false,
       response: Response.json(
         {
-          error: 'TEXT_TOO_LONG',
+          error: "TEXT_TOO_LONG",
           message: `Text exceeds the ${maxTextChars} character limit.`,
         },
         { status: 413 },
@@ -382,7 +382,7 @@ export function guardAudioSize(fileSize: number, tier: Tier): GuardResult {
       allowed: false,
       response: Response.json(
         {
-          error: 'FILE_TOO_LARGE',
+          error: "FILE_TOO_LARGE",
           message: `Audio file exceeds the ${Math.round(maxAudioBytes / 1024 / 1024)}MB limit for your plan.`,
         },
         { status: 413 },
@@ -402,7 +402,7 @@ export function guardAutoDetect(
   tier: Tier,
 ): GuardResult {
   const { autoDetectAllowed } = getLimits(tier);
-  const isAuto = !lang || lang === 'auto';
+  const isAuto = !lang || lang === "auto";
 
   if (isAuto && !autoDetectAllowed) {
     logger.warn(`[security] Rejected auto-detect for tier ${tier}`);
@@ -410,8 +410,8 @@ export function guardAutoDetect(
       allowed: false,
       response: Response.json(
         {
-          error: 'AUTO_DETECT_PRO_ONLY',
-          message: 'Auto-detect language is a Pro feature.',
+          error: "AUTO_DETECT_PRO_ONLY",
+          message: "Auto-detect language is a Pro feature.",
         },
         { status: 403 },
       ),
@@ -442,7 +442,7 @@ export function guardLanguageCode(
       allowed: false,
       response: Response.json(
         {
-          error: 'INVALID_LANGUAGE',
+          error: "INVALID_LANGUAGE",
           message: `Unsupported language code: ${code}`,
         },
         { status: 400 },
@@ -459,11 +459,37 @@ export function guardLanguageCode(
  * user still gets a valid translation minus the attack payload.
  * Used by: /translate (before sending to LLM)
  */
+/**
+ * Rejects JSON request bodies that exceed a byte-size limit.
+ * Uses Content-Length header when available (avoids reading the body).
+ * Used by: /translate, /checkout/initialize
+ */
+export function guardJsonSize(request: Request, maxBytes: number): GuardResult {
+  const contentLength = request.headers.get("Content-Length");
+  if (contentLength && parseInt(contentLength, 10) > maxBytes) {
+    logger.warn(
+      `[security] Rejected oversized JSON body. ` +
+        `Content-Length: ${contentLength} > Max: ${maxBytes}`,
+    );
+    return {
+      allowed: false,
+      response: Response.json(
+        {
+          error: "PAYLOAD_TOO_LARGE",
+          message: `Request body exceeds ${Math.round(maxBytes / 1024)}KB limit.`,
+        },
+        { status: 413 },
+      ),
+    };
+  }
+  return { allowed: true };
+}
+
 export function sanitizeTranslationText(text: string): string {
   let sanitized = text;
   for (const pattern of INJECTION_PATTERNS) {
-    sanitized = sanitized.replace(pattern, '');
+    sanitized = sanitized.replace(pattern, "");
   }
   // Collapse excessive whitespace left by removals
-  return sanitized.replace(/\s{3,}/g, '  ').trim();
+  return sanitized.replace(/\s{3,}/g, "  ").trim();
 }

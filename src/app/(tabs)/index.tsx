@@ -1,15 +1,18 @@
-import { useSelector } from '@legendapp/state/react';
-import { useRouter } from 'expo-router';
-import * as Speech from 'expo-speech';
-import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView } from 'react-native';
+import { useSelector } from "@legendapp/state/react";
+import { useRouter } from "expo-router";
+import * as Speech from "expo-speech";
+import { useEffect, useState } from "react";
+import { KeyboardAvoidingView } from "react-native";
 
-import { HomeHeader, TranslationInterface, BackgroundFlair } from '@/components/home';
-import { Box, ScrollArea, SafeArea } from '@/components/ui';
-import { spacing } from '@/constants';
-import { settings$ } from '@/store';
-
-import { isIOS } from '@/utils';
+import {
+  HomeHeader,
+  TranslationInterface,
+  BackgroundFlair,
+} from "@/components/home";
+import { Box, ScrollArea } from "@/components/ui";
+import { spacing } from "@/constants";
+import { settings$ } from "@/store";
+import { isIOS } from "@/utils";
 
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
@@ -22,7 +25,7 @@ export default function HomeScreen(): React.ReactElement {
   useEffect(() => {
     const prewarmTTS = async (): Promise<void> => {
       try {
-        await Speech.speak('.', { volume: 0 });
+        await Speech.speak(".", { volume: 0 });
       } catch {
         // Silently ignore prewarm errors
       }
@@ -32,15 +35,15 @@ export default function HomeScreen(): React.ReactElement {
 
   useEffect(() => {
     if (!onboardingCompleted) {
-      router.replace('/(onboarding)/language');
+      router.replace("/(onboarding)/language");
     }
   }, [onboardingCompleted, router]);
 
   return (
-    <SafeArea>
+    <Box style={{ flex: 1 }}>
       <BackgroundFlair />
       <KeyboardAvoidingView
-        behavior={isIOS ? 'padding' : undefined}
+        behavior={isIOS ? "padding" : undefined}
         style={{ flex: 1 }}
         keyboardVerticalOffset={isIOS ? 0 : 20}
       >
@@ -59,6 +62,6 @@ export default function HomeScreen(): React.ReactElement {
           </Box>
         </ScrollArea>
       </KeyboardAvoidingView>
-    </SafeArea>
+    </Box>
   );
 }

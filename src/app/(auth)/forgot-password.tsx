@@ -1,38 +1,38 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Mail } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "expo-router";
+import { Mail } from "lucide-react-native";
+import React, { useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 
-import { AuthShell, Input, ErrorBanner, Button } from '@/components';
-import { Box, Text } from '@/components/ui';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
-import { forgotPasswordSchema, ForgotPasswordForm } from '@/schemas/auth';
-import { sendPasswordResetOtp } from '@/services/auth';
+import { AuthShell, Input, ErrorBanner, Button } from "@/components";
+import { Box, Text } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { forgotPasswordSchema, ForgotPasswordForm } from "@/schemas/auth";
+import { sendPasswordResetOtp } from "@/services/auth";
 
 export default function ForgotPasswordScreen(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const { color } = useTheme();
   const primary = color.primary;
   const router = useRouter();
 
   const { control, handleSubmit } = useForm<ForgotPasswordForm>({
     resolver: zodResolver(forgotPasswordSchema),
-    defaultValues: { email: '' },
+    defaultValues: { email: "" },
   });
 
   const onSubmit = async (data: ForgotPasswordForm): Promise<void> => {
     setIsLoading(true);
-    setError('');
+    setError("");
     const r = await sendPasswordResetOtp(data.email);
     setIsLoading(false);
     if (r.ok) {
       router.push({
-        pathname: '/(auth)/verify',
-        params: { email: data.email.trim(), source: 'forgot-password' },
+        pathname: "/(auth)/verify",
+        params: { email: data.email.trim(), source: "forgot-password" },
       });
     } else if (r.error) {
       setError(r.error);
@@ -41,15 +41,15 @@ export default function ForgotPasswordScreen(): React.JSX.Element {
 
   return (
     <AuthShell showBackButton>
-      <Box style={{ alignItems: 'center', marginBottom: spacing['2xl'] }}>
+      <Box style={{ alignItems: "center", marginBottom: spacing["2xl"] }}>
         <Box
           style={{
             width: 64,
             height: 64,
-            borderRadius: borderRadius['2xl'],
+            borderRadius: borderRadius["2xl"],
             backgroundColor: `${primary}15`,
-            alignItems: 'center',
-            justifyContent: 'center',
+            alignItems: "center",
+            justifyContent: "center",
             marginBottom: spacing.md,
           }}
         >
@@ -58,20 +58,20 @@ export default function ForgotPasswordScreen(): React.JSX.Element {
         <Text
           variant="heading1"
           style={{
-            textAlign: 'center',
+            textAlign: "center",
           }}
         >
-          Reset your password
+          Forgot your password?
         </Text>
         <Text
           variant="body"
           style={{
             marginTop: spacing.sm,
-            textAlign: 'center',
+            textAlign: "center",
             color: color.muted,
           }}
         >
-          Enter your email and we'll send you a code.
+          No worries. Enter your email and we'll send a reset code.
         </Text>
       </Box>
       <Box>
@@ -80,10 +80,7 @@ export default function ForgotPasswordScreen(): React.JSX.Element {
           <Controller
             control={control}
             name="email"
-            render={({
-              field: { onChange, onBlur, value },
-              fieldState,
-            }) => (
+            render={({ field: { onChange, onBlur, value }, fieldState }) => (
               <Input
                 value={value}
                 onChangeText={onChange}

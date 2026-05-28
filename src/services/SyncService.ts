@@ -1,12 +1,12 @@
-import { observable } from '@legendapp/state';
-import * as Crypto from 'expo-crypto';
+import { observable } from "@legendapp/state";
+import * as Crypto from "expo-crypto";
 
-import { Db } from './db';
+import { Db } from "./db";
 
-import { supabase } from '@/services/supabase';
-import { HistoryEntry, history$ } from '@/store';
-import { logger } from '@/utils';
-import { checkIsOnline, subscribeToNetwork } from '@/utils/netInfo';
+import { supabase } from "@/services/supabase";
+import { HistoryEntry, history$ } from "@/store";
+import { logger } from "@/utils";
+import { checkIsOnline, subscribeToNetwork } from "@/utils/netInfo";
 
 const INITIAL_HISTORY_SIZE = 20;
 const MAX_HISTORY_CACHE = 1000;
@@ -51,7 +51,7 @@ class SyncServiceClass {
       Db.insertOutbox({
         id,
         payload: JSON.stringify({
-          action: 'upsert',
+          action: "upsert",
           source_lang: payload.sourceLang,
           target_lang: payload.targetLang,
           transcript: payload.transcript,
@@ -107,16 +107,16 @@ class SyncServiceClass {
 
     try {
       const { error } = await supabase
-        .from('history')
+        .from("history")
         .update({
           translation_text: translation,
           transliteration_text: transliteration ?? null,
           target_lang: targetLang,
         })
-        .eq('id', id);
+        .eq("id", id);
       if (error) throw error;
     } catch {
-      logger.warn('[Sync] Failed to update translation on cloud', id);
+      logger.warn("[Sync] Failed to update translation on cloud", id);
     }
   }
 
@@ -127,7 +127,7 @@ class SyncServiceClass {
       Db.insertOutbox({
         id: Crypto.randomUUID(),
         payload: JSON.stringify({
-          action: 'delete',
+          action: "delete",
           id,
         }),
         user_id: userId,
@@ -144,27 +144,36 @@ class SyncServiceClass {
   async deleteHistoryBatch(ids: string[], userId: string): Promise<void> {
     if (ids.length === 0) return;
     const created_at = new Date().toISOString();
-    Db.transaction(() => {
-      Db.deleteHistoryBatch(ids);
-      for (const id of ids) {
-        Db.insertOutbox({
-          id: Crypto.randomUUID(),
-          payload: JSON.stringify({
-            action: 'delete',
-            id,
-          }),
-          user_id: userId,
-          created_at,
-        });
-      }
-    });
 
-    for (const id of ids) {
-      history$[id].delete();
+    let dbOk = false;
+    try {
+      Db.transaction(() => {
+        Db.deleteHistoryBatch(ids);
+        for (const id of ids) {
+          Db.insertOutbox({
+            id: Crypto.randomUUID(),
+            payload: JSON.stringify({
+              action: "delete",
+              id,
+            }),
+            user_id: userId,
+            created_at,
+          });
+        }
+      });
+      dbOk = true;
+    } catch (err) {
+      logger.error("[Sync] deleteHistoryBatch DB transaction failed", err);
+      return;
     }
-    this.refreshPendingCount();
 
-    this.drain().catch(() => {});
+    if (dbOk) {
+      for (const id of ids) {
+        history$[id].delete();
+      }
+      this.refreshPendingCount();
+      this.drain().catch(() => {});
+    }
   }
 
   private async pushToCloud(id: string): Promise<void> {
@@ -177,15 +186,15 @@ class SyncServiceClass {
 
       const payload = JSON.parse(row.payload);
 
-      if (payload.action === 'delete') {
+      if (payload.action === "delete") {
         const targetId = payload.id || row.id;
         const { error } = await supabase
-          .from('history')
+          .from("history")
           .delete()
-          .eq('id', targetId);
+          .eq("id", targetId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('history').upsert({
+        const { error } = await supabase.from("history").upsert({
           id: row.id,
           user_id: row.user_id,
           source_lang: payload.source_lang,
@@ -202,10 +211,10 @@ class SyncServiceClass {
       }
 
       Db.deleteOutbox(id);
-      logger.info('[Sync] Pushed entry/delete to cloud', id);
+      logger.info("[Sync] Pushed entry/delete to cloud", id);
     } catch (err) {
       Db.incrementOutboxRetry(id);
-      logger.error('[Sync] Push failed for entry', id, err);
+      logger.error("[Sync] Push failed for entry", id, err);
     }
     this.refreshPendingCount();
   }
@@ -221,7 +230,7 @@ class SyncServiceClass {
       const entries = Db.getPendingOutbox();
       if (entries.length === 0) return;
 
-      logger.info('[Sync] Draining', entries.length, 'pending entries');
+      logger.info("[Sync] Draining", entries.length, "pending entries");
 
       for (const entry of entries) {
         await this.pushToCloud(entry.id);
@@ -238,14 +247,14 @@ class SyncServiceClass {
       const lastSync = Db.getStore(lastSyncKey);
 
       let query = supabase
-        .from('history')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
+        .from("history")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
         .limit(200);
 
       if (lastSync) {
-        query = query.gt('created_at', lastSync);
+        query = query.gt("created_at", lastSync);
       }
 
       const { data, error } = await query;
@@ -266,8 +275,8 @@ class SyncServiceClass {
           translation_text: row.translation_text,
           transliteration_text: row.transliteration_text,
           duration: row.duration || 0,
-          source_app: row.source_app || '',
-          provider: row.provider || '',
+          source_app: row.source_app || "",
+          provider: row.provider || "",
           created_at: row.created_at,
         });
 
@@ -280,8 +289,8 @@ class SyncServiceClass {
             translation: row.translation_text,
             transliteration: row.transliteration_text,
             duration: row.duration || 0,
-            sourceApp: row.source_app || '',
-            provider: row.provider || '',
+            sourceApp: row.source_app || "",
+            provider: row.provider || "",
             timestamp: new Date(row.created_at).getTime(),
           });
         }
@@ -292,9 +301,9 @@ class SyncServiceClass {
       }
 
       this.trimHistoryWindow();
-      logger.info('[Sync] Pulled', data.length, 'entries from cloud');
+      logger.info("[Sync] Pulled", data.length, "entries from cloud");
     } catch (err) {
-      logger.error('[Sync] Pull from cloud failed', err);
+      logger.error("[Sync] Pull from cloud failed", err);
     }
   }
 
@@ -359,7 +368,7 @@ class SyncServiceClass {
     }
 
     supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session?.user?.id) {
+      if (event === "SIGNED_IN" && session?.user?.id) {
         this.pullFromCloud(session.user.id).catch(() => {});
         this.drain().catch(() => {});
       }

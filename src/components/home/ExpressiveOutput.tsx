@@ -1,18 +1,23 @@
-import { useFocusEffect } from 'expo-router';
-import * as Speech from 'expo-speech';
-import { Copy, Volume2, VolumeX, Check } from 'lucide-react-native';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Share } from 'react-native';
-import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import { useFocusEffect } from "expo-router";
+import * as Speech from "expo-speech";
+import { Copy, Volume2, VolumeX, Check } from "lucide-react-native";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { Share } from "react-native";
+import Animated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+} from "react-native-reanimated";
 
-import { IconButton } from '../IconButton';
-import { SkeletonBox } from '../SkeletonBox';
+import { IconButton } from "../IconButton";
+import { SkeletonBox } from "../SkeletonBox";
 
-import { Box, Text, Spinner, ScrollArea } from '@/components/ui';
-import { shadows } from '@/constants/shadows';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text, Spinner, ScrollArea } from "@/components/ui";
+import { shadows } from "@/constants/shadows";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import logger from "@/utils/logger";
 
 interface ExpressiveOutputProps {
   translation: string | null;
@@ -48,13 +53,13 @@ export const ExpressiveOutput = React.memo(
 
     // Stop speech when the user navigates away from the screen
     useFocusEffect(
-      useCallback(() => {
-        return () => {
+      useCallback((): (() => void) => {
+        return (): void => {
           Speech.stop();
           setIsSpeaking(false);
           setIsTTSLoading(false);
         };
-      }, [])
+      }, []),
     );
 
     const handleSpeakToggle = useCallback(async (): Promise<void> => {
@@ -65,7 +70,7 @@ export const ExpressiveOutput = React.memo(
           await Speech.stop();
         } catch (err) {
           // ignore stop errors
-          console.warn('Speech.stop failed', err);
+          logger.warn("Speech.stop failed", err);
         }
         setIsSpeaking(false);
         setIsTTSLoading(false);
@@ -77,7 +82,7 @@ export const ExpressiveOutput = React.memo(
         try {
           await Speech.stop();
         } catch (err) {
-          console.warn('Speech.stop failed', err);
+          logger.warn("Speech.stop failed", err);
         }
 
         setIsTTSLoading(true);
@@ -95,19 +100,23 @@ export const ExpressiveOutput = React.memo(
             onError: (e): void => {
               setIsSpeaking(false);
               setIsTTSLoading(false);
-              
+
               const errorMsg = e instanceof Error ? e.message : String(e);
-              console.warn('Speech.speak error:', errorMsg);
+              logger.warn("Speech.speak error:", errorMsg);
 
               // Ignore interruption errors (which happen naturally on stop)
-              if (errorMsg.includes('interrupted') || errorMsg.includes('stopped')) {
-                 return;
+              if (
+                errorMsg.includes("interrupted") ||
+                errorMsg.includes("stopped")
+              ) {
+                return;
               }
 
               // eslint-disable-next-line @typescript-eslint/no-var-requires
-              const { AppToast } = require('@/utils');
-              AppToast.error('Speech Unavailable', { 
-                description: 'Your device does not support text-to-speech for this language, or the voice is not downloaded.' 
+              const { AppToast } = require("@/utils");
+              AppToast.error("Speech Unavailable", {
+                description:
+                  "Your device does not support text-to-speech for this language, or the voice is not downloaded.",
               });
             },
             onStopped: (): void => {
@@ -119,12 +128,13 @@ export const ExpressiveOutput = React.memo(
           setIsSpeaking(false);
           setIsTTSLoading(false);
           const errorMsg = err instanceof Error ? err.message : String(err);
-          console.warn('Speech.speak threw exception:', errorMsg);
-          
+          logger.warn("Speech.speak threw exception:", errorMsg);
+
           // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const { AppToast } = require('@/utils');
-          AppToast.error('Speech Unavailable', { 
-             description: 'Your device does not support text-to-speech for this language.' 
+          const { AppToast } = require("@/utils");
+          AppToast.error("Speech Unavailable", {
+            description:
+              "Your device does not support text-to-speech for this language.",
           });
         }
       }
@@ -155,7 +165,7 @@ export const ExpressiveOutput = React.memo(
       <Animated.View
         layout={LinearTransition.springify()}
         style={{
-          borderRadius: borderRadius['2xl'],
+          borderRadius: borderRadius["2xl"],
           padding: spacing.lg,
           ...shadows.soft,
           backgroundColor: color.secondary,
@@ -170,18 +180,18 @@ export const ExpressiveOutput = React.memo(
             </Box>
             <Box
               style={{
-                flexDirection: 'row',
-                justifyContent: 'flex-end',
+                flexDirection: "row",
+                justifyContent: "flex-end",
                 gap: spacing.md,
                 marginTop: spacing.xl,
               }}
             >
-              <Box style={{ alignItems: 'center', gap: spacing.sm }}>
+              <Box style={{ alignItems: "center", gap: spacing.sm }}>
                 <SkeletonBox width={64} height={64} borderRadius={32} />
                 <SkeletonBox width={40} height={12} />
               </Box>
               {onCopy ? (
-                <Box style={{ alignItems: 'center', gap: spacing.sm }}>
+                <Box style={{ alignItems: "center", gap: spacing.sm }}>
                   <SkeletonBox width={64} height={64} borderRadius={32} />
                   <SkeletonBox width={36} height={12} />
                 </Box>
@@ -206,16 +216,16 @@ export const ExpressiveOutput = React.memo(
             </ScrollArea>
             <Box
               style={{
-                flexDirection: 'row',
-                justifyContent: 'flex-end',
+                flexDirection: "row",
+                justifyContent: "flex-end",
                 gap: spacing.md,
                 marginTop: spacing.xl,
               }}
             >
-              <Box style={{ alignItems: 'center', gap: spacing.sm }}>
+              <Box style={{ alignItems: "center", gap: spacing.sm }}>
                 <IconButton
                   accessibilityLabel={
-                    isSpeaking ? 'Stop speaking' : 'Listen to translation'
+                    isSpeaking ? "Stop speaking" : "Listen to translation"
                   }
                   onPress={handleSpeakToggle}
                   backgroundColor={
@@ -227,7 +237,12 @@ export const ExpressiveOutput = React.memo(
                         entering={FadeIn.duration(150)}
                         exiting={FadeOut.duration(150)}
                       >
-                        <Spinner size="sm" color={isSpeaking ? color.secondary : color.onSecondary} />
+                        <Spinner
+                          size="sm"
+                          color={
+                            isSpeaking ? color.secondary : color.onSecondary
+                          }
+                        />
                       </Animated.View>
                     ) : isSpeaking ? (
                       <Animated.View
@@ -255,14 +270,14 @@ export const ExpressiveOutput = React.memo(
                   }
                 />
                 <Text variant="caption" style={listenLabelStyle}>
-                  {isSpeaking ? 'Stop' : 'Listen'}
+                  {isSpeaking ? "Stop" : "Listen"}
                 </Text>
               </Box>
 
               {onCopy ? (
-                <Box style={{ alignItems: 'center', gap: spacing.sm }}>
+                <Box style={{ alignItems: "center", gap: spacing.sm }}>
                   <IconButton
-                    accessibilityLabel={copied ? 'Copied' : 'Copy translation'}
+                    accessibilityLabel={copied ? "Copied" : "Copy translation"}
                     onPress={onCopy}
                     onLongPress={async () => {
                       if (translation) {
@@ -299,7 +314,7 @@ export const ExpressiveOutput = React.memo(
                     }
                   />
                   <Text variant="caption" style={copyLabelStyle}>
-                    {copied ? 'Copied' : 'Copy'}
+                    {copied ? "Copied" : "Copy"}
                   </Text>
                 </Box>
               ) : null}

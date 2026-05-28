@@ -1,17 +1,17 @@
-import { Check, Zap } from 'lucide-react-native';
-import React, { useMemo } from 'react';
-import { useSelector } from '@legendapp/state/react';
+import { useSelector } from "@legendapp/state/react";
+import { Check, Zap } from "lucide-react-native";
+import React, { useMemo } from "react";
 
-import { FeatureRow } from './FeatureRow';
+import { FeatureRow } from "./FeatureRow";
 
-import { Button } from '@/components/Button';
-import { Box, Text } from '@/components/ui';
-import { DISPLAY_PRICING } from '@/constants/billing';
-import type { BILLING_PLANS, PlanFeature } from '@/constants/billing';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import type { ThemeTokens } from '@/hooks/ui/useTheme';
-import { settings$ } from '@/store';
+import { Button } from "@/components/Button";
+import { Box, Text } from "@/components/ui";
+import { DISPLAY_PRICING } from "@/constants/billing";
+import type { BILLING_PLANS, PlanFeature } from "@/constants/billing";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import type { ThemeTokens } from "@/hooks/ui/useTheme";
+import { settings$ } from "@/store";
 
 interface PriceBreakdown {
   displayPrice: number;
@@ -22,7 +22,7 @@ interface PriceBreakdown {
 }
 
 function usePriceBreakdown(
-  plan: (typeof BILLING_PLANS)['pro'],
+  plan: (typeof BILLING_PLANS)["pro"],
   isAnnual: boolean,
 ): PriceBreakdown {
   const currency = useSelector(() => settings$.currency.get());
@@ -59,9 +59,9 @@ function usePriceBreakdown(
 export interface ProPlanCardProps {
   isPro: boolean;
   isAnnual: boolean;
-  color: ThemeTokens['color'];
+  color: ThemeTokens["color"];
   isDark: boolean;
-  proPlan: (typeof BILLING_PLANS)['pro'];
+  proPlan: (typeof BILLING_PLANS)["pro"];
   handleUpgrade: () => Promise<void>;
   handleManage: () => Promise<void>;
 }
@@ -87,12 +87,12 @@ export function ProPlanCard({
         {
           backgroundColor: glassBg,
           borderColor: color.secondary,
-          borderWidth: 2,
+          borderWidth: 1,
           shadowColor: color.secondary,
-          shadowOffset: { width: 0, height: 8 },
-          shadowOpacity: 0.15,
-          shadowRadius: 20,
-          elevation: 3,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.08,
+          shadowRadius: 12,
+          elevation: 2,
         },
       ]}
     >
@@ -103,16 +103,19 @@ export function ProPlanCard({
             {
               backgroundColor: color.secondary,
               shadowColor: color.secondary,
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.2,
-              shadowRadius: 4,
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.12,
+              shadowRadius: 3,
               elevation: 1,
-            }
+            },
           ]}
         >
-          <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+          <Box style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
             <Check size={12} color={color.background} strokeWidth={2} />
-            <Text variant="caption" style={{ color: color.background, fontWeight: '600' }}>
+            <Text
+              variant="caption"
+              style={{ color: color.background, fontWeight: "600" }}
+            >
               Active Plan
             </Text>
           </Box>
@@ -131,10 +134,11 @@ export function ProPlanCard({
             variant="body"
             style={[
               styles.strikethrough,
-              { color: color.muted, textDecorationLine: 'line-through' },
+              { color: color.muted, textDecorationLine: "line-through" },
             ]}
           >
-            {price.symbol}{price.originalPrice.toFixed(2)}
+            {price.symbol}
+            {price.originalPrice.toFixed(2)}
           </Text>
         )}
         <Text variant="body" style={{ color: color.secondary }}>
@@ -151,12 +155,16 @@ export function ProPlanCard({
       {isAnnual && (
         <Box style={styles.annualRow}>
           <Box style={[styles.savingChip, { backgroundColor: color.success }]}>
-            <Text variant="caption" style={{ color: color.background, fontWeight: '800' }}>
+            <Text
+              variant="caption"
+              style={{ color: color.background, fontWeight: "800" }}
+            >
               Save {price.savingPercent}%
             </Text>
           </Box>
           <Text variant="body" style={{ color: color.secondary }}>
-            Billed {price.symbol}{price.annualTotal.toFixed(2)} annually
+            Billed {price.symbol}
+            {price.annualTotal.toFixed(2)} annually
           </Text>
         </Box>
       )}
@@ -176,7 +184,14 @@ export function ProPlanCard({
             isPro
           />
           {index < proPlan.features.length - 1 && (
-            <Box style={{ height: 1, backgroundColor: color.border, opacity: 0.15, marginVertical: spacing.xs }} />
+            <Box
+              style={{
+                height: 1,
+                backgroundColor: color.border,
+                opacity: 0.15,
+                marginVertical: spacing.xs,
+              }}
+            />
           )}
         </React.Fragment>
       ))}
@@ -194,16 +209,16 @@ export function ProPlanCard({
 
 const styles = {
   planCard: {
-    borderRadius: borderRadius['2xl'],
+    borderRadius: borderRadius["2xl"],
     paddingHorizontal: spacing.lg,
-    position: 'relative',
-    overflow: 'hidden',
+    position: "relative",
+    overflow: "hidden",
   } as const,
   proCard: {
-    paddingVertical: spacing['2xl'],
+    paddingVertical: spacing["2xl"],
   } as const,
   currentBadge: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     right: 0,
     borderBottomLeftRadius: 16,
@@ -211,13 +226,13 @@ const styles = {
     paddingVertical: spacing.sm,
   } as const,
   proHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.sm,
   } as const,
   priceRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    alignItems: "flex-start",
     marginTop: spacing.md,
     marginBottom: spacing.xs,
     gap: spacing.xs,
@@ -225,7 +240,7 @@ const styles = {
   strikethrough: {
     fontSize: 16,
     lineHeight: 28,
-    textDecorationLine: 'line-through',
+    textDecorationLine: "line-through",
   } as const,
   divider: {
     height: 1,
@@ -238,12 +253,12 @@ const styles = {
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.sm,
-    transform: [{ rotate: '-6deg' }],
+    transform: [{ rotate: "-6deg" }],
   } as const,
   annualRow: {
     marginTop: spacing.xs,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.sm,
   } as const,
 };

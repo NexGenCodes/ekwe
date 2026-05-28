@@ -1,8 +1,8 @@
-import { useSelector } from '@legendapp/state/react';
-import Constants from 'expo-constants';
-import { Image as ExpoImage } from 'expo-image';
-import { useRouter } from 'expo-router';
-import * as StoreReview from 'expo-store-review';
+import { useSelector } from "@legendapp/state/react";
+import Constants from "expo-constants";
+import { Image as ExpoImage } from "expo-image";
+import { useRouter } from "expo-router";
+import * as StoreReview from "expo-store-review";
 import {
   LogOut,
   CreditCard,
@@ -17,22 +17,10 @@ import {
   Globe,
   Eye,
   Smartphone,
-  Check,
-  Sun,
-  Moon,
-  Monitor,
-} from 'lucide-react-native';
-import React, { useState, useEffect } from 'react';
-import { Linking, Switch } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  FadeIn,
-  FadeOut,
-  FadeInDown,
-  ZoomIn,
-} from 'react-native-reanimated';
+} from "lucide-react-native";
+import React, { useState } from "react";
+import { Linking, Switch } from "react-native";
+import Animated, { FadeInDown } from "react-native-reanimated";
 
 import {
   AvatarPickerModal,
@@ -41,17 +29,25 @@ import {
   ProfileSection,
   ProfileIdentity,
   CurrencyPickerModal,
-} from '@/components';
-import { Box, Pressable, Text, ScrollArea } from '@/components/ui';
-import { duration, spring, borderRadius, opacity, spacing, SUPPORTED_CURRENCIES } from '@/constants';
-import { useLogout, useTheme, usePermissions, useForegroundApp } from '@/hooks';
-import { deleteAccount } from '@/services/auth';
-import { supabase } from '@/services/supabase';
-import { auth$, authActions, settings$, settingsActions } from '@/store';
-import { AppAlert } from '@/utils/alert';
-import { triggerHaptic } from '@/utils/haptics';
-import logger from '@/utils/logger';
-import { isIOS } from '@/utils';
+  ThemePickerModal,
+} from "@/components";
+import { Box, Pressable, Text, ScrollArea } from "@/components/ui";
+import {
+  duration,
+  spring,
+  borderRadius,
+  opacity,
+  spacing,
+  SUPPORTED_CURRENCIES,
+} from "@/constants";
+import { useLogout, useTheme, usePermissions, useForegroundApp } from "@/hooks";
+import { deleteAccount } from "@/services/auth";
+import { supabase } from "@/services/supabase";
+import { auth$, authActions, settings$, settingsActions } from "@/store";
+import { isIOS } from "@/utils";
+import { AppAlert } from "@/utils/alert";
+import { triggerHaptic } from "@/utils/haptics";
+import logger from "@/utils/logger";
 
 // ─── ProfileScreen ────────────────────────────────────────────────────────────
 
@@ -72,39 +68,17 @@ export default function ProfileScreen(): React.JSX.Element {
   const autoCopy = useSelector(() => settings$.autoCopy.get());
   const { hasPermission } = useForegroundApp();
 
-  const [appearanceExpanded, setAppearanceExpanded] = useState(false);
   const [isCurrencyModalVisible, setIsCurrencyModalVisible] = useState(false);
-  const chevronRotation = useSharedValue(0);
-
-  useEffect(() => {
-    chevronRotation.value = withSpring(
-      appearanceExpanded ? 90 : 0,
-      spring.smooth,
-    );
-  }, [appearanceExpanded]);
-
-  const chevronStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${chevronRotation.value}deg` }],
-  }));
+  const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
 
   const rawName =
-    user?.user_metadata?.full_name || user?.user_metadata?.name || '';
-  const userEmail = user?.email || '';
+    user?.user_metadata?.full_name || user?.user_metadata?.name || "";
+  const userEmail = user?.email || "";
   // Fallback to the first part of their email if name is completely empty
-  const fallbackName = userEmail.split('@')[0] || 'User';
-  const userName = rawName ? rawName.split(' ')[0] : fallbackName;
+  const fallbackName = userEmail.split("@")[0] || "User";
+  const userName = rawName ? rawName.split(" ")[0] : fallbackName;
 
   const [isIconModalVisible, setIsIconModalVisible] = useState(false);
-
-  const themeOptions: {
-    value: 'light' | 'dark' | 'system';
-    icon: typeof Sun;
-    label: string;
-  }[] = [
-    { value: 'light', icon: Sun, label: 'Light' },
-    { value: 'dark', icon: Moon, label: 'Dark' },
-    { value: 'system', icon: Monitor, label: 'System (Follow Device)' },
-  ];
 
   const currentIconData = user?.user_metadata?.avatar_icon
     ? (AVATAR_ICONS.find((i) => i.name === user?.user_metadata?.avatar_icon) ??
@@ -121,28 +95,28 @@ export default function ProfileScreen(): React.JSX.Element {
       if (error) throw error;
       if (data.user) authActions.setUser(data.user);
     } catch (e) {
-      logger.error('Failed to update avatar icon:', e);
-      AppAlert.error('Error', 'Could not update your avatar.');
+      logger.error("Failed to update avatar icon:", e);
+      AppAlert.error("Error", "Could not update your avatar.");
     }
   };
 
   const handleDeleteAccount = async (): Promise<void> => {
     await triggerHaptic();
     AppAlert.confirm(
-      'Delete Account',
-      'This will permanently delete your account and all associated data. This action cannot be undone. Are you sure?',
+      "Delete Account",
+      "This will permanently delete your account and all associated data. This action cannot be undone. Are you sure?",
       async () => {
         const result = await deleteAccount();
         if (!result.ok) {
           AppAlert.error(
-            'Action Required',
-            result.error || 'Failed to delete account.',
+            "Action Required",
+            result.error || "Failed to delete account.",
           );
         } else {
-          router.replace('/(auth)/login');
+          router.replace("/(auth)/login");
         }
       },
-      { confirmText: 'Delete Permanently', isDestructive: true },
+      { confirmText: "Delete Permanently", isDestructive: true },
     );
   };
 
@@ -170,8 +144,8 @@ export default function ProfileScreen(): React.JSX.Element {
                 setIsIconModalVisible(true);
               } else {
                 AppAlert.info(
-                  'Ekwe Pro',
-                  'Custom avatar icons are a premium feature. Upgrade to Pro to customize your profile.',
+                  "Ekwe Pro",
+                  "Custom avatar icons are a premium feature. Upgrade to Pro to customize your profile.",
                 );
               }
             }}
@@ -179,407 +153,370 @@ export default function ProfileScreen(): React.JSX.Element {
         </Animated.View>
 
         {/* Account & Subscription */}
-        <Animated.View entering={FadeInDown.duration(duration.normal).delay(100)}>
+        <Animated.View
+          entering={FadeInDown.duration(duration.normal).delay(100)}
+        >
           <ProfileSection title="Account & Subscription">
-          <ProfileRow
-            icon={CreditCard}
-            sfIcon="creditcard.fill"
-            iconColor={color.primary}
-            title={isPro ? 'Ekwe Pro' : 'Plan & Billing'}
-            subtitle={
-              isPro ? 'Unlimited translations' : 'Free Tier · Standard limits'
-            }
-            onPress={async () => {
-              triggerHaptic();
-              router.push('/billing');
-            }}
-            trailing={
-              isPro ? (
-                isIOS ? (
-                  <ExpoImage
-                    source="sf:chevron.right"
-                    style={{ width: 14, height: 14 }}
-                    tintColor={color.muted}
-                  />
+            <ProfileRow
+              icon={CreditCard}
+              sfIcon="creditcard.fill"
+              iconColor={color.primary}
+              title={isPro ? "Ekwe Pro" : "Plan & Billing"}
+              subtitle={
+                isPro ? "Unlimited translations" : "Free Tier · Standard limits"
+              }
+              onPress={async () => {
+                triggerHaptic();
+                router.push("/billing");
+              }}
+              trailing={
+                isPro ? (
+                  isIOS ? (
+                    <ExpoImage
+                      source="sf:chevron.right"
+                      style={{ width: 14, height: 14 }}
+                      tintColor={color.muted}
+                    />
+                  ) : (
+                    <ChevronRight size={20} color={color.muted} />
+                  )
                 ) : (
-                  <ChevronRight size={20} color={color.muted} />
+                  <Box
+                    style={[
+                      styles.upgradeBadge,
+                      { backgroundColor: color.secondary },
+                    ]}
+                  >
+                    <Text
+                      variant="caption"
+                      style={{ color: color.onSecondary }}
+                    >
+                      Upgrade
+                    </Text>
+                  </Box>
                 )
-              ) : (
-                <Box
-                  style={[
-                    styles.upgradeBadge,
-                    { backgroundColor: color.secondary },
-                  ]}
-                >
-                  <Text variant="caption" style={{ color: color.onSecondary }}>
-                    Upgrade
-                  </Text>
-                </Box>
-              )
-            }
-          />
-        </ProfileSection>
+              }
+            />
+          </ProfileSection>
         </Animated.View>
 
         {/* App Preferences */}
-        <Animated.View entering={FadeInDown.duration(duration.normal).delay(150)}>
-        <ProfileSection title="App Preferences">
-          <ProfileRow
-            icon={Globe}
-            sfIcon="globe"
-            iconColor={color.primary}
-            title="Edit Language Grid"
-            subtitle={`${selectedLanguages.length}/5 active languages`}
-            hasDivider
-            onPress={async () => {
-              triggerHaptic();
-              router.push('/edit-languages');
-            }}
-          />
-          <ProfileRow
-            icon={Smartphone}
-            sfIcon="hand.tap.fill"
-            iconColor={color.primary}
-            title="Haptic Feedback"
-            subtitle="Vibrate on user actions"
-            onPress={async () => {
-              await triggerHaptic();
-              setHapticsEnabled(!hapticsEnabled);
-            }}
-            hasDivider
-            trailing={
-              <Switch
-                value={hapticsEnabled}
-                onValueChange={(val) => {
-                  setHapticsEnabled(val);
-                }}
-                trackColor={{
-                  true: color.primary,
-                  false: color.border,
-                }}
-                thumbColor={color.card}
-              />
-            }
-          />
-          <ProfileRow
-            icon={Globe}
-            sfIcon="globe"
-            iconColor={color.primary}
-            title="Display Currency"
-            subtitle="Choose your preferred currency"
-            hasDivider
-            onPress={async () => {
-              await triggerHaptic();
-              setIsCurrencyModalVisible(true);
-            }}
-            trailing={
-              <Box style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text
-                  variant="body"
-                  style={{ color: color.muted, marginRight: spacing.sm }}
-                >
-                  {SUPPORTED_CURRENCIES.find((c) => c.code === currency)?.code || currency}
-                </Text>
-                <ChevronRight size={16} color={color.muted} />
-              </Box>
-            }
-          />
-          <ProfileRow
-            icon={Palette}
-            sfIcon="paintpalette.fill"
-            iconColor={color.primary}
-            title="Appearance"
-            subtitle="Light, Dark, or System"
-            onPress={async () => {
-              await triggerHaptic();
-              setAppearanceExpanded(!appearanceExpanded);
-            }}
-            trailing={
-              <Box style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text
-                  variant="body"
-                  style={{ color: color.muted, marginRight: spacing.sm }}
-                >
-                  {colorScheme === 'light'
-                    ? 'Light'
-                    : colorScheme === 'dark'
-                      ? 'Dark'
-                      : 'System'}
-                </Text>
-                <Animated.View style={chevronStyle}>
-                  <ChevronRight size={16} color={color.muted} />
-                </Animated.View>
-              </Box>
-            }
-          />
-          {appearanceExpanded && (
-            <Animated.View
-              entering={FadeIn.duration(duration.normal)}
-              exiting={FadeOut.duration(duration.normal)}
-              style={{ backgroundColor: color.surface }}
-            >
-              {themeOptions.map((option) => {
-                const isActive = colorScheme === option.value;
-                return (
-                  <Pressable
-                    key={option.value}
-                    onPress={async () => {
-                      await triggerHaptic();
-                      setColorScheme(option.value);
-                      setAppearanceExpanded(false);
-                    }}
-                    style={({ pressed }) => [
-                      {
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        paddingLeft: spacing['4xl'],
-                        paddingVertical: spacing.md,
-                        paddingRight: spacing.lg,
-                        borderTopWidth: 0.5,
-                        borderTopColor: color.border,
-                      },
-                      pressed && {
-                        backgroundColor: `${color.primary}1A`,
-                      },
-                    ]}
+        <Animated.View
+          entering={FadeInDown.duration(duration.normal).delay(150)}
+        >
+          <ProfileSection title="App Preferences">
+            <ProfileRow
+              icon={Globe}
+              sfIcon="globe"
+              iconColor={color.primary}
+              title="Edit Language Grid"
+              subtitle={`${selectedLanguages.length}/5 active languages`}
+              hasDivider
+              onPress={async () => {
+                triggerHaptic();
+                router.push("/edit-languages");
+              }}
+            />
+            <ProfileRow
+              icon={Smartphone}
+              sfIcon="hand.tap.fill"
+              iconColor={color.primary}
+              title="Haptic Feedback"
+              subtitle="Vibrate on user actions"
+              onPress={async () => {
+                await triggerHaptic();
+                setHapticsEnabled(!hapticsEnabled);
+              }}
+              hasDivider
+              trailing={
+                <Switch
+                  value={hapticsEnabled}
+                  onValueChange={(val) => {
+                    setHapticsEnabled(val);
+                  }}
+                  trackColor={{
+                    true: color.primary,
+                    false: color.border,
+                  }}
+                  thumbColor={color.card}
+                />
+              }
+            />
+            <ProfileRow
+              icon={Globe}
+              sfIcon="globe"
+              iconColor={color.primary}
+              title="Display Currency"
+              subtitle="Choose your preferred currency"
+              hasDivider
+              onPress={async () => {
+                await triggerHaptic();
+                setIsCurrencyModalVisible(true);
+              }}
+              trailing={
+                <Box style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text
+                    variant="body"
+                    style={{ color: color.muted, marginRight: spacing.sm }}
                   >
-                    <option.icon
-                      size={18}
-                      color={isActive ? color.primary : color.muted}
-                    />
-                    <Text
-                      variant="body"
-                      style={{
-                        flex: 1,
-                        marginLeft: spacing.md,
-                        color: isActive ? color.primary : color.foreground,
-                      }}
-                    >
-                      {option.label}
-                    </Text>
-                    {isActive && <Check size={18} color={color.primary} />}
-                  </Pressable>
-                );
-              })}
-            </Animated.View>
-          )}
-        </ProfileSection>
+                    {SUPPORTED_CURRENCIES.find((c) => c.code === currency)
+                      ?.code || currency}
+                  </Text>
+                  <ChevronRight size={16} color={color.muted} />
+                </Box>
+              }
+            />
+            <ProfileRow
+              icon={Palette}
+              sfIcon="paintpalette.fill"
+              iconColor={color.primary}
+              title="Appearance"
+              subtitle="Light, Dark, or System"
+              onPress={async () => {
+                await triggerHaptic();
+                setIsThemeModalVisible(true);
+              }}
+              trailing={
+                <Box style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text
+                    variant="body"
+                    style={{ color: color.muted, marginRight: spacing.sm }}
+                  >
+                    {colorScheme === "light"
+                      ? "Light"
+                      : colorScheme === "dark"
+                        ? "Dark"
+                        : "System"}
+                  </Text>
+                  <ChevronRight size={16} color={color.muted} />
+                </Box>
+              }
+            />
+          </ProfileSection>
         </Animated.View>
 
         {/* Smart Features */}
-        <Animated.View entering={FadeInDown.duration(duration.normal).delay(200)}>
-        <ProfileSection title="Smart Features">
-          <ProfileRow
-            icon={Copy}
-            sfIcon="doc.on.doc.fill"
-            iconColor={color.primary}
-            title="Auto-copy to Clipboard"
-            subtitle="Copy translation automatically"
-            onPress={async () => {
-              if (!isPro) {
-                AppAlert.info(
-                  'Ekwe Pro Required',
-                  'Auto-copy is a premium feature. Please upgrade to use this.',
-                );
-                router.push('/billing');
-                return;
+        <Animated.View
+          entering={FadeInDown.duration(duration.normal).delay(200)}
+        >
+          <ProfileSection title="Smart Features">
+            <ProfileRow
+              icon={Copy}
+              sfIcon="doc.on.doc.fill"
+              iconColor={color.primary}
+              title="Auto-copy to Clipboard"
+              subtitle="Copy translation automatically"
+              onPress={async () => {
+                if (!isPro) {
+                  AppAlert.info(
+                    "Ekwe Pro Required",
+                    "Auto-copy is a premium feature. Please upgrade to use this.",
+                  );
+                  router.push("/billing");
+                  return;
+                }
+                if (permissions.autoCopy) {
+                  await triggerHaptic();
+                  setAutoCopy(!autoCopy);
+                }
+              }}
+              hasDivider
+              trailing={
+                <Switch
+                  value={permissions.autoCopy ? autoCopy : false}
+                  onValueChange={(val) => {
+                    setAutoCopy(val);
+                  }}
+                  trackColor={{
+                    true: color.primary,
+                    false: color.border,
+                  }}
+                  thumbColor={color.card}
+                  disabled={!permissions.autoCopy}
+                />
               }
-              if (permissions.autoCopy) {
-                await triggerHaptic();
-                setAutoCopy(!autoCopy);
+            />
+            <ProfileRow
+              icon={Eye}
+              sfIcon="eye.fill"
+              iconColor={color.primary}
+              title="Floating Translation Bubble"
+              subtitle="Translate inline in external apps"
+              onPress={async () => {
+                if (permissions.contextAwareness) {
+                  await triggerHaptic();
+                  router.push("/accessibility-disclosure");
+                }
+              }}
+              trailing={
+                <Switch
+                  value={!!hasPermission}
+                  onValueChange={async (value) => {
+                    if (value) {
+                      router.push("/accessibility-disclosure");
+                    }
+                  }}
+                  trackColor={{
+                    true: color.primary,
+                    false: color.border,
+                  }}
+                  thumbColor={color.card}
+                  disabled={!permissions.contextAwareness}
+                />
               }
-            }}
-            hasDivider
-            trailing={
-              <Switch
-                value={permissions.autoCopy ? autoCopy : false}
-                onValueChange={(val) => {
-                  setAutoCopy(val);
-                }}
-                trackColor={{
-                  true: color.primary,
-                  false: color.border,
-                }}
-                thumbColor={color.card}
-                disabled={!permissions.autoCopy}
-              />
-            }
-          />
-          <ProfileRow
-            icon={Eye}
-            sfIcon="eye.fill"
-            iconColor={color.primary}
-            title="Floating Translation Bubble"
-            subtitle="Translate inline in external apps"
-            onPress={async () => {
-              if (permissions.contextAwareness) {
-                await triggerHaptic();
-                router.push('/accessibility-disclosure');
-              }
-            }}
-            trailing={
-              <Switch
-                value={!!hasPermission}
-                onValueChange={async (value) => {
-                  if (value) {
-                    router.push('/accessibility-disclosure');
-                  }
-                }}
-                trackColor={{
-                  true: color.primary,
-                  false: color.border,
-                }}
-                thumbColor={color.card}
-                disabled={!permissions.contextAwareness}
-              />
-            }
-          />
-        </ProfileSection>
+            />
+          </ProfileSection>
         </Animated.View>
 
         {/* Help & Legal */}
-        <Animated.View entering={FadeInDown.duration(duration.normal).delay(250)}>
-        <ProfileSection title="Help & Legal">
-          <ProfileRow
-            icon={Mail}
-            sfIcon="envelope.fill"
-            iconColor={color.primary}
-            title="Contact Support"
-            hasDivider
-            onPress={async () => {
-              await triggerHaptic();
-              Linking.openURL('mailto:emmanuelztrd@gmail.com');
-            }}
-          />
-          <ProfileRow
-            icon={Star}
-            sfIcon="star.fill"
-            iconColor={color.primary}
-            title="Rate Us"
-            hasDivider
-            onPress={async () => {
-              await triggerHaptic();
-              let hasNativeAction = false;
-              try {
-                hasNativeAction = await StoreReview.hasAction();
-              } catch {
-                logger.warn(
-                  'StoreReview native module not found, falling back to Linking',
-                );
-              }
-
-              if (hasNativeAction) {
+        <Animated.View
+          entering={FadeInDown.duration(duration.normal).delay(250)}
+        >
+          <ProfileSection title="Help & Legal">
+            <ProfileRow
+              icon={Mail}
+              sfIcon="envelope.fill"
+              iconColor={color.primary}
+              title="Contact Support"
+              hasDivider
+              onPress={async () => {
+                await triggerHaptic();
+                Linking.openURL("mailto:emmanuelztrd@gmail.com");
+              }}
+            />
+            <ProfileRow
+              icon={Star}
+              sfIcon="star.fill"
+              iconColor={color.primary}
+              title="Rate Us"
+              hasDivider
+              onPress={async () => {
+                await triggerHaptic();
+                let hasNativeAction = false;
                 try {
-                  await StoreReview.requestReview();
-                  return;
+                  hasNativeAction = await StoreReview.hasAction();
                 } catch {
                   logger.warn(
-                    'StoreReview request failed, falling back to Linking',
+                    "StoreReview native module not found, falling back to Linking",
                   );
                 }
-              }
 
-              // Fallback to deep link
-              // Get from .env EXPO_PUBLIC_ITUNES_ITEM_ID
-              const ITUNES_ITEM_ID =
-                process.env.EXPO_PUBLIC_ITUNES_ITEM_ID || '';
-              if (!ITUNES_ITEM_ID || ITUNES_ITEM_ID === '123456789') {
-                logger.warn(
-                  '[profile] ITUNES_ITEM_ID not set in .env - App Store review will fail',
-                );
-              }
-              const ANDROID_PACKAGE_NAME =
-                Constants.expoConfig?.android?.package ?? 'com.anonymous.ekwe';
+                if (hasNativeAction) {
+                  try {
+                    await StoreReview.requestReview();
+                    return;
+                  } catch {
+                    logger.warn(
+                      "StoreReview request failed, falling back to Linking",
+                    );
+                  }
+                }
 
-              if (!ITUNES_ITEM_ID) {
-                AppAlert.error(
-                  'Error',
-                  'iOS App Store ID not configured. Set EXPO_PUBLIC_ITUNES_ITEM_ID in .env',
-                );
-                return;
-              }
+                // Fallback to deep link
+                // Get from .env EXPO_PUBLIC_ITUNES_ITEM_ID
+                const ITUNES_ITEM_ID =
+                  process.env.EXPO_PUBLIC_ITUNES_ITEM_ID || "";
+                if (!ITUNES_ITEM_ID || ITUNES_ITEM_ID === "123456789") {
+                  logger.warn(
+                    "[profile] ITUNES_ITEM_ID not set in .env - App Store review will fail",
+                  );
+                }
+                const ANDROID_PACKAGE_NAME =
+                  Constants.expoConfig?.android?.package ??
+                  "com.anonymous.ekwe";
 
-              const url =
-                isIOS
+                if (!ITUNES_ITEM_ID) {
+                  AppAlert.error(
+                    "Error",
+                    "iOS App Store ID not configured. Set EXPO_PUBLIC_ITUNES_ITEM_ID in .env",
+                  );
+                  return;
+                }
+
+                const url = isIOS
                   ? `itms-apps://itunes.apple.com/app/viewContentsUserReviews?id=${ITUNES_ITEM_ID}&action=write-review`
                   : `market://details?id=${ANDROID_PACKAGE_NAME}`;
-              Linking.openURL(url).catch(() => {
-                AppAlert.error('Error', 'Could not open the app store.');
-              });
-            }}
-          />
-          <ProfileRow
-            icon={Shield}
-            sfIcon="shield.fill"
-            iconColor={color.primary}
-            title="Privacy Policy"
-            hasDivider
-            onPress={async () => {
-              triggerHaptic();
-              router.push('/legal/privacy');
-            }}
-          />
-          <ProfileRow
-            icon={FileText}
-            sfIcon="doc.text.fill"
-            iconColor={color.primary}
-            title="Terms of Service"
-            onPress={async () => {
-              triggerHaptic();
-              router.push('/legal/terms');
-            }}
-          />
-        </ProfileSection>
+                Linking.openURL(url).catch(() => {
+                  AppAlert.error("Error", "Could not open the app store.");
+                });
+              }}
+            />
+            <ProfileRow
+              icon={Shield}
+              sfIcon="shield.fill"
+              iconColor={color.primary}
+              title="Privacy Policy"
+              hasDivider
+              onPress={async () => {
+                triggerHaptic();
+                router.push("/legal/privacy");
+              }}
+            />
+            <ProfileRow
+              icon={FileText}
+              sfIcon="doc.text.fill"
+              iconColor={color.primary}
+              title="Terms of Service"
+              onPress={async () => {
+                triggerHaptic();
+                router.push("/legal/terms");
+              }}
+            />
+          </ProfileSection>
         </Animated.View>
 
-        {/* Danger Zone */}
-        <Animated.View entering={FadeInDown.duration(duration.normal).delay(300)}>
-        <ProfileSection title="Danger Zone" titleColor={color.error}>
-          <ProfileRow
-            icon={LogOut}
-            sfIcon="rectangle.portrait.and.arrow.right"
-            iconColor={color.error}
-            title="Log Out"
-            subtitle="Sign out of your session"
-            hasDivider
-            onPress={async () => {
-              await triggerHaptic();
-              confirmLogout();
-            }}
-            trailing={null}
-          />
-          <ProfileRow
-            icon={Trash2}
-            sfIcon="trash.fill"
-            iconColor={color.error}
-            title="Delete Account"
-            subtitle="Permanently delete your data"
-            onPress={handleDeleteAccount}
-            trailing={null}
-          />
-        </ProfileSection>
+        {/* Account */}
+        <Animated.View
+          entering={FadeInDown.duration(duration.normal).delay(300)}
+        >
+          <ProfileSection title="Account" titleColor={color.error}>
+            <ProfileRow
+              icon={LogOut}
+              sfIcon="rectangle.portrait.and.arrow.right"
+              iconColor={color.error}
+              title="Log Out"
+              subtitle="Sign out of your session"
+              hasDivider
+              onPress={async () => {
+                await triggerHaptic();
+                confirmLogout();
+              }}
+              trailing={null}
+            />
+            <ProfileRow
+              icon={Trash2}
+              sfIcon="trash.fill"
+              iconColor={color.error}
+              title="Delete Account"
+              subtitle="Permanently delete your data"
+              onPress={handleDeleteAccount}
+              trailing={null}
+            />
+          </ProfileSection>
         </Animated.View>
 
         {/* Footer */}
-        <Animated.View entering={FadeInDown.duration(duration.normal).delay(350)}>
-        <Box style={styles.footer}>
-          <Text
-            variant="caption"
-            style={{ opacity: opacity.inactive, color: color.muted }}
-          >
-            Built with ❤️ by EKWE team
-          </Text>
-          <Text
-            variant="caption"
-            style={{
-              opacity: opacity.scrim,
-              marginTop: spacing.xs,
-              color: color.muted,
-            }}
-          >
-            v{Constants.expoConfig?.version ?? '1.0.0'}
-          </Text>
-        </Box>
+        <Animated.View
+          entering={FadeInDown.duration(duration.normal).delay(350)}
+        >
+          <Box style={styles.footer}>
+            <Text
+              variant="caption"
+              style={{ opacity: opacity.inactive, color: color.muted }}
+            >
+              Made by the Ekwe team
+            </Text>
+            <Text
+              variant="caption"
+              style={{
+                opacity: opacity.scrim,
+                marginTop: spacing.xs,
+                color: color.muted,
+              }}
+            >
+              v{Constants.expoConfig?.version ?? "1.0.0"}
+            </Text>
+          </Box>
         </Animated.View>
       </ScrollArea>
 
@@ -600,6 +537,17 @@ export default function ProfileScreen(): React.JSX.Element {
         }}
         currentCurrency={currency}
       />
+
+      <ThemePickerModal
+        visible={isThemeModalVisible}
+        onClose={() => setIsThemeModalVisible(false)}
+        onSelect={async (value) => {
+          await triggerHaptic();
+          setColorScheme(value);
+          setIsThemeModalVisible(false);
+        }}
+        currentTheme={colorScheme}
+      />
     </Box>
   );
 }
@@ -615,7 +563,7 @@ const styles = {
     borderRadius: borderRadius.md,
   },
   footer: {
-    alignItems: 'center' as const,
+    alignItems: "center" as const,
     paddingVertical: spacing.xl,
   },
 };

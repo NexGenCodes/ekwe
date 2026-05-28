@@ -1,20 +1,22 @@
-import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
+import React, { useState } from "react";
+import Animated, { FadeInDown } from "react-native-reanimated";
 
-import { Button, LanguageSelectionGrid } from '@/components';
-import { Box, Text, SafeArea, ScrollArea } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
-import { settingsActions, auth$ } from '@/store';
-import { triggerHaptic } from '@/utils/haptics';
+import { Button, LanguageSelectionGrid } from "@/components";
+import { Box, Text, SafeArea, ScrollArea } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { settingsActions, settings$, auth$ } from "@/store";
+import { triggerHaptic } from "@/utils/haptics";
 
 export default function OnboardingLanguagesScreen(): React.ReactElement {
   const router = useRouter();
   const { setSelectedLanguages, setTargetLanguage, setOnboardingCompleted } =
     settingsActions;
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(() =>
+    settings$.selectedLanguages.get(),
+  );
 
   const { color } = useTheme();
 
@@ -41,9 +43,9 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
 
     const session = auth$.session.get();
     if (session) {
-      router.replace('/(tabs)');
+      router.replace("/(tabs)");
     } else {
-      router.replace('/(auth)/login');
+      router.replace("/(auth)/login");
     }
   };
 
@@ -84,12 +86,16 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
           size="large"
           label={
             selected.length === 5
-              ? 'Start Translating'
+              ? "Start Translating"
               : `Select ${5 - selected.length} more`
           }
           disabled={selected.length !== 5}
           onPress={handleContinue}
-          style={selected.length === 5 ? { backgroundColor: color.secondary } : undefined}
+          style={
+            selected.length === 5
+              ? { backgroundColor: color.secondary }
+              : undefined
+          }
         />
       </Box>
     </SafeArea>
@@ -99,7 +105,7 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
 const styles = {
   header: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing['2xl'],
+    paddingTop: spacing["2xl"],
     paddingBottom: spacing.md,
   } as const,
   title: {
@@ -109,7 +115,7 @@ const styles = {
   scrollView: { flex: 1, paddingHorizontal: spacing.lg } as const,
   bottomSection: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing['3xl'],
+    paddingBottom: spacing["3xl"],
     paddingTop: spacing.md,
     borderTopWidth: 1,
   } as const,

@@ -1,31 +1,38 @@
-import { useSelector } from '@legendapp/state/react';
+import { useSelector } from "@legendapp/state/react";
 import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
-} from '@react-navigation/native';
-import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import * as Linking from 'expo-linking';
-import { useRouter } from 'expo-router';
-import { Stack } from 'expo-router/stack';
-import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useMemo } from 'react';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import 'react-native-reanimated';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+} from "@react-navigation/native";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import * as Linking from "expo-linking";
+import { useRouter } from "expo-router";
+import { Stack } from "expo-router/stack";
+import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
+import React, { useEffect, useMemo } from "react";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import "react-native-reanimated";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { ErrorBoundary, ToastContainer, AppAlertModal, EkweLogo } from '@/components';
-import { Box } from '@/components/ui';
-import { palette } from '@/constants/colors';
-import { useShareIntentHandler, useTheme, useTripleExclusivity } from '@/hooks';
-import { useAppFonts } from '@/hooks/useFonts';
-import { ShareIntentProvider } from '@/providers/ShareIntentProvider';
-import { HistoryService } from '@/services/HistoryService';
-import { SyncService } from '@/services/SyncService';
-import { initAuth } from '@/services/auth';
-import { auth$ } from '@/store';
-import logger from '@/utils/logger';
+import {
+  ErrorBoundary,
+  ToastContainer,
+  AppAlertModal,
+  EkweLogo,
+} from "@/components";
+import { Box } from "@/components/ui";
+import { palette } from "@/constants/colors";
+import { useShareIntentHandler, useTheme, useTripleExclusivity } from "@/hooks";
+import { queryClient } from "@/hooks/queries/queryClient";
+import { useAppFonts } from "@/hooks/useFonts";
+import { ShareIntentProvider } from "@/providers/ShareIntentProvider";
+import { HistoryService } from "@/services/HistoryService";
+import { SyncService } from "@/services/SyncService";
+import { initAuth } from "@/services/auth";
+import { auth$ } from "@/store";
+import logger from "@/utils/logger";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -38,12 +45,12 @@ function InnerLayout(): React.ReactElement {
   // ─── Deep Link: Password Reset ──────────────────────────────
   useEffect(() => {
     const handleDeepLink = async ({ url }: { url: string }): Promise<void> => {
-      if (!url.includes('reset-password')) return;
+      if (!url.includes("reset-password")) return;
 
-      const { setSessionFromDeepLink } = await import('@/services/auth');
+      const { setSessionFromDeepLink } = await import("@/services/auth");
       const success = await setSessionFromDeepLink(url);
       if (success) {
-        router.replace('/(auth)/reset-password');
+        router.replace("/(auth)/reset-password");
       }
     };
 
@@ -52,10 +59,10 @@ function InnerLayout(): React.ReactElement {
         if (url) handleDeepLink({ url });
       })
       .catch((err) => {
-        logger.error('[deepLink] Failed to get initial URL', err);
+        logger.error("[deepLink] Failed to get initial URL", err);
       });
 
-    const linkSub = Linking.addEventListener('url', handleDeepLink);
+    const linkSub = Linking.addEventListener("url", handleDeepLink);
     return (): void => linkSub.remove();
   }, [router]);
 
@@ -91,66 +98,66 @@ function InnerLayout(): React.ReactElement {
       >
         <ErrorBoundary>
           <Box style={{ flex: 1 }}>
-            <StatusBar style={isDark ? 'light' : 'dark'} />
+            <StatusBar style={isDark ? "light" : "dark"} />
 
             <Stack
               screenOptions={{
                 headerShown: false,
-                animation: 'slide_from_bottom',
+                animation: "slide_from_bottom",
               }}
             >
-              <Stack.Screen name="index" options={{ animation: 'fade' }} />
+              <Stack.Screen name="index" options={{ animation: "fade" }} />
               <Stack.Screen
                 name="(onboarding)"
-                options={{ animation: 'fade' }}
+                options={{ animation: "fade" }}
               />
-              <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
-              <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+              <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
+              <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
               <Stack.Screen
                 name="accessibility-disclosure"
                 options={{
-                  presentation: 'formSheet',
+                  presentation: "formSheet",
                   sheetGrabberVisible: true,
                   headerShown: true,
-                  title: 'Disclosure',
-                  contentStyle: { backgroundColor: 'transparent' },
+                  title: "Disclosure",
+                  contentStyle: { backgroundColor: "transparent" },
                 }}
               />
               <Stack.Screen
                 name="result"
                 options={{
-                  presentation: 'transparentModal',
+                  presentation: "transparentModal",
                   headerShown: false,
-                  contentStyle: { backgroundColor: 'transparent' },
+                  contentStyle: { backgroundColor: "transparent" },
                 }}
               />
               <Stack.Screen
                 name="translate"
                 options={{
-                  presentation: 'formSheet',
+                  presentation: "formSheet",
                   sheetGrabberVisible: true,
                   headerShown: true,
-                  title: 'Translate',
-                  contentStyle: { backgroundColor: 'transparent' },
+                  title: "Translate",
+                  contentStyle: { backgroundColor: "transparent" },
                 }}
               />
               <Stack.Screen
                 name="legal"
                 options={{
-                  presentation: 'formSheet',
+                  presentation: "formSheet",
                   sheetGrabberVisible: true,
                   headerShown: true,
-                  title: 'Legal',
-                  contentStyle: { backgroundColor: 'transparent' },
+                  title: "Legal",
+                  contentStyle: { backgroundColor: "transparent" },
                 }}
               />
               <Stack.Screen
                 name="billing"
                 options={{
                   headerShown: true,
-                  title: 'Ekwe Pro',
-                  headerBackTitle: 'Back',
-                  animation: 'slide_from_right',
+                  title: "Ekwe Pro",
+                  headerBackTitle: "Back",
+                  animation: "slide_from_right",
                 }}
               />
             </Stack>
@@ -196,7 +203,14 @@ function RootLayout(): React.ReactElement {
     // Show a simple splash screen while fonts are loading
     return (
       <SafeAreaProvider>
-        <Box style={{ flex: 1, backgroundColor: palette.white, justifyContent: 'center', alignItems: 'center' }}>
+        <Box
+          style={{
+            flex: 1,
+            backgroundColor: palette.white,
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
           <EkweLogo size={120} />
         </Box>
       </SafeAreaProvider>
@@ -205,9 +219,11 @@ function RootLayout(): React.ReactElement {
 
   return (
     <SafeAreaProvider>
-      <ShareIntentProvider>
-        <InnerLayout />
-      </ShareIntentProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShareIntentProvider>
+          <InnerLayout />
+        </ShareIntentProvider>
+      </QueryClientProvider>
     </SafeAreaProvider>
   );
 }

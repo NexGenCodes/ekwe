@@ -1,7 +1,7 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useRouter } from 'expo-router';
-import React from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "expo-router";
+import React from "react";
+import { Controller, useForm } from "react-hook-form";
 
 import {
   AuthHeader,
@@ -13,12 +13,12 @@ import {
   Divider,
   ErrorBanner,
   Button,
-} from '@/components';
-import { Box, Text, Pressable } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { useAuthFlow, useTheme } from '@/hooks';
-import { loginSchema, LoginForm } from '@/schemas/auth';
-import { signInWithPassword } from '@/services/auth';
+} from "@/components";
+import { Box, Text, Pressable } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { useAuthFlow, useTheme } from "@/hooks";
+import { loginSchema, LoginForm } from "@/schemas/auth";
+import { signInWithPassword } from "@/services/auth";
 
 export default function LoginScreen(): React.JSX.Element {
   const router = useRouter();
@@ -29,14 +29,12 @@ export default function LoginScreen(): React.JSX.Element {
 
   const { control, handleSubmit, getValues } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: '', password: '' },
+    defaultValues: { email: "", password: "" },
   });
 
   const onSubmit = (data: LoginForm): void => {
     run(() => signInWithPassword(data.email, data.password));
   };
-
-
 
   return (
     <AuthShell>
@@ -57,6 +55,9 @@ export default function LoginScreen(): React.JSX.Element {
                 placeholder="Email address"
                 keyboardType="email-address"
                 returnKeyType="next"
+                textContentType="emailAddress"
+                autoComplete="email"
+                editable={!isLoading}
                 error={fieldState.error?.message}
               />
             )}
@@ -72,17 +73,19 @@ export default function LoginScreen(): React.JSX.Element {
                 onBlur={onBlur}
                 placeholder="Password"
                 returnKeyType="done"
+                textContentType="password"
+                autoComplete="password"
+                editable={!isLoading}
                 onSubmitEditing={handleSubmit(onSubmit)}
                 error={fieldState.error?.message}
-                showStrength={true}
               />
             )}
           />
         </Box>
 
         <Pressable
-          onPress={() => router.push('/(auth)/forgot-password')}
-          style={{ alignItems: 'flex-end', marginBottom: spacing.lg }}
+          onPress={() => router.push("/(auth)/forgot-password")}
+          style={{ alignItems: "flex-end", marginBottom: spacing.lg }}
         >
           <Text variant="bodySmall" style={{ color: color.primary }}>
             Forgot password?
@@ -97,14 +100,16 @@ export default function LoginScreen(): React.JSX.Element {
 
         <Divider />
 
-        <SocialAuthGroup onApple={handleApple} onGoogle={handleGoogle} disabled={isLoading} />
-
-
+        <SocialAuthGroup
+          onApple={handleApple}
+          onGoogle={handleGoogle}
+          disabled={isLoading}
+        />
 
         <AuthFooter
           text="Don't have an account?"
           linkText="Create one"
-          onPress={() => router.push('/(auth)/signup')}
+          onPress={() => router.push("/(auth)/signup")}
         />
       </Box>
     </AuthShell>

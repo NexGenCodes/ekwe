@@ -1,5 +1,10 @@
-import { Env, Tier, TranslateResult } from './types';
-import { logger } from './logger';
+import { logger } from "./logger";
+import * as cloudflare from "./providers/cloudflare";
+import * as cohere from "./providers/cohere";
+import * as gemini from "./providers/gemini";
+import * as groq from "./providers/groq";
+import * as mistral from "./providers/mistral";
+import * as openrouter from "./providers/openrouter";
 import {
   guardTextLength,
   guardAutoDetect,
@@ -7,13 +12,8 @@ import {
   safeParseJSON,
   sanitizeTranslationText,
   getLanguageName,
-} from './security';
-import * as groq from './providers/groq';
-import * as mistral from './providers/mistral';
-import * as openrouter from './providers/openrouter';
-import * as cloudflare from './providers/cloudflare';
-import * as gemini from './providers/gemini';
-import * as cohere from './providers/cohere';
+} from "./security";
+import { Env, Tier, TranslateResult } from "./types";
 
 // ─── Translation Provider Signature ───────────────────────────────
 
@@ -27,28 +27,28 @@ type TranslateFn = (
 
 // ─── Tier-based Pipeline Definitions ──────────────────────────────
 
-const PREMIUM_PIPELINE: Array<{ name: string; fn: TranslateFn }> = [
-  { name: 'gemini', fn: gemini.translate },
-  { name: 'cohere', fn: cohere.translate },
-  { name: 'mistral', fn: mistral.translate },
-  { name: 'groq', fn: groq.translate },
-  { name: 'openrouter', fn: openrouter.translate },
-  { name: 'cloudflare', fn: cloudflare.translate },
+const PREMIUM_PIPELINE: { name: string; fn: TranslateFn }[] = [
+  { name: "gemini", fn: gemini.translate },
+  { name: "cohere", fn: cohere.translate },
+  { name: "mistral", fn: mistral.translate },
+  { name: "groq", fn: groq.translate },
+  { name: "openrouter", fn: openrouter.translate },
+  { name: "cloudflare", fn: cloudflare.translate },
 ];
 
-const FREE_PIPELINE: Array<{ name: string; fn: TranslateFn }> = [
-  { name: 'groq', fn: groq.translate },
-  { name: 'gemini', fn: gemini.translate },
-  { name: 'cohere', fn: cohere.translate },
-  { name: 'openrouter', fn: openrouter.translate },
-  { name: 'cloudflare', fn: cloudflare.translate },
+const FREE_PIPELINE: { name: string; fn: TranslateFn }[] = [
+  { name: "groq", fn: groq.translate },
+  { name: "gemini", fn: gemini.translate },
+  { name: "cohere", fn: cohere.translate },
+  { name: "openrouter", fn: openrouter.translate },
+  { name: "cloudflare", fn: cloudflare.translate },
 ];
 
 async function sha256(message: string): Promise<string> {
   const msgBuffer = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────────
@@ -69,7 +69,7 @@ export async function handleTranslate(
   const body = parsed.data;
 
   if (!body.text?.trim()) {
-    return Response.json({ error: 'EKWE_EMPTY_TRANSCRIPT' }, { status: 400 });
+    return Response.json({ error: "EKWE_EMPTY_TRANSCRIPT" }, { status: 400 });
   }
 
   // ── Security Guards (centralized in security.ts) ──
@@ -79,10 +79,10 @@ export async function handleTranslate(
   const autoGuard = guardAutoDetect(body.sourceLang, tier);
   if (!autoGuard.allowed) return autoGuard.response;
 
-  const srcLangGuard = guardLanguageCode(body.sourceLang, 'sourceLang');
+  const srcLangGuard = guardLanguageCode(body.sourceLang, "sourceLang");
   if (!srcLangGuard.allowed) return srcLangGuard.response;
 
-  const tgtLangGuard = guardLanguageCode(body.targetLang, 'targetLang');
+  const tgtLangGuard = guardLanguageCode(body.targetLang, "targetLang");
   if (!tgtLangGuard.allowed) return tgtLangGuard.response;
 
   // ── Prompt Injection Defense (silent strip) ──
@@ -92,7 +92,7 @@ export async function handleTranslate(
   let cacheKey: string;
   try {
     const textHash = await sha256(
-      `${cleanText}_${body.sourceLang || 'auto'}_${body.targetLang}`,
+      `${cleanText}_${body.sourceLang || "auto"}_${body.targetLang}`,
     );
     cacheKey = `trans:${textHash}`;
     const cached = await env.EKWE_KV.get(cacheKey);
@@ -107,18 +107,18 @@ export async function handleTranslate(
     });
     return Response.json(
       {
-        error: 'EKWE_ALL_PROVIDERS_FAIL',
-        message: 'Service temporarily unavailable. Please try again later.',
+        error: "EKWE_ALL_PROVIDERS_FAIL",
+        message: "Service temporarily unavailable. Please try again later.",
       },
       { status: 503 },
     );
   }
 
-  const pipeline = tier === 'PREMIUM' ? PREMIUM_PIPELINE : FREE_PIPELINE;
+  const pipeline = tier === "PREMIUM" ? PREMIUM_PIPELINE : FREE_PIPELINE;
 
   for (const provider of pipeline) {
     try {
-      if (signal.aborted) throw new Error('CLIENT_ABORTED');
+      if (signal.aborted) throw new Error("CLIENT_ABORTED");
       const targetName = getLanguageName(body.targetLang);
       const sourceName = getLanguageName(body.sourceLang);
 
@@ -134,34 +134,26 @@ export async function handleTranslate(
           provider: result.provider,
         });
 
-        // Write to cache (Fail-Closed for security - if write fails, block return)
+        // Write to cache (best-effort — fail-open so the user still gets their translation)
         try {
           await env.EKWE_KV.put(cacheKey, JSON.stringify(result), {
             expirationTtl: 30 * 24 * 60 * 60,
           }); // 30 days
         } catch (err) {
-          logger.error(`[translate] KV cache write error (Failing closed)`, {
+          logger.error(`[translate] KV cache write error`, {
             error: String(err),
           });
-          return Response.json(
-            {
-              error: 'EKWE_ALL_PROVIDERS_FAIL',
-              message:
-                'Service temporarily unavailable. Please try again later.',
-            },
-            { status: 503 },
-          );
         }
 
         return Response.json(result);
       }
     } catch (e: unknown) {
-      if (e instanceof Error && e.message === 'CLIENT_ABORTED') throw e;
+      if (e instanceof Error && e.message === "CLIENT_ABORTED") throw e;
       logger.error(`[translate] ${provider.name} failed`, {
         error: e instanceof Error ? e.message : String(e),
       });
     }
   }
 
-  return Response.json({ error: 'EKWE_ALL_PROVIDERS_FAIL' }, { status: 503 });
+  return Response.json({ error: "EKWE_ALL_PROVIDERS_FAIL" }, { status: 503 });
 }

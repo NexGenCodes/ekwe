@@ -4,16 +4,13 @@
  * Every auth screen calls these functions instead of touching supabase.auth directly.
  * This keeps screens thin and auth logic testable + swappable.
  */
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import * as AppleAuthentication from 'expo-apple-authentication';
+import { AuthService, AuthError } from "react-native-nitro-auth";
 
-
-import { TranscriptionService } from '@/services/Transcription';
-import { TranslationService } from '@/services/Translation';
-import { supabase } from '@/services/supabase';
-import { authActions } from '@/store';
-import logger from '@/utils/logger';
-import { isIOS } from '@/utils';
+import { queryClient } from "@/hooks/queries/queryClient";
+import { supabase } from "@/services/supabase";
+import { authActions } from "@/store";
+import { isIOS } from "@/utils";
+import logger from "@/utils/logger";
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -38,9 +35,9 @@ export const initAuth = (): void => {
     logger.info(`Auth state changed: ${event}`, session?.user?.id);
     authActions.setSession(session);
     authActions.setInitialized(true);
-    if (event === 'SIGNED_OUT') {
-      TranslationService.clearCache();
-      TranscriptionService.clearCache();
+    if (event === "SIGNED_OUT") {
+      queryClient.invalidateQueries({ queryKey: ["translate"] });
+      queryClient.invalidateQueries({ queryKey: ["transcribe"] });
     }
   });
   _authSubscription = subscription;
@@ -69,15 +66,15 @@ export const signInWithPassword = async (
       return {
         ok: false,
         error:
-          error.message === 'Invalid login credentials'
-            ? 'Incorrect email or password.'
+          error.message === "Invalid login credentials"
+            ? "Incorrect email or password."
             : error.message,
       };
     }
     return { ok: true };
   } catch (err) {
-    logger.error('[Auth] signInWithPassword error:', err);
-    return { ok: false, error: 'Sign in failed. Please try again.' };
+    logger.error("[Auth] signInWithPassword error:", err);
+    return { ok: false, error: "Something went wrong. Give it another try." };
   }
 };
 
@@ -94,8 +91,8 @@ export const signUpWithPassword = async (
     // Supabase sends a confirmation OTP email
     return { ok: true, needsOtp: true };
   } catch (err) {
-    logger.error('[Auth] signUpWithPassword error:', err);
-    return { ok: false, error: 'Sign up failed. Please try again.' };
+    logger.error("[Auth] signUpWithPassword error:", err);
+    return { ok: false, error: "Something went wrong. Want to try again?" };
   }
 };
 
@@ -109,8 +106,11 @@ export const sendOtp = async (email: string): Promise<AuthResult> => {
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err) {
-    logger.error('[Auth] sendOtp error:', err);
-    return { ok: false, error: 'Failed to send verification code.' };
+    logger.error("[Auth] sendOtp error:", err);
+    return {
+      ok: false,
+      error: "We couldn't send the code. Please try again in a moment.",
+    };
   }
 };
 
@@ -122,20 +122,23 @@ export const verifyOtp = async (
     const { data, error } = await supabase.auth.verifyOtp({
       email: email.trim(),
       token: token.trim(),
-      type: 'email',
+      type: "email",
     });
     if (error) return { ok: false, error: error.message };
-    if (!data.session) return { ok: false, error: 'Verification failed.' };
+    if (!data.session)
+      return { ok: false, error: "Verification didn't complete. Try again." };
     return { ok: true };
   } catch (err) {
-    logger.error('[Auth] verifyOtp error:', err);
-    return { ok: false, error: 'Invalid code. Please try again.' };
+    logger.error("[Auth] verifyOtp error:", err);
+    return { ok: false, error: "That code didn't match. Check and try again." };
   }
 };
 
 // ── Password Reset ──────────────────────────────────────────────
 
-export const sendPasswordResetOtp = async (email: string): Promise<AuthResult> => {
+export const sendPasswordResetOtp = async (
+  email: string,
+): Promise<AuthResult> => {
   try {
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
@@ -145,18 +148,21 @@ export const sendPasswordResetOtp = async (email: string): Promise<AuthResult> =
     });
 
     if (error) {
-      logger.error('[Auth] sendPasswordResetOtp error:', error);
+      logger.error("[Auth] sendPasswordResetOtp error:", error);
       // Pass through rate-limit errors so the user knows they are spamming
       if (error.status === 429) {
-        return { ok: false, error: 'Please wait a moment before trying again.' };
+        return {
+          ok: false,
+          error: "Too many requests. Wait a moment and try again.",
+        };
       }
-      // Security: Silently succeed for all other errors (like user not found) 
+      // Security: Silently succeed for all other errors (like user not found)
       // to prevent email enumeration attacks.
       return { ok: true };
     }
     return { ok: true };
   } catch (err) {
-    logger.error('[Auth] sendPasswordResetOtp error:', err);
+    logger.error("[Auth] sendPasswordResetOtp error:", err);
     // Security: Silently succeed on unexpected exceptions too
     return { ok: true };
   }
@@ -172,8 +178,8 @@ export const updatePassword = async (
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err) {
-    logger.error('[Auth] updatePassword error:', err);
-    return { ok: false, error: 'Failed to update password.' };
+    logger.error("[Auth] updatePassword error:", err);
+    return { ok: false, error: "Couldn't update your password. Try again." };
   }
 };
 
@@ -181,99 +187,70 @@ export const updatePassword = async (
 
 export const signInWithApple = async (): Promise<AuthResult> => {
   if (!isIOS) {
-    return { ok: false, error: 'Apple Sign In is only available on iOS.' };
+    return { ok: false, error: "Apple Sign In is available on iOS only." };
   }
 
   try {
-    const credential = await AppleAuthentication.signInAsync({
-      requestedScopes: [
-        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-        AppleAuthentication.AppleAuthenticationScope.EMAIL,
-      ],
+    await AuthService.login("apple", {
+      scopes: ["email", "fullName"],
     });
 
-    if (!credential.identityToken) {
-      return { ok: false, error: 'Apple Sign In failed — no identity token.' };
+    const user = AuthService.currentUser;
+    const idToken = user?.idToken;
+    if (!idToken) {
+      return { ok: false, error: "Apple Sign In couldn't be completed." };
     }
 
     const { error } = await supabase.auth.signInWithIdToken({
-      provider: 'apple',
-      token: credential.identityToken,
+      provider: "apple",
+      token: idToken,
     });
 
     if (error) return { ok: false, error: error.message };
 
-    // Apple only provides name on FIRST sign-in — persist it
-    if (credential.fullName?.givenName) {
+    if (user?.name) {
       await supabase.auth.updateUser({
-        data: {
-          full_name:
-            `${credential.fullName.givenName} ${credential.fullName.familyName || ''}`.trim(),
-        },
+        data: { full_name: user.name },
       });
     }
 
     return { ok: true };
   } catch (err: unknown) {
-    if (
-      err instanceof Error &&
-      'code' in err &&
-      (err as { code: string }).code === 'ERR_REQUEST_CANCELED'
-    ) {
-      return { ok: false }; // User cancelled — not an error
+    if (err instanceof AuthError && err.code === "cancelled") {
+      return { ok: false };
     }
-    logger.error('[Auth] Apple sign-in error:', err);
-    return { ok: false, error: 'Apple Sign In failed.' };
+    logger.error("[Auth] Apple sign-in error:", err);
+    return { ok: false, error: "Apple Sign In failed. Please try again." };
   }
 };
 
 // ── Social: Google ──────────────────────────────────────────────
 
-let googleConfigured = false;
-
-const configureGoogleSignIn = (): void => {
-  if (googleConfigured) return;
-  try {
-    GoogleSignin.configure({
-      webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-      scopes: ['openid', 'email', 'profile'],
-    });
-    googleConfigured = true;
-  } catch {
-    // Package not installed — will fail gracefully at signIn time
-  }
-};
-
 export const signInWithGoogle = async (): Promise<AuthResult> => {
   try {
-    configureGoogleSignIn();
+    await AuthService.login("google", {
+      scopes: ["openid", "email", "profile"],
+    });
 
-    await GoogleSignin.hasPlayServices();
-    await GoogleSignin.signOut(); // Force account chooser every time
-    const userInfo = await GoogleSignin.signIn();
-
-    const idToken = userInfo.data?.idToken;
+    const user = AuthService.currentUser;
+    const idToken = user?.idToken;
     if (!idToken) {
-      return { ok: false, error: 'Google Sign In failed — no ID token.' };
+      return { ok: false, error: "Google Sign In couldn't be completed." };
     }
 
     const { error } = await supabase.auth.signInWithIdToken({
-      provider: 'google',
+      provider: "google",
       token: idToken,
     });
 
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err: unknown) {
-    if (
-      err instanceof Error &&
-      'code' in err &&
-      (err as { code: string }).code === 'SIGN_IN_CANCELLED'
-    ) {
-      return { ok: false }; // User cancelled — not an error
+    if (err instanceof AuthError && err.code === "cancelled") {
+      return { ok: false };
     }
-    logger.error('[Auth] Google sign-in error:', err);
-    return { ok: false, error: 'Google Sign In failed.' };
+    logger.error("[Auth] Google sign-in error:", err);
+    return { ok: false, error: "Google Sign In failed. Please try again." };
   }
 };
 
@@ -281,10 +258,10 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
 
 export const setSessionFromDeepLink = async (url: string): Promise<boolean> => {
   try {
-    const fragment = url.split('#')[1] || url.split('?')[1] || '';
+    const fragment = url.split("#")[1] || url.split("?")[1] || "";
     const params = new URLSearchParams(fragment);
-    const access_token = params.get('access_token');
-    const refresh_token = params.get('refresh_token');
+    const access_token = params.get("access_token");
+    const refresh_token = params.get("refresh_token");
 
     if (!access_token || !refresh_token) return false;
 
@@ -295,52 +272,48 @@ export const setSessionFromDeepLink = async (url: string): Promise<boolean> => {
 
     return !error;
   } catch (err) {
-    logger.error('[Auth] setSessionFromDeepLink error:', err);
+    logger.error("[Auth] setSessionFromDeepLink error:", err);
     return false;
   }
 };
 
 // ── Account Management ──────────────────────────────────────────
 
-const signOutGoogle = async (): Promise<void> => {
-  try {
-    await GoogleSignin.signOut();
-  } catch {
-    // Not signed in with Google — ignore
-  }
-};
-
 export const signOut = async (): Promise<AuthResult> => {
   try {
-    await signOutGoogle();
     const { error } = await supabase.auth.signOut();
+    AuthService.logout();
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err) {
-    logger.error('[Auth] signOut error:', err);
-    return { ok: false, error: 'An unexpected error occurred.' };
+    logger.error("[Auth] signOut error:", err);
+    return {
+      ok: false,
+      error: "Something unexpected happened. Please try again.",
+    };
   }
 };
 
 export const deleteAccount = async (): Promise<AuthResult> => {
   try {
-    await signOutGoogle();
-    const { error } = await supabase.rpc('delete_user');
+    const { error } = await supabase.rpc("delete_user");
     if (error) {
-      logger.error('[Auth] delete_user RPC error:', error);
+      logger.error("[Auth] delete_user RPC error:", error);
       return {
         ok: false,
         error:
-          'Please contact support at support@ekwe.app to complete account deletion.',
+          "Please contact support at support@ekwe.app to complete account deletion.",
       };
     }
     await supabase.auth.signOut();
+    AuthService.logout();
+    queryClient.clear();
     return { ok: true };
   } catch (err) {
-    logger.error('[Auth] deleteAccount error:', err);
+    logger.error("[Auth] deleteAccount error:", err);
     return {
       ok: false,
-      error: 'An unexpected error occurred. Please contact support.',
+      error: "Something went wrong. Please contact support for help.",
     };
   }
 };

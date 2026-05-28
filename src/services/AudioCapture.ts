@@ -1,21 +1,21 @@
-import * as Haptics from 'expo-haptics';
-import { Linking } from 'react-native';
-import { isAndroid } from '@/utils';
-import { AudioContext } from 'react-native-audio-api';
+import * as Haptics from "expo-haptics";
+import { Linking } from "react-native";
+import { AudioContext } from "react-native-audio-api";
 
-import { PLAN_LIMITS } from '@/constants/billing';
-import { EkweError } from '@/constants/errors';
-import AudioService from '@/services/AudioService';
-import { VolumeManager } from '@/services/VolumeManager';
-import { auth$ } from '@/store';
-import { Result, ok, err } from '@/types/Result';
+import { PLAN_LIMITS } from "@/constants/billing";
+import { EkweError } from "@/constants/errors";
+import AudioService from "@/services/AudioService";
+import { VolumeManager } from "@/services/VolumeManager";
+import { auth$ } from "@/store";
+import { Result, ok, err } from "@/types/Result";
+import { isAndroid } from "@/utils";
 import {
   attachAudioEffects,
   releaseAudioEffects,
-} from '@/utils/AudioEffectsModule';
-import { AppAlert } from '@/utils/alert';
-import { validateSharedAudio } from '@/utils/fileValidation';
-import logger from '@/utils/logger';
+} from "@/utils/AudioEffectsModule";
+import { AppAlert } from "@/utils/alert";
+import { validateSharedAudio } from "@/utils/fileValidation";
+import logger from "@/utils/logger";
 
 export interface CaptureSession {
   sessionId: string;
@@ -35,7 +35,7 @@ class AudioCaptureClass {
   private currentMeteringData: number[] = []; // Track during session
   private maxDurationTimeout: ReturnType<typeof setTimeout> | null = null;
   private listeners: ((amplitude: number) => void)[] = [];
-  private statusListeners: ((status: 'started' | 'stopped') => void)[] = [];
+  private statusListeners: ((status: "started" | "stopped") => void)[] = [];
   private onAutoStopCallback: (() => void) | null = null;
   private isStartingParams = false;
 
@@ -45,16 +45,16 @@ class AudioCaptureClass {
   async requestPermission(): Promise<Result<boolean, EkweError>> {
     try {
       const status = await AudioService.requestPermission();
-      if (status === 'Granted') return ok(true);
+      if (status === "Granted") return ok(true);
 
-      if (status === 'Denied' || status === 'Restricted') {
+      if (status === "Denied" || status === "Restricted") {
         AppAlert.info(
-          'Microphone Required',
-          'Ekwe needs microphone access to record and translate voice notes. Please enable it in Settings.',
+          "Microphone Required",
+          "Ekwe needs microphone access to record and translate voice notes. Please enable it in Settings.",
           [
-            { text: 'Cancel', style: 'cancel' },
+            { text: "Cancel", style: "cancel" },
             {
-              text: 'Open Settings',
+              text: "Open Settings",
               onPress: (): Promise<void> => Linking.openSettings(),
             },
           ],
@@ -73,7 +73,7 @@ class AudioCaptureClass {
   async checkPermission(): Promise<Result<boolean, EkweError>> {
     try {
       const status = await AudioService.checkPermission();
-      return ok(status === 'Granted');
+      return ok(status === "Granted");
     } catch {
       return err(EkweError.PERMISSION_MIC);
     }
@@ -92,7 +92,7 @@ class AudioCaptureClass {
 
     if (AudioService.isRecording()) {
       logger.info(
-        'AudioCapture: Native recorder already active, stopping before restart...',
+        "AudioCapture: Native recorder already active, stopping before restart...",
       );
       await this.stopRecording().catch(() => {});
     }
@@ -112,7 +112,7 @@ class AudioCaptureClass {
       this.currentMeteringData = []; // Reset for new session
       this.onAutoStopCallback = onAutoStop ?? null;
       await AudioService.startRecording();
-      this.notifyStatusListeners('started');
+      this.notifyStatusListeners("started");
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -135,7 +135,7 @@ class AudioCaptureClass {
           if (silenceStartTime === null) {
             silenceStartTime = Date.now();
           } else if (Date.now() - silenceStartTime > SILENCE_DURATION_MS) {
-            logger.info('AudioCapture: Silence detected, auto-stopping...');
+            logger.info("AudioCapture: Silence detected, auto-stopping...");
 
             // Synchronously clear the interval to prevent race conditions while waiting for the native bridge
             if (this.meteringInterval !== null) {
@@ -187,6 +187,10 @@ class AudioCaptureClass {
       this.isStartingParams = false;
       return ok(undefined);
     } catch {
+      if (this.meteringInterval !== null) {
+        clearInterval(this.meteringInterval);
+        this.meteringInterval = null;
+      }
       this.currentSessionId = null;
       this.isStartingParams = false;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -220,7 +224,7 @@ class AudioCaptureClass {
 
     try {
       const { path, duration } = await AudioService.stopRecording();
-      this.notifyStatusListeners('stopped');
+      this.notifyStatusListeners("stopped");
 
       if (duration < 500) {
         this.currentSessionId = null;
@@ -249,7 +253,7 @@ class AudioCaptureClass {
       return ok(result);
     } catch {
       this.currentSessionId = null;
-      this.notifyStatusListeners('stopped');
+      this.notifyStatusListeners("stopped");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return err(EkweError.INTERRUPTED);
     }
@@ -275,7 +279,7 @@ class AudioCaptureClass {
     try {
       const result = await AudioService.stopRecording();
       path = result.path;
-      this.notifyStatusListeners('stopped');
+      this.notifyStatusListeners("stopped");
     } catch {
       // Ignore errors during cancel
     }
@@ -347,7 +351,7 @@ class AudioCaptureClass {
    * Adds a listener for recording status changes.
    */
   addStatusListener(
-    callback: (status: 'started' | 'stopped') => void,
+    callback: (status: "started" | "stopped") => void,
   ): () => void {
     this.statusListeners.push(callback);
     return () => {
@@ -355,7 +359,7 @@ class AudioCaptureClass {
     };
   }
 
-  private notifyStatusListeners(status: 'started' | 'stopped'): void {
+  private notifyStatusListeners(status: "started" | "stopped"): void {
     this.statusListeners.forEach((l) => l(status));
   }
 

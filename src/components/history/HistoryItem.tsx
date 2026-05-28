@@ -1,23 +1,23 @@
-import * as Haptics from 'expo-haptics';
-import { Image as ExpoImage } from 'expo-image';
-import { Mic, Upload, Type } from 'lucide-react-native';
-import React, { useRef, useCallback, useMemo } from 'react';
-import { ViewStyle, StyleSheet } from 'react-native';
-import { Swipeable } from 'react-native-gesture-handler';
+import * as Haptics from "expo-haptics";
+import { Image as ExpoImage } from "expo-image";
+import { Mic, Upload, Type } from "lucide-react-native";
+import React, { useRef, useCallback, useMemo } from "react";
+import { ViewStyle, StyleSheet } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 
-import { Card } from '../Card';
-import { Badge } from '../Badge';
+import { Badge } from "../Badge";
+import { Card } from "../Card";
 
-import { TrashIcon } from '@/assets/icons/TrashIcon';
-import { Box, Text, Pressable } from '@/components/ui';
-import { getLanguageName } from '@/constants/languages';
-import { borderRadius, iconSize } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { getEntryType } from '@/hooks/useHistorySearch';
-import { useTheme } from '@/hooks';
-import { HistoryEntry } from '@/store';
-import { getRelativeTime } from '@/utils/relativeTime';
-import { isIOS } from '@/utils';
+import { TrashIcon } from "@/assets/icons/TrashIcon";
+import { Box, Text, Pressable } from "@/components/ui";
+import { getLanguageName } from "@/constants/languages";
+import { borderRadius, iconSize } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { getEntryType } from "@/hooks/useHistorySearch";
+import { HistoryEntry } from "@/store";
+import { isIOS } from "@/utils";
+import { getRelativeTime } from "@/utils/relativeTime";
 
 export interface HistoryItemProps {
   entry: HistoryEntry;
@@ -48,12 +48,24 @@ export const HistoryItem = React.memo(
       swipeableRef.current?.close();
     }, [entry.id, onDelete]);
 
+    const rightActionBg = useMemo(() => `${color.error}20`, [color.error]);
+
+    const deleteAccessibilityLabel = useMemo(
+      () => `Delete ${entry.transcript?.split("\n")[0] || "entry"}`,
+      [entry.transcript],
+    );
+
+    const trashIconStyle = useMemo(
+      () => ({ width: iconSize.md, height: iconSize.md }),
+      [],
+    );
+
     const renderRightActions = useCallback(
       (): React.ReactElement => (
         <Box
           style={[
             styles.rightActionContainer,
-            { backgroundColor: `${color.error}20` },
+            { backgroundColor: rightActionBg },
           ]}
         >
           <Pressable
@@ -61,12 +73,12 @@ export const HistoryItem = React.memo(
             hitSlop={spacing.sm}
             onPress={handleDelete}
             style={styles.deleteButton}
-            accessibilityLabel={`Delete ${entry.transcript?.split('\n')[0] || 'entry'}`}
+            accessibilityLabel={deleteAccessibilityLabel}
           >
             {isIOS ? (
               <ExpoImage
                 source="sf:trash.fill"
-                style={{ width: iconSize.md, height: iconSize.md }}
+                style={trashIconStyle}
                 tintColor={color.error}
               />
             ) : (
@@ -75,7 +87,7 @@ export const HistoryItem = React.memo(
           </Pressable>
         </Box>
       ),
-      [color.error, handleDelete, entry.transcript],
+      [rightActionBg, handleDelete, deleteAccessibilityLabel, color.error],
     );
 
     // Format duration nicely
@@ -99,7 +111,7 @@ export const HistoryItem = React.memo(
 
     // Semantic type: transcription | translation | both
     const entryType = useMemo(() => getEntryType(entry), [entry]);
-    const isTranslation = entryType !== 'transcription';
+    const isTranslation = entryType !== "transcription";
 
     const snippetBody = useMemo((): React.ReactNode => {
       const hasTranscript = !!entry.transcript?.trim();
@@ -117,7 +129,12 @@ export const HistoryItem = React.memo(
 
       // Show dual-text + accent border for entries that have both
       // a transcript AND a distinct translation (entryType === 'both' or 'translation')
-      if ((entryType === 'both' || entryType === 'translation') && hasTranslation && hasTranscript && areDifferent) {
+      if (
+        (entryType === "both" || entryType === "translation") &&
+        hasTranslation &&
+        hasTranscript &&
+        areDifferent
+      ) {
         return (
           <Box style={{ gap: spacing.xs }}>
             {/* Original transcript — muted, one line */}
@@ -152,7 +169,7 @@ export const HistoryItem = React.memo(
       // Transcription or translation-only: show the single available text
       const textToShow = entry.translation?.trim() || entry.transcript?.trim();
       const textColor =
-        entryType === 'transcription' ? color.foreground : color.secondary;
+        entryType === "transcription" ? color.foreground : color.secondary;
       return (
         <Text
           variant="bodySmall"
@@ -167,25 +184,31 @@ export const HistoryItem = React.memo(
 
     // Resolve media badge label — transcription/translation entries get clear type labels
     const mediaBadgeLabel = useMemo(() => {
-      const isShared = entry.sourceApp && entry.sourceApp !== 'ekwe' && entry.sourceApp !== 'ekwe-home';
-      const durationStr = formattedDuration ? ` • ${formattedDuration}` : '';
+      const isShared =
+        entry.sourceApp &&
+        entry.sourceApp !== "ekwe" &&
+        entry.sourceApp !== "ekwe-home";
+      const durationStr = formattedDuration ? ` • ${formattedDuration}` : "";
 
-      if (entryType === 'both') {
+      if (entryType === "both") {
         return `Both${durationStr}`;
       }
-      if (entryType === 'transcription') {
+      if (entryType === "transcription") {
         return `Transcription${durationStr}`;
       }
       // entryType === 'translation'
       if (isShared && (!entry.duration || entry.duration === 0)) {
-        return 'Shared Text';
+        return "Shared Text";
       }
       return `Translation${durationStr}`;
     }, [entryType, entry.sourceApp, entry.duration, formattedDuration]);
 
     // Resolve media badge icon
     const mediaBadgeIcon = useMemo(() => {
-      const isShared = entry.sourceApp && entry.sourceApp !== 'ekwe' && entry.sourceApp !== 'ekwe-home';
+      const isShared =
+        entry.sourceApp &&
+        entry.sourceApp !== "ekwe" &&
+        entry.sourceApp !== "ekwe-home";
       if (isShared) {
         return <Upload size={iconSize.xs} color={color.muted} />;
       }
@@ -195,6 +218,23 @@ export const HistoryItem = React.memo(
       return <Mic size={iconSize.xs} color={color.muted} />;
     }, [entry.sourceApp, entry.duration, color.muted]);
 
+    const cardStyle = useMemo(
+      () => [
+        styles.itemCard,
+        { borderColor: color.border, backgroundColor: color.card },
+        style,
+      ],
+      [color.border, color.card, style],
+    );
+
+    const pressableLabel = useMemo(
+      () =>
+        `${entry.transcript?.split("\n")[0] || "Voice Note"}. ${getLanguageName(entry.sourceLang)} to ${getLanguageName(entry.targetLang)}`,
+      [entry.transcript, entry.sourceLang, entry.targetLang],
+    );
+
+    const captionStyle = useMemo(() => ({ color: color.muted }), [color.muted]);
+
     return (
       <Swipeable
         ref={swipeableRef}
@@ -203,18 +243,11 @@ export const HistoryItem = React.memo(
         rightThreshold={40}
         containerStyle={styles.swipeableContainer}
       >
-        <Card
-          padding="none"
-          style={[
-            styles.itemCard,
-            { borderColor: color.border, backgroundColor: color.card },
-            style,
-          ]}
-        >
+        <Card padding="none" style={cardStyle}>
           <Pressable
             onPress={handlePress}
             style={styles.contentContainer}
-            accessibilityLabel={`${entry.transcript?.split('\n')[0] || 'Voice Note'}. ${getLanguageName(entry.sourceLang)} to ${getLanguageName(entry.targetLang)}`}
+            accessibilityLabel={pressableLabel}
           >
             {/* Badge row — language + media type */}
             <Box style={styles.badgeRow}>
@@ -244,7 +277,7 @@ export const HistoryItem = React.memo(
 
             {/* Footer — timestamp */}
             <Box style={styles.footer}>
-              <Text variant="caption" style={{ color: color.muted }}>
+              <Text variant="caption" style={captionStyle}>
                 {getRelativeTime(entry.timestamp)}
               </Text>
             </Box>
@@ -269,21 +302,21 @@ export const HistoryItem = React.memo(
 
 const styles = StyleSheet.create({
   swipeableContainer: {
-    backgroundColor: 'transparent',
-    overflow: 'hidden',
+    backgroundColor: "transparent",
+    overflow: "hidden",
   },
   itemCard: {
     borderRadius: borderRadius.xl,
     borderWidth: 1,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   contentContainer: {
     padding: spacing.md,
     gap: spacing.sm,
   },
   badgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.xs,
   },
   snippetBody: {
@@ -295,19 +328,19 @@ const styles = StyleSheet.create({
     paddingLeft: spacing.sm,
   },
   footer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
+    flexDirection: "row",
+    justifyContent: "flex-end",
     marginTop: spacing.xs,
   },
   rightActionContainer: {
-    width: spacing['6xl'],
-    justifyContent: 'center',
+    width: spacing["6xl"],
+    justifyContent: "center",
     borderRadius: borderRadius.xl,
   },
   deleteButton: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     padding: spacing.sm,
   },
 });

@@ -58,6 +58,7 @@ coverage/
 .vscode/
 .idea/
 .agents/
+.claude/
 
 # OS specific
 Thumbs.db

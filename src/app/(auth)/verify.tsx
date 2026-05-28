@@ -1,7 +1,7 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState, useEffect, useCallback } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useState, useEffect, useCallback } from "react";
+import { Controller, useForm } from "react-hook-form";
 
 import {
   AuthHeader,
@@ -9,14 +9,14 @@ import {
   Input,
   ErrorBanner,
   Button,
-} from '@/components';
-import { Box, Text, Pressable } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { typography } from '@/constants/typography';
-import { useTheme } from '@/hooks';
-import { otpSchema, OtpForm } from '@/schemas/auth';
-import { verifyOtp, sendOtp } from '@/services/auth';
-import { settingsActions } from '@/store';
+} from "@/components";
+import { Box, Text, Pressable } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { typography } from "@/constants/typography";
+import { useTheme } from "@/hooks";
+import { otpSchema, OtpForm } from "@/schemas/auth";
+import { verifyOtp, sendOtp } from "@/services/auth";
+import { settingsActions } from "@/store";
 
 const RESEND_COOLDOWN = 60;
 
@@ -24,17 +24,17 @@ export default function VerifyScreen(): React.JSX.Element {
   const router = useRouter();
   const { setOnboardingCompleted } = settingsActions;
   const params = useLocalSearchParams<{ email: string; source: string }>();
-  const email = params.email || '';
+  const email = params.email || "";
 
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN);
 
   const { color } = useTheme();
 
   const { control, handleSubmit } = useForm<OtpForm>({
     resolver: zodResolver(otpSchema),
-    defaultValues: { token: '' },
+    defaultValues: { token: "" },
   });
 
   useEffect(() => {
@@ -46,16 +46,16 @@ export default function VerifyScreen(): React.JSX.Element {
   const onSubmit = useCallback(
     async (data: OtpForm): Promise<void> => {
       setIsLoading(true);
-      setError('');
+      setError("");
       const result = await verifyOtp(email, data.token);
       setIsLoading(false);
 
       if (result.ok) {
-        if (params.source === 'forgot-password') {
-          router.replace('/(auth)/update-password');
+        if (params.source === "forgot-password") {
+          router.replace("/(auth)/update-password");
         } else {
           setOnboardingCompleted(true);
-          router.replace('/(tabs)');
+          router.replace("/(tabs)");
         }
       } else if (result.error) {
         setError(result.error);
@@ -67,7 +67,7 @@ export default function VerifyScreen(): React.JSX.Element {
   const handleResend = async (): Promise<void> => {
     if (cooldown > 0) return;
     setIsLoading(true);
-    setError('');
+    setError("");
     const result = await sendOtp(email);
     setIsLoading(false);
     if (result.ok) setCooldown(RESEND_COOLDOWN);
@@ -77,7 +77,7 @@ export default function VerifyScreen(): React.JSX.Element {
   return (
     <AuthShell showBackButton>
       <AuthHeader
-        subtitle="Check your email"
+        subtitle="Check your inbox"
         caption={`We sent a code to ${email}`}
       />
 
@@ -101,7 +101,7 @@ export default function VerifyScreen(): React.JSX.Element {
                 style={[
                   {
                     ...typography.heading2,
-                    textAlign: 'center',
+                    textAlign: "center",
                     letterSpacing: 8,
                     color: color.foreground,
                   },
@@ -120,7 +120,7 @@ export default function VerifyScreen(): React.JSX.Element {
         <Pressable
           onPress={handleResend}
           disabled={cooldown > 0 || isLoading}
-          style={{ alignItems: 'center', marginTop: spacing.lg }}
+          style={{ alignItems: "center", marginTop: spacing.lg }}
         >
           <Text variant="bodySmall" style={{ color: color.muted }}>
             Didn't receive it?
@@ -132,7 +132,7 @@ export default function VerifyScreen(): React.JSX.Element {
               marginTop: spacing.xs,
             }}
           >
-            {cooldown > 0 ? `Resend code (${cooldown}s)` : 'Resend code'}
+            {cooldown > 0 ? `Resend code (${cooldown}s)` : "Resend code"}
           </Text>
         </Pressable>
       </Box>

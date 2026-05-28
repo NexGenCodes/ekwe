@@ -5,27 +5,27 @@ import BottomSheet, {
   BottomSheetFooter,
   BottomSheetFooterProps,
   BottomSheetBackdropProps,
-} from '@gorhom/bottom-sheet';
-import { useSelector } from '@legendapp/state/react';
-import { Search, Star, X, Check } from 'lucide-react-native';
+} from "@gorhom/bottom-sheet";
+import { useSelector } from "@legendapp/state/react";
+import { Search, Star, X, Check } from "lucide-react-native";
 import React, {
   useRef,
   useMemo,
   useState,
   useCallback,
   useEffect,
-} from 'react';
+} from "react";
 
-import { Button } from './Button';
+import { Button } from "./Button";
 
-import { Box, Pressable, Text } from '@/components/ui';
-import { LANGUAGES, Language, FLAG_MAP } from '@/constants/languages';
-import { borderRadius, zIndex } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { typography } from '@/constants/typography';
-import { useTheme, usePermissions } from '@/hooks';
-import { auth$ } from '@/store';
-import { AppAlert } from '@/utils';
+import { Box, Pressable, Text } from "@/components/ui";
+import { LANGUAGES, Language, FLAG_MAP } from "@/constants/languages";
+import { borderRadius, zIndex } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { typography } from "@/constants/typography";
+import { useTheme, usePermissions } from "@/hooks";
+import { auth$ } from "@/store";
+import { AppAlert } from "@/utils";
 
 interface LanguageRowProps {
   item: Language;
@@ -62,15 +62,15 @@ const LanguageRow = ({
       onPress={onToggleSelect}
       style={{
         height: 52,
-        flexDirection: 'row',
-        alignItems: 'center',
+        flexDirection: "row",
+        alignItems: "center",
         paddingHorizontal: spacing.md,
         backgroundColor: color.background,
       }}
     >
-      <Box style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+      <Box style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
         <Text variant="body" style={{ marginRight: spacing.md }}>
-          {FLAG_MAP[item.code] || '🌐'}
+          {FLAG_MAP[item.code] || "🌐"}
         </Text>
         <Box>
           <Text variant="body">{item.englishName}</Text>
@@ -80,7 +80,7 @@ const LanguageRow = ({
         </Box>
       </Box>
 
-      <Box style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Box style={{ flexDirection: "row", alignItems: "center" }}>
         <Pressable
           onPress={onTogglePin}
           hitSlop={8}
@@ -89,7 +89,7 @@ const LanguageRow = ({
           <Star
             size={20}
             color={isPinned ? color.secondary : color.muted}
-            fill={isPinned ? color.secondary : 'transparent'}
+            fill={isPinned ? color.secondary : "transparent"}
           />
         </Pressable>
 
@@ -100,13 +100,13 @@ const LanguageRow = ({
               height: 22,
               borderRadius: borderRadius.lg,
               marginLeft: spacing.md,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderWidth: 1.5,
+              alignItems: "center",
+              justifyContent: "center",
+              borderWidth: 1,
             },
             isSelected
               ? { backgroundColor: color.secondary, borderWidth: 0 }
-              : { backgroundColor: 'transparent', borderColor: color.border },
+              : { backgroundColor: "transparent", borderColor: color.border },
           ]}
         >
           {isSelected && (
@@ -132,8 +132,8 @@ export const LanguagePickerSheet = ({
   const maxPinnedLanguages = permissions.maxPinnedLanguages;
   const maxSelectedLanguages = permissions.maxSelectedLanguages;
   const sheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ['85%'], []);
-  const [searchQuery, setSearchQuery] = useState('');
+  const snapPoints = useMemo(() => ["85%"], []);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const bgColor = color.background;
   const handleColor = color.border;
@@ -154,7 +154,7 @@ export const LanguagePickerSheet = ({
 
   const filteredLanguages = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (q === '') return availableLanguages;
+    if (q === "") return availableLanguages;
     return availableLanguages.filter(
       (l) =>
         l.englishName.toLowerCase().includes(q) ||
@@ -222,7 +222,7 @@ export const LanguagePickerSheet = ({
       selectedLanguages.length >= maxSelectedLanguages
     ) {
       AppAlert.info(
-        'Language Limit Reached',
+        "Language Limit Reached",
         `You can only select up to ${maxSelectedLanguages} languages on your current plan. Upgrade to Pro for more.`,
       );
       return;
@@ -238,7 +238,7 @@ export const LanguagePickerSheet = ({
     const isCurrentlyPinned = pinnedLanguages.includes(code);
     if (!isCurrentlyPinned && pinnedLanguages.length >= maxPinnedLanguages) {
       AppAlert.info(
-        'Language Limit Reached',
+        "Language Limit Reached",
         `You can only pin up to ${maxPinnedLanguages} languages on your current plan. Upgrade to Pro for more.`,
       );
       return;
@@ -253,10 +253,10 @@ export const LanguagePickerSheet = ({
   const sections = useMemo(() => {
     const list = [];
     if (pinnedItems.length > 0) {
-      list.push({ title: 'PINNED', data: pinnedItems, isPinnedSection: true });
+      list.push({ title: "PINNED", data: pinnedItems, isPinnedSection: true });
     }
     list.push({
-      title: searchQuery ? 'RESULTS' : 'ALL LANGUAGES',
+      title: searchQuery ? "RESULTS" : "ALL LANGUAGES",
       data: otherItems,
       isPinnedSection: false,
     });
@@ -315,8 +315,8 @@ export const LanguagePickerSheet = ({
       footerComponent={renderFooter}
       backgroundStyle={{
         backgroundColor: bgColor,
-        borderTopLeftRadius: borderRadius['2xl'],
-        borderTopRightRadius: borderRadius['2xl'],
+        borderTopLeftRadius: borderRadius["2xl"],
+        borderTopRightRadius: borderRadius["2xl"],
       }}
       handleIndicatorStyle={{
         backgroundColor: handleColor,
@@ -334,8 +334,8 @@ export const LanguagePickerSheet = ({
                 height: 44,
                 borderWidth: 0.5,
                 borderRadius: borderRadius.lg,
-                flexDirection: 'row',
-                alignItems: 'center',
+                flexDirection: "row",
+                alignItems: "center",
                 paddingHorizontal: spacing.md,
               },
               { backgroundColor: color.card, borderColor: color.border },
@@ -357,7 +357,7 @@ export const LanguagePickerSheet = ({
               onChangeText={setSearchQuery}
             />
             {searchQuery.length > 0 && (
-              <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+              <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
                 <X size={16} color={mutedColor} />
               </Pressable>
             )}

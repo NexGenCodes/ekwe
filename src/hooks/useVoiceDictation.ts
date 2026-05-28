@@ -1,27 +1,27 @@
-import * as Crypto from 'expo-crypto';
-import * as FileSystem from 'expo-file-system/legacy';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SharedValue } from 'react-native-reanimated';
+import * as Crypto from "expo-crypto";
+import * as FileSystem from "expo-file-system/legacy";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { SharedValue } from "react-native-reanimated";
 
-import { EkweError, ErrorMessages } from '@/constants/errors';
-import { useMetering } from '@/hooks/audio/useMetering';
-import { usePermissions } from '@/hooks/usePermissions';
-import { AudioCapture } from '@/services/AudioCapture';
-import { AudioProcessor } from '@/services/AudioProcessor';
-import { TranscriptionService } from '@/services/Transcription';
-import { audioActions, RecordingState } from '@/store';
-import { logger } from '@/utils';
+import { EkweError, ErrorMessages } from "@/constants/errors";
+import { useMetering } from "@/hooks/audio/useMetering";
+import { usePermissions } from "@/hooks/usePermissions";
+import { AudioCapture } from "@/services/AudioCapture";
+import { AudioProcessor } from "@/services/AudioProcessor";
+import { transcribeAudio } from "@/services/transcribeAudio";
+import { audioActions, RecordingState } from "@/store";
+import { logger } from "@/utils";
 
 // Timer resolution for elapsed display
 const TIMER_TICK_MS = 100;
 
 export type DictationStatus =
-  | 'idle'
-  | 'initializing'
-  | 'recording'
-  | 'preview'
-  | 'processing'
-  | 'error';
+  | "idle"
+  | "initializing"
+  | "recording"
+  | "preview"
+  | "processing"
+  | "error";
 
 export interface UseVoiceDictationReturn {
   status: DictationStatus;
@@ -41,8 +41,8 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
   const permissions = usePermissions();
   const maxDurationMs = permissions.dictationDurationMs;
 
-  const [status, _setStatus] = useState<DictationStatus>('idle');
-  const statusRef = useRef<DictationStatus>('idle');
+  const [status, _setStatus] = useState<DictationStatus>("idle");
+  const statusRef = useRef<DictationStatus>("idle");
   const setStatus = (s: DictationStatus): void => {
     statusRef.current = s;
     _setStatus(s);
@@ -62,13 +62,13 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
   const maxDurationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  const sourceLangRef = useRef<string>('auto');
+  const sourceLangRef = useRef<string>("auto");
   const elapsedMsRef = useRef(0);
   const capturedUriRef = useRef<string | null>(null);
   const capturedMeteringRef = useRef<number[]>([]);
   const capturedDurationRef = useRef<number>(0);
 
-  // stopDictation ref — keeps the timeout closure pointing to latest version
+  // stopDictation ref — updated at render time to avoid stale closure
   const stopDictationRef = useRef<() => Promise<string | null>>(
     async () => null,
   );
@@ -88,9 +88,9 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
   // --- Sync with native status changes (e.g. silence auto-stop) ---
   useEffect(() => {
     return AudioCapture.addStatusListener((s) => {
-      if (s === 'stopped' && statusRef.current === 'recording') {
+      if (s === "stopped" && statusRef.current === "recording") {
         logger.info(
-          '[VoiceDictation] Native recorder stopped externally (silence or cap), syncing...',
+          "[VoiceDictation] Native recorder stopped externally (silence or cap), syncing...",
         );
         stopDictationRef.current();
       }
@@ -110,27 +110,27 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
   // --- Stop recording and enter preview ---
   const stopDictation = useCallback(async (): Promise<string | null> => {
-    if (statusRef.current !== 'recording' || !AudioCapture.isRecording()) {
-      if (statusRef.current === 'recording') {
-        logger.warn('[VoiceDictation] stopDictation called but not recording');
-        setStatus('idle');
+    if (statusRef.current !== "recording" || !AudioCapture.isRecording()) {
+      if (statusRef.current === "recording") {
+        logger.warn("[VoiceDictation] stopDictation called but not recording");
+        setStatus("idle");
       }
       return null;
     }
 
     clearTimers();
-    logger.info('[VoiceDictation] Stopping recording, entering preview');
+    logger.info("[VoiceDictation] Stopping recording, entering preview");
 
     // 1. Stop the native recorder
     const captureResult = await AudioCapture.stopRecording();
     if (!captureResult.ok) {
-      const msg = ErrorMessages[captureResult.error] ?? 'Recording failed.';
+      const msg = ErrorMessages[captureResult.error] ?? "Recording failed.";
       logger.error(
-        '[VoiceDictation] stopRecording failed:',
+        "[VoiceDictation] stopRecording failed:",
         captureResult.error,
       );
       setError(msg);
-      setStatus('error');
+      setStatus("error");
       return null;
     }
 
@@ -139,30 +139,33 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     capturedMeteringRef.current = meteringData;
     capturedDurationRef.current = durationMs;
     setMeteringData(meteringData);
-    
+
     audioActions.setDuration(durationMs / 1000);
     audioActions.setRecordingState(RecordingState.Processing);
 
-    setStatus('preview');
+    setStatus("preview");
     return uri;
   }, [clearTimers]);
+
+  // Keep stopDictationRef current at render time so it's never stale
+  stopDictationRef.current = stopDictation;
 
   // --- Confirm preview and send for transcription ---
   const confirmDictation = useCallback(
     async (sourceLang: string): Promise<string | null> => {
       const uri = capturedUriRef.current;
-      if (!uri || statusRef.current !== 'preview') {
+      if (!uri || statusRef.current !== "preview") {
         logger.warn(
-          '[VoiceDictation] confirmDictation called without valid preview',
+          "[VoiceDictation] confirmDictation called without valid preview",
         );
         return null;
       }
 
-      setStatus('processing');
+      setStatus("processing");
       let processedUri: string | null = null;
 
       try {
-        logger.info('[VoiceDictation] Confirming dictation, uri:', uri);
+        logger.info("[VoiceDictation] Confirming dictation, uri:", uri);
 
         // 2. Validate & trim audio
         const processResult = await AudioProcessor.processRecording(
@@ -173,13 +176,13 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
         if (!processResult.ok) {
           const msg =
-            ErrorMessages[processResult.error] ?? 'Audio processing failed.';
+            ErrorMessages[processResult.error] ?? "Audio processing failed.";
           logger.error(
-            '[VoiceDictation] processRecording failed:',
+            "[VoiceDictation] processRecording failed:",
             processResult.error,
           );
           setError(msg);
-          setStatus('error');
+          setStatus("error");
           return null;
         }
 
@@ -191,8 +194,8 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
         // Use the live sourceLang passed at confirm-time, not the stale ref from record-time.
         // This ensures language changes made in the preview state are respected.
-        logger.info('[VoiceDictation] Transcribing with lang:', sourceLang);
-        const transcribeResult = await TranscriptionService.transcribe(
+        logger.info("[VoiceDictation] Transcribing with lang:", sourceLang);
+        const transcribeResult = await transcribeAudio(
           processResult.value,
           sourceLang,
           controller.signal,
@@ -202,36 +205,36 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
         if (!transcribeResult.ok) {
           if (controller.signal.aborted) {
-            logger.info('[VoiceDictation] Transcription aborted');
+            logger.info("[VoiceDictation] Transcription aborted");
             return null;
           }
           const msg =
-            ErrorMessages[transcribeResult.error] ?? 'Transcription failed.';
+            ErrorMessages[transcribeResult.error] ?? "Transcription failed.";
           logger.error(
-            '[VoiceDictation] Transcription failed:',
+            "[VoiceDictation] Transcription failed:",
             transcribeResult.error,
           );
           setError(msg);
-          setStatus('error');
+          setStatus("error");
           audioActions.setError(transcribeResult.error as EkweError);
           return null;
         }
 
         const { transcript } = transcribeResult.value;
-        logger.info('[VoiceDictation] Transcription success');
+        logger.info("[VoiceDictation] Transcription success");
         audioActions.appendTranscript(transcript);
         audioActions.setRecordingState(RecordingState.Done);
 
-        setStatus('idle');
+        setStatus("idle");
         setElapsedMs(0);
         setMeteringData([]);
         elapsedMsRef.current = 0;
         capturedUriRef.current = null;
         return transcript;
       } catch (err) {
-        logger.error('[VoiceDictation] Confirm error:', err);
-        setError('Failed to process voice input.');
-        setStatus('error');
+        logger.error("[VoiceDictation] Confirm error:", err);
+        setError("Failed to process voice input.");
+        setStatus("error");
         return null;
       } finally {
         // --- ALWAYS Cleanup audio files ---
@@ -240,25 +243,20 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
           if (processedUri && processedUri !== uri) {
             await FileSystem.deleteAsync(processedUri, { idempotent: true });
           }
-          logger.info('[VoiceDictation] Cleaned up temporary audio files');
+          logger.info("[VoiceDictation] Cleaned up temporary audio files");
         } catch (e) {
-          logger.error('[VoiceDictation] Cleanup error:', e);
+          logger.error("[VoiceDictation] Cleanup error:", e);
         }
       }
     },
     [],
   );
 
-  // Keep stopDictationRef current so the maxDuration timeout always calls the latest version
-  useEffect(() => {
-    stopDictationRef.current = stopDictation;
-  }, [stopDictation]);
-
   // --- Start dictation ---
   const startDictation = useCallback(
     async (sourceLang: string): Promise<void> => {
       // Auto-recover from stale states on new attempt
-      if (statusRef.current === 'error' || statusRef.current === 'preview') {
+      if (statusRef.current === "error" || statusRef.current === "preview") {
         // Cleanup any preview file before resetting
         if (capturedUriRef.current) {
           FileSystem.deleteAsync(capturedUriRef.current, {
@@ -266,22 +264,22 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
           }).catch(() => {});
           capturedUriRef.current = null;
         }
-        setStatus('idle');
+        setStatus("idle");
         setError(null);
       }
 
-      if (statusRef.current !== 'idle') {
+      if (statusRef.current !== "idle") {
         logger.warn(
-          '[VoiceDictation] startDictation called while status is:',
+          "[VoiceDictation] startDictation called while status is:",
           statusRef.current,
         );
         return;
       }
 
       logger.info(
-        '[VoiceDictation] Starting dictation, lang:',
+        "[VoiceDictation] Starting dictation, lang:",
         sourceLang,
-        'permissions:',
+        "permissions:",
         permissions,
       );
       sourceLangRef.current = sourceLang;
@@ -290,14 +288,14 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
       setElapsedMs(0);
 
       // Explicit Loading State for instant UI feedback without faking a recording
-      setStatus('initializing');
+      setStatus("initializing");
 
       // Request microphone permission (shows OS prompt if needed)
       const permResult = await AudioCapture.requestPermission();
       if (!permResult.ok) {
-        logger.warn('[VoiceDictation] Microphone permission denied');
+        logger.warn("[VoiceDictation] Microphone permission denied");
         setError(ErrorMessages[EkweError.PERMISSION_MIC]);
-        setStatus('error');
+        setStatus("error");
         return;
       }
 
@@ -313,22 +311,22 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
       );
       if (!startResult.ok) {
         logger.error(
-          '[VoiceDictation] startRecording failed:',
+          "[VoiceDictation] startRecording failed:",
           startResult.error,
         );
         setError(
           ErrorMessages[startResult.error] ??
             ErrorMessages[EkweError.AUDIO_RECORD_FAIL],
         );
-        setStatus('error');
+        setStatus("error");
         return;
       }
 
-      setStatus('recording');
+      setStatus("recording");
       logger.info(
-        '[VoiceDictation] Recording started, maxDuration:',
+        "[VoiceDictation] Recording started, maxDuration:",
         maxDurationMs,
-        'ms',
+        "ms",
       );
 
       // Elapsed counter (100ms ticks for smooth countdown display)
@@ -339,7 +337,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
       // Hard cap — auto-stop when max duration is reached
       maxDurationTimeoutRef.current = setTimeout(() => {
-        logger.info('[VoiceDictation] Max duration reached, auto-stopping');
+        logger.info("[VoiceDictation] Max duration reached, auto-stopping");
         stopDictationRef.current();
       }, maxDurationMs);
     },
@@ -349,7 +347,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
   // --- Cancel dictation ---
   const cancelDictation = useCallback(async (): Promise<void> => {
     logger.info(
-      '[VoiceDictation] Cancelling dictation, status:',
+      "[VoiceDictation] Cancelling dictation, status:",
       statusRef.current,
     );
     clearTimers();
@@ -369,12 +367,12 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
             idempotent: true,
           });
           logger.info(
-            '[VoiceDictation] Cleaned up partial recording:',
+            "[VoiceDictation] Cleaned up partial recording:",
             cancelResult.value,
           );
         } catch (e) {
           logger.error(
-            '[VoiceDictation] Failed to cleanup partial recording:',
+            "[VoiceDictation] Failed to cleanup partial recording:",
             e,
           );
         }
@@ -389,7 +387,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
       capturedUriRef.current = null;
     }
 
-    setStatus('idle');
+    setStatus("idle");
     setError(null);
     setElapsedMs(0);
     setMeteringData([]);

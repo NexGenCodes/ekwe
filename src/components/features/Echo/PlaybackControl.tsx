@@ -1,14 +1,14 @@
-import { Play, Pause } from 'lucide-react-native';
-import React, { useState } from 'react';
-import { SharedValue } from 'react-native-reanimated';
+import { Play, Pause } from "lucide-react-native";
+import React, { useState } from "react";
+import { SharedValue } from "react-native-reanimated";
 
-import { AudioWaveform as ReanimatedWaveform } from '../../AudioWaveform';
+import { AudioWaveform as ReanimatedWaveform } from "../../AudioWaveform";
 
-import { Box, Text, Pressable, Spinner } from '@/components/ui';
-import { borderRadius, opacity } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
-import { formatDuration } from '@/utils/echo';
+import { Box, Text, Pressable, Spinner } from "@/components/ui";
+import { borderRadius, opacity } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { formatDuration } from "@/utils/echo";
 
 interface PlaybackControlProps {
   isPlaying: boolean;
@@ -43,9 +43,9 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
   return (
     <Box
       style={{
-        borderRadius: borderRadius['2xl'],
-        borderWidth: 1.5,
-        overflow: 'hidden',
+        borderRadius: borderRadius["2xl"],
+        borderWidth: 1,
+        overflow: "hidden",
         marginBottom: spacing.lg,
         backgroundColor: color.background,
         borderColor: color.border,
@@ -53,8 +53,8 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
     >
       <Box
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
+          flexDirection: "row",
+          alignItems: "center",
           padding: spacing.md,
           gap: spacing.md,
         }}
@@ -66,9 +66,9 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
           style={{
             width: 48,
             height: 48,
-            borderRadius: borderRadius['2xl'],
-            alignItems: 'center',
-            justifyContent: 'center',
+            borderRadius: borderRadius["2xl"],
+            alignItems: "center",
+            justifyContent: "center",
             backgroundColor: color.secondary,
             opacity: isDecoding ? opacity.disabled : 1,
           }}
@@ -90,7 +90,7 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
           )}
         </Pressable>
 
-        <Box style={{ flex: 1, height: 48, justifyContent: 'center' }}>
+        <Box style={{ flex: 1, height: 48, justifyContent: "center" }}>
           <ReanimatedWaveform
             amplitudes={peaks}
             progressSV={progressSV}
@@ -108,7 +108,7 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
 
         <Text
           variant="caption"
-          style={{ width: 50, textAlign: 'right', color: color.secondary }}
+          style={{ width: 50, textAlign: "right", color: color.secondary }}
         >
           {formatDuration(scrubTime !== null ? scrubTime : progress)}
         </Text>

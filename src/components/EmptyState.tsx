@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { AccessibilityInfo } from 'react-native';
+import React, { useEffect, useState } from "react";
+import { AccessibilityInfo } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -7,11 +7,11 @@ import Animated, {
   withSequence,
   withTiming,
   Easing,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { Box, Text } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 export interface EmptyStateProps {
   /** Icon element rendered above the title */
@@ -55,7 +55,10 @@ export const EmptyState = ({
               duration: 1500,
               easing: Easing.inOut(Easing.ease),
             }),
-            withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
+            withTiming(1, {
+              duration: 1500,
+              easing: Easing.inOut(Easing.ease),
+            }),
           ),
           -1,
           true,
@@ -77,15 +80,18 @@ export const EmptyState = ({
       accessibilityRole="summary"
       accessibilityLabel={accessibilityLabel}
       style={{
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: spacing['2xl'],
+        alignItems: "center",
+        justifyContent: "center",
+        paddingVertical: spacing["2xl"],
         paddingHorizontal: spacing.lg,
       }}
     >
       <Animated.View
         // If reduced motion is enabled, don't apply animatedStyle
-        style={[!reduceMotionEnabled && animate ? animatedStyle : undefined, { marginBottom: spacing.md }]}
+        style={[
+          !reduceMotionEnabled && animate ? animatedStyle : undefined,
+          { marginBottom: spacing.md },
+        ]}
       >
         {icon}
       </Animated.View>
@@ -93,7 +99,7 @@ export const EmptyState = ({
         variant="heading3"
         style={{
           color: color.muted,
-          textAlign: 'center',
+          textAlign: "center",
           marginBottom: subtitle ? spacing.sm : 0,
         }}
       >
@@ -104,13 +110,13 @@ export const EmptyState = ({
           variant="bodySmall"
           style={{
             color: color.muted,
-            textAlign: 'center',
+            textAlign: "center",
           }}
         >
           {subtitle}
         </Text>
       )}
-      {action && <Box style={{ marginTop: spacing.lg }}>{action}</Box>}
+      {action ? <Box style={{ marginTop: spacing.lg }}>{action}</Box> : null}
     </Box>
   );
 };

@@ -1,24 +1,24 @@
-import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import {
   Zap,
   AlertCircle,
   ArrowRight,
   Ear,
   Languages,
-} from 'lucide-react-native';
-import React from 'react';
+} from "lucide-react-native";
+import React from "react";
 
-import { AnimatedCopyButton } from '../../AnimatedCopyButton';
-import { ScrollableTextBox } from '../../ScrollableTextBox';
+import { AnimatedCopyButton } from "../../AnimatedCopyButton";
+import { ScrollableTextBox } from "../../ScrollableTextBox";
 
-import { Box, Text, Pressable } from '@/components/ui';
-import { LANGUAGES, FLAG_MAP } from '@/constants/languages';
-import { borderRadius, opacity } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text, Pressable } from "@/components/ui";
+import { LANGUAGES, FLAG_MAP } from "@/constants/languages";
+import { borderRadius, opacity } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 interface EchoTranslationConfigProps {
-  step: 'TranscribeResult';
+  step: "TranscribeResult";
   selectedLang: string;
   detectedLang: string | null;
   targetLang: string;
@@ -46,19 +46,19 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
       const brandWarning = color.warning;
 
       const isMismatch =
-        selectedLang !== 'auto' && selectedLang !== detectedLang;
+        selectedLang !== "auto" && selectedLang !== detectedLang;
 
       const selectedName =
-        selectedLang === 'auto'
-          ? 'Auto'
+        selectedLang === "auto"
+          ? "Auto"
           : (LANGUAGES.find((l) => l.code === selectedLang)?.englishName ??
             selectedLang);
       const detectedName =
         LANGUAGES.find((l) => l.code === detectedLang)?.englishName ??
         detectedLang ??
-        '—';
-      const selectedFlag = FLAG_MAP[selectedLang] || '🌐';
-      const detectedFlag = detectedLang ? FLAG_MAP[detectedLang] || '🌐' : '🌐';
+        "—";
+      const selectedFlag = FLAG_MAP[selectedLang] || "🌐";
+      const detectedFlag = detectedLang ? FLAG_MAP[detectedLang] || "🌐" : "🌐";
 
       return (
         <Box>
@@ -67,12 +67,12 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
             {isMismatch && (
               <Box
                 style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  alignSelf: 'flex-start',
+                  flexDirection: "row",
+                  alignItems: "center",
+                  alignSelf: "flex-start",
                   paddingHorizontal: spacing.sm,
                   paddingVertical: spacing.xs,
-                  borderRadius: borderRadius['2xl'],
+                  borderRadius: borderRadius["2xl"],
                   borderWidth: 1,
                   gap: spacing.xs,
                   backgroundColor: color.surface,
@@ -86,13 +86,13 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
               </Box>
             )}
 
-            <Box style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Box style={{ flexDirection: "row", alignItems: "center" }}>
               {/* Selected pill */}
               <Box
                 style={{
                   flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
+                  flexDirection: "row",
+                  alignItems: "center",
                   paddingHorizontal: spacing.md,
                   paddingVertical: spacing.sm,
                   borderRadius: borderRadius.xl,
@@ -138,8 +138,8 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
               <Box
                 style={{
                   flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
+                  flexDirection: "row",
+                  alignItems: "center",
                   paddingHorizontal: spacing.md,
                   paddingVertical: spacing.sm,
                   borderRadius: borderRadius.xl,
@@ -190,10 +190,10 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                   feedback="opacity"
                   onPress={() => setTargetLang(lang.code)}
                   style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
+                    flexDirection: "row",
+                    alignItems: "center",
                     borderWidth: 1,
-                    borderRadius: borderRadius['2xl'],
+                    borderRadius: borderRadius["2xl"],
                     paddingVertical: spacing.sm,
                     paddingHorizontal: spacing.md,
                     marginRight: spacing.sm,
@@ -204,7 +204,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                       targetLang === lang.code ? brandPrimary : color.border,
                   }}
                 >
-                  <Text variant="body">{FLAG_MAP[lang.code] || '🌐'}</Text>
+                  <Text variant="body">{FLAG_MAP[lang.code] || "🌐"}</Text>
                   <Text
                     variant="bodySmall"
                     style={{
@@ -220,18 +220,18 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
               ))}
             </BottomSheetScrollView>
 
-            <Box style={{ flexDirection: 'row', gap: spacing.md }}>
+            <Box style={{ flexDirection: "row", gap: spacing.md }}>
               <AnimatedCopyButton
                 textToCopy={transcription!}
                 size={16}
                 style={{
                   flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
                   gap: spacing.sm,
                   paddingVertical: spacing.md,
-                  borderWidth: 1.5,
+                  borderWidth: 1,
                   borderRadius: borderRadius.xl,
                   borderColor: color.border,
                 }}
@@ -246,12 +246,12 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                 disabled={!targetLang}
                 style={{
                   flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
                   gap: spacing.sm,
                   paddingVertical: spacing.md,
-                  borderWidth: 1.5,
+                  borderWidth: 1,
                   borderRadius: borderRadius.xl,
                   backgroundColor: brandPrimary,
                   opacity: targetLang ? 1 : opacity.disabled,

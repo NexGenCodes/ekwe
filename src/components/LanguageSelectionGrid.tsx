@@ -1,12 +1,12 @@
-import { Check } from 'lucide-react-native';
-import React from 'react';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { Check } from "lucide-react-native";
+import React from "react";
+import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 
-import { Box, Text, Pressable } from '@/components/ui';
-import { LANGUAGES, FLAG_MAP } from '@/constants/languages';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text, Pressable } from "@/components/ui";
+import { LANGUAGES, FLAG_MAP } from "@/constants/languages";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 export interface LanguageSelectionGridProps {
   selected: string[];
@@ -35,27 +35,27 @@ export function LanguageSelectionGrid({
           <Animated.View
             key={code}
             entering={FadeInDown.duration(300).delay(index * 30)}
-            style={{ width: '48%', marginBottom: spacing.md }}
+            style={{ width: "48%", marginBottom: spacing.md }}
           >
             <Pressable
               onPress={() => onToggle(code)}
               style={[
                 {
-                  width: '100%',
+                  width: "100%",
                   aspectRatio: 2.2,
                   backgroundColor: isSelected ? brandPrimary : bgMain,
                   borderColor: isSelected ? brandPrimary : handleHex,
-                  borderWidth: 2,
-                  borderRadius: borderRadius['2xl'],
+                  borderWidth: 1,
+                  borderRadius: borderRadius["2xl"],
                   marginBottom: spacing.md,
                   paddingHorizontal: spacing.md,
-                  flexDirection: 'row',
-                  alignItems: 'center',
+                  flexDirection: "row",
+                  alignItems: "center",
                 },
               ]}
             >
               <Text variant="heading2" style={{ marginRight: spacing.sm }}>
-                {FLAG_MAP[code] || '🌐'}
+                {FLAG_MAP[code] || "🌐"}
               </Text>
               <Text
                 variant="bodySmall"
@@ -82,11 +82,11 @@ export function LanguageSelectionGrid({
 
 const styles = {
   gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
     paddingTop: spacing.md,
-    paddingBottom: spacing['2xl'],
+    paddingBottom: spacing["2xl"],
   } as const,
   checkIcon: { marginLeft: spacing.xs } as const,
 };

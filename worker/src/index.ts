@@ -1,36 +1,56 @@
-import { Env, Tier, JWTPayloadWithMeta } from './types';
-import { handleTranscribe } from './transcribe';
-import { handleTranslate } from './translate';
-import { checkPreflight, postflightDeduction } from './utils';
-import { jwtVerify, createRemoteJWKSet } from 'jose';
-import type { ExecutionContext } from '@cloudflare/workers-types';
-import { logger } from './logger';
-import { guardContentType } from './security';
-import { handleWebhook } from './webhook';
-import { handleCheckoutInitialize } from './checkout';
+import type { ExecutionContext } from "@cloudflare/workers-types";
+import { jwtVerify, createRemoteJWKSet } from "jose";
+
+import { handleCheckoutInitialize } from "./checkout";
+import { logger } from "./logger";
+import { guardContentType, guardJsonSize } from "./security";
+import { handleTranscribe } from "./transcribe";
+import { handleTranslate } from "./translate";
+import { Env, Tier, JWTPayloadWithMeta } from "./types";
+import { checkPreflight, postflightDeduction } from "./utils";
+import { handleWebhook } from "./webhook";
 
 let JWKS: ReturnType<typeof createRemoteJWKSet>;
+let JWKS_TS = 0;
+const JWKS_TTL = 3_600_000;
+
+function getJWKS(
+  env: Env,
+  force = false,
+): ReturnType<typeof createRemoteJWKSet> {
+  const now = Date.now();
+  if (!JWKS || force || now - JWKS_TS > JWKS_TTL) {
+    JWKS = createRemoteJWKSet(
+      new URL(`${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`),
+    );
+    JWKS_TS = now;
+  }
+  return JWKS;
+}
 
 function getCorsHeaders(request: Request, env: Env): Record<string, string> {
-  const origin = request.headers.get('Origin') || request.headers.get('origin');
+  const origin = request.headers.get("Origin") || request.headers.get("origin");
   const allowedOrigins =
-    env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()) || [];
+    env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()) || [];
 
+  const isDevOrigin =
+    origin.startsWith("exp://") ||
+    origin.includes(".expo.dev") ||
+    origin.includes(".expo.io") ||
+    origin.startsWith("http://localhost") ||
+    origin.startsWith("http://127.0.0.1");
+
+  const isProduction = env.APP_ENV === "production";
   const isAllowed =
     origin &&
-    (allowedOrigins.includes(origin) ||
-      origin.startsWith('exp://') ||
-      origin.includes('.expo.dev') ||
-      origin.includes('.expo.io') ||
-      origin.startsWith('http://localhost') ||
-      origin.startsWith('http://127.0.0.1'));
+    (allowedOrigins.includes(origin) || (!isProduction && isDevOrigin));
 
   return {
-    ...(isAllowed && { 'Access-Control-Allow-Origin': origin }),
-    ...(isAllowed && { 'Access-Control-Allow-Credentials': 'true' }),
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    Vary: 'Origin',
+    ...(isAllowed && { "Access-Control-Allow-Origin": origin }),
+    ...(isAllowed && { "Access-Control-Allow-Credentials": "true" }),
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    Vary: "Origin",
   };
 }
 
@@ -42,7 +62,7 @@ export default {
   ): Promise<Response> {
     const corsHeaders = getCorsHeaders(request, env);
 
-    if (request.method === 'OPTIONS') {
+    if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders });
     }
 
@@ -50,49 +70,56 @@ export default {
     let response: Response;
 
     // ─── Webhook Route (no JWT auth — uses signature verification) ───
-    if (request.method === 'POST' && url.pathname === '/webhook') {
+    if (request.method === "POST" && url.pathname === "/webhook") {
       response = await handleWebhook(request, env);
       return this.addCorsHeaders(response, corsHeaders);
     }
 
     // ─── Auth: Strict JWT Only ───
-    let tier: Tier = 'FREE';
-    let userId = '';
-    let userEmail = '';
+    let tier: Tier = "FREE";
+    let userId = "";
+    let userEmail = "";
 
-    const authHeader = request.headers.get('Authorization');
+    const authHeader = request.headers.get("Authorization");
 
-    if (authHeader && authHeader.startsWith('Bearer ')) {
+    if (authHeader && authHeader.startsWith("Bearer ")) {
       try {
-        const token = authHeader.split(' ')[1];
-        if (!JWKS) {
-          JWKS = createRemoteJWKSet(
-            new URL(`${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`),
-          );
-        }
-        const { payload } = await jwtVerify(token, JWKS, {
-          issuer: `${env.SUPABASE_URL}/auth/v1`,
-          audience: 'authenticated',
-        });
-                const meta = payload as JWTPayloadWithMeta;
-        userId = meta.sub || '';
-        userEmail = meta.email || '';
+        const token = authHeader.split(" ")[1];
+        let meta: JWTPayloadWithMeta;
 
-        if (!userId) throw new Error('Missing sub in JWT');
+        try {
+          const { payload } = await jwtVerify(token, getJWKS(env), {
+            issuer: `${env.SUPABASE_URL}/auth/v1`,
+            audience: "authenticated",
+          });
+          meta = payload as JWTPayloadWithMeta;
+        } catch {
+          // Key may have rotated — force-refresh JWKS and retry once
+          const { payload } = await jwtVerify(token, getJWKS(env, true), {
+            issuer: `${env.SUPABASE_URL}/auth/v1`,
+            audience: "authenticated",
+          });
+          meta = payload as JWTPayloadWithMeta;
+        }
+
+        userId = meta.sub || "";
+        userEmail = meta.email || "";
+
+        if (!userId) throw new Error("Missing sub in JWT");
 
         if (meta.app_metadata?.is_pro) {
-          tier = 'PREMIUM';
+          tier = "PREMIUM";
         }
       } catch (err) {
         return this.addCorsHeaders(
-          Response.json({ error: 'INVALID_TOKEN' }, { status: 401 }),
+          Response.json({ error: "INVALID_TOKEN" }, { status: 401 }),
           corsHeaders,
         );
       }
     } else {
       // No valid JWT provided — block completely
       return this.addCorsHeaders(
-        Response.json({ error: 'UNAUTHORIZED' }, { status: 401 }),
+        Response.json({ error: "UNAUTHORIZED" }, { status: 401 }),
         corsHeaders,
       );
     }
@@ -100,7 +127,7 @@ export default {
     // ─── SECURITY GATING: Cloudflare Rate Limiting ───
     // Protects against API spam on a per-user basis, with IP-level fallback
     if (env.RATE_LIMITER) {
-      const clientIp = request.headers.get('CF-Connecting-IP') || '';
+      const clientIp = request.headers.get("CF-Connecting-IP") || "";
       const rateLimitKey = clientIp ? `${userId}::${clientIp}` : userId;
 
       const { success } = await env.RATE_LIMITER.limit({ key: rateLimitKey });
@@ -109,8 +136,8 @@ export default {
         return this.addCorsHeaders(
           Response.json(
             {
-              error: 'TOO_MANY_REQUESTS',
-              message: 'Rate limit exceeded. Please slow down.',
+              error: "TOO_MANY_REQUESTS",
+              message: "Rate limit exceeded. Please slow down.",
             },
             { status: 429 },
           ),
@@ -123,15 +150,15 @@ export default {
     // Fast per-user protection using Cloudflare KV - 50 requests/minute per user
     const kvRateLimitKey = `ratelimit:user:${userId}`;
     const currentCount = await env.EKWE_KV.get(kvRateLimitKey);
-    const requestCount = parseInt(currentCount || '0', 10);
+    const requestCount = parseInt(currentCount || "0", 10);
 
     if (requestCount >= 50) {
       logger.warn(`[kv-ratelimit] User ${userId} exceeded 50 req/min`);
       return this.addCorsHeaders(
         Response.json(
           {
-            error: 'TOO_MANY_REQUESTS',
-            message: 'Rate limit exceeded. Please slow down.',
+            error: "TOO_MANY_REQUESTS",
+            message: "Rate limit exceeded. Please slow down.",
           },
           { status: 429 },
         ),
@@ -150,7 +177,7 @@ export default {
       return this.addCorsHeaders(
         Response.json(
           {
-            error: 'EKWE_RATE_LIMIT',
+            error: "EKWE_RATE_LIMIT",
             message: `Please wait ${Math.ceil(preflight.cooldown_remaining || 0)} seconds.`,
           },
           { status: 429 },
@@ -161,8 +188,8 @@ export default {
 
     // ─── 2. EXECUTION ───
     try {
-      if (request.method === 'POST' && url.pathname === '/transcribe') {
-        const ctGuard = guardContentType(request, 'multipart');
+      if (request.method === "POST" && url.pathname === "/transcribe") {
+        const ctGuard = guardContentType(request, "multipart");
         if (!ctGuard.allowed)
           return this.addCorsHeaders(ctGuard.response, corsHeaders);
         response = await handleTranscribe(
@@ -171,24 +198,38 @@ export default {
           preflight.tier_active,
           request.signal,
         );
-      } else if (request.method === 'POST' && url.pathname === '/translate') {
-        const ctGuard = guardContentType(request, 'json');
+      } else if (request.method === "POST" && url.pathname === "/translate") {
+        const ctGuard = guardContentType(request, "json");
         if (!ctGuard.allowed)
           return this.addCorsHeaders(ctGuard.response, corsHeaders);
+        const sizeGuard = guardJsonSize(request, 128_000);
+        if (!sizeGuard.allowed)
+          return this.addCorsHeaders(sizeGuard.response, corsHeaders);
         response = await handleTranslate(
           request,
           env,
           preflight.tier_active,
           request.signal,
         );
-      } else if (request.method === 'POST' && url.pathname === '/checkout/initialize') {
-        const ctGuard = guardContentType(request, 'json');
+      } else if (
+        request.method === "POST" &&
+        url.pathname === "/checkout/initialize"
+      ) {
+        const ctGuard = guardContentType(request, "json");
         if (!ctGuard.allowed)
           return this.addCorsHeaders(ctGuard.response, corsHeaders);
-        response = await handleCheckoutInitialize(request, env, userId, userEmail);
+        const sizeGuard = guardJsonSize(request, 128_000);
+        if (!sizeGuard.allowed)
+          return this.addCorsHeaders(sizeGuard.response, corsHeaders);
+        response = await handleCheckoutInitialize(
+          request,
+          env,
+          userId,
+          userEmail,
+        );
         return this.addCorsHeaders(response, corsHeaders);
       } else {
-        response = Response.json({ error: 'NOT_FOUND' }, { status: 404 });
+        response = Response.json({ error: "NOT_FOUND" }, { status: 404 });
       }
 
       // ─── 3. POST-FLIGHT DEDUCTION ───
@@ -209,14 +250,14 @@ export default {
 
         if (!deductionResult) {
           logger.error(
-            '[postflight] deduction failed — billing bypass prevented',
+            "[postflight] deduction failed — billing bypass prevented",
           );
           return this.addCorsHeaders(
             Response.json(
               {
-                error: 'BILLING_FAILED',
+                error: "BILLING_FAILED",
                 message:
-                  'Transaction could not be processed. Please try again.',
+                  "Transaction could not be processed. Please try again.",
               },
               { status: 502 },
             ),
@@ -231,11 +272,11 @@ export default {
       }
     } catch (e: unknown) {
       const errorMsg = e instanceof Error ? e.message : String(e);
-      if (errorMsg === 'CLIENT_ABORTED') {
+      if (errorMsg === "CLIENT_ABORTED") {
         return new Response(null, { status: 499 });
       }
       response = Response.json(
-        { error: 'EKWE_NETWORK_LOST', message: errorMsg },
+        { error: "EKWE_NETWORK_LOST", message: errorMsg },
         { status: 500 },
       );
     }

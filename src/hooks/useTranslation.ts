@@ -1,17 +1,17 @@
-import { useSelector } from '@legendapp/state/react';
-import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Keyboard } from 'react-native';
+import { useSelector } from "@legendapp/state/react";
+import * as Haptics from "expo-haptics";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Keyboard } from "react-native";
 
-import { PLAN_LIMITS } from '@/constants/billing';
-import { EkweError } from '@/constants/errors';
-import { translationSchema } from '@/schemas/translation';
-import { HistoryService } from '@/services/HistoryService';
-import { TranslationService, TranslationResult } from '@/services/Translation';
-import { supabase } from '@/services/supabase';
-import { history$, audioActions, settings$, auth$, audio$ } from '@/store';
-import { Result, ok, err } from '@/types/Result';
-import { AppToast, logger } from '@/utils';
+import { PLAN_LIMITS } from "@/constants/billing";
+import { EkweError } from "@/constants/errors";
+import { useTranslateMutation } from "@/hooks/queries/useTranslateMutation";
+import { translationSchema } from "@/schemas/translation";
+import { HistoryService } from "@/services/HistoryService";
+import { TranslationResult } from "@/services/translateText";
+import { audioActions, settings$, auth$, audio$ } from "@/store";
+import { Result, ok, err } from "@/types/Result";
+import { AppToast, logger } from "@/utils";
 
 export interface UseTranslationReturn {
   translate: (
@@ -40,14 +40,15 @@ export interface UseTranslationReturn {
 }
 
 export const useTranslation = (): UseTranslationReturn => {
+  const translateMutation = useTranslateMutation();
+
   const defaultTargetLang = useSelector(() => settings$.targetLanguage.get());
   const userSession = useSelector(() => auth$.session.get());
 
-  const [isTranslating, setIsTranslating] = useState(false);
   const [translation, setTranslation] = useState<string | null>(null);
   const [transliteration, setTransliteration] = useState<string | null>(null);
 
-  const [sourceText, setSourceText] = useState('');
+  const [sourceText, setSourceText] = useState("");
 
   // Free users cannot use auto-detect — default to their first selected language
   const isPro = useSelector(() => auth$.isPro.get());
@@ -57,23 +58,23 @@ export const useTranslation = (): UseTranslationReturn => {
   const defaultSelectedLangs =
     useSelector(() => settings$.selectedLanguages.get()) || [];
   const defaultSourceLang = canUseAuto
-    ? 'auto'
-    : defaultSelectedLangs[0] || 'en';
+    ? "auto"
+    : defaultSelectedLangs[0] || "en";
 
   const initialSourceLang = defaultSourceLang;
   const initialTargetLang =
-    (defaultTargetLang || 'es') === initialSourceLang &&
-    initialSourceLang !== 'auto'
-      ? ''
-      : defaultTargetLang || 'es';
+    (defaultTargetLang || "es") === initialSourceLang &&
+    initialSourceLang !== "auto"
+      ? ""
+      : defaultTargetLang || "es";
 
   const [sourceLang, setSourceLang] = useState<string>(initialSourceLang);
   const [targetLang, setTargetLang] = useState<string>(initialTargetLang);
 
   // Sync auth state changes (if they load in slightly after mount) so Pro users always get Auto-Detect by default
   useEffect(() => {
-    if (canUseAuto && sourceLang !== 'auto') {
-      setSourceLang('auto');
+    if (canUseAuto && sourceLang !== "auto") {
+      setSourceLang("auto");
     }
   }, [canUseAuto]); // Intentional: We only want to push them to auto if their permission state changes to true
 
@@ -106,26 +107,26 @@ export const useTranslation = (): UseTranslationReturn => {
       currentSessionId !== null
     ) {
       audioActions.setSaved(true);
-      const detectedSource = audio$.sourceLang.get() || 'en';
+      const detectedSource = audio$.sourceLang.get() || "en";
       const resolvedSource =
-        sourceLangRef.current === 'auto'
+        sourceLangRef.current === "auto"
           ? detectedSource
           : sourceLangRef.current;
 
       HistoryService.recordTranslation(
         {
           sourceLang: resolvedSource,
-          targetLang: targetLangRef.current || 'en',
+          targetLang: targetLangRef.current || "en",
           transcript: currentTranscript,
           translation: null,
           transliteration: null,
           duration,
-          sourceApp: 'ekwe',
-          provider: 'gemini',
+          sourceApp: "ekwe",
+          provider: "gemini",
           sessionKey: currentSessionId,
         },
         userSessionRef.current,
-      ).catch((e) => logger.error('Failed to save transcription-only', e));
+      ).catch((e) => logger.error("Failed to save transcription-only", e));
     }
   }, []);
 
@@ -143,14 +144,13 @@ export const useTranslation = (): UseTranslationReturn => {
       targetLang: string,
       signal?: AbortSignal,
     ): Promise<Result<TranslationResult, EkweError>> => {
-      setIsTranslating(true);
       try {
-        const result = await TranslationService.translate(
-          transcript,
+        const result = await translateMutation.mutateAsync({
+          text: transcript,
           sourceLang,
           targetLang,
           signal,
-        );
+        });
 
         if (!result.ok) {
           setError(result.error);
@@ -161,12 +161,21 @@ export const useTranslation = (): UseTranslationReturn => {
         setTransliteration(result.value.transliteration ?? null);
 
         return ok(result.value);
-      } finally {
-        setIsTranslating(false);
+      } catch (e: unknown) {
+        if (e instanceof Error && e.name === "AbortError") {
+          return err(EkweError.NETWORK_LOST);
+        }
+        setError(EkweError.TRANSLATION_FAIL);
+        return err(EkweError.TRANSLATION_FAIL);
       }
     },
-    [setError],
+    [translateMutation, setError],
   );
+
+  // Clear request cache when sourceText changes
+  useEffect(() => {
+    lastRequestRef.current = null;
+  }, [sourceText]);
 
   const handleClear = useCallback(async () => {
     saveTranscriptionOnly();
@@ -174,15 +183,14 @@ export const useTranslation = (): UseTranslationReturn => {
     translationAbortRef.current = null;
     lastRequestRef.current = null;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSourceText('');
+    setSourceText("");
     setTranslation(null);
     setTransliteration(null);
-    setIsTranslating(false);
     audioActions.resetAudioState();
   }, [saveTranscriptionOnly]);
 
   const handleSwap = useCallback(async () => {
-    if (sourceLang === 'auto' || targetLang === 'none' || targetLang === '')
+    if (sourceLang === "auto" || targetLang === "none" || targetLang === "")
       return;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     lastRequestRef.current = null;
@@ -194,16 +202,13 @@ export const useTranslation = (): UseTranslationReturn => {
       const oldSource = sourceText;
       setSourceText(translation);
       setTranslation(oldSource);
-    } else {
-      setSourceText('');
-      setTranslation(null);
     }
   }, [sourceLang, targetLang, translation, sourceText]);
 
   const handleTranslate = useCallback(
     async (textOverride?: string) => {
       const textToTranslate = (
-        typeof textOverride === 'string' ? textOverride : sourceText
+        typeof textOverride === "string" ? textOverride : sourceText
       ).trim();
       if (!textToTranslate) return;
 
@@ -217,7 +222,7 @@ export const useTranslation = (): UseTranslationReturn => {
 
       if (!validation.success) {
         AppToast.error(
-          validation.error.issues?.[0]?.message ?? 'Please check your input.',
+          validation.error.issues?.[0]?.message ?? "Please check your input.",
         );
         return;
       }
@@ -233,7 +238,6 @@ export const useTranslation = (): UseTranslationReturn => {
         return;
       }
 
-      setIsTranslating(true);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       try {
         const result = await translate(
@@ -261,16 +265,16 @@ export const useTranslation = (): UseTranslationReturn => {
           await HistoryService.recordTranslation(
             {
               sourceLang:
-                sourceLang === 'auto'
-                  ? audio$.sourceLang.get() || 'en'
+                sourceLang === "auto"
+                  ? audio$.sourceLang.get() || "en"
                   : sourceLang,
               targetLang,
               transcript: textToTranslate,
               translation: result.value.translation,
               transliteration: result.value.transliteration || null,
               duration,
-              sourceApp: 'ekwe',
-              provider: 'gemini',
+              sourceApp: "ekwe",
+              provider: "gemini",
               sessionKey: currentSessionId,
             },
             userSession,
@@ -285,21 +289,17 @@ export const useTranslation = (): UseTranslationReturn => {
               translation: result.value.translation,
               transliteration: result.value.transliteration || null,
               duration: 0,
-              sourceApp: 'ekwe-home',
-              provider: 'gemini',
+              sourceApp: "ekwe-home",
+              provider: "gemini",
             },
             userSession,
           );
         }
       } catch (e: unknown) {
-        if (e instanceof Error && e.name === 'AbortError') return;
-        AppToast.error('Translation Failed', {
-          description: 'Something went wrong. Please try again.',
+        if (e instanceof Error && e.name === "AbortError") return;
+        AppToast.error("Translation Failed", {
+          description: "Something went wrong. Please try again.",
         });
-      } finally {
-        if (!translationAbortRef.current?.signal.aborted) {
-          setIsTranslating(false);
-        }
       }
     },
     [sourceText, sourceLang, targetLang, userSession, translate, translation],
@@ -309,7 +309,7 @@ export const useTranslation = (): UseTranslationReturn => {
 
   return {
     translate,
-    isTranslating,
+    isTranslating: translateMutation.isPending,
     translation,
     transliteration,
     sourceText,

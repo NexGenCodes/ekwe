@@ -1,5 +1,5 @@
-import { useSelector } from '@legendapp/state/react';
-import { useShareIntent } from 'expo-share-intent';
+import { useSelector } from "@legendapp/state/react";
+import { useShareIntent } from "expo-share-intent";
 import {
   useState,
   useEffect,
@@ -8,14 +8,13 @@ import {
   Dispatch,
   SetStateAction,
   useMemo,
-} from 'react';
-import { isIOS, isAndroid } from '@/utils';
+} from "react";
 
-import { AudioCapture } from '@/services/AudioCapture';
-import { IntentService } from '@/services/IntentService';
-import { settings$, auth$ } from '@/store';
-import { AppAlert, logger } from '@/utils';
-import { cleanEchoCache } from '@/utils/echo';
+import { AudioCapture } from "@/services/AudioCapture";
+import { IntentService } from "@/services/IntentService";
+import { settings$, auth$ } from "@/store";
+import { isIOS, isAndroid, AppAlert, logger } from "@/utils";
+import { cleanEchoCache } from "@/utils/echo";
 
 export const useEchoIntentResolver = (props: {
   value?: { value: string; mimeType: string }[];
@@ -61,24 +60,24 @@ export const useEchoIntentResolver = (props: {
     IntentService.dismissNativeLoader();
 
     logger.info(
-      '[IntentResolver] Guard check — rawUri:',
-      rawUri ? rawUri.substring(0, 60) : 'MISSING',
-      'isInitialized:',
+      "[IntentResolver] Guard check — rawUri:",
+      rawUri ? rawUri.substring(0, 60) : "MISSING",
+      "isInitialized:",
       isInitialized,
-      'onboardingCompleted:',
+      "onboardingCompleted:",
       onboardingCompleted,
-      'session:',
+      "session:",
       !!session,
     );
 
     if (!rawUri) {
-      logger.warn('[IntentResolver] ❌ BLOCKED: no rawUri');
+      logger.warn("[IntentResolver] ❌ BLOCKED: no rawUri");
       return;
     }
 
     // Check if we are already handling this URI or have finished it
     if (rawUri === previousRawUri.current && activeResolvedUri.current) {
-      logger.debug('[IntentResolver] Already resolved this URI — skipping');
+      logger.debug("[IntentResolver] Already resolved this URI — skipping");
       return;
     }
 
@@ -97,7 +96,7 @@ export const useEchoIntentResolver = (props: {
       try {
         setIsResolving(true);
         logger.info(
-          '[IntentResolver] resolve() started. rawUri:',
+          "[IntentResolver] resolve() started. rawUri:",
           rawUri.substring(0, 60),
         );
 
@@ -105,26 +104,26 @@ export const useEchoIntentResolver = (props: {
 
         if (isStale) {
           logger.info(
-            '[IntentResolver] Stale after resolveToFileUri — aborting',
+            "[IntentResolver] Stale after resolveToFileUri — aborting",
           );
           return;
         }
 
         if (!fileUri) {
-          logger.warn('[IntentResolver] resolveToFileUri returned null');
+          logger.warn("[IntentResolver] resolveToFileUri returned null");
           setIsResolving(false);
-          AppAlert.error('Error', 'Could not access the shared audio file.');
+          AppAlert.error("Error", "Could not access the shared audio file.");
           return;
         }
 
-        logger.info('[IntentResolver] fileUri resolved:', fileUri);
+        logger.info("[IntentResolver] fileUri resolved:", fileUri);
 
         // Validation: verify the file is actually an audio file we can handle
         try {
           const mimeType = hasIOSFiles
             ? props.value?.[0]?.mimeType
             : props.mimeType;
-          await AudioCapture.processSharedFile(fileUri, mimeType || 'audio/*');
+          await AudioCapture.processSharedFile(fileUri, mimeType || "audio/*");
         } catch {
           // Validation threw — keep the URI as best-effort fallback
         }
@@ -134,9 +133,9 @@ export const useEchoIntentResolver = (props: {
         setAudioUri(fileUri);
         setIsResolving(false);
         setIsSubsequentIntent(isSubseq);
-        logger.info('[IntentResolver] ✅ audioUri set + isResolving=false');
+        logger.info("[IntentResolver] ✅ audioUri set + isResolving=false");
       } catch (err) {
-        logger.error('[IntentResolver] ❌ Resolution FAILED:', err);
+        logger.error("[IntentResolver] ❌ Resolution FAILED:", err);
         setIsResolving(false);
       }
     };

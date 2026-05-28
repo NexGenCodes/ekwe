@@ -11,10 +11,17 @@ module.exports = ({ config }) => {
     ? 'armeabi-v7a,arm64-v8a,x86,x86_64'
     : 'arm64-v8a';
 
-  // The 'config' object passed here is the parsed app.json with the 'expo' key unwrapped.
-  return {
-    ...config,
-    plugins: (config.plugins || []).map((plugin) => {
+  const plugins = (config.plugins || [])
+    .filter((plugin) => {
+      if (
+        typeof plugin === 'string' &&
+        plugin.includes('@react-native-google-signin')
+      ) {
+        return false;
+      }
+      return true;
+    })
+    .map((plugin) => {
       if (Array.isArray(plugin) && plugin[0] === 'expo-build-properties') {
         return [
           'expo-build-properties',
@@ -28,6 +35,25 @@ module.exports = ({ config }) => {
         ];
       }
       return plugin;
-    }),
+    });
+
+  plugins.push([
+    'react-native-nitro-auth',
+    {
+      ios: {
+        googleClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+        googleServerClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+        googleUrlScheme: `com.googleusercontent.apps.${process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID}`,
+        appleSignIn: true,
+      },
+      android: {
+        googleClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+      },
+    },
+  ]);
+
+  return {
+    ...config,
+    plugins,
   };
 };

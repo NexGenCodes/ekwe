@@ -1,7 +1,7 @@
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useRouter } from 'expo-router';
-import React from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "expo-router";
+import React from "react";
+import { Controller, useForm } from "react-hook-form";
 
 import {
   AuthHeader,
@@ -14,12 +14,12 @@ import {
   ErrorBanner,
   Button,
   Disclaimer,
-} from '@/components';
-import { Box, Text } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { useAuthFlow, useTheme } from '@/hooks';
-import { signupSchema, SignupForm } from '@/schemas/auth';
-import { signUpWithPassword } from '@/services/auth';
+} from "@/components";
+import { Box, Text } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { useAuthFlow, useTheme } from "@/hooks";
+import { signupSchema, SignupForm } from "@/schemas/auth";
+import { signUpWithPassword } from "@/services/auth";
 
 export default function SignupScreen(): React.JSX.Element {
   const router = useRouter();
@@ -30,7 +30,7 @@ export default function SignupScreen(): React.JSX.Element {
 
   const { control, handleSubmit } = useForm<SignupForm>({
     resolver: zodResolver(signupSchema),
-    defaultValues: { email: '', password: '', confirmPassword: '' },
+    defaultValues: { email: "", password: "", confirmPassword: "" },
   });
 
   const onSubmit = async (data: SignupForm): Promise<void> => {
@@ -39,8 +39,8 @@ export default function SignupScreen(): React.JSX.Element {
     );
     if (result.ok && result.needsOtp) {
       router.push({
-        pathname: '/(auth)/verify',
-        params: { email: data.email.trim(), source: 'signup' },
+        pathname: "/(auth)/verify",
+        params: { email: data.email.trim(), source: "signup" },
       });
     }
   };
@@ -75,6 +75,9 @@ export default function SignupScreen(): React.JSX.Element {
                 placeholder="Email address"
                 keyboardType="email-address"
                 returnKeyType="next"
+                textContentType="emailAddress"
+                autoComplete="email"
+                editable={!isLoading}
                 error={fieldState.error?.message}
               />
             )}
@@ -90,8 +93,11 @@ export default function SignupScreen(): React.JSX.Element {
                 onBlur={onBlur}
                 placeholder="Password"
                 returnKeyType="next"
+                textContentType="newPassword"
+                autoComplete="new-password"
+                editable={!isLoading}
                 error={fieldState.error?.message}
-                showStrength={true}
+                showStrength
               />
             )}
           />
@@ -106,6 +112,9 @@ export default function SignupScreen(): React.JSX.Element {
                 onBlur={onBlur}
                 placeholder="Confirm password"
                 returnKeyType="done"
+                textContentType="newPassword"
+                autoComplete="new-password"
+                editable={!isLoading}
                 onSubmitEditing={handleSubmit(onSubmit)}
                 error={fieldState.error?.message}
               />
@@ -114,7 +123,7 @@ export default function SignupScreen(): React.JSX.Element {
         </Box>
 
         <Button
-          label="Create Account"
+          label="Create Your Profile"
           onPress={handleSubmit(onSubmit)}
           loading={isLoading}
         />

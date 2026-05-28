@@ -3,14 +3,14 @@
  *
  * Supports field-level error display from react-hook-form.
  */
-import React, { forwardRef, useState } from 'react';
-import { TextInput, type TextInputProps } from 'react-native';
+import React, { forwardRef, useState } from "react";
+import { TextInput, type TextInputProps } from "react-native";
 
-import { Box, Text } from '@/components/ui';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { typography } from '@/constants/typography';
-import { useTheme } from '@/hooks';
+import { Box, Text } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { typography } from "@/constants/typography";
+import { useTheme } from "@/hooks";
 
 export interface InputProps extends TextInputProps {
   /** Field-level error message from react-hook-form */
@@ -44,7 +44,7 @@ export const Input = forwardRef<TextInput, InputProps>(
               padding: spacing.md + 2,
               color: color.foreground,
               ...typography.body,
-              borderWidth: 1.5,
+              borderWidth: 1,
               borderColor: error
                 ? color.error
                 : isFocused
@@ -72,4 +72,4 @@ export const Input = forwardRef<TextInput, InputProps>(
   },
 );
 
-Input.displayName = 'Input';
+Input.displayName = "Input";
