@@ -1,6 +1,5 @@
 import { useSelector } from "@legendapp/state/react";
 import { useRouter } from "expo-router";
-import * as Speech from "expo-speech";
 import { useEffect, useState } from "react";
 import { KeyboardAvoidingView } from "react-native";
 
@@ -9,7 +8,7 @@ import {
   TranslationInterface,
   BackgroundFlair,
 } from "@/components/home";
-import { Box, ScrollArea } from "@/components/ui";
+import { Box, SafeArea, ScrollArea } from "@/components/ui";
 import { spacing } from "@/constants";
 import { settings$ } from "@/store";
 import { isIOS } from "@/utils";
@@ -21,17 +20,6 @@ export default function HomeScreen(): React.ReactElement {
   );
   const [isInputFocused, setIsInputFocused] = useState(false);
 
-  // Prewarm the Text-to-Speech engine on mount to eliminate cold-start latency
-  useEffect(() => {
-    const prewarmTTS = async (): Promise<void> => {
-      try {
-        await Speech.speak(".", { volume: 0 });
-      } catch {
-        // Silently ignore prewarm errors
-      }
-    };
-    prewarmTTS();
-  }, []);
 
   useEffect(() => {
     if (!onboardingCompleted) {
@@ -40,7 +28,7 @@ export default function HomeScreen(): React.ReactElement {
   }, [onboardingCompleted, router]);
 
   return (
-    <Box style={{ flex: 1 }}>
+    <SafeArea >
       <BackgroundFlair />
       <KeyboardAvoidingView
         behavior={isIOS ? "padding" : undefined}
@@ -54,6 +42,7 @@ export default function HomeScreen(): React.ReactElement {
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
           nestedScrollEnabled
+          
         >
           {/* Main content */}
           <Box style={{ gap: spacing.md }}>
@@ -62,6 +51,6 @@ export default function HomeScreen(): React.ReactElement {
           </Box>
         </ScrollArea>
       </KeyboardAvoidingView>
-    </Box>
+    </SafeArea>
   );
 }

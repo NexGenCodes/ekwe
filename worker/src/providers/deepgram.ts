@@ -3,6 +3,9 @@ import {
   isHallucination,
   fetchWithTimeout,
   rotateKeys,
+  getFirstKey,
+  connectWithTimeout,
+  relayWebSockets,
   TIMEOUT_FAST,
 } from '../utils';
 import { logger } from '../logger';
@@ -89,3 +92,39 @@ interface DeepgramResponse {
 }
 
 export const supportsAutoLang = true;
+
+/**
+ * Handles a real-time streaming session via Deepgram WebSocket.
+ * Returns true if the session was handled, false if the provider could not connect.
+ */
+export async function handleStream(
+  env: Env,
+  lang: string,
+  clientWs: WebSocket,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const key =
+    (env.DEEPGRAM_API_KEY as string | undefined) ||
+    getFirstKey(env, 'DEEPGRAM_KEY_');
+  if (!key) return false;
+
+  const params = new URLSearchParams({
+    access_token: key,
+    encoding: 'linear16',
+    sample_rate: '16000',
+    channels: '1',
+    model: 'nova-2',
+    interim_results: 'true',
+    smart_format: 'true',
+  });
+  // Omit language param for auto-detect; Deepgram auto-detects when absent
+  if (lang && lang !== 'auto') params.set('language', lang);
+
+  const dgWs = await connectWithTimeout(
+    `wss://api.deepgram.com/v1/listen?${params}`,
+  );
+  if (!dgWs) return false;
+
+  relayWebSockets(clientWs, dgWs);
+  return true;
+}

@@ -5,11 +5,12 @@ import {
   AudioContext,
   AudioRecorder,
   AnalyserNode,
-  FilePreset,
   AudioManager,
   FileDirectory,
+  FileFormat,
 } from 'react-native-audio-api';
 
+import { PLAN_LIMITS } from '@/constants/billing';
 import { logger, isIOS } from '@/utils';
 import { releaseAudioEffects } from '@/utils/AudioEffectsModule';
 
@@ -82,7 +83,7 @@ class AudioService {
     adapter.connect(this.analyser);
   }
 
-  public async startRecording(): Promise<void> {
+  public async startRecording(maxDurationMs?: number): Promise<void> {
     const status = await this.checkPermission();
     if (status !== 'Granted') {
       const result = await this.requestPermission();
@@ -92,12 +93,32 @@ class AudioService {
     await this.initialize();
     if (!this.recorder) throw new Error('Recorder not initialized');
 
-    // SWM Audio API 0.11+ handle file output
+    // Format decision: WAV (16kHz/16-bit) for ≤10 min, M4A for >10 min
+    // 16kHz/16-bit mono WAV: ~1.9MB/min, well within all tier limits
+    const WAV_THRESHOLD_MS = PLAN_LIMITS.pro.dictationDurationMs; // 600s
+    const useWav = !maxDurationMs || maxDurationMs <= WAV_THRESHOLD_MS;
+
     const timestamp = Date.now();
     const result = this.recorder.enableFileOutput({
+      format: useWav ? FileFormat.Wav : FileFormat.M4A,
       directory: FileDirectory.Cache,
       fileNamePrefix: `rec_${timestamp}`,
-      preset: FilePreset.High,
+      channelCount: 1,
+      preset: useWav
+        ? {
+            sampleRate: 16000,
+            bitDepth: 0,   // Bit16
+            bitRate: 256000,
+            iosQuality: 4,  // Max
+            flacCompressionLevel: 0, // L0
+          }
+        : {
+            sampleRate: 16000,
+            bitDepth: 0,
+            bitRate: 64000,
+            iosQuality: 4,
+            flacCompressionLevel: 0,
+          },
     });
 
     if (result.status !== 'success') {
@@ -160,7 +181,7 @@ class AudioService {
         (f) =>
           !('isDirectory' in f) &&
           f.name.startsWith('rec_') &&
-          f.name.endsWith('.m4a'),
+          (f.name.endsWith('.m4a') || f.name.endsWith('.wav')),
       );
 
       if (audioFiles.length === 0) return;

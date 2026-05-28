@@ -1,48 +1,30 @@
 import type { ExecutionContext } from "@cloudflare/workers-types";
-import { jwtVerify, createRemoteJWKSet } from "jose";
 
+import { authenticate } from "./auth";
 import { handleCheckoutInitialize } from "./checkout";
 import { logger } from "./logger";
 import { guardContentType, guardJsonSize } from "./security";
-import { handleTranscribe } from "./transcribe";
+import { handleTranscribe, handleStream } from "./transcribe";
 import { handleTranslate } from "./translate";
-import { Env, Tier, JWTPayloadWithMeta } from "./types";
+import { Env, Tier } from "./types";
 import { checkPreflight, postflightDeduction } from "./utils";
 import { handleWebhook } from "./webhook";
-
-let JWKS: ReturnType<typeof createRemoteJWKSet>;
-let JWKS_TS = 0;
-const JWKS_TTL = 3_600_000;
-
-function getJWKS(
-  env: Env,
-  force = false,
-): ReturnType<typeof createRemoteJWKSet> {
-  const now = Date.now();
-  if (!JWKS || force || now - JWKS_TS > JWKS_TTL) {
-    JWKS = createRemoteJWKSet(
-      new URL(`${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`),
-    );
-    JWKS_TS = now;
-  }
-  return JWKS;
-}
 
 function getCorsHeaders(request: Request, env: Env): Record<string, string> {
   const origin = request.headers.get("Origin") || request.headers.get("origin");
   const allowedOrigins =
     env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()) || [];
 
-  const isDevOrigin =
-    origin.startsWith("exp://") ||
-    origin.includes(".expo.dev") ||
-    origin.includes(".expo.io") ||
-    origin.startsWith("http://localhost") ||
-    origin.startsWith("http://127.0.0.1");
-
   const isProduction = env.APP_ENV === "production";
+  const isDevOrigin =
+    !!origin &&
+    (origin.startsWith("exp://") ||
+      origin.includes(".expo.dev") ||
+      origin.includes(".expo.io") ||
+      origin.startsWith("http://localhost") ||
+      origin.startsWith("http://127.0.0.1"));
   const isAllowed =
-    origin &&
+    !!origin &&
     (allowedOrigins.includes(origin) || (!isProduction && isDevOrigin));
 
   return {
@@ -56,6 +38,27 @@ function getCorsHeaders(request: Request, env: Env): Record<string, string> {
 
 export default {
   async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
+    try {
+      return await this.handleRequest(request, env, ctx);
+    } catch (e: unknown) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      logger.error("[global] Unhandled exception", { error: errorMsg });
+      const corsHeaders = getCorsHeaders(request, env);
+      return this.addCorsHeaders(
+        Response.json(
+          { error: "EKWE_NETWORK_LOST", message: errorMsg },
+          { status: 500 },
+        ),
+        corsHeaders,
+      );
+    }
+  },
+
+  async handleRequest(
     request: Request,
     env: Env,
     ctx: ExecutionContext,
@@ -76,52 +79,44 @@ export default {
     }
 
     // ─── Auth: Strict JWT Only ───
-    let tier: Tier = "FREE";
-    let userId = "";
-    let userEmail = "";
+    const isStream = url.pathname === '/transcribe/stream';
+    const token = isStream
+      ? url.searchParams.get('token')
+      : request.headers.get('Authorization')?.startsWith('Bearer ')
+        ? request.headers.get('Authorization')!.slice(7)
+        : null;
 
-    const authHeader = request.headers.get("Authorization");
+    let userId = '';
+    let userEmail = '';
+    let tier: Tier = 'FREE';
 
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      try {
-        const token = authHeader.split(" ")[1];
-        let meta: JWTPayloadWithMeta;
-
-        try {
-          const { payload } = await jwtVerify(token, getJWKS(env), {
-            issuer: `${env.SUPABASE_URL}/auth/v1`,
-            audience: "authenticated",
-          });
-          meta = payload as JWTPayloadWithMeta;
-        } catch {
-          // Key may have rotated — force-refresh JWKS and retry once
-          const { payload } = await jwtVerify(token, getJWKS(env, true), {
-            issuer: `${env.SUPABASE_URL}/auth/v1`,
-            audience: "authenticated",
-          });
-          meta = payload as JWTPayloadWithMeta;
-        }
-
-        userId = meta.sub || "";
-        userEmail = meta.email || "";
-
-        if (!userId) throw new Error("Missing sub in JWT");
-
-        if (meta.app_metadata?.is_pro) {
-          tier = "PREMIUM";
-        }
-      } catch (err) {
-        return this.addCorsHeaders(
-          Response.json({ error: "INVALID_TOKEN" }, { status: 401 }),
-          corsHeaders,
-        );
+    if (token) {
+      const auth = await authenticate(token, env);
+      if (!auth) {
+        const body = isStream
+          ? new Response('Invalid token', { status: 401 })
+          : this.addCorsHeaders(
+              Response.json({ error: 'INVALID_TOKEN' }, { status: 401 }),
+              corsHeaders,
+            );
+        return body;
       }
+      userId = auth.userId;
+      userEmail = auth.userEmail;
+      tier = auth.tier;
     } else {
-      // No valid JWT provided — block completely
-      return this.addCorsHeaders(
-        Response.json({ error: "UNAUTHORIZED" }, { status: 401 }),
-        corsHeaders,
-      );
+      const body = isStream
+        ? new Response('Missing token', { status: 401 })
+        : this.addCorsHeaders(
+            Response.json({ error: 'UNAUTHORIZED' }, { status: 401 }),
+            corsHeaders,
+          );
+      return body;
+    }
+
+    // ─── Streaming WebSocket Route (after auth, before rate limits) ───
+    if (isStream) {
+      return handleStream(request, env, userId, tier);
     }
 
     // ─── SECURITY GATING: Cloudflare Rate Limiting ───

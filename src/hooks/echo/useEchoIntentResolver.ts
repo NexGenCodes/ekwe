@@ -118,19 +118,19 @@ export const useEchoIntentResolver = (props: {
 
         logger.info("[IntentResolver] fileUri resolved:", fileUri);
 
-        // Validation: verify the file is actually an audio file we can handle
-        try {
-          const mimeType = hasIOSFiles
-            ? props.value?.[0]?.mimeType
-            : props.mimeType;
-          await AudioCapture.processSharedFile(fileUri, mimeType || "audio/*");
-        } catch {
-          // Validation threw — keep the URI as best-effort fallback
-        }
+        // Validate + convert shared audio to WAV for broad format compatibility
+        const mimeType = hasIOSFiles
+          ? props.value?.[0]?.mimeType
+          : props.mimeType;
+        const result = await AudioCapture.processSharedFile(
+          fileUri,
+          mimeType || "audio/*",
+        );
+        const finalUri = result.ok ? result.value.uri : fileUri;
 
         // Set audio URI immediately so useSharedAudioPlayer starts decoding
-        activeResolvedUri.current = fileUri;
-        setAudioUri(fileUri);
+        activeResolvedUri.current = finalUri;
+        setAudioUri(finalUri);
         setIsResolving(false);
         setIsSubsequentIntent(isSubseq);
         logger.info("[IntentResolver] ✅ audioUri set + isResolving=false");

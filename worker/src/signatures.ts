@@ -72,7 +72,7 @@ export async function verifyWebhook(
     PAYSTACK_SECRET_KEY?: string;
     FLUTTERWAVE_SECRET_HASH?: string;
     REVENUECAT_WEBHOOK_SECRET?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   },
 ): Promise<WebhookVerificationResult> {
   const headers = request.headers;

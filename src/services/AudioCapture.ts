@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { Linking } from "react-native";
-import { AudioContext } from "react-native-audio-api";
+import { decodeAudioData } from "react-native-audio-api";
+import { File, Paths } from "expo-file-system";
 
 import { PLAN_LIMITS } from "@/constants/billing";
 import { EkweError } from "@/constants/errors";
@@ -15,6 +16,7 @@ import {
 } from "@/utils/AudioEffectsModule";
 import { AppAlert } from "@/utils/alert";
 import { validateSharedAudio } from "@/utils/fileValidation";
+import { encodeWav } from "@/utils/wavEncoder";
 import logger from "@/utils/logger";
 
 export interface CaptureSession {
@@ -111,7 +113,13 @@ class AudioCaptureClass {
       this.currentSessionId = sessionId;
       this.currentMeteringData = []; // Reset for new session
       this.onAutoStopCallback = onAutoStop ?? null;
-      await AudioService.startRecording();
+
+      // Compute plan cap and pass to AudioService for format selection
+      const isPro = auth$.isPro.get();
+      const safetyCapMs = isPro
+        ? PLAN_LIMITS.pro.dictationDurationMs
+        : PLAN_LIMITS.free.dictationDurationMs;
+      await AudioService.startRecording(safetyCapMs);
       this.notifyStatusListeners("started");
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -166,11 +174,6 @@ class AudioCaptureClass {
       }, 32);
 
       // --- Max Duration Safety Net (Dynamic Cap based on plan) ---
-      const isPro = auth$.isPro.get();
-      const safetyCapMs = isPro
-        ? PLAN_LIMITS.pro.dictationDurationMs
-        : PLAN_LIMITS.free.dictationDurationMs;
-
       this.maxDurationTimeout = setTimeout(async () => {
         if (this.isRecording()) {
           logger.info(
@@ -314,17 +317,31 @@ class AudioCaptureClass {
     }
 
     let durationMs = 0;
+    let outputUri = validationResult.value.uri;
+
     try {
-      const context = new AudioContext();
-      const decoded = await context.decodeAudioData(uri);
+      const decoded = await decodeAudioData(uri, 16000);
       durationMs = Math.round(decoded.duration * 1000);
-      await context.close();
+
+      // 22MB safety guard: skip WAV conversion if estimated size exceeds limit
+      const MAX_WAV_BYTES = 22 * 1024 * 1024;
+      const estimatedWavBytes = decoded.length * decoded.numberOfChannels * 2;
+      if (estimatedWavBytes <= MAX_WAV_BYTES) {
+        const wavBytes = encodeWav(decoded);
+        const wavFile = new File(Paths.cache, `shared_${Date.now()}.wav`);
+        wavFile.write(wavBytes);
+        outputUri = wavFile.uri;
+      } else {
+        logger.warn(
+          `Shared audio too large for WAV conversion: ~${Math.round(estimatedWavBytes / 1024 / 1024)}MB, using original file`,
+        );
+      }
     } catch {
-      // Non-critical — duration defaults to 0 if we can't decode
+      // Non-critical — use original file if decode/encode fails
     }
 
     return ok({
-      uri: validationResult.value.uri,
+      uri: outputUri,
       durationMs,
       meteringData: [],
     });

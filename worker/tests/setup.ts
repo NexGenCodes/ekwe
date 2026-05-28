@@ -4,16 +4,16 @@ import type { Env } from '../src/types';
 // ─── Mock Env Factory ──────────────────────────────────────────────
 
 export function mockEnv(overrides: Partial<Env> = {}): Env {
+  const store = new Map<string, string>();
   const kv = {
-    _store: new Map<string, string>(),
     get: vi.fn(
-      async (key: string) => kv._store.get(key) ?? null,
+      async (key: string) => store.get(key) ?? null,
     ) as Env['EKWE_KV']['get'],
     put: vi.fn(
       async (key: string, value: string, opts?: { expirationTtl?: number }) => {
-        kv._store.set(key, value);
+        store.set(key, value);
         if (opts?.expirationTtl) {
-          setTimeout(() => kv._store.delete(key), opts.expirationTtl * 1000);
+          setTimeout(() => store.delete(key), opts.expirationTtl * 1000);
         }
       },
     ) as Env['EKWE_KV']['put'],

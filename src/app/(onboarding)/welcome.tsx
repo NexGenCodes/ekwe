@@ -104,8 +104,8 @@ export default function WelcomeScreen(): React.ReactElement {
   const styles = useMemo(
     () => ({
       containerContent: {
-        paddingHorizontal: spacing.lg,
-        paddingBottom: spacing.lg,
+        paddingTop: spacing['2xl'],
+        paddingBottom: spacing['6xl'],
         justifyContent: "space-between",
       } as const,
       header: { alignItems: "center", marginBottom: spacing.xl } as const,

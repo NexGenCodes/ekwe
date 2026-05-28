@@ -3,6 +3,9 @@ import {
   isHallucination,
   fetchWithTimeout,
   rotateKeys,
+  getFirstKey,
+  connectWithTimeout,
+  relayWebSockets,
   TIMEOUT_FAST,
   abortableDelay,
 } from '../utils';
@@ -148,3 +151,33 @@ interface GladiaResult {
 }
 
 export const supportsAutoLang = true;
+
+/**
+ * Handles a real-time streaming session via Gladia WebSocket.
+ * Returns true if the session was handled, false if the provider could not connect.
+ */
+export async function handleStream(
+  env: Env,
+  lang: string,
+  clientWs: WebSocket,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const key = getFirstKey(env, 'GLADIA_KEY_');
+  if (!key) return false;
+
+  const params = new URLSearchParams({
+    sample_rate: '16000',
+    channels: '1',
+    encoding: 'wav/pcm',
+    x_gladia_key: key,
+  });
+  if (lang && lang !== 'auto') params.set('language', lang);
+
+  const glWs = await connectWithTimeout(
+    `wss://api.gladia.io/audio/text/audio-transcription?${params}`,
+  );
+  if (!glWs) return false;
+
+  relayWebSockets(clientWs, glWs);
+  return true;
+}

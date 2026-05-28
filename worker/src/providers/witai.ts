@@ -155,14 +155,14 @@ async function parseStream(res: Response): Promise<{ text: string } | null> {
  */
 function toWitMime(mime: string): string | null {
   const baseMime = mime.split(';')[0].trim().toLowerCase();
-  const map: Record<string, string> = {
+  const map: Record<string, string | null> = {
     'audio/mpeg': 'audio/mpeg3',
     'audio/mp3': 'audio/mpeg3',
     'audio/mpeg3': 'audio/mpeg3',
-    'audio/mp4': 'audio/mp4',
-    'audio/m4a': 'audio/mp4',
-    'audio/x-m4a': 'audio/mp4',
-    'audio/aac': 'audio/mp4',
+    'audio/mp4': null,
+    'audio/m4a': null,
+    'audio/x-m4a': null,
+    'audio/aac': null,
     'audio/wav': 'audio/wav',
     'audio/x-wav': 'audio/wav',
     'audio/ogg': 'audio/ogg',
@@ -177,3 +177,138 @@ function toWitMime(mime: string): string | null {
 }
 
 export const supportsAutoLang = false;
+
+/**
+ * Handles a streaming session via Wit.ai HTTP dictation API.
+ * Accumulates audio chunks from the client, then POSTs the complete
+ * audio and streams back the chunked JSON response.
+ */
+export async function handleStream(
+  env: Env,
+  lang: string,
+  clientWs: WebSocket,
+  signal: AbortSignal,
+): Promise<boolean> {
+  // Wit.ai is language-locked per key; auto is unsupported
+  if (!lang || lang === 'auto') return false;
+
+  const targetLang = lang.toUpperCase().replace('-', '_');
+  const baseLang = targetLang.split('_')[0];
+  const witKey = sanitizeKey(
+    env[`WIT_KEY_${targetLang}`] ?? env[`WIT_KEY_${baseLang}`],
+  );
+  if (!witKey) return false;
+
+  // Accumulate audio chunks from client WebSocket
+  const chunks: ArrayBuffer[] = [];
+  let streamEnded = false;
+
+  const onMessage = (event: MessageEvent): void => {
+    if (event.data instanceof ArrayBuffer) {
+      chunks.push(event.data);
+    } else if (event.data instanceof Blob) {
+      event.data.arrayBuffer().then((buf) => chunks.push(buf));
+    } else if (typeof event.data === 'string') {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'close' || msg.type === 'CloseStream') {
+          streamEnded = true;
+          processAudio();
+        }
+      } catch { /* ignore unparseable text */ }
+    }
+  };
+
+  const onClose = (): void => {
+    streamEnded = true;
+    processAudio();
+  };
+
+  clientWs.addEventListener('message', onMessage);
+  clientWs.addEventListener('close', onClose);
+
+  let processed = false;
+  async function processAudio(): Promise<void> {
+    if (processed) return;
+    processed = true;
+    clientWs.removeEventListener('message', onMessage);
+    clientWs.removeEventListener('close', onClose);
+
+    if (chunks.length === 0) {
+      clientWs.send(JSON.stringify({ error: 'NO_AUDIO', message: 'No audio data received.' }));
+      clientWs.close();
+      return;
+    }
+
+    const audioBlob = new Blob(chunks, { type: 'audio/wav' });
+    const contentType = toWitMime(audioBlob.type);
+    if (!contentType) {
+      clientWs.send(JSON.stringify({ error: 'UNSUPPORTED_FORMAT', message: 'Audio format not supported by Wit.ai.' }));
+      clientWs.close();
+      return;
+    }
+
+    logger.info('[witai-stream] Sending request', { lang, size: audioBlob.size });
+
+    try {
+      const res = await fetch(WITAI_DICTATION, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${witKey}`,
+          'Content-Type': contentType,
+          'User-Agent': getUserAgent(),
+        },
+        body: audioBlob,
+        signal,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => 'Unknown');
+        clientWs.send(JSON.stringify({ error: 'PROVIDER_ERROR', message: `Wit.ai HTTP ${res.status}: ${errText}` }));
+        clientWs.close();
+        return;
+      }
+
+      // Stream the chunked JSON response back to client
+      const raw = await res.text();
+      const cleaned = raw.replace(/^\uFEFF/, '');
+      const jsonMatches = cleaned.match(/\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}/g);
+
+      if (jsonMatches) {
+        let finalText = '';
+        for (const part of jsonMatches) {
+          try {
+            const data = JSON.parse(part) as { text?: string; is_final?: boolean };
+            if (data.text) {
+              finalText = data.text;
+              clientWs.send(JSON.stringify({
+                type: 'interim',
+                text: data.text,
+                is_final: data.is_final ?? false,
+                provider: `witai-${lang}`,
+              }));
+            }
+          } catch { /* skip malformed chunk */ }
+        }
+
+        if (finalText.trim()) {
+          clientWs.send(JSON.stringify({
+            type: 'final',
+            text: finalText.trim(),
+            provider: `witai-${lang}`,
+            language: lang,
+          }));
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg !== 'CLIENT_ABORTED') {
+        clientWs.send(JSON.stringify({ error: 'STREAM_FAILED', message: msg }));
+      }
+    }
+
+    clientWs.close();
+  }
+
+  return true;
+}

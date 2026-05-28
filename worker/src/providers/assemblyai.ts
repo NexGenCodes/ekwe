@@ -3,6 +3,9 @@ import {
   rotateKeys,
   isHallucination,
   fetchWithTimeout,
+  getFirstKey,
+  connectWithTimeout,
+  relayWebSockets,
   TIMEOUT_FAST,
   abortableDelay,
 } from '../utils';
@@ -159,3 +162,32 @@ interface AssemblyResult {
 }
 
 export const supportsAutoLang = true;
+
+/**
+ * Handles a real-time streaming session via AssemblyAI WebSocket.
+ * Returns true if the session was handled, false if the provider could not connect.
+ */
+export async function handleStream(
+  env: Env,
+  lang: string,
+  clientWs: WebSocket,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const key = getFirstKey(env, 'ASSEMBLYAI_KEY_');
+  if (!key) return false;
+
+  const params = new URLSearchParams({
+    sample_rate: '16000',
+    token: key,
+  });
+  // AssemblyAI supports auto-detection; omit language_code for auto
+  if (lang && lang !== 'auto') params.set('language_code', lang);
+
+  const aaiWs = await connectWithTimeout(
+    `wss://api.assemblyai.com/v2/realtime/ws?${params}`,
+  );
+  if (!aaiWs) return false;
+
+  relayWebSockets(clientWs, aaiWs);
+  return true;
+}

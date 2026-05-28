@@ -47,7 +47,7 @@ export const PLAN_LIMITS = {
   pro: {
     maxPinnedLanguages: 5,
     maxSelectedLanguages: 5,
-    dictationDurationMs: 120_000, // 2 minutes
+    dictationDurationMs: 600_000, // 10 minutes
     historyLocalTtlDays: 7, // Flat for all users (tamper-safe)
     historyRemoteTtlDays: 365, // Cloud retention — 1 year for Pro
     textTranslationMaxChars: 10000,
@@ -147,7 +147,7 @@ export const BILLING_PLANS = {
       { title: 'Voice dictation (up to 60s)', included: true },
       { title: '30-day cloud history', included: true },
       { title: 'Ad-free experience', included: false },
-      { title: 'Extended voice dictation (120s)', included: false },
+      { title: 'Extended voice dictation (up to 10 min)', included: false },
       { title: '1-year cloud history', included: false },
       { title: 'Auto-detect spoken language', included: false },
     ] as PlanFeature[],
@@ -160,7 +160,7 @@ export const BILLING_PLANS = {
     productIdAnnual: 'ekwe_pro_annual',
     features: [
       { title: 'Ad-free experience', included: true },
-      { title: 'Extended voice dictation (120s)', included: true },
+      { title: 'Extended voice dictation (up to 10 min)', included: true },
       { title: '1-year cloud history', included: true },
       { title: 'Auto-detect spoken language', included: true },
       { title: 'Custom avatar icons', included: true },

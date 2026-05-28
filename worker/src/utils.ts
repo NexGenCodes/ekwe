@@ -86,7 +86,7 @@ export async function fetchWithTimeout(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  const onClientAbort = () => controller.abort();
+  const onClientAbort = (): void => controller.abort();
   if (clientSignal) {
     if (clientSignal.aborted) {
       controller.abort();
@@ -113,7 +113,7 @@ export async function abortableDelay(
       signal.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
-    const onAbort = () => {
+    const onAbort = (): void => {
       clearTimeout(timer);
       reject(new Error('CLIENT_ABORTED'));
     };
@@ -301,4 +301,119 @@ export async function postflightDeduction(
     logger.error('[postflight] deduction failed');
   }
   return null;
+}
+
+// ─── Streaming Helpers ───────────────────────────────────────────
+
+/**
+ * Resolves the first env var matching a numbered prefix (e.g. GLADIA_KEY_1).
+ */
+export function getFirstKey(env: Env, prefix: string): string | null {
+  for (let i = 1; i <= 10; i++) {
+    const key = env[`${prefix}${i}`] as string | undefined;
+    if (key && typeof key === 'string') return key;
+  }
+  return null;
+}
+
+/**
+ * Creates a WebSocket with a connection timeout.
+ * Resolves with the WebSocket on open, or null on error/timeout.
+ */
+export function connectWithTimeout(
+  url: string,
+  protocols?: string | string[],
+): Promise<WebSocket | null> {
+  return new Promise((resolve) => {
+    try {
+      const ws = new WebSocket(url, protocols);
+      const timer = setTimeout(() => {
+        if (ws.readyState !== WebSocket.OPEN) {
+          ws.close();
+          resolve(null);
+        }
+      }, 5000);
+      ws.addEventListener('open', () => {
+        clearTimeout(timer);
+        resolve(ws);
+      });
+      ws.addEventListener('error', () => {
+        clearTimeout(timer);
+        resolve(null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * Bi-directionally relays messages between two WebSockets.
+ * Handles binary/text messages and close propagation.
+ * Returns a cleanup function to stop relaying.
+ */
+export function relayWebSockets(
+  a: WebSocket,
+  b: WebSocket,
+): () => void {
+  let aClosed = false;
+  let bClosed = false;
+  let aCleanup: (() => void) | null = null;
+  let bCleanup: (() => void) | null = null;
+
+  function closeBoth(): void {
+    if (!aClosed) { try { a.close(); } catch { /* ignore */ } }
+    if (!bClosed) { try { b.close(); } catch { /* ignore */ } }
+  }
+
+  const onAMessage = (event: MessageEvent): void => {
+    if (bClosed) return;
+    try { b.send(event.data); } catch { /* ignore */ }
+  };
+  const onAClose = (): void => {
+    aClosed = true;
+    if (!bClosed) {
+      bClosed = true;
+      try { b.close(); } catch { /* ignore */ }
+    }
+  };
+  const onAError = (): void => { onAClose(); };
+
+  const onBMessage = (event: MessageEvent): void => {
+    if (aClosed) return;
+    try { a.send(event.data); } catch { /* ignore */ }
+  };
+  const onBClose = (): void => {
+    bClosed = true;
+    if (!aClosed) {
+      aClosed = true;
+      try { a.close(); } catch { /* ignore */ }
+    }
+  };
+  const onBError = (): void => { onBClose(); };
+
+  a.addEventListener('message', onAMessage);
+  a.addEventListener('close', onAClose);
+  a.addEventListener('error', onAError);
+
+  b.addEventListener('message', onBMessage);
+  b.addEventListener('close', onBClose);
+  b.addEventListener('error', onBError);
+
+  aCleanup = (): void => {
+    a.removeEventListener('message', onAMessage);
+    a.removeEventListener('close', onAClose);
+    a.removeEventListener('error', onAError);
+  };
+  bCleanup = (): void => {
+    b.removeEventListener('message', onBMessage);
+    b.removeEventListener('close', onBClose);
+    b.removeEventListener('error', onBError);
+  };
+
+  return () => {
+    aCleanup?.();
+    bCleanup?.();
+    closeBoth();
+  };
 }

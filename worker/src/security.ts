@@ -29,20 +29,20 @@ const TIER_LIMITS = {
   },
   PREMIUM: {
     maxTextChars: 10_000, // ~1,500 words
-    maxAudioBytes: 10 * 1024 * 1024, // 10MB (~120s)
+    maxAudioBytes: 25 * 1024 * 1024, // 25MB (~10 min)
     autoDetectAllowed: true,
   },
   // CAPPED_PREMIUM users are silently downgraded
   CAPPED_PREMIUM: {
     maxTextChars: 5_000,
-    maxAudioBytes: 6 * 1024 * 1024, // 6MB (~72s)
+    maxAudioBytes: 25 * 1024 * 1024, // 25MB (~10 min)
     autoDetectAllowed: true,
   },
 } as const;
 
 type LimitsFor = (typeof TIER_LIMITS)[Tier];
 
-function getLimits(tier: Tier): LimitsFor {
+export function getLimits(tier: Tier): LimitsFor {
   return TIER_LIMITS[tier] ?? TIER_LIMITS.FREE;
 }
 
