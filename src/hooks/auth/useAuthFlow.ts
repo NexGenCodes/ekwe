@@ -4,11 +4,11 @@
  * Eliminates copy-pasted handleApple/handleGoogle/handleAuthSuccess
  * across every auth screen. Screens call `run()` or the social helpers.
  */
-import { useRouter } from 'expo-router';
-import { useState, useCallback } from 'react';
+import { useRouter } from "expo-router";
+import { useState, useCallback } from "react";
 
-import { signInWithApple, signInWithGoogle, AuthResult } from '@/services/auth';
-import { settingsActions } from '@/store';
+import { signInWithApple, signInWithGoogle, AuthResult } from "@/services/auth";
+import { settingsActions } from "@/store";
 
 interface UseAuthFlowReturn {
   isLoading: boolean;
@@ -25,23 +25,23 @@ export const useAuthFlow = (): UseAuthFlowReturn => {
   const router = useRouter();
   const { setOnboardingCompleted } = settingsActions;
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
-  const clearError = useCallback((): void => setError(''), []);
+  const clearError = useCallback((): void => setError(""), []);
 
   const onSuccess = useCallback((): void => {
     setOnboardingCompleted(true);
-    router.replace('/(tabs)');
+    router.replace("/(tabs)");
   }, [router]);
 
   const run = useCallback(
     async (fn: () => Promise<AuthResult>): Promise<AuthResult> => {
       setIsLoading(true);
-      setError('');
+      setError("");
       const result = await fn();
       setIsLoading(false);
 
-      if (result.ok) {
+      if (result.ok && !result.needsOtp) {
         onSuccess();
       } else if (result.error) {
         setError(result.error);

@@ -83,13 +83,15 @@ export const signUpWithPassword = async (
   password: string,
 ): Promise<AuthResult> => {
   try {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
     });
     if (error) return { ok: false, error: error.message };
-    // Supabase sends a confirmation OTP email
-    return { ok: true, needsOtp: true };
+    // If session is present, user was auto-confirmed or already existed
+    // — no OTP email was sent, so skip OTP verification.
+    const needsOtp = !data.session;
+    return { ok: true, needsOtp };
   } catch (err) {
     logger.error("[Auth] signUpWithPassword error:", err);
     return { ok: false, error: "Something went wrong. Want to try again?" };
