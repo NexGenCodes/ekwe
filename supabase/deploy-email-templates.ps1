@@ -7,7 +7,7 @@
 # Usage:
 #   $env:SUPABASE_ACCESS_TOKEN = "sbp_..."
 #   $env:SUPABASE_PROJECT_REF = "your-project-ref"
-#   .\scripts\deploy-email-templates.ps1
+#   .\supabase\deploy-email-templates.ps1
 # ──────────────────────────────────────────────────────────────────────────────
 
 $ErrorActionPreference = "Stop"
