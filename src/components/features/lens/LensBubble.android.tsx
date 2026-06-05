@@ -15,13 +15,15 @@ import Animated, {
   SharedValue,
 } from "react-native-reanimated";
 
-import { CheckmarkIcon } from "@/assets/icons/CheckmarkIcon";
-import { ExclamationIcon } from "@/assets/icons/ExclamationIcon";
-import { MicrophoneIcon } from "@/assets/icons/MicrophoneIcon";
-import { SpinnerIcon } from "@/assets/icons/SpinnerIcon";
+import { Check, AlertCircle, Mic } from "lucide-react-native";
+import Svg, { Path } from "react-native-svg";
 import { Box } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
 import { bubbleColors } from "@/constants/colors";
 import { useBubble, useMetering, useTheme } from "@/hooks";
+
+const AnimatedSvg = Animated.createAnimatedComponent(Svg);
 import { audio$, audioActions, settings$, RecordingState } from "@/store";
 import { BubbleNative } from "@/utils/BubbleModule";
 
@@ -219,7 +221,7 @@ export function LensBubble(): React.ReactElement | null {
     return (
       <Animated.View
         style={[
-          { width: 3, borderRadius: 1.5, backgroundColor: color },
+          { width: 3, borderRadius: borderRadius.sm, backgroundColor: color },
           animatedStyle,
         ]}
       />
@@ -312,27 +314,37 @@ export function LensBubble(): React.ReactElement | null {
           ]}
         >
           {recordingState === RecordingState.Idle && (
-            <MicrophoneIcon size={20} color={onPrimaryColor} />
+            <Mic size={20} color={onPrimaryColor} />
           )}
           {recordingState === RecordingState.Recording && (
-            <Box style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <Box style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
               {history.map((h, i) => (
                 <MeterBar key={i} value={h} color={onPrimaryColor} />
               ))}
             </Box>
           )}
           {recordingState === RecordingState.Processing && (
-            <SpinnerIcon
-              size={20}
-              color={onPrimaryColor}
-              animatedStyle={spinnerStyle}
-            />
+            <AnimatedSvg
+              width={20}
+              height={20}
+              viewBox="0 0 24 24"
+              fill="none"
+              style={spinnerStyle}
+            >
+              <Path
+                d="M21 12a9 9 0 1 1-6.219-8.56"
+                stroke={onPrimaryColor}
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </AnimatedSvg>
           )}
           {recordingState === RecordingState.Done && (
-            <CheckmarkIcon size={20} color={onPrimaryColor} />
+            <Check size={20} color={onPrimaryColor} />
           )}
           {recordingState === RecordingState.Error && (
-            <ExclamationIcon size={20} color={onPrimaryColor} />
+            <AlertCircle size={20} color={onPrimaryColor} />
           )}
         </Animated.View>
       </GestureDetector>

@@ -8,6 +8,7 @@ import Animated, {
 import { Box, Pressable } from '@/components/ui';
 import { spring } from '@/constants';
 import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTheme } from '@/hooks';
 import { settingsActions, ThemePreference } from '@/store';
 import { triggerHaptic } from '@/utils/haptics';
@@ -45,7 +46,7 @@ export function ThemeSelector(): React.ReactElement {
         flexDirection: 'row',
         backgroundColor: color.surface,
         borderRadius: borderRadius.xl,
-        padding: 3,
+        padding: spacing.xs,
         position: 'relative',
       }}
     >
@@ -54,8 +55,8 @@ export function ThemeSelector(): React.ReactElement {
         style={[
           {
             position: 'absolute',
-            top: 3,
-            left: 3,
+            top: spacing.xs,
+            left: spacing.xs,
             width: SEGMENT_SIZE,
             height: SEGMENT_SIZE,
             borderRadius: borderRadius.lg,

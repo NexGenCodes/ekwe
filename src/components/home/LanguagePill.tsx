@@ -54,7 +54,7 @@ export function LanguagePill({
       <Text
         variant="bodySmall"
         style={{
-          marginRight: 4,
+          marginRight: spacing.xs,
           color: !langCode ? color.muted : color.foreground,
         }}
         numberOfLines={1}

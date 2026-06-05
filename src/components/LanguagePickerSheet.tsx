@@ -68,7 +68,7 @@ const LanguageRow = ({
         </Text>
         <Box>
           <Text variant="body">{item.englishName}</Text>
-          <Text variant="caption" style={{ marginTop: 4, color: color.muted }}>
+          <Text variant="caption" style={{ marginTop: spacing.xs, color: color.muted }}>
             {item.nativeName}
           </Text>
         </Box>

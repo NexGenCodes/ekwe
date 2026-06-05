@@ -5,7 +5,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 
-import { MicrophoneIcon } from '@/assets/icons/MicrophoneIcon';
+import { Mic } from 'lucide-react-native';
 import { Text } from '@/components/ui';
 import { bubbleColors } from '@/constants/colors';
 import { borderRadius } from '@/constants/sizes';
@@ -102,15 +102,15 @@ export function LensBubble(): React.ReactElement | null {
           borderRadius: borderRadius.full,
           flexDirection: 'row',
           alignItems: 'center',
-          gap: 8,
+          gap: spacing.sm,
           paddingHorizontal: spacing.md,
-          paddingVertical: 4,
+          paddingVertical: spacing.xs,
         },
         { backgroundColor: stateColor },
         pillAnimatedStyle,
       ]}
     >
-      <MicrophoneIcon size={14} color={onPrimaryColor} />
+      <Mic size={14} color={onPrimaryColor} />
       <Text
         variant="caption"
         style={{

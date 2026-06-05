@@ -8,7 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Box } from '@/components/ui';
-import { opacity } from '@/constants/sizes';
+import { borderRadius, opacity } from '@/constants/sizes';
 import { useTheme } from '@/hooks';
 
 export interface AudioWaveformProps {
@@ -103,7 +103,7 @@ export const AudioWaveform = ({
           style={{
             width: 3,
             height: h,
-            borderRadius: 1.5,
+            borderRadius: borderRadius.sm,
             backgroundColor: TERTIARY_COLOR,
             opacity: 0.15,
           }}
@@ -120,7 +120,7 @@ export const AudioWaveform = ({
           style={{
             width: 3,
             height: h,
-            borderRadius: 1.5,
+            borderRadius: borderRadius.sm,
             backgroundColor: PRIMARY_BRAND_COLOR,
           }}
         />
@@ -141,7 +141,7 @@ export const AudioWaveform = ({
           style={{
             flex: 1,
             height: 2,
-            borderRadius: 1,
+            borderRadius: borderRadius.sm,
             opacity: opacity.disabled,
             backgroundColor: color.muted,
           }}

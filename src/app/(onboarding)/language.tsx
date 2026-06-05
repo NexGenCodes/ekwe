@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { Button, LanguageSelectionGrid } from "@/components";
-import { Box, Text, SafeArea, ScrollArea } from "@/components/ui";
+import { Box, Text, SafeArea, ScrollArea, ScreenContainer } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 import { settingsActions, settings$, auth$ } from "@/store";
@@ -50,7 +50,7 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
   };
 
   return (
-    <SafeArea style={{ flex: 1, backgroundColor: color.background }}>
+    <ScreenContainer style={{ flex: 1, backgroundColor: color.background }}>
       <Box style={styles.header}>
         <Animated.View entering={FadeInDown.duration(400)}>
           <Text
@@ -98,7 +98,7 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
           }
         />
       </Box>
-    </SafeArea>
+    </ScreenContainer>
   );
 }
 

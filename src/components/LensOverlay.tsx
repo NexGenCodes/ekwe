@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { StyleSheet, View, Text, Pressable, Dimensions } from "react-native";
+import { Dimensions } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -10,9 +10,13 @@ import { PanGestureHandler } from "react-native-gesture-handler";
 import { Mic, X, Copy, Globe } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 
+import { Box, Text, Pressable, Icon } from "@/components/ui";
 import { useTheme } from "@/hooks";
 import { useAudioStream } from "@/hooks/audio/useAudioStream";
 import { triggerHaptic } from "@/utils/haptics";
+import { borderRadius, opacity, zIndex } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { palette } from "@/constants/colors";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -35,7 +39,6 @@ export function LensOverlay() {
       translateY.value = ctx.startY + event.translationY;
     },
     onEnd: (_) => {
-      // Snap to edges
       if (translateX.value < SCREEN_WIDTH / 2) {
         translateX.value = withSpring(20);
       } else {
@@ -60,7 +63,6 @@ export function LensOverlay() {
 
   const handleTranslate = async () => {
     await triggerHaptic();
-    // Here we'd call the real translation service using the 'transcript' state
     setTranslatedText("Simulated translation result from Lens API.");
   };
 
@@ -68,16 +70,34 @@ export function LensOverlay() {
     return (
       <PanGestureHandler onGestureEvent={gestureHandler}>
         <Animated.View
-          style={[styles.bubble, animatedStyle, { backgroundColor: color.primary }]}
+          style={[
+            {
+              position: "absolute",
+              width: 60,
+              height: 60,
+              borderRadius: borderRadius.full,
+              justifyContent: "center",
+              alignItems: "center",
+              elevation: 8,
+              shadowColor: palette.neutral950,
+              shadowOpacity: 0.3,
+              shadowRadius: 5,
+              shadowOffset: { width: 0, height: 4 },
+              zIndex: zIndex.modal,
+              backgroundColor: color.primary,
+            },
+            animatedStyle,
+          ]}
         >
           <Pressable
             onPress={async () => {
               await triggerHaptic();
               setExpanded(true);
             }}
-            style={styles.bubbleInner}
+            feedback="scale"
+            style={{ width: "100%", height: "100%", justifyContent: "center", alignItems: "center" }}
           >
-            <Mic color="white" size={28} />
+            <Icon icon={Mic} size="lg" color={color.onPrimary} />
           </Pressable>
         </Animated.View>
       </PanGestureHandler>
@@ -87,142 +107,102 @@ export function LensOverlay() {
   return (
     <Animated.View
       style={[
-        styles.panel,
+        {
+          position: "absolute",
+          width: 320,
+          padding: spacing.lg,
+          borderRadius: borderRadius.xl,
+          borderWidth: 1,
+          borderColor: color.border,
+          elevation: 10,
+          shadowColor: palette.neutral950,
+          shadowOpacity: 0.2,
+          shadowRadius: 10,
+          shadowOffset: { width: 0, height: 5 },
+          zIndex: zIndex.modal,
+          backgroundColor: color.card,
+        },
         animatedStyle,
-        { backgroundColor: color.card, borderColor: color.border },
       ]}
     >
-      <View style={styles.header}>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <Globe color={color.primary} size={20} style={{ marginRight: 8 }} />
-          <Text style={{ color: color.text, fontWeight: "bold", fontSize: 16 }}>
+      <Box style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+        <Box style={{ flexDirection: "row", alignItems: "center" }}>
+          <Box style={{ marginRight: spacing.sm }}>
+            <Icon icon={Globe} size="sm" color={color.primary} />
+          </Box>
+          <Text variant="body" style={{ fontWeight: "bold" }}>
             Lens Translator
           </Text>
-        </View>
+        </Box>
         <Pressable
           onPress={async () => {
             await triggerHaptic();
             setExpanded(false);
             stopStream();
           }}
+          feedback="scale"
         >
-          <X color={color.muted} size={24} />
+          <Icon icon={X} size="sm" color={color.muted} />
         </Pressable>
-      </View>
+      </Box>
 
-      <View style={styles.content}>
-        <Text style={{ color: color.text, fontSize: 15 }}>
+      <Box style={{ minHeight: 80, marginBottom: spacing.md }}>
+        <Text variant="bodySmall">
           {transcript || (isStreaming ? "Listening..." : "Tap Listen to transcribe speaker audio")}
         </Text>
         {translatedText ? (
-          <View style={styles.translationBox}>
-            <Text style={{ color: color.primary, fontSize: 15, fontWeight: "500" }}>
+          <Box style={{ marginTop: spacing.sm, padding: spacing.sm, backgroundColor: color.surface, borderRadius: borderRadius.md, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text variant="label" style={{ color: color.primary }}>
               {translatedText}
             </Text>
-            <Pressable onPress={handleCopy} style={styles.copyBtn}>
-              <Copy color={color.primary} size={16} />
+            <Pressable onPress={handleCopy} feedback="opacity" style={{ padding: spacing.xs }}>
+              <Icon icon={Copy} size="sm" color={color.primary} />
             </Pressable>
-          </View>
+          </Box>
         ) : null}
-      </View>
+      </Box>
 
-      <View style={styles.actions}>
+      <Box style={{ flexDirection: "row", justifyContent: "space-between" }}>
         <Pressable
           style={[
-            styles.button,
-            { backgroundColor: isStreaming ? color.error : color.primary },
+            {
+              flex: 1,
+              paddingVertical: spacing.sm,
+              borderRadius: borderRadius.md,
+              alignItems: "center",
+              marginHorizontal: spacing.xs,
+              backgroundColor: isStreaming ? color.error : color.primary,
+            },
           ]}
           onPress={async () => {
             await triggerHaptic();
             isStreaming ? stopStream() : startStream("auto");
           }}
         >
-          <Text style={{ color: "white", fontWeight: "bold" }}>
+          <Text variant="body" style={{ color: color.onPrimary, fontWeight: "bold" }}>
             {isStreaming ? "Stop" : "Listen"}
           </Text>
         </Pressable>
         <Pressable
           style={[
-            styles.button,
-            { backgroundColor: color.secondary, opacity: transcript ? 1 : 0.5 },
+            {
+              flex: 1,
+              paddingVertical: spacing.sm,
+              borderRadius: borderRadius.md,
+              alignItems: "center",
+              marginHorizontal: spacing.xs,
+              backgroundColor: color.secondary,
+              opacity: transcript ? 1 : opacity.disabled,
+            },
           ]}
           onPress={handleTranslate}
-          disabled={!transcript && !translatedText} // Remove this block later if we allow empty triggers
+          disabled={!transcript && !translatedText}
         >
-          <Text style={{ color: color.onSecondary, fontWeight: "bold" }}>
+          <Text variant="body" style={{ color: color.onSecondary, fontWeight: "bold" }}>
             Translate
           </Text>
         </Pressable>
-      </View>
+      </Box>
     </Animated.View>
   );
 }
-
-const styles = StyleSheet.create({
-  bubble: {
-    position: "absolute",
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 4 },
-    zIndex: 9999,
-  },
-  bubbleInner: {
-    width: "100%",
-    height: "100%",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  panel: {
-    position: "absolute",
-    width: 320,
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    elevation: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    zIndex: 9999,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  content: {
-    minHeight: 80,
-    marginBottom: 16,
-  },
-  translationBox: {
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: "rgba(0,0,0,0.04)",
-    borderRadius: 8,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  copyBtn: {
-    padding: 4,
-  },
-  actions: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: "center",
-    marginHorizontal: 6,
-  },
-});

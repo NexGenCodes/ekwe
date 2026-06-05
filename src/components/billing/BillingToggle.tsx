@@ -83,8 +83,8 @@ const styles = {
   } as const,
   toggleIndicator: {
     position: 'absolute',
-    top: 4,
-    left: 4,
+    top: spacing.xs,
+    left: spacing.xs,
     width: 150,
     height: '100%',
     borderRadius: borderRadius.full,

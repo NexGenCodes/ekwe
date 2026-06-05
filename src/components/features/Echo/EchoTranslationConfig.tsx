@@ -111,7 +111,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                   <Text
                     variant="caption"
                     style={{
-                      marginBottom: 4,
+                      marginBottom: spacing.xs,
                       color: isMismatch ? brandWarning : color.muted,
                     }}
                   >
@@ -154,7 +154,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                 <Box>
                   <Text
                     variant="caption"
-                    style={{ marginBottom: 4, color: color.muted }}
+                    style={{ marginBottom: spacing.xs, color: color.muted }}
                   >
                     Detected
                   </Text>

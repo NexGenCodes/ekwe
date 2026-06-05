@@ -123,7 +123,7 @@ const styles = StyleSheet.create({
   grabber: {
     width: 40,
     height: 5,
-    borderRadius: 2.5,
+    borderRadius: borderRadius.sm,
   },
   closeButton: {
     position: 'absolute',

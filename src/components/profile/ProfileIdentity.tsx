@@ -40,7 +40,7 @@ export function ProfileIdentity({
 
   return (
     <Box
-      style={{ alignItems: 'center', marginBottom: 32, marginTop: spacing.md }}
+      style={{ alignItems: 'center', marginBottom: spacing.xl, marginTop: spacing.md }}
     >
       <Box>
         <Box

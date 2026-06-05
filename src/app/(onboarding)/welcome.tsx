@@ -36,6 +36,7 @@ export default function WelcomeScreen(): React.ReactElement {
       contentContainerStyle={{
         paddingTop: spacing["2xl"],
         paddingBottom: spacing["6xl"],
+        paddingHorizontal:spacing.lg,
         justifyContent: "space-between",
       }}
       style={{ backgroundColor: color.background }}

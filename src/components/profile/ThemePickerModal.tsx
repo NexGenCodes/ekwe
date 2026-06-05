@@ -101,7 +101,7 @@ export function ThemePickerModal({
                       paddingVertical: spacing.md,
                       paddingHorizontal: spacing.sm,
                       borderRadius: borderRadius.lg,
-                      marginVertical: 2,
+                      marginVertical: spacing.hairline,
                     },
                     pressed && {
                       backgroundColor: `${color.primary}1A`,

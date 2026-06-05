@@ -101,7 +101,7 @@ function WaveBar({
     };
   });
 
-  return <Animated.View style={[{ width: 3, borderRadius: 1.5 }, animStyle]} />;
+  return <Animated.View style={[{ width: 3, borderRadius: borderRadius.sm }, animStyle]} />;
 }
 
 function ProcessingBar({
@@ -133,7 +133,7 @@ function ProcessingBar({
   return (
     <Animated.View
       style={[
-        { width: 3, borderRadius: 1.5 },
+        { width: 3, borderRadius: borderRadius.sm },
         animStyle,
         { backgroundColor: color.muted },
       ]}

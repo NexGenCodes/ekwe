@@ -8,6 +8,8 @@ import {
 
 import { Pressable } from './Pressable';
 
+import { borderRadius } from '@/constants/sizes';
+import { spacing } from '@/constants/spacing';
 import { useTokens } from '@/hooks/ui/useTokens';
 
 export type ModalProps = RNModalProps & {
@@ -57,9 +59,9 @@ export const Modal = React.memo(
             <View
               style={{
                 backgroundColor: color.card,
-                borderTopLeftRadius: 16,
-                borderTopRightRadius: 16,
-                paddingBottom: 32,
+                borderTopLeftRadius: borderRadius.xl,
+                borderTopRightRadius: borderRadius.xl,
+                paddingBottom: spacing.xl,
               }}
             >
               {children}

@@ -8,6 +8,7 @@ import { TextInput } from "react-native";
 import { Input, InputProps } from "@/components/Input";
 import { Box, Pressable } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
+import { borderRadius, opacity } from "@/constants/sizes";
 import { useTheme } from "@/hooks";
 
 export interface PasswordInputProps extends Omit<
@@ -56,7 +57,7 @@ export const PasswordInput = forwardRef<TextInput, PasswordInputProps>(
           onPress={() => setVisible((v) => !v)}
           style={{
             position: "absolute",
-            right: 16,
+            right: spacing.md,
             top: 0,
             height: 56,
             justifyContent: "center",
@@ -77,9 +78,9 @@ export const PasswordInput = forwardRef<TextInput, PasswordInputProps>(
           <Box
             style={{
               flexDirection: "row",
-              gap: 4,
-              marginTop: 8,
-              paddingHorizontal: 4,
+              gap: spacing.xs,
+              marginTop: spacing.sm,
+              paddingHorizontal: spacing.xs,
             }}
           >
             {[1, 2, 3, 4].map((level) => (
@@ -88,7 +89,7 @@ export const PasswordInput = forwardRef<TextInput, PasswordInputProps>(
                 style={{
                   flex: 1,
                   height: 4,
-                  borderRadius: 2,
+                  borderRadius: borderRadius.sm,
                   backgroundColor:
                     strength >= level ? getStrengthColor() : color.border,
                   opacity: strength >= level ? 1 : 0.5,
