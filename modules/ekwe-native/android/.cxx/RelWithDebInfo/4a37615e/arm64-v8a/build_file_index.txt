@@ -1,3 +1,0 @@
-C:\Users\USER\Desktop\ekwe2\modules\ekwe-native\android\CMakeLists.txt
-C:\Users\USER\Desktop\ekwe2\modules\ekwe-native\cpp\thirdparty\libogg\CMakeLists.txt
-C:\Users\USER\Desktop\ekwe2\modules\ekwe-native\cpp\thirdparty\opus\CMakeLists.txt

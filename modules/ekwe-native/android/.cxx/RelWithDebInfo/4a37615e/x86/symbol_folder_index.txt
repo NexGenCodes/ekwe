@@ -1,1 +1,0 @@
-C:\Users\USER\Desktop\ekwe2\modules\ekwe-native\android\build\intermediates\cxx\RelWithDebInfo\4a37615e\obj\x86
