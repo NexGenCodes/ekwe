@@ -21,6 +21,7 @@ export enum EkweError {
   AUDIO_RECORD_FAIL = 'EKWE_AUDIO_RECORD_FAIL',
   AUDIO_EMPTY = 'EKWE_AUDIO_EMPTY',
   FILE_TOO_LARGE = 'EKWE_FILE_TOO_LARGE',
+  TTS_FAIL = 'EKWE_TTS_FAIL',
 }
 
 export const ErrorMessages: Record<EkweError, string> = {
@@ -59,4 +60,6 @@ export const ErrorMessages: Record<EkweError, string> = {
     'No audio was captured. Make sure the voice note is audible.',
   [EkweError.FILE_TOO_LARGE]:
     'This file is too large to process. Maximum size is 25MB.',
+  [EkweError.TTS_FAIL]:
+    'Text-to-speech failed. Please try again.',
 };

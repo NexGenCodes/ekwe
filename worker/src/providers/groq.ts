@@ -26,7 +26,8 @@ export async function transcribe(
     'GROQ_KEY_',
     (key) => {
       const body = new FormData();
-      body.append('file', blob, 'audio.wav');
+      const ext = blob.type === 'audio/flac' ? 'flac' : 'wav';
+      body.append('file', blob, `audio.${ext}`);
       body.append('model', 'whisper-large-v3');
       if (lang && lang !== 'auto') body.append('language', lang);
       body.append('response_format', 'json');

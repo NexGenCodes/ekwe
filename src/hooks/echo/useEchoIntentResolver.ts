@@ -1,5 +1,4 @@
 import { useSelector } from "@legendapp/state/react";
-import { useShareIntent } from "expo-share-intent";
 import {
   useState,
   useEffect,
@@ -16,6 +15,8 @@ import { settings$, auth$ } from "@/store";
 import { isIOS, isAndroid, AppAlert, logger } from "@/utils";
 import { cleanEchoCache } from "@/utils/echo";
 
+const noopResetShareIntent = (): void => {};
+
 export const useEchoIntentResolver = (props: {
   value?: { value: string; mimeType: string }[];
   audioUri?: string;
@@ -28,10 +29,6 @@ export const useEchoIntentResolver = (props: {
   setIsSubsequentIntent: Dispatch<SetStateAction<boolean>>;
   resetShareIntent: (clearIntent?: boolean) => void;
 } => {
-  const { resetShareIntent } = useShareIntent({
-    disabled: isAndroid,
-  });
-
   const onboardingCompleted = useSelector(() =>
     settings$.onboardingCompleted.get(),
   );
@@ -153,6 +150,6 @@ export const useEchoIntentResolver = (props: {
     activeResolvedUri,
     isSubsequentIntent,
     setIsSubsequentIntent,
-    resetShareIntent,
+    resetShareIntent: noopResetShareIntent,
   };
 };

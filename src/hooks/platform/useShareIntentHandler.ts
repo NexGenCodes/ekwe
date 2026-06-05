@@ -1,9 +1,6 @@
-import { useSelector } from "@legendapp/state/react";
 import { useEventListener } from "expo";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
-import { useRouter, useRootNavigationState } from "expo-router";
-import { useShareIntent } from "expo-share-intent";
-import { useEffect } from "react";
+import { useRouter } from "expo-router";
 import { AppState } from "react-native";
 
 import EkweNative from "../../../modules/ekwe-native";
@@ -118,21 +115,6 @@ const handleEchoSession = async (
 
 export const useShareIntentHandler = (): void => {
   const router = useRouter();
-  const navigationState = useRootNavigationState();
-  const onboardingCompleted = useSelector(() =>
-    settings$.onboardingCompleted.get(),
-  );
-
-  const { hasShareIntent, shareIntent, resetShareIntent, error } =
-    useShareIntent({
-      disabled: isAndroid,
-    });
-
-  useEffect((): void => {
-    if (error) {
-      logger.error("[ShareIntent] Error:", error);
-    }
-  }, [error]);
 
   // NATIVE QUEUE Bridge: Process intents intercepted by Ekwe Echo (ShareActivity)
   useEventListener(
@@ -188,90 +170,4 @@ export const useShareIntentHandler = (): void => {
     },
   );
 
-  useEffect((): void => {
-    // Wait for the navigation root to be mounted (only for foreground routing)
-    const isBackground = AppState.currentState !== "active";
-    if (!navigationState?.key && !isBackground) return;
-
-    if (hasShareIntent && shareIntent.type) {
-      const userSession = auth$.session.get();
-
-      if (!onboardingCompleted || !userSession) {
-        logger.warn(
-          "[ShareIntent] User not authenticated or not onboarded. Skipping share processing.",
-        );
-        AppAlert.info(
-          "Login Required",
-          "Please open Ekwe to log in before translating shared items.",
-        );
-        resetShareIntent();
-        router.replace("/(auth)");
-        return;
-      }
-
-      if (shareIntent.type === "text" && shareIntent.text) {
-        router.push({
-          pathname: "/translate",
-          params: {
-            text: shareIntent.text,
-            detectedLang: "en",
-          },
-        });
-        resetShareIntent();
-      } else if (shareIntent.type === "file" && shareIntent.files) {
-        const validFiles = shareIntent.files.filter(
-          (f) => f && typeof f === "object" && "path" in f,
-        );
-        if (validFiles.length === 0) return;
-
-        const file = validFiles[0];
-        resetShareIntent();
-
-        const isBackgroundApp = AppState.currentState !== "active";
-
-        const processFile = async (): Promise<void> => {
-          let filePath = file.path;
-
-          if (isAndroid && filePath.startsWith("content://")) {
-            const resolved = await BubbleNative.resolveContentUri(filePath);
-            if (resolved) filePath = resolved;
-          }
-
-          const result = await AudioCapture.processSharedFile(
-            filePath,
-            file.mimeType,
-          );
-
-          if (result.ok) {
-            if (isAndroid && isBackgroundApp) {
-              BubbleNative.showOverlay(result.value.uri, "Unknown App");
-              handleEchoSession(result.value.uri, "Unknown App");
-            } else {
-              router.push({
-                pathname: "/result",
-                params: {
-                  uri: result.value.uri,
-                  sourceApp: "shared",
-                },
-              });
-            }
-          } else {
-            AppAlert.error(
-              "Unsupported Format",
-              "Ekwe only supports voice note formats (.opus, .m4a, .ogg).",
-            );
-          }
-        };
-
-        processFile();
-      }
-    }
-  }, [
-    hasShareIntent,
-    shareIntent,
-    router,
-    navigationState?.key,
-    onboardingCompleted,
-    resetShareIntent,
-  ]);
 };

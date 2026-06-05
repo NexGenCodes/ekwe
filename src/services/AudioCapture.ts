@@ -1,7 +1,5 @@
 import * as Haptics from "expo-haptics";
 import { Linking } from "react-native";
-import { decodeAudioData } from "react-native-audio-api";
-import { File, Paths } from "expo-file-system";
 
 import { PLAN_LIMITS } from "@/constants/billing";
 import { EkweError } from "@/constants/errors";
@@ -16,7 +14,6 @@ import {
 } from "@/utils/AudioEffectsModule";
 import { AppAlert } from "@/utils/alert";
 import { validateSharedAudio } from "@/utils/fileValidation";
-import { encodeWav } from "@/utils/wavEncoder";
 import logger from "@/utils/logger";
 
 export interface CaptureSession {
@@ -28,22 +25,19 @@ export interface RecordingResult {
   uri: string;
   durationMs: number;
   sessionId: string;
-  meteringData: number[]; // Added for waveform consistency
+  meteringData: number[];
 }
 
 class AudioCaptureClass {
   private meteringInterval: ReturnType<typeof setInterval> | null = null;
   private currentSessionId: string | null = null;
-  private currentMeteringData: number[] = []; // Track during session
+  private currentMeteringData: number[] = [];
   private maxDurationTimeout: ReturnType<typeof setTimeout> | null = null;
   private listeners: ((amplitude: number) => void)[] = [];
   private statusListeners: ((status: "started" | "stopped") => void)[] = [];
   private onAutoStopCallback: (() => void) | null = null;
   private isStartingParams = false;
 
-  /**
-   * Requests microphone permission.
-   */
   async requestPermission(): Promise<Result<boolean, EkweError>> {
     try {
       const status = await AudioService.requestPermission();
@@ -69,9 +63,6 @@ class AudioCaptureClass {
     }
   }
 
-  /**
-   * Checks if microphone permission is already granted.
-   */
   async checkPermission(): Promise<Result<boolean, EkweError>> {
     try {
       const status = await AudioService.checkPermission();
@@ -81,14 +72,10 @@ class AudioCaptureClass {
     }
   }
 
-  /**
-   * Starts a new recording session safely.
-   */
   async startRecording(
     sessionId: string,
     onAutoStop?: () => void,
   ): Promise<Result<void, EkweError>> {
-    // If starting or already recording, try to recover instead of failing immediately
     if (this.isStartingParams) return err(EkweError.AUDIO_RECORD_FAIL);
     this.onAutoStopCallback = null;
 
@@ -111,10 +98,9 @@ class AudioCaptureClass {
       await VolumeManager.raiseVolumeIfNeeded();
 
       this.currentSessionId = sessionId;
-      this.currentMeteringData = []; // Reset for new session
+      this.currentMeteringData = [];
       this.onAutoStopCallback = onAutoStop ?? null;
 
-      // Compute plan cap and pass to AudioService for format selection
       const isPro = auth$.isPro.get();
       const safetyCapMs = isPro
         ? PLAN_LIMITS.pro.dictationDurationMs
@@ -128,30 +114,26 @@ class AudioCaptureClass {
         await attachAudioEffects(0);
       }
 
-      // Begin metering and silence detection loop
       let silenceStartTime: number | null = null;
-      const SILENCE_THRESHOLD_DB = -45; // Slightly less sensitive to low-level hum
-      const SILENCE_DURATION_MS = 8000; // 8 seconds of absolute silence before auto-stop
+      const SILENCE_THRESHOLD_DB = -45;
+      const SILENCE_DURATION_MS = 8000;
 
       this.meteringInterval = setInterval(async () => {
         if (!this.currentSessionId) return;
 
         const db = AudioService.getMetering();
 
-        // --- Silence Auto-Stop Logic ---
         if (db < SILENCE_THRESHOLD_DB) {
           if (silenceStartTime === null) {
             silenceStartTime = Date.now();
           } else if (Date.now() - silenceStartTime > SILENCE_DURATION_MS) {
             logger.info("AudioCapture: Silence detected, auto-stopping...");
 
-            // Synchronously clear the interval to prevent race conditions while waiting for the native bridge
             if (this.meteringInterval !== null) {
               clearInterval(this.meteringInterval);
               this.meteringInterval = null;
             }
 
-            // Distinct haptic for auto-stop — Warning tells user the mic cut off by itself
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
 
             if (this.onAutoStopCallback) {
@@ -165,15 +147,13 @@ class AudioCaptureClass {
           silenceStartTime = null;
         }
 
-        // --- Metering UI Update ---
         const normalized = Math.max(0, Math.min(1, (db + 60) / 60));
-        this.currentMeteringData.push(db); // Store raw dB for accurate post-processing analysis
+        this.currentMeteringData.push(db);
         if (this.listeners.length > 0) {
           this.notifyListeners(normalized);
         }
       }, 32);
 
-      // --- Max Duration Safety Net (Dynamic Cap based on plan) ---
       this.maxDurationTimeout = setTimeout(async () => {
         if (this.isRecording()) {
           logger.info(
@@ -201,9 +181,6 @@ class AudioCaptureClass {
     }
   }
 
-  /**
-   * Stops the current recording session.
-   */
   async stopRecording(): Promise<Result<RecordingResult, EkweError>> {
     const sessionId = this.currentSessionId;
     const isRecording = AudioService.isRecording();
@@ -262,9 +239,6 @@ class AudioCaptureClass {
     }
   }
 
-  /**
-   * Cancels the current recording and returns the path to the partial file for cleanup.
-   */
   async cancelRecording(): Promise<Result<string | null, EkweError>> {
     let path: string | null = null;
     this.onAutoStopCallback = null;
@@ -289,7 +263,7 @@ class AudioCaptureClass {
 
     this.currentSessionId = null;
     this.currentMeteringData = [];
-    this.notifyListeners(0); // Reset UI waveform
+    this.notifyListeners(0);
     await VolumeManager.restoreVolume();
 
     if (isAndroid) {
@@ -299,9 +273,6 @@ class AudioCaptureClass {
     return ok(path);
   }
 
-  /**
-   * Processes an audio file received via share.
-   */
   async processSharedFile(
     uri: string,
     mimeType?: string,
@@ -316,47 +287,19 @@ class AudioCaptureClass {
       return err(validationResult.error);
     }
 
-    let durationMs = 0;
-    let outputUri = validationResult.value.uri;
-
-    try {
-      const decoded = await decodeAudioData(uri, 16000);
-      durationMs = Math.round(decoded.duration * 1000);
-
-      // 22MB safety guard: skip WAV conversion if estimated size exceeds limit
-      const MAX_WAV_BYTES = 22 * 1024 * 1024;
-      const estimatedWavBytes = decoded.length * decoded.numberOfChannels * 2;
-      if (estimatedWavBytes <= MAX_WAV_BYTES) {
-        const wavBytes = encodeWav(decoded);
-        const wavFile = new File(Paths.cache, `shared_${Date.now()}.wav`);
-        wavFile.write(wavBytes);
-        outputUri = wavFile.uri;
-      } else {
-        logger.warn(
-          `Shared audio too large for WAV conversion: ~${Math.round(estimatedWavBytes / 1024 / 1024)}MB, using original file`,
-        );
-      }
-    } catch {
-      // Non-critical — use original file if decode/encode fails
-    }
+    const outputUri = validationResult.value.uri;
 
     return ok({
       uri: outputUri,
-      durationMs,
+      durationMs: 0,
       meteringData: [],
     });
   }
 
-  /**
-   * Returns true if a recording is currently active.
-   */
   isRecording(): boolean {
     return AudioService.isRecording();
   }
 
-  /**
-   * Adds a listener for real-time metering updates.
-   */
   addListener(callback: (amplitude: number) => void): () => void {
     this.listeners.push(callback);
     return () => {
@@ -364,9 +307,6 @@ class AudioCaptureClass {
     };
   }
 
-  /**
-   * Adds a listener for recording status changes.
-   */
   addStatusListener(
     callback: (status: "started" | "stopped") => void,
   ): () => void {

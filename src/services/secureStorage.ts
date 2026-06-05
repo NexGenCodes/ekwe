@@ -1,39 +1,18 @@
-import * as SecureStore from "expo-secure-store";
+import { mmkv } from "@/services/mmkv";
 
-import { logger } from "@/utils";
-
-const secureStoreOptions: SecureStore.SecureStoreOptions = {
-  keychainService: "ekwe_secure_storage",
-};
-
+/**
+ * Supabase-compatible async storage wrapper around the encrypted MMKV instance.
+ * MMKV is synchronous internally; Promises are returned for Supabase's
+ * SupportedStorage interface. Auth hydration is near-instant at boot.
+ */
 export const secureStorage = {
   getItem: async (key: string): Promise<string | null> => {
-    try {
-      return await SecureStore.getItemAsync(key, secureStoreOptions);
-    } catch {
-      // Keystore corrupted or locked: purge it to prevent infinite logout loops
-      await SecureStore.deleteItemAsync(key, secureStoreOptions).catch(
-        () => {},
-      );
-      return null;
-    }
+    return mmkv.getString(key) ?? null;
   },
   setItem: async (key: string, value: string): Promise<void> => {
-    try {
-      await SecureStore.setItemAsync(key, value, secureStoreOptions);
-    } catch (e) {
-      logger.error("[secureStorage] Failed to set item:", e);
-      // Fallback: purge if corrupted
-      await SecureStore.deleteItemAsync(key, secureStoreOptions).catch(
-        () => {},
-      );
-    }
+    mmkv.set(key, value);
   },
   removeItem: async (key: string): Promise<void> => {
-    try {
-      await SecureStore.deleteItemAsync(key, secureStoreOptions);
-    } catch (e) {
-      logger.error("[secureStorage] Failed to remove item:", e);
-    }
+    mmkv.remove(key);
   },
 };

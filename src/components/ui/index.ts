@@ -18,6 +18,8 @@ export { SafeArea } from './SafeArea';
 export type { SafeAreaProps } from './SafeArea';
 export { ScrollArea } from './ScrollArea';
 export type { ScrollAreaProps } from './ScrollArea';
+export { ScreenContainer } from './ScreenContainer';
+export type { ScreenContainerProps } from './ScreenContainer';
 export { KeyboardAware } from './KeyboardAware';
 export type { KeyboardAwareProps } from './KeyboardAware';
 export { Switch } from './Switch';

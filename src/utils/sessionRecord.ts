@@ -1,4 +1,4 @@
-import { Db } from '@/services/db';
+import { mmkv as storage } from '@/services/mmkv';
 
 const SESSION_KEY = 'interrupted_session';
 
@@ -12,10 +12,10 @@ export interface InterruptedSession {
 
 export const SessionRecord = {
   save: (session: InterruptedSession): void => {
-    Db.setStore(SESSION_KEY, JSON.stringify(session));
+    storage.set(SESSION_KEY, JSON.stringify(session));
   },
   get: (): InterruptedSession | null => {
-    const raw = Db.getStore(SESSION_KEY);
+    const raw = storage.getString(SESSION_KEY);
     if (!raw) return null;
     try {
       return JSON.parse(raw) as InterruptedSession;
@@ -24,6 +24,6 @@ export const SessionRecord = {
     }
   },
   clear: (): void => {
-    Db.removeStore(SESSION_KEY);
+    storage.remove(SESSION_KEY);
   },
 };

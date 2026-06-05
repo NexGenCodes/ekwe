@@ -1,0 +1,168 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						2
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-RelWithDebInfo-d0094a50bb2071803777.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.6.0"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						5
+					]
+				},
+				{
+					"build" : "libogg_build",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-libogg_build-RelWithDebInfo-1f3d12f1522c0f6527d0.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "2.8.12"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 1,
+					"source" : "C:/Users/USER/Desktop/ekwe2/modules/ekwe-native/cpp/thirdparty/libogg",
+					"targetIndexes" : 
+					[
+						3
+					]
+				},
+				{
+					"build" : "libopus_build",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-libopus_build-RelWithDebInfo-1bfff816d77d7960a767.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.16"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 2,
+					"source" : "C:/Users/USER/Desktop/ekwe2/modules/ekwe-native/cpp/thirdparty/opus",
+					"targetIndexes" : 
+					[
+						4
+					]
+				}
+			],
+			"name" : "RelWithDebInfo",
+			"projects" : 
+			[
+				{
+					"childIndexes" : 
+					[
+						1,
+						2
+					],
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "EkweNative",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						5
+					]
+				},
+				{
+					"directoryIndexes" : 
+					[
+						1
+					],
+					"name" : "libogg",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						3
+					]
+				},
+				{
+					"directoryIndexes" : 
+					[
+						2
+					],
+					"name" : "Opus",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						4
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "ekwe_audio_decoder::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ekwe_audio_decoder-RelWithDebInfo-38133842392daf1d2077.json",
+					"name" : "ekwe_audio_decoder",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ekwe_native_jni::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ekwe_native_jni-RelWithDebInfo-79b8689217e07c9be5d4.json",
+					"name" : "ekwe_native_jni",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "flac::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-flac-RelWithDebInfo-89bf866bb02b255b12d9.json",
+					"name" : "flac",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "ogg::@675755a188016754a13c",
+					"jsonFile" : "target-ogg-RelWithDebInfo-6eede99c572b5500f92d.json",
+					"name" : "ogg",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "opus::@4b255c248c6f1b37a71b",
+					"jsonFile" : "target-opus-RelWithDebInfo-04b04d1ccf494f8e10ab.json",
+					"name" : "opus",
+					"projectIndex" : 2
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "opusfile::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-opusfile-RelWithDebInfo-39b03c14461ec09ef1f3.json",
+					"name" : "opusfile",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "C:/Users/USER/Desktop/ekwe2/modules/ekwe-native/android/.cxx/RelWithDebInfo/4a37615e/armeabi-v7a",
+		"source" : "C:/Users/USER/Desktop/ekwe2/modules/ekwe-native/android"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 3
+	}
+}

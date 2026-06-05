@@ -10,3 +10,5 @@ export { useHistorySearch } from './useHistorySearch';
 export * from './useLanguageSwitcher';
 export * from './useVoiceDictation';
 export * from './usePermissions';
+export * from './useAnimation';
+export * from './useOnboardingAnimation';

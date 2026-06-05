@@ -1,0 +1,68 @@
+import { posthogClient } from "@/lib/posthog";
+
+export const AnalyticsEvents = {
+  // Onboarding & Auth
+  ONBOARDING_COMPLETED: "onboarding_completed",
+  SIGN_UP: "sign_up",
+  SIGN_IN: "sign_in",
+  SIGN_OUT: "sign_out",
+  DELETE_ACCOUNT: "delete_account",
+
+  // Dictation
+  DICTATION_STARTED: "dictation_started",
+  DICTATION_CANCELLED: "dictation_cancelled",
+
+  // Transcribing
+  TRANSCRIBING_STARTED: "transcribing_started",
+  TRANSCRIBING_COMPLETED: "transcribing_completed",
+  TRANSCRIPTION_FAILED: "transcription_failed",
+
+  // Translation
+  TRANSLATION_COMPLETED: "translation_completed",
+  TRANSLATION_FAILED: "translation_failed",
+
+  // Billing
+  BILLING_PAGE_VIEWED: "billing_page_viewed",
+  BILLING_TOGGLED: "billing_toggled",
+  CHECKOUT_INITIATED: "checkout_initiated",
+
+  // Engagement
+  TTS_PLAYED: "tts_played",
+  RESULT_COPIED: "result_copied",
+  RESULT_SHARED: "result_shared",
+  RATE_PROMPT_SHOWN: "rate_prompt_shown",
+  RATE_PROMPT_RATED: "rate_prompt_rated",
+} as const;
+
+type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+type AnalyticsProperties = Record<string, JsonValue>;
+
+export function track(event: string, properties?: AnalyticsProperties): void {
+  if (!posthogClient) return;
+  posthogClient.capture(event, properties);
+}
+
+export function identify(
+  userId: string,
+  properties?: AnalyticsProperties,
+): void {
+  if (!posthogClient) return;
+  posthogClient.identify(userId, properties);
+}
+
+export function reset(): void {
+  if (!posthogClient) return;
+  posthogClient.reset();
+}
+
+export function setPersonProperties(properties: AnalyticsProperties): void {
+  if (!posthogClient) return;
+  posthogClient.setPersonProperties(properties);
+}

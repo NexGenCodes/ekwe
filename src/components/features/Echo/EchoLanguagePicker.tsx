@@ -1,5 +1,5 @@
-import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import React from 'react';
+import { ScrollView } from 'react-native';
 
 import { LanguageGrid } from './LanguageGrid';
 
@@ -19,9 +19,9 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
         <Text variant="heading3" style={{ marginBottom: spacing.lg }}>
           {STEP_METADATA.PickLanguage.title}
         </Text>
-        <BottomSheetScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView showsVerticalScrollIndicator={false}>
           <LanguageGrid selectedLang={selectedLang} onSelect={onSelect} />
-        </BottomSheetScrollView>
+        </ScrollView>
       </Box>
     );
   },

@@ -230,59 +230,7 @@ Object.defineProperty(global, 'crypto', {
   },
 });
 /* ------------------------------------------------------------------ */
-/*  react-native-audio-api                                             */
-/* ------------------------------------------------------------------ */
-jest.mock('react-native-audio-api', () => ({
-  AudioContext: jest.fn().mockImplementation(() => ({
-    createAnalyser: jest.fn().mockReturnValue({
-      fftSize: 0,
-      frequencyBinCount: 128,
-      getFloatTimeDomainData: jest.fn(),
-    }),
-    createRecorderAdapter: jest.fn().mockReturnValue({
-      connect: jest.fn(),
-    }),
-    close: jest.fn().mockResolvedValue(undefined),
-  })),
-  AudioRecorder: jest.fn().mockImplementation(() => ({
-    connect: jest.fn(),
-    enableFileOutput: jest.fn().mockReturnValue({
-      status: 'success',
-      path: 'file://test.m4a',
-      message: '',
-    }),
-    start: jest.fn().mockReturnValue({ status: 'success', message: '' }),
-    stop: jest.fn().mockReturnValue({
-      status: 'success',
-      path: 'file://test.m4a',
-      duration: 1,
-      message: '',
-    }),
-    isRecording: jest.fn().mockReturnValue(false),
-  })),
-  AnalyserNode: jest.fn(),
-  AudioManager: {
-    checkRecordingPermissions: jest.fn().mockResolvedValue('Granted'),
-    requestRecordingPermissions: jest.fn().mockResolvedValue('Granted'),
-    setAudioSessionOptions: jest.fn(),
-    setAudioSessionActivity: jest.fn().mockResolvedValue(undefined),
-    observeVolumeChanges: jest.fn(),
-    addSystemEventListener: jest.fn(),
-    getDevicesInfo: jest.fn().mockResolvedValue({
-      currentOutputs: [],
-      availableOutputs: [],
-    }),
-  },
-  FileDirectory: {
-    Cache: 'cache',
-    Document: 'document',
-  },
-  FilePreset: {
-    High: 'high',
-    Medium: 'medium',
-    Low: 'low',
-  },
-}));
+
 
 /* ------------------------------------------------------------------ */
 /*  expo-file-system                                                   */

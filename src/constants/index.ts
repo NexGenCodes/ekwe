@@ -23,6 +23,7 @@ export { shadows } from './shadows';
 export type { ShadowKey } from './shadows';
 export { duration, spring, scale } from './motion';
 export type { DurationKey, SpringKey } from './motion';
+export { CONTACT_EMAIL } from './contact';
 export { palette, lightColors, darkColors, getTheme } from './colors';
 export type { ColorsKey } from './colors';
 export { SUPPORTED_CURRENCIES, DEFAULT_CURRENCY, detectDeviceCurrency, formatCurrency } from './currency';

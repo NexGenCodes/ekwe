@@ -1,7 +1,8 @@
-import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
+import { Sheet } from '../../ui/Sheet';
 import { useSelector } from '@legendapp/state/react';
 import { X, AlertCircle, RefreshCw } from 'lucide-react-native';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
+import type { DimensionValue } from 'react-native';
 
 import { EchoConfigStep } from './EchoConfig';
 import { EchoFinalResult } from './EchoFinalResult';
@@ -22,14 +23,16 @@ import { auth$ } from '@/store';
 import { EchoProps, EchoStep } from '@/types/echo';
 import { formatSourceApp } from '@/utils';
 
-/**
- * Echo — Share Extension Root Orchestrator
- *
- * This is the top-level feature component registered by index.js
- * as the `share-extension` entry point. It receives shared audio
- * data from iOS/Android, wires up the `useEchoFlow` state machine,
- * and renders step-based content inside a BottomSheet.
- */
+const STEP_MAX_HEIGHTS: Record<EchoStep, DimensionValue> = {
+  PickLanguage: '95%',
+  Transcribing: '45%',
+  TranscribeResult: '75%',
+  Translating: '45%',
+  FullResult: '80%',
+  Config: '45%',
+  Error: '45%',
+};
+
 export const Echo = (props: EchoProps): React.ReactElement => {
   useEffect(() => {
     initAuth();
@@ -59,15 +62,8 @@ export const Echo = (props: EchoProps): React.ReactElement => {
 
   const { color, isDark } = useTheme();
 
-  // Preload audio as soon as audioUri is available (e.g. during PickLanguage step)
   const player = useSharedAudioPlayer(audioUri || null);
 
-  const bottomSheetRef = useRef<BottomSheet>(null);
-
-  // Refined snap points: 40% (Config), 75% (Standard), 90% (Deep Read)
-  const snapPoints = useMemo(() => ['45%', '75%', '80%', '95%'], []);
-
-  // Compute available target languages (default-selected only, exclude detected source)
   const availableTargetList = useMemo(
     () => LANGUAGES.filter((l) => l.defaultSelected && l.code !== detectedLang),
     [detectedLang],
@@ -84,29 +80,8 @@ export const Echo = (props: EchoProps): React.ReactElement => {
 
   const handleClose = useCallback((): void => {
     player.cleanup();
-    bottomSheetRef.current?.close();
     onDismiss();
   }, [onDismiss, player]);
-
-  const sheetIndex = useMemo(() => {
-    switch (step) {
-      case 'PickLanguage':
-        return 1; // 95%
-      case 'TranscribeResult':
-        return 3; // 75%
-      case 'FullResult':
-        return 3; // 80%
-      case 'Config':
-        return 1; // 75%
-      case 'Transcribing':
-        return 0; // 45%
-      case 'Translating':
-        return 0;
-      case 'Error':
-      default:
-        return 0; // 45%
-    }
-  }, [step]);
 
   const handleLanguageSelected = useCallback(
     (code: string): void => {
@@ -116,7 +91,6 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     [setSelectedLang, setStep],
   );
 
-  // ── Step-based content renderer ──────────────────────────────────────
   const renderStepContent = (currentStep: EchoStep): React.ReactElement => {
     if (!userSession) {
       return (
@@ -382,98 +356,80 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   const stepMeta = STEP_METADATA[step];
 
   return (
-    <Box style={[{ flex: 1 }, { backgroundColor: color.overlay }]}>
-      <BottomSheet
-        ref={bottomSheetRef}
-        snapPoints={snapPoints}
-        index={sheetIndex}
-        enablePanDownToClose={false}
-        enableHandlePanningGesture={false}
-        enableContentPanningGesture={false}
-        onClose={onDismiss}
-        backgroundStyle={{
-          borderTopLeftRadius: borderRadius['2xl'],
-          borderTopRightRadius: borderRadius['2xl'],
-          backgroundColor: color.background,
-        }}
-        handleIndicatorStyle={{
-          width: 40,
-          height: 4,
-          borderRadius: 2,
-          backgroundColor: color.border,
+    <Sheet
+      visible
+      onClose={handleClose}
+      maxHeight={STEP_MAX_HEIGHTS[step]}
+    >
+      <Box
+        style={{
+          paddingHorizontal: spacing.lg,
+          paddingBottom: spacing['2xl'],
+          paddingTop: spacing.md,
         }}
       >
-        <BottomSheetView
-          key={step}
+        {/* Header */}
+        <Box
           style={{
-            paddingHorizontal: spacing.lg,
-            paddingBottom: spacing['2xl'],
-            paddingTop: spacing.md,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: spacing.lg,
+            marginTop: spacing.sm,
           }}
         >
-          {/* Header */}
           <Box
             style={{
               flexDirection: 'row',
-              justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: spacing.lg,
-              marginTop: spacing.sm,
+              gap: spacing.sm,
             }}
           >
             <Box
               style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: spacing.sm,
+                width: 8,
+                height: 8,
+                borderRadius: borderRadius.sm,
+                backgroundColor: color.secondary,
               }}
-            >
-              <Box
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: borderRadius.sm,
-                  backgroundColor: color.secondary,
-                }}
-              />
-              <Text variant="bodySmall" style={{ color: color.muted }}>
-                ECHO
-              </Text>
-            </Box>
-
-            <Pressable
-              feedback="opacity"
-              onPress={handleClose}
-              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-              accessibilityLabel="Close Echo"
-            >
-              <IconContainer size="sm" variant="muted">
-                <X size={16} color={color.foreground} />
-              </IconContainer>
-            </Pressable>
-
-            {stepMeta.showBadge && (
-              <Box
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  pointerEvents: 'none',
-                }}
-              >
-                <Badge label={formatSourceApp(sourceApp)} variant="primary" />
-              </Box>
-            )}
+            />
+            <Text variant="bodySmall" style={{ color: color.muted }}>
+              ECHO
+            </Text>
           </Box>
 
-          {/* Step Content */}
-          {renderStepContent(step)}
-        </BottomSheetView>
-      </BottomSheet>
-    </Box>
+          <Pressable
+            feedback="opacity"
+            onPress={handleClose}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            accessibilityLabel="Close Echo"
+          >
+            <IconContainer size="sm" variant="muted">
+              <X size={16} color={color.foreground} />
+            </IconContainer>
+          </Pressable>
+
+          {stepMeta.showBadge && (
+            <Box
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                alignItems: 'center',
+                justifyContent: 'center',
+                pointerEvents: 'none',
+              }}
+            >
+              <Badge label={formatSourceApp(sourceApp)} variant="primary" />
+            </Box>
+          )}
+        </Box>
+
+        {/* Step Content */}
+        {renderStepContent(step)}
+      </Box>
+    </Sheet>
   );
 };

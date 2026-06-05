@@ -1,4 +1,3 @@
-import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import {
   Zap,
   AlertCircle,
@@ -7,6 +6,7 @@ import {
   Languages,
 } from "lucide-react-native";
 import React from "react";
+import { ScrollView } from "react-native";
 
 import { AnimatedCopyButton } from "../../AnimatedCopyButton";
 import { ScrollableTextBox } from "../../ScrollableTextBox";
@@ -179,7 +179,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
             >
               Translate to:
             </Text>
-            <BottomSheetScrollView
+            <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               style={{ marginBottom: spacing.lg }}
@@ -218,7 +218,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                   </Text>
                 </Pressable>
               ))}
-            </BottomSheetScrollView>
+            </ScrollView>
 
             <Box style={{ flexDirection: "row", gap: spacing.md }}>
               <AnimatedCopyButton

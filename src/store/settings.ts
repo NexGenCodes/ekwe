@@ -1,7 +1,7 @@
 import { observable } from '@legendapp/state';
 import { persistObservable } from '@legendapp/state/persist';
 
-import { ObservablePersistSQLite } from '@/store/sqlitePlugin';
+import { ObservablePersistMMKV } from '@/store/mmkvPlugin';
 import { detectDeviceCurrency } from '@/constants/currency';
 
 export enum ThemePreference {
@@ -49,7 +49,7 @@ export const settings$ = observable<SettingsState>(initialSettings);
 // Persist settings to MMKV
 persistObservable(settings$, {
   local: 'ekwe-settings',
-  pluginLocal: ObservablePersistSQLite,
+  pluginLocal: ObservablePersistMMKV,
 });
 // Actions
 export const settingsActions = {

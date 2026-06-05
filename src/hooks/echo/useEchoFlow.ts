@@ -166,7 +166,6 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     activeResolvedUri,
     isSubsequentIntent,
     setIsSubsequentIntent,
-    resetShareIntent,
   } = useEchoIntentResolver(props);
 
   // Reset state on subsequent share intents
@@ -376,8 +375,8 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
 
     if (activeResolvedUri.current) cleanEchoCache(activeResolvedUri.current);
     deactivateKeepAwake('echoSession')?.catch?.(() => {});
-    IntentService.dismissEcho(resetShareIntent);
-  }, [resetShareIntent, sourceApp, session, audioUri]);
+    IntentService.dismissEcho();
+  }, [sourceApp, session, audioUri]);
 
   // Clean up and dismiss if the user minimizes the app (backgrounds it)
   useEffect(() => {

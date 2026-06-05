@@ -1,0 +1,59 @@
+{
+  "buildFiles": [
+    "C:\\Users\\USER\\Desktop\\ekwe2\\modules\\ekwe-native\\android\\CMakeLists.txt",
+    "C:\\Users\\USER\\Desktop\\ekwe2\\modules\\ekwe-native\\cpp\\thirdparty\\libogg\\CMakeLists.txt",
+    "C:\\Users\\USER\\Desktop\\ekwe2\\modules\\ekwe-native\\cpp\\thirdparty\\opus\\CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "C:\\Users\\USER\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+      "-C",
+      "C:\\Users\\USER\\Desktop\\ekwe2\\modules\\ekwe-native\\android\\.cxx\\RelWithDebInfo\\4a37615e\\arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "C:\\Users\\USER\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+    "-C",
+    "C:\\Users\\USER\\Desktop\\ekwe2\\modules\\ekwe-native\\android\\.cxx\\RelWithDebInfo\\4a37615e\\arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "opusfile::@6890427a1f51a3e7e1df": {
+      "artifactName": "opusfile",
+      "abi": "arm64-v8a",
+      "output": "C:\\Users\\USER\\Desktop\\ekwe2\\modules\\ekwe-native\\android\\.cxx\\RelWithDebInfo\\4a37615e\\arm64-v8a\\libopusfile.a",
+      "runtimeFiles": []
+    },
+    "opus::@4b255c248c6f1b37a71b": {
+      "artifactName": "opus",
+      "abi": "arm64-v8a",
+      "output": "C:\\Users\\USER\\Desktop\\ekwe2\\modules\\ekwe-native\\android\\.cxx\\RelWithDebInfo\\4a37615e\\arm64-v8a\\libopus_build\\libopus.a",
+      "runtimeFiles": []
+    },
+    "ekwe_native_jni::@6890427a1f51a3e7e1df": {
+      "artifactName": "ekwe_native_jni",
+      "abi": "arm64-v8a",
+      "output": "C:\\Users\\USER\\Desktop\\ekwe2\\modules\\ekwe-native\\android\\build\\intermediates\\cxx\\RelWithDebInfo\\4a37615e\\obj\\arm64-v8a\\libekwe_native_jni.so",
+      "runtimeFiles": []
+    },
+    "ogg::@675755a188016754a13c": {
+      "artifactName": "ogg",
+      "abi": "arm64-v8a",
+      "output": "C:\\Users\\USER\\Desktop\\ekwe2\\modules\\ekwe-native\\android\\.cxx\\RelWithDebInfo\\4a37615e\\arm64-v8a\\libogg_build\\libogg.a",
+      "runtimeFiles": []
+    },
+    "flac::@6890427a1f51a3e7e1df": {
+      "artifactName": "flac",
+      "abi": "arm64-v8a",
+      "output": "C:\\Users\\USER\\Desktop\\ekwe2\\modules\\ekwe-native\\android\\.cxx\\RelWithDebInfo\\4a37615e\\arm64-v8a\\libflac.a",
+      "runtimeFiles": []
+    },
+    "ekwe_audio_decoder::@6890427a1f51a3e7e1df": {
+      "artifactName": "ekwe_audio_decoder",
+      "abi": "arm64-v8a",
+      "output": "C:\\Users\\USER\\Desktop\\ekwe2\\modules\\ekwe-native\\android\\.cxx\\RelWithDebInfo\\4a37615e\\arm64-v8a\\libekwe_audio_decoder.a",
+      "runtimeFiles": []
+    }
+  }
+}

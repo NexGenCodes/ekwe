@@ -12,15 +12,6 @@ module.exports = ({ config }) => {
     : 'arm64-v8a';
 
   const plugins = (config.plugins || [])
-    .filter((plugin) => {
-      if (
-        typeof plugin === 'string' &&
-        plugin.includes('@react-native-google-signin')
-      ) {
-        return false;
-      }
-      return true;
-    })
     .map((plugin) => {
       if (Array.isArray(plugin) && plugin[0] === 'expo-build-properties') {
         return [
@@ -38,19 +29,28 @@ module.exports = ({ config }) => {
     });
 
   plugins.push([
-    'react-native-nitro-auth',
+    '@react-native-google-signin/google-signin',
     {
-      ios: {
-        googleClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-        googleServerClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-        googleUrlScheme: `com.googleusercontent.apps.${process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID}`,
-        appleSignIn: true,
-      },
-      android: {
-        googleClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-      },
+      iosUrlScheme: `com.googleusercontent.apps.${process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID}`,
     },
   ]);
+
+  plugins.push('expo-audio');
+  plugins.push('expo-asset');
+
+  const sentryIndex = plugins.findIndex(
+    (p) => p === '@sentry/react-native' || (Array.isArray(p) && p[0] === '@sentry/react-native'),
+  );
+
+  if (sentryIndex !== -1) {
+    plugins[sentryIndex] = [
+      '@sentry/react-native',
+      {
+        organization: process.env.SENTRY_ORG,
+        project: process.env.SENTRY_PROJECT,
+      },
+    ];
+  }
 
   return {
     ...config,

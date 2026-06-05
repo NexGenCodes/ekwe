@@ -1,5 +1,6 @@
 import { SyncService } from './SyncService';
 import { Db } from './db';
+import { mmkv as storage } from './mmkv';
 
 import { logger } from '@/utils';
 
@@ -51,9 +52,9 @@ export const HistoryService = {
       const now = Date.now();
       const CLEANUP_KEY = 'ekwe-history-last-cleanup';
 
-      const lastCleanup = Number(Db.getStore(CLEANUP_KEY) ?? 0);
+      const lastCleanup = Number(storage.getString(CLEANUP_KEY) ?? 0);
       if (now - lastCleanup < 86_400_000) return;
-      Db.setStore(CLEANUP_KEY, String(now));
+      storage.set(CLEANUP_KEY, String(now));
 
       const ttlDays = 7;
       const deletedCount = Db.cleanupExpiredHistory(ttlDays);

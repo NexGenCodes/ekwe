@@ -27,21 +27,14 @@ export const IntentService = {
     }
   },
 
-  dismissAndRedirect: (resetShareIntent: (clear: boolean) => void): void => {
-    if (isAndroid) {
-      EkweNative.dismissEcho();
-      Linking.openURL('ekwe://');
-    } else {
-      resetShareIntent(true);
-      Linking.openURL('ekwe://');
-    }
+  dismissAndRedirect: (): void => {
+    EkweNative.dismissEcho();
+    Linking.openURL('ekwe://');
   },
 
-  dismissEcho: (resetShareIntent: (clear: boolean) => void): void => {
+  dismissEcho: (): void => {
     if (isAndroid) {
       EkweNative.dismissEcho();
-    } else {
-      resetShareIntent(true);
     }
   },
 };

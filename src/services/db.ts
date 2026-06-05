@@ -123,6 +123,11 @@ function migrate(): void {
 
     db.executeSync("PRAGMA user_version = 1");
   }
+
+  if (currentVersion < 2) {
+    db.executeSync("DROP TABLE IF EXISTS store");
+    db.executeSync("PRAGMA user_version = 2");
+  }
 }
 
 export function getDb(): DB {
@@ -133,26 +138,9 @@ export function getDb(): DB {
   return db;
 }
 
+getDb();
+
 export const Db = {
-  getStore: (key: string): string | null => {
-    const res = getDb().executeSync("SELECT value FROM store WHERE key = ?", [
-      key,
-    ]) as QueryResult;
-    const row = res.rows?.[0];
-    return (row?.value as string) ?? null;
-  },
-
-  setStore: (key: string, value: string): void => {
-    getDb().executeSync(
-      "INSERT OR REPLACE INTO store (key, value) VALUES (?, ?)",
-      [key, value],
-    );
-  },
-
-  removeStore: (key: string): void => {
-    getDb().executeSync("DELETE FROM store WHERE key = ?", [key]);
-  },
-
   transaction: (fn: () => void): void => {
     getDb().executeSync("BEGIN TRANSACTION");
     try {

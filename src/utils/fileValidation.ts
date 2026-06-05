@@ -8,6 +8,7 @@ export const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB Groq limit
 export const VOICE_NOTE_EXTENSIONS = [
   '.opus',
   '.ogg',
+  '.flac',
   '.m4a',
   '.aac',
   '.amr',
@@ -18,6 +19,8 @@ export const VOICE_NOTE_MIME_TYPES = [
   'audio/ogg',
   'audio/opus',
   'audio/x-opus',
+  'audio/flac',
+  'audio/x-flac',
   'audio/m4a',
   'audio/x-m4a',
   'audio/aac',
@@ -93,6 +96,7 @@ export const sniffAudioHeader = async (uri: string): Promise<boolean> => {
     const signatures = [
       'T2dnUw', // "OggS"
       'OpusHead', // raw string in some encodings
+      'Zkxh', // "fLaC" (FLAC)
       'ZnR5c', // "ftyp"
       'I0FNUg', // "#!AMR"
       'UklGR', // "RIFF" (WAV)

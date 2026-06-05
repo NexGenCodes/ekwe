@@ -2,6 +2,7 @@ import { observable } from "@legendapp/state";
 import * as Crypto from "expo-crypto";
 
 import { Db } from "./db";
+import { mmkv as storage } from "./mmkv";
 
 import { supabase } from "@/services/supabase";
 import { HistoryEntry, history$ } from "@/store";
@@ -244,7 +245,7 @@ class SyncServiceClass {
   async pullFromCloud(userId: string): Promise<void> {
     try {
       const lastSyncKey = `last-sync-${userId}`;
-      const lastSync = Db.getStore(lastSyncKey);
+      const lastSync = storage.getString(lastSyncKey);
 
       let query = supabase
         .from("history")
@@ -297,7 +298,7 @@ class SyncServiceClass {
       }
 
       if (data.length > 0) {
-        Db.setStore(lastSyncKey, data[0].created_at);
+        storage.set(lastSyncKey, data[0].created_at);
       }
 
       this.trimHistoryWindow();

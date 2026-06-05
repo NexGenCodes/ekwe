@@ -1,5 +1,6 @@
+import { setAudioModeAsync } from 'expo-audio';
+
 import { isIOS } from '@/utils';
-import { AudioManager } from 'react-native-audio-api';
 
 import { EkweError } from '@/constants/errors';
 import { Result, ok, err } from '@/types/Result';
@@ -18,14 +19,6 @@ class VolumeManagerClass {
 
   private async init(): Promise<void> {
     if (this.isInitialized) return;
-
-    // Activate native volume observation
-    AudioManager.observeVolumeChanges(true);
-    AudioManager.addSystemEventListener('volumeChange', (event) => {
-      this.currentVolume = event.value;
-      this.notifyListeners();
-    });
-
     this.isInitialized = true;
   }
 
@@ -74,14 +67,12 @@ class VolumeManagerClass {
   async forceToSpeaker(): Promise<Result<void, EkweError>> {
     try {
       if (isIOS) {
-        AudioManager.setAudioSessionOptions({
-          iosCategory: 'playAndRecord',
-          iosOptions: ['defaultToSpeaker', 'allowBluetoothHFP'],
-          iosMode: 'voiceChat',
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          allowsRecording: true,
+          interruptionMode: 'mixWithOthers',
         });
       }
-      // On Android, routing is managed by the AudioContext/Recorder pair
-      // which defaults to standard communications routing.
       return ok(undefined);
     } catch {
       return err(EkweError.PROCESSOR_FAIL);
@@ -95,28 +86,6 @@ class VolumeManagerClass {
     Result<'speaker' | 'bluetooth' | 'wired' | 'earpiece', EkweError>
   > {
     try {
-      const info = await AudioManager.getDevicesInfo();
-
-      // Determine route based on current output names/categories
-      const output =
-        isIOS && info.currentOutputs.length > 0
-          ? info.currentOutputs[0]
-          : info.availableOutputs[0];
-
-      if (!output) return ok('speaker');
-
-      const name = output.name.toLowerCase();
-      if (
-        name.includes('bluetooth') ||
-        name.includes('airpods') ||
-        name.includes('bt')
-      )
-        return ok('bluetooth');
-      if (name.includes('headphone') || name.includes('wired'))
-        return ok('wired');
-      if (name.includes('earpiece') || name.includes('receiver'))
-        return ok('earpiece');
-
       return ok('speaker');
     } catch {
       return ok('speaker');

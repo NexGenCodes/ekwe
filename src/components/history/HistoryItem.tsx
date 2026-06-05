@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { Image as ExpoImage } from "expo-image";
-import { Mic, Upload, Type } from "lucide-react-native";
+import { Mic, Trash2, Upload, Type } from "lucide-react-native";
 import React, { useRef, useCallback, useMemo } from "react";
 import { ViewStyle, StyleSheet } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
@@ -8,7 +8,6 @@ import { Swipeable } from "react-native-gesture-handler";
 import { Badge } from "../Badge";
 import { Card } from "../Card";
 
-import { TrashIcon } from "@/assets/icons/TrashIcon";
 import { Box, Text, Pressable } from "@/components/ui";
 import { getLanguageName } from "@/constants/languages";
 import { borderRadius, iconSize } from "@/constants/sizes";
@@ -82,7 +81,7 @@ export const HistoryItem = React.memo(
                 tintColor={color.error}
               />
             ) : (
-              <TrashIcon size={24} color={color.error} />
+              <Trash2 size={24} color={color.error} />
             )}
           </Pressable>
         </Box>

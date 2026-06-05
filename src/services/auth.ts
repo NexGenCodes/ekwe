@@ -4,7 +4,8 @@
  * Every auth screen calls these functions instead of touching supabase.auth directly.
  * This keeps screens thin and auth logic testable + swappable.
  */
-import { AuthService, AuthError } from "react-native-nitro-auth";
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import * as AppleAuthentication from 'expo-apple-authentication';
 
 import { queryClient } from "@/hooks/queries/queryClient";
 import { supabase } from "@/services/supabase";
@@ -28,6 +29,15 @@ let _authSubscription: { unsubscribe: () => void } | null = null;
 export const initAuth = (): void => {
   if (_authInitialized) return;
   _authInitialized = true;
+
+  try {
+    GoogleSignin.configure({
+      webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    });
+  } catch (err) {
+    logger.error("[Auth] GoogleSignin configure error:", err);
+  }
 
   const {
     data: { subscription },
@@ -193,12 +203,14 @@ export const signInWithApple = async (): Promise<AuthResult> => {
   }
 
   try {
-    await AuthService.login("apple", {
-      scopes: ["email", "fullName"],
+    const credential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
     });
 
-    const user = AuthService.currentUser;
-    const idToken = user?.idToken;
+    const idToken = credential.identityToken;
     if (!idToken) {
       return { ok: false, error: "Apple Sign In couldn't be completed." };
     }
@@ -210,16 +222,24 @@ export const signInWithApple = async (): Promise<AuthResult> => {
 
     if (error) return { ok: false, error: error.message };
 
-    if (user?.name) {
-      await supabase.auth.updateUser({
-        data: { full_name: user.name },
-      });
+    if (credential.fullName) {
+      const name = [credential.fullName.givenName, credential.fullName.familyName]
+        .filter(Boolean)
+        .join(" ");
+      if (name) {
+        await supabase.auth.updateUser({
+          data: { full_name: name },
+        });
+      }
     }
 
     return { ok: true };
   } catch (err: unknown) {
-    if (err instanceof AuthError && err.code === "cancelled") {
-      return { ok: false };
+    if (err instanceof Error && "code" in err) {
+      const appleErr = err as { code: string };
+      if (appleErr.code === "ERR_REQUEST_CANCELED") {
+        return { ok: false };
+      }
     }
     logger.error("[Auth] Apple sign-in error:", err);
     return { ok: false, error: "Apple Sign In failed. Please try again." };
@@ -230,12 +250,14 @@ export const signInWithApple = async (): Promise<AuthResult> => {
 
 export const signInWithGoogle = async (): Promise<AuthResult> => {
   try {
-    await AuthService.login("google", {
-      scopes: ["openid", "email", "profile"],
-    });
+    const signInResult = await GoogleSignin.signIn();
 
-    const user = AuthService.currentUser;
-    const idToken = user?.idToken;
+    if (signInResult.type === "cancelled") {
+      return { ok: false };
+    }
+
+    const { idToken } = await GoogleSignin.getTokens();
+
     if (!idToken) {
       return { ok: false, error: "Google Sign In couldn't be completed." };
     }
@@ -248,9 +270,6 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err: unknown) {
-    if (err instanceof AuthError && err.code === "cancelled") {
-      return { ok: false };
-    }
     logger.error("[Auth] Google sign-in error:", err);
     return { ok: false, error: "Google Sign In failed. Please try again." };
   }
@@ -284,7 +303,7 @@ export const setSessionFromDeepLink = async (url: string): Promise<boolean> => {
 export const signOut = async (): Promise<AuthResult> => {
   try {
     const { error } = await supabase.auth.signOut();
-    AuthService.logout();
+    try { await GoogleSignin.signOut(); } catch {}
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err) {
@@ -308,7 +327,7 @@ export const deleteAccount = async (): Promise<AuthResult> => {
       };
     }
     await supabase.auth.signOut();
-    AuthService.logout();
+    try { await GoogleSignin.signOut(); } catch {}
     queryClient.clear();
     return { ok: true };
   } catch (err) {

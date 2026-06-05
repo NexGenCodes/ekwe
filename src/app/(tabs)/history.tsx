@@ -6,9 +6,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import { TextInput, ScrollView, StyleSheet } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 
-import { CloseIcon } from "@/assets/icons/CloseIcon";
-import { DrumIcon } from "@/assets/icons/DrumIcon";
-import { SearchIcon } from "@/assets/icons/SearchIcon";
+import { AudioLines, Search, X } from "lucide-react-native";
 import { HistoryItem, EmptyState, IconContainer } from "@/components";
 import { Box, Text, Pressable } from "@/components/ui";
 import { duration, shadows } from "@/constants";
@@ -174,7 +172,7 @@ export default function HistoryScreen(): React.JSX.Element {
               },
             ]}
           >
-            <SearchIcon size={iconSize.md} color={color.secondary} />
+            <Search size={iconSize.md} color={color.secondary} />
             <TextInput
               style={[
                 styles.searchInput,
@@ -200,7 +198,7 @@ export default function HistoryScreen(): React.JSX.Element {
                   pressed && styles.clearButtonPressed,
                 ]}
               >
-                <CloseIcon size={iconSize.sm} color={color.muted} />
+                <X size={iconSize.sm} color={color.muted} />
               </Pressable>
             )}
           </Box>
@@ -272,7 +270,7 @@ export default function HistoryScreen(): React.JSX.Element {
                       tintColor={color.primary}
                     />
                   ) : (
-                    <DrumIcon size={iconSize.lg} color={color.primary} />
+                    <AudioLines size={iconSize.lg} color={color.primary} />
                   )}
                 </IconContainer>
               }

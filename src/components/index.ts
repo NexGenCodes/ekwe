@@ -44,3 +44,5 @@ export * from './history';
 
 // Feature modules
 export * from './features';
+export * from './onboarding';
+export * from './LensOverlay';

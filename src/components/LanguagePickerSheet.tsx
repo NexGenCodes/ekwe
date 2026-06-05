@@ -1,26 +1,21 @@
-import BottomSheet, {
-  BottomSheetSectionList,
-  BottomSheetBackdrop,
-  BottomSheetTextInput,
-  BottomSheetFooter,
-  BottomSheetFooterProps,
-  BottomSheetBackdropProps,
-} from "@gorhom/bottom-sheet";
+import { Sheet } from "./ui/Sheet";
 import { useSelector } from "@legendapp/state/react";
 import { Search, Star, X, Check } from "lucide-react-native";
 import React, {
-  useRef,
   useMemo,
   useState,
   useCallback,
-  useEffect,
 } from "react";
+import {
+  SectionList,
+  TextInput,
+} from "react-native";
 
 import { Button } from "./Button";
 
 import { Box, Pressable, Text } from "@/components/ui";
 import { LANGUAGES, Language, FLAG_MAP } from "@/constants/languages";
-import { borderRadius, zIndex } from "@/constants/sizes";
+import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import { useTheme, usePermissions } from "@/hooks";
@@ -47,7 +42,6 @@ export interface LanguagePickerSheetProps {
   singleSelect?: boolean;
 }
 
-// Row component for the section list
 const LanguageRow = ({
   item,
   isSelected,
@@ -131,21 +125,9 @@ export const LanguagePickerSheet = ({
   const permissions = usePermissions();
   const maxPinnedLanguages = permissions.maxPinnedLanguages;
   const maxSelectedLanguages = permissions.maxSelectedLanguages;
-  const sheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ["85%"], []);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const bgColor = color.background;
-  const handleColor = color.border;
   const mutedColor = color.muted;
-
-  useEffect(() => {
-    if (isVisible) {
-      sheetRef.current?.expand();
-    } else {
-      sheetRef.current?.close();
-    }
-  }, [isVisible]);
 
   const availableLanguages = useMemo(() => {
     if (isPro) return LANGUAGES;
@@ -170,44 +152,6 @@ export const LanguagePickerSheet = ({
   const otherItems = useMemo(
     () => filteredLanguages.filter((l) => !pinnedLanguages.includes(l.code)),
     [filteredLanguages, pinnedLanguages],
-  );
-
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        onPress={onClose}
-      />
-    ),
-    [onClose],
-  );
-
-  const renderFooter = useCallback(
-    (props: BottomSheetFooterProps) => {
-      if (singleSelect) return null;
-      return (
-        <BottomSheetFooter {...props} bottomInset={16}>
-          <Box
-            style={[
-              {
-                paddingHorizontal: spacing.md,
-                paddingVertical: spacing.md,
-                borderTopWidth: 0.5,
-              },
-              {
-                backgroundColor: color.background,
-                borderTopColor: color.border,
-              },
-            ]}
-          >
-            <Button label="Confirm" onPress={onClose} variant="primary" />
-          </Box>
-        </BottomSheetFooter>
-      );
-    },
-    [onClose, singleSelect],
   );
 
   const toggleSelection = (code: string): void => {
@@ -251,7 +195,11 @@ export const LanguagePickerSheet = ({
   };
 
   const sections = useMemo(() => {
-    const list = [];
+    const list: {
+      title: string;
+      data: Language[];
+      isPinnedSection: boolean;
+    }[] = [];
     if (pinnedItems.length > 0) {
       list.push({ title: "PINNED", data: pinnedItems, isPinnedSection: true });
     }
@@ -264,7 +212,7 @@ export const LanguagePickerSheet = ({
   }, [pinnedItems, otherItems, searchQuery]);
 
   const renderSectionHeader = useCallback(
-    ({ section: { title } }: { section: { title: string } }) => (
+    ({ section }: { section: { title: string } }) => (
       <Box
         style={{
           paddingHorizontal: spacing.md,
@@ -278,7 +226,7 @@ export const LanguagePickerSheet = ({
             color: color.muted,
           }}
         >
-          {title}
+          {section.title}
         </Text>
       </Box>
     ),
@@ -286,13 +234,7 @@ export const LanguagePickerSheet = ({
   );
 
   const renderItem = useCallback(
-    ({
-      item,
-      section,
-    }: {
-      item: Language;
-      section: { title: string; data: Language[]; isPinnedSection: boolean };
-    }) => (
+    ({ item, section }: { item: Language; section: { data: Language[]; isPinnedSection: boolean } }) => (
       <LanguageRow
         item={item}
         isSelected={selectedLanguages.includes(item.code)}
@@ -305,26 +247,9 @@ export const LanguagePickerSheet = ({
   );
 
   return (
-    <BottomSheet
-      ref={sheetRef}
-      index={-1}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      onClose={onClose}
-      backdropComponent={renderBackdrop}
-      footerComponent={renderFooter}
-      backgroundStyle={{
-        backgroundColor: bgColor,
-        borderTopLeftRadius: borderRadius["2xl"],
-        borderTopRightRadius: borderRadius["2xl"],
-      }}
-      handleIndicatorStyle={{
-        backgroundColor: handleColor,
-        width: 40,
-      }}
-    >
-      <Box style={{ zIndex: zIndex.sticky, backgroundColor: bgColor }}>
-        {/* Search */}
+    <Sheet visible={isVisible} onClose={onClose} maxHeight="90%">
+      {/* Search */}
+      <Box style={{ zIndex: 1, backgroundColor: color.background }}>
         <Box
           style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.sm }}
         >
@@ -346,7 +271,7 @@ export const LanguagePickerSheet = ({
               color={mutedColor}
               style={{ marginRight: spacing.sm }}
             />
-            <BottomSheetTextInput
+            <TextInput
               style={[
                 { flex: 1, height: 44, ...typography.body },
                 { color: color.foreground },
@@ -365,13 +290,27 @@ export const LanguagePickerSheet = ({
         </Box>
       </Box>
 
-      <BottomSheetSectionList
+      <SectionList
         sections={sections}
         keyExtractor={(item: Language) => item.code}
         renderItem={renderItem}
         renderSectionHeader={renderSectionHeader}
         contentContainerStyle={{ paddingBottom: 100 }}
       />
-    </BottomSheet>
+
+      {!singleSelect && (
+        <Box
+          style={{
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.md,
+            borderTopWidth: 0.5,
+            backgroundColor: color.background,
+            borderTopColor: color.border,
+          }}
+        >
+          <Button label="Confirm" onPress={onClose} variant="primary" />
+        </Box>
+      )}
+    </Sheet>
   );
 };

@@ -12,24 +12,27 @@
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
     "knip:check": "knip",
-    "postinstall": "patch-package && node node_modules/react-native-audio-api/scripts/download-prebuilt-binaries.js android",
-    "prepare": "npx husky"
+    "postinstall": "patch-package",
+    "prepare": ""
   },
   "dependencies": {
     "@expo-google-fonts/merriweather": "^0.2.3",
     "@expo-google-fonts/outfit": "^0.2.3",
     "@expo-google-fonts/space-mono": "^0.4.2",
-    "@gorhom/bottom-sheet": "^5.2.8",
     "@hookform/resolvers": "^5.2.2",
     "@legendapp/state": "^2.1.15",
     "@op-engineering/op-sqlite": "^16.1.0",
     "@react-native-community/netinfo": "11.5.2",
+    "@react-native-google-signin/google-signin": "^16.1.2",
     "@react-navigation/native": "^7.1.33",
     "@sentry/react-native": "~7.11.0",
     "@shopify/flash-list": "2.0.2",
     "@supabase/supabase-js": "^2.103.0",
     "@tanstack/react-query": "^5.100.14",
     "expo": "~55.0.26",
+    "expo-apple-authentication": "~55.0.13",
+    "expo-asset": "~55.0.17",
+    "expo-audio": "~55.0.14",
     "expo-blur": "~55.0.14",
     "expo-build-properties": "~55.0.14",
     "expo-clipboard": "~55.0.13",
@@ -45,8 +48,6 @@
     "expo-localization": "~55.0.15",
     "expo-media-library": "~55.0.17",
     "expo-router": "~55.0.16",
-    "expo-secure-store": "~55.0.14",
-    "expo-share-intent": "^6.0.0",
     "expo-speech": "^55.0.14",
     "expo-splash-screen": "~55.0.21",
     "expo-status-bar": "~55.0.6",
@@ -54,13 +55,13 @@
     "expo-system-ui": "~55.0.18",
     "expo-web-browser": "~55.0.16",
     "lucide-react-native": "^1.8.0",
+    "posthog-react-native": "^4.46.16",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-hook-form": "^7.75.0",
     "react-native": "0.83.6",
-    "react-native-audio-api": "^0.12.1",
     "react-native-gesture-handler": "~2.30.0",
-    "react-native-nitro-auth": "^0.6.1",
+    "react-native-mmkv": "^4.3.1",
     "react-native-nitro-modules": "^0.35.4",
     "react-native-reanimated": "4.2.1",
     "react-native-safe-area-context": "~5.6.2",
@@ -71,14 +72,11 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@babel/plugin-transform-runtime": "^7.29.0",
     "@babel/runtime": "^7.29.2",
-    "@tanstack/react-query-devtools": "^5.100.14",
     "@testing-library/jest-native": "^5.4.3",
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^29.5.14",
     "@types/react": "~19.2.0",
-    "babel-plugin-module-resolver": "^5.0.3",
     "babel-preset-expo": "~55.0.8",
     "eslint": "^8.57.1",
     "eslint-config-universe": "^15.0.3",
@@ -91,12 +89,7 @@
     "react-test-renderer": "19.2.0",
     "typescript": "^5.9.0"
   },
-  "husky": {
-    "hooks": {
-      "pre-commit": "npx lint-staged"
-    }
-  },
-  "op-sqlite": {
+"op-sqlite": {
     "fts5": true
   },
   "private": true,
