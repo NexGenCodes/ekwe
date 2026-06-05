@@ -50,6 +50,7 @@ yarn-error.*
 # local module build artifacts
 modules/**/android/build/
 modules/**/ios/build/
+.cxx/
 
 # tests
 coverage/

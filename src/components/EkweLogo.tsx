@@ -2,6 +2,7 @@ import React from 'react';
 import Svg, { Path, Ellipse, Rect } from 'react-native-svg';
 
 import { useTheme } from '@/hooks';
+import { iconSize } from '@/constants/sizes';
 
 export interface EkweLogoProps {
   /** Width & height in dp. Defaults to 48. */
@@ -22,7 +23,7 @@ export interface EkweLogoProps {
  * All elements share a single color that adapts to light/dark mode.
  */
 export const EkweLogo = ({
-  size = 48,
+  size = iconSize.md,
   color,
 }: EkweLogoProps): React.JSX.Element => {
   const { color: themeColor } = useTheme();
