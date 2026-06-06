@@ -1,18 +1,18 @@
-import * as FileSystem from 'expo-file-system/legacy';
-import { isAndroid } from './platform';
+import * as FileSystem from "expo-file-system/legacy";
 
-import EkweNative from '../../modules/ekwe-native';
+import { isAndroid } from "./platform";
+import EkweNative from "../../modules/ekwe-native";
 
-import { logger } from '@/utils';
+import { logger } from "@/utils";
 
 /**
  * Formats seconds into MM:SS format
  */
 export const formatDuration = (seconds: number): string => {
-  if (!seconds || isNaN(seconds)) return '0:00';
+  if (!seconds || isNaN(seconds)) return "0:00";
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 };
 
 /**
@@ -25,7 +25,7 @@ export const cleanEchoCache = async (
 
   try {
     // 1. Filesystem cleanup (Legacy Expo API for stability)
-    if (uri.includes('Cache') || uri.includes('cache')) {
+    if (uri.includes("Cache") || uri.includes("cache")) {
       await FileSystem.deleteAsync(uri, { idempotent: true });
     }
 
@@ -34,6 +34,6 @@ export const cleanEchoCache = async (
       await EkweNative.deleteFile(uri);
     }
   } catch (err) {
-    logger.error('[EchoUtils] Cache cleanup failed:', err);
+    logger.error("[EchoUtils] Cache cleanup failed:", err);
   }
 };

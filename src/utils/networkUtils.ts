@@ -36,14 +36,14 @@ export async function fetchWithRetry(
   for (let i = 0; i < retries; i++) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
+      signal?.removeEventListener("abort", onAbort);
       controller.abort();
     }, timeout);
     const onAbort = (): void => {
       clearTimeout(timeoutId);
       controller.abort();
     };
-    signal?.addEventListener('abort', onAbort);
+    signal?.addEventListener("abort", onAbort);
 
     try {
       const response = await fetch(url, {
@@ -67,7 +67,7 @@ export async function fetchWithRetry(
       lastError = error;
 
       // Don't retry if the request was explicitly aborted by the user
-      if (error.name === 'AbortError' && signal?.aborted) {
+      if (error.name === "AbortError" && signal?.aborted) {
         throw error;
       }
 
@@ -76,9 +76,9 @@ export async function fetchWithRetry(
       await new Promise((resolve) => setTimeout(resolve, wait));
     } finally {
       clearTimeout(timeoutId);
-      signal?.removeEventListener('abort', onAbort);
+      signal?.removeEventListener("abort", onAbort);
     }
   }
 
-  throw lastError || new Error('Network request failed');
+  throw lastError || new Error("Network request failed");
 }

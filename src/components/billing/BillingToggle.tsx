@@ -1,20 +1,20 @@
-import React, { useEffect } from 'react';
+import React, { useEffect } from "react";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { Box, Pressable, Text } from '@/components/ui';
-import { duration, shadows } from '@/constants';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import type { ThemeTokens } from '@/hooks/ui/useTheme';
+import { Box, Pressable, Text } from "@/components/ui";
+import { duration, shadows } from "@/constants";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import type { ThemeTokens } from "@/hooks/ui/useTheme";
 
 export interface BillingToggleProps {
   isAnnual: boolean;
   onToggle: (annual: boolean) => void;
-  color: ThemeTokens['color'];
+  color: ThemeTokens["color"];
 }
 
 export function BillingToggle({
@@ -75,25 +75,25 @@ export function BillingToggle({
 
 const styles = {
   toggleContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     borderRadius: borderRadius.full,
     padding: spacing.xs,
     width: 308,
-    position: 'relative',
+    position: "relative",
   } as const,
   toggleIndicator: {
-    position: 'absolute',
+    position: "absolute",
     top: spacing.xs,
     left: spacing.xs,
     width: 150,
-    height: '100%',
+    height: "100%",
     borderRadius: borderRadius.full,
     ...shadows.soft,
   } as const,
   toggleOption: {
     width: 150,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: spacing.md,
     zIndex: 1,
   } as const,

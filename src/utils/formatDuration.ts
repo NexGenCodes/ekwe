@@ -4,5 +4,5 @@ export const formatDuration = (
   if (!audioDuration) return null;
   const mins = Math.floor(audioDuration / 60);
   const secs = Math.floor(audioDuration % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 };

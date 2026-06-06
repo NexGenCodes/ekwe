@@ -1,12 +1,12 @@
-import { useSelector } from '@legendapp/state/react';
-import * as Crypto from 'expo-crypto';
-import { useCallback, useEffect } from 'react';
+import { useSelector } from "@legendapp/state/react";
+import * as Crypto from "expo-crypto";
+import { useCallback, useEffect } from "react";
 
-import { EkweError } from '@/constants/errors';
-import { AudioCapture } from '@/services/AudioCapture';
-import { AudioProcessor } from '@/services/AudioProcessor';
-import { audio$, audioActions, RecordingState } from '@/store';
-import { Result, ok, err } from '@/types/Result';
+import { EkweError } from "@/constants/errors";
+import { AudioCapture } from "@/services/AudioCapture";
+import { AudioProcessor } from "@/services/AudioProcessor";
+import { audio$, audioActions, RecordingState } from "@/store";
+import { Result, ok, err } from "@/types/Result";
 
 export interface UseAudioCaptureReturn {
   startRecording: () => Promise<Result<void, EkweError>>;
@@ -36,7 +36,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
     const removeStatusListener = AudioCapture.addStatusListener((status) => {
       // Use getState to avoid stale closure / dependency loop
       if (
-        status === 'stopped' &&
+        status === "stopped" &&
         audio$.recordingState.get() === RecordingState.Recording
       ) {
         setRecordingState(RecordingState.Done);

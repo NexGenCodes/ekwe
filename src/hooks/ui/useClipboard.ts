@@ -1,5 +1,5 @@
-import * as Clipboard from 'expo-clipboard';
-import { useState, useCallback, useRef } from 'react';
+import * as Clipboard from "expo-clipboard";
+import { useState, useCallback, useRef } from "react";
 
 interface UseClipboardReturn {
   /** Whether text was recently copied (auto-resets after timeout). */

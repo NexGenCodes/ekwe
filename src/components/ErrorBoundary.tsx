@@ -1,14 +1,14 @@
-import { AlertCircle, RotateCcw } from 'lucide-react-native';
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { Appearance } from 'react-native';
+import { AlertCircle, RotateCcw } from "lucide-react-native";
+import React, { Component, ErrorInfo, ReactNode } from "react";
+import { Appearance } from "react-native";
 
-import { Button } from './Button';
+import { Button } from "./Button";
 
-import { Box, Text, SafeArea } from '@/components/ui';
-import { getTheme } from '@/constants/colors';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import logger from '@/utils/logger';
+import { Box, Text, SafeArea } from "@/components/ui";
+import { getTheme } from "@/constants/colors";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import logger from "@/utils/logger";
 
 interface Props {
   children: ReactNode;
@@ -30,7 +30,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    logger.error('ErrorBoundary caught:', error, errorInfo);
+    logger.error("ErrorBoundary caught:", error, errorInfo);
   }
 
   private handleReset = (): void => {
@@ -39,27 +39,27 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public render(): ReactNode {
     const colorScheme = Appearance.getColorScheme();
-    const isDark = colorScheme === 'dark';
+    const isDark = colorScheme === "dark";
     const color = getTheme(isDark);
 
     if (this.state.hasError) {
       return (
         <SafeArea
           style={{
-            alignItems: 'center',
-            justifyContent: 'center',
+            alignItems: "center",
+            justifyContent: "center",
             paddingHorizontal: spacing.xl,
           }}
         >
-          <Box style={{ alignItems: 'center', marginBottom: spacing.xl }}>
+          <Box style={{ alignItems: "center", marginBottom: spacing.xl }}>
             <Box
               style={[
                 {
                   width: 80,
                   height: 80,
-                  borderRadius: borderRadius['2xl'],
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  borderRadius: borderRadius["2xl"],
+                  alignItems: "center",
+                  justifyContent: "center",
                   marginBottom: spacing.lg,
                 },
                 { backgroundColor: `${color.error}18` },
@@ -70,7 +70,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <Text
               variant="heading2"
               style={{
-                textAlign: 'center',
+                textAlign: "center",
                 marginBottom: spacing.md,
               }}
             >
@@ -80,14 +80,14 @@ export class ErrorBoundary extends Component<Props, State> {
               variant="body"
               style={{
                 color: color.muted,
-                textAlign: 'center',
+                textAlign: "center",
               }}
             >
               An unexpected error occurred. Our team has been notified.
             </Text>
           </Box>
 
-          <Box style={{ width: '100%', gap: spacing.md }}>
+          <Box style={{ width: "100%", gap: spacing.md }}>
             <Button
               label="Try again"
               variant="primary"
@@ -99,11 +99,11 @@ export class ErrorBoundary extends Component<Props, State> {
           {__DEV__ && (
             <Box
               style={{
-                marginTop: spacing['3xl'],
+                marginTop: spacing["3xl"],
                 padding: spacing.md,
                 borderRadius: borderRadius.lg,
                 backgroundColor: color.surface,
-                width: '100%',
+                width: "100%",
               }}
             >
               <Text variant="caption" style={{ color: color.muted }}>

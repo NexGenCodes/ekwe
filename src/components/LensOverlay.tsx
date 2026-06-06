@@ -1,26 +1,25 @@
+import * as Clipboard from "expo-clipboard";
+import { Mic, X, Copy, Globe } from "lucide-react-native";
 import React, { useState } from "react";
 import { Dimensions } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  useAnimatedGestureHandler,
 } from "react-native-reanimated";
-import { PanGestureHandler } from "react-native-gesture-handler";
-import { Mic, X, Copy, Globe } from "lucide-react-native";
-import * as Clipboard from "expo-clipboard";
 
 import { Box, Text, Pressable, Icon } from "@/components/ui";
+import { palette } from "@/constants/colors";
+import { borderRadius, opacity, zIndex } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 import { useAudioStream } from "@/hooks/audio/useAudioStream";
 import { triggerHaptic } from "@/utils/haptics";
-import { borderRadius, opacity, zIndex } from "@/constants/sizes";
-import { spacing } from "@/constants/spacing";
-import { palette } from "@/constants/colors";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
-export function LensOverlay() {
+export function LensOverlay(): React.ReactElement {
   const { color } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const { isStreaming, transcript, startStream, stopStream } = useAudioStream();
@@ -29,23 +28,21 @@ export function LensOverlay() {
   const translateX = useSharedValue(SCREEN_WIDTH - 80);
   const translateY = useSharedValue(SCREEN_HEIGHT / 2);
 
-  const gestureHandler = useAnimatedGestureHandler({
-    onStart: (_, ctx: any) => {
-      ctx.startX = translateX.value;
-      ctx.startY = translateY.value;
-    },
-    onActive: (event, ctx) => {
-      translateX.value = ctx.startX + event.translationX;
-      translateY.value = ctx.startY + event.translationY;
-    },
-    onEnd: (_) => {
+  const panGesture = Gesture.Pan()
+    .onStart(() => {
+      "worklet";
+    })
+    .onUpdate((e) => {
+      translateX.value += e.translationX;
+      translateY.value += e.translationY;
+    })
+    .onEnd(() => {
       if (translateX.value < SCREEN_WIDTH / 2) {
         translateX.value = withSpring(20);
       } else {
         translateX.value = withSpring(SCREEN_WIDTH - 80);
       }
-    },
-  });
+    });
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -54,21 +51,21 @@ export function LensOverlay() {
     ],
   }));
 
-  const handleCopy = async () => {
+  const handleCopy = async (): Promise<void> => {
     await triggerHaptic();
     if (translatedText) {
       await Clipboard.setStringAsync(translatedText);
     }
   };
 
-  const handleTranslate = async () => {
+  const handleTranslate = async (): Promise<void> => {
     await triggerHaptic();
     setTranslatedText("Simulated translation result from Lens API.");
   };
 
   if (!expanded) {
     return (
-      <PanGestureHandler onGestureEvent={gestureHandler}>
+      <GestureDetector gesture={panGesture}>
         <Animated.View
           style={[
             {
@@ -95,12 +92,17 @@ export function LensOverlay() {
               setExpanded(true);
             }}
             feedback="scale"
-            style={{ width: "100%", height: "100%", justifyContent: "center", alignItems: "center" }}
+            style={{
+              width: "100%",
+              height: "100%",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
           >
             <Icon icon={Mic} size="lg" color={color.onPrimary} />
           </Pressable>
         </Animated.View>
-      </PanGestureHandler>
+      </GestureDetector>
     );
   }
 
@@ -125,7 +127,14 @@ export function LensOverlay() {
         animatedStyle,
       ]}
     >
-      <Box style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+      <Box
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: spacing.md,
+        }}
+      >
         <Box style={{ flexDirection: "row", alignItems: "center" }}>
           <Box style={{ marginRight: spacing.sm }}>
             <Icon icon={Globe} size="sm" color={color.primary} />
@@ -148,14 +157,31 @@ export function LensOverlay() {
 
       <Box style={{ minHeight: 80, marginBottom: spacing.md }}>
         <Text variant="bodySmall">
-          {transcript || (isStreaming ? "Listening..." : "Tap Listen to transcribe speaker audio")}
+          {transcript ||
+            (isStreaming
+              ? "Listening..."
+              : "Tap Listen to transcribe speaker audio")}
         </Text>
         {translatedText ? (
-          <Box style={{ marginTop: spacing.sm, padding: spacing.sm, backgroundColor: color.surface, borderRadius: borderRadius.md, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <Box
+            style={{
+              marginTop: spacing.sm,
+              padding: spacing.sm,
+              backgroundColor: color.surface,
+              borderRadius: borderRadius.md,
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
             <Text variant="label" style={{ color: color.primary }}>
               {translatedText}
             </Text>
-            <Pressable onPress={handleCopy} feedback="opacity" style={{ padding: spacing.xs }}>
+            <Pressable
+              onPress={handleCopy}
+              feedback="opacity"
+              style={{ padding: spacing.xs }}
+            >
               <Icon icon={Copy} size="sm" color={color.primary} />
             </Pressable>
           </Box>
@@ -176,10 +202,17 @@ export function LensOverlay() {
           ]}
           onPress={async () => {
             await triggerHaptic();
-            isStreaming ? stopStream() : startStream("auto");
+            if (isStreaming) {
+              stopStream();
+            } else {
+              startStream("auto");
+            }
           }}
         >
-          <Text variant="body" style={{ color: color.onPrimary, fontWeight: "bold" }}>
+          <Text
+            variant="body"
+            style={{ color: color.onPrimary, fontWeight: "bold" }}
+          >
             {isStreaming ? "Stop" : "Listen"}
           </Text>
         </Pressable>
@@ -198,7 +231,10 @@ export function LensOverlay() {
           onPress={handleTranslate}
           disabled={!transcript && !translatedText}
         >
-          <Text variant="body" style={{ color: color.onSecondary, fontWeight: "bold" }}>
+          <Text
+            variant="body"
+            style={{ color: color.onSecondary, fontWeight: "bold" }}
+          >
             Translate
           </Text>
         </Pressable>

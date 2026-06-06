@@ -1,21 +1,21 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef } from "react";
 import {
   ActivityIndicator,
   type ActivityIndicatorProps,
   type View,
-} from 'react-native';
+} from "react-native";
 
-import { useTokens } from '@/hooks/ui/useTokens';
+import { useTokens } from "@/hooks/ui/useTokens";
 
-export type SpinnerProps = Omit<ActivityIndicatorProps, 'size'> & {
-  size?: 'sm' | 'md' | 'lg';
+export type SpinnerProps = Omit<ActivityIndicatorProps, "size"> & {
+  size?: "sm" | "md" | "lg";
 };
 
 export const Spinner = React.memo(
-  forwardRef<View, SpinnerProps>(({ size = 'md', color, ...props }, ref) => {
+  forwardRef<View, SpinnerProps>(({ size = "md", color, ...props }, ref) => {
     const { color: tokens } = useTokens();
 
-    const sizeValue = size === 'sm' ? 16 : size === 'lg' ? 32 : 24;
+    const sizeValue = size === "sm" ? 16 : size === "lg" ? 32 : 24;
 
     return (
       <ActivityIndicator
@@ -29,4 +29,4 @@ export const Spinner = React.memo(
   }),
 );
 
-Spinner.displayName = 'Spinner';
+Spinner.displayName = "Spinner";

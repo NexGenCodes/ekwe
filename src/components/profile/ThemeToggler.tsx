@@ -13,7 +13,6 @@ import { Box, Pressable } from "@/components/ui";
 import { spring } from "@/constants";
 import { borderRadius } from "@/constants/sizes";
 import { useTheme } from "@/hooks";
-import { settingsActions, ThemePreference } from "@/store";
 import { triggerHaptic } from "@/utils/haptics";
 
 export interface ThemeTogglerProps {

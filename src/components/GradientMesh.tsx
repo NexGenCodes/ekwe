@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { AppState } from 'react-native';
+import React, { useEffect, useRef } from "react";
+import { AppState } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -7,11 +7,11 @@ import Animated, {
   withTiming,
   withSequence,
   cancelAnimation,
-} from 'react-native-reanimated';
-import Svg, { Defs, RadialGradient, Stop, Rect } from 'react-native-svg';
+} from "react-native-reanimated";
+import Svg, { Defs, RadialGradient, Stop, Rect } from "react-native-svg";
 
-import { Box } from '@/components/ui';
-import { useTheme } from '@/hooks';
+import { Box } from "@/components/ui";
+import { useTheme } from "@/hooks";
 
 export const GradientMesh = (): React.JSX.Element => {
   const { color, isDark } = useTheme();
@@ -45,8 +45,8 @@ export const GradientMesh = (): React.JSX.Element => {
 
     startAnimations();
 
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
         isAnimating.current = true;
         startAnimations();
       } else {
@@ -67,13 +67,13 @@ export const GradientMesh = (): React.JSX.Element => {
 
   return (
     <Box
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+      style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
       pointerEvents="none"
     >
       <Svg
         height="100%"
         width="100%"
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
       >
         <Defs>
           <RadialGradient id="grad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
@@ -86,7 +86,7 @@ export const GradientMesh = (): React.JSX.Element => {
         </Defs>
         <Animated.View
           style={[
-            { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+            { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
             animatedStyle,
           ]}
         >

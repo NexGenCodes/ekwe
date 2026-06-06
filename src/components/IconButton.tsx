@@ -1,9 +1,9 @@
-import * as Haptics from 'expo-haptics';
-import React from 'react';
-import type { StyleProp, ViewStyle } from 'react-native';
+import * as Haptics from "expo-haptics";
+import React from "react";
+import type { StyleProp, ViewStyle } from "react-native";
 
-import { Pressable } from '@/components/ui';
-import { opacity } from '@/constants/sizes';
+import { Pressable } from "@/components/ui";
+import { opacity } from "@/constants/sizes";
 
 export interface IconButtonProps {
   icon: React.ReactNode;
@@ -22,11 +22,11 @@ export const IconButton = ({
   onLongPress,
   disabled = false,
   style,
-  backgroundColor = 'transparent',
+  backgroundColor = "transparent",
   size = 64,
   accessibilityLabel,
 }: IconButtonProps): React.ReactElement => {
-  const label = accessibilityLabel ?? 'Action';
+  const label = accessibilityLabel ?? "Action";
 
   return (
     <Pressable
@@ -51,8 +51,8 @@ export const IconButton = ({
           height: size,
           borderRadius: size / 2,
           backgroundColor,
-          alignItems: 'center',
-          justifyContent: 'center',
+          alignItems: "center",
+          justifyContent: "center",
           opacity: disabled ? opacity.disabled : 1,
         },
         pressed && !disabled && { transform: [{ scale: 0.95 }] },

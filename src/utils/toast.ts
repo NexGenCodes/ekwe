@@ -1,7 +1,7 @@
-import * as Haptics from 'expo-haptics';
-import { toast } from 'sonner-native';
+import * as Haptics from "expo-haptics";
+import { toast } from "sonner-native";
 
-import logger from './logger';
+import logger from "./logger";
 
 export interface AppToastOptions {
   /** Description text to show below the title */
@@ -45,18 +45,18 @@ export const AppToast = {
     const error = options?.error;
 
     if (error) {
-      if (typeof error === 'string') {
+      if (typeof error === "string") {
         description = error;
       } else if (error instanceof Error) {
         description = error.message;
-      } else if (typeof error === 'object' && 'message' in error) {
+      } else if (typeof error === "object" && "message" in error) {
         description = String(error.message);
       }
     }
 
     if (description || error) {
       logger.error(
-        `[AppToast Error] ${title} - ${description || 'Unknown error'}`,
+        `[AppToast Error] ${title} - ${description || "Unknown error"}`,
       );
     }
 

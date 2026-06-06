@@ -1,17 +1,17 @@
-import { Monitor, Moon, Sun } from 'lucide-react-native';
-import React from 'react';
+import { Monitor, Moon, Sun } from "lucide-react-native";
+import React from "react";
 import Animated, {
   useAnimatedStyle,
   withSpring,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { Box, Pressable } from '@/components/ui';
-import { spring } from '@/constants';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
-import { settingsActions, ThemePreference } from '@/store';
-import { triggerHaptic } from '@/utils/haptics';
+import { Box, Pressable } from "@/components/ui";
+import { spring } from "@/constants";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { settingsActions, ThemePreference } from "@/store";
+import { triggerHaptic } from "@/utils/haptics";
 
 const SEGMENT_SIZE = 36;
 const SEGMENTS: { value: ThemePreference; icon: typeof Sun }[] = [
@@ -43,18 +43,18 @@ export function ThemeSelector(): React.ReactElement {
   return (
     <Box
       style={{
-        flexDirection: 'row',
+        flexDirection: "row",
         backgroundColor: color.surface,
         borderRadius: borderRadius.xl,
         padding: spacing.xs,
-        position: 'relative',
+        position: "relative",
       }}
     >
       {/* Sliding indicator */}
       <Animated.View
         style={[
           {
-            position: 'absolute',
+            position: "absolute",
             top: spacing.xs,
             left: spacing.xs,
             width: SEGMENT_SIZE,
@@ -75,8 +75,8 @@ export function ThemeSelector(): React.ReactElement {
             style={{
               width: SEGMENT_SIZE,
               height: SEGMENT_SIZE,
-              alignItems: 'center',
-              justifyContent: 'center',
+              alignItems: "center",
+              justifyContent: "center",
               borderRadius: borderRadius.lg,
             }}
             accessibilityLabel={`Set theme to ${value}`}

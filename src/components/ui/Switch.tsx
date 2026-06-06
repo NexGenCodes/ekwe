@@ -1,11 +1,11 @@
-import React, { forwardRef, useMemo } from 'react';
+import React, { forwardRef, useMemo } from "react";
 import {
   Switch as RNSwitch,
   type SwitchProps as RNSwitchProps,
   type View,
-} from 'react-native';
+} from "react-native";
 
-import { useTokens } from '@/hooks/ui/useTokens';
+import { useTokens } from "@/hooks/ui/useTokens";
 
 export type SwitchProps = RNSwitchProps;
 
@@ -35,4 +35,4 @@ export const Switch = React.memo(
   }),
 );
 
-Switch.displayName = 'Switch';
+Switch.displayName = "Switch";

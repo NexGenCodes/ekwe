@@ -1,10 +1,10 @@
-import { useSelector } from '@legendapp/state/react';
-import { useMemo, useCallback } from 'react';
-import { useColorScheme as useSystemColorScheme } from 'react-native';
+import { useSelector } from "@legendapp/state/react";
+import { useMemo, useCallback } from "react";
+import { useColorScheme as useSystemColorScheme } from "react-native";
 
-import { getTheme, bubbleColors, palette } from '@/constants/colors';
-import type { ColorsKey } from '@/constants/colors';
-import { settings$, ThemePreference } from '@/store/settings';
+import { getTheme, bubbleColors, palette } from "@/constants/colors";
+import type { ColorsKey } from "@/constants/colors";
+import { settings$, ThemePreference } from "@/store/settings";
 
 type ThemeColor = Record<ColorsKey, string> & {
   bubble: {
@@ -17,8 +17,8 @@ type ThemeColor = Record<ColorsKey, string> & {
 };
 
 export interface ThemeTokens {
-  colorScheme: 'light' | 'dark' | 'system';
-  setColorScheme: (scheme: 'light' | 'dark' | 'system') => void;
+  colorScheme: "light" | "dark" | "system";
+  setColorScheme: (scheme: "light" | "dark" | "system") => void;
   color: ThemeColor;
   shadow: {
     overlay: {
@@ -36,13 +36,13 @@ export const useTheme = (): ThemeTokens => {
   const systemColorScheme = useSystemColorScheme();
   // Read preference from Legend-State — ALL hook instances react to this simultaneously
   const preference = useSelector(() => settings$.themePreference.get()) as
-    | 'light'
-    | 'dark'
-    | 'system';
+    | "light"
+    | "dark"
+    | "system";
 
   const resolvedScheme =
-    preference === 'system' ? systemColorScheme : preference;
-  const isDark = resolvedScheme === 'dark';
+    preference === "system" ? systemColorScheme : preference;
+  const isDark = resolvedScheme === "dark";
 
   // Stable reference: only recomputes when theme actually switches.
   const color = useMemo(
@@ -67,7 +67,7 @@ export const useTheme = (): ThemeTokens => {
     [],
   );
 
-  const setColorScheme = useCallback((scheme: 'light' | 'dark' | 'system') => {
+  const setColorScheme = useCallback((scheme: "light" | "dark" | "system") => {
     settings$.themePreference.set(scheme as ThemePreference);
   }, []);
 

@@ -1,11 +1,11 @@
 /**
  * AuthFooter — ToS + account toggle link.
  */
-import React from 'react';
+import React from "react";
 
-import { Pressable, Text } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Pressable, Text } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 interface AuthFooterProps {
   text: string;
@@ -27,9 +27,9 @@ export const AuthFooter = ({
       <Pressable
         onPress={onPress}
         style={{
-          flexDirection: 'row',
-          justifyContent: 'center',
-          alignItems: 'center',
+          flexDirection: "row",
+          justifyContent: "center",
+          alignItems: "center",
           gap: spacing.xs,
           marginTop: spacing.lg,
         }}
@@ -41,7 +41,6 @@ export const AuthFooter = ({
           {linkText}
         </Text>
       </Pressable>
-
     </>
   );
 };

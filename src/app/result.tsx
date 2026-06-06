@@ -1,17 +1,17 @@
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { X } from 'lucide-react-native';
-import React, { useEffect } from 'react';
-import { StyleSheet } from 'react-native';
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { X } from "lucide-react-native";
+import React, { useEffect } from "react";
+import { StyleSheet } from "react-native";
 
 import {
   ResultProcessingIndicator,
   ResultTextBlock,
-} from '@/components/result';
-import { Box, Pressable, ScrollArea, Spinner } from '@/components/ui';
-import { getLanguageName } from '@/constants/languages';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useResultPipeline, useTheme } from '@/hooks';
+} from "@/components/result";
+import { Box, Pressable, ScrollArea, Spinner } from "@/components/ui";
+import { getLanguageName } from "@/constants/languages";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useResultPipeline, useTheme } from "@/hooks";
 
 export default function ResultScreen(): React.JSX.Element {
   const router = useRouter();
@@ -32,14 +32,20 @@ export default function ResultScreen(): React.JSX.Element {
     initialTranscript: params.transcript as string | undefined,
     initialSourceLang: params.sourceLang as string | undefined,
     initialTargetLang: params.targetLang as string | undefined,
-    isHistoryReplay: params.isHistoryReplay === 'true',
+    isHistoryReplay: params.isHistoryReplay === "true",
     sourceApp: params.sourceApp as string | undefined,
   });
 
   const { color } = useTheme();
 
   useEffect(() => {
-    if (transcript && !translation && !isTranslating && !isProcessing && !isHistoryReplay) {
+    if (
+      transcript &&
+      !translation &&
+      !isTranslating &&
+      !isProcessing &&
+      !isHistoryReplay
+    ) {
       handleTranslate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -77,7 +83,7 @@ export default function ResultScreen(): React.JSX.Element {
           {transcript.length > 0 && (
             <Box style={styles.blocksContainer}>
               <ResultTextBlock
-                title={`ORIGINAL · ${getLanguageName(sourceLang)} ${isProcessing ? '✨ POLISHING' : ''}`}
+                title={`ORIGINAL · ${getLanguageName(sourceLang)} ${isProcessing ? "✨ POLISHING" : ""}`}
                 text={transcript}
               />
 
@@ -103,19 +109,19 @@ export default function ResultScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
   },
   sheetContainer: {
-    borderTopLeftRadius: borderRadius['2xl'],
-    borderTopRightRadius: borderRadius['2xl'],
-    paddingBottom: spacing['4xl'],
-    maxHeight: '85%',
+    borderTopLeftRadius: borderRadius["2xl"],
+    borderTopRightRadius: borderRadius["2xl"],
+    paddingBottom: spacing["4xl"],
+    maxHeight: "85%",
   },
   header: {
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
   },
   grabberContainer: {
     paddingVertical: spacing.md,
@@ -126,7 +132,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
   },
   closeButton: {
-    position: 'absolute',
+    position: "absolute",
     right: spacing.lg,
     top: spacing.sm,
     padding: spacing.xs,
@@ -135,7 +141,7 @@ const styles = StyleSheet.create({
   scrollContent: { paddingBottom: spacing.xl },
   blocksContainer: { marginTop: spacing.xs },
   translateActionContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingVertical: spacing.lg,
   },
 });

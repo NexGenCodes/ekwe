@@ -1,10 +1,10 @@
-import React, { useMemo } from 'react';
-import { TextInput } from 'react-native';
+import React, { useMemo } from "react";
+import { TextInput } from "react-native";
 
-import { Box, Text } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { typography } from '@/constants/typography';
-import { useTheme } from '@/hooks';
+import { Box, Text } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { typography } from "@/constants/typography";
+import { useTheme } from "@/hooks";
 
 interface MainTextInputProps {
   value: string;
@@ -31,7 +31,11 @@ export const MainTextInput = React.memo(
     }, [color.foreground]);
 
     return (
-      <Box accessible accessibilityRole="text" style={{ flex: 1, position: 'relative' }}>
+      <Box
+        accessible
+        accessibilityRole="text"
+        style={{ flex: 1, position: "relative" }}
+      >
         <TextInput
           accessibilityLabel="Source text input"
           accessibilityHint="Type or paste text to translate."
@@ -48,7 +52,7 @@ export const MainTextInput = React.memo(
           onFocus={onFocus}
           onBlur={onBlur}
         />
-        <Box style={{ paddingHorizontal: spacing.lg, alignItems: 'flex-end' }}>
+        <Box style={{ paddingHorizontal: spacing.lg, alignItems: "flex-end" }}>
           <Text
             variant="caption"
             style={{

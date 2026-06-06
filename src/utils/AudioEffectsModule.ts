@@ -1,6 +1,5 @@
-import { isAndroid } from './platform';
-
-import EkweNative, { AudioEffectsResult } from '../../modules/ekwe-native';
+import { isAndroid } from "./platform";
+import EkweNative, { AudioEffectsResult } from "../../modules/ekwe-native";
 
 /**
  * Attaches Android audio effects (NoiseSuppressor, AcousticEchoCanceler,

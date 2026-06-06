@@ -1,18 +1,18 @@
-import React from 'react';
+import React from "react";
 
-import { FeatureRow } from './FeatureRow';
+import { FeatureRow } from "./FeatureRow";
 
-import { Box, Text } from '@/components/ui';
-import type { BILLING_PLANS, PlanFeature } from '@/constants/billing';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import type { ThemeTokens } from '@/hooks/ui/useTheme';
+import { Box, Text } from "@/components/ui";
+import type { BILLING_PLANS, PlanFeature } from "@/constants/billing";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import type { ThemeTokens } from "@/hooks/ui/useTheme";
 
 export interface FreePlanCardProps {
   isPro: boolean;
-  color: ThemeTokens['color'];
+  color: ThemeTokens["color"];
   isDark: boolean;
-  freePlan: (typeof BILLING_PLANS)['free'];
+  freePlan: (typeof BILLING_PLANS)["free"];
 }
 
 export function FreePlanCard({
@@ -72,14 +72,14 @@ export function FreePlanCard({
 
 const styles = {
   planCard: {
-    borderRadius: borderRadius['2xl'],
+    borderRadius: borderRadius["2xl"],
     paddingHorizontal: spacing.lg,
-    position: 'relative',
-    overflow: 'hidden',
+    position: "relative",
+    overflow: "hidden",
   } as const,
   priceRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    alignItems: "flex-start",
     marginTop: spacing.md,
     marginBottom: spacing.xs,
   } as const,

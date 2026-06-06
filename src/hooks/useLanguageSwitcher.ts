@@ -1,15 +1,15 @@
-import { useSelector } from '@legendapp/state/react';
-import * as Haptics from 'expo-haptics';
-import { useState, useCallback, useEffect } from 'react';
+import { useSelector } from "@legendapp/state/react";
+import * as Haptics from "expo-haptics";
+import { useState, useCallback, useEffect } from "react";
 import {
   useSharedValue,
   withTiming,
   SharedValue,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { settings$ } from '@/store';
+import { settings$ } from "@/store";
 
-export type DropdownType = 'source' | 'target' | null;
+export type DropdownType = "source" | "target" | null;
 
 interface UseLanguageSwitcherProps {
   sourceLang: string;
@@ -58,18 +58,18 @@ export function useLanguageSwitcher({
     (code: string) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      if (activeDropdown === 'source') {
+      if (activeDropdown === "source") {
         onSourceChange(code);
 
         // Handle Collision: Source picked a language that is already Target
-        if (code !== 'auto' && code === targetLang) {
+        if (code !== "auto" && code === targetLang) {
           // Can we swap the old source to target?
           // Only if old source wasn't 'auto' and wasn't blank.
-          if (sourceLang !== 'auto' && sourceLang !== '') {
+          if (sourceLang !== "auto" && sourceLang !== "") {
             onTargetChange(sourceLang);
           } else {
             // Cannot safely swap, so we must blank the target
-            onTargetChange('');
+            onTargetChange("");
           }
         }
       } else {
@@ -79,10 +79,10 @@ export function useLanguageSwitcher({
         if (code === sourceLang) {
           // Can we swap the old target to source?
           // Target is never 'auto', so yes, as long as it's not blank.
-          if (targetLang !== '') {
+          if (targetLang !== "") {
             onSourceChange(targetLang);
           } else {
-            onSourceChange('');
+            onSourceChange("");
           }
         }
       }

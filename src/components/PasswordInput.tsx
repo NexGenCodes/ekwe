@@ -7,8 +7,8 @@ import { TextInput } from "react-native";
 
 import { Input, InputProps } from "@/components/Input";
 import { Box, Pressable } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { borderRadius, opacity } from "@/constants/sizes";
 import { useTheme } from "@/hooks";
 
 export interface PasswordInputProps extends Omit<

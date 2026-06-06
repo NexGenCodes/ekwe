@@ -1,8 +1,8 @@
-import { observable } from '@legendapp/state';
-import { persistObservable } from '@legendapp/state/persist';
-import { Session, User } from '@supabase/supabase-js';
+import { observable } from "@legendapp/state";
+import { persistObservable } from "@legendapp/state/persist";
+import { Session, User } from "@supabase/supabase-js";
 
-import { ObservablePersistMMKV } from '@/store/mmkvPlugin';
+import { ObservablePersistMMKV } from "@/store/mmkvPlugin";
 
 interface AuthState {
   session: Session | null;
@@ -10,7 +10,7 @@ interface AuthState {
   isPro: boolean;
   isInitialized: boolean;
   transactionsUsed: number;
-  activeTier: 'FREE' | 'PREMIUM';
+  activeTier: "FREE" | "PREMIUM";
   isFallback: boolean;
 }
 
@@ -20,26 +20,26 @@ const initialAuth: AuthState = {
   isPro: false,
   isInitialized: false,
   transactionsUsed: 0,
-  activeTier: 'FREE',
+  activeTier: "FREE",
   isFallback: false,
 };
 
 export const auth$ = observable<AuthState>(initialAuth);
 
 persistObservable(auth$.isPro, {
-  local: 'ekwe-auth-isPro',
+  local: "ekwe-auth-isPro",
   pluginLocal: ObservablePersistMMKV,
 });
 persistObservable(auth$.transactionsUsed, {
-  local: 'ekwe-auth-transactions',
+  local: "ekwe-auth-transactions",
   pluginLocal: ObservablePersistMMKV,
 });
 persistObservable(auth$.activeTier, {
-  local: 'ekwe-auth-tier',
+  local: "ekwe-auth-tier",
   pluginLocal: ObservablePersistMMKV,
 });
 persistObservable(auth$.isFallback, {
-  local: 'ekwe-auth-fallback',
+  local: "ekwe-auth-fallback",
   pluginLocal: ObservablePersistMMKV,
 });
 
@@ -64,14 +64,14 @@ export const authActions = {
   },
   updateBilling: (data: {
     transactions_used: number;
-    tier_active: 'FREE' | 'PREMIUM';
+    tier_active: "FREE" | "PREMIUM";
     is_fallback: boolean;
   }): void => {
     auth$.assign({
       transactionsUsed: data.transactions_used,
       activeTier: data.tier_active,
       isFallback: data.is_fallback,
-      isPro: data.tier_active === 'PREMIUM',
+      isPro: data.tier_active === "PREMIUM",
     });
   },
 };

@@ -1,15 +1,15 @@
-import React, { useMemo } from 'react';
-import type { LayoutChangeEvent, StyleProp, ViewStyle } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import React, { useMemo } from "react";
+import type { LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   SharedValue,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { Box } from '@/components/ui';
-import { borderRadius, opacity } from '@/constants/sizes';
-import { useTheme } from '@/hooks';
+import { Box } from "@/components/ui";
+import { borderRadius, opacity } from "@/constants/sizes";
+import { useTheme } from "@/hooks";
 
 export interface AudioWaveformProps {
   amplitudes: number[];
@@ -150,15 +150,15 @@ export const AudioWaveform = ({
     }
 
     return (
-      <Box style={{ flex: 1, height, justifyContent: 'center' }}>
+      <Box style={{ flex: 1, height, justifyContent: "center" }}>
         <Box
           style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
             height,
-            width: '100%',
-            position: 'absolute',
+            width: "100%",
+            position: "absolute",
           }}
         >
           {inactiveBars}
@@ -167,11 +167,11 @@ export const AudioWaveform = ({
         <Animated.View
           style={[
             {
-              flexDirection: 'row',
-              alignItems: 'center',
+              flexDirection: "row",
+              alignItems: "center",
               height,
-              overflow: 'hidden',
-              position: 'absolute',
+              overflow: "hidden",
+              position: "absolute",
               zIndex: 1,
             },
             progressStyle,
@@ -180,9 +180,9 @@ export const AudioWaveform = ({
           <Animated.View
             style={[
               {
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
                 height,
               },
               innerWaveformStyle,

@@ -1,16 +1,16 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef } from "react";
 import {
   Modal as RNModal,
   type ModalProps as RNModalProps,
   View,
   type ViewStyle,
-} from 'react-native';
+} from "react-native";
 
-import { Pressable } from './Pressable';
+import { Pressable } from "./Pressable";
 
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTokens } from '@/hooks/ui/useTokens';
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTokens } from "@/hooks/ui/useTokens";
 
 export type ModalProps = RNModalProps & {
   onBackdropPress?: () => void;
@@ -22,7 +22,7 @@ export const Modal = React.memo(
     (
       {
         transparent = true,
-        animationType = 'slide',
+        animationType = "slide",
         onBackdropPress,
         containerStyle,
         children,
@@ -44,7 +44,7 @@ export const Modal = React.memo(
               {
                 flex: 1,
                 backgroundColor: color.overlay,
-                justifyContent: 'flex-end',
+                justifyContent: "flex-end",
               },
               containerStyle,
             ]}
@@ -73,4 +73,4 @@ export const Modal = React.memo(
   ),
 );
 
-Modal.displayName = 'Modal';
+Modal.displayName = "Modal";

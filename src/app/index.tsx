@@ -1,7 +1,7 @@
-import { useSelector } from '@legendapp/state/react';
-import { Redirect } from 'expo-router';
+import { useSelector } from "@legendapp/state/react";
+import { Redirect } from "expo-router";
 
-import { settings$, auth$ } from '@/store';
+import { settings$, auth$ } from "@/store";
 
 /**
  * Index Gatekeeper

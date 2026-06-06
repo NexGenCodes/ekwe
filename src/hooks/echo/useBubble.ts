@@ -1,22 +1,22 @@
-import { useSelector } from '@legendapp/state/react';
-import { useCallback, useEffect, useRef } from 'react';
-import { isAndroid } from '@/utils';
+import { useSelector } from "@legendapp/state/react";
+import { useCallback, useEffect, useRef } from "react";
 
-import { useAudioCapture } from '../audio';
-import { useForegroundApp } from '../platform';
+import { useAudioCapture } from "../audio";
+import { useForegroundApp } from "../platform";
 
-import { EkweError } from '@/constants/errors';
-import { VoiceNoteScanner } from '@/services/VoiceNoteScanner';
+import { EkweError } from "@/constants/errors";
+import { VoiceNoteScanner } from "@/services/VoiceNoteScanner";
 import {
   audio$,
   audioActions,
   settings$,
   settingsActions,
   RecordingState,
-} from '@/store';
-import { Result, ok, err } from '@/types/Result';
-import { BubbleNative } from '@/utils/BubbleModule';
-import logger from '@/utils/logger';
+} from "@/store";
+import { Result, ok, err } from "@/types/Result";
+import { isAndroid } from "@/utils";
+import { BubbleNative } from "@/utils/BubbleModule";
+import logger from "@/utils/logger";
 
 export interface UseBubbleReturn {
   enableBubble: () => Promise<Result<void, EkweError>>;
@@ -48,7 +48,7 @@ export const useBubble = (): UseBubbleReturn => {
     const syncState = async (): Promise<void> => {
       // 1. Handle Visibility
       const shouldHide =
-        strategy.hideBubble || strategy.packageName === 'unknown';
+        strategy.hideBubble || strategy.packageName === "unknown";
       if (shouldHide) {
         await BubbleNative.dismissBubble();
         return;
@@ -57,25 +57,25 @@ export const useBubble = (): UseBubbleReturn => {
       }
 
       // 2. Handle Magic Mode for Messaging Apps
-      if (strategy.recommendedMode === 'MEDIA_SCAN') {
+      if (strategy.recommendedMode === "MEDIA_SCAN") {
         const note = await VoiceNoteScanner.findRecentVoiceNote(
           strategy.packageName,
         );
         if (note) {
           magicNoteUri.current = note.uri;
-          await BubbleNative.updateState('MAGIC');
+          await BubbleNative.updateState("MAGIC");
         } else {
           magicNoteUri.current = null;
-          await BubbleNative.updateState('IDLE');
+          await BubbleNative.updateState("IDLE");
         }
       }
       // 3. Handle Alert Mode for Dating Apps (Requires system record)
-      else if (strategy.recommendedMode === 'SYSTEM_AUDIO') {
+      else if (strategy.recommendedMode === "SYSTEM_AUDIO") {
         magicNoteUri.current = null;
-        await BubbleNative.updateState('RECORD');
+        await BubbleNative.updateState("RECORD");
       } else {
         magicNoteUri.current = null;
-        await BubbleNative.updateState('IDLE');
+        await BubbleNative.updateState("IDLE");
       }
     };
 
@@ -108,17 +108,17 @@ export const useBubble = (): UseBubbleReturn => {
       }
 
       const currentHead = audio$.activeFloatingHead.get();
-      if (currentHead === 'card') {
-        logger.info('[Exclusivity] Cannot start bubble while card is active');
+      if (currentHead === "card") {
+        logger.info("[Exclusivity] Cannot start bubble while card is active");
         return ok(undefined);
       }
 
       setBubbleEnabled(true);
-      setActiveFloatingHead('bubble');
+      setActiveFloatingHead("bubble");
       const serviceResult = await BubbleNative.showBubble();
       if (!serviceResult.ok) {
         setBubbleEnabled(false);
-        setActiveFloatingHead('none');
+        setActiveFloatingHead("none");
         return err(serviceResult.error);
       }
       return ok(undefined);
@@ -126,7 +126,7 @@ export const useBubble = (): UseBubbleReturn => {
 
     // iOS — just enable, Live Activity starts on first use
     setBubbleEnabled(true);
-    setActiveFloatingHead('bubble');
+    setActiveFloatingHead("bubble");
     return ok(undefined);
   }, [setBubbleEnabled, setActiveFloatingHead]);
 
@@ -135,7 +135,7 @@ export const useBubble = (): UseBubbleReturn => {
    */
   const disableBubble = useCallback(async (): Promise<void> => {
     setBubbleEnabled(false);
-    setActiveFloatingHead('none');
+    setActiveFloatingHead("none");
     if (isAndroid) {
       await BubbleNative.dismissBubble();
     }
@@ -157,14 +157,11 @@ export const useBubble = (): UseBubbleReturn => {
       setRecordingState(RecordingState.Done);
       // Clear magic ref after use
       magicNoteUri.current = null;
-      await BubbleNative.updateState('IDLE');
+      await BubbleNative.updateState("IDLE");
       return;
     }
 
-    if (
-      strategy.recommendedMode === 'SYSTEM_AUDIO' &&
-      isAndroid
-    ) {
+    if (strategy.recommendedMode === "SYSTEM_AUDIO" && isAndroid) {
       if (recordingState === RecordingState.Recording) {
         await BubbleNative.stopAudioCapture();
         await stopRecording();

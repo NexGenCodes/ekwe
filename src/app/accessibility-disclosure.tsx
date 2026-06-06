@@ -1,11 +1,11 @@
-import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
-import React from 'react';
+import { BlurView } from "expo-blur";
+import { useRouter } from "expo-router";
+import React from "react";
 
-import { AccessibilityDisclosure } from '@/components';
-import { Box } from '@/components/ui';
-import { isIOS } from '@/utils';
-import { useForegroundApp, useTheme } from '@/hooks';
+import { AccessibilityDisclosure } from "@/components";
+import { Box } from "@/components/ui";
+import { useForegroundApp, useTheme } from "@/hooks";
+import { isIOS } from "@/utils";
 
 export default function AccessibilityDisclosureScreen(): React.ReactElement {
   const router = useRouter();
@@ -24,10 +24,9 @@ export default function AccessibilityDisclosureScreen(): React.ReactElement {
   };
 
   const Container = isIOS ? BlurView : Box;
-  const containerProps =
-    isIOS
-      ? { intensity: 80, tint: isDark ? ('dark' as const) : ('light' as const) }
-      : { style: { flex: 1, backgroundColor: color.background } };
+  const containerProps = isIOS
+    ? { intensity: 80, tint: isDark ? ("dark" as const) : ("light" as const) }
+    : { style: { flex: 1, backgroundColor: color.background } };
 
   return (
     <Container {...containerProps} style={styles.flex1}>

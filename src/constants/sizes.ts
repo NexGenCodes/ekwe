@@ -4,7 +4,7 @@ export const borderRadius = {
   md: 8,
   lg: 12,
   xl: 16,
-  '2xl': 24,
+  "2xl": 24,
   full: 9999,
 } as const;
 
@@ -51,4 +51,3 @@ export type IconSizeKey = keyof typeof iconSize;
 export type TouchTargetKey = keyof typeof touchTarget;
 export type OpacityKey = keyof typeof opacity;
 export type ZIndexKey = keyof typeof zIndex;
-

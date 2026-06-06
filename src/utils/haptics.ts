@@ -1,6 +1,6 @@
-import * as Haptics from 'expo-haptics';
+import * as Haptics from "expo-haptics";
 
-import { settings$ } from '@/store';
+import { settings$ } from "@/store";
 
 /**
  * Triggers a haptic feedback effect, respecting the global user settings.

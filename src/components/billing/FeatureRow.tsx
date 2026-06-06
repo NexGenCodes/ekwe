@@ -1,10 +1,10 @@
-import { Check, X } from 'lucide-react-native';
-import React from 'react';
+import { Check, X } from "lucide-react-native";
+import React from "react";
 
-import { Box, Text } from '@/components/ui';
-import type { PlanFeature } from '@/constants/billing';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
+import { Box, Text } from "@/components/ui";
+import type { PlanFeature } from "@/constants/billing";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
 
 export interface FeatureRowProps {
   feature: PlanFeature;
@@ -53,16 +53,16 @@ export function FeatureRow({
 
 const styles = {
   featureRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: spacing.md,
   } as const,
   featureIcon: {
     width: 28,
     height: 28,
     borderRadius: borderRadius.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: spacing.md,
   } as const,
 };

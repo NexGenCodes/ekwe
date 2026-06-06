@@ -2,11 +2,11 @@ import { FlashList } from "@shopify/flash-list";
 import * as Haptics from "expo-haptics";
 import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
+import { AudioLines, Search, X } from "lucide-react-native";
 import React, { useCallback, useMemo, useState } from "react";
 import { TextInput, ScrollView, StyleSheet } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 
-import { AudioLines, Search, X } from "lucide-react-native";
 import { HistoryItem, EmptyState, IconContainer } from "@/components";
 import { Box, Text, Pressable } from "@/components/ui";
 import { duration, shadows } from "@/constants";

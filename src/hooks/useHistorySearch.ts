@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from "react";
 
-import { Db } from '@/services/db';
-import { HistoryEntry } from '@/store';
+import { Db } from "@/services/db";
+import { HistoryEntry } from "@/store";
 
 const DEBOUNCE_DELAY_MS = 300;
-export type HistoryFilterOption = 'all' | 'transcription' | 'translation';
-export type EntryType = 'transcription' | 'translation' | 'both';
+export type HistoryFilterOption = "all" | "transcription" | "translation";
+export type EntryType = "transcription" | "translation" | "both";
 
 /**
  * Derives the semantic type of a history entry:
@@ -18,13 +18,13 @@ export function getEntryType(entry: HistoryEntry): EntryType {
     !!entry.translation?.trim() &&
     entry.translation.trim() !== entry.transcript?.trim();
 
-  if (!hasDistinctTranslation) return 'transcription';
+  if (!hasDistinctTranslation) return "transcription";
 
   const hasTranscript = !!entry.transcript?.trim();
   const hasAudio = !!entry.duration && entry.duration > 0;
 
-  if (hasTranscript && hasAudio) return 'both';
-  return 'translation';
+  if (hasTranscript && hasAudio) return "both";
+  return "translation";
 }
 
 function rowToEntry(row: {
@@ -65,9 +65,9 @@ export interface HistorySearchState {
 }
 
 export function useHistorySearch(entries: HistoryEntry[]): HistorySearchState {
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [filter, setFilter] = useState<HistoryFilterOption>('all');
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [filter, setFilter] = useState<HistoryFilterOption>("all");
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -83,14 +83,14 @@ export function useHistorySearch(entries: HistoryEntry[]): HistorySearchState {
       list = rows.map(rowToEntry);
     }
 
-    if (filter === 'transcription') {
+    if (filter === "transcription") {
       // Transcription: no distinct translation exists
-      list = list.filter((e) => getEntryType(e) === 'transcription');
-    } else if (filter === 'translation') {
+      list = list.filter((e) => getEntryType(e) === "transcription");
+    } else if (filter === "translation") {
       // Translation: has a distinct translation (includes 'both' entries)
       list = list.filter((e) => {
         const t = getEntryType(e);
-        return t === 'translation' || t === 'both';
+        return t === "translation" || t === "both";
       });
     }
 

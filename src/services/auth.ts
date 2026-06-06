@@ -4,8 +4,8 @@
  * Every auth screen calls these functions instead of touching supabase.auth directly.
  * This keeps screens thin and auth logic testable + swappable.
  */
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import * as AppleAuthentication from 'expo-apple-authentication';
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import * as AppleAuthentication from "expo-apple-authentication";
 
 import { queryClient } from "@/hooks/queries/queryClient";
 import { supabase } from "@/services/supabase";
@@ -223,7 +223,10 @@ export const signInWithApple = async (): Promise<AuthResult> => {
     if (error) return { ok: false, error: error.message };
 
     if (credential.fullName) {
-      const name = [credential.fullName.givenName, credential.fullName.familyName]
+      const name = [
+        credential.fullName.givenName,
+        credential.fullName.familyName,
+      ]
         .filter(Boolean)
         .join(" ");
       if (name) {
@@ -303,7 +306,9 @@ export const setSessionFromDeepLink = async (url: string): Promise<boolean> => {
 export const signOut = async (): Promise<AuthResult> => {
   try {
     const { error } = await supabase.auth.signOut();
-    try { await GoogleSignin.signOut(); } catch {}
+    try {
+      await GoogleSignin.signOut();
+    } catch {}
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err) {
@@ -327,7 +332,9 @@ export const deleteAccount = async (): Promise<AuthResult> => {
       };
     }
     await supabase.auth.signOut();
-    try { await GoogleSignin.signOut(); } catch {}
+    try {
+      await GoogleSignin.signOut();
+    } catch {}
     queryClient.clear();
     return { ok: true };
   } catch (err) {

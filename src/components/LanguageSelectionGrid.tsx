@@ -1,92 +1,100 @@
-import { Check } from "lucide-react-native";
-import React from "react";
-import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
+import { FlashList } from "@shopify/flash-list";
+import React, { memo, useCallback } from "react";
+import { View } from "react-native";
 
-import { Box, Text, Pressable } from "@/components/ui";
-import { LANGUAGES, FLAG_MAP } from "@/constants/languages";
-import { borderRadius } from "@/constants/sizes";
-import { spacing } from "@/constants/spacing";
-import { useTheme } from "@/hooks";
+import { LanguageGridCard } from "@/components/language";
+import { LANGUAGES, getLanguageName } from "@/constants/languages";
+import { useTokens } from "@/hooks/ui";
 
 export interface LanguageSelectionGridProps {
   selected: string[];
   onToggle: (code: string) => void;
 }
 
+interface ItemData {
+  code: string;
+  label: string;
+}
+
+const NUM_COLUMNS = 2;
+const COLUMN_GAP = 12;
+
+const LanguageGridItem = memo(function LanguageGridItem({
+  code,
+  label,
+  isSelected,
+  onToggle,
+  index,
+}: {
+  code: string;
+  label: string;
+  isSelected: boolean;
+  onToggle: (code: string) => void;
+  index: number;
+}) {
+  const columnIndex = index % NUM_COLUMNS;
+  return (
+    <View
+      style={{
+        flex: 1,
+        paddingLeft: columnIndex === 1 ? COLUMN_GAP / 2 : 0,
+        paddingRight: columnIndex === 0 ? COLUMN_GAP / 2 : 0,
+        paddingBottom: COLUMN_GAP,
+      }}
+    >
+      <LanguageGridCard
+        code={code}
+        label={label}
+        isSelected={isSelected}
+        onPress={() => onToggle(code)}
+        width="100%"
+        aspectRatio={2.2}
+      />
+    </View>
+  );
+});
+
 export function LanguageSelectionGrid({
   selected,
   onToggle,
 }: LanguageSelectionGridProps): React.ReactElement {
-  const { color } = useTheme();
-  const brandPrimary = color.secondary;
-  const bgMain = color.background;
-  const handleHex = color.border;
+  const { spacing } = useTokens();
+
+  const data: ItemData[] = React.useMemo(
+    () =>
+      LANGUAGES.map((lang) => ({
+        code: lang.code,
+        label: getLanguageName(lang.code),
+      })),
+    [],
+  );
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: ItemData; index: number }) => (
+      <LanguageGridItem
+        code={item.code}
+        label={item.label}
+        isSelected={selected.includes(item.code)}
+        onToggle={onToggle}
+        index={index}
+      />
+    ),
+    [selected, onToggle],
+  );
+
+  const keyExtractor = useCallback((item: ItemData) => item.code, []);
 
   return (
-    <Animated.View
-      entering={FadeInUp.duration(600).delay(100)}
-      style={styles.gridContainer}
-    >
-      {LANGUAGES.map((lang, index) => {
-        const code = lang.code;
-        const isSelected = selected.includes(code);
-
-        return (
-          <Animated.View
-            key={code}
-            entering={FadeInDown.duration(300).delay(index * 30)}
-            style={{ width: "48%", marginBottom: spacing.md }}
-          >
-            <Pressable
-              onPress={() => onToggle(code)}
-              style={[
-                {
-                  width: "100%",
-                  aspectRatio: 2.2,
-                  backgroundColor: isSelected ? brandPrimary : bgMain,
-                  borderColor: isSelected ? brandPrimary : handleHex,
-                  borderWidth: 1,
-                  borderRadius: borderRadius["2xl"],
-                  marginBottom: spacing.md,
-                  paddingHorizontal: spacing.md,
-                  flexDirection: "row",
-                  alignItems: "center",
-                },
-              ]}
-            >
-              <Text variant="heading2" style={{ marginRight: spacing.sm }}>
-                {FLAG_MAP[code] || "🌐"}
-              </Text>
-              <Text
-                variant="bodySmall"
-                style={{
-                  flex: 1,
-                  color: isSelected ? color.onSecondary : color.foreground,
-                }}
-                numberOfLines={1}
-              >
-                {lang.englishName}
-              </Text>
-              {isSelected && (
-                <Box style={styles.checkIcon}>
-                  <Check size={18} color={color.onSecondary} strokeWidth={3} />
-                </Box>
-              )}
-            </Pressable>
-          </Animated.View>
-        );
-      })}
-    </Animated.View>
+    <FlashList
+      data={data}
+      renderItem={renderItem}
+      keyExtractor={keyExtractor}
+      numColumns={NUM_COLUMNS}
+      contentContainerStyle={{
+        paddingTop: spacing.md,
+        paddingBottom: spacing["2xl"],
+      }}
+      scrollEnabled={false}
+    />
   );
 }
-
-const styles = {
-  gridContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    paddingTop: spacing.md,
-    paddingBottom: spacing["2xl"],
-  } as const,
-  checkIcon: { marginLeft: spacing.xs } as const,
-};

@@ -1,36 +1,36 @@
-import { Sheet } from '../../ui/Sheet';
-import { useSelector } from '@legendapp/state/react';
-import { X, AlertCircle, RefreshCw } from 'lucide-react-native';
-import React, { useCallback, useEffect, useMemo } from 'react';
-import type { DimensionValue } from 'react-native';
+import { useSelector } from "@legendapp/state/react";
+import { X, AlertCircle, RefreshCw } from "lucide-react-native";
+import React, { useCallback, useEffect, useMemo } from "react";
+import type { DimensionValue } from "react-native";
 
-import { EchoConfigStep } from './EchoConfig';
-import { EchoFinalResult } from './EchoFinalResult';
-import { EchoLanguagePicker } from './EchoLanguagePicker';
-import { EchoTranslationConfig } from './EchoTranslationConfig';
-import { Badge } from '../../Badge';
-import { IconContainer } from '../../IconContainer';
-import { SkeletonBox } from '../../SkeletonBox';
+import { EchoConfigStep } from "./EchoConfig";
+import { EchoFinalResult } from "./EchoFinalResult";
+import { EchoLanguagePicker } from "./EchoLanguagePicker";
+import { EchoTranslationConfig } from "./EchoTranslationConfig";
+import { Badge } from "../../Badge";
+import { IconContainer } from "../../IconContainer";
+import { SkeletonBox } from "../../SkeletonBox";
+import { Sheet } from "../../ui/Sheet";
 
-import { Box, Text, Pressable } from '@/components/ui';
-import { STEP_METADATA } from '@/constants/echo';
-import { LANGUAGES } from '@/constants/languages';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useEchoFlow, useTheme, useSharedAudioPlayer } from '@/hooks';
-import { initAuth } from '@/services/auth';
-import { auth$ } from '@/store';
-import { EchoProps, EchoStep } from '@/types/echo';
-import { formatSourceApp } from '@/utils';
+import { Box, Text, Pressable } from "@/components/ui";
+import { STEP_METADATA } from "@/constants/echo";
+import { LANGUAGES } from "@/constants/languages";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useEchoFlow, useTheme, useSharedAudioPlayer } from "@/hooks";
+import { initAuth } from "@/services/auth";
+import { auth$ } from "@/store";
+import { EchoProps, EchoStep } from "@/types/echo";
+import { formatSourceApp } from "@/utils";
 
 const STEP_MAX_HEIGHTS: Record<EchoStep, DimensionValue> = {
-  PickLanguage: '95%',
-  Transcribing: '45%',
-  TranscribeResult: '75%',
-  Translating: '45%',
-  FullResult: '80%',
-  Config: '45%',
-  Error: '45%',
+  PickLanguage: "95%",
+  Transcribing: "45%",
+  TranscribeResult: "75%",
+  Translating: "45%",
+  FullResult: "80%",
+  Config: "45%",
+  Error: "45%",
 };
 
 export const Echo = (props: EchoProps): React.ReactElement => {
@@ -71,8 +71,8 @@ export const Echo = (props: EchoProps): React.ReactElement => {
 
   const selectedLangName = useMemo(
     () =>
-      selectedLang === 'auto'
-        ? 'Auto-Detect'
+      selectedLang === "auto"
+        ? "Auto-Detect"
         : LANGUAGES.find((l) => l.code === selectedLang)?.englishName ||
           selectedLang,
     [selectedLang],
@@ -86,7 +86,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   const handleLanguageSelected = useCallback(
     (code: string): void => {
       setSelectedLang(code);
-      setStep('Config');
+      setStep("Config");
     },
     [setSelectedLang, setStep],
   );
@@ -96,9 +96,9 @@ export const Echo = (props: EchoProps): React.ReactElement => {
       return (
         <Box
           style={{
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingVertical: spacing['3xl'],
+            alignItems: "center",
+            justifyContent: "center",
+            paddingVertical: spacing["3xl"],
           }}
         >
           <AlertCircle
@@ -108,7 +108,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
           />
           <Text
             variant="heading3"
-            style={{ marginTop: spacing.lg, textAlign: 'center' }}
+            style={{ marginTop: spacing.lg, textAlign: "center" }}
           >
             Login Required
           </Text>
@@ -116,7 +116,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             variant="bodySmall"
             style={{
               color: color.muted,
-              textAlign: 'center',
+              textAlign: "center",
               marginTop: spacing.sm,
             }}
           >
@@ -127,7 +127,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     }
 
     switch (currentStep) {
-      case 'PickLanguage':
+      case "PickLanguage":
         return (
           <EchoLanguagePicker
             selectedLang={selectedLang}
@@ -135,7 +135,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
           />
         );
 
-      case 'Config':
+      case "Config":
         return (
           <EchoConfigStep
             player={player}
@@ -145,8 +145,8 @@ export const Echo = (props: EchoProps): React.ReactElement => {
           >
             <Box
               style={{
-                flexDirection: 'row',
-                alignItems: 'center',
+                flexDirection: "row",
+                alignItems: "center",
                 paddingVertical: spacing.md,
                 borderTopWidth: 1,
                 marginTop: spacing.sm,
@@ -154,7 +154,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
               }}
             >
               <Text variant="bodySmall" style={{ color: color.muted }}>
-                {selectedLang === 'auto' ? 'Language: ' : 'Source Language: '}
+                {selectedLang === "auto" ? "Language: " : "Source Language: "}
               </Text>
               <Text
                 variant="bodySmall"
@@ -168,12 +168,12 @@ export const Echo = (props: EchoProps): React.ReactElement => {
               </Text>
               <Pressable
                 feedback="opacity"
-                onPress={() => setStep('PickLanguage')}
+                onPress={() => setStep("PickLanguage")}
                 accessibilityLabel="Change language"
                 style={{
                   paddingVertical: spacing.sm,
                   paddingHorizontal: spacing.md,
-                  borderRadius: borderRadius['2xl'],
+                  borderRadius: borderRadius["2xl"],
                   backgroundColor: color.secondary,
                 }}
               >
@@ -185,13 +185,13 @@ export const Echo = (props: EchoProps): React.ReactElement => {
           </EchoConfigStep>
         );
 
-      case 'Transcribing':
+      case "Transcribing":
         return (
           <Box
             style={{
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingVertical: spacing['3xl'],
+              alignItems: "center",
+              justifyContent: "center",
+              paddingVertical: spacing["3xl"],
             }}
           >
             <Text variant="heading3" style={{ marginTop: spacing.lg }}>
@@ -205,7 +205,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             </Text>
             <Box
               style={{
-                width: '100%',
+                width: "100%",
                 gap: spacing.md,
                 marginTop: spacing.lg,
                 paddingHorizontal: spacing.md,
@@ -222,7 +222,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
           </Box>
         );
 
-      case 'TranscribeResult':
+      case "TranscribeResult":
         return (
           <EchoTranslationConfig
             step={currentStep}
@@ -237,13 +237,13 @@ export const Echo = (props: EchoProps): React.ReactElement => {
           />
         );
 
-      case 'Translating':
+      case "Translating":
         return (
           <Box
             style={{
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingVertical: spacing['3xl'],
+              alignItems: "center",
+              justifyContent: "center",
+              paddingVertical: spacing["3xl"],
             }}
           >
             <Text variant="heading3" style={{ marginTop: spacing.lg }}>
@@ -257,7 +257,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             </Text>
             <Box
               style={{
-                width: '100%',
+                width: "100%",
                 gap: spacing.md,
                 marginTop: spacing.lg,
                 paddingHorizontal: spacing.md,
@@ -271,7 +271,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
           </Box>
         );
 
-      case 'FullResult':
+      case "FullResult":
         return (
           <EchoFinalResult
             transcription={transcription}
@@ -284,12 +284,12 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             handleClose={handleClose}
           />
         );
-      case 'Error':
+      case "Error":
         return (
           <Box
             style={{
-              alignItems: 'center',
-              justifyContent: 'center',
+              alignItems: "center",
+              justifyContent: "center",
               paddingVertical: spacing.xl,
             }}
           >
@@ -297,9 +297,9 @@ export const Echo = (props: EchoProps): React.ReactElement => {
               style={{
                 width: 64,
                 height: 64,
-                borderRadius: borderRadius['2xl'],
-                alignItems: 'center',
-                justifyContent: 'center',
+                borderRadius: borderRadius["2xl"],
+                alignItems: "center",
+                justifyContent: "center",
                 marginBottom: spacing.lg,
                 backgroundColor: `${color.error}15`,
               }}
@@ -309,18 +309,18 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             <Text
               variant="body"
               style={{
-                textAlign: 'center',
+                textAlign: "center",
                 marginBottom: spacing.sm,
                 paddingHorizontal: spacing.lg,
                 color: color.foreground,
               }}
             >
-              {error || 'An unexpected error occurred'}
+              {error || "An unexpected error occurred"}
             </Text>
             <Text
               variant="bodySmall"
               style={{
-                textAlign: 'center',
+                textAlign: "center",
                 marginBottom: spacing.lg,
                 color: color.muted,
               }}
@@ -329,14 +329,14 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             </Text>
             <Pressable
               feedback="opacity"
-              onPress={() => setStep('PickLanguage')}
+              onPress={() => setStep("PickLanguage")}
               accessibilityLabel="Start over"
               style={{
-                flexDirection: 'row',
-                alignItems: 'center',
+                flexDirection: "row",
+                alignItems: "center",
                 paddingVertical: spacing.md,
                 paddingHorizontal: spacing.lg,
-                borderRadius: borderRadius['2xl'],
+                borderRadius: borderRadius["2xl"],
                 gap: spacing.sm,
                 backgroundColor: color.secondary,
               }}
@@ -356,32 +356,28 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   const stepMeta = STEP_METADATA[step];
 
   return (
-    <Sheet
-      visible
-      onClose={handleClose}
-      maxHeight={STEP_MAX_HEIGHTS[step]}
-    >
+    <Sheet visible onClose={handleClose} maxHeight={STEP_MAX_HEIGHTS[step]}>
       <Box
         style={{
           paddingHorizontal: spacing.lg,
-          paddingBottom: spacing['2xl'],
+          paddingBottom: spacing["2xl"],
           paddingTop: spacing.md,
         }}
       >
         {/* Header */}
         <Box
           style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
             marginBottom: spacing.lg,
             marginTop: spacing.sm,
           }}
         >
           <Box
             style={{
-              flexDirection: 'row',
-              alignItems: 'center',
+              flexDirection: "row",
+              alignItems: "center",
               gap: spacing.sm,
             }}
           >
@@ -412,14 +408,14 @@ export const Echo = (props: EchoProps): React.ReactElement => {
           {stepMeta.showBadge && (
             <Box
               style={{
-                position: 'absolute',
+                position: "absolute",
                 top: 0,
                 left: 0,
                 right: 0,
                 bottom: 0,
-                alignItems: 'center',
-                justifyContent: 'center',
-                pointerEvents: 'none',
+                alignItems: "center",
+                justifyContent: "center",
+                pointerEvents: "none",
               }}
             >
               <Badge label={formatSourceApp(sourceApp)} variant="primary" />

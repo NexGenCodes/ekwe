@@ -1,11 +1,11 @@
-import React from 'react';
-import Animated, { LinearTransition } from 'react-native-reanimated';
+import React from "react";
+import Animated, { LinearTransition } from "react-native-reanimated";
 
-import { Box, Text } from '@/components/ui';
-import { spring } from '@/constants';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text } from "@/components/ui";
+import { spring } from "@/constants";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 export interface ProfileSectionProps {
   title: string;
@@ -24,7 +24,7 @@ export function ProfileSection({
       <Text
         variant="caption"
         style={{
-          textTransform: 'uppercase',
+          textTransform: "uppercase",
           marginBottom: spacing.md,
           color: titleColor ?? color.muted,
         }}
@@ -37,9 +37,9 @@ export function ProfileSection({
           .stiffness(spring.smooth.stiffness)
           .mass(spring.smooth.mass)}
         style={{
-          borderRadius: borderRadius['2xl'],
+          borderRadius: borderRadius["2xl"],
           borderWidth: 1,
-          overflow: 'hidden',
+          overflow: "hidden",
           backgroundColor: color.card,
           borderColor: color.border,
         }}

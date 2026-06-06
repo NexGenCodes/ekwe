@@ -1,4 +1,5 @@
 import { useSelector } from "@legendapp/state/react";
+import { Check, AlertCircle, Mic } from "lucide-react-native";
 import React, { useEffect, useRef, useMemo } from "react";
 import { Dimensions } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -14,18 +15,17 @@ import Animated, {
   useAnimatedReaction,
   SharedValue,
 } from "react-native-reanimated";
-
-import { Check, AlertCircle, Mic } from "lucide-react-native";
 import Svg, { Path } from "react-native-svg";
+
 import { Box } from "@/components/ui";
+import { bubbleColors } from "@/constants/colors";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { bubbleColors } from "@/constants/colors";
 import { useBubble, useMetering, useTheme } from "@/hooks";
-
-const AnimatedSvg = Animated.createAnimatedComponent(Svg);
 import { audio$, audioActions, settings$, RecordingState } from "@/store";
 import { BubbleNative } from "@/utils/BubbleModule";
+
+const AnimatedSvg = Animated.createAnimatedComponent(Svg);
 
 const BUBBLE_SIZE = 52;
 const SCREEN = Dimensions.get("window");
@@ -317,7 +317,13 @@ export function LensBubble(): React.ReactElement | null {
             <Mic size={20} color={onPrimaryColor} />
           )}
           {recordingState === RecordingState.Recording && (
-            <Box style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
+            <Box
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: spacing.xs,
+              }}
+            >
               {history.map((h, i) => (
                 <MeterBar key={i} value={h} color={onPrimaryColor} />
               ))}

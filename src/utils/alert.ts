@@ -1,9 +1,9 @@
-import * as Haptics from 'expo-haptics';
-import { AlertButton } from 'react-native';
+import * as Haptics from "expo-haptics";
+import { AlertButton } from "react-native";
 
-import logger from './logger';
+import logger from "./logger";
 
-import { appAlertActions } from '@/store/appAlert';
+import { appAlertActions } from "@/store/appAlert";
 
 export interface AppAlertOptions {
   /**
@@ -38,10 +38,10 @@ export const AppAlert = {
     }
 
     appAlertActions.show({
-      type: 'info',
+      type: "info",
       title,
       message,
-      buttons: buttons || [{ text: 'OK', style: 'default' }],
+      buttons: buttons || [{ text: "OK", style: "default" }],
       cancelable: options?.cancelable ?? true,
     });
   },
@@ -56,12 +56,12 @@ export const AppAlert = {
     options?: AppAlertOptions,
   ): void => {
     // Determine the safest string to display
-    let message = 'An unexpected error occurred.';
-    if (typeof error === 'string') {
+    let message = "An unexpected error occurred.";
+    if (typeof error === "string") {
       message = error;
     } else if (error instanceof Error) {
       message = error.message;
-    } else if (error && typeof error === 'object' && 'message' in error) {
+    } else if (error && typeof error === "object" && "message" in error) {
       message = String(error.message);
     }
 
@@ -72,10 +72,10 @@ export const AppAlert = {
     }
 
     appAlertActions.show({
-      type: 'error',
+      type: "error",
       title,
       message,
-      buttons: buttons || [{ text: 'Dismiss', style: 'cancel' }],
+      buttons: buttons || [{ text: "Dismiss", style: "cancel" }],
       cancelable: options?.cancelable ?? true,
     });
   },
@@ -94,10 +94,10 @@ export const AppAlert = {
     }
 
     appAlertActions.show({
-      type: 'success',
+      type: "success",
       title,
       message,
-      buttons: buttons || [{ text: 'Great', style: 'default' }],
+      buttons: buttons || [{ text: "Great", style: "default" }],
       cancelable: options?.cancelable ?? true,
     });
   },
@@ -120,17 +120,17 @@ export const AppAlert = {
     }
 
     appAlertActions.show({
-      type: 'confirm',
+      type: "confirm",
       title,
       message,
       buttons: [
         {
-          text: options?.cancelText || 'Cancel',
-          style: 'cancel',
+          text: options?.cancelText || "Cancel",
+          style: "cancel",
         },
         {
-          text: options?.confirmText || 'Confirm',
-          style: options?.isDestructive ? 'destructive' : 'default',
+          text: options?.confirmText || "Confirm",
+          style: options?.isDestructive ? "destructive" : "default",
           onPress: onConfirm,
         },
       ],

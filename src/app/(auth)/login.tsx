@@ -24,10 +24,9 @@ export default function LoginScreen(): React.JSX.Element {
   const router = useRouter();
   const { color } = useTheme();
 
-  const { isLoading, error, setError, run, handleApple, handleGoogle } =
-    useAuthFlow();
+  const { isLoading, error, run, handleApple, handleGoogle } = useAuthFlow();
 
-  const { control, handleSubmit, getValues } = useForm<LoginForm>({
+  const { control, handleSubmit } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "", password: "" },
   });

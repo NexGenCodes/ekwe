@@ -1,5 +1,5 @@
-import { Play, Pause } from 'lucide-react-native';
-import React, { useEffect, useMemo } from 'react';
+import { Play, Pause } from "lucide-react-native";
+import React, { useEffect, useMemo } from "react";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -9,14 +9,14 @@ import Animated, {
   withRepeat,
   withTiming,
   type SharedValue,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { Box, Text, Pressable } from '@/components/ui';
-import { shadows } from '@/constants';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme, useSharedAudioPlayer } from '@/hooks';
-import type { DictationStatus } from '@/hooks/useVoiceDictation';
+import { Box, Text, Pressable } from "@/components/ui";
+import { shadows } from "@/constants";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme, useSharedAudioPlayer } from "@/hooks";
+import type { DictationStatus } from "@/hooks/useVoiceDictation";
 
 const TOTAL_BARS = 35;
 
@@ -101,7 +101,11 @@ function WaveBar({
     };
   });
 
-  return <Animated.View style={[{ width: 3, borderRadius: borderRadius.sm }, animStyle]} />;
+  return (
+    <Animated.View
+      style={[{ width: 3, borderRadius: borderRadius.sm }, animStyle]}
+    />
+  );
 }
 
 function ProcessingBar({
@@ -158,8 +162,8 @@ export function RecordingInline({
   meteringData,
 }: RecordingInlineProps): React.ReactElement {
   const { color } = useTheme();
-  const isProcessing = status === 'processing';
-  const isPreview = status === 'preview';
+  const isProcessing = status === "processing";
+  const isPreview = status === "preview";
 
   const player = useSharedAudioPlayer(isPreview ? capturedUri : null);
   const isPlaying = player.isPlaying;
@@ -168,14 +172,14 @@ export function RecordingInline({
     const totalSeconds = Math.floor(ms / 1000);
     const mins = Math.floor(totalSeconds / 60);
     const secs = totalSeconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   const dotOpacity = useSharedValue(1);
   const phase = useSharedValue(0);
 
   useEffect(() => {
-    if (status === 'recording') {
+    if (status === "recording") {
       dotOpacity.value = withRepeat(
         withTiming(0.2, { duration: 600 }),
         -1,
@@ -186,7 +190,7 @@ export function RecordingInline({
         -1,
         false,
       );
-    } else if (status === 'preview' && isPlaying) {
+    } else if (status === "preview" && isPlaying) {
       dotOpacity.value = 1;
       phase.value = withRepeat(
         withTiming(2 * Math.PI, { duration: 1500 }),
@@ -243,10 +247,10 @@ export function RecordingInline({
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(150)}
       style={{
-        flexDirection: 'row',
-        alignItems: 'center',
+        flexDirection: "row",
+        alignItems: "center",
         height: 72,
-        borderRadius: borderRadius['2xl'],
+        borderRadius: borderRadius["2xl"],
         paddingHorizontal: spacing.md,
         backgroundColor: color.surface,
       }}
@@ -255,9 +259,9 @@ export function RecordingInline({
         <Box
           style={{
             flex: 1,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
             paddingHorizontal: spacing.sm,
           }}
         >
@@ -266,14 +270,14 @@ export function RecordingInline({
             style={{
               width: 48,
               height: 48,
-              borderRadius: borderRadius['2xl'],
-              alignItems: 'center',
-              justifyContent: 'center',
+              borderRadius: borderRadius["2xl"],
+              alignItems: "center",
+              justifyContent: "center",
               ...shadows.soft,
               backgroundColor: color.secondary,
             }}
             accessibilityLabel={
-              player.isPlaying ? 'Pause playback' : 'Play recording'
+              player.isPlaying ? "Pause playback" : "Play recording"
             }
           >
             {player.isPlaying ? (
@@ -293,9 +297,9 @@ export function RecordingInline({
           <Box
             style={{
               flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
               height: 40,
               marginLeft: spacing.md,
             }}
@@ -307,16 +311,16 @@ export function RecordingInline({
         <Box
           style={{
             flex: 1,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
             paddingHorizontal: spacing.sm,
           }}
         >
           <Box
             style={{
-              flexDirection: 'row',
-              alignItems: 'center',
+              flexDirection: "row",
+              alignItems: "center",
               gap: spacing.sm,
             }}
           >
@@ -339,9 +343,9 @@ export function RecordingInline({
             <Box
               style={{
                 flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
                 height: 40,
                 marginLeft: spacing.md,
               }}

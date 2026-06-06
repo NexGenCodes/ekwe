@@ -1,6 +1,6 @@
 import { useSelector } from "@legendapp/state/react";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { KeyboardAvoidingView } from "react-native";
 
 import {
@@ -18,8 +18,6 @@ export default function HomeScreen(): React.ReactElement {
   const onboardingCompleted = useSelector(() =>
     settings$.onboardingCompleted.get(),
   );
-  const [isInputFocused, setIsInputFocused] = useState(false);
-
 
   useEffect(() => {
     if (!onboardingCompleted) {
@@ -28,7 +26,7 @@ export default function HomeScreen(): React.ReactElement {
   }, [onboardingCompleted, router]);
 
   return (
-    <SafeArea >
+    <SafeArea>
       <BackgroundFlair />
       <KeyboardAvoidingView
         behavior={isIOS ? "padding" : undefined}
@@ -42,12 +40,11 @@ export default function HomeScreen(): React.ReactElement {
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
           nestedScrollEnabled
-          
         >
           {/* Main content */}
           <Box style={{ gap: spacing.md }}>
             <HomeHeader />
-            <TranslationInterface onInputFocusChange={setIsInputFocused} />
+            <TranslationInterface />
           </Box>
         </ScrollArea>
       </KeyboardAvoidingView>

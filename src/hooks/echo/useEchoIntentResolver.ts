@@ -12,7 +12,7 @@ import {
 import { AudioCapture } from "@/services/AudioCapture";
 import { IntentService } from "@/services/IntentService";
 import { settings$, auth$ } from "@/store";
-import { isIOS, isAndroid, AppAlert, logger } from "@/utils";
+import { isIOS, AppAlert, logger } from "@/utils";
 import { cleanEchoCache } from "@/utils/echo";
 
 const noopResetShareIntent = (): void => {};

@@ -1,42 +1,53 @@
-import * as Haptics from 'expo-haptics';
-import { Stack, useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import * as Haptics from "expo-haptics";
+import { Stack, useRouter } from "expo-router";
+import React from "react";
+import Animated from "react-native-reanimated";
 
-import { Button, LanguageSelectionGrid } from '@/components';
-import { Box, ScrollArea, Text } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { typography } from '@/constants/typography';
-import { useTheme } from '@/hooks';
-import { settings$, settingsActions } from '@/store';
-import { triggerHaptic } from '@/utils/haptics';
+import { Button, LanguageSelectionGrid } from "@/components";
+import { Box, ScrollArea, Text } from "@/components/ui";
+import { useStyles, useTokens } from "@/hooks/ui";
+import type { Tokens } from "@/hooks/ui";
+import { useFadeIn } from "@/hooks/useAnimation";
+import { useLanguageSelection } from "@/hooks/useLanguageSelection";
+import { settings$, settingsActions } from "@/store";
+import { triggerHaptic } from "@/utils/haptics";
 
 export default function EditLanguagesScreen(): React.ReactElement {
   const router = useRouter();
-  const { color } = useTheme();
+  const { color, typography } = useTokens();
+  const { selected, toggleLanguage, isComplete, remaining } =
+    useLanguageSelection();
 
-  const initialSelected = settings$.selectedLanguages.get();
-  const [selected, setSelected] = useState<string[]>(initialSelected);
+  const headerStyle = useFadeIn({ duration: 400 });
 
-  const toggleLanguage = (code: string): void => {
-    if (selected.includes(code)) {
-      triggerHaptic();
-      setSelected((prev) => prev.filter((c) => c !== code));
-    } else {
-      if (selected.length >= 5) {
-        triggerHaptic(Haptics.NotificationFeedbackType.Warning);
-        return;
-      }
-      triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
-      setSelected((prev) => [...prev, code]);
-    }
-  };
+  const styles = useStyles((t: Tokens) => ({
+    flex1: { flex: 1, backgroundColor: t.color.background },
+    header: {
+      paddingHorizontal: t.spacing.lg,
+      paddingTop: t.spacing.md,
+      paddingBottom: t.spacing.sm,
+    },
+    subtitle: {
+      color: t.color.muted,
+    },
+    scrollView: {
+      flex: 1,
+      paddingHorizontal: t.spacing.lg,
+    },
+    bottomSection: {
+      paddingHorizontal: t.spacing.lg,
+      paddingBottom: t.spacing["3xl"],
+      paddingTop: t.spacing.md,
+      borderTopWidth: 1,
+      borderTopColor: t.color.border,
+    },
+  }));
 
   const handleSave = (): void => {
-    if (selected.length !== 5) return;
+    if (!isComplete) return;
+
     settingsActions.setSelectedLanguages(selected);
 
-    // Ensure pinned languages don't contain removed languages
     const pinned = settings$.pinnedLanguages.get();
     const newPinned = pinned.filter((p) => selected.includes(p));
     settingsActions.setPinnedLanguages(newPinned);
@@ -46,12 +57,12 @@ export default function EditLanguagesScreen(): React.ReactElement {
   };
 
   return (
-    <Box style={[styles.flex1, { backgroundColor: color.background }]}>
+    <Box style={styles.flex1}>
       <Stack.Screen
         options={{
           headerShown: true,
-          title: 'Edit Languages',
-          headerBackTitle: 'Profile',
+          title: "Edit Languages",
+          headerBackTitle: "Profile",
           headerStyle: { backgroundColor: color.background },
           headerShadowVisible: false,
           headerTitleStyle: {
@@ -62,8 +73,8 @@ export default function EditLanguagesScreen(): React.ReactElement {
         }}
       />
 
-      <Animated.View entering={FadeInDown.duration(400)} style={styles.header}>
-        <Text variant="bodySmall" style={{ color: color.muted }}>
+      <Animated.View style={[styles.header, headerStyle]}>
+        <Text variant="bodySmall" style={styles.subtitle}>
           Select exactly 5 languages to use in your translation studio. You can
           change these anytime.
         </Text>
@@ -72,48 +83,20 @@ export default function EditLanguagesScreen(): React.ReactElement {
       <ScrollArea
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: spacing['2xl'] }}
+        contentContainerStyle={{ paddingBottom: 40 }}
       >
         <LanguageSelectionGrid selected={selected} onToggle={toggleLanguage} />
       </ScrollArea>
 
-      <Box
-        style={[
-          styles.bottomSection,
-          { borderTopColor: color.border, backgroundColor: color.background },
-        ]}
-      >
+      <Box style={styles.bottomSection}>
         <Button
           variant="primary"
           size="large"
-          label={
-            selected.length === 5
-              ? 'Save Changes'
-              : `Select ${5 - selected.length} more`
-          }
-          disabled={selected.length !== 5}
+          label={isComplete ? "Save Changes" : `Select ${remaining} more`}
+          disabled={!isComplete}
           onPress={handleSave}
         />
       </Box>
     </Box>
   );
 }
-
-const styles = {
-  flex1: { flex: 1 } as const,
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-  } as const,
-  scrollView: {
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-  } as const,
-  bottomSection: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing['3xl'],
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-  } as const,
-};

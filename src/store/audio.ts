@@ -1,24 +1,24 @@
-import { observable } from '@legendapp/state';
+import { observable } from "@legendapp/state";
 
-import { EkweError } from '@/constants/errors';
+import { EkweError } from "@/constants/errors";
 
 export enum RecordingState {
-  Idle = 'idle',
-  Recording = 'recording',
-  Processing = 'processing',
-  Done = 'done',
-  Error = 'error',
-  Overlay = 'overlay',
+  Idle = "idle",
+  Recording = "recording",
+  Processing = "processing",
+  Done = "done",
+  Error = "error",
+  Overlay = "overlay",
 }
 
 export enum OverlayStep {
-  Pick = 'pick',
-  Preview = 'preview',
-  Process = 'process',
-  Result = 'result',
+  Pick = "pick",
+  Preview = "preview",
+  Process = "process",
+  Result = "result",
 }
 
-export type FloatingHeadType = 'none' | 'bubble' | 'card';
+export type FloatingHeadType = "none" | "bubble" | "card";
 
 export interface AudioState {
   recordingState: RecordingState;
@@ -40,7 +40,7 @@ export interface AudioState {
 
 const initialAudioState: AudioState = {
   recordingState: RecordingState.Idle,
-  transcriptBuffer: '',
+  transcriptBuffer: "",
   isSaved: false,
   errorCode: null,
   sessionId: null,
@@ -53,7 +53,7 @@ const initialAudioState: AudioState = {
   overlayFileUri: null,
   overlayMimeType: null,
   overlaySourceApp: null,
-  activeFloatingHead: 'none',
+  activeFloatingHead: "none",
 };
 
 export const audio$ = observable<AudioState>(initialAudioState);
@@ -102,9 +102,9 @@ export const audioActions = {
       overlayMimeType: overlayMimeType ?? audio$.overlayMimeType.get(),
       overlaySourceApp: overlaySourceApp ?? audio$.overlaySourceApp.get(),
       activeFloatingHead: showOverlay
-        ? 'card'
-        : audio$.activeFloatingHead.get() === 'card'
-          ? 'none'
+        ? "card"
+        : audio$.activeFloatingHead.get() === "card"
+          ? "none"
           : audio$.activeFloatingHead.get(),
     });
   },

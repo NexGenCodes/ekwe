@@ -1,16 +1,16 @@
-import React, { forwardRef, useMemo } from 'react';
+import React, { forwardRef, useMemo } from "react";
 import {
   TextInput,
   View,
   type TextInputProps,
   type StyleProp,
   type ViewStyle,
-} from 'react-native';
+} from "react-native";
 
-import { Text } from '@/components/ui/Text';
-import { spacing } from '@/constants/spacing';
-import { typography } from '@/constants/typography';
-import { useTokens } from '@/hooks/ui/useTokens';
+import { Text } from "@/components/ui/Text";
+import { spacing } from "@/constants/spacing";
+import { typography } from "@/constants/typography";
+import { useTokens } from "@/hooks/ui/useTokens";
 
 export type FieldProps = TextInputProps & {
   label?: string;
@@ -72,4 +72,4 @@ export const Field = React.memo(
   ),
 );
 
-Field.displayName = 'Field';
+Field.displayName = "Field";

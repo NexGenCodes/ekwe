@@ -1,7 +1,7 @@
-import { observable } from '@legendapp/state';
-import { AlertButton } from 'react-native';
+import { observable } from "@legendapp/state";
+import { AlertButton } from "react-native";
 
-export type AlertType = 'info' | 'success' | 'error' | 'confirm';
+export type AlertType = "info" | "success" | "error" | "confirm";
 
 export interface AppAlertState {
   isVisible: boolean;
@@ -14,8 +14,8 @@ export interface AppAlertState {
 
 const defaultState: AppAlertState = {
   isVisible: false,
-  type: 'info',
-  title: '',
+  type: "info",
+  title: "",
   message: undefined,
   buttons: undefined,
   cancelable: true,
@@ -25,7 +25,7 @@ const defaultState: AppAlertState = {
 export const appAlert$ = observable<AppAlertState>(defaultState);
 
 export const appAlertActions = {
-  show: (params: Omit<AppAlertState, 'isVisible'>): void => {
+  show: (params: Omit<AppAlertState, "isVisible">): void => {
     appAlert$.set({
       ...params,
       isVisible: true,

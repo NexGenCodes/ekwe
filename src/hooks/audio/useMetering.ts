@@ -1,11 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect } from "react";
 import {
   useSharedValue,
   cancelAnimation,
   SharedValue,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { AudioCapture } from '@/services/AudioCapture';
+import { AudioCapture } from "@/services/AudioCapture";
 
 /**
  * Low-latency metering hook synced to the display refresh rate.

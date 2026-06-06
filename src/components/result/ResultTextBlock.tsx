@@ -1,23 +1,23 @@
-import { Copy, Check } from 'lucide-react-native';
-import React from 'react';
-import { StyleSheet } from 'react-native';
+import { Copy, Check } from "lucide-react-native";
+import React from "react";
+import { StyleSheet } from "react-native";
 
-import { Card } from '@/components/Card';
-import { Box, Pressable, Text } from '@/components/ui';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme, useClipboard } from '@/hooks';
+import { Card } from "@/components/Card";
+import { Box, Pressable, Text } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme, useClipboard } from "@/hooks";
 
 export interface ResultTextBlockProps {
   title: string;
   text: string;
-  variant?: 'default' | 'accent';
+  variant?: "default" | "accent";
 }
 
 export function ResultTextBlock({
   title,
   text,
-  variant = 'default',
+  variant = "default",
 }: ResultTextBlockProps): React.JSX.Element {
   const { color } = useTheme();
   const primaryColor = color.primary;
@@ -33,8 +33,8 @@ export function ResultTextBlock({
         <Text
           variant="caption"
           style={{
-            textTransform: 'uppercase',
-            color: variant === 'accent' ? primaryColor : color.muted,
+            textTransform: "uppercase",
+            color: variant === "accent" ? primaryColor : color.muted,
           }}
         >
           {title}
@@ -63,7 +63,7 @@ export function ResultTextBlock({
         variant={variant}
         style={{
           padding: spacing.lg,
-          borderRadius: borderRadius['2xl'],
+          borderRadius: borderRadius["2xl"],
         }}
       >
         <Text variant="bodyLarge" style={{ color: color.foreground }}>
@@ -79,19 +79,19 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   blockHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: spacing.md,
   },
   headerActions: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: spacing.sm,
   },
   iconButton: {
     padding: spacing.sm,
     borderRadius: borderRadius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

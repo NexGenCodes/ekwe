@@ -1,28 +1,28 @@
 export const formatSourceApp = (
   bundleId: string | null | undefined,
 ): string => {
-  if (!bundleId) return 'Audio';
+  if (!bundleId) return "Audio";
 
   // Map known bundle IDs to their exact brand names
   const KNOWN_APPS: Record<string, string> = {
-    'com.whatsapp': 'WhatsApp',
-    'com.whatsapp.w4b': 'WhatsApp Business',
-    'org.telegram.messenger': 'Telegram',
-    'ph.telegra.Telegraph': 'Telegram',
-    'com.zhiliaoapp.musically': 'TikTok',
-    'com.apple.VoiceMemos': 'Voice Memos',
-    'com.google.android.youtube': 'YouTube',
-    'com.instagram.android': 'Instagram',
-    'com.twitter.android': 'X (Twitter)',
-    'com.facebook.orca': 'Messenger',
-    'com.facebook.katana': 'Facebook',
-    'com.viber.voip': 'Viber',
-    'com.skype.raider': 'Skype',
-    'com.microsoft.teams': 'Teams',
-    'com.slack': 'Slack',
-    'com.discord': 'Discord',
-    'org.thoughtcrime.securesms': 'Signal',
-    'com.tencent.mm': 'WeChat',
+    "com.whatsapp": "WhatsApp",
+    "com.whatsapp.w4b": "WhatsApp Business",
+    "org.telegram.messenger": "Telegram",
+    "ph.telegra.Telegraph": "Telegram",
+    "com.zhiliaoapp.musically": "TikTok",
+    "com.apple.VoiceMemos": "Voice Memos",
+    "com.google.android.youtube": "YouTube",
+    "com.instagram.android": "Instagram",
+    "com.twitter.android": "X (Twitter)",
+    "com.facebook.orca": "Messenger",
+    "com.facebook.katana": "Facebook",
+    "com.viber.voip": "Viber",
+    "com.skype.raider": "Skype",
+    "com.microsoft.teams": "Teams",
+    "com.slack": "Slack",
+    "com.discord": "Discord",
+    "org.thoughtcrime.securesms": "Signal",
+    "com.tencent.mm": "WeChat",
   };
 
   if (KNOWN_APPS[bundleId]) {
@@ -30,19 +30,19 @@ export const formatSourceApp = (
   }
 
   // Fallback: strip domain extensions and common namespace words
-  const parts = bundleId.split('.');
+  const parts = bundleId.split(".");
   const ignoreList = [
-    'com',
-    'org',
-    'net',
-    'io',
-    'co',
-    'app',
-    'android',
-    'apple',
-    'google',
-    'mobile',
-    'inc',
+    "com",
+    "org",
+    "net",
+    "io",
+    "co",
+    "app",
+    "android",
+    "apple",
+    "google",
+    "mobile",
+    "inc",
   ];
 
   const validParts = parts.filter((p) => !ignoreList.includes(p.toLowerCase()));

@@ -1,17 +1,17 @@
-import * as Haptics from 'expo-haptics';
-import { Stack } from 'expo-router';
-import { Crown, Sparkles } from 'lucide-react-native';
-import React, { useMemo } from 'react';
-import Animated, { FadeInDown, ZoomIn, FadeIn } from 'react-native-reanimated';
+import * as Haptics from "expo-haptics";
+import { Stack } from "expo-router";
+import { Crown, Sparkles } from "lucide-react-native";
+import React, { useMemo } from "react";
+import Animated, { FadeInDown, ZoomIn, FadeIn } from "react-native-reanimated";
 
-import { GradientMesh } from '@/components/GradientMesh';
-import { BillingToggle } from '@/components/billing/BillingToggle';
-import { FreePlanCard } from '@/components/billing/FreePlanCard';
-import { ProPlanCard } from '@/components/billing/ProPlanCard';
-import { Box, Text, ScrollArea } from '@/components/ui';
-import { useTheme, useTokens } from '@/hooks';
-import { palette } from '@/constants/colors';
-import { useBilling } from '@/hooks/billing/useBilling';
+import { GradientMesh } from "@/components/GradientMesh";
+import { BillingToggle } from "@/components/billing/BillingToggle";
+import { FreePlanCard } from "@/components/billing/FreePlanCard";
+import { ProPlanCard } from "@/components/billing/ProPlanCard";
+import { Box, Text, ScrollArea } from "@/components/ui";
+import { palette } from "@/constants/colors";
+import { useTheme, useTokens } from "@/hooks";
+import { useBilling } from "@/hooks/billing/useBilling";
 
 export default function BillingScreen(): React.ReactElement {
   const { color, isDark } = useTheme();
@@ -34,38 +34,38 @@ export default function BillingScreen(): React.ReactElement {
       scrollView: { flex: 1 } as const,
       scrollContent: {
         paddingHorizontal: spacing.md,
-        paddingBottom: spacing['3xl'],
+        paddingBottom: spacing["3xl"],
       } as const,
 
       // Hero
       heroBanner: {
-        alignItems: 'center',
+        alignItems: "center",
         paddingVertical: spacing.xl,
       } as const,
       heroIconContainer: {
         width: 80,
         height: 80,
         borderRadius: borderRadius.full,
-        alignItems: 'center',
-        justifyContent: 'center',
+        alignItems: "center",
+        justifyContent: "center",
         marginBottom: spacing.md,
       } as const,
       heroTitle: {
-        textAlign: 'center',
+        textAlign: "center",
         marginBottom: spacing.md,
       } as const,
       heroSubtitle: {
-        textAlign: 'center',
+        textAlign: "center",
         paddingHorizontal: spacing.md,
       } as const,
 
       // Toggle
       toggleWrapper: {
-        alignItems: 'center',
+        alignItems: "center",
         marginBottom: spacing.xl,
       } as const,
       savingsBadgeWrapper: {
-        position: 'absolute',
+        position: "absolute",
         top: -12,
         right: spacing.lg,
       } as const,
@@ -73,7 +73,7 @@ export default function BillingScreen(): React.ReactElement {
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.xs,
         borderRadius: borderRadius.sm,
-        transform: [{ rotate: '-6deg' }],
+        transform: [{ rotate: "-6deg" }],
       } as const,
 
       // Plans
@@ -82,11 +82,11 @@ export default function BillingScreen(): React.ReactElement {
       // Footer
       footer: {
         paddingVertical: spacing.xl,
-        alignItems: 'center',
+        alignItems: "center",
         paddingHorizontal: spacing.xl,
       } as const,
       footerText: {
-        textAlign: 'center',
+        textAlign: "center",
       } as const,
     }),
     [spacing, borderRadius],
@@ -94,7 +94,7 @@ export default function BillingScreen(): React.ReactElement {
 
   return (
     <Box style={[styles.flex1, { backgroundColor: color.background }]}>
-      <Stack.Screen options={{ title: 'Billing', headerTitle: 'Billing' }} />
+      <Stack.Screen options={{ title: "Billing", headerTitle: "Billing" }} />
       <GradientMesh />
       <ScrollArea
         style={styles.scrollView}
@@ -122,8 +122,8 @@ export default function BillingScreen(): React.ReactElement {
               style={[styles.heroSubtitle, { color: color.muted }]}
             >
               {isPro
-                ? 'You have access to all premium features and an ad-free experience.'
-                : 'Go Pro for an ad-free, distraction-free translation experience with premium voices and offline packs.'}
+                ? "You have access to all premium features and an ad-free experience."
+                : "Go Pro for an ad-free, distraction-free translation experience with premium voices and offline packs."}
             </Text>
           </Animated.View>
         </Box>

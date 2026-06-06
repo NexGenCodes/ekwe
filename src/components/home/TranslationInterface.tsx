@@ -1,24 +1,28 @@
-import { Image as ExpoImage } from 'expo-image';
-import { Languages } from 'lucide-react-native';
+import { Image as ExpoImage } from "expo-image";
+import { Languages } from "lucide-react-native";
 import React, {
   forwardRef,
   useImperativeHandle,
   useCallback,
   useEffect,
-} from 'react';
-import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
+} from "react";
+import Animated, { FadeIn, LinearTransition } from "react-native-reanimated";
 
-import { ExpressiveInput } from './ExpressiveInput';
-import { ExpressiveOutput } from './ExpressiveOutput';
-import { EmptyState } from '../EmptyState';
-import { IconContainer } from '../IconContainer';
+import { ExpressiveInput } from "./ExpressiveInput";
+import { ExpressiveOutput } from "./ExpressiveOutput";
+import { EmptyState } from "../EmptyState";
+import { IconContainer } from "../IconContainer";
 
-import { Box } from '@/components/ui';
-import { duration, spacing } from '@/constants';
-import { iconSize } from '@/constants/sizes';
-import { useTheme, useTranslation, useClipboard, useVoiceDictation } from '@/hooks';
-import { AppAlert } from '@/utils/alert';
-import { isIOS } from '@/utils';
+import { duration, spacing } from "@/constants";
+import { iconSize } from "@/constants/sizes";
+import {
+  useTheme,
+  useTranslation,
+  useClipboard,
+  useVoiceDictation,
+} from "@/hooks";
+import { isIOS } from "@/utils";
+import { AppAlert } from "@/utils/alert";
 
 export interface TranslationInterfaceProps {
   onInputFocusChange?: (focused: boolean) => void;
@@ -73,7 +77,7 @@ export const TranslationInterface = forwardRef<
 
   useEffect(() => {
     if (dictationError) {
-      AppAlert.error('Voice Input', dictationError);
+      AppAlert.error("Voice Input", dictationError);
     }
   }, [dictationError]);
 
@@ -139,7 +143,7 @@ export const TranslationInterface = forwardRef<
       style={{
         paddingHorizontal: spacing.md,
         gap: spacing.md,
-        marginBottom: spacing['7xl'],
+        marginBottom: spacing["7xl"],
       }}
     >
       <ExpressiveInput

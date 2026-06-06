@@ -1,16 +1,16 @@
-import { Mic, X, Square, Trash2, Send } from 'lucide-react-native';
-import React, { useMemo } from 'react';
-import { StyleProp, ViewStyle } from 'react-native';
-import Animated, { useAnimatedProps } from 'react-native-reanimated';
-import Svg, { Circle } from 'react-native-svg';
+import { Mic, X, Square, Trash2, Send } from "lucide-react-native";
+import React, { useMemo } from "react";
+import { StyleProp, ViewStyle } from "react-native";
+import Animated, { useAnimatedProps } from "react-native-reanimated";
+import Svg, { Circle } from "react-native-svg";
 
-import { IconButton } from '../IconButton';
+import { IconButton } from "../IconButton";
 
-import { Box, Text, Pressable, Spinner } from '@/components/ui';
-import { shadows } from '@/constants';
-import { borderRadius, opacity } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text, Pressable, Spinner } from "@/components/ui";
+import { shadows } from "@/constants";
+import { borderRadius, opacity } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -66,14 +66,14 @@ export const InputFooterActions = React.memo(
           {
             width: 52,
             height: 52,
-            borderRadius: borderRadius['2xl'],
-            alignItems: 'center' as const,
-            justifyContent: 'center' as const,
+            borderRadius: borderRadius["2xl"],
+            alignItems: "center" as const,
+            justifyContent: "center" as const,
             ...shadows.soft,
           },
           (valueLength > 0 || isPreview) &&
             ({
-              width: 'auto',
+              width: "auto",
               paddingHorizontal: spacing.lg,
             } as const),
           {
@@ -113,14 +113,14 @@ export const InputFooterActions = React.memo(
         {isActive ? (
           <Box
             style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'flex-end',
-              width: '100%',
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "flex-end",
+              width: "100%",
             }}
           >
-            <Box style={{ flexDirection: 'row', gap: spacing.md }}>
-              <Box style={{ alignItems: 'center', gap: spacing.xs }}>
+            <Box style={{ flexDirection: "row", gap: spacing.md }}>
+              <Box style={{ alignItems: "center", gap: spacing.xs }}>
                 <IconButton
                   accessibilityLabel="Discard recording"
                   onPress={handleCancelPress}
@@ -142,14 +142,14 @@ export const InputFooterActions = React.memo(
               style={{
                 minWidth: 60,
                 height: 60,
-                alignItems: 'center',
-                justifyContent: 'center',
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
               {(isRecording || isProcessing) && (
                 <Box
                   style={{
-                    position: 'absolute',
+                    position: "absolute",
                     top: 0,
                     left: 0,
                     right: 0,
@@ -172,19 +172,19 @@ export const InputFooterActions = React.memo(
                   </Svg>
                 </Box>
               )}
-               <Pressable
-                 accessibilityLabel={
-                   isPreview
-                     ? 'Confirm audio and transcribe'
-                     : isRecording
-                       ? 'Stop recording'
-                       : 'Recording action'
-                 }
-                 style={micBtnStyle}
-                 onPress={handleRightButtonPress}
-                 disabled={isTranslating || isProcessing || isInitializing}
-                 hitSlop={15}
-               >
+              <Pressable
+                accessibilityLabel={
+                  isPreview
+                    ? "Confirm audio and transcribe"
+                    : isRecording
+                      ? "Stop recording"
+                      : "Recording action"
+                }
+                style={micBtnStyle}
+                onPress={handleRightButtonPress}
+                disabled={isTranslating || isProcessing || isInitializing}
+                hitSlop={15}
+              >
                 {isRecording ? (
                   <Square
                     size={22}
@@ -201,18 +201,18 @@ export const InputFooterActions = React.memo(
             </Box>
           </Box>
         ) : (
-          <Box style={{ width: '100%' }}>
+          <Box style={{ width: "100%" }}>
             <Box
               style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'flex-end',
-                width: '100%',
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "flex-end",
+                width: "100%",
               }}
             >
-              <Box style={{ flexDirection: 'row', gap: spacing.md }}>
+              <Box style={{ flexDirection: "row", gap: spacing.md }}>
                 {valueLength > 0 ? (
-                  <Box style={{ alignItems: 'center', gap: spacing.xs }}>
+                  <Box style={{ alignItems: "center", gap: spacing.xs }}>
                     <IconButton
                       accessibilityLabel="Clear text"
                       onPress={handleClear}
@@ -235,17 +235,17 @@ export const InputFooterActions = React.memo(
                 style={{
                   minWidth: 60,
                   height: 60,
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
                 <Pressable
                   accessibilityLabel={
                     valueLength > 0
                       ? isTranslating
-                        ? 'Translating'
-                        : 'Translate text'
-                      : 'Start voice dictation'
+                        ? "Translating"
+                        : "Translate text"
+                      : "Start voice dictation"
                   }
                   style={micBtnStyle}
                   onPress={handleRightButtonPress}
@@ -257,8 +257,8 @@ export const InputFooterActions = React.memo(
                   ) : valueLength > 0 ? (
                     <Box
                       style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
+                        flexDirection: "row",
+                        alignItems: "center",
                         gap: spacing.sm,
                       }}
                     >
@@ -268,7 +268,7 @@ export const InputFooterActions = React.memo(
                           color: color.onSecondary,
                         }}
                       >
-                        {isTranslating ? 'Translating...' : 'Translate'}
+                        {isTranslating ? "Translating..." : "Translate"}
                       </Text>
                       <Send
                         size={18}

@@ -1,17 +1,17 @@
-import React from 'react';
-import type { ViewStyle, StyleProp } from 'react-native';
+import React from "react";
+import type { ViewStyle, StyleProp } from "react-native";
 
-import { Box } from '@/components/ui';
-import { shadows } from '@/constants/shadows';
-import { borderRadius } from '@/constants/sizes';
-import { useTheme } from '@/hooks';
+import { Box } from "@/components/ui";
+import { shadows } from "@/constants/shadows";
+import { borderRadius } from "@/constants/sizes";
+import { useTheme } from "@/hooks";
 
 export interface CardProps {
   children: React.ReactNode;
   /** default = filled bg, outlined = border only, accent = primary tint */
-  variant?: 'default' | 'outlined' | 'accent';
+  variant?: "default" | "outlined" | "accent";
   /** Padding preset. 'none' for custom padding via style. */
-  padding?: 'none' | 'sm' | 'md' | 'lg';
+  padding?: "none" | "sm" | "md" | "lg";
   /** Clip children to card bounds (needed for grouped rows) */
   overflow?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -30,8 +30,8 @@ const PADDING_MAP = {
  */
 export const Card = ({
   children,
-  variant = 'default',
-  padding = 'md',
+  variant = "default",
+  padding = "md",
   overflow = false,
   style,
 }: CardProps): React.ReactElement => {
@@ -39,15 +39,15 @@ export const Card = ({
 
   const variantStyles: ViewStyle = ((): ViewStyle => {
     switch (variant) {
-      case 'accent':
+      case "accent":
         return {
           backgroundColor: `${color.primary}08`,
           borderColor: `${color.primary}30`,
           borderWidth: 1,
         };
-      case 'outlined':
+      case "outlined":
         return {
-          backgroundColor: 'transparent',
+          backgroundColor: "transparent",
           borderColor: color.border,
           borderWidth: 1,
         };
@@ -66,8 +66,8 @@ export const Card = ({
         {
           borderRadius: borderRadius.xl,
           padding: PADDING_MAP[padding],
-          overflow: overflow ? 'hidden' : undefined,
-          ...(variant === 'default' ? shadows.soft : {}),
+          overflow: overflow ? "hidden" : undefined,
+          ...(variant === "default" ? shadows.soft : {}),
         },
         variantStyles,
         style,

@@ -1,17 +1,17 @@
-import { Image as ExpoImage } from 'expo-image';
+import { Image as ExpoImage } from "expo-image";
 import {
   LucideShieldCheck,
   LucideBatteryCharging,
   LucideZap,
-} from 'lucide-react-native';
-import React from 'react';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+} from "lucide-react-native";
+import React from "react";
+import Animated, { FadeInDown } from "react-native-reanimated";
 
-import { Box, Text, Pressable, ScrollArea } from '@/components/ui';
-import { borderRadius, iconSize } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
-import { isIOS } from '@/utils';
+import { Box, Text, Pressable, ScrollArea } from "@/components/ui";
+import { borderRadius, iconSize } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { isIOS } from "@/utils";
 
 export interface AccessibilityDisclosureProps {
   onAgree: () => void;
@@ -52,7 +52,7 @@ export const AccessibilityDisclosure: React.FC<
               Google Play Policy Requirement
             </Text>
             <Text variant="bodySmall">
-              This app uses the{' '}
+              This app uses the{" "}
               <Text variant="bodySmall">AccessibilityService API</Text> to
               detect when you open messaging applications (like WhatsApp or
               Tinder). This allows Ekwe to automatically display the floating
@@ -67,8 +67,8 @@ export const AccessibilityDisclosure: React.FC<
         >
           <Box
             style={{
-              flexDirection: 'row',
-              alignItems: 'flex-start',
+              flexDirection: "row",
+              alignItems: "flex-start",
               gap: spacing.md,
             }}
           >
@@ -103,8 +103,8 @@ export const AccessibilityDisclosure: React.FC<
 
           <Box
             style={{
-              flexDirection: 'row',
-              alignItems: 'flex-start',
+              flexDirection: "row",
+              alignItems: "flex-start",
               gap: spacing.md,
             }}
           >
@@ -138,8 +138,8 @@ export const AccessibilityDisclosure: React.FC<
 
           <Box
             style={{
-              flexDirection: 'row',
-              alignItems: 'flex-start',
+              flexDirection: "row",
+              alignItems: "flex-start",
               gap: spacing.md,
             }}
           >
@@ -165,10 +165,10 @@ export const AccessibilityDisclosure: React.FC<
                 Zero Data Collection
               </Text>
               <Text variant="bodySmall" style={{ color: color.muted }}>
-                We{' '}
+                We{" "}
                 <Text variant="bodySmall">
                   do not collect, store, transmit, or share
-                </Text>{' '}
+                </Text>{" "}
                 any data, text, or inputs captured by this service. The
                 implementation acts exclusively as a local UI trigger.
               </Text>
@@ -180,7 +180,7 @@ export const AccessibilityDisclosure: React.FC<
       <Box
         style={{
           paddingTop: spacing.md,
-          paddingBottom: spacing['2xl'],
+          paddingBottom: spacing["2xl"],
           paddingHorizontal: spacing.lg,
           borderTopWidth: 1,
           backgroundColor: color.background,
@@ -191,10 +191,10 @@ export const AccessibilityDisclosure: React.FC<
           onPress={onAgree}
           feedback="none"
           style={{
-            width: '100%',
+            width: "100%",
             paddingVertical: spacing.md,
             borderRadius: borderRadius.xl,
-            alignItems: 'center',
+            alignItems: "center",
             backgroundColor: primaryColor,
           }}
           accessibilityLabel="I agree to accessibility permissions"
@@ -207,10 +207,10 @@ export const AccessibilityDisclosure: React.FC<
           onPress={onDeny}
           feedback="none"
           style={{
-            width: '100%',
+            width: "100%",
             paddingVertical: spacing.md,
             marginTop: spacing.xs,
-            alignItems: 'center',
+            alignItems: "center",
             borderRadius: borderRadius.xl,
           }}
           accessibilityLabel="Decline accessibility permissions"

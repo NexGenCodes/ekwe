@@ -1,13 +1,13 @@
-import React from 'react';
-import { StyleSheet } from 'react-native';
-import { SharedValue } from 'react-native-reanimated';
+import React from "react";
+import { StyleSheet } from "react-native";
+import { SharedValue } from "react-native-reanimated";
 
-import { AudioWaveform } from '@/components/AudioWaveform';
-import { Card } from '@/components/Card';
-import { Text } from '@/components/ui';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { AudioWaveform } from "@/components/AudioWaveform";
+import { Card } from "@/components/Card";
+import { Text } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 export interface ResultAudioWaveformProps {
   progressSV: SharedValue<number>;
@@ -19,7 +19,7 @@ export function ResultAudioWaveform({
   const { color } = useTheme();
 
   return (
-    <Card style={{ padding: spacing.lg, borderRadius: borderRadius['2xl'] }}>
+    <Card style={{ padding: spacing.lg, borderRadius: borderRadius["2xl"] }}>
       <Text
         variant="caption"
         style={[
@@ -44,7 +44,7 @@ export function ResultAudioWaveform({
 
 const styles = StyleSheet.create({
   title: {
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     marginBottom: spacing.md,
   },
 });

@@ -169,5 +169,4 @@ export const useShareIntentHandler = (): void => {
       }
     },
   );
-
 };

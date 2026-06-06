@@ -1,28 +1,28 @@
-import React from 'react';
-import type { StyleProp, ViewStyle } from 'react-native';
+import React from "react";
+import type { StyleProp, ViewStyle } from "react-native";
 
-import { Box, Text } from '@/components/ui';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 export interface BadgeProps {
   label: string;
   /** Color variant */
-  variant?: 'primary' | 'muted' | 'success' | 'warning' | 'error';
+  variant?: "primary" | "muted" | "success" | "warning" | "error";
   /** Optional leading icon */
   icon?: React.ReactNode;
   /** Text size preset */
-  size?: 'sm' | 'md';
+  size?: "sm" | "md";
   style?: StyleProp<ViewStyle>;
 }
 
 const VARIANT_CONFIG = {
-  primary: { bgOpacity: '20', textKey: 'primary' },
-  muted: { bgOpacity: '20', textKey: 'muted' },
-  success: { bgOpacity: '20', textKey: 'primary' },
-  warning: { bgOpacity: '20', textKey: 'warning' },
-  error: { bgOpacity: '20', textKey: 'error' },
+  primary: { bgOpacity: "20", textKey: "primary" },
+  muted: { bgOpacity: "20", textKey: "muted" },
+  success: { bgOpacity: "20", textKey: "primary" },
+  warning: { bgOpacity: "20", textKey: "warning" },
+  error: { bgOpacity: "20", textKey: "error" },
 } as const;
 
 /**
@@ -31,9 +31,9 @@ const VARIANT_CONFIG = {
  */
 export const Badge = ({
   label,
-  variant = 'primary',
+  variant = "primary",
   icon,
-  size = 'sm',
+  size = "sm",
   style,
 }: BadgeProps): React.ReactElement => {
   const { color } = useTheme();
@@ -45,11 +45,11 @@ export const Badge = ({
     <Box
       style={[
         {
-          flexDirection: 'row',
-          alignItems: 'center',
-          paddingHorizontal: size === 'sm' ? spacing.sm : spacing.md,
-          paddingVertical: size === 'sm' ? spacing.xs - 1 : spacing.xs,
-          borderRadius: borderRadius['2xl'],
+          flexDirection: "row",
+          alignItems: "center",
+          paddingHorizontal: size === "sm" ? spacing.sm : spacing.md,
+          paddingVertical: size === "sm" ? spacing.xs - 1 : spacing.xs,
+          borderRadius: borderRadius["2xl"],
           backgroundColor: bgColor,
           gap: spacing.xs,
         },
@@ -58,10 +58,10 @@ export const Badge = ({
     >
       {icon}
       <Text
-        variant={size === 'sm' ? 'caption' : 'bodySmall'}
+        variant={size === "sm" ? "caption" : "bodySmall"}
         style={{
           color: textColor,
-          textTransform: 'uppercase',
+          textTransform: "uppercase",
         }}
       >
         {label}

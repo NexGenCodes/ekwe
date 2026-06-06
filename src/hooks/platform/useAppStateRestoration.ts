@@ -1,7 +1,7 @@
-import { useRouter } from 'expo-router';
-import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from "expo-router";
+import { useState, useEffect, useCallback } from "react";
 
-import { SessionRecord, InterruptedSession } from '@/utils/sessionRecord';
+import { SessionRecord, InterruptedSession } from "@/utils/sessionRecord";
 export const useAppStateRestoration = (): {
   interruptedSession: InterruptedSession | null;
   dismissInterrupted: () => void;
@@ -33,13 +33,13 @@ export const useAppStateRestoration = (): {
     setInterruptedSession(null);
 
     router.push({
-      pathname: '/result',
+      pathname: "/result",
       params: {
         sessionId,
         transcript,
         sourceLang,
         targetLang,
-        isHistoryReplay: 'false',
+        isHistoryReplay: "false",
       },
     });
   }, [interruptedSession, router]);

@@ -1,5 +1,5 @@
-import { Stack } from 'expo-router';
-import React from 'react';
+import { Stack } from "expo-router";
+import React from "react";
 
 export default function LegalLayout(): React.JSX.Element {
   return (

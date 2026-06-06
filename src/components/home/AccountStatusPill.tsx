@@ -1,13 +1,13 @@
-import { useSelector } from '@legendapp/state/react';
-import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
-import React from 'react';
+import { useSelector } from "@legendapp/state/react";
+import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
+import React from "react";
 
-import { Box, Text, Pressable } from '@/components/ui';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
-import { auth$ } from '@/store';
+import { Box, Text, Pressable } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { auth$ } from "@/store";
 
 export function AccountStatusPill(): React.ReactElement {
   const { color } = useTheme();
@@ -25,8 +25,8 @@ export function AccountStatusPill(): React.ReactElement {
           paddingVertical: spacing.sm,
           borderRadius: borderRadius.full,
           borderWidth: 1,
-          alignItems: 'center',
-          justifyContent: 'center',
+          alignItems: "center",
+          justifyContent: "center",
           minWidth: 80,
           borderColor: color.warning,
           backgroundColor: color.card,
@@ -36,7 +36,7 @@ export function AccountStatusPill(): React.ReactElement {
           variant="bodySmall"
           style={{
             color: color.primary,
-            textTransform: 'uppercase',
+            textTransform: "uppercase",
           }}
         >
           PRO
@@ -49,7 +49,7 @@ export function AccountStatusPill(): React.ReactElement {
     <Pressable
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        router.push('/billing');
+        router.push("/billing");
       }}
       accessible
       accessibilityRole="button"
@@ -60,8 +60,8 @@ export function AccountStatusPill(): React.ReactElement {
           paddingVertical: spacing.sm,
           borderRadius: borderRadius.full,
           borderWidth: 1,
-          alignItems: 'center',
-          justifyContent: 'center',
+          alignItems: "center",
+          justifyContent: "center",
           minWidth: 80,
           backgroundColor: color.secondary,
           borderColor: color.secondary,

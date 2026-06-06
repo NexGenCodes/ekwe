@@ -19,7 +19,9 @@ export interface UseDictationStateReturn {
   error: string | null;
   setError: React.Dispatch<React.SetStateAction<string | null>>;
   abortControllerRef: React.MutableRefObject<AbortController | null>;
-  maxDurationTimeoutRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  maxDurationTimeoutRef: React.MutableRefObject<ReturnType<
+    typeof setTimeout
+  > | null>;
   sourceLangRef: React.MutableRefObject<string>;
   capturedUriRef: React.MutableRefObject<string | null>;
   capturedMeteringRef: React.MutableRefObject<number[]>;
@@ -89,4 +91,3 @@ export function useDictationState(): UseDictationStateReturn {
     stopDictationRef,
   } as const;
 }
-

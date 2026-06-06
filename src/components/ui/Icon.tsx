@@ -1,8 +1,8 @@
-import React, { forwardRef } from 'react';
-import type { View } from 'react-native';
+import React, { forwardRef } from "react";
+import type { View } from "react-native";
 
-import { iconSize, type IconSizeKey } from '@/constants/sizes';
-import { useTokens } from '@/hooks/ui/useTokens';
+import { iconSize, type IconSizeKey } from "@/constants/sizes";
+import { useTokens } from "@/hooks/ui/useTokens";
 
 export type IconProps = {
   icon: React.ComponentType<{
@@ -17,7 +17,7 @@ export type IconProps = {
 
 export const Icon = React.memo(
   forwardRef<View, IconProps>(
-    ({ icon: IconComponent, size = 'md', color, strokeWidth }, ref) => {
+    ({ icon: IconComponent, size = "md", color, strokeWidth }, ref) => {
       const { color: tokens } = useTokens();
 
       const iconColor = color ?? tokens.foreground;
@@ -34,4 +34,4 @@ export const Icon = React.memo(
   ),
 );
 
-Icon.displayName = 'Icon';
+Icon.displayName = "Icon";

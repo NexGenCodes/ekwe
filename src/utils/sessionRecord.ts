@@ -1,6 +1,6 @@
-import { mmkv as storage } from '@/services/mmkv';
+import { mmkv as storage } from "@/services/mmkv";
 
-const SESSION_KEY = 'interrupted_session';
+const SESSION_KEY = "interrupted_session";
 
 export interface InterruptedSession {
   sessionId: string;

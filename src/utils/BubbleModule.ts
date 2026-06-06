@@ -1,8 +1,8 @@
-import EkweNative from '../../modules/ekwe-native';
+import EkweNative from "../../modules/ekwe-native";
 
-import { EkweError } from '@/constants/errors';
-import { Result, ok, err } from '@/types/Result';
-import logger from '@/utils/logger';
+import { EkweError } from "@/constants/errors";
+import { Result, ok, err } from "@/types/Result";
+import logger from "@/utils/logger";
 
 interface SavedPosition {
   x: number;
@@ -14,7 +14,7 @@ export const BubbleNative = {
     try {
       return await EkweNative.hasOverlayPermission();
     } catch (e) {
-      logger.warn('[BubbleNative] hasOverlayPermission error:', e);
+      logger.warn("[BubbleNative] hasOverlayPermission error:", e);
       return false;
     }
   },
@@ -23,7 +23,7 @@ export const BubbleNative = {
     try {
       await EkweNative.requestOverlayPermission();
     } catch (e) {
-      logger.warn('[BubbleNative] requestOverlayPermission error:', e);
+      logger.warn("[BubbleNative] requestOverlayPermission error:", e);
     }
   },
 
@@ -43,7 +43,7 @@ export const BubbleNative = {
     try {
       await EkweNative.dismissBubble();
     } catch (e) {
-      logger.warn('[BubbleNative] dismissBubble error:', e);
+      logger.warn("[BubbleNative] dismissBubble error:", e);
     }
   },
 
@@ -51,7 +51,7 @@ export const BubbleNative = {
     try {
       await EkweNative.expandBubble();
     } catch (e) {
-      logger.warn('[BubbleNative] expandBubble error:', e);
+      logger.warn("[BubbleNative] expandBubble error:", e);
     }
   },
 
@@ -59,7 +59,7 @@ export const BubbleNative = {
     try {
       await EkweNative.collapseBubble();
     } catch (e) {
-      logger.warn('[BubbleNative] collapseBubble error:', e);
+      logger.warn("[BubbleNative] collapseBubble error:", e);
     }
   },
 
@@ -71,7 +71,7 @@ export const BubbleNative = {
       await EkweNative.showOverlay(audioPath, sourceApp);
       return ok(undefined);
     } catch (e) {
-      logger.warn('[BubbleNative] showOverlay error:', e);
+      logger.warn("[BubbleNative] showOverlay error:", e);
       return err(EkweError.PROCESSOR_FAIL);
     }
   },
@@ -80,7 +80,7 @@ export const BubbleNative = {
     try {
       await EkweNative.dismissOverlay();
     } catch (e) {
-      logger.warn('[BubbleNative] dismissOverlay error:', e);
+      logger.warn("[BubbleNative] dismissOverlay error:", e);
     }
   },
 
@@ -96,18 +96,18 @@ export const BubbleNative = {
     try {
       await EkweNative.savePosition(x, y);
     } catch (e) {
-      logger.warn('[BubbleNative] savePosition error:', e);
+      logger.warn("[BubbleNative] savePosition error:", e);
     }
   },
 
   async updateState(
-    mode: 'RECORD' | 'MAGIC' | 'IDLE',
+    mode: "RECORD" | "MAGIC" | "IDLE",
     data?: string,
   ): Promise<void> {
     try {
       await EkweNative.updateBubbleMode(mode, data);
     } catch (e) {
-      logger.warn('[BubbleNative] updateState error:', e);
+      logger.warn("[BubbleNative] updateState error:", e);
     }
   },
 
@@ -115,7 +115,7 @@ export const BubbleNative = {
     try {
       await EkweNative.requestMediaProjection();
     } catch (e) {
-      logger.warn('[BubbleNative] requestMediaProjection error:', e);
+      logger.warn("[BubbleNative] requestMediaProjection error:", e);
     }
   },
 
@@ -123,7 +123,7 @@ export const BubbleNative = {
     try {
       await EkweNative.stopAudioCapture();
     } catch (e) {
-      logger.warn('[BubbleNative] stopAudioCapture error:', e);
+      logger.warn("[BubbleNative] stopAudioCapture error:", e);
     }
   },
 
@@ -131,7 +131,7 @@ export const BubbleNative = {
     try {
       return await EkweNative.resolveContentUri(uri);
     } catch (e) {
-      logger.warn('[BubbleNative] resolveContentUri error:', e);
+      logger.warn("[BubbleNative] resolveContentUri error:", e);
       return null;
     }
   },
@@ -140,8 +140,8 @@ export const BubbleNative = {
     try {
       return await EkweNative.getWindowState();
     } catch (e) {
-      logger.warn('[BubbleNative] getWindowState error:', e);
-      return 'IDLE';
+      logger.warn("[BubbleNative] getWindowState error:", e);
+      return "IDLE";
     }
   },
 };

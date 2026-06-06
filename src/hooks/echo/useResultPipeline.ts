@@ -1,15 +1,14 @@
-import { useSelector } from '@legendapp/state/react';
-import { File as ExpoFile } from 'expo-file-system';
-import * as Haptics from 'expo-haptics';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useSelector } from "@legendapp/state/react";
+import { File as ExpoFile } from "expo-file-system";
+import * as Haptics from "expo-haptics";
+import { useState, useCallback, useEffect, useRef } from "react";
 
-import { useTranscription } from '../useTranscription';
-import { useTranslation } from '../useTranslation';
+import { useTranscription } from "../useTranscription";
+import { useTranslation } from "../useTranslation";
 
-import { HistoryService } from '@/services/HistoryService';
-import { SyncService } from '@/services/SyncService';
-import { settings$, auth$, HistoryEntry, history$ } from '@/store';
-import { AppToast, logger } from '@/utils';
+import { HistoryService } from "@/services/HistoryService";
+import { settings$, auth$, HistoryEntry, history$ } from "@/store";
+import { AppToast, logger } from "@/utils";
 
 export interface UseResultPipelineProps {
   uri?: string;
@@ -36,7 +35,7 @@ export interface UseResultPipelineReturn {
 export const useResultPipeline = ({
   uri,
   entryId,
-  initialTranscript = '',
+  initialTranscript = "",
   initialSourceLang,
   initialTargetLang,
   isHistoryReplay = false,
@@ -62,10 +61,10 @@ export const useResultPipeline = ({
     foundEntry?.translation || null,
   );
   const [sourceLang] = useState(
-    foundEntry?.sourceLang || initialSourceLang || defaultSourceLang || 'en',
+    foundEntry?.sourceLang || initialSourceLang || defaultSourceLang || "en",
   );
   const [targetLang] = useState(
-    foundEntry?.targetLang || initialTargetLang || defaultTargetLang || 'es',
+    foundEntry?.targetLang || initialTargetLang || defaultTargetLang || "es",
   );
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -119,8 +118,8 @@ export const useResultPipeline = ({
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setHasPolished(true);
       } catch (err) {
-        AppToast.error('Translation failed', {
-          description: err instanceof Error ? err.message : 'Unknown error',
+        AppToast.error("Translation failed", {
+          description: err instanceof Error ? err.message : "Unknown error",
         });
       } finally {
         setIsProcessing(false);
@@ -148,8 +147,8 @@ export const useResultPipeline = ({
             translation: null,
             transliteration: null,
             duration: durationRef.current,
-            sourceApp: sourceApp || 'shared',
-            provider: 'gemini',
+            sourceApp: sourceApp || "shared",
+            provider: "gemini",
             sessionKey: uri,
           },
           userSessionRef.current as Parameters<
@@ -157,7 +156,7 @@ export const useResultPipeline = ({
           >[1],
         ).catch((e) =>
           logger.error(
-            'Failed to save shared audio transcription on unmount',
+            "Failed to save shared audio transcription on unmount",
             e,
           ),
         );
@@ -193,16 +192,16 @@ export const useResultPipeline = ({
             translation: val.translation,
             transliteration: val.transliteration ?? null,
             duration: durationRef.current,
-            sourceApp: sourceApp || 'shared',
-            provider: 'gemini',
+            sourceApp: sourceApp || "shared",
+            provider: "gemini",
             sessionKey: uri,
           },
           userSession as Parameters<typeof HistoryService.recordTranslation>[1],
         );
       }
     } catch {
-      AppToast.error('Translation Failed', {
-        description: 'Try again in a moment.',
+      AppToast.error("Translation Failed", {
+        description: "Try again in a moment.",
       });
     } finally {
       setIsTranslating(false);

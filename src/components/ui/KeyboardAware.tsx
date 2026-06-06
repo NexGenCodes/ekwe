@@ -1,9 +1,10 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef } from "react";
 import {
   KeyboardAvoidingView,
   type KeyboardAvoidingViewProps,
-} from 'react-native';
-import { isIOS } from '@/utils';
+} from "react-native";
+
+import { isIOS } from "@/utils";
 
 export type KeyboardAwareProps = KeyboardAvoidingViewProps;
 
@@ -12,7 +13,7 @@ export const KeyboardAware = React.memo(
     ({ behavior, style, ...props }, ref) => (
       <KeyboardAvoidingView
         ref={ref}
-        behavior={(behavior ?? isIOS) ? 'padding' : undefined}
+        behavior={(behavior ?? isIOS) ? "padding" : undefined}
         style={[{ flex: 1 }, style]}
         {...props}
       />
@@ -20,4 +21,4 @@ export const KeyboardAware = React.memo(
   ),
 );
 
-KeyboardAware.displayName = 'KeyboardAware';
+KeyboardAware.displayName = "KeyboardAware";

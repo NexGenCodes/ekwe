@@ -1,7 +1,7 @@
-import { File as ExpoFile } from 'expo-file-system';
+import { File as ExpoFile } from "expo-file-system";
 
-import { EkweError } from '@/constants/errors';
-import { Result, ok, err } from '@/types/Result';
+import { EkweError } from "@/constants/errors";
+import { Result, ok, err } from "@/types/Result";
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB in bytes
 

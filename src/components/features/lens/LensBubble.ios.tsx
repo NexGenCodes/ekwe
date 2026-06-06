@@ -1,17 +1,17 @@
-import { useSelector } from '@legendapp/state/react';
-import React, { useEffect, useMemo } from 'react';
+import { useSelector } from "@legendapp/state/react";
+import { Mic } from "lucide-react-native";
+import React, { useEffect, useMemo } from "react";
 import Animated, {
   useAnimatedStyle,
   withSpring,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { Mic } from 'lucide-react-native';
-import { Text } from '@/components/ui';
-import { bubbleColors } from '@/constants/colors';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useMetering, useTheme } from '@/hooks';
-import { audio$, audioActions, settings$, RecordingState } from '@/store';
+import { Text } from "@/components/ui";
+import { bubbleColors } from "@/constants/colors";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useMetering, useTheme } from "@/hooks";
+import { audio$, audioActions, settings$, RecordingState } from "@/store";
 
 // Live Activity management — expo-widgets
 const updateLiveActivity = (_state: RecordingState): void => {
@@ -78,15 +78,15 @@ export function LensBubble(): React.ReactElement | null {
   const stateLabel = useMemo(() => {
     switch (recordingState) {
       case RecordingState.Recording:
-        return 'Recording';
+        return "Recording";
       case RecordingState.Processing:
-        return 'Processing';
+        return "Processing";
       case RecordingState.Done:
-        return 'Done';
+        return "Done";
       case RecordingState.Error:
-        return 'Error';
+        return "Error";
       default:
-        return 'Ekwe ready';
+        return "Ekwe ready";
     }
   }, [recordingState]);
 
@@ -96,12 +96,12 @@ export function LensBubble(): React.ReactElement | null {
     <Animated.View
       style={[
         {
-          position: 'absolute',
-          top: spacing['5xl'],
-          alignSelf: 'center',
+          position: "absolute",
+          top: spacing["5xl"],
+          alignSelf: "center",
           borderRadius: borderRadius.full,
-          flexDirection: 'row',
-          alignItems: 'center',
+          flexDirection: "row",
+          alignItems: "center",
           gap: spacing.sm,
           paddingHorizontal: spacing.md,
           paddingVertical: spacing.xs,
@@ -114,7 +114,7 @@ export function LensBubble(): React.ReactElement | null {
       <Text
         variant="caption"
         style={{
-          textTransform: 'uppercase',
+          textTransform: "uppercase",
           color: onPrimaryColor,
         }}
       >

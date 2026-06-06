@@ -1,12 +1,12 @@
-import { useRouter } from 'expo-router';
-import { ChevronLeft } from 'lucide-react-native';
-import React from 'react';
-import { KeyboardAvoidingView } from 'react-native';
+import { useRouter } from "expo-router";
+import { ChevronLeft } from "lucide-react-native";
+import React from "react";
+import { KeyboardAvoidingView } from "react-native";
 
-import { Text, Pressable, SafeArea, ScrollArea } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
-import { isIOS } from '@/utils';
+import { Text, Pressable, SafeArea, ScrollArea } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { isIOS } from "@/utils";
 
 export interface AuthShellProps {
   showBackButton?: boolean;
@@ -28,8 +28,8 @@ export const AuthShell = ({
           style={{
             paddingHorizontal: spacing.lg,
             paddingVertical: spacing.md,
-            flexDirection: 'row',
-            alignItems: 'center',
+            flexDirection: "row",
+            alignItems: "center",
             gap: spacing.xs,
           }}
           hitSlop={12}
@@ -48,7 +48,7 @@ export const AuthShell = ({
         <ScrollArea
           contentContainerStyle={{
             flexGrow: 1,
-            justifyContent: 'center',
+            justifyContent: "center",
             padding: spacing.xl,
           }}
           keyboardShouldPersistTaps="handled"

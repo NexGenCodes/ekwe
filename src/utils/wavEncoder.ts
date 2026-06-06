@@ -18,11 +18,11 @@ export function encodeWav(buffer: WavAudioData): Uint8Array {
   const wav = new Uint8Array(totalLength);
   const view = new DataView(wav.buffer);
 
-  writeStr(view, 0, 'RIFF');
+  writeStr(view, 0, "RIFF");
   view.setUint32(4, totalLength - 8, true);
-  writeStr(view, 8, 'WAVE');
+  writeStr(view, 8, "WAVE");
 
-  writeStr(view, 12, 'fmt ');
+  writeStr(view, 12, "fmt ");
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
   view.setUint16(22, numChannels, true);
@@ -31,7 +31,7 @@ export function encodeWav(buffer: WavAudioData): Uint8Array {
   view.setUint16(32, numChannels * bytesPerSample, true);
   view.setUint16(34, bitsPerSample, true);
 
-  writeStr(view, 36, 'data');
+  writeStr(view, 36, "data");
   view.setUint32(40, dataLength, true);
 
   let offset = 44;
@@ -39,7 +39,11 @@ export function encodeWav(buffer: WavAudioData): Uint8Array {
     for (let ch = 0; ch < numChannels; ch++) {
       const sample = buffer.getChannelData(ch)[i];
       const clamped = Math.max(-1, Math.min(1, sample));
-      view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+      view.setInt16(
+        offset,
+        clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff,
+        true,
+      );
       offset += 2;
     }
   }

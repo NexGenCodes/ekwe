@@ -1,8 +1,8 @@
-import React from 'react';
-import Svg, { Path, Ellipse, Rect } from 'react-native-svg';
+import React from "react";
+import Svg, { Path, Ellipse, Rect } from "react-native-svg";
 
-import { useTheme } from '@/hooks';
-import { iconSize } from '@/constants/sizes';
+import { iconSize } from "@/constants/sizes";
+import { useTheme } from "@/hooks";
 
 export interface EkweLogoProps {
   /** Width & height in dp. Defaults to 48. */

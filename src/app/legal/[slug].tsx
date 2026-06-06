@@ -1,19 +1,19 @@
-import { useLocalSearchParams, Stack } from 'expo-router';
-import React from 'react';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useLocalSearchParams, Stack } from "expo-router";
+import React from "react";
+import Animated, { FadeInDown } from "react-native-reanimated";
 
-import { Box, Text, ScrollArea } from '@/components/ui';
-import { LEGAL_DOCUMENTS } from '@/constants/legal';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { typography } from '@/constants/typography';
-import { useTheme } from '@/hooks';
+import { Box, Text, ScrollArea } from "@/components/ui";
+import { LEGAL_DOCUMENTS } from "@/constants/legal";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { typography } from "@/constants/typography";
+import { useTheme } from "@/hooks";
 
 export default function LegalScreen(): React.JSX.Element {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const { color } = useTheme();
 
-  const doc = LEGAL_DOCUMENTS[slug || ''];
+  const doc = LEGAL_DOCUMENTS[slug || ""];
 
   const Container = Box;
   const containerProps = {
@@ -49,7 +49,7 @@ export default function LegalScreen(): React.JSX.Element {
           headerTitleStyle: {
             fontFamily: typography.heading2.fontFamily,
             fontSize: 24,
-            fontWeight: '400',
+            fontWeight: "400",
             color: color.foreground,
           },
           headerTintColor: color.primary,
@@ -114,12 +114,12 @@ const styles = {
   } as const,
   scrollContent: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing['3xl'],
+    paddingBottom: spacing["3xl"],
     paddingTop: spacing.md,
   } as const,
   lastUpdated: {
     marginBottom: spacing.lg,
-    textAlign: 'center',
+    textAlign: "center",
   } as const,
   sectionCard: {
     borderRadius: borderRadius.xl,
@@ -133,13 +133,13 @@ const styles = {
   sectionBody: {} as const,
   footer: {
     paddingVertical: spacing.lg,
-    alignItems: 'center',
+    alignItems: "center",
   } as const,
   footerText: {} as const,
   emptyState: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   } as const,
   emptyText: {} as const,
 };

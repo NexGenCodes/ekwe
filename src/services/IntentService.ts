@@ -1,13 +1,13 @@
-import { Linking } from 'react-native';
-import { isAndroid } from '@/utils';
+import { Linking } from "react-native";
 
-import EkweNative from '../../modules/ekwe-native';
+import EkweNative from "../../modules/ekwe-native";
 
-import logger from '@/utils/logger';
+import { isAndroid } from "@/utils";
+import logger from "@/utils/logger";
 
 export const IntentService = {
   resolveToFileUri: async (rawUri: string): Promise<string | null> => {
-    if (isAndroid && rawUri.startsWith('content://')) {
+    if (isAndroid && rawUri.startsWith("content://")) {
       return EkweNative.resolveContentUri(rawUri);
     }
     return rawUri;
@@ -19,17 +19,17 @@ export const IntentService = {
     }
   },
 
-  updateBubbleMode: (mode: 'IDLE' | 'MAGIC' | 'RECORD'): void => {
+  updateBubbleMode: (mode: "IDLE" | "MAGIC" | "RECORD"): void => {
     try {
       EkweNative?.updateBubbleMode?.(mode);
     } catch (err) {
-      logger.warn('[IntentService] updateBubbleMode failed', err);
+      logger.warn("[IntentService] updateBubbleMode failed", err);
     }
   },
 
   dismissAndRedirect: (): void => {
     EkweNative.dismissEcho();
-    Linking.openURL('ekwe://');
+    Linking.openURL("ekwe://");
   },
 
   dismissEcho: (): void => {

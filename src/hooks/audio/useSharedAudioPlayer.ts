@@ -1,13 +1,9 @@
-import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  useAudioPlayer,
-  useAudioPlayerStatus,
-  setIsAudioActiveAsync,
-} from 'expo-audio';
-import { useSharedValue, SharedValue } from 'react-native-reanimated';
+import { useAudioPlayer, setIsAudioActiveAsync } from "expo-audio";
+import * as Haptics from "expo-haptics";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSharedValue, SharedValue } from "react-native-reanimated";
 
-import logger from '@/utils/logger';
+import logger from "@/utils/logger";
 
 export const preWarmAudioEngine = (): void => {};
 
@@ -32,12 +28,11 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
   const [duration, setDuration] = useState(0);
   const [isDecoding, setIsDecoding] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [realWaveform, setRealWaveform] = useState<number[]>([]);
+  const [realWaveform] = useState<number[]>([]);
 
   const isPlayingRef = useRef(false);
 
   const player = useAudioPlayer(uri);
-  const status = useAudioPlayerStatus(player);
 
   useEffect(() => {
     isPlayingRef.current = player.playing;
@@ -49,7 +44,13 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
     setProgress(player.currentTime);
     progressSV.value = player.currentTime;
     setIsDecoding(player.isBuffering);
-  }, [player.isLoaded, player.duration, player.currentTime, player.isBuffering, progressSV]);
+  }, [
+    player.isLoaded,
+    player.duration,
+    player.currentTime,
+    player.isBuffering,
+    progressSV,
+  ]);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -90,7 +91,7 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
     } else {
       stopProgressTimer();
     }
-    return () => stopProgressTimer();
+    return (): void => stopProgressTimer();
   }, [player.playing, startProgressTimer, stopProgressTimer]);
 
   const play = useCallback(async (): Promise<void> => {
@@ -99,7 +100,7 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
       player.play();
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error) {
-      logger.error('[SharedAudioPlayer] Play failed:', error);
+      logger.error("[SharedAudioPlayer] Play failed:", error);
     }
   }, [player]);
 
@@ -108,12 +109,15 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
     setIsAudioActiveAsync(false).catch(() => {});
   }, [player]);
 
-  const seek = useCallback(async (seconds: number): Promise<void> => {
-    const clampedPos = Math.max(0, Math.min(seconds, player.duration));
-    player.seekTo(clampedPos);
-    progressSV.value = clampedPos;
-    setProgress(clampedPos);
-  }, [player, progressSV]);
+  const seek = useCallback(
+    async (seconds: number): Promise<void> => {
+      const clampedPos = Math.max(0, Math.min(seconds, player.duration));
+      player.seekTo(clampedPos);
+      progressSV.value = clampedPos;
+      setProgress(clampedPos);
+    },
+    [player, progressSV],
+  );
 
   const cleanup = useCallback((): void => {
     stopProgressTimer();

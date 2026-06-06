@@ -1,21 +1,21 @@
-import { useSelector } from '@legendapp/state/react';
-import { BlurView } from 'expo-blur';
-import { AlertCircle, CheckCircle, Info, Trash2 } from 'lucide-react-native';
-import React from 'react';
-import { Modal, useWindowDimensions } from 'react-native';
+import { useSelector } from "@legendapp/state/react";
+import { BlurView } from "expo-blur";
+import { AlertCircle, CheckCircle, Info, Trash2 } from "lucide-react-native";
+import React from "react";
+import { Modal, useWindowDimensions } from "react-native";
 import Animated, {
   FadeIn,
   FadeOut,
   ZoomIn,
   ZoomOut,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { Box, Pressable, Text } from '@/components/ui';
-import { shadows, duration } from '@/constants';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
-import { appAlert$, appAlertActions } from '@/store';
+import { Box, Pressable, Text } from "@/components/ui";
+import { shadows, duration } from "@/constants";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { appAlert$, appAlertActions } from "@/store";
 
 const ICON_MAP = {
   info: Info,
@@ -35,9 +35,9 @@ export function AppAlertModal(): React.JSX.Element | null {
   // Render the correct icon based on type
   const IconComponent = ICON_MAP[type] || Info;
   const iconColor =
-    type === 'error' || type === 'confirm'
+    type === "error" || type === "confirm"
       ? color.error
-      : type === 'success'
+      : type === "success"
         ? color.secondary
         : color.secondary;
 
@@ -66,23 +66,23 @@ export function AppAlertModal(): React.JSX.Element | null {
       <Animated.View
         style={{
           flex: 1,
-          alignItems: 'center',
-          justifyContent: 'center',
+          alignItems: "center",
+          justifyContent: "center",
           backgroundColor: color.overlay,
         }}
         entering={FadeIn.duration(duration.normal)}
         exiting={FadeOut.duration(duration.normal)}
       >
         <Pressable
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
           onPress={handleClose}
           accessible={false}
           feedback="none"
         />
         <BlurView
           intensity={isDark ? 20 : 10}
-          tint={isDark ? 'dark' : 'light'}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          tint={isDark ? "dark" : "light"}
+          style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
         />
 
         <Animated.View
@@ -90,7 +90,7 @@ export function AppAlertModal(): React.JSX.Element | null {
           exiting={ZoomOut.duration(duration.normal)}
           style={[
             {
-              borderRadius: borderRadius['2xl'],
+              borderRadius: borderRadius["2xl"],
               padding: spacing.lg,
               borderWidth: 1,
               ...shadows.softLg,
@@ -102,15 +102,15 @@ export function AppAlertModal(): React.JSX.Element | null {
             },
           ]}
         >
-          <Box style={{ alignItems: 'center', marginBottom: spacing.lg }}>
+          <Box style={{ alignItems: "center", marginBottom: spacing.lg }}>
             <Box
               style={[
                 {
                   width: 56,
                   height: 56,
-                  borderRadius: borderRadius['2xl'],
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  borderRadius: borderRadius["2xl"],
+                  alignItems: "center",
+                  justifyContent: "center",
                   marginBottom: spacing.md,
                 },
                 { backgroundColor: isDark ? color.border : color.background },
@@ -120,14 +120,14 @@ export function AppAlertModal(): React.JSX.Element | null {
             </Box>
             <Text
               variant="heading3"
-              style={{ textAlign: 'center', marginBottom: spacing.sm }}
+              style={{ textAlign: "center", marginBottom: spacing.sm }}
             >
               {title}
             </Text>
             {message && (
               <Text
                 variant="body"
-                style={{ textAlign: 'center', color: color.muted }}
+                style={{ textAlign: "center", color: color.muted }}
               >
                 {message}
               </Text>
@@ -136,13 +136,13 @@ export function AppAlertModal(): React.JSX.Element | null {
 
           <Box
             style={[
-              { flexDirection: 'column', gap: spacing.md },
-              buttons?.length === 2 && { flexDirection: 'row' },
+              { flexDirection: "column", gap: spacing.md },
+              buttons?.length === 2 && { flexDirection: "row" },
             ]}
           >
             {buttons?.map((btn, idx) => {
-              const isDestructive = btn.style === 'destructive';
-              const isCancel = btn.style === 'cancel';
+              const isDestructive = btn.style === "destructive";
+              const isCancel = btn.style === "cancel";
               const isPrimary = !isDestructive && !isCancel;
 
               return (
@@ -152,14 +152,14 @@ export function AppAlertModal(): React.JSX.Element | null {
                     {
                       height: 48,
                       borderRadius: borderRadius.xl,
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      alignItems: "center",
+                      justifyContent: "center",
                       paddingHorizontal: spacing.md,
                     },
                     isPrimary && { backgroundColor: color.secondary },
                     isDestructive && { backgroundColor: color.error },
                     isCancel && {
-                      backgroundColor: 'transparent',
+                      backgroundColor: "transparent",
                       borderWidth: 1,
                       borderColor: color.border,
                     },

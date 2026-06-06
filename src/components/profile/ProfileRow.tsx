@@ -1,12 +1,12 @@
-import { Image as ExpoImage } from 'expo-image';
-import { ChevronRight, LucideIcon } from 'lucide-react-native';
-import React from 'react';
+import { Image as ExpoImage } from "expo-image";
+import { ChevronRight, LucideIcon } from "lucide-react-native";
+import React from "react";
 
-import { Box, Text, Pressable } from '@/components/ui';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
-import { isIOS } from '@/utils';
+import { Box, Text, Pressable } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { isIOS } from "@/utils";
 
 export interface ProfileRowProps {
   icon: LucideIcon;
@@ -40,9 +40,9 @@ export function ProfileRow({
       style={({ pressed }) => [
         {
           padding: spacing.lg,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
         },
         hasDivider && {
           borderBottomColor: color.border,
@@ -52,14 +52,14 @@ export function ProfileRow({
       ]}
       accessibilityLabel={subtitle ? `${title}, ${subtitle}` : title}
     >
-      <Box style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+      <Box style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
         <Box
           style={{
             width: 44,
             height: 44,
-            borderRadius: borderRadius['2xl'],
-            alignItems: 'center',
-            justifyContent: 'center',
+            borderRadius: borderRadius["2xl"],
+            alignItems: "center",
+            justifyContent: "center",
             backgroundColor: bgTint,
           }}
         >

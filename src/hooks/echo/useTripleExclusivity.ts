@@ -1,11 +1,11 @@
-import { useEventListener } from 'expo';
-import { useEffect } from 'react';
+import { useEventListener } from "expo";
+import { useEffect } from "react";
 
-import EkweNative from '../../../modules/ekwe-native';
-import { FloatingState } from '../../../modules/ekwe-native/src/EkweNative.types';
+import EkweNative from "../../../modules/ekwe-native";
+import { FloatingState } from "../../../modules/ekwe-native/src/EkweNative.types";
 
-import { audioActions } from '@/store';
-import logger from '@/utils/logger';
+import { audioActions } from "@/store";
+import logger from "@/utils/logger";
 
 /**
  * Ensures that the Main App, Ekwe Lens (Bubble), and Ekwe Echo (Share) are mutually exclusive.
@@ -20,27 +20,27 @@ export const useTripleExclusivity = (): void => {
   // NATIVE EVENT BRIDGE: Listen for service lifecycle changes from Kotlin
   useEventListener(
     EkweNative,
-    'onStateChanged',
+    "onStateChanged",
     (event: {
       state: FloatingState;
       previousState: FloatingState;
       reason?: string;
     }) => {
       logger.info(
-        `[Exclusivity] Native event: ${event.previousState} -> ${event.state} (${event.reason ?? 'no reason'})`,
+        `[Exclusivity] Native event: ${event.previousState} -> ${event.state} (${event.reason ?? "no reason"})`,
       );
 
       switch (event.state) {
-        case 'IDLE':
-        case 'HIDDEN_IDLE':
-          setActiveFloatingHead('none');
+        case "IDLE":
+        case "HIDDEN_IDLE":
+          setActiveFloatingHead("none");
           break;
-        case 'BUBBLE_VISIBLE':
-        case 'BUBBLE_EXPANDED':
-          setActiveFloatingHead('bubble');
+        case "BUBBLE_VISIBLE":
+        case "BUBBLE_EXPANDED":
+          setActiveFloatingHead("bubble");
           break;
-        case 'OVERLAY_ACTIVE':
-          setActiveFloatingHead('card');
+        case "OVERLAY_ACTIVE":
+          setActiveFloatingHead("card");
           break;
         default:
           logger.warn(
@@ -50,18 +50,18 @@ export const useTripleExclusivity = (): void => {
     },
   );
 
-  useEventListener(EkweNative, 'onAppForeground', (): void => {
-    logger.info('[Exclusivity] App foregrounded (Native sync)');
+  useEventListener(EkweNative, "onAppForeground", (): void => {
+    logger.info("[Exclusivity] App foregrounded (Native sync)");
     // Native module auto-removes the bubble if it was visible
   });
 
-  useEventListener(EkweNative, 'onAppBackground', (): void => {
-    logger.info('[Exclusivity] App backgrounded (Native sync)');
+  useEventListener(EkweNative, "onAppBackground", (): void => {
+    logger.info("[Exclusivity] App backgrounded (Native sync)");
   });
 
   useEventListener(
     EkweNative,
-    'onIntentQueued',
+    "onIntentQueued",
     (event: { audioPath: string; sourceApp: string }): void => {
       logger.info(
         `[Exclusivity] Intent queued while active: ${event.audioPath} from ${event.sourceApp}`,
@@ -73,18 +73,18 @@ export const useTripleExclusivity = (): void => {
   // INITIAL STATE SYNC: On startup, ensure we start with an accurate view of native state
   useEffect(() => {
     EkweNative.getWindowState().then((state: string): void => {
-      logger.info('[Exclusivity] Startup Sync: current native state =', state);
+      logger.info("[Exclusivity] Startup Sync: current native state =", state);
       switch (state) {
-        case 'IDLE':
-        case 'HIDDEN_IDLE':
-          setActiveFloatingHead('none');
+        case "IDLE":
+        case "HIDDEN_IDLE":
+          setActiveFloatingHead("none");
           break;
-        case 'BUBBLE_VISIBLE':
-        case 'BUBBLE_EXPANDED':
-          setActiveFloatingHead('bubble');
+        case "BUBBLE_VISIBLE":
+        case "BUBBLE_EXPANDED":
+          setActiveFloatingHead("bubble");
           break;
-        case 'OVERLAY_ACTIVE':
-          setActiveFloatingHead('card');
+        case "OVERLAY_ACTIVE":
+          setActiveFloatingHead("card");
           break;
         default:
           logger.warn(

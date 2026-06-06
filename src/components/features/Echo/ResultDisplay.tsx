@@ -1,19 +1,19 @@
-import * as Haptics from 'expo-haptics';
-import React, { useState } from 'react';
+import * as Haptics from "expo-haptics";
+import React, { useState } from "react";
 
-import { ScrollableTextBox } from '../../ScrollableTextBox';
+import { ScrollableTextBox } from "../../ScrollableTextBox";
 
-import { Box, Text, Pressable } from '@/components/ui';
-import { FLAG_MAP } from '@/constants/languages';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text, Pressable } from "@/components/ui";
+import { FLAG_MAP } from "@/constants/languages";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 interface ResultDisplayProps {
   transcription: string | null;
   translation: string | null;
-  defaultTab?: 'Translation' | 'Transcription';
-  onTabChange?: (tab: 'Translation' | 'Transcription') => void;
+  defaultTab?: "Translation" | "Transcription";
+  onTabChange?: (tab: "Translation" | "Transcription") => void;
   isDark?: boolean;
   sourceLang?: string | null;
   targetLang?: string | null;
@@ -31,14 +31,14 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
   ({
     transcription,
     translation,
-    defaultTab = 'Translation',
+    defaultTab = "Translation",
     onTabChange,
     isDark = false,
     sourceLang,
     targetLang,
     isLoading = false,
   }) => {
-    const [activeTab, setActiveTab] = useState<'Translation' | 'Transcription'>(
+    const [activeTab, setActiveTab] = useState<"Translation" | "Transcription">(
       defaultTab,
     );
 
@@ -46,7 +46,7 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
     const brandPrimary = color.secondary;
 
     const handleTabPress = React.useCallback(
-      (tab: 'Translation' | 'Transcription'): void => {
+      (tab: "Translation" | "Transcription"): void => {
         Haptics.selectionAsync();
         setActiveTab(tab);
         onTabChange?.(tab);
@@ -58,15 +58,15 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
       <Box>
         <Box
           style={{
-            flexDirection: 'row',
-            alignItems: 'stretch',
-            justifyContent: 'space-between',
+            flexDirection: "row",
+            alignItems: "stretch",
+            justifyContent: "space-between",
             marginBottom: spacing.md,
           }}
         >
           <Box
             style={{
-              flexDirection: 'row',
+              flexDirection: "row",
               borderRadius: borderRadius.xl,
               padding: spacing.xs,
               flex: 1,
@@ -77,15 +77,15 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
           >
             <Pressable
               feedback="none"
-              onPress={() => handleTabPress('Translation')}
+              onPress={() => handleTabPress("Translation")}
               style={[
                 {
                   flex: 1,
                   paddingVertical: spacing.md,
                   borderRadius: borderRadius.lg,
-                  alignItems: 'center',
+                  alignItems: "center",
                 },
-                activeTab === 'Translation' && {
+                activeTab === "Translation" && {
                   backgroundColor: brandPrimary,
                 },
               ]}
@@ -94,29 +94,29 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
                 variant="bodySmall"
                 style={{
                   color:
-                    activeTab === 'Translation'
+                    activeTab === "Translation"
                       ? color.onSecondary
                       : color.muted,
                 }}
               >
                 Translated (
                 {targetLang
-                  ? `${FLAG_MAP[targetLang] || ''} ${targetLang.toUpperCase()}`
-                  : ''}
+                  ? `${FLAG_MAP[targetLang] || ""} ${targetLang.toUpperCase()}`
+                  : ""}
                 )
               </Text>
             </Pressable>
             <Pressable
               feedback="none"
-              onPress={() => handleTabPress('Transcription')}
+              onPress={() => handleTabPress("Transcription")}
               style={[
                 {
                   flex: 1,
                   paddingVertical: spacing.md,
                   borderRadius: borderRadius.lg,
-                  alignItems: 'center',
+                  alignItems: "center",
                 },
-                activeTab === 'Transcription' && {
+                activeTab === "Transcription" && {
                   backgroundColor: brandPrimary,
                 },
               ]}
@@ -125,15 +125,15 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
                 variant="bodySmall"
                 style={{
                   color:
-                    activeTab === 'Transcription'
+                    activeTab === "Transcription"
                       ? color.onSecondary
                       : color.muted,
                 }}
               >
                 Original (
                 {sourceLang
-                  ? `${FLAG_MAP[sourceLang] || ''} ${sourceLang.toUpperCase()}`
-                  : ''}
+                  ? `${FLAG_MAP[sourceLang] || ""} ${sourceLang.toUpperCase()}`
+                  : ""}
                 )
               </Text>
             </Pressable>
@@ -141,10 +141,10 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
         </Box>
 
         <ScrollableTextBox
-          text={activeTab === 'Translation' ? translation : transcription}
+          text={activeTab === "Translation" ? translation : transcription}
           height={350}
           variant="default"
-          isLoading={isLoading && activeTab === 'Translation'}
+          isLoading={isLoading && activeTab === "Translation"}
         />
       </Box>
     );

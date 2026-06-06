@@ -1,11 +1,11 @@
-import React from 'react';
-import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
+import React from "react";
+import Animated, { FadeInDown, FadeOutUp } from "react-native-reanimated";
 
-import { Text } from '@/components/ui';
-import { palette } from '@/constants/colors';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Text } from "@/components/ui";
+import { palette } from "@/constants/colors";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 interface LensCardProps {
   transcript: string;
@@ -21,7 +21,7 @@ export function LensCard({ transcript }: LensCardProps): React.ReactElement {
       style={[
         {
           padding: spacing.lg,
-          borderRadius: borderRadius['2xl'],
+          borderRadius: borderRadius["2xl"],
           borderWidth: 1,
           shadowColor: palette.neutral950,
           shadowOffset: { width: 0, height: 10 },

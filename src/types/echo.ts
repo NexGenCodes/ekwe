@@ -1,11 +1,11 @@
 export type EchoStep =
-  | 'PickLanguage'
-  | 'Config'
-  | 'Transcribing'
-  | 'TranscribeResult'
-  | 'Translating'
-  | 'FullResult'
-  | 'Error';
+  | "PickLanguage"
+  | "Config"
+  | "Transcribing"
+  | "TranscribeResult"
+  | "Translating"
+  | "FullResult"
+  | "Error";
 
 export interface SharedFile {
   value: string;
@@ -39,7 +39,7 @@ export interface UseEchoFlowResult {
   audioUri: string | undefined;
   sourceApp: string;
   isResolving: boolean;
-  themePreference: 'light' | 'dark' | 'system' | null;
+  themePreference: "light" | "dark" | "system" | null;
   handleTranscribe: (
     durationSeconds: number,
     waveform: number[],

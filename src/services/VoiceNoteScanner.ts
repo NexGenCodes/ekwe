@@ -1,5 +1,6 @@
-import * as MediaLibrary from 'expo-media-library';
-import { isAndroid } from '@/utils';
+import * as MediaLibrary from "expo-media-library";
+
+import { isAndroid } from "@/utils";
 
 export interface RecentVoiceNote {
   uri: string;
@@ -19,13 +20,13 @@ export const VoiceNoteScanner = {
     if (!isAndroid) return null;
 
     const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status !== 'granted') return null;
+    if (status !== "granted") return null;
 
     // We search for all audio files
     const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
 
     const assets = await MediaLibrary.getAssetsAsync({
-      mediaType: 'audio',
+      mediaType: "audio",
       sortBy: [[MediaLibrary.SortBy.creationTime, false]], // Newest first
       first: 20, // Check first 20 recent files
     });
@@ -39,11 +40,11 @@ export const VoiceNoteScanner = {
       // WhatsApp voice notes usually have 'WhatsApp' in path or filename starts with 'PTT'
       // Telegram usually has 'Telegram' in path
       const isWhatsApp =
-        packageName === 'com.whatsapp' &&
-        (uri.includes('WhatsApp') || asset.filename.startsWith('PTT'));
+        packageName === "com.whatsapp" &&
+        (uri.includes("WhatsApp") || asset.filename.startsWith("PTT"));
 
       const isTelegram =
-        packageName === 'org.telegram.messenger' && uri.includes('Telegram');
+        packageName === "org.telegram.messenger" && uri.includes("Telegram");
 
       if (isWhatsApp || isTelegram) {
         return {

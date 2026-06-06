@@ -9,7 +9,6 @@ import { LanguageDropdown } from "./LanguageDropdown";
 import { LanguagePill } from "./LanguagePill";
 import { SwapButton } from "./SwapButton";
 
-import { Box } from "@/components/ui";
 import { PLAN_LIMITS } from "@/constants/billing";
 import { borderRadius, zIndex } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";

@@ -1,13 +1,13 @@
-import { observable } from '@legendapp/state';
-import { persistObservable } from '@legendapp/state/persist';
+import { observable } from "@legendapp/state";
+import { persistObservable } from "@legendapp/state/persist";
 
-import { ObservablePersistMMKV } from '@/store/mmkvPlugin';
-import { detectDeviceCurrency } from '@/constants/currency';
+import { detectDeviceCurrency } from "@/constants/currency";
+import { ObservablePersistMMKV } from "@/store/mmkvPlugin";
 
 export enum ThemePreference {
-  Light = 'light',
-  Dark = 'dark',
-  System = 'system',
+  Light = "light",
+  Dark = "dark",
+  System = "system",
 }
 
 export interface SettingsState {
@@ -31,8 +31,8 @@ const initialSettings: SettingsState = {
   bubbleEnabled: false,
   themePreference: ThemePreference.System,
   retentionDays: 7,
-  selectedLanguages: ['en', 'es', 'it', 'de', 'zh'],
-  targetLanguage: 'en',
+  selectedLanguages: ["en", "es", "it", "de", "zh"],
+  targetLanguage: "en",
   pinnedLanguages: [],
   autoRaiseVolume: true,
   forceSpeakerMode: true,
@@ -48,7 +48,7 @@ export const settings$ = observable<SettingsState>(initialSettings);
 
 // Persist settings to MMKV
 persistObservable(settings$, {
-  local: 'ekwe-settings',
+  local: "ekwe-settings",
   pluginLocal: ObservablePersistMMKV,
 });
 // Actions

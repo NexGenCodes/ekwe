@@ -1,18 +1,18 @@
-import * as Haptics from 'expo-haptics';
-import { ArrowRightLeft } from 'lucide-react-native';
-import React from 'react';
+import * as Haptics from "expo-haptics";
+import { ArrowRightLeft } from "lucide-react-native";
+import React from "react";
 import Animated, {
   useAnimatedStyle,
   withTiming,
   SharedValue,
-} from 'react-native-reanimated';
+} from "react-native-reanimated";
 
-import { Pressable } from '@/components/ui';
-import { duration, shadows } from '@/constants';
-import { borderRadius, opacity } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
-import { AppToast } from '@/utils';
+import { Pressable } from "@/components/ui";
+import { duration, shadows } from "@/constants";
+import { borderRadius, opacity } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
+import { AppToast } from "@/utils";
 
 interface SwapButtonProps {
   sourceLang: string;
@@ -30,10 +30,10 @@ export function SwapButton({
   const { color } = useTheme();
 
   const isSwapDisabled =
-    sourceLang === 'auto' ||
-    targetLang === 'auto' ||
-    sourceLang === '' ||
-    targetLang === '';
+    sourceLang === "auto" ||
+    targetLang === "auto" ||
+    sourceLang === "" ||
+    targetLang === "";
 
   const animatedSwapStyle = useAnimatedStyle(() => {
     return {
@@ -44,7 +44,7 @@ export function SwapButton({
   const handlePress = async (): Promise<void> => {
     if (isSwapDisabled) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      AppToast.info('Auto detect is only available for source language');
+      AppToast.info("Auto detect is only available for source language");
       return;
     }
     swapRotation.value = withTiming(swapRotation.value + 180, {
@@ -62,9 +62,9 @@ export function SwapButton({
         {
           width: 40,
           height: 40,
-          borderRadius: borderRadius['2xl'],
-          alignItems: 'center',
-          justifyContent: 'center',
+          borderRadius: borderRadius["2xl"],
+          alignItems: "center",
+          justifyContent: "center",
           marginHorizontal: spacing.xs,
           ...shadows.soft,
           backgroundColor: color.secondary,

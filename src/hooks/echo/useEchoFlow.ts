@@ -1,23 +1,23 @@
-import { useSelector } from '@legendapp/state/react';
-import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
-import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { useEffect, useCallback, useReducer, useRef } from 'react';
-import { AppState } from 'react-native';
+import { useSelector } from "@legendapp/state/react";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import { useEffect, useCallback, useReducer, useRef } from "react";
+import { AppState } from "react-native";
 
-import { useEchoIntentResolver } from './useEchoIntentResolver';
-import { preWarmAudioEngine } from '../audio/useSharedAudioPlayer';
-import { useTranscription } from '../useTranscription';
-import { useTranslation } from '../useTranslation';
+import { useEchoIntentResolver } from "./useEchoIntentResolver";
+import { preWarmAudioEngine } from "../audio/useSharedAudioPlayer";
+import { useTranscription } from "../useTranscription";
+import { useTranslation } from "../useTranslation";
 
-import { usePermissions } from '@/hooks/usePermissions';
-import { HistoryService } from '@/services/HistoryService';
-import { IntentService } from '@/services/IntentService';
-import { settings$, auth$ } from '@/store';
-import { EchoStep, EchoProps, UseEchoFlowResult } from '@/types/echo';
-import { logger, isIOS } from '@/utils';
-import { cleanEchoCache } from '@/utils/echo';
-import { checkIsOnline } from '@/utils/netInfo';
+import { usePermissions } from "@/hooks/usePermissions";
+import { HistoryService } from "@/services/HistoryService";
+import { IntentService } from "@/services/IntentService";
+import { settings$, auth$ } from "@/store";
+import { EchoStep, EchoProps, UseEchoFlowResult } from "@/types/echo";
+import { logger, isIOS } from "@/utils";
+import { cleanEchoCache } from "@/utils/echo";
+import { checkIsOnline } from "@/utils/netInfo";
 
 interface EchoState {
   step: EchoStep;
@@ -33,49 +33,49 @@ interface EchoState {
 }
 
 type EchoAction =
-  | { type: 'SET_STEP'; payload: EchoStep }
-  | { type: 'SET_SELECTED_LANG'; payload: string }
-  | { type: 'SET_DETECTED_LANG'; payload: string | null }
-  | { type: 'SET_TARGET_LANG'; payload: string }
-  | { type: 'SET_TRANSCRIPTION'; payload: { text: string; provider?: string } }
+  | { type: "SET_STEP"; payload: EchoStep }
+  | { type: "SET_SELECTED_LANG"; payload: string }
+  | { type: "SET_DETECTED_LANG"; payload: string | null }
+  | { type: "SET_TARGET_LANG"; payload: string }
+  | { type: "SET_TRANSCRIPTION"; payload: { text: string; provider?: string } }
   | {
-      type: 'SET_TRANSLATION';
+      type: "SET_TRANSLATION";
       payload: { text: string | null; provider?: string };
     }
-  | { type: 'SET_AUDIO_DURATION'; payload: number }
-  | { type: 'SET_ERROR'; payload: string | null }
-  | { type: 'RESET' };
+  | { type: "SET_AUDIO_DURATION"; payload: number }
+  | { type: "SET_ERROR"; payload: string | null }
+  | { type: "RESET" };
 
 const echoReducer = (state: EchoState, action: EchoAction): EchoState => {
   switch (action.type) {
-    case 'SET_STEP':
+    case "SET_STEP":
       return { ...state, step: action.payload };
-    case 'SET_SELECTED_LANG':
+    case "SET_SELECTED_LANG":
       return { ...state, selectedLang: action.payload };
-    case 'SET_DETECTED_LANG':
+    case "SET_DETECTED_LANG":
       return { ...state, detectedLang: action.payload };
-    case 'SET_TARGET_LANG':
+    case "SET_TARGET_LANG":
       return { ...state, targetLang: action.payload };
-    case 'SET_TRANSCRIPTION':
+    case "SET_TRANSCRIPTION":
       return {
         ...state,
         transcription: action.payload.text,
         sttProvider: action.payload.provider,
       };
-    case 'SET_TRANSLATION':
+    case "SET_TRANSLATION":
       return {
         ...state,
         translation: action.payload.text,
         llmProvider: action.payload.provider,
       };
-    case 'SET_AUDIO_DURATION':
+    case "SET_AUDIO_DURATION":
       return { ...state, audioDuration: action.payload };
-    case 'SET_ERROR':
+    case "SET_ERROR":
       return { ...state, error: action.payload };
-    case 'RESET':
+    case "RESET":
       return {
         ...state,
-        step: 'PickLanguage',
+        step: "PickLanguage",
         transcription: null,
         translation: null,
         detectedLang: null,
@@ -96,14 +96,14 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
   const autoCopy = permissions.autoCopy ? autoCopySetting : false;
   const session = useSelector(() => auth$.session.get());
 
-  const sourceApp = isIOS ? 'iOS' : props.sourceApp || 'Unknown App';
+  const sourceApp = isIOS ? "iOS" : props.sourceApp || "Unknown App";
 
   // State Machine via Reducer
   const [state, dispatch] = useReducer(echoReducer, {
-    step: 'PickLanguage',
-    selectedLang: 'auto',
+    step: "PickLanguage",
+    selectedLang: "auto",
     detectedLang: null,
-    targetLang: '',
+    targetLang: "",
     transcription: null,
     translation: null,
     sttProvider: undefined,
@@ -113,7 +113,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
   });
 
   const setStep = useCallback(
-    (step: EchoStep) => dispatch({ type: 'SET_STEP', payload: step }),
+    (step: EchoStep) => dispatch({ type: "SET_STEP", payload: step }),
     [],
   );
 
@@ -139,19 +139,19 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     state.audioDuration,
   ]);
   const setSelectedLang = useCallback(
-    (lang: string) => dispatch({ type: 'SET_SELECTED_LANG', payload: lang }),
+    (lang: string) => dispatch({ type: "SET_SELECTED_LANG", payload: lang }),
     [],
   );
   const setTargetLang = useCallback(
-    (lang: string) => dispatch({ type: 'SET_TARGET_LANG', payload: lang }),
+    (lang: string) => dispatch({ type: "SET_TARGET_LANG", payload: lang }),
     [],
   );
 
   // Keep screen awake for the entire Echo session
   useEffect((): (() => void) => {
-    activateKeepAwakeAsync('echoSession').catch(() => {});
+    activateKeepAwakeAsync("echoSession").catch(() => {});
     return () => {
-      deactivateKeepAwake('echoSession')?.catch?.(() => {});
+      deactivateKeepAwake("echoSession")?.catch?.(() => {});
     };
   }, []);
 
@@ -171,7 +171,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
   // Reset state on subsequent share intents
   useEffect(() => {
     if (isSubsequentIntent) {
-      dispatch({ type: 'RESET' });
+      dispatch({ type: "RESET" });
       savedRef.current = false;
       setIsSubsequentIntent(false);
     }
@@ -182,18 +182,18 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     durationSeconds: number,
     waveform: number[],
   ): Promise<void> => {
-    dispatch({ type: 'SET_AUDIO_DURATION', payload: durationSeconds });
-    logger.info('[EchoFlow] ── Initiating Transcription ──');
-    logger.info('[EchoFlow] User ID:', session?.user?.id);
+    dispatch({ type: "SET_AUDIO_DURATION", payload: durationSeconds });
+    logger.info("[EchoFlow] ── Initiating Transcription ──");
+    logger.info("[EchoFlow] User ID:", session?.user?.id);
     logger.info(
-      '[EchoFlow] app_metadata:',
+      "[EchoFlow] app_metadata:",
       JSON.stringify(session?.user?.app_metadata),
     );
     logger.info(
-      '[EchoFlow] is_pro:',
-      session?.user?.app_metadata?.is_pro ?? 'MISSING',
+      "[EchoFlow] is_pro:",
+      session?.user?.app_metadata?.is_pro ?? "MISSING",
     );
-    logger.info('[EchoFlow] Selected Language:', state.selectedLang);
+    logger.info("[EchoFlow] Selected Language:", state.selectedLang);
 
     if (!audioUri) return;
 
@@ -201,25 +201,25 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     if (durationSeconds * 1000 > permissions.dictationDurationMs) {
       const limitSec = permissions.dictationDurationMs / 1000;
       dispatch({
-        type: 'SET_ERROR',
+        type: "SET_ERROR",
         payload: `Audio exceeds your plan limit (${limitSec}s). Please upgrade to Pro for longer files.`,
       });
-      dispatch({ type: 'SET_STEP', payload: 'Error' });
+      dispatch({ type: "SET_STEP", payload: "Error" });
       return;
     }
 
     Haptics.selectionAsync();
-    dispatch({ type: 'SET_STEP', payload: 'Transcribing' });
-    IntentService.updateBubbleMode('MAGIC');
+    dispatch({ type: "SET_STEP", payload: "Transcribing" });
+    IntentService.updateBubbleMode("MAGIC");
 
     const isOnline = await checkIsOnline();
     if (!isOnline) {
       dispatch({
-        type: 'SET_ERROR',
-        payload: 'Transcription requires an active internet connection.',
+        type: "SET_ERROR",
+        payload: "Transcription requires an active internet connection.",
       });
-      dispatch({ type: 'SET_STEP', payload: 'Error' });
-      IntentService.updateBubbleMode('IDLE');
+      dispatch({ type: "SET_STEP", payload: "Error" });
+      IntentService.updateBubbleMode("IDLE");
       return;
     }
 
@@ -245,16 +245,16 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       const detectedLang = trResult.value.detectedLang;
 
       let finalLang = state.selectedLang;
-      if (state.selectedLang === 'auto') {
-        finalLang = detectedLang || 'en';
+      if (state.selectedLang === "auto") {
+        finalLang = detectedLang || "en";
       } else {
         finalLang = state.selectedLang;
       }
 
-      dispatch({ type: 'SET_DETECTED_LANG', payload: finalLang });
+      dispatch({ type: "SET_DETECTED_LANG", payload: finalLang });
 
       dispatch({
-        type: 'SET_TRANSCRIPTION',
+        type: "SET_TRANSCRIPTION",
         payload: {
           text: trResult.value.transcript,
           provider: trResult.value.provider,
@@ -262,14 +262,14 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      dispatch({ type: 'SET_STEP', payload: 'TranscribeResult' });
+      dispatch({ type: "SET_STEP", payload: "TranscribeResult" });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      logger.error('[EchoFlow] Transcription Error:', message);
-      dispatch({ type: 'SET_ERROR', payload: message });
-      dispatch({ type: 'SET_STEP', payload: 'Error' });
+      const message = err instanceof Error ? err.message : "Unknown error";
+      logger.error("[EchoFlow] Transcription Error:", message);
+      dispatch({ type: "SET_ERROR", payload: message });
+      dispatch({ type: "SET_STEP", payload: "Error" });
     } finally {
-      IntentService.updateBubbleMode('IDLE');
+      IntentService.updateBubbleMode("IDLE");
     }
   };
 
@@ -280,23 +280,23 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     const target = state.targetLang;
     const stt = state.sttProvider;
 
-    logger.info('[EchoFlow] ── Initiating Translation ──');
-    logger.info('[EchoFlow] Source:', source, '→ Target:', target);
+    logger.info("[EchoFlow] ── Initiating Translation ──");
+    logger.info("[EchoFlow] Source:", source, "→ Target:", target);
 
     if (!textToTranslate || !source) return;
 
     Haptics.selectionAsync();
     // Clear old translation immediately to prevent "brief text flash"
-    dispatch({ type: 'SET_TRANSLATION', payload: { text: null } });
-    dispatch({ type: 'SET_STEP', payload: 'Translating' });
+    dispatch({ type: "SET_TRANSLATION", payload: { text: null } });
+    dispatch({ type: "SET_STEP", payload: "Translating" });
 
     const isOnline = await checkIsOnline();
     if (!isOnline) {
       dispatch({
-        type: 'SET_ERROR',
-        payload: 'Translation requires an active internet connection.',
+        type: "SET_ERROR",
+        payload: "Translation requires an active internet connection.",
       });
-      dispatch({ type: 'SET_STEP', payload: 'Error' });
+      dispatch({ type: "SET_STEP", payload: "Error" });
       return;
     }
 
@@ -311,7 +311,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
 
       translationResultText = trResult.value.translation;
       dispatch({
-        type: 'SET_TRANSLATION',
+        type: "SET_TRANSLATION",
         payload: {
           text: translationResultText,
           provider: trResult.value.provider,
@@ -322,10 +322,10 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
         await Clipboard.setStringAsync(translationResultText);
       }
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Unknown error';
-      logger.error('Translate Error:', message);
-      dispatch({ type: 'SET_ERROR', payload: message });
-      dispatch({ type: 'SET_STEP', payload: 'Error' });
+      const message = e instanceof Error ? e.message : "Unknown error";
+      logger.error("Translate Error:", message);
+      dispatch({ type: "SET_ERROR", payload: message });
+      dispatch({ type: "SET_STEP", payload: "Error" });
       return; // Stop flow on translation error
     }
 
@@ -340,14 +340,14 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
         transliteration: null,
         duration: state.audioDuration,
         sourceApp,
-        provider: stt || 'unknown',
+        provider: stt || "unknown",
         sessionKey: audioUri || undefined,
       },
       session,
     );
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    dispatch({ type: 'SET_STEP', payload: 'FullResult' });
+    dispatch({ type: "SET_STEP", payload: "FullResult" });
   };
 
   const onDismiss = useCallback((): void => {
@@ -356,34 +356,34 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       savedRef.current = true;
       HistoryService.recordTranslation(
         {
-          sourceLang: detectedLangRef.current || 'en',
+          sourceLang: detectedLangRef.current || "en",
           targetLang:
-            targetLangRef.current || settings$.targetLanguage.get() || 'en',
+            targetLangRef.current || settings$.targetLanguage.get() || "en",
           transcript: transcriptRef.current,
           translation: null,
           transliteration: null,
           duration: durationRef.current,
           sourceApp,
-          provider: sttRef.current || 'unknown',
+          provider: sttRef.current || "unknown",
           sessionKey: audioUri || undefined,
         },
         session,
       ).catch((e) =>
-        logger.error('Failed to save transcription-only on overlay dismiss', e),
+        logger.error("Failed to save transcription-only on overlay dismiss", e),
       );
     }
 
     if (activeResolvedUri.current) cleanEchoCache(activeResolvedUri.current);
-    deactivateKeepAwake('echoSession')?.catch?.(() => {});
+    deactivateKeepAwake("echoSession")?.catch?.(() => {});
     IntentService.dismissEcho();
   }, [sourceApp, session, audioUri]);
 
   // Clean up and dismiss if the user minimizes the app (backgrounds it)
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'background' || nextAppState === 'inactive') {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "background" || nextAppState === "inactive") {
         logger.info(
-          '[EchoFlow] App state changed to background/inactive, dismissing echo...',
+          "[EchoFlow] App state changed to background/inactive, dismissing echo...",
         );
         onDismiss();
       }

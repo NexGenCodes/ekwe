@@ -1,12 +1,12 @@
-import { Check, X } from 'lucide-react-native';
-import React from 'react';
-import { Modal, ScrollView } from 'react-native';
+import { Check, X } from "lucide-react-native";
+import React from "react";
+import { Modal, ScrollView } from "react-native";
 
-import { Box, Text, Pressable } from '@/components/ui';
-import { SUPPORTED_CURRENCIES } from '@/constants/currency';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text, Pressable } from "@/components/ui";
+import { SUPPORTED_CURRENCIES } from "@/constants/currency";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 interface CurrencyPickerModalProps {
   visible: boolean;
@@ -33,15 +33,15 @@ export function CurrencyPickerModal({
       <Box
         style={{
           flex: 1,
-          justifyContent: 'flex-end',
+          justifyContent: "flex-end",
           backgroundColor: color.overlay,
         }}
       >
         <Box
           style={{
-            borderTopLeftRadius: borderRadius['2xl'],
-            borderTopRightRadius: borderRadius['2xl'],
-            maxHeight: '60%',
+            borderTopLeftRadius: borderRadius["2xl"],
+            borderTopRightRadius: borderRadius["2xl"],
+            maxHeight: "60%",
             borderTopWidth: 1,
             backgroundColor: color.background,
             borderColor: color.border,
@@ -50,9 +50,9 @@ export function CurrencyPickerModal({
           {/* Header */}
           <Box
             style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
               padding: spacing.lg,
               borderBottomWidth: 1,
               borderColor: color.border,
@@ -91,8 +91,8 @@ export function CurrencyPickerModal({
                   key={item.code}
                   style={({ pressed }) => [
                     {
-                      flexDirection: 'row',
-                      alignItems: 'center',
+                      flexDirection: "row",
+                      alignItems: "center",
                       paddingVertical: spacing.md,
                       paddingHorizontal: spacing.sm,
                       borderRadius: borderRadius.lg,
@@ -124,7 +124,7 @@ export function CurrencyPickerModal({
                       variant="body"
                       style={{
                         color: isSelected ? color.primary : color.foreground,
-                        fontWeight: isSelected ? '600' : '400',
+                        fontWeight: isSelected ? "600" : "400",
                       }}
                     >
                       {item.code} - {item.name}

@@ -1,12 +1,12 @@
 /**
  * Divider — Horizontal line with optional centered label.
  */
-import React from 'react';
-import type { StyleProp, ViewStyle } from 'react-native';
+import React from "react";
+import type { StyleProp, ViewStyle } from "react-native";
 
-import { Box, Text } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 interface DividerProps {
   label?: string;
@@ -21,8 +21,8 @@ export const Divider = ({ label, style }: DividerProps): React.ReactElement => {
     <Box
       style={[
         {
-          flexDirection: 'row',
-          alignItems: 'center',
+          flexDirection: "row",
+          alignItems: "center",
           marginVertical: spacing.lg,
         },
         style,

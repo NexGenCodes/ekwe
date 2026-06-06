@@ -1,11 +1,11 @@
-import React from 'react';
-import { ScrollView } from 'react-native';
+import React from "react";
+import { ScrollView } from "react-native";
 
-import { LanguageGrid } from './LanguageGrid';
+import { LanguageGrid } from "./LanguageGrid";
 
-import { Box, Text } from '@/components/ui';
-import { STEP_METADATA } from '@/constants/echo';
-import { spacing } from '@/constants/spacing';
+import { Box, Text } from "@/components/ui";
+import { STEP_METADATA } from "@/constants/echo";
+import { useTokens } from "@/hooks/ui";
 
 export interface EchoLanguagePickerProps {
   selectedLang: string;
@@ -14,6 +14,8 @@ export interface EchoLanguagePickerProps {
 
 export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
   ({ selectedLang, onSelect }) => {
+    const { spacing } = useTokens();
+
     return (
       <Box>
         <Text variant="heading3" style={{ marginBottom: spacing.lg }}>

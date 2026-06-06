@@ -1,10 +1,10 @@
-import { createClient, SupportedStorage } from '@supabase/supabase-js';
-import { AppState } from 'react-native';
+import { createClient, SupportedStorage } from "@supabase/supabase-js";
+import { AppState } from "react-native";
 
-import { secureStorage } from '@/services/secureStorage';
+import { secureStorage } from "@/services/secureStorage";
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "";
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -15,8 +15,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-const appStateSubscription = AppState.addEventListener('change', (state) => {
-  if (state === 'active') {
+const appStateSubscription = AppState.addEventListener("change", (state) => {
+  if (state === "active") {
     supabase.auth.startAutoRefresh();
   } else {
     supabase.auth.stopAutoRefresh();

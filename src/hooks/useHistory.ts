@@ -1,10 +1,10 @@
-import { useSelector } from '@legendapp/state/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSelector } from "@legendapp/state/react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { SyncService } from '@/services/SyncService';
-import { Db } from '@/services/db';
-import { HistoryEntry, history$, auth$ } from '@/store';
-import logger from '@/utils/logger';
+import { SyncService } from "@/services/SyncService";
+import { Db } from "@/services/db";
+import { HistoryEntry, history$, auth$ } from "@/store";
+import logger from "@/utils/logger";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const PAGE_SIZE = 20;
@@ -88,7 +88,7 @@ export const useHistory = (): UseHistoryReturn => {
   const deleteEntry = useCallback(async (id: string): Promise<void> => {
     const userId = auth$.user.get()?.id;
     if (!userId) {
-      logger.warn('[useHistory] Cannot delete entry: no authenticated user');
+      logger.warn("[useHistory] Cannot delete entry: no authenticated user");
       return;
     }
     await SyncService.deleteHistory(id, userId);
@@ -97,7 +97,7 @@ export const useHistory = (): UseHistoryReturn => {
   const clearAll = useCallback(async (): Promise<void> => {
     const userId = auth$.user.get()?.id;
     if (!userId) {
-      logger.warn('[useHistory] Cannot clear entries: no authenticated user');
+      logger.warn("[useHistory] Cannot clear entries: no authenticated user");
       return;
     }
     const ids = Object.keys(history$.get() || {});

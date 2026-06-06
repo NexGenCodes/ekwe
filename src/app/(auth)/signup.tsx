@@ -15,15 +15,14 @@ import {
   Button,
   Disclaimer,
 } from "@/components";
-import { Box, Text } from "@/components/ui";
+import { Box } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
-import { useAuthFlow, useTheme } from "@/hooks";
+import { useAuthFlow } from "@/hooks";
 import { signupSchema, SignupForm } from "@/schemas/auth";
 import { signUpWithPassword } from "@/services/auth";
 
 export default function SignupScreen(): React.JSX.Element {
   const router = useRouter();
-  const { color } = useTheme();
 
   const { isLoading, error, run, handleApple, handleGoogle, onSuccess } =
     useAuthFlow();

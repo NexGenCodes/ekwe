@@ -1,12 +1,12 @@
-import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
-import { Copy, CheckCircle2 } from 'lucide-react-native';
-import React, { useState } from 'react';
-import type { StyleProp, ViewStyle } from 'react-native';
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
+import { Copy, CheckCircle2 } from "lucide-react-native";
+import React, { useState } from "react";
+import type { StyleProp, ViewStyle } from "react-native";
 
-import { Pressable, Box } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Pressable, Box } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 interface Props {
   textToCopy: string;
@@ -45,7 +45,7 @@ export const AnimatedCopyButton: React.FC<Props> = ({
   return (
     <Pressable onPress={handleCopy} hitSlop={12} style={style}>
       <Box
-        style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}
+        style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}
       >
         {copied ? (
           <CheckCircle2 color={successColor} size={size} strokeWidth={2.5} />

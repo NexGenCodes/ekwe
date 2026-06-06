@@ -1,12 +1,12 @@
-import { useSelector } from '@legendapp/state/react';
-import { Tabs, useRouter } from 'expo-router';
-import { Home, History, User } from 'lucide-react-native';
-import React, { useEffect } from 'react';
+import { useSelector } from "@legendapp/state/react";
+import { Tabs, useRouter } from "expo-router";
+import { Home, History, User } from "lucide-react-native";
+import React, { useEffect } from "react";
 
-import { CustomTabBar } from '@/components/CustomTabBar';
-import { typography } from '@/constants/typography';
-import { useTheme } from '@/hooks';
-import { settings$ } from '@/store';
+import { CustomTabBar } from "@/components/CustomTabBar";
+import { typography } from "@/constants/typography";
+import { useTheme } from "@/hooks";
+import { settings$ } from "@/store";
 
 export default function TabLayout(): React.ReactElement | null {
   const { color } = useTheme();
@@ -18,7 +18,7 @@ export default function TabLayout(): React.ReactElement | null {
 
   useEffect(() => {
     if (!onboardingCompleted) {
-      router.replace('/(onboarding)/language');
+      router.replace("/(onboarding)/language");
     }
   }, [onboardingCompleted, router]);
 
@@ -43,7 +43,7 @@ export default function TabLayout(): React.ReactElement | null {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: "Home",
           headerShown: false,
           tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
         }}
@@ -51,7 +51,7 @@ export default function TabLayout(): React.ReactElement | null {
       <Tabs.Screen
         name="history"
         options={{
-          title: 'History',
+          title: "History",
           headerShown: true,
           tabBarIcon: ({ color, size }) => (
             <History size={size} color={color} />
@@ -61,7 +61,7 @@ export default function TabLayout(): React.ReactElement | null {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: "Profile",
           headerShown: true,
           tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
         }}

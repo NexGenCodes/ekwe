@@ -1,34 +1,17 @@
-import { Sheet } from "./ui/Sheet";
 import { useSelector } from "@legendapp/state/react";
-import { Search, Star, X, Check } from "lucide-react-native";
-import React, {
-  useMemo,
-  useState,
-  useCallback,
-} from "react";
-import {
-  SectionList,
-  TextInput,
-} from "react-native";
+import React, { useMemo, useState, useCallback } from "react";
+import { SectionList } from "react-native";
 
 import { Button } from "./Button";
+import { Sheet } from "./ui/Sheet";
 
-import { Box, Pressable, Text } from "@/components/ui";
-import { LANGUAGES, Language, FLAG_MAP } from "@/constants/languages";
-import { borderRadius } from "@/constants/sizes";
-import { spacing } from "@/constants/spacing";
-import { typography } from "@/constants/typography";
-import { useTheme, usePermissions } from "@/hooks";
+import { LanguageRow, LanguageSearchBar } from "@/components/language";
+import { Box, Text } from "@/components/ui";
+import { LANGUAGES, type Language } from "@/constants/languages";
+import { usePermissions } from "@/hooks";
+import { useTokens } from "@/hooks/ui";
 import { auth$ } from "@/store";
 import { AppAlert } from "@/utils";
-
-interface LanguageRowProps {
-  item: Language;
-  isSelected: boolean;
-  isPinned: boolean;
-  onToggleSelect: () => void;
-  onTogglePin: () => void;
-}
 
 export interface LanguagePickerSheetProps {
   isVisible: boolean;
@@ -42,76 +25,6 @@ export interface LanguagePickerSheetProps {
   singleSelect?: boolean;
 }
 
-const LanguageRow = ({
-  item,
-  isSelected,
-  isPinned,
-  onToggleSelect,
-  onTogglePin,
-}: LanguageRowProps): React.ReactElement => {
-  const { color } = useTheme();
-
-  return (
-    <Pressable
-      onPress={onToggleSelect}
-      style={{
-        height: 52,
-        flexDirection: "row",
-        alignItems: "center",
-        paddingHorizontal: spacing.md,
-        backgroundColor: color.background,
-      }}
-    >
-      <Box style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
-        <Text variant="body" style={{ marginRight: spacing.md }}>
-          {FLAG_MAP[item.code] || "🌐"}
-        </Text>
-        <Box>
-          <Text variant="body">{item.englishName}</Text>
-          <Text variant="caption" style={{ marginTop: spacing.xs, color: color.muted }}>
-            {item.nativeName}
-          </Text>
-        </Box>
-      </Box>
-
-      <Box style={{ flexDirection: "row", alignItems: "center" }}>
-        <Pressable
-          onPress={onTogglePin}
-          hitSlop={8}
-          style={{ padding: spacing.sm }}
-        >
-          <Star
-            size={20}
-            color={isPinned ? color.secondary : color.muted}
-            fill={isPinned ? color.secondary : "transparent"}
-          />
-        </Pressable>
-
-        <Box
-          style={[
-            {
-              width: 22,
-              height: 22,
-              borderRadius: borderRadius.lg,
-              marginLeft: spacing.md,
-              alignItems: "center",
-              justifyContent: "center",
-              borderWidth: 1,
-            },
-            isSelected
-              ? { backgroundColor: color.secondary, borderWidth: 0 }
-              : { backgroundColor: "transparent", borderColor: color.border },
-          ]}
-        >
-          {isSelected && (
-            <Check size={12} color={color.onSecondary} strokeWidth={3} />
-          )}
-        </Box>
-      </Box>
-    </Pressable>
-  );
-};
-
 export const LanguagePickerSheet = ({
   isVisible,
   selectedLanguages,
@@ -120,14 +33,12 @@ export const LanguagePickerSheet = ({
   onClose,
   singleSelect = false,
 }: LanguagePickerSheetProps): React.ReactElement => {
-  const { color } = useTheme();
+  const { color, spacing } = useTokens();
   const isPro = useSelector(() => auth$.isPro.get());
   const permissions = usePermissions();
   const maxPinnedLanguages = permissions.maxPinnedLanguages;
   const maxSelectedLanguages = permissions.maxSelectedLanguages;
   const [searchQuery, setSearchQuery] = useState("");
-
-  const mutedColor = color.muted;
 
   const availableLanguages = useMemo(() => {
     if (isPro) return LANGUAGES;
@@ -220,26 +131,27 @@ export const LanguagePickerSheet = ({
           backgroundColor: color.surface,
         }}
       >
-        <Text
-          variant="caption"
-          style={{
-            color: color.muted,
-          }}
-        >
+        <Text variant="caption" style={{ color: color.muted }}>
           {section.title}
         </Text>
       </Box>
     ),
-    [color],
+    [color, spacing],
   );
 
   const renderItem = useCallback(
-    ({ item, section }: { item: Language; section: { data: Language[]; isPinnedSection: boolean } }) => (
+    ({
+      item,
+      section,
+    }: {
+      item: Language;
+      section: { data: Language[]; isPinnedSection: boolean };
+    }) => (
       <LanguageRow
-        item={item}
+        code={item.code}
         isSelected={selectedLanguages.includes(item.code)}
         isPinned={section.isPinnedSection}
-        onToggleSelect={() => toggleSelection(item.code)}
+        onPress={() => toggleSelection(item.code)}
         onTogglePin={() => togglePin(item.code)}
       />
     ),
@@ -248,45 +160,14 @@ export const LanguagePickerSheet = ({
 
   return (
     <Sheet visible={isVisible} onClose={onClose} maxHeight="90%">
-      {/* Search */}
       <Box style={{ zIndex: 1, backgroundColor: color.background }}>
         <Box
           style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.sm }}
         >
-          <Box
-            style={[
-              {
-                height: 44,
-                borderWidth: 0.5,
-                borderRadius: borderRadius.lg,
-                flexDirection: "row",
-                alignItems: "center",
-                paddingHorizontal: spacing.md,
-              },
-              { backgroundColor: color.card, borderColor: color.border },
-            ]}
-          >
-            <Search
-              size={18}
-              color={mutedColor}
-              style={{ marginRight: spacing.sm }}
-            />
-            <TextInput
-              style={[
-                { flex: 1, height: 44, ...typography.body },
-                { color: color.foreground },
-              ]}
-              placeholder="Search languages"
-              placeholderTextColor={mutedColor}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searchQuery.length > 0 && (
-              <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
-                <X size={16} color={mutedColor} />
-              </Pressable>
-            )}
-          </Box>
+          <LanguageSearchBar
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
         </Box>
       </Box>
 

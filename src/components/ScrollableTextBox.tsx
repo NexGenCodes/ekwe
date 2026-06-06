@@ -1,11 +1,11 @@
-import React from 'react';
-import type { ViewStyle, TextStyle, StyleProp } from 'react-native';
+import React from "react";
+import type { ViewStyle, TextStyle, StyleProp } from "react-native";
 
-import { Card } from './Card';
+import { Card } from "./Card";
 
-import { Box, Text, Spinner, ScrollArea } from '@/components/ui';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text, Spinner, ScrollArea } from "@/components/ui";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 interface ScrollableTextBoxProps {
   /** Text content to display. */
@@ -13,7 +13,7 @@ interface ScrollableTextBoxProps {
   /** Fixed height of the scroll view container (default: 280). */
   height?: number;
   /** Card variant (default: 'default'). */
-  variant?: 'default' | 'outlined' | 'accent';
+  variant?: "default" | "outlined" | "accent";
   /** Primary brand color for the loader. */
   brandPrimary?: string;
   /** Whether to show a loading indicator. */
@@ -27,7 +27,7 @@ interface ScrollableTextBoxProps {
 export const ScrollableTextBox: React.FC<ScrollableTextBoxProps> = ({
   text,
   height = 280,
-  variant = 'default',
+  variant = "default",
   brandPrimary,
   isLoading = false,
   containerStyle,
@@ -51,8 +51,8 @@ export const ScrollableTextBox: React.FC<ScrollableTextBoxProps> = ({
           <Box
             style={{
               flex: 1,
-              alignItems: 'center',
-              justifyContent: 'center',
+              alignItems: "center",
+              justifyContent: "center",
               height: height - 32,
             }}
           >

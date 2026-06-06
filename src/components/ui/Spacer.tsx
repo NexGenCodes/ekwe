@@ -1,8 +1,8 @@
-import React from 'react';
-import { View } from 'react-native';
+import React from "react";
+import { View } from "react-native";
 
 export const Spacer = React.memo(() => (
   <View style={{ flex: 1 }} accessibilityRole="none" />
 ));
 
-Spacer.displayName = 'Spacer';
+Spacer.displayName = "Spacer";

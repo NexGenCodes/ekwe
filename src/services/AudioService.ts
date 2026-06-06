@@ -1,5 +1,3 @@
-import * as Haptics from 'expo-haptics';
-
 import {
   AudioModule,
   AudioQuality,
@@ -7,35 +5,36 @@ import {
   setAudioModeAsync,
   requestRecordingPermissionsAsync,
   getRecordingPermissionsAsync,
-} from 'expo-audio';
-import type { AudioRecorder, RecordingOptions } from 'expo-audio';
+} from "expo-audio";
+import type { AudioRecorder, RecordingOptions } from "expo-audio";
+import * as Haptics from "expo-haptics";
 
-import { PLAN_LIMITS } from '@/constants/billing';
-import { logger, isIOS } from '@/utils';
-import { releaseAudioEffects } from '@/utils/AudioEffectsModule';
+import { PLAN_LIMITS } from "@/constants/billing";
+import { logger, isIOS } from "@/utils";
+import { releaseAudioEffects } from "@/utils/AudioEffectsModule";
 
-type PermissionStatus = 'Granted' | 'Denied' | 'Undetermined' | 'Restricted';
+type PermissionStatus = "Granted" | "Denied" | "Undetermined" | "Restricted";
 
 const RECORDING_OPTIONS: Partial<RecordingOptions> = {
-  extension: '.flac',
+  extension: ".flac",
   sampleRate: 16000,
   numberOfChannels: 1,
   bitRate: 256000,
   isMeteringEnabled: true,
   android: {
-    outputFormat: 'default',
-    audioEncoder: 'default',
-    extension: '.wav',
+    outputFormat: "default",
+    audioEncoder: "default",
+    extension: ".wav",
     sampleRate: 16000,
   },
   ios: {
-    outputFormat: 'flac',
+    outputFormat: "flac",
     audioQuality: AudioQuality.MAX,
-    extension: '.flac',
+    extension: ".flac",
     sampleRate: 16000,
   },
   web: {
-    mimeType: 'audio/wav',
+    mimeType: "audio/wav",
     bitsPerSecond: 256000,
   },
 };
@@ -71,25 +70,26 @@ class AudioService {
         await setAudioModeAsync({
           playsInSilentMode: true,
           allowsRecording: true,
-          interruptionMode: 'doNotMix',
+          interruptionMode: "doNotMix",
         });
       } catch (e) {
-        logger.warn('AudioSession configuration failed:', e);
+        logger.warn("AudioSession configuration failed:", e);
       }
     }
 
+    // eslint-disable-next-line import/namespace -- AudioRecorder is a property on NativeAudioModule
     this.recorder = new AudioModule.AudioRecorder(RECORDING_OPTIONS);
   }
 
   public async startRecording(maxDurationMs?: number): Promise<void> {
     const status = await this.checkPermission();
-    if (status !== 'Granted') {
+    if (status !== "Granted") {
       const result = await this.requestPermission();
-      if (result !== 'Granted') throw new Error('Permission denied');
+      if (result !== "Granted") throw new Error("Permission denied");
     }
 
     await this.initialize();
-    if (!this.recorder) throw new Error('Recorder not initialized');
+    if (!this.recorder) throw new Error("Recorder not initialized");
 
     await this.recorder.prepareToRecordAsync();
 
@@ -107,14 +107,14 @@ class AudioService {
 
   public async stopRecording(): Promise<{ path: string; duration: number }> {
     if (!this.recorder || !this.recorder.isRecording) {
-      throw new Error('Recorder not initialized or not recording');
+      throw new Error("Recorder not initialized or not recording");
     }
 
     await this.recorder.stop();
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    const path = this.recorder.uri || '';
+    const path = this.recorder.uri || "";
     const duration = this.recorder.currentTime * 1000;
 
     await setIsAudioActiveAsync(false);
@@ -137,7 +137,7 @@ class AudioService {
     await setAudioModeAsync({
       playsInSilentMode: true,
       allowsRecording: false,
-      interruptionMode: 'duckOthers',
+      interruptionMode: "duckOthers",
     });
   }
 

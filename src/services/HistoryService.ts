@@ -1,8 +1,8 @@
-import { SyncService } from './SyncService';
-import { Db } from './db';
-import { mmkv as storage } from './mmkv';
+import { SyncService } from "./SyncService";
+import { Db } from "./db";
+import { mmkv as storage } from "./mmkv";
 
-import { logger } from '@/utils';
+import { logger } from "@/utils";
 
 export interface HistoryEntryPayload {
   sourceLang: string;
@@ -50,7 +50,7 @@ export const HistoryService = {
   cleanupLocalHistory: (): void => {
     try {
       const now = Date.now();
-      const CLEANUP_KEY = 'ekwe-history-last-cleanup';
+      const CLEANUP_KEY = "ekwe-history-last-cleanup";
 
       const lastCleanup = Number(storage.getString(CLEANUP_KEY) ?? 0);
       if (now - lastCleanup < 86_400_000) return;
@@ -65,7 +65,7 @@ export const HistoryService = {
         );
       }
     } catch (e) {
-      logger.error('[HistoryService] Failed to cleanup local history', e);
+      logger.error("[HistoryService] Failed to cleanup local history", e);
     }
   },
 };

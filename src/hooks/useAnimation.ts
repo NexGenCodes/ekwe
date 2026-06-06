@@ -5,8 +5,6 @@ import {
   withTiming,
   withSpring,
   withDelay,
-  type WithTimingConfig,
-  type WithSpringConfig,
 } from "react-native-reanimated";
 
 interface StaggerConfig {
@@ -30,7 +28,10 @@ interface SlideConfig extends FadeConfig {
 /**
  * Staggered entrance animation for lists (fade + slide up + scale).
  */
-export function useStaggerEntrance(index: number, config: StaggerConfig = {}) {
+export function useStaggerEntrance(
+  index: number,
+  config: StaggerConfig = {},
+): ReturnType<typeof useAnimatedStyle> {
   const {
     baseDelay = 600,
     stepDelay = 180,
@@ -66,7 +67,7 @@ export function useStaggerEntrance(index: number, config: StaggerConfig = {}) {
 /**
  * Header/section entrance animation (fade in + scale up).
  */
-export function useHeaderEntrance() {
+export function useHeaderEntrance(): ReturnType<typeof useAnimatedStyle> {
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.9);
   const translateY = useSharedValue(-20);
@@ -86,7 +87,9 @@ export function useHeaderEntrance() {
 /**
  * Simple fade-in animation.
  */
-export function useFadeIn(config: FadeConfig = {}) {
+export function useFadeIn(
+  config: FadeConfig = {},
+): ReturnType<typeof useAnimatedStyle> {
   const { duration = 400, delay = 0 } = config;
 
   const opacity = useSharedValue(0);
@@ -105,13 +108,10 @@ export function useFadeIn(config: FadeConfig = {}) {
 /**
  * Slide-in animation from any direction.
  */
-export function useSlideIn(config: SlideConfig = {}) {
-  const {
-    duration = 400,
-    delay = 0,
-    direction = "up",
-    distance = 30,
-  } = config;
+export function useSlideIn(
+  config: SlideConfig = {},
+): ReturnType<typeof useAnimatedStyle> {
+  const { duration = 400, delay = 0, direction = "up", distance = 30 } = config;
 
   const offsetX = useSharedValue(
     direction === "left" ? distance : direction === "right" ? -distance : 0,
@@ -122,7 +122,7 @@ export function useSlideIn(config: SlideConfig = {}) {
   const opacity = useSharedValue(0);
 
   useEffect(() => {
-    const start = () => {
+    const start = (): void => {
       offsetX.value = withSpring(0, { damping: 18, stiffness: 100 });
       offsetY.value = withSpring(0, { damping: 18, stiffness: 100 });
       opacity.value = withTiming(1, { duration });
@@ -130,16 +130,13 @@ export function useSlideIn(config: SlideConfig = {}) {
 
     if (delay > 0) {
       const timer = setTimeout(start, delay);
-      return () => clearTimeout(timer);
+      return (): void => clearTimeout(timer);
     }
     start();
   }, []);
 
   return useAnimatedStyle(() => ({
     opacity: opacity.value,
-    transform: [
-      { translateX: offsetX.value },
-      { translateY: offsetY.value },
-    ],
+    transform: [{ translateX: offsetX.value }, { translateY: offsetY.value }],
   }));
 }

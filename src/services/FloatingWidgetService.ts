@@ -7,11 +7,13 @@ export class FloatingWidgetService {
       logger.info("FloatingWidgetService: Overlay permission is Android-only.");
       return false;
     }
-    logger.info("FloatingWidgetService: Requesting SYSTEM_ALERT_WINDOW permission.");
-    // In a real native module implementation, we would call our ekwe-native or 
+    logger.info(
+      "FloatingWidgetService: Requesting SYSTEM_ALERT_WINDOW permission.",
+    );
+    // In a real native module implementation, we would call our ekwe-native or
     // react-native-floating-bubble here to prompt the user for Display Over Other Apps permission.
     // We mock success for now so the UI can proceed.
-    return true; 
+    return true;
   }
 
   static showWidget(): void {

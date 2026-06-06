@@ -1,9 +1,8 @@
-import { setAudioModeAsync } from 'expo-audio';
+import { setAudioModeAsync } from "expo-audio";
 
-import { isIOS } from '@/utils';
-
-import { EkweError } from '@/constants/errors';
-import { Result, ok, err } from '@/types/Result';
+import { EkweError } from "@/constants/errors";
+import { Result, ok, err } from "@/types/Result";
+import { isIOS } from "@/utils";
 
 const VOLUME_RAISE_THRESHOLD = 0.5;
 
@@ -70,7 +69,7 @@ class VolumeManagerClass {
         await setAudioModeAsync({
           playsInSilentMode: true,
           allowsRecording: true,
-          interruptionMode: 'mixWithOthers',
+          interruptionMode: "mixWithOthers",
         });
       }
       return ok(undefined);
@@ -83,12 +82,12 @@ class VolumeManagerClass {
    * Detects current audio routing natively.
    */
   async getAudioRoute(): Promise<
-    Result<'speaker' | 'bluetooth' | 'wired' | 'earpiece', EkweError>
+    Result<"speaker" | "bluetooth" | "wired" | "earpiece", EkweError>
   > {
     try {
-      return ok('speaker');
+      return ok("speaker");
     } catch {
-      return ok('speaker');
+      return ok("speaker");
     }
   }
 

@@ -1,31 +1,31 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef } from "react";
 import {
   Pressable as RNPressable,
   type PressableProps as RNPressableProps,
   type View,
   type ViewStyle,
-} from 'react-native';
+} from "react-native";
 
-import { opacity } from '@/constants/sizes';
+import { opacity } from "@/constants/sizes";
 
 export type PressableProps = RNPressableProps & {
-  feedback?: 'opacity' | 'scale' | 'none';
+  feedback?: "opacity" | "scale" | "none";
 };
 
 export const Pressable = React.memo(
   forwardRef<View, PressableProps>(
-    ({ feedback = 'opacity', style, ...props }, ref) => {
+    ({ feedback = "opacity", style, ...props }, ref) => {
       const pressStyle =
-        feedback === 'opacity'
+        feedback === "opacity"
           ? ({ pressed }: { pressed: boolean }): ViewStyle[] => [
-              typeof style === 'function'
+              typeof style === "function"
                 ? (style as Function)({ pressed })
                 : (style as ViewStyle),
               pressed && { opacity: opacity.inactive },
             ]
-          : feedback === 'scale'
+          : feedback === "scale"
             ? ({ pressed }: { pressed: boolean }): ViewStyle[] => [
-                typeof style === 'function'
+                typeof style === "function"
                   ? (style as Function)({ pressed })
                   : (style as ViewStyle),
                 pressed && { transform: [{ scale: 0.95 }] },
@@ -44,4 +44,4 @@ export const Pressable = React.memo(
   ),
 );
 
-Pressable.displayName = 'Pressable';
+Pressable.displayName = "Pressable";

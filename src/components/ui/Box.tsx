@@ -1,5 +1,5 @@
-import React, { forwardRef } from 'react';
-import { View, type ViewProps } from 'react-native';
+import React, { forwardRef } from "react";
+import { View, type ViewProps } from "react-native";
 
 export type BoxProps = ViewProps;
 
@@ -9,4 +9,4 @@ export const Box = React.memo(
   )),
 );
 
-Box.displayName = 'Box';
+Box.displayName = "Box";

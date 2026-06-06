@@ -16,31 +16,31 @@ export const ECHO_CONSTANTS = {
 
 export const STEP_METADATA = {
   PickLanguage: {
-    title: 'Pick Original Language',
+    title: "Pick Original Language",
     showBadge: true,
   },
   Config: {
-    title: 'Confirm & Transcribe',
+    title: "Confirm & Transcribe",
     showBadge: true,
   },
   Transcribing: {
-    title: 'Transcribing...',
+    title: "Transcribing...",
     showBadge: false,
   },
   TranscribeResult: {
-    title: 'Transcription',
+    title: "Transcription",
     showBadge: true,
   },
   Translating: {
-    title: 'Translating...',
+    title: "Translating...",
     showBadge: false,
   },
   FullResult: {
-    title: 'Results',
+    title: "Results",
     showBadge: true,
   },
   Error: {
-    title: 'Something went wrong',
+    title: "Something went wrong",
     showBadge: true,
   },
 };

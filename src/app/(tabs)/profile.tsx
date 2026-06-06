@@ -31,10 +31,9 @@ import {
   CurrencyPickerModal,
   ThemePickerModal,
 } from "@/components";
-import { Box, Pressable, Text, ScrollArea } from "@/components/ui";
+import { Box, Text, ScrollArea } from "@/components/ui";
 import {
   duration,
-  spring,
   borderRadius,
   opacity,
   spacing,

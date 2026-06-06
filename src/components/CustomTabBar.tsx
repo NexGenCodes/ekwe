@@ -1,21 +1,21 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Tabs } from "expo-router";
+import React from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { CustomTabBarItem } from './CustomTabBarItem';
+import { CustomTabBarItem } from "./CustomTabBarItem";
 
-import { Box } from '@/components/ui';
-import { shadows } from '@/constants';
-import { zIndex } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box } from "@/components/ui";
+import { shadows } from "@/constants";
+import { zIndex } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 // Derive the tab bar props type from expo-router's Tabs component
 // to avoid depending on @react-navigation/bottom-tabs directly.
 type TabBarProps = Parameters<
-  NonNullable<React.ComponentProps<typeof Tabs>['tabBar']>
+  NonNullable<React.ComponentProps<typeof Tabs>["tabBar"]>
 >[0];
-type TabRoute = TabBarProps['state']['routes'][number];
+type TabRoute = TabBarProps["state"]["routes"][number];
 
 export function CustomTabBar({
   state,
@@ -28,12 +28,12 @@ export function CustomTabBar({
   return (
     <Box
       style={{
-        position: 'absolute',
+        position: "absolute",
         left: 0,
         right: 0,
         bottom: 0,
         zIndex: zIndex.sticky,
-        flexDirection: 'row',
+        flexDirection: "row",
         backgroundColor: color.card,
         borderTopWidth: 1,
         borderTopColor: color.border,
@@ -56,7 +56,7 @@ export function CustomTabBar({
 
         const onPress = (): void => {
           const event = navigation.emit({
-            type: 'tabPress',
+            type: "tabPress",
             target: route.key,
             canPreventDefault: true,
           });
@@ -68,7 +68,7 @@ export function CustomTabBar({
 
         const onLongPress = (): void => {
           navigation.emit({
-            type: 'tabLongPress',
+            type: "tabLongPress",
             target: route.key,
           });
         };

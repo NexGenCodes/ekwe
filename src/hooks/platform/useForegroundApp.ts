@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
-import { AppState } from 'react-native';
-import { isAndroid } from '@/utils';
+import { useState, useEffect } from "react";
+import { AppState } from "react-native";
 
-import EkweNative from '../../../modules/ekwe-native';
+import EkweNative from "../../../modules/ekwe-native";
 
 import {
   AppStrategy,
   getStrategyForApp,
   DEFAULT_STRATEGY,
-} from '@/constants/appStrategies';
+} from "@/constants/appStrategies";
+import { isAndroid } from "@/utils";
 
 export interface UseForegroundAppResult {
   strategy: AppStrategy;
@@ -33,8 +33,8 @@ export const useForegroundApp = (
   useEffect(() => {
     checkPermission();
 
-    const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active') checkPermission();
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") checkPermission();
     });
 
     // Listen for real-time app changes from native AccessibilityService
@@ -44,7 +44,7 @@ export const useForegroundApp = (
     let eventSub: Subscription | undefined;
     if (isAndroid && enabled) {
       eventSub = EkweNative.addListener(
-        'onForegroundAppChanged',
+        "onForegroundAppChanged",
         ({ packageName }: { packageName: string }) => {
           const newStrategy = getStrategyForApp(packageName);
           setStrategy((prevStrategy) =>

@@ -10,26 +10,26 @@ import {
   Rocket,
   User,
   X,
-} from 'lucide-react-native';
-import React from 'react';
-import { Modal } from 'react-native';
+} from "lucide-react-native";
+import React from "react";
+import { Modal } from "react-native";
 
-import { Box, Text, Pressable } from '@/components/ui';
-import { palette } from '@/constants/colors';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text, Pressable } from "@/components/ui";
+import { palette } from "@/constants/colors";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 export const AVATAR_ICONS = [
-  { name: 'Smile', icon: Smile, color: palette.amber500 },
-  { name: 'Ghost', icon: Ghost, color: palette.blue600 },
-  { name: 'Sparkles', icon: Sparkles, color: palette.green500 },
-  { name: 'Heart', icon: Heart, color: palette.rose500 },
-  { name: 'Star', icon: Star, color: palette.amber400 },
-  { name: 'Zap', icon: Zap, color: palette.blue500 },
-  { name: 'Coffee', icon: Coffee, color: palette.neutral400 },
-  { name: 'Music', icon: Music, color: palette.rose400 },
-  { name: 'Rocket', icon: Rocket, color: palette.green400 },
+  { name: "Smile", icon: Smile, color: palette.amber500 },
+  { name: "Ghost", icon: Ghost, color: palette.blue600 },
+  { name: "Sparkles", icon: Sparkles, color: palette.green500 },
+  { name: "Heart", icon: Heart, color: palette.rose500 },
+  { name: "Star", icon: Star, color: palette.amber400 },
+  { name: "Zap", icon: Zap, color: palette.blue500 },
+  { name: "Coffee", icon: Coffee, color: palette.neutral400 },
+  { name: "Music", icon: Music, color: palette.rose400 },
+  { name: "Rocket", icon: Rocket, color: palette.green400 },
 ];
 
 interface AvatarPickerModalProps {
@@ -57,16 +57,16 @@ export function AvatarPickerModal({
       <Box
         style={{
           flex: 1,
-          justifyContent: 'flex-end',
+          justifyContent: "flex-end",
           backgroundColor: color.overlay,
         }}
       >
         <Box
           style={{
-            borderTopLeftRadius: borderRadius['2xl'],
-            borderTopRightRadius: borderRadius['2xl'],
+            borderTopLeftRadius: borderRadius["2xl"],
+            borderTopRightRadius: borderRadius["2xl"],
             padding: spacing.lg,
-            paddingBottom: spacing['3xl'],
+            paddingBottom: spacing["3xl"],
             borderTopWidth: 1,
             backgroundColor: color.background,
             borderColor: color.border,
@@ -74,9 +74,9 @@ export function AvatarPickerModal({
         >
           <Box
             style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
               marginBottom: spacing.lg,
             }}
           >
@@ -100,10 +100,10 @@ export function AvatarPickerModal({
 
           <Box
             style={{
-              flexDirection: 'row',
-              flexWrap: 'wrap',
+              flexDirection: "row",
+              flexWrap: "wrap",
               gap: spacing.md,
-              justifyContent: 'center',
+              justifyContent: "center",
             }}
           >
             {AVATAR_ICONS.map((item) => {
@@ -115,10 +115,10 @@ export function AvatarPickerModal({
                     {
                       width: 72,
                       height: 72,
-                      borderRadius: borderRadius['2xl'],
+                      borderRadius: borderRadius["2xl"],
                       borderWidth: 2,
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      alignItems: "center",
+                      justifyContent: "center",
                       backgroundColor: color.card,
                       borderColor: isSelected ? item.color : color.border,
                     },
@@ -144,10 +144,10 @@ export function AvatarPickerModal({
                 {
                   width: 72,
                   height: 72,
-                  borderRadius: borderRadius['2xl'],
+                  borderRadius: borderRadius["2xl"],
                   borderWidth: 2,
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  alignItems: "center",
+                  justifyContent: "center",
                   backgroundColor: color.card,
                   borderColor: !currentIcon ? color.primary : color.border,
                 },
@@ -156,7 +156,7 @@ export function AvatarPickerModal({
                   transform: [{ scale: 0.95 }],
                 },
               ]}
-              onPress={() => onSelect('')}
+              onPress={() => onSelect("")}
               accessibilityLabel="Use default avatar"
               accessibilityState={!currentIcon ? { selected: true } : undefined}
             >

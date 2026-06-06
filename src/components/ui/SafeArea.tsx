@@ -1,6 +1,6 @@
-import React, { forwardRef } from 'react';
-import { View, type ViewProps } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { forwardRef } from "react";
+import { View, type ViewProps } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export type SafeAreaProps = ViewProps;
 
@@ -10,4 +10,4 @@ export const SafeArea = React.memo(
   )),
 );
 
-SafeArea.displayName = 'SafeArea';
+SafeArea.displayName = "SafeArea";

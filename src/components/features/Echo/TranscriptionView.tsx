@@ -1,10 +1,10 @@
-import React from 'react';
+import React from "react";
 
-import { Box, Text } from '@/components/ui';
-import { shadows } from '@/constants';
-import { borderRadius } from '@/constants/sizes';
-import { spacing } from '@/constants/spacing';
-import { useTheme } from '@/hooks';
+import { Box, Text } from "@/components/ui";
+import { shadows } from "@/constants";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 interface Props {
   transcript: string;
@@ -20,7 +20,7 @@ export const TranscriptionView = ({
   return (
     <Box
       style={{
-        borderRadius: borderRadius['2xl'],
+        borderRadius: borderRadius["2xl"],
         padding: spacing.lg,
         borderWidth: 1,
         minHeight: 140,
@@ -30,14 +30,14 @@ export const TranscriptionView = ({
       }}
     >
       <Text variant="heading3" style={{ color: color.foreground }}>
-        {transcript || (isLive ? 'Listening...' : 'Waiting for audio...')}
+        {transcript || (isLive ? "Listening..." : "Waiting for audio...")}
       </Text>
 
       {isLive && (
         <Box
           style={{
-            flexDirection: 'row',
-            alignItems: 'center',
+            flexDirection: "row",
+            alignItems: "center",
             marginTop: spacing.lg,
           }}
         >
