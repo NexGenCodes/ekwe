@@ -47,10 +47,21 @@ persistObservable(auth$.isFallback, {
 export const authActions = {
   setSession: (session: Session | null): void => {
     const isPro = session?.user?.app_metadata?.is_pro === true;
+
+    // Clear stale billing states when signing out
+    const billingState = session
+      ? {}
+      : {
+          transactionsUsed: 0,
+          activeTier: "FREE" as const,
+          isFallback: false,
+        };
+
     auth$.assign({
       session,
       user: session?.user || null,
       isPro,
+      ...billingState,
     });
   },
   setUser: (user: User | null): void => {
@@ -71,7 +82,6 @@ export const authActions = {
       transactionsUsed: data.transactions_used,
       activeTier: data.tier_active,
       isFallback: data.is_fallback,
-      isPro: data.tier_active === "PREMIUM",
     });
   },
 };

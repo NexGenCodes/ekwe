@@ -129,7 +129,6 @@ describe("cleanupAuth", () => {
   });
 });
 
-
 describe("sendOtp", () => {
   it("returns ok on success", async () => {
     (supabase.auth.signInWithOtp as jest.Mock).mockResolvedValueOnce({
@@ -177,7 +176,6 @@ describe("verifyOtp", () => {
     expect(result.ok).toBe(false);
   });
 });
-
 
 describe("signInWithApple", () => {
   it("returns ok on success", async () => {
@@ -244,27 +242,8 @@ describe("signInWithGoogle", () => {
   });
 });
 
-describe("setSessionFromDeepLink", () => {
-  it("returns true when session set successfully", async () => {
-    (supabase.auth.setSession as jest.Mock).mockResolvedValueOnce({
-      error: null,
-    });
 
-    const result = await authModule.setSessionFromDeepLink(
-      "ekwe://callback#access_token=at&refresh_token=rt",
-    );
 
-    expect(result).toBe(true);
-  });
-
-  it("returns false if tokens are missing", async () => {
-    const result = await authModule.setSessionFromDeepLink(
-      "ekwe://callback#no_tokens",
-    );
-
-    expect(result).toBe(false);
-  });
-});
 
 describe("signOut", () => {
   it("signs out of supabase and google", async () => {

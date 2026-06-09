@@ -1,14 +1,15 @@
 import { Stack } from "expo-router";
 import React from "react";
-import { useTheme } from "@/hooks";
+
 import { typography } from "@/constants/typography";
+import { useTheme } from "@/hooks";
 
 export default function LegalLayout(): React.JSX.Element {
   const { color } = useTheme();
-  
+
   return (
-    <Stack 
-      screenOptions={{ 
+    <Stack
+      screenOptions={{
         headerShown: true,
         headerTransparent: false,
         headerShadowVisible: false,
@@ -18,7 +19,6 @@ export default function LegalLayout(): React.JSX.Element {
           fontFamily: typography.heading2.fontFamily,
           fontSize: 24,
           fontWeight: "400",
-          letterSpacing: -0.5,
           color: color.foreground,
         },
       }}

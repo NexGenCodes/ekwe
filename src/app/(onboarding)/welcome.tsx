@@ -1,5 +1,5 @@
-import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import { ChevronRight, Globe, Mic, ShieldCheck } from "lucide-react-native";
 import { useEffect, useCallback } from "react";
 import { View, StyleSheet } from "react-native";
@@ -50,17 +50,17 @@ export default function WelcomeScreen(): React.ReactElement {
       duration: duration.slower,
       easing: Easing.out(Easing.cubic),
     });
-    
+
     // Slow breathing animation for the gradient
     gradientOpacity.value = withRepeat(
       withSequence(
         withTiming(1, { duration: 4000, easing: Easing.inOut(Easing.ease) }),
-        withTiming(0.5, { duration: 4000, easing: Easing.inOut(Easing.ease) })
+        withTiming(0.5, { duration: 4000, easing: Easing.inOut(Easing.ease) }),
       ),
       -1,
-      true
+      true,
     );
-    
+
     router.prefetch("/language");
   }, [progress, gradientOpacity, router]);
 
@@ -75,7 +75,9 @@ export default function WelcomeScreen(): React.ReactElement {
 
   return (
     <View style={{ flex: 1, backgroundColor: color.background }}>
-      <Animated.View style={[StyleSheet.absoluteFillObject, animatedGradientStyle]}>
+      <Animated.View
+        style={[StyleSheet.absoluteFillObject, animatedGradientStyle]}
+      >
         <LinearGradient
           colors={[
             color.background,
@@ -138,7 +140,7 @@ export default function WelcomeScreen(): React.ReactElement {
 
             <Box style={{ gap: spacing.md }}>
               {FEATURES.map((item, index) => (
-                <Animated.View 
+                <Animated.View
                   key={item.title}
                   entering={FadeInDown.delay(300 + index * 150).springify()}
                 >

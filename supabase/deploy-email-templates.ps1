@@ -26,7 +26,7 @@ if (Test-Path $EnvFile) {
 }
 
 if (-not $env:SUPABASE_ACCESS_TOKEN -or -not $env:SUPABASE_PROJECT_REF) {
-    Write-Host "❌ Missing SUPABASE_ACCESS_TOKEN or SUPABASE_PROJECT_REF." -ForegroundColor Red
+    Write-Host "Failed: Missing SUPABASE_ACCESS_TOKEN or SUPABASE_PROJECT_REF." -ForegroundColor Red
     Write-Host "   Add them to your .env file or set them manually."
     exit 1
 }
@@ -35,7 +35,7 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $MagicLinkHtml = Get-Content -Path "$ProjectRoot\supabase\templates\magic_link.html" -Raw
 $ConfirmationHtml = Get-Content -Path "$ProjectRoot\supabase\templates\confirmation.html" -Raw
 
-Write-Host "📧 Deploying email templates to Supabase project: $env:SUPABASE_PROJECT_REF"
+Write-Host "Deploying email templates to Supabase project: $env:SUPABASE_PROJECT_REF"
 
 # Build JSON manually to avoid ConvertTo-Json encoding issues with HTML content
 $MagicLinkEscaped = $MagicLinkHtml -replace '\\', '\\' -replace '"', '\"' -replace "`r`n", '' -replace "`n", ''
@@ -56,9 +56,9 @@ try {
         -Headers $Headers `
         -Body $BodyBytes
 
-    Write-Host "✅ Email templates deployed successfully!" -ForegroundColor Green
+    Write-Host "Success: Email templates deployed successfully!" -ForegroundColor Green
 } catch {
-    Write-Host "❌ Failed to deploy templates." -ForegroundColor Red
+    Write-Host "Failed: Failed to deploy templates." -ForegroundColor Red
     Write-Host $_.Exception.Message
     exit 1
 }

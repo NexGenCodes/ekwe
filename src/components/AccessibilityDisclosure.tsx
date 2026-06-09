@@ -31,9 +31,9 @@ export const AccessibilityDisclosure: React.FC<
     <View style={{ flex: 1, backgroundColor: color.background }}>
       <ScrollArea
         style={{ flex: 1 }}
-        contentContainerStyle={{ 
+        contentContainerStyle={{
           paddingHorizontal: spacing.lg,
-          paddingBottom: 160 // Room for floating footer
+          paddingBottom: 160, // Room for floating footer
         }}
         contentInsetAdjustmentBehavior="automatic"
       >
@@ -62,8 +62,13 @@ export const AccessibilityDisclosure: React.FC<
             </Text>
             <Text variant="bodySmall">
               This app uses the{" "}
-              <Text variant="bodySmall" style={{ fontFamily: "SpaceMono-Regular" }}>AccessibilityService API</Text> to
-              detect when you open messaging applications (like WhatsApp or
+              <Text
+                variant="bodySmall"
+                style={{ fontFamily: "SpaceMono-Regular" }}
+              >
+                AccessibilityService API
+              </Text>{" "}
+              to detect when you open messaging applications (like WhatsApp or
               Tinder). This allows Ekwe to automatically display the floating
               translation tool over your screen exactly when you need it.
             </Text>
@@ -99,10 +104,16 @@ export const AccessibilityDisclosure: React.FC<
               )}
             </Box>
             <Box style={{ flex: 1, paddingRight: spacing.sm }}>
-              <Text variant="body" style={{ marginBottom: spacing.xs, letterSpacing: -0.2 }}>
+              <Text
+                variant="body"
+                style={{ marginBottom: spacing.xs, letterSpacing: -0.2 }}
+              >
                 Contextual App Detection
               </Text>
-              <Text variant="bodySmall" style={{ color: color.muted, lineHeight: 20 }}>
+              <Text
+                variant="bodySmall"
+                style={{ color: color.muted, lineHeight: 20 }}
+              >
                 We strictly monitor top-level window transitions to identify
                 when a target messaging app is launched. We do NOT read your
                 chat messages.
@@ -135,10 +146,16 @@ export const AccessibilityDisclosure: React.FC<
               )}
             </Box>
             <Box style={{ flex: 1, paddingRight: spacing.sm }}>
-              <Text variant="body" style={{ marginBottom: spacing.xs, letterSpacing: -0.2 }}>
+              <Text
+                variant="body"
+                style={{ marginBottom: spacing.xs, letterSpacing: -0.2 }}
+              >
                 Battery Optimized
               </Text>
-              <Text variant="bodySmall" style={{ color: color.muted, lineHeight: 20 }}>
+              <Text
+                variant="bodySmall"
+                style={{ color: color.muted, lineHeight: 20 }}
+              >
                 Utilizing native Accessibility signals prevents aggressive
                 background polling, ensuring your phone's battery isn't drained.
               </Text>
@@ -170,10 +187,16 @@ export const AccessibilityDisclosure: React.FC<
               )}
             </Box>
             <Box style={{ flex: 1, paddingRight: spacing.sm }}>
-              <Text variant="body" style={{ marginBottom: spacing.xs, letterSpacing: -0.2 }}>
+              <Text
+                variant="body"
+                style={{ marginBottom: spacing.xs, letterSpacing: -0.2 }}
+              >
                 Zero Data Collection
               </Text>
-              <Text variant="bodySmall" style={{ color: color.muted, lineHeight: 20 }}>
+              <Text
+                variant="bodySmall"
+                style={{ color: color.muted, lineHeight: 20 }}
+              >
                 We{" "}
                 <Text variant="bodySmall" style={{ color: color.foreground }}>
                   do not collect, store, transmit, or share

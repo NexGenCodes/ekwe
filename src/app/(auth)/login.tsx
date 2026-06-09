@@ -45,7 +45,13 @@ export default function WelcomeScreen(): React.JSX.Element {
       <AuthHeader subtitle="Every voice, understood." />
 
       <Box>
-        <ErrorBanner message={isOffline ? "No internet connection. Please connect to proceed." : error} />
+        <ErrorBanner
+          message={
+            isOffline
+              ? "No internet connection. Please connect to proceed."
+              : error
+          }
+        />
 
         <Box style={{ gap: spacing.md, marginBottom: spacing.lg }}>
           <Controller

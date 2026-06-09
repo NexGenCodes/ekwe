@@ -6,11 +6,9 @@ import Animated, {
   useSharedValue,
   withTiming,
   interpolateColor,
-  withSequence,
-  withSpring,
 } from "react-native-reanimated";
 
-import { Box, Text } from "@/components/ui";
+import { Box } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
@@ -58,7 +56,7 @@ const OtpDigitBox = memo(function OtpDigitBox({
       borderColor: interpolateColor(
         focusProgress.value,
         [0, 1],
-        [borderColor, secondaryColor]
+        [borderColor, secondaryColor],
       ),
     };
   });
@@ -123,7 +121,7 @@ export const OtpInput = memo(function OtpInput({
         onSubmitEditing();
       }
     },
-    [onChangeText, onSubmitEditing]
+    [onChangeText, onSubmitEditing],
   );
 
   const handleFocus = useCallback(() => setIsFocused(true), []);

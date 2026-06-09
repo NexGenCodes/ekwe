@@ -6,8 +6,6 @@ import {
 } from "@react-navigation/native";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
-import * as Linking from "expo-linking";
-import { useRouter } from "expo-router";
 import { Stack } from "expo-router/stack";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -20,10 +18,8 @@ import {
   ErrorBoundary,
   ToastContainer,
   AppAlertModal,
-  EkweLogo,
 } from "@/components";
 import { Box } from "@/components/ui";
-import { palette } from "@/constants/colors";
 import { useShareIntentHandler, useTheme, useTripleExclusivity } from "@/hooks";
 import { queryClient } from "@/hooks/queries/queryClient";
 import { useAppFonts } from "@/hooks/useFonts";
@@ -33,16 +29,13 @@ import { SyncService } from "@/services/SyncService";
 import { initAuth } from "@/services/auth";
 import { initializeMMKV } from "@/services/mmkv";
 import { auth$ } from "@/store";
-import logger from "@/utils/logger";
 
 SplashScreen.preventAutoHideAsync();
 
 function InnerLayout(): React.ReactElement {
-  const router = useRouter();
   const { isDark, color } = useTheme();
 
   const isInitialized = useSelector(() => auth$.isInitialized.get());
-
 
   // Real-time Exclusivity Guard & Share Intent Listener
   useTripleExclusivity();
@@ -145,7 +138,7 @@ function InnerLayout(): React.ReactElement {
   );
 }
 
-function RootLayout(): React.ReactElement {
+function RootLayout(): React.ReactElement | null {
   const fontsLoaded = useAppFonts();
   const [appReady, setAppReady] = React.useState(false);
 

@@ -8,8 +8,9 @@ import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import * as AppleAuthentication from "expo-apple-authentication";
 
 import { queryClient } from "@/hooks/queries/queryClient";
+import { posthogClient } from "@/lib/posthog";
 import { supabase } from "@/services/supabase";
-import { authActions } from "@/store";
+import { auth$, authActions } from "@/store";
 import { isIOS } from "@/utils";
 import logger from "@/utils/logger";
 
@@ -23,12 +24,10 @@ export interface AuthResult {
 
 // ── Initialization ─────────────────────────────────────────────────
 
-let _authInitialized = false;
 let _authSubscription: { unsubscribe: () => void } | null = null;
 
 export const initAuth = (): void => {
-  if (_authInitialized) return;
-  _authInitialized = true;
+  if (auth$.isInitialized.peek()) return;
 
   try {
     GoogleSignin.configure({
@@ -58,7 +57,7 @@ export const cleanupAuth = (): void => {
     _authSubscription.unsubscribe();
     _authSubscription = null;
   }
-  _authInitialized = false;
+  authActions.setInitialized(false);
 };
 
 // ── OTP (Passwordless) ──────────────────────────────────────────
@@ -183,29 +182,6 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
   }
 };
 
-// ── Deep Link Session ───────────────────────────────────────────
-
-export const setSessionFromDeepLink = async (url: string): Promise<boolean> => {
-  try {
-    const fragment = url.split("#")[1] || url.split("?")[1] || "";
-    const params = new URLSearchParams(fragment);
-    const access_token = params.get("access_token");
-    const refresh_token = params.get("refresh_token");
-
-    if (!access_token || !refresh_token) return false;
-
-    const { error } = await supabase.auth.setSession({
-      access_token,
-      refresh_token,
-    });
-
-    return !error;
-  } catch (err) {
-    logger.error("[Auth] setSessionFromDeepLink error:", err);
-    return false;
-  }
-};
-
 // ── Account Management ──────────────────────────────────────────
 
 export const signOut = async (): Promise<AuthResult> => {
@@ -214,6 +190,9 @@ export const signOut = async (): Promise<AuthResult> => {
     try {
       await GoogleSignin.signOut();
     } catch {}
+
+    posthogClient?.reset();
+
     if (error) return { ok: false, error: error.message };
     return { ok: true };
   } catch (err) {
@@ -241,6 +220,7 @@ export const deleteAccount = async (): Promise<AuthResult> => {
       await GoogleSignin.signOut();
     } catch {}
     queryClient.clear();
+    posthogClient?.reset();
     return { ok: true };
   } catch (err) {
     logger.error("[Auth] deleteAccount error:", err);

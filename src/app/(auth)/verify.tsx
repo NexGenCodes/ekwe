@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -24,8 +25,7 @@ export default function VerifyScreen(): React.JSX.Element {
   const email = params.email || "";
 
   const { color } = useTheme();
-  const { isLoading, error, cooldown, verify, resend } =
-    useOtpVerify();
+  const { isLoading, error, cooldown, verify, resend } = useOtpVerify();
 
   const { control, handleSubmit } = useForm<OtpForm>({
     resolver: zodResolver(otpSchema),
@@ -36,6 +36,7 @@ export default function VerifyScreen(): React.JSX.Element {
     const type = params.source === "signup" ? "signup" : "email";
     const result = await verify(email, data.token, type);
     if (result.ok) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setOnboardingCompleted(true);
       router.replace("/(tabs)");
     }

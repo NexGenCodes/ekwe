@@ -34,7 +34,7 @@ export const Input = forwardRef<TextInput, InputProps>(
       const borderColorValue = interpolateColor(
         focusProgress.value,
         [0, 1],
-        [color.border, color.secondary]
+        [color.border, color.secondary],
       );
       return { borderColor: borderColorValue };
     });
@@ -54,7 +54,7 @@ export const Input = forwardRef<TextInput, InputProps>(
           </Text>
         ) : null}
         <AnimatedTextInput
-          ref={ref as React.Ref<Animated.AnimatedComponent<typeof TextInput>>}
+          ref={ref as React.Ref<TextInput>}
           autoCapitalize="none"
           autoCorrect={false}
           placeholderTextColor={color.muted}

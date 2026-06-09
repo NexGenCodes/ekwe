@@ -10,7 +10,6 @@ import { Pressable, Text, Box } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
-import { isIOS } from "@/utils";
 
 interface SocialButtonProps {
   provider: "apple" | "google";
@@ -97,13 +96,27 @@ export const SocialButton = ({
       accessibilityLabel={`${action === "sign-in" ? "Sign in" : "Sign up"} with ${label}`}
     >
       {provider === "google" ? <GoogleLogo /> : <AppleLogo color={textColor} />}
-      <Box style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
+      <Box
+        style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}
+      >
         <Text variant="body" style={{ color: textColor }}>
           {label}
         </Text>
         {comingSoon && (
-          <Box style={{ backgroundColor: color.muted, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 }}>
-            <Text variant="caption" style={{ color: color.background, fontSize: 10 }}>Soon</Text>
+          <Box
+            style={{
+              backgroundColor: color.muted,
+              paddingHorizontal: 6,
+              paddingVertical: 2,
+              borderRadius: 10,
+            }}
+          >
+            <Text
+              variant="caption"
+              style={{ color: color.background, fontSize: 10 }}
+            >
+              Soon
+            </Text>
           </Box>
         )}
       </Box>

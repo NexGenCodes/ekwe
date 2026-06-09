@@ -1,5 +1,5 @@
-import { useRouter } from "expo-router";
 import { BlurView } from "expo-blur";
+import { useRouter } from "expo-router";
 import React, { useCallback, useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 import Animated, {
@@ -66,7 +66,7 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
         contentContainerStyle={{
           paddingHorizontal: spacing.md,
           // Extra padding bottom so the last item scrolls past the absolute footer
-          paddingBottom: 140, 
+          paddingBottom: 140,
         }}
         style={{ backgroundColor: color.background }}
       >
@@ -98,7 +98,10 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
             </Text>
           </Box>
 
-          <LanguageSelectionGrid selected={selected} onToggle={toggleLanguage} />
+          <LanguageSelectionGrid
+            selected={selected}
+            onToggle={toggleLanguage}
+          />
         </Animated.View>
       </ScreenContainer>
 
@@ -111,7 +114,7 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
             styles.blurView,
             {
               paddingHorizontal: spacing.lg,
-              paddingBottom: spacing["3xl"],
+              paddingBottom: spacing.xl,
               paddingTop: spacing.md,
               borderTopWidth: 1,
               borderTopColor: color.border + "80", // 50% opacity border
@@ -122,7 +125,9 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
           <Button
             variant="primary"
             size="large"
-            label={isComplete ? "Start Translating" : `Select ${remaining} more`}
+            label={
+              isComplete ? "Start Translating" : `Select ${remaining} more`
+            }
             disabled={!isComplete}
             onPress={handleContinue}
             style={{ width: "100%" }}

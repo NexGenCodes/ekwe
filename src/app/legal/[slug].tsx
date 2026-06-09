@@ -68,7 +68,6 @@ export default function LegalScreen(): React.JSX.Element {
             fontFamily: typography.heading2.fontFamily,
             fontSize: 24,
             fontWeight: "400",
-            letterSpacing: -0.5,
             color: color.foreground,
           },
         }}
@@ -79,7 +78,9 @@ export default function LegalScreen(): React.JSX.Element {
         contentContainerStyle={styles.scrollContent}
         contentInsetAdjustmentBehavior="automatic"
       >
-        <Animated.View entering={FadeInDown.delay(100).duration(400).springify()}>
+        <Animated.View
+          entering={FadeInDown.delay(100).duration(400).springify()}
+        >
           <Text
             variant="bodySmall"
             style={[styles.lastUpdated, { color: color.muted }]}
@@ -91,7 +92,9 @@ export default function LegalScreen(): React.JSX.Element {
         {doc.sections.map((section, index) => (
           <Animated.View
             key={section.title}
-            entering={FadeInDown.delay(150 + index * 50).duration(400).springify()}
+            entering={FadeInDown.delay(150 + index * 50)
+              .duration(400)
+              .springify()}
             style={[
               styles.sectionCard,
               { backgroundColor: color.card, borderColor: color.border },
@@ -102,7 +105,10 @@ export default function LegalScreen(): React.JSX.Element {
             </Text>
             <Text
               variant="body"
-              style={[styles.sectionBody, { color: color.muted, lineHeight: 24 }]}
+              style={[
+                styles.sectionBody,
+                { color: color.muted, lineHeight: 24 },
+              ]}
             >
               {section.body}
             </Text>

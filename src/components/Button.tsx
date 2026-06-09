@@ -69,7 +69,7 @@ export const Button = React.memo(function Button({
           easing: Easing.linear,
         }),
         -1, // infinite
-        false // no reverse
+        false, // no reverse
       );
     } else {
       spinAnim.value = 0;
