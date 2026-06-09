@@ -5,7 +5,7 @@ import {
   fetchWithTimeout,
   getFirstKey,
   connectWithTimeout,
-  relayWebSockets,
+  createStreamInterceptor,
   TIMEOUT_FAST,
   abortableDelay,
 } from '../utils';
@@ -188,6 +188,25 @@ export async function handleStream(
   );
   if (!aaiWs) return false;
 
-  relayWebSockets(clientWs, aaiWs);
+  createStreamInterceptor(clientWs, aaiWs, (data) => {
+    try {
+      const payload = JSON.parse(data);
+      if (payload.message_type === 'PartialTranscript' || payload.message_type === 'FinalTranscript') {
+        const text = payload.text;
+        const isFinal = payload.message_type === 'FinalTranscript';
+
+        if (text && !isHallucination(text)) {
+          clientWs.send(
+            JSON.stringify({
+              type: isFinal ? 'final' : 'interim',
+              text,
+              provider: 'assemblyai',
+            })
+          );
+        }
+      }
+    } catch { /* ignore parse errors */ }
+  });
+
   return true;
 }

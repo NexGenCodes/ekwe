@@ -14,7 +14,7 @@ export function useAudioStream(): {
   transcript: string;
   startStream: (sourceLang?: string) => Promise<void>;
   stopStream: () => void;
-  sendAudioChunk: (base64Chunk: string) => void;
+  sendAudioChunk: (buffer: ArrayBuffer | Uint8Array) => void;
 } {
   const [isStreaming, setIsStreaming] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -64,14 +64,17 @@ export function useAudioStream(): {
     };
   };
 
-  const sendAudioChunk = (base64Chunk: string): void => {
+  const sendAudioChunk = (buffer: ArrayBuffer | Uint8Array): void => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "audio", data: base64Chunk }));
+      wsRef.current.send(buffer);
     }
   };
 
   const stopStream = (): void => {
     if (wsRef.current) {
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "stop" }));
+      }
       wsRef.current.close();
       wsRef.current = null;
     }

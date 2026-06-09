@@ -49,14 +49,13 @@ interface StreamPipelineEntry {
   handleStream: (env: Env, lang: string, clientWs: WebSocket, signal: AbortSignal) => Promise<boolean>;
 }
 
-// 🚀 STREAMING — providers that support streaming, in order of preference
-// Each handleStream(env, lang, clientWs, signal) → Promise<boolean>
-// Returns true if it handled the session, false to fall through to next provider
+// 🚀 STREAMING — true WebSocket providers only, in order of preference
+// Wit.ai is intentionally excluded: it uses HTTP chunked transfer (not WebSockets)
+// and has 500ms+ latency. It remains in the batch pipeline where it excels.
 const STREAMING_PIPELINE: StreamPipelineEntry[] = [
-  { name: 'witai', skipOnAuto: true, handleStream: witai.handleStream },
-  { name: 'deepgram', skipOnAuto: false, handleStream: deepgram.handleStream },
+  { name: 'deepgram',   skipOnAuto: false, handleStream: deepgram.handleStream },
   { name: 'assemblyai', skipOnAuto: false, handleStream: assemblyai.handleStream },
-  { name: 'gladia', skipOnAuto: false, handleStream: gladia.handleStream },
+  { name: 'gladia',     skipOnAuto: false, handleStream: gladia.handleStream },
 ];
 
 async function sha256Bytes(buffer: ArrayBuffer): Promise<string> {

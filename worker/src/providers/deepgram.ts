@@ -5,7 +5,7 @@ import {
   rotateKeys,
   getFirstKey,
   connectWithTimeout,
-  relayWebSockets,
+  createStreamInterceptor,
   TIMEOUT_FAST,
 } from '../utils';
 import { logger } from '../logger';
@@ -125,6 +125,25 @@ export async function handleStream(
   );
   if (!dgWs) return false;
 
-  relayWebSockets(clientWs, dgWs);
+  createStreamInterceptor(clientWs, dgWs, (data) => {
+    try {
+      const payload = JSON.parse(data);
+      if (payload.type === 'Results' && payload.channel?.alternatives?.length > 0) {
+        const text = payload.channel.alternatives[0].transcript;
+        const isFinal = payload.is_final === true;
+
+        if (text && !isHallucination(text)) {
+          clientWs.send(
+            JSON.stringify({
+              type: isFinal ? 'final' : 'interim',
+              text,
+              provider: 'deepgram',
+            })
+          );
+        }
+      }
+    } catch { /* ignore parse errors */ }
+  });
+
   return true;
 }

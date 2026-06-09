@@ -348,72 +348,76 @@ export function connectWithTimeout(
 }
 
 /**
- * Bi-directionally relays messages between two WebSockets.
- * Handles binary/text messages and close propagation.
- * Returns a cleanup function to stop relaying.
+ * Bi-directionally relays messages between client and provider WebSockets,
+ * with a custom interceptor for parsing the provider's JSON.
  */
-export function relayWebSockets(
-  a: WebSocket,
-  b: WebSocket,
+export function createStreamInterceptor(
+  clientWs: WebSocket,
+  providerWs: WebSocket,
+  onProviderMessage: (data: string) => void,
 ): () => void {
-  let aClosed = false;
-  let bClosed = false;
-  let aCleanup: (() => void) | null = null;
-  let bCleanup: (() => void) | null = null;
+  let isClosed = false;
 
   function closeBoth(): void {
-    if (!aClosed) { try { a.close(); } catch { /* ignore */ } }
-    if (!bClosed) { try { b.close(); } catch { /* ignore */ } }
+    if (isClosed) return;
+    isClosed = true;
+    try { clientWs.close(); } catch { /* ignore */ }
+    try { providerWs.close(); } catch { /* ignore */ }
   }
 
-  const onAMessage = (event: MessageEvent): void => {
-    if (bClosed) return;
-    try { b.send(event.data); } catch { /* ignore */ }
+  // Client -> Provider
+  const onClientMessage = (event: MessageEvent): void => {
+    if (isClosed) return;
+    try {
+      // The client should send binary PCM chunks for real-time transcription.
+      // We ignore non-binary messages here, except maybe a "stop" config.
+      if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
+        providerWs.send(event.data);
+      } else if (typeof event.data === 'string') {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === 'stop') closeBoth();
+        } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
   };
-  const onAClose = (): void => {
-    aClosed = true;
-    if (!bClosed) {
-      bClosed = true;
-      try { b.close(); } catch { /* ignore */ }
+
+  const onClientClose = (): void => closeBoth();
+  const onClientError = (): void => closeBoth();
+
+  // Provider -> Client
+  const onProviderMessageEvent = (event: MessageEvent): void => {
+    if (isClosed) return;
+    if (typeof event.data === 'string') {
+      try {
+        onProviderMessage(event.data);
+      } catch (err) {
+        logger.error('[stream] Interceptor processing error', { error: String(err) });
+      }
     }
   };
-  const onAError = (): void => { onAClose(); };
 
-  const onBMessage = (event: MessageEvent): void => {
-    if (aClosed) return;
-    try { a.send(event.data); } catch { /* ignore */ }
-  };
-  const onBClose = (): void => {
-    bClosed = true;
-    if (!aClosed) {
-      aClosed = true;
-      try { a.close(); } catch { /* ignore */ }
-    }
-  };
-  const onBError = (): void => { onBClose(); };
+  const onProviderClose = (): void => closeBoth();
+  const onProviderError = (): void => closeBoth();
 
-  a.addEventListener('message', onAMessage);
-  a.addEventListener('close', onAClose);
-  a.addEventListener('error', onAError);
+  clientWs.addEventListener('message', onClientMessage);
+  clientWs.addEventListener('close', onClientClose);
+  clientWs.addEventListener('error', onClientError);
 
-  b.addEventListener('message', onBMessage);
-  b.addEventListener('close', onBClose);
-  b.addEventListener('error', onBError);
-
-  aCleanup = (): void => {
-    a.removeEventListener('message', onAMessage);
-    a.removeEventListener('close', onAClose);
-    a.removeEventListener('error', onAError);
-  };
-  bCleanup = (): void => {
-    b.removeEventListener('message', onBMessage);
-    b.removeEventListener('close', onBClose);
-    b.removeEventListener('error', onBError);
-  };
+  providerWs.addEventListener('message', onProviderMessageEvent);
+  providerWs.addEventListener('close', onProviderClose);
+  providerWs.addEventListener('error', onProviderError);
 
   return () => {
-    aCleanup?.();
-    bCleanup?.();
+    clientWs.removeEventListener('message', onClientMessage);
+    clientWs.removeEventListener('close', onClientClose);
+    clientWs.removeEventListener('error', onClientError);
+
+    providerWs.removeEventListener('message', onProviderMessageEvent);
+    providerWs.removeEventListener('close', onProviderClose);
+    providerWs.removeEventListener('error', onProviderError);
+
     closeBoth();
   };
 }
+

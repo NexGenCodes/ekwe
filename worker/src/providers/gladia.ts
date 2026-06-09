@@ -5,7 +5,7 @@ import {
   rotateKeys,
   getFirstKey,
   connectWithTimeout,
-  relayWebSockets,
+  createStreamInterceptor,
   TIMEOUT_FAST,
   abortableDelay,
 } from '../utils';
@@ -178,6 +178,25 @@ export async function handleStream(
   );
   if (!glWs) return false;
 
-  relayWebSockets(clientWs, glWs);
+  createStreamInterceptor(clientWs, glWs, (data) => {
+    try {
+      const payload = JSON.parse(data);
+      if (payload.type === 'transcript' && payload.transcription) {
+        const text = payload.transcription;
+        const isFinal = payload.time_end !== undefined && payload.type === 'final';
+
+        if (text && !isHallucination(text)) {
+          clientWs.send(
+            JSON.stringify({
+              type: isFinal ? 'final' : 'interim',
+              text,
+              provider: 'gladia',
+            })
+          );
+        }
+      }
+    } catch { /* ignore parse errors */ }
+  });
+
   return true;
 }
