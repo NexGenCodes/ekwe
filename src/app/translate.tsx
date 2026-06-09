@@ -2,7 +2,7 @@ import { useSelector } from "@legendapp/state/react";
 import { BlurView } from "expo-blur";
 import { useLocalSearchParams } from "expo-router";
 import { ChevronDown, ArrowDownUp } from "lucide-react-native";
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 
 import { LanguagePickerSheet, Button, Card } from "@/components";
 import { Box, Text, ScrollArea, Spinner, Pressable } from "@/components/ui";
@@ -29,6 +29,8 @@ export default function TranslateScreen(): React.JSX.Element {
   const mutedColor = color.muted;
   const { copied, copy } = useClipboard();
   const { translate } = useTranslation();
+
+  const translateAbortRef = useRef<AbortController | null>(null);
 
   // Local State
   const [sourceLang, setSourceLang] = useState<string>(
@@ -70,9 +72,19 @@ export default function TranslateScreen(): React.JSX.Element {
 
   const handleTranslate = async (): Promise<void> => {
     if (!text) return;
+    translateAbortRef.current?.abort();
+    const controller = new AbortController();
+    translateAbortRef.current = controller;
     setIsTranslating(true);
     try {
-      const result = await translate(text as string, sourceLang, targetLang);
+      const result = await translate(
+        text as string,
+        sourceLang,
+        targetLang,
+        controller.signal,
+      );
+
+      if (controller.signal.aborted) return;
 
       if (!result.ok) {
         throw new Error(result.error);
@@ -112,6 +124,8 @@ export default function TranslateScreen(): React.JSX.Element {
   const handleSwap = (): void => {
     if (sourceLang === "auto" || targetLang === "" || targetLang === "none")
       return;
+    translateAbortRef.current?.abort();
+    translateAbortRef.current = null;
     setSourceLang(targetLang);
     setTargetLang(sourceLang);
     setTranslation(null);

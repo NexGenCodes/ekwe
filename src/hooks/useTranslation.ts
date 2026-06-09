@@ -3,7 +3,6 @@ import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Keyboard } from "react-native";
 
-import { PLAN_LIMITS } from "@/constants/billing";
 import { EkweError } from "@/constants/errors";
 import { useTranslateMutation } from "@/hooks/queries/useTranslateMutation";
 import { translationSchema } from "@/schemas/translation";
@@ -12,6 +11,10 @@ import { TranslationResult } from "@/services/translateText";
 import { audioActions, settings$, auth$, audio$ } from "@/store";
 import { Result, ok, err } from "@/types/Result";
 import { AppToast, logger } from "@/utils";
+import {
+  getDefaultSourceLang,
+  resolveDetectedLanguage,
+} from "@/utils/languageUtils";
 
 export interface UseTranslationReturn {
   translate: (
@@ -50,33 +53,12 @@ export const useTranslation = (): UseTranslationReturn => {
 
   const [sourceText, setSourceText] = useState("");
 
-  // Free users cannot use auto-detect — default to their first selected language
-  const isPro = useSelector(() => auth$.isPro.get());
-  const canUseAuto = isPro
-    ? PLAN_LIMITS.pro.autoLanguageDetect
-    : PLAN_LIMITS.free.autoLanguageDetect;
-  const defaultSelectedLangs =
-    useSelector(() => settings$.selectedLanguages.get()) || [];
-  const defaultSourceLang = canUseAuto
-    ? "auto"
-    : defaultSelectedLangs[0] || "en";
+  // Auto-detect is free for all — always default to "auto"
+  const defaultSourceLang = getDefaultSourceLang();
+  const initialTargetLang = defaultTargetLang || "es";
 
-  const initialSourceLang = defaultSourceLang;
-  const initialTargetLang =
-    (defaultTargetLang || "es") === initialSourceLang &&
-    initialSourceLang !== "auto"
-      ? ""
-      : defaultTargetLang || "es";
-
-  const [sourceLang, setSourceLang] = useState<string>(initialSourceLang);
+  const [sourceLang, setSourceLang] = useState<string>(defaultSourceLang);
   const [targetLang, setTargetLang] = useState<string>(initialTargetLang);
-
-  // Sync auth state changes (if they load in slightly after mount) so Pro users always get Auto-Detect by default
-  useEffect(() => {
-    if (canUseAuto && sourceLang !== "auto") {
-      setSourceLang("auto");
-    }
-  }, [canUseAuto]); // Intentional: We only want to push them to auto if their permission state changes to true
 
   const { setError } = audioActions;
   const translationAbortRef = useRef<AbortController | null>(null);
@@ -108,10 +90,11 @@ export const useTranslation = (): UseTranslationReturn => {
     ) {
       audioActions.setSaved(true);
       const detectedSource = audio$.sourceLang.get() || "en";
-      const resolvedSource =
-        sourceLangRef.current === "auto"
-          ? detectedSource
-          : sourceLangRef.current;
+      const resolvedSource = resolveDetectedLanguage(
+        detectedSource,
+        sourceLangRef.current,
+        "en",
+      );
 
       HistoryService.recordTranslation(
         {
@@ -192,6 +175,9 @@ export const useTranslation = (): UseTranslationReturn => {
   const handleSwap = useCallback(async () => {
     if (sourceLang === "auto" || targetLang === "none" || targetLang === "")
       return;
+    // Abort any in-flight translation before swapping languages
+    translationAbortRef.current?.abort();
+    translationAbortRef.current = null;
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     lastRequestRef.current = null;
 
@@ -264,10 +250,11 @@ export const useTranslation = (): UseTranslationReturn => {
           audioActions.setSaved(true);
           await HistoryService.recordTranslation(
             {
-              sourceLang:
-                sourceLang === "auto"
-                  ? audio$.sourceLang.get() || "en"
-                  : sourceLang,
+              sourceLang: resolveDetectedLanguage(
+                audio$.sourceLang.get(),
+                sourceLang,
+                "en",
+              ),
               targetLang,
               transcript: textToTranslate,
               translation: result.value.translation,

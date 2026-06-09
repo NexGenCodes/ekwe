@@ -1,6 +1,6 @@
 import { useSelector } from "@legendapp/state/react";
 import * as Haptics from "expo-haptics";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   useSharedValue,
   withTiming,
@@ -29,6 +29,10 @@ interface LanguageSwitcherReturn {
   closeDropdown: () => void;
 }
 
+function findReplacement(myLanguages: string[], exclude: string): string {
+  return myLanguages.find((l) => l !== exclude) || "";
+}
+
 export function useLanguageSwitcher({
   sourceLang,
   targetLang,
@@ -37,6 +41,9 @@ export function useLanguageSwitcher({
 }: UseLanguageSwitcherProps): LanguageSwitcherReturn {
   const myLanguages = (useSelector(() => settings$.selectedLanguages.get()) ||
     []) as string[];
+
+  const myLanguagesRef = useRef(myLanguages);
+  myLanguagesRef.current = myLanguages;
 
   const [activeDropdown, setActiveDropdown] = useState<DropdownType>(null);
 
@@ -57,6 +64,7 @@ export function useLanguageSwitcher({
   const handleSelect = useCallback(
     (code: string) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const langs = myLanguagesRef.current;
 
       if (activeDropdown === "source") {
         onSourceChange(code);
@@ -68,8 +76,8 @@ export function useLanguageSwitcher({
           if (sourceLang !== "auto" && sourceLang !== "") {
             onTargetChange(sourceLang);
           } else {
-            // Cannot safely swap, so we must blank the target
-            onTargetChange("");
+            // Pick the next available language from the user's list
+            onTargetChange(findReplacement(langs, code));
           }
         }
       } else {
@@ -82,7 +90,8 @@ export function useLanguageSwitcher({
           if (targetLang !== "") {
             onSourceChange(targetLang);
           } else {
-            onSourceChange("");
+            // Pick the next available language from the user's list
+            onSourceChange(findReplacement(langs, code));
           }
         }
       }

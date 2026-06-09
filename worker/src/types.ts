@@ -49,6 +49,7 @@ export interface TranscribeResult {
 export interface TranslateResult {
   translation: string;
   provider: string;
+  language?: string;
 }
 
 // ─── Auth Types (kept for when auth is re-enabled) ────────────────

@@ -5,6 +5,7 @@ import * as gemini from "./providers/gemini";
 import * as groq from "./providers/groq";
 import * as mistral from "./providers/mistral";
 import * as openrouter from "./providers/openrouter";
+import { detectTextLanguage } from "./autoDetect";
 import {
   guardTextLength,
   guardAutoDetect,
@@ -116,6 +117,14 @@ export async function handleTranslate(
 
   const pipeline = tier === "PREMIUM" ? PREMIUM_PIPELINE : FREE_PIPELINE;
 
+  // Kick off parallel language detection when source is auto
+  const isAuto = !body.sourceLang || body.sourceLang === "auto";
+  const detectPromise = isAuto
+    ? detectTextLanguage(cleanText, env.AI, env.EKWE_KV, signal).catch(
+        () => null as string | null,
+      )
+    : null;
+
   for (const provider of pipeline) {
     try {
       if (signal.aborted) throw new Error("CLIENT_ABORTED");
@@ -133,6 +142,14 @@ export async function handleTranslate(
         logger.info(`[translate] Success: ${provider.name}`, {
           provider: result.provider,
         });
+
+        // Add detected language if detection was requested
+        if (detectPromise) {
+          const detected = await detectPromise;
+          if (detected) {
+            result.language = detected;
+          }
+        }
 
         // Write to cache (best-effort — fail-open so the user still gets their translation)
         try {

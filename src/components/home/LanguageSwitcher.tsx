@@ -1,4 +1,3 @@
-import { useSelector } from "@legendapp/state/react";
 import React from "react";
 import Animated, {
   useAnimatedStyle,
@@ -9,11 +8,9 @@ import { LanguageDropdown } from "./LanguageDropdown";
 import { LanguagePill } from "./LanguagePill";
 import { SwapButton } from "./SwapButton";
 
-import { PLAN_LIMITS } from "@/constants/billing";
 import { borderRadius, zIndex } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme, useLanguageSwitcher } from "@/hooks";
-import { auth$ } from "@/store";
 
 interface LanguageSwitcherProps {
   sourceLang: string;
@@ -55,14 +52,9 @@ export function LanguageSwitcher({
     };
   });
 
-  const isPro = useSelector(() => auth$.isPro.get());
-  const canUseAuto = isPro
-    ? PLAN_LIMITS.pro.autoLanguageDetect
-    : PLAN_LIMITS.free.autoLanguageDetect;
-
   const sourceOptions = React.useMemo(
-    () => (canUseAuto ? ["auto", ...myLanguages] : myLanguages),
-    [canUseAuto, myLanguages],
+    () => ["auto", ...myLanguages],
+    [myLanguages],
   );
 
   const sourcePillOnPress = React.useCallback(
@@ -132,7 +124,6 @@ export function LanguageSwitcher({
         oppositeLang={activeDropdown === "source" ? targetLang : sourceLang}
         onSelect={handleSelect}
         animatedStyle={animatedDropdownStyle}
-        showAutoLocked={activeDropdown === "source" && !canUseAuto}
       />
 
       {items}

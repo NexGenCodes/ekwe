@@ -44,7 +44,7 @@ export function SwapButton({
   const handlePress = async (): Promise<void> => {
     if (isSwapDisabled) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      AppToast.info("Auto detect is only available for source language");
+      AppToast.info("Cannot swap when source is set to Auto Detect");
       return;
     }
     swapRotation.value = withTiming(swapRotation.value + 180, {

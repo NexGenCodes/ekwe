@@ -17,6 +17,7 @@ import { settings$, auth$ } from "@/store";
 import { EchoStep, EchoProps, UseEchoFlowResult } from "@/types/echo";
 import { logger, isIOS } from "@/utils";
 import { cleanEchoCache } from "@/utils/echo";
+import { resolveDetectedLanguage } from "@/utils/languageUtils";
 import { checkIsOnline } from "@/utils/netInfo";
 
 interface EchoState {
@@ -242,16 +243,13 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
         throw new Error(trResult.error);
       }
 
-      const detectedLang = trResult.value.detectedLang;
+      const detectedLang = resolveDetectedLanguage(
+        trResult.value.detectedLang,
+        state.selectedLang,
+        "en",
+      );
 
-      let finalLang = state.selectedLang;
-      if (state.selectedLang === "auto") {
-        finalLang = detectedLang || "en";
-      } else {
-        finalLang = state.selectedLang;
-      }
-
-      dispatch({ type: "SET_DETECTED_LANG", payload: finalLang });
+      dispatch({ type: "SET_DETECTED_LANG", payload: detectedLang });
 
       dispatch({
         type: "SET_TRANSCRIPTION",

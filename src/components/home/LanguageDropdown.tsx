@@ -15,7 +15,6 @@ export interface LanguageDropdownProps {
   oppositeLang?: string;
   onSelect: (code: string) => void;
   animatedStyle?: object;
-  showAutoLocked?: boolean;
 }
 
 export function LanguageDropdown({
@@ -26,7 +25,6 @@ export function LanguageDropdown({
   oppositeLang,
   onSelect,
   animatedStyle,
-  showAutoLocked = false,
 }: LanguageDropdownProps): React.ReactElement | null {
   const { color, spacing, borderRadius } = useTokens();
 
@@ -83,15 +81,6 @@ export function LanguageDropdown({
           </Box>
 
           <ScrollArea bounces={false}>
-            {showAutoLocked && (
-              <LanguageRow
-                code="auto"
-                isSelected={false}
-                showLock
-                onPress={() => {}}
-              />
-            )}
-
             {options.map((code) => {
               const isSelected = currentLang === code;
               const isOtherLang = code === oppositeLang && code !== "auto";

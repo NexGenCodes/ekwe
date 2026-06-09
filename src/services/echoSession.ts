@@ -63,11 +63,13 @@ export const handleEchoSession = async (
 
     if (transcriptionResult.ok) {
       const data = transcriptionResult.value;
+      // Resolve the actual detected language (sourceLang may be "auto")
+      const effectiveSource = data.detectedLang || "en";
       // 3. Chain Translation
       const targetLang = settings$.targetLanguage.get() || "en";
       const translationResult = await translateText(
         data.transcript,
-        "auto",
+        effectiveSource,
         targetLang,
         signal,
       );
@@ -77,7 +79,7 @@ export const handleEchoSession = async (
       // 4. Persistence to History (Crucial: Background sessions must be saved)
       await HistoryService.recordTranslation(
         {
-          sourceLang: data.sourceLang,
+          sourceLang: effectiveSource,
           targetLang,
           transcript: data.transcript,
           translation: translationResult.ok

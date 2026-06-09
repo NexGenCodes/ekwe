@@ -10,6 +10,7 @@ import { fetchWithRetry } from "@/utils/networkUtils";
 const translationResponseSchema = z.object({
   translation: z.string(),
   transliteration: z.string().optional(),
+  language: z.string().optional(),
   provider: z.string().optional(),
   transaction: z
     .object({
@@ -32,6 +33,7 @@ const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? "";
 export interface TranslationResult {
   translation: string;
   transliteration?: string;
+  language?: string;
   sourceLang: string;
   targetLang: string;
   provider?: string;
@@ -112,6 +114,7 @@ export async function translateText(
     return ok({
       translation: data.translation.trim(),
       transliteration: data.transliteration?.trim(),
+      language: data.language,
       sourceLang,
       targetLang,
       provider: data.provider,

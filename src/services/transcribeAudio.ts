@@ -6,6 +6,7 @@ import { ProcessedAudio } from "@/services/AudioProcessor";
 import { supabase } from "@/services/supabase";
 import { authActions } from "@/store";
 import { Result, ok, err } from "@/types/Result";
+import { resolveDetectedLanguage } from "@/utils/languageUtils";
 import logger from "@/utils/logger";
 import { fetchWithRetry } from "@/utils/networkUtils";
 
@@ -197,12 +198,7 @@ function processTranscript(
     return err(EkweError.EMPTY_TRANSCRIPT);
   }
 
-  const detectedLang =
-    returnedLang && returnedLang !== "auto"
-      ? returnedLang
-      : sourceLang !== "auto"
-        ? sourceLang
-        : "en";
+  const detectedLang = resolveDetectedLanguage(returnedLang, sourceLang, "en");
 
   const adjustedWords: WordTimestamp[] = words.map((w) => ({
     word: w.word,

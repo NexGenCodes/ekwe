@@ -1,6 +1,5 @@
 import { logger } from "./logger";
 import { AiBinding } from "./types";
-import { detectLanguage as detectUnicode } from "./utils";
 
 const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct";
 const AI_TIMEOUT_MS = 3_000;
@@ -9,11 +8,7 @@ const MAX_CHARS = 2_000;
 
 interface KvLike {
   get(key: string): Promise<string | null>;
-  put(
-    key: string,
-    value: string,
-    opts?: { expirationTtl?: number },
-  ): Promise<void>;
+  put(key: string, value: string, opts?: { expirationTtl?: number }): Promise<void>;
 }
 
 function cacheKey(text: string): string {
@@ -26,6 +21,43 @@ function cacheKey(text: string): string {
 
 function isIsoCode(s: string): boolean {
   return /^[a-z]{2}$/.test(s);
+}
+
+function detectWithUnicode(text: string): string {
+  if (!text.trim()) return "en";
+
+  // Count characters by script ranges
+  let cjk = 0, cyrillic = 0, arabic = 0, devanagari = 0, latin = 0, total = 0;
+
+  for (const ch of text) {
+    const code = ch.codePointAt(0);
+    if (!code) continue;
+    total++;
+    if (code >= 0x4E00 && code <= 0x9FFF) cjk++;
+    else if (code >= 0x3040 && code <= 0x30FF) cjk++;
+    else if (code >= 0xAC00 && code <= 0xD7AF) cjk++;
+    else if (code >= 0x0400 && code <= 0x04FF) cyrillic++;
+    else if (code >= 0x0600 && code <= 0x06FF) arabic++;
+    else if (code >= 0x0900 && code <= 0x097F) devanagari++;
+    else if (
+      (code >= 0x0041 && code <= 0x005A) ||
+      (code >= 0x0061 && code <= 0x007A) ||
+      (code >= 0x00C0 && code <= 0x024F)
+    ) latin++;
+  }
+
+  if (total === 0) return "en";
+
+  const cjkPct = cjk / total;
+  const cyrillicPct = cyrillic / total;
+  const arabicPct = arabic / total;
+  const devanagariPct = devanagari / total;
+
+  if (cjkPct > 0.5) return "zh";
+  if (cyrillicPct > 0.5) return "ru";
+  if (arabicPct > 0.5) return "ar";
+  if (devanagariPct > 0.5) return "hi";
+  return "en";
 }
 
 async function detectWithAI(
@@ -78,7 +110,7 @@ async function detectWithAI(
   }
 }
 
-export async function detectLanguage(
+export async function detectTextLanguage(
   text: string,
   ai: AiBinding,
   kv: KvLike,
@@ -100,7 +132,7 @@ export async function detectLanguage(
     return fromCache;
   }
 
-  // 2. AI detection (with timeout fallback)
+  // 2. AI detection (with timeout)
   const aiLang = await detectWithAI(input, ai, signal);
   if (aiLang) {
     try {
@@ -111,6 +143,6 @@ export async function detectLanguage(
     return aiLang;
   }
 
-  // 3. Unicode fallback (instant)
-  return detectUnicode(text);
+  // 3. Unicode-range fallback
+  return detectWithUnicode(text);
 }

@@ -25,7 +25,7 @@ const TIER_LIMITS = {
   FREE: {
     maxTextChars: 3_000, // ~500 words
     maxAudioBytes: 4 * 1024 * 1024, // 4MB (~60s)
-    autoDetectAllowed: false,
+    autoDetectAllowed: true,
   },
   PREMIUM: {
     maxTextChars: 10_000, // ~1,500 words
