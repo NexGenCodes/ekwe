@@ -1,13 +1,14 @@
 import * as Haptics from "expo-haptics";
 import { Loader } from "lucide-react-native";
-import React, { useRef, useEffect } from "react";
-import {
-  Animated,
+import React, { useMemo } from "react";
+import { StyleProp, TextStyle, ViewStyle } from "react-native";
+import Animated, {
   Easing,
-  StyleProp,
-  TextStyle,
-  ViewStyle,
-} from "react-native";
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
 
 import { Box, Pressable, Text } from "@/components/ui";
 import {
@@ -40,7 +41,7 @@ export interface ButtonProps {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export const Button = ({
+export const Button = React.memo(function Button({
   label,
   variant = "primary",
   size = "medium",
@@ -53,78 +54,65 @@ export const Button = ({
   labelStyle,
   accessibilityLabel,
   accessibilityHint,
-}: ButtonProps): React.ReactElement => {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const spinAnim = useRef(new Animated.Value(0)).current;
+}: ButtonProps): React.ReactElement {
   const { color } = useTheme();
 
-  useEffect(() => {
-    if (!loading) {
-      spinAnim.setValue(0);
-      return;
+  // Reanimated shared values
+  const scaleAnim = useSharedValue(1);
+  const spinAnim = useSharedValue(0);
+
+  React.useEffect(() => {
+    if (loading) {
+      spinAnim.value = withRepeat(
+        withTiming(360, {
+          duration: 1000,
+          easing: Easing.linear,
+        }),
+        -1, // infinite
+        false // no reverse
+      );
+    } else {
+      spinAnim.value = 0;
     }
-    const animation = Animated.loop(
-      Animated.timing(spinAnim, {
-        toValue: 1,
-        duration: 1000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    );
-    animation.start();
-    return (): void => animation.stop();
   }, [loading, spinAnim]);
 
-  const spinDeg = spinAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
-  });
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scaleAnim.value }],
+  }));
+
+  const spinStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${spinAnim.value}deg` }],
+  }));
 
   const handlePressIn = (): void => {
     if (disabled || loading) return;
-    Animated.timing(scaleAnim, {
-      toValue: 0.95,
-      duration: 120,
-      useNativeDriver: true,
-    }).start();
+    scaleAnim.value = withTiming(0.95, { duration: 100 });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handlePressOut = (): void => {
-    Animated.timing(scaleAnim, {
-      toValue: 1,
-      duration: 120,
-      useNativeDriver: true,
-    }).start();
+    scaleAnim.value = withTiming(1, { duration: 150 });
   };
 
-  interface VariantStyles {
-    container: object;
-    text: object;
-    spinner: string;
-  }
-
-  interface SizeStyles {
-    container: object;
-    text: object;
-  }
-
-  const variantStyles = function (): VariantStyles {
+  const { variantStyle, sizeStyle } = useMemo(() => {
+    let vStyle = { container: {}, text: {}, spinner: color.secondary };
     switch (variant) {
       case "primary":
-        return {
+        vStyle = {
           container: { backgroundColor: color.secondary },
           text: { color: color.onSecondary },
           spinner: color.onSecondary,
         };
+        break;
       case "secondary":
-        return {
+        vStyle = {
           container: { backgroundColor: `${color.secondary}1A` },
           text: { color: color.secondary },
           spinner: color.secondary,
         };
+        break;
       case "outline":
-        return {
+        vStyle = {
           container: {
             backgroundColor: "transparent",
             borderWidth: 1,
@@ -133,19 +121,20 @@ export const Button = ({
           text: { color: color.secondary },
           spinner: color.secondary,
         };
+        break;
       case "ghost":
-        return {
+        vStyle = {
           container: { backgroundColor: "transparent" },
           text: { color: color.secondary },
           spinner: color.secondary,
         };
+        break;
     }
-  };
 
-  const sizeStyles = function (): SizeStyles {
+    let sStyle = { container: {}, text: {} };
     switch (size) {
       case "small":
-        return {
+        sStyle = {
           container: {
             paddingVertical: spacing.sm,
             paddingHorizontal: spacing.md,
@@ -153,8 +142,9 @@ export const Button = ({
           },
           text: { fontFamily: typography.label.fontFamily },
         };
+        break;
       case "large":
-        return {
+        sStyle = {
           container: {
             paddingVertical: spacing.md,
             paddingHorizontal: spacing.lg,
@@ -166,10 +156,11 @@ export const Button = ({
             letterSpacing: -0.2,
           },
         };
+        break;
       case "medium":
       case "md":
       default:
-        return {
+        sStyle = {
           container: {
             paddingVertical: spacing.sm,
             paddingHorizontal: spacing.md,
@@ -177,8 +168,11 @@ export const Button = ({
           },
           text: { fontFamily: typography.label.fontFamily },
         };
+        break;
     }
-  };
+
+    return { variantStyle: vStyle, sizeStyle: sStyle };
+  }, [variant, size, color]);
 
   return (
     <AnimatedPressable
@@ -193,10 +187,10 @@ export const Button = ({
           justifyContent: "center",
           borderRadius: borderRadius.xl,
           opacity: disabled ? opacity.disabled : 1,
-          transform: [{ scale: scaleAnim }],
         },
-        variantStyles().container,
-        sizeStyles().container,
+        variantStyle.container,
+        sizeStyle.container,
+        animatedStyle,
         style,
       ]}
       accessibilityRole="button"
@@ -206,10 +200,10 @@ export const Button = ({
       hitSlop={interaction.hitSlop}
     >
       {loading ? (
-        <Animated.View style={{ transform: [{ rotate: spinDeg }] }}>
+        <Animated.View style={spinStyle}>
           <Loader
             size={size === "small" ? spinnerSize.sm : spinnerSize.md}
-            color={variantStyles().spinner}
+            color={variantStyle.spinner}
             strokeWidth={spinnerSize.strokeWidth}
           />
         </Animated.View>
@@ -222,8 +216,8 @@ export const Button = ({
             variant={size === "large" ? "bodyLarge" : "body"}
             style={[
               { textAlign: "center" },
-              variantStyles().text,
-              sizeStyles().text,
+              variantStyle.text,
+              sizeStyle.text,
               labelStyle,
             ]}
           >
@@ -236,4 +230,4 @@ export const Button = ({
       )}
     </AnimatedPressable>
   );
-};
+});

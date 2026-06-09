@@ -1,3 +1,4 @@
+import { BlurView } from "expo-blur";
 import { Image as ExpoImage } from "expo-image";
 import {
   LucideShieldCheck,
@@ -5,9 +6,11 @@ import {
   LucideZap,
 } from "lucide-react-native";
 import React from "react";
+import { StyleSheet, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
-import { Box, Text, Pressable, ScrollArea } from "@/components/ui";
+import { Button } from "@/components/Button";
+import { Box, Text, ScrollArea } from "@/components/ui";
 import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
@@ -21,20 +24,26 @@ export interface AccessibilityDisclosureProps {
 export const AccessibilityDisclosure: React.FC<
   AccessibilityDisclosureProps
 > = ({ onAgree, onDeny }) => {
-  const { color } = useTheme();
+  const { color, isDark } = useTheme();
   const primaryColor = color.primary;
 
   return (
-    <Box style={{ flex: 1, backgroundColor: color.background }}>
+    <View style={{ flex: 1, backgroundColor: color.background }}>
       <ScrollArea
-        style={{ flex: 1, paddingHorizontal: spacing.lg }}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ 
+          paddingHorizontal: spacing.lg,
+          paddingBottom: 160 // Room for floating footer
+        }}
         contentInsetAdjustmentBehavior="automatic"
       >
         <Animated.View
           entering={FadeInDown.duration(500).springify()}
           style={{ marginTop: spacing.xl, marginBottom: spacing.xl }}
         >
-          <Text variant="display">Accessibility Service Disclosure</Text>
+          <Text variant="display" style={{ letterSpacing: -0.5 }}>
+            Accessibility Service Disclosure
+          </Text>
           <Box
             style={{
               marginTop: spacing.md,
@@ -53,7 +62,7 @@ export const AccessibilityDisclosure: React.FC<
             </Text>
             <Text variant="bodySmall">
               This app uses the{" "}
-              <Text variant="bodySmall">AccessibilityService API</Text> to
+              <Text variant="bodySmall" style={{ fontFamily: "SpaceMono-Regular" }}>AccessibilityService API</Text> to
               detect when you open messaging applications (like WhatsApp or
               Tinder). This allows Ekwe to automatically display the floating
               translation tool over your screen exactly when you need it.
@@ -63,7 +72,7 @@ export const AccessibilityDisclosure: React.FC<
 
         <Animated.View
           entering={FadeInDown.duration(500).delay(100).springify()}
-          style={{ gap: spacing.lg, marginBottom: 160 }}
+          style={{ gap: spacing.lg }}
         >
           <Box
             style={{
@@ -90,10 +99,10 @@ export const AccessibilityDisclosure: React.FC<
               )}
             </Box>
             <Box style={{ flex: 1, paddingRight: spacing.sm }}>
-              <Text variant="body" style={{ marginBottom: spacing.xs }}>
+              <Text variant="body" style={{ marginBottom: spacing.xs, letterSpacing: -0.2 }}>
                 Contextual App Detection
               </Text>
-              <Text variant="bodySmall" style={{ color: color.muted }}>
+              <Text variant="bodySmall" style={{ color: color.muted, lineHeight: 20 }}>
                 We strictly monitor top-level window transitions to identify
                 when a target messaging app is launched. We do NOT read your
                 chat messages.
@@ -126,10 +135,10 @@ export const AccessibilityDisclosure: React.FC<
               )}
             </Box>
             <Box style={{ flex: 1, paddingRight: spacing.sm }}>
-              <Text variant="body" style={{ marginBottom: spacing.xs }}>
+              <Text variant="body" style={{ marginBottom: spacing.xs, letterSpacing: -0.2 }}>
                 Battery Optimized
               </Text>
-              <Text variant="bodySmall" style={{ color: color.muted }}>
+              <Text variant="bodySmall" style={{ color: color.muted, lineHeight: 20 }}>
                 Utilizing native Accessibility signals prevents aggressive
                 background polling, ensuring your phone's battery isn't drained.
               </Text>
@@ -161,12 +170,12 @@ export const AccessibilityDisclosure: React.FC<
               )}
             </Box>
             <Box style={{ flex: 1, paddingRight: spacing.sm }}>
-              <Text variant="body" style={{ marginBottom: spacing.xs }}>
+              <Text variant="body" style={{ marginBottom: spacing.xs, letterSpacing: -0.2 }}>
                 Zero Data Collection
               </Text>
-              <Text variant="bodySmall" style={{ color: color.muted }}>
+              <Text variant="bodySmall" style={{ color: color.muted, lineHeight: 20 }}>
                 We{" "}
-                <Text variant="bodySmall">
+                <Text variant="bodySmall" style={{ color: color.foreground }}>
                   do not collect, store, transmit, or share
                 </Text>{" "}
                 any data, text, or inputs captured by this service. The
@@ -177,49 +186,54 @@ export const AccessibilityDisclosure: React.FC<
         </Animated.View>
       </ScrollArea>
 
-      <Box
-        style={{
-          paddingTop: spacing.md,
-          paddingBottom: spacing["2xl"],
-          paddingHorizontal: spacing.lg,
-          borderTopWidth: 1,
-          backgroundColor: color.background,
-          borderTopColor: color.border,
-        }}
-      >
-        <Pressable
-          onPress={onAgree}
-          feedback="none"
-          style={{
-            width: "100%",
-            paddingVertical: spacing.md,
-            borderRadius: borderRadius.xl,
-            alignItems: "center",
-            backgroundColor: primaryColor,
-          }}
-          accessibilityLabel="I agree to accessibility permissions"
+      {/* Floating Blurred Footer */}
+      <View style={styles.footerContainer}>
+        <BlurView
+          intensity={80}
+          tint={isDark ? "dark" : "light"}
+          style={[
+            styles.blurView,
+            {
+              paddingHorizontal: spacing.lg,
+              paddingBottom: spacing["3xl"],
+              paddingTop: spacing.md,
+              borderTopWidth: 1,
+              borderTopColor: color.border + "80", // 50% opacity border
+              backgroundColor: color.background + "99", // 60% opacity background
+            },
+          ]}
         >
-          <Text variant="body" style={{ color: color.onPrimary }}>
-            I Agree
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={onDeny}
-          feedback="none"
-          style={{
-            width: "100%",
-            paddingVertical: spacing.md,
-            marginTop: spacing.xs,
-            alignItems: "center",
-            borderRadius: borderRadius.xl,
-          }}
-          accessibilityLabel="Decline accessibility permissions"
-        >
-          <Text variant="bodySmall" style={{ color: color.muted }}>
-            Decline
-          </Text>
-        </Pressable>
-      </Box>
-    </Box>
+          <Button
+            variant="primary"
+            size="large"
+            label="I Agree"
+            onPress={onAgree}
+            style={{ width: "100%" }}
+            accessibilityLabel="I agree to accessibility permissions"
+          />
+          <Button
+            variant="ghost"
+            size="medium"
+            label="Decline"
+            onPress={onDeny}
+            style={{ width: "100%", marginTop: spacing.xs }}
+            labelStyle={{ color: color.muted }}
+            accessibilityLabel="Decline accessibility permissions"
+          />
+        </BlurView>
+      </View>
+    </View>
   );
 };
+
+const styles = StyleSheet.create({
+  footerContainer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  blurView: {
+    width: "100%",
+  },
+});

@@ -1,28 +1,28 @@
-import { useLocalSearchParams, Stack } from "expo-router";
+import { useLocalSearchParams, Stack, useRouter } from "expo-router";
+import { LucideChevronLeft } from "lucide-react-native";
 import React from "react";
+import { StyleSheet } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
+import { Button } from "@/components/Button";
 import { Box, Text, ScrollArea } from "@/components/ui";
 import { LEGAL_DOCUMENTS } from "@/constants/legal";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks";
+import { isIOS } from "@/utils";
 
 export default function LegalScreen(): React.JSX.Element {
   const { slug } = useLocalSearchParams<{ slug: string }>();
+  const router = useRouter();
   const { color } = useTheme();
 
   const doc = LEGAL_DOCUMENTS[slug || ""];
 
-  const Container = Box;
-  const containerProps = {
-    style: { flex: 1, backgroundColor: color.background },
-  };
-
   if (!doc) {
     return (
-      <Container {...containerProps} style={styles.flex1}>
+      <Box style={[styles.flex1, { backgroundColor: color.background }]}>
         <Box style={styles.emptyState}>
           <Text
             variant="body"
@@ -31,28 +31,46 @@ export default function LegalScreen(): React.JSX.Element {
             Document not found.
           </Text>
         </Box>
-      </Container>
+      </Box>
     );
   }
 
   return (
-    <Container {...containerProps} style={styles.flex1}>
+    <Box style={[styles.flex1, { backgroundColor: color.background }]}>
       <Stack.Screen
         options={{
           title: doc.title,
           headerShown: true,
           headerTransparent: false,
-          headerStyle: {
-            backgroundColor: color.background,
-          },
           headerShadowVisible: false,
+          headerStyle: { backgroundColor: color.background },
+          headerLeft: () => (
+            <Box
+              style={{
+                marginLeft: isIOS ? 0 : spacing.sm,
+                marginRight: spacing.lg,
+              }}
+            >
+              <Button
+                variant="ghost"
+                size="small"
+                onPress={() => router.back()}
+                leftIcon={
+                  <Box style={{ marginRight: -spacing.sm }}>
+                    <LucideChevronLeft size={28} color={color.primary} />
+                  </Box>
+                }
+                label=""
+              />
+            </Box>
+          ),
           headerTitleStyle: {
             fontFamily: typography.heading2.fontFamily,
             fontSize: 24,
             fontWeight: "400",
+            letterSpacing: -0.5,
             color: color.foreground,
           },
-          headerTintColor: color.primary,
         }}
       />
 
@@ -61,7 +79,7 @@ export default function LegalScreen(): React.JSX.Element {
         contentContainerStyle={styles.scrollContent}
         contentInsetAdjustmentBehavior="automatic"
       >
-        <Animated.View entering={FadeInDown.delay(100).duration(400)}>
+        <Animated.View entering={FadeInDown.delay(100).duration(400).springify()}>
           <Text
             variant="bodySmall"
             style={[styles.lastUpdated, { color: color.muted }]}
@@ -73,7 +91,7 @@ export default function LegalScreen(): React.JSX.Element {
         {doc.sections.map((section, index) => (
           <Animated.View
             key={section.title}
-            entering={FadeInDown.delay(150 + index * 50).duration(400)}
+            entering={FadeInDown.delay(150 + index * 50).duration(400).springify()}
             style={[
               styles.sectionCard,
               { backgroundColor: color.card, borderColor: color.border },
@@ -84,7 +102,7 @@ export default function LegalScreen(): React.JSX.Element {
             </Text>
             <Text
               variant="body"
-              style={[styles.sectionBody, { color: color.muted }]}
+              style={[styles.sectionBody, { color: color.muted, lineHeight: 24 }]}
             >
               {section.body}
             </Text>
@@ -92,54 +110,57 @@ export default function LegalScreen(): React.JSX.Element {
         ))}
 
         {/* Footer */}
-        <Box style={styles.footer}>
-          <Text
-            variant="caption"
-            style={[styles.footerText, { color: color.muted }]}
-          >
-            © {new Date().getFullYear()} Ekwe. All rights reserved.
-          </Text>
-        </Box>
+        <Animated.View entering={FadeInDown.delay(500).duration(400)}>
+          <Box style={styles.footer}>
+            <Text
+              variant="caption"
+              style={[styles.footerText, { color: color.muted }]}
+            >
+              © {new Date().getFullYear()} Ekwe. All rights reserved.
+            </Text>
+          </Box>
+        </Animated.View>
       </ScrollArea>
-    </Container>
+    </Box>
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   flex1: {
     flex: 1,
-  } as const,
+  },
   scrollView: {
     flex: 1,
-  } as const,
+  },
   scrollContent: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing["3xl"],
     paddingTop: spacing.md,
-  } as const,
+  },
   lastUpdated: {
     marginBottom: spacing.lg,
     textAlign: "center",
-  } as const,
+  },
   sectionCard: {
     borderRadius: borderRadius.xl,
     borderWidth: 1,
     padding: spacing.lg,
     marginBottom: spacing.md,
-  } as const,
+  },
   sectionTitle: {
     marginBottom: spacing.sm,
-  } as const,
-  sectionBody: {} as const,
+    letterSpacing: -0.2,
+  },
+  sectionBody: {},
   footer: {
     paddingVertical: spacing.lg,
     alignItems: "center",
-  } as const,
-  footerText: {} as const,
+  },
+  footerText: {},
   emptyState: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-  } as const,
-  emptyText: {} as const,
-};
+  },
+  emptyText: {},
+});

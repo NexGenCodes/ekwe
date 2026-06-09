@@ -6,6 +6,7 @@ import { LanguageFlag } from "./LanguageFlag";
 
 import { Box, Pressable, Text } from "@/components/ui";
 import { useTokens } from "@/hooks/ui";
+import { triggerHaptic } from "@/utils/haptics";
 
 export interface LanguageGridCardProps {
   code: string;
@@ -35,7 +36,10 @@ export function LanguageGridCard({
     <Pressable
       feedback="scale"
       disabled={disabled}
-      onPress={onPress}
+      onPress={() => {
+        triggerHaptic();
+        onPress();
+      }}
       style={{
         width: width ?? "100%",
         aspectRatio,

@@ -1,27 +1,27 @@
 export const typography = {
   display: {
-    fontFamily: "Merriweather-Bold",
+    fontFamily: "Outfit-Bold",
     fontSize: 32,
     lineHeight: 38,
     fontWeight: "700",
     letterSpacing: -0.5,
   },
   heading1: {
-    fontFamily: "Merriweather-Bold",
+    fontFamily: "Outfit-Bold",
     fontSize: 28,
     lineHeight: 34,
     fontWeight: "600",
     letterSpacing: -0.3,
   },
   heading2: {
-    fontFamily: "Merriweather-Bold",
+    fontFamily: "Outfit-Bold",
     fontSize: 24,
     lineHeight: 30,
     fontWeight: "600",
     letterSpacing: -0.2,
   },
   heading3: {
-    fontFamily: "Merriweather-Bold",
+    fontFamily: "Outfit-Bold",
     fontSize: 20,
     lineHeight: 26,
     fontWeight: "600",

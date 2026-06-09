@@ -12,7 +12,6 @@
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
     "knip:check": "knip",
-    "postinstall": "patch-package",
     "prepare": ""
   },
   "dependencies": {
@@ -48,6 +47,7 @@
     "expo-localization": "~55.0.15",
     "expo-media-library": "~55.0.17",
     "expo-router": "~55.0.16",
+    "expo-secure-store": "~55.0.14",
     "expo-speech": "^55.0.14",
     "expo-splash-screen": "~55.0.21",
     "expo-status-bar": "~55.0.6",
@@ -84,12 +84,11 @@
     "jest-expo": "~55.0.18",
     "knip": "^6.4.1",
     "lint-staged": "^16.4.0",
-    "patch-package": "^8.0.1",
     "prettier": "^3.8.1",
     "react-test-renderer": "19.2.0",
     "typescript": "^5.9.0"
   },
-"op-sqlite": {
+  "op-sqlite": {
     "fts5": true
   },
   "private": true,

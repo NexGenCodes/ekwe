@@ -6,7 +6,6 @@ export * from "./ui";
 
 // Domain Components
 export * from "./AuthHeader";
-export * from "./AuthFooter";
 export * from "./AuthShell";
 export * from "./SocialAuthGroup";
 export * from "./SocialButton";
@@ -19,7 +18,6 @@ export * from "./CustomTabBarItem";
 
 // Composites (moved from ui/)
 export * from "./Input";
-export * from "./PasswordInput";
 export * from "./Divider";
 export * from "./ErrorBanner";
 export * from "./Button";
@@ -36,6 +34,8 @@ export * from "./SkeletonBox";
 export * from "./IconButton";
 export * from "./ToastContainer";
 export * from "./Disclaimer";
+export * from "./OtpInput";
+export * from "./AuthBackground";
 
 // Screen-specific
 export * from "./home";

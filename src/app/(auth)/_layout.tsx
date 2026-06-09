@@ -6,8 +6,9 @@ export default function AuthLayout(): React.ReactElement {
     <Stack
       screenOptions={{
         headerShown: false,
-        animation: "fade",
+        animation: "slide_from_right",
       }}
+      /* Screen reader announces route changes automatically via expo-router */
     />
   );
 }

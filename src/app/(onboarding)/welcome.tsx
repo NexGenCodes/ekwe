@@ -1,17 +1,23 @@
 import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { ChevronRight, Globe, Mic, ShieldCheck } from "lucide-react-native";
 import { useEffect, useCallback } from "react";
+import { View, StyleSheet } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   Easing,
+  FadeInDown,
+  withRepeat,
+  withSequence,
 } from "react-native-reanimated";
 
 import { Button, EkweLogo, FeatureCard } from "@/components";
 import { Box, ScreenContainer, Text } from "@/components/ui";
 import { duration, spacing, iconSize, spinnerSize } from "@/constants";
 import { useTokens } from "@/hooks/ui";
+import { triggerHaptic } from "@/utils/haptics";
 
 const FEATURES = [
   {
@@ -37,97 +43,136 @@ export default function WelcomeScreen(): React.ReactElement {
   const { color } = useTokens();
 
   const progress = useSharedValue(0);
+  const gradientOpacity = useSharedValue(0.5);
 
   useEffect(() => {
     progress.value = withTiming(1, {
       duration: duration.slower,
       easing: Easing.out(Easing.cubic),
     });
+    
+    // Slow breathing animation for the gradient
+    gradientOpacity.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 4000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.5, { duration: 4000, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      true
+    );
+    
     router.prefetch("/language");
-  }, [progress, router]);
+  }, [progress, gradientOpacity, router]);
 
   const containerStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
     transform: [{ translateY: (1 - progress.value) * 30 }],
   }));
 
+  const animatedGradientStyle = useAnimatedStyle(() => ({
+    opacity: gradientOpacity.value,
+  }));
+
   return (
-    <ScreenContainer
-      scroll
-      contentContainerStyle={{
-        flexGrow: 1,
-        paddingTop: spacing["2xl"],
-        paddingBottom: spacing["2xl"],
-        paddingHorizontal: spacing.lg,
-      }}
-      style={{ backgroundColor: color.background }}
-    >
-      <Animated.View
-        style={[
-          {
-            flex: 1,
-            justifyContent: "space-between",
-          },
-          containerStyle,
-        ]}
-      >
-        <Box>
-          <Box style={{ alignItems: "center", marginBottom: spacing.xl }}>
-            <Box style={{ marginBottom: spacing.md }}>
-              <EkweLogo size={spacing["6xl"]} color={color.secondary} />
-            </Box>
-            <Text
-              variant="display"
-              style={{
-                textAlign: "center",
-                paddingHorizontal: spacing.md,
-                color: color.foreground,
-              }}
-            >
-              Speak. We'll handle the rest.
-            </Text>
-            <Text
-              variant="body"
-              style={{
-                textAlign: "center",
-                color: color.muted,
-                marginTop: spacing.sm,
-                paddingHorizontal: spacing.md,
-              }}
-            >
-              Real-time translation that stays on your device.
-            </Text>
-          </Box>
-
-          <Box style={{ gap: spacing.md }}>
-            {FEATURES.map((item) => (
-              <FeatureCard
-                key={item.title}
-                icon={item.icon}
-                title={item.title}
-                description={item.description}
-              />
-            ))}
-          </Box>
-        </Box>
-
-        <Box>
-          <Button
-            variant="primary"
-            size="large"
-            label="Set up your studio"
-            onPress={useCallback(() => router.replace("/language"), [router])}
-            rightIcon={
-              <ChevronRight
-                size={iconSize.md}
-                color={color.onSecondary}
-                strokeWidth={spinnerSize.strokeWidth}
-              />
-            }
-            style={{ width: "100%" }}
-          />
-        </Box>
+    <View style={{ flex: 1, backgroundColor: color.background }}>
+      <Animated.View style={[StyleSheet.absoluteFillObject, animatedGradientStyle]}>
+        <LinearGradient
+          colors={[
+            color.background,
+            color.secondary + "1A", // 10% opacity hex
+            color.background,
+          ]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
       </Animated.View>
-    </ScreenContainer>
+
+      <ScreenContainer
+        scroll
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop: spacing["2xl"],
+          paddingBottom: spacing["2xl"],
+          paddingHorizontal: spacing.lg,
+        }}
+        style={{ backgroundColor: "transparent" }}
+      >
+        <Animated.View
+          style={[
+            {
+              flex: 1,
+              justifyContent: "space-between",
+            },
+            containerStyle,
+          ]}
+        >
+          <Box>
+            <Box style={{ alignItems: "center", marginBottom: spacing.xl }}>
+              <Box style={{ marginBottom: spacing.md }}>
+                <EkweLogo size={spacing["6xl"]} color={color.secondary} />
+              </Box>
+              <Text
+                variant="display"
+                style={{
+                  textAlign: "center",
+                  paddingHorizontal: spacing.md,
+                  color: color.foreground,
+                  letterSpacing: -0.5,
+                }}
+              >
+                Speak. We'll handle the rest.
+              </Text>
+              <Text
+                variant="body"
+                style={{
+                  textAlign: "center",
+                  color: color.muted,
+                  marginTop: spacing.sm,
+                  paddingHorizontal: spacing.md,
+                }}
+              >
+                Real-time translation that stays on your device.
+              </Text>
+            </Box>
+
+            <Box style={{ gap: spacing.md }}>
+              {FEATURES.map((item, index) => (
+                <Animated.View 
+                  key={item.title}
+                  entering={FadeInDown.delay(300 + index * 150).springify()}
+                >
+                  <FeatureCard
+                    icon={item.icon}
+                    title={item.title}
+                    description={item.description}
+                  />
+                </Animated.View>
+              ))}
+            </Box>
+          </Box>
+
+          <Box>
+            <Button
+              variant="primary"
+              size="large"
+              label="Set up your studio"
+              onPress={useCallback(async () => {
+                await triggerHaptic();
+                router.replace("/language");
+              }, [router])}
+              rightIcon={
+                <ChevronRight
+                  size={iconSize.md}
+                  color={color.onSecondary}
+                  strokeWidth={spinnerSize.strokeWidth}
+                />
+              }
+              style={{ width: "100%" }}
+            />
+          </Box>
+        </Animated.View>
+      </ScreenContainer>
+    </View>
   );
 }

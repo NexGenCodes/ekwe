@@ -5,34 +5,39 @@ import { Controller, useForm } from "react-hook-form";
 
 import {
   AuthHeader,
-  AuthFooter,
   SocialAuthGroup,
   AuthShell,
   Input,
-  PasswordInput,
   Divider,
   ErrorBanner,
   Button,
+  Disclaimer,
 } from "@/components";
-import { Box, Text, Pressable } from "@/components/ui";
+import { Box } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
-import { useAuthFlow, useTheme } from "@/hooks";
+import { useAuthFlow, useNetwork } from "@/hooks";
 import { loginSchema, LoginForm } from "@/schemas/auth";
-import { signInWithPassword } from "@/services/auth";
+import { sendOtp } from "@/services/auth";
 
-export default function LoginScreen(): React.JSX.Element {
+export default function WelcomeScreen(): React.JSX.Element {
   const router = useRouter();
-  const { color } = useTheme();
 
   const { isLoading, error, run, handleApple, handleGoogle } = useAuthFlow();
+  const { isOffline } = useNetwork();
 
   const { control, handleSubmit } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { email: "" },
   });
 
-  const onSubmit = (data: LoginForm): void => {
-    run(() => signInWithPassword(data.email, data.password));
+  const onSubmit = async (data: LoginForm): Promise<void> => {
+    const result = await run(() => sendOtp(data.email));
+    if (result.ok && result.needsOtp) {
+      router.push({
+        pathname: "/(auth)/verify",
+        params: { email: data.email.trim(), source: "login" },
+      });
+    }
   };
 
   return (
@@ -40,9 +45,9 @@ export default function LoginScreen(): React.JSX.Element {
       <AuthHeader subtitle="Every voice, understood." />
 
       <Box>
-        <ErrorBanner message={error} />
+        <ErrorBanner message={isOffline ? "No internet connection. Please connect to proceed." : error} />
 
-        <Box style={{ gap: spacing.md, marginBottom: spacing.md }}>
+        <Box style={{ gap: spacing.md, marginBottom: spacing.lg }}>
           <Controller
             control={control}
             name="email"
@@ -53,28 +58,10 @@ export default function LoginScreen(): React.JSX.Element {
                 onBlur={onBlur}
                 placeholder="Email address"
                 keyboardType="email-address"
-                returnKeyType="next"
+                returnKeyType="go"
                 textContentType="emailAddress"
                 autoComplete="email"
-                editable={!isLoading}
-                error={fieldState.error?.message}
-              />
-            )}
-          />
-
-          <Controller
-            control={control}
-            name="password"
-            render={({ field: { onChange, onBlur, value }, fieldState }) => (
-              <PasswordInput
-                value={value}
-                onChangeText={onChange}
-                onBlur={onBlur}
-                placeholder="Password"
-                returnKeyType="done"
-                textContentType="password"
-                autoComplete="password"
-                editable={!isLoading}
+                editable={!isLoading && !isOffline}
                 onSubmitEditing={handleSubmit(onSubmit)}
                 error={fieldState.error?.message}
               />
@@ -82,19 +69,11 @@ export default function LoginScreen(): React.JSX.Element {
           />
         </Box>
 
-        <Pressable
-          onPress={() => router.push("/(auth)/forgot-password")}
-          style={{ alignItems: "flex-end", marginBottom: spacing.lg }}
-        >
-          <Text variant="bodySmall" style={{ color: color.primary }}>
-            Forgot password?
-          </Text>
-        </Pressable>
-
         <Button
-          label="Sign In"
+          label="Continue with Email"
           onPress={handleSubmit(onSubmit)}
           loading={isLoading}
+          disabled={isOffline}
         />
 
         <Divider />
@@ -102,14 +81,10 @@ export default function LoginScreen(): React.JSX.Element {
         <SocialAuthGroup
           onApple={handleApple}
           onGoogle={handleGoogle}
-          disabled={isLoading}
+          disabled={isLoading || isOffline}
         />
 
-        <AuthFooter
-          text="Don't have an account?"
-          linkText="Create one"
-          onPress={() => router.push("/(auth)/signup")}
-        />
+        <Disclaimer />
       </Box>
     </AuthShell>
   );

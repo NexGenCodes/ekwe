@@ -12,3 +12,4 @@ export * from "./useVoiceDictation";
 export * from "./usePermissions";
 export * from "./useAnimation";
 export * from "./useLanguageSelection";
+export * from "./useNetwork";

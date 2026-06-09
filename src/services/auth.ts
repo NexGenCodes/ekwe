@@ -61,53 +61,6 @@ export const cleanupAuth = (): void => {
   _authInitialized = false;
 };
 
-// ── Email + Password ─────────────────────────────────────────────
-
-export const signInWithPassword = async (
-  email: string,
-  password: string,
-): Promise<AuthResult> => {
-  try {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-    if (error) {
-      return {
-        ok: false,
-        error:
-          error.message === "Invalid login credentials"
-            ? "Incorrect email or password."
-            : error.message,
-      };
-    }
-    return { ok: true };
-  } catch (err) {
-    logger.error("[Auth] signInWithPassword error:", err);
-    return { ok: false, error: "Something went wrong. Give it another try." };
-  }
-};
-
-export const signUpWithPassword = async (
-  email: string,
-  password: string,
-): Promise<AuthResult> => {
-  try {
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-    });
-    if (error) return { ok: false, error: error.message };
-    // If session is present, user was auto-confirmed or already existed
-    // — no OTP email was sent, so skip OTP verification.
-    const needsOtp = !data.session;
-    return { ok: true, needsOtp };
-  } catch (err) {
-    logger.error("[Auth] signUpWithPassword error:", err);
-    return { ok: false, error: "Something went wrong. Want to try again?" };
-  }
-};
-
 // ── OTP (Passwordless) ──────────────────────────────────────────
 
 export const sendOtp = async (email: string): Promise<AuthResult> => {
@@ -116,7 +69,7 @@ export const sendOtp = async (email: string): Promise<AuthResult> => {
       email: email.trim(),
     });
     if (error) return { ok: false, error: error.message };
-    return { ok: true };
+    return { ok: true, needsOtp: true };
   } catch (err) {
     logger.error("[Auth] sendOtp error:", err);
     return {
@@ -129,12 +82,13 @@ export const sendOtp = async (email: string): Promise<AuthResult> => {
 export const verifyOtp = async (
   email: string,
   token: string,
+  type: "signup" | "email" = "email",
 ): Promise<AuthResult> => {
   try {
     const { data, error } = await supabase.auth.verifyOtp({
       email: email.trim(),
       token: token.trim(),
-      type: "email",
+      type,
     });
     if (error) return { ok: false, error: error.message };
     if (!data.session)
@@ -143,55 +97,6 @@ export const verifyOtp = async (
   } catch (err) {
     logger.error("[Auth] verifyOtp error:", err);
     return { ok: false, error: "That code didn't match. Check and try again." };
-  }
-};
-
-// ── Password Reset ──────────────────────────────────────────────
-
-export const sendPasswordResetOtp = async (
-  email: string,
-): Promise<AuthResult> => {
-  try {
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: {
-        shouldCreateUser: false, // Prevent creating an account if email doesn't exist
-      },
-    });
-
-    if (error) {
-      logger.error("[Auth] sendPasswordResetOtp error:", error);
-      // Pass through rate-limit errors so the user knows they are spamming
-      if (error.status === 429) {
-        return {
-          ok: false,
-          error: "Too many requests. Wait a moment and try again.",
-        };
-      }
-      // Security: Silently succeed for all other errors (like user not found)
-      // to prevent email enumeration attacks.
-      return { ok: true };
-    }
-    return { ok: true };
-  } catch (err) {
-    logger.error("[Auth] sendPasswordResetOtp error:", err);
-    // Security: Silently succeed on unexpected exceptions too
-    return { ok: true };
-  }
-};
-
-export const updatePassword = async (
-  newPassword: string,
-): Promise<AuthResult> => {
-  try {
-    const { error } = await supabase.auth.updateUser({
-      password: newPassword,
-    });
-    if (error) return { ok: false, error: error.message };
-    return { ok: true };
-  } catch (err) {
-    logger.error("[Auth] updatePassword error:", err);
-    return { ok: false, error: "Couldn't update your password. Try again." };
   }
 };
 

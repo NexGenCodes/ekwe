@@ -1,5 +1,7 @@
 import { useRouter } from "expo-router";
+import { BlurView } from "expo-blur";
 import React, { useCallback, useEffect } from "react";
+import { StyleSheet, View } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -13,6 +15,7 @@ import { duration } from "@/constants/motion";
 import { useTokens } from "@/hooks/ui";
 import { useLanguageSelection } from "@/hooks/useLanguageSelection";
 import { settingsActions, auth$ } from "@/store";
+import { triggerHaptic } from "@/utils/haptics";
 
 const HEADING = "Pick your 5 languages";
 const SUBTITLE =
@@ -20,7 +23,7 @@ const SUBTITLE =
 
 export default function OnboardingLanguagesScreen(): React.ReactElement {
   const router = useRouter();
-  const { color, spacing } = useTokens();
+  const { color, spacing, isDark } = useTokens();
   const { selected, toggleLanguage, isComplete, remaining } =
     useLanguageSelection();
 
@@ -43,8 +46,10 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
     transform: [{ translateY: translateY.value }],
   }));
 
-  const handleContinue = useCallback((): void => {
+  const handleContinue = useCallback(async (): Promise<void> => {
     if (!isComplete) return;
+
+    await triggerHaptic();
 
     settingsActions.setSelectedLanguages(selected);
     settingsActions.setTargetLanguage(selected[0]);
@@ -54,67 +59,88 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
     router.replace(session ? "/(tabs)" : "/(auth)/login");
   }, [isComplete, selected, router]);
 
-  const footer = (
-    <Box
-      style={{
-        paddingHorizontal: spacing.lg,
-        paddingBottom: spacing["3xl"],
-        paddingTop: spacing.md,
-        borderTopWidth: 1,
-        borderTopColor: color.border,
-        backgroundColor: color.background,
-      }}
-    >
-      <Button
-        variant="primary"
-        size="large"
-        label={isComplete ? "Start Translating" : `Select ${remaining} more`}
-        disabled={!isComplete}
-        onPress={handleContinue}
-        style={{ width: "100%" }}
-      />
-    </Box>
-  );
-
   return (
-    <ScreenContainer
-      scroll
-      footer={footer}
-      contentContainerStyle={{
-        paddingHorizontal: spacing.md,
-        paddingBottom: spacing["4xl"],
-      }}
-      style={{ backgroundColor: color.background }}
-    >
-      <Animated.View style={containerStyle}>
-        <Box
-          style={{
-            paddingTop: spacing["2xl"],
-            paddingBottom: spacing.md,
-          }}
-        >
-          <Text
-            variant="display"
+    <View style={{ flex: 1, backgroundColor: color.background }}>
+      <ScreenContainer
+        scroll
+        contentContainerStyle={{
+          paddingHorizontal: spacing.md,
+          // Extra padding bottom so the last item scrolls past the absolute footer
+          paddingBottom: 140, 
+        }}
+        style={{ backgroundColor: color.background }}
+      >
+        <Animated.View style={containerStyle}>
+          <Box
             style={{
-              marginBottom: spacing.sm,
-              color: color.foreground,
+              paddingTop: spacing["2xl"],
+              paddingBottom: spacing.md,
             }}
           >
-            {HEADING}
-          </Text>
-          <Text
-            variant="body"
-            style={{
-              color: color.muted,
-              lineHeight: 24,
-            }}
-          >
-            {SUBTITLE}
-          </Text>
-        </Box>
+            <Text
+              variant="display"
+              style={{
+                marginBottom: spacing.sm,
+                color: color.foreground,
+                letterSpacing: -0.5,
+              }}
+            >
+              {HEADING}
+            </Text>
+            <Text
+              variant="body"
+              style={{
+                color: color.muted,
+                lineHeight: 24,
+              }}
+            >
+              {SUBTITLE}
+            </Text>
+          </Box>
 
-        <LanguageSelectionGrid selected={selected} onToggle={toggleLanguage} />
-      </Animated.View>
-    </ScreenContainer>
+          <LanguageSelectionGrid selected={selected} onToggle={toggleLanguage} />
+        </Animated.View>
+      </ScreenContainer>
+
+      {/* Floating Blurred Footer */}
+      <View style={styles.footerContainer}>
+        <BlurView
+          intensity={80}
+          tint={isDark ? "dark" : "light"}
+          style={[
+            styles.blurView,
+            {
+              paddingHorizontal: spacing.lg,
+              paddingBottom: spacing["3xl"],
+              paddingTop: spacing.md,
+              borderTopWidth: 1,
+              borderTopColor: color.border + "80", // 50% opacity border
+              backgroundColor: color.background + "99", // 60% opacity background
+            },
+          ]}
+        >
+          <Button
+            variant="primary"
+            size="large"
+            label={isComplete ? "Start Translating" : `Select ${remaining} more`}
+            disabled={!isComplete}
+            onPress={handleContinue}
+            style={{ width: "100%" }}
+          />
+        </BlurView>
+      </View>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  footerContainer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  blurView: {
+    width: "100%",
+  },
+});

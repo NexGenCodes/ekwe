@@ -61,7 +61,8 @@
       "expo-router",
       "expo-image",
       "@sentry/react-native",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "expo-secure-store"
     ],
     "assetBundlePatterns": ["assets/fonts/*"]
   }

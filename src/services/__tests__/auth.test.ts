@@ -4,7 +4,6 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import { queryClient } from "@/hooks/queries/queryClient";
 import * as authModule from "@/services/auth";
 import { supabase } from "@/services/supabase";
-import { AnalyticsEvents, identify, reset, track } from "@/utils/analytics";
 import logger from "@/utils/logger";
 
 jest.mock("@/services/supabase", () => ({
@@ -14,7 +13,6 @@ jest.mock("@/services/supabase", () => ({
         data: { subscription: { unsubscribe: jest.fn() } },
       })),
       getSession: jest.fn(),
-      signInWithPassword: jest.fn(),
       signUp: jest.fn(),
       signInWithOtp: jest.fn(),
       verifyOtp: jest.fn(),
@@ -36,18 +34,6 @@ jest.mock("@/hooks/queries/queryClient", () => ({
   queryClient: {
     invalidateQueries: jest.fn(),
     clear: jest.fn(),
-  },
-}));
-
-jest.mock("@/utils/analytics", () => ({
-  identify: jest.fn(),
-  reset: jest.fn(),
-  track: jest.fn(),
-  AnalyticsEvents: {
-    SIGN_IN: "sign_in",
-    SIGN_UP: "sign_up",
-    SIGN_OUT: "sign_out",
-    DELETE_ACCOUNT: "delete_account",
   },
 }));
 
@@ -91,29 +77,7 @@ describe("initAuth", () => {
     });
   });
 
-  it("calls identify on SIGNED_IN event", () => {
-    const session = {
-      user: {
-        id: "user_1",
-        email: "test@ekwe.app",
-        app_metadata: { is_pro: false },
-      },
-    };
-    (supabase.auth.onAuthStateChange as jest.Mock).mockImplementationOnce(
-      (cb: (event: string, session: unknown) => void) => {
-        cb("SIGNED_IN", session);
-        return { data: { subscription: { unsubscribe: jest.fn() } } };
-      },
-    );
-
-    authModule.initAuth();
-
-    expect(identify).toHaveBeenCalledWith("user_1", {
-      $set: { is_pro: false, email: "test@ekwe.app" },
-    });
-  });
-
-  it("calls reset + invalidates queries on SIGNED_OUT", () => {
+  it("invalidates queries on SIGNED_OUT", () => {
     (supabase.auth.onAuthStateChange as jest.Mock).mockImplementationOnce(
       (cb: (event: string) => void) => {
         cb("SIGNED_OUT");
@@ -123,7 +87,6 @@ describe("initAuth", () => {
 
     authModule.initAuth();
 
-    expect(reset).toHaveBeenCalled();
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
       queryKey: ["translate"],
     });
@@ -166,78 +129,6 @@ describe("cleanupAuth", () => {
   });
 });
 
-describe("signInWithPassword", () => {
-  it("returns ok on success", async () => {
-    (supabase.auth.signInWithPassword as jest.Mock).mockResolvedValueOnce({
-      error: null,
-    });
-
-    const result = await authModule.signInWithPassword("test@ekwe.app", "pw");
-
-    expect(result).toEqual({ ok: true });
-    expect(track).toHaveBeenCalledWith(AnalyticsEvents.SIGN_IN, {
-      method: "email",
-    });
-  });
-
-  it("returns friendly error for invalid credentials", async () => {
-    (supabase.auth.signInWithPassword as jest.Mock).mockResolvedValueOnce({
-      error: { message: "Invalid login credentials" },
-    });
-
-    const result = await authModule.signInWithPassword("test@ekwe.app", "pw");
-
-    expect(result).toEqual({
-      ok: false,
-      error: "Incorrect email or password.",
-    });
-  });
-
-  it("returns generic error on exception", async () => {
-    (supabase.auth.signInWithPassword as jest.Mock).mockRejectedValueOnce(
-      new Error("net"),
-    );
-
-    const result = await authModule.signInWithPassword("test@ekwe.app", "pw");
-
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe("Something went wrong. Give it another try.");
-  });
-});
-
-describe("signUpWithPassword", () => {
-  it("returns needsOtp=true when no session present", async () => {
-    (supabase.auth.signUp as jest.Mock).mockResolvedValueOnce({
-      data: { session: null },
-      error: null,
-    });
-
-    const result = await authModule.signUpWithPassword(
-      "test@ekwe.app",
-      "pw123",
-    );
-
-    expect(result).toEqual({ ok: true, needsOtp: true });
-    expect(track).toHaveBeenCalledWith(AnalyticsEvents.SIGN_UP, {
-      method: "email",
-      needsOtp: true,
-    });
-  });
-
-  it("returns needsOtp=false when session exists", async () => {
-    (supabase.auth.signUp as jest.Mock).mockResolvedValueOnce({
-      data: { session: { user: { id: "u1" } } },
-      error: null,
-    });
-
-    const result = await authModule.signUpWithPassword(
-      "test@ekwe.app",
-      "pw123",
-    );
-
-    expect(result).toEqual({ ok: true, needsOtp: false });
-  });
-});
 
 describe("sendOtp", () => {
   it("returns ok on success", async () => {
@@ -287,62 +178,6 @@ describe("verifyOtp", () => {
   });
 });
 
-describe("sendPasswordResetOtp", () => {
-  it("returns ok on success", async () => {
-    (supabase.auth.signInWithOtp as jest.Mock).mockResolvedValueOnce({
-      error: null,
-    });
-
-    const result = await authModule.sendPasswordResetOtp("test@ekwe.app");
-
-    expect(result).toEqual({ ok: true });
-  });
-
-  it("returns rate-limit error for 429", async () => {
-    (supabase.auth.signInWithOtp as jest.Mock).mockResolvedValueOnce({
-      error: { status: 429, message: "Over limit" },
-    });
-
-    const result = await authModule.sendPasswordResetOtp("test@ekwe.app");
-
-    expect(result).toEqual({
-      ok: false,
-      error: "Too many requests. Wait a moment and try again.",
-    });
-  });
-
-  it("silently succeeds for other errors (anti-enumeration)", async () => {
-    (supabase.auth.signInWithOtp as jest.Mock).mockResolvedValueOnce({
-      error: { status: 400, message: "User not found" },
-    });
-
-    const result = await authModule.sendPasswordResetOtp("test@ekwe.app");
-
-    expect(result).toEqual({ ok: true });
-  });
-
-  it("silently succeeds on exception", async () => {
-    (supabase.auth.signInWithOtp as jest.Mock).mockRejectedValueOnce(
-      new Error("net"),
-    );
-
-    const result = await authModule.sendPasswordResetOtp("test@ekwe.app");
-
-    expect(result).toEqual({ ok: true });
-  });
-});
-
-describe("updatePassword", () => {
-  it("returns ok on success", async () => {
-    (supabase.auth.updateUser as jest.Mock).mockResolvedValueOnce({
-      error: null,
-    });
-
-    const result = await authModule.updatePassword("new-secret");
-
-    expect(result).toEqual({ ok: true });
-  });
-});
 
 describe("signInWithApple", () => {
   it("returns ok on success", async () => {
@@ -357,9 +192,6 @@ describe("signInWithApple", () => {
     const result = await authModule.signInWithApple();
 
     expect(result).toEqual({ ok: true });
-    expect(track).toHaveBeenCalledWith(AnalyticsEvents.SIGN_IN, {
-      method: "apple",
-    });
     expect(supabase.auth.updateUser).toHaveBeenCalledWith({
       data: { full_name: "Jane Doe" },
     });
@@ -399,9 +231,6 @@ describe("signInWithGoogle", () => {
     const result = await authModule.signInWithGoogle();
 
     expect(result).toEqual({ ok: true });
-    expect(track).toHaveBeenCalledWith(AnalyticsEvents.SIGN_IN, {
-      method: "google",
-    });
   });
 
   it("handles cancellation", async () => {
@@ -446,7 +275,6 @@ describe("signOut", () => {
     const result = await authModule.signOut();
 
     expect(result).toEqual({ ok: true });
-    expect(track).toHaveBeenCalledWith(AnalyticsEvents.SIGN_OUT);
     expect(GoogleSignin.signOut).toHaveBeenCalled();
   });
 });

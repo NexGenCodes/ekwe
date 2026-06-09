@@ -27,6 +27,7 @@ export const SocialAuthGroup = ({
       action={action}
       onPress={onApple}
       disabled={disabled}
+      comingSoon
     />
     <SocialButton
       provider="google"

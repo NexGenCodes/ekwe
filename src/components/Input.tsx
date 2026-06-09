@@ -1,10 +1,11 @@
-/**
- * Input — Base text input primitive.
- *
- * Supports field-level error display from react-hook-form.
- */
 import React, { forwardRef, useState } from "react";
 import { TextInput, type TextInputProps } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  interpolateColor,
+} from "react-native-reanimated";
 
 import { Box, Text } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
@@ -13,28 +14,58 @@ import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks";
 
 export interface InputProps extends TextInputProps {
-  /** Field-level error message from react-hook-form */
   error?: string;
+  label?: string;
+  helperText?: string;
 }
 
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
+
 export const Input = forwardRef<TextInput, InputProps>(
-  ({ error, style, ...props }, ref) => {
+  ({ error, label, helperText, style, ...props }, ref) => {
     const { color } = useTheme();
     const [isFocused, setIsFocused] = useState(false);
+    const focusProgress = useSharedValue(0);
+
+    const animatedBorderStyle = useAnimatedStyle(() => {
+      if (error) {
+        return { borderColor: color.error };
+      }
+      const borderColorValue = interpolateColor(
+        focusProgress.value,
+        [0, 1],
+        [color.border, color.secondary]
+      );
+      return { borderColor: borderColorValue };
+    });
 
     return (
       <Box>
-        <TextInput
-          ref={ref}
+        {label ? (
+          <Text
+            variant="label"
+            style={{
+              color: color.foreground,
+              marginBottom: spacing.sm,
+              paddingHorizontal: spacing.xs,
+            }}
+          >
+            {label}
+          </Text>
+        ) : null}
+        <AnimatedTextInput
+          ref={ref as React.Ref<Animated.AnimatedComponent<typeof TextInput>>}
           autoCapitalize="none"
           autoCorrect={false}
           placeholderTextColor={color.muted}
           onFocus={(e) => {
             setIsFocused(true);
+            focusProgress.value = withTiming(1, { duration: 200 });
             props.onFocus?.(e);
           }}
           onBlur={(e) => {
             setIsFocused(false);
+            focusProgress.value = withTiming(0, { duration: 200 });
             props.onBlur?.(e);
           }}
           style={[
@@ -45,12 +76,8 @@ export const Input = forwardRef<TextInput, InputProps>(
               color: color.foreground,
               ...typography.body,
               borderWidth: 1,
-              borderColor: error
-                ? color.error
-                : isFocused
-                  ? color.secondary
-                  : color.border,
             },
+            animatedBorderStyle,
             style,
           ]}
           {...props}
@@ -65,6 +92,17 @@ export const Input = forwardRef<TextInput, InputProps>(
             }}
           >
             {error}
+          </Text>
+        ) : helperText ? (
+          <Text
+            variant="caption"
+            style={{
+              color: color.muted,
+              marginTop: spacing.xs,
+              paddingHorizontal: spacing.xs,
+            }}
+          >
+            {helperText}
           </Text>
         ) : null}
       </Box>

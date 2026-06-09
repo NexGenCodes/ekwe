@@ -1,7 +1,6 @@
-/**
- * ErrorBanner — Inline error message. Renders nothing when empty.
- */
+import { AlertCircle } from "lucide-react-native";
 import React from "react";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 
 import { Box, Text } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
@@ -17,25 +16,38 @@ export const ErrorBanner = ({
 }: ErrorBannerProps): React.ReactElement | null => {
   const { color } = useTheme();
   return message ? (
-    <Box
-      style={{
-        backgroundColor: `${color.error}14`,
-        padding: spacing.md,
-        borderRadius: borderRadius.lg,
-        marginBottom: spacing.md,
-        borderWidth: 1,
-        borderColor: `${color.error}26`,
-      }}
+    <Animated.View
+      entering={FadeIn.duration(300)}
+      exiting={FadeOut.duration(200)}
     >
-      <Text
-        variant="bodySmall"
+      <Box
         style={{
-          color: color.error,
-          textAlign: "center",
+          backgroundColor: `${color.error}10`,
+          padding: spacing.md,
+          borderRadius: borderRadius.lg,
+          marginBottom: spacing.md,
+          borderWidth: 1,
+          borderColor: `${color.error}20`,
+          borderLeftWidth: 3,
+          borderLeftColor: color.error,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: spacing.sm,
         }}
+        accessibilityRole="alert"
       >
-        {message}
-      </Text>
-    </Box>
+        <AlertCircle size={18} color={color.error} />
+        <Box style={{ flex: 1 }}>
+          <Text
+            variant="bodySmall"
+            style={{
+              color: color.error,
+            }}
+          >
+            {message}
+          </Text>
+        </Box>
+      </Box>
+    </Animated.View>
   ) : null;
 };

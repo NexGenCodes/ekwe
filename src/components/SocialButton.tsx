@@ -6,7 +6,7 @@
 import React from "react";
 import Svg, { Path, G, ClipPath, Defs } from "react-native-svg";
 
-import { Pressable, Text } from "@/components/ui";
+import { Pressable, Text, Box } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
@@ -17,6 +17,7 @@ interface SocialButtonProps {
   action?: "sign-in" | "sign-up";
   onPress: () => void;
   disabled?: boolean;
+  comingSoon?: boolean;
 }
 
 /** Official multicolour Google "G" logo */
@@ -55,42 +56,57 @@ export const SocialButton = ({
   action = "sign-in",
   onPress,
   disabled = false,
+  comingSoon = false,
 }: SocialButtonProps): React.ReactElement | null => {
-  const { color } = useTheme();
-
-  if (provider === "apple" && !isIOS) return null;
+  const { color, isDark } = useTheme();
 
   const label = provider === "google" ? "Google" : "Apple";
 
+  const isApple = provider === "apple";
+  const bgColor = isApple
+    ? isDark
+      ? color.foreground
+      : "#000000"
+    : color.card;
+  const textColor = isApple
+    ? isDark
+      ? color.background
+      : "#FFFFFF"
+    : color.foreground;
+  const borderColor = isApple ? bgColor : color.border;
+
   return (
     <Pressable
-      onPress={disabled ? undefined : onPress}
+      onPress={disabled || comingSoon ? undefined : onPress}
       feedback="scale"
-      disabled={disabled}
+      disabled={disabled || comingSoon}
       style={{
         flex: 1,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
         gap: spacing.sm,
-        backgroundColor: color.card,
+        backgroundColor: bgColor,
         borderRadius: borderRadius.xl,
         paddingVertical: spacing.md,
         paddingHorizontal: spacing.lg,
         borderWidth: 1,
-        borderColor: color.border,
-        opacity: disabled ? 0.5 : 1,
+        borderColor,
+        opacity: disabled || comingSoon ? 0.5 : 1,
       }}
       accessibilityLabel={`${action === "sign-in" ? "Sign in" : "Sign up"} with ${label}`}
     >
-      {provider === "google" ? (
-        <GoogleLogo />
-      ) : (
-        <AppleLogo color={color.foreground} />
-      )}
-      <Text variant="body" style={{ color: color.foreground }}>
-        {label}
-      </Text>
+      {provider === "google" ? <GoogleLogo /> : <AppleLogo color={textColor} />}
+      <Box style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
+        <Text variant="body" style={{ color: textColor }}>
+          {label}
+        </Text>
+        {comingSoon && (
+          <Box style={{ backgroundColor: color.muted, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 }}>
+            <Text variant="caption" style={{ color: color.background, fontSize: 10 }}>Soon</Text>
+          </Box>
+        )}
+      </Box>
     </Pressable>
   );
 };

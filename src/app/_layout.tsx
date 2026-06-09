@@ -31,6 +31,7 @@ import { ShareIntentProvider } from "@/providers/ShareIntentProvider";
 import { HistoryService } from "@/services/HistoryService";
 import { SyncService } from "@/services/SyncService";
 import { initAuth } from "@/services/auth";
+import { initializeMMKV } from "@/services/mmkv";
 import { auth$ } from "@/store";
 import logger from "@/utils/logger";
 
@@ -42,29 +43,6 @@ function InnerLayout(): React.ReactElement {
 
   const isInitialized = useSelector(() => auth$.isInitialized.get());
 
-  // ─── Deep Link: Password Reset ──────────────────────────────
-  useEffect(() => {
-    const handleDeepLink = async ({ url }: { url: string }): Promise<void> => {
-      if (!url.includes("reset-password")) return;
-
-      const { setSessionFromDeepLink } = await import("@/services/auth");
-      const success = await setSessionFromDeepLink(url);
-      if (success) {
-        router.replace("/(auth)/reset-password");
-      }
-    };
-
-    Linking.getInitialURL()
-      .then((url) => {
-        if (url) handleDeepLink({ url });
-      })
-      .catch((err) => {
-        logger.error("[deepLink] Failed to get initial URL", err);
-      });
-
-    const linkSub = Linking.addEventListener("url", handleDeepLink);
-    return (): void => linkSub.remove();
-  }, [router]);
 
   // Real-time Exclusivity Guard & Share Intent Listener
   useTripleExclusivity();
@@ -144,11 +122,8 @@ function InnerLayout(): React.ReactElement {
               <Stack.Screen
                 name="legal"
                 options={{
-                  presentation: "formSheet",
-                  sheetGrabberVisible: true,
-                  headerShown: true,
-                  title: "Legal",
-                  contentStyle: { backgroundColor: "transparent" },
+                  headerShown: false,
+                  animation: "slide_from_right",
                 }}
               />
               <Stack.Screen
@@ -181,10 +156,11 @@ function RootLayout(): React.ReactElement {
       } catch {
         /* Silently fail if activity is not ready */
       }
+      await initializeMMKV();
+      initAuth();
+      SyncService.start();
     };
     activate();
-    initAuth();
-    SyncService.start();
 
     return (): void => {
       deactivateKeepAwake().catch(() => {});
@@ -200,21 +176,8 @@ function RootLayout(): React.ReactElement {
   }, [fontsLoaded]);
 
   if (!appReady) {
-    // Show a simple splash screen while fonts are loading
-    return (
-      <SafeAreaProvider>
-        <Box
-          style={{
-            flex: 1,
-            backgroundColor: palette.white,
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          <EkweLogo size={120} />
-        </Box>
-      </SafeAreaProvider>
-    );
+    // Return null to keep the native splash screen visible while loading fonts
+    return null;
   }
 
   return (
