@@ -158,7 +158,7 @@ export default function WelcomeScreen(): React.ReactElement {
             <Button
               variant="primary"
               size="large"
-              label="Set up your studio"
+              label="Get Started"
               onPress={useCallback(async () => {
                 await triggerHaptic();
                 router.replace("/language");

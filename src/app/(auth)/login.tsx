@@ -42,7 +42,7 @@ export default function WelcomeScreen(): React.JSX.Element {
 
   return (
     <AuthShell>
-      <AuthHeader subtitle="Every voice, understood." />
+      <AuthHeader subtitle="Enter your email to sign in or create a new account." />
 
       <Box>
         <ErrorBanner

@@ -35,7 +35,7 @@ export function useLanguageSelection(): UseLanguageSelectionReturn {
     });
   }, []);
 
-  const isComplete = selected.length === MAX_LANGUAGES;
+  const isComplete = selected.length > 0;
   const remaining = MAX_LANGUAGES - selected.length;
   const isMaxed = selected.length >= MAX_LANGUAGES;
 

@@ -17,9 +17,9 @@ import { useLanguageSelection } from "@/hooks/useLanguageSelection";
 import { settingsActions, auth$ } from "@/store";
 import { triggerHaptic } from "@/utils/haptics";
 
-const HEADING = "Pick your 5 languages";
+const HEADING = "Pick your languages";
 const SUBTITLE =
-  "Choose 5 languages you work with. Tap to select, tap again to swap. You can always change these later.";
+  "Choose up to 5 languages you work with. Tap to select, tap again to remove. You can always change these later.";
 
 export default function OnboardingLanguagesScreen(): React.ReactElement {
   const router = useRouter();
@@ -113,12 +113,12 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
           style={[
             styles.blurView,
             {
-              paddingHorizontal: spacing.lg,
-              paddingBottom: spacing.xl,
-              paddingTop: spacing.md,
+              paddingVertical: spacing.md,
+              paddingHorizontal: spacing.md,
               borderTopWidth: 1,
               borderTopColor: color.border + "80", // 50% opacity border
               backgroundColor: color.background + "99", // 60% opacity background
+              alignItems: "center", // Center the button
             },
           ]}
         >
@@ -126,11 +126,11 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
             variant="primary"
             size="large"
             label={
-              isComplete ? "Start Translating" : `Select ${remaining} more`
+              isComplete ? "Create Account to Continue" : `Select ${remaining} more`
             }
             disabled={!isComplete}
             onPress={handleContinue}
-            style={{ width: "100%" }}
+            style={{ minWidth: 250 }}
           />
         </BlurView>
       </View>

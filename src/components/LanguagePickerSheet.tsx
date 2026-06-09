@@ -159,7 +159,7 @@ export const LanguagePickerSheet = ({
   );
 
   return (
-    <Sheet visible={isVisible} onClose={onClose} maxHeight="90%">
+    <Sheet visible={isVisible} onClose={onClose} maxHeight="80%">
       <Box style={{ zIndex: 1, backgroundColor: color.background }}>
         <Box
           style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.sm }}
@@ -187,9 +187,10 @@ export const LanguagePickerSheet = ({
             borderTopWidth: 0.5,
             backgroundColor: color.background,
             borderTopColor: color.border,
+            alignItems: "center",
           }}
         >
-          <Button label="Confirm" onPress={onClose} variant="primary" />
+          <Button label="Confirm" onPress={onClose} variant="primary" style={{ minWidth: 200 }} />
         </Box>
       )}
     </Sheet>

@@ -16,11 +16,10 @@ import { Box, Text, Pressable } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
 import { useTheme, useOtpVerify } from "@/hooks";
 import { otpSchema, OtpForm } from "@/schemas/auth";
-import { settingsActions } from "@/store";
 
 export default function VerifyScreen(): React.JSX.Element {
   const router = useRouter();
-  const { setOnboardingCompleted } = settingsActions;
+
   const params = useLocalSearchParams<{ email: string; source: string }>();
   const email = params.email || "";
 
@@ -37,7 +36,6 @@ export default function VerifyScreen(): React.JSX.Element {
     const result = await verify(email, data.token, type);
     if (result.ok) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setOnboardingCompleted(true);
       router.replace("/(tabs)");
     }
   };
@@ -65,7 +63,12 @@ export default function VerifyScreen(): React.JSX.Element {
               render={({ field: { onChange, value }, fieldState }) => (
                 <OtpInput
                   value={value}
-                  onChangeText={onChange}
+                  onChangeText={(text: string) => {
+                    onChange(text);
+                    if (text.length === 6) {
+                      handleSubmit(onSubmit)();
+                    }
+                  }}
                   onSubmitEditing={handleSubmit(onSubmit)}
                   error={fieldState.error?.message}
                 />
