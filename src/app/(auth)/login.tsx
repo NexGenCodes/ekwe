@@ -21,6 +21,7 @@ import { sendOtp } from "@/services/auth";
 
 export default function WelcomeScreen(): React.JSX.Element {
   const router = useRouter();
+  const [hasConsented, setHasConsented] = React.useState(false);
 
   const { isLoading, error, run, handleApple, handleGoogle } = useAuthFlow();
   const { isOffline } = useNetwork();
@@ -29,6 +30,8 @@ export default function WelcomeScreen(): React.JSX.Element {
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "" },
   });
+
+  const disabled = isLoading || isOffline || !hasConsented;
 
   const onSubmit = async (data: LoginForm): Promise<void> => {
     const result = await run(() => sendOtp(data.email));
@@ -79,7 +82,7 @@ export default function WelcomeScreen(): React.JSX.Element {
           label="Continue with Email"
           onPress={handleSubmit(onSubmit)}
           loading={isLoading}
-          disabled={isOffline}
+          disabled={disabled}
         />
 
         <Divider />
@@ -87,10 +90,13 @@ export default function WelcomeScreen(): React.JSX.Element {
         <SocialAuthGroup
           onApple={handleApple}
           onGoogle={handleGoogle}
-          disabled={isLoading || isOffline}
+          disabled={disabled}
         />
 
-        <Disclaimer />
+        <Disclaimer
+          agreed={hasConsented}
+          onToggleAgreement={() => setHasConsented((v) => !v)}
+        />
       </Box>
     </AuthShell>
   );

@@ -26,7 +26,7 @@ import { useAppFonts } from "@/hooks/useFonts";
 import { ShareIntentProvider } from "@/providers/ShareIntentProvider";
 import { HistoryService } from "@/services/HistoryService";
 import { SyncService } from "@/services/SyncService";
-import { initAuth } from "@/services/auth";
+import { initAuth, cleanupAuth } from "@/services/auth";
 import { initializeMMKV } from "@/services/mmkv";
 import { auth$ } from "@/store";
 
@@ -158,6 +158,7 @@ function RootLayout(): React.ReactElement | null {
     return (): void => {
       deactivateKeepAwake().catch(() => {});
       SyncService.stop();
+      cleanupAuth();
     };
   }, []);
 

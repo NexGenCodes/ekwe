@@ -19,7 +19,13 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.ekwe.app",
-      "userInterfaceStyle": "automatic"
+      "userInterfaceStyle": "automatic",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Ekwe uses your microphone to capture your voice for real-time translation.",
+        "NSSpeechRecognitionUsageDescription": "Ekwe uses speech recognition to convert your spoken words into text for translation.",
+        "NSUserTrackingUsageDescription": "This identifier helps us deliver a better experience and improve our services."
+      },
+      "privacyManifests": {}
     },
     "android": {
       "adaptiveIcon": {

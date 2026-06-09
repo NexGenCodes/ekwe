@@ -10,11 +10,12 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { Button, LanguageSelectionGrid } from "@/components";
-import { Box, ScreenContainer, Text } from "@/components/ui";
+import { Box, ScreenContainer, Text, Pressable } from "@/components/ui";
 import { duration } from "@/constants/motion";
 import { useTokens } from "@/hooks/ui";
 import { useLanguageSelection } from "@/hooks/useLanguageSelection";
 import { settingsActions, auth$ } from "@/store";
+import { track, AnalyticsEvents } from "@/utils/analytics";
 import { triggerHaptic } from "@/utils/haptics";
 
 const HEADING = "Pick your languages";
@@ -54,10 +55,24 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
     settingsActions.setSelectedLanguages(selected);
     settingsActions.setTargetLanguage(selected[0]);
     settingsActions.setOnboardingCompleted(true);
+    track(AnalyticsEvents.ONBOARDING_COMPLETED, {
+      languageCount: selected.length,
+      targetLanguage: selected[0],
+    });
 
     const session = auth$.session.get();
     router.replace(session ? "/(tabs)" : "/(auth)/login");
   }, [isComplete, selected, router]);
+
+  const handleSkip = useCallback(async (): Promise<void> => {
+    await triggerHaptic();
+    settingsActions.setOnboardingCompleted(true);
+    track(AnalyticsEvents.ONBOARDING_COMPLETED, {
+      skipped: true,
+    });
+    const session = auth$.session.get();
+    router.replace(session ? "/(tabs)" : "/(auth)/login");
+  }, [router]);
 
   return (
     <View style={{ flex: 1, backgroundColor: color.background }}>
@@ -132,6 +147,23 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
             onPress={handleContinue}
             style={{ minWidth: 250 }}
           />
+          <Pressable
+            onPress={handleSkip}
+            style={{
+              marginTop: spacing.sm,
+              alignItems: "center",
+              paddingVertical: spacing.xs,
+            }}
+            accessibilityLabel="Skip language selection"
+            hitSlop={8}
+          >
+            <Text
+              variant="bodySmall"
+              style={{ color: color.muted, textDecorationLine: "underline" }}
+            >
+              Skip for now
+            </Text>
+          </Pressable>
         </BlurView>
       </View>
     </View>

@@ -39,10 +39,13 @@ export const PLAN_LIMITS = {
     historyLocalTtlDays: 7, // Flat for all users (tamper-safe)
     historyRemoteTtlDays: 30, // Cloud retention — enforced server-side
     textTranslationMaxChars: 3000,
-    autoLanguageDetect: false, // Auto detect is Pro only
+    autoLanguageDetect: true, // Now free for all!
     customAvatarIcons: false,
     autoCopy: false,
     contextAwareness: false,
+    hasKeyboardExtension: false,
+    hasWhatsAppBot: false,
+    hasOfflinePacks: false,
   },
   pro: {
     maxPinnedLanguages: 5,
@@ -55,6 +58,9 @@ export const PLAN_LIMITS = {
     customAvatarIcons: true,
     autoCopy: true,
     contextAwareness: true,
+    hasKeyboardExtension: true,
+    hasWhatsAppBot: true,
+    hasOfflinePacks: true,
   },
 } as const;
 
@@ -74,16 +80,16 @@ export const DISPLAY_PRICING: Record<
   }
 > = {
   USD: {
-    monthly: { amount: 2.5, currency: "USD", symbol: "$" },
-    annual: { amount: 24.0, currency: "USD", symbol: "$" },
-    annualMonthlyCost: 2.0,
-    annualSavingPercent: 20,
+    monthly: { amount: 3.5, currency: "USD", symbol: "$" },
+    annual: { amount: 35.0, currency: "USD", symbol: "$" },
+    annualMonthlyCost: 2.91,
+    annualSavingPercent: 17,
   },
   NGN: {
-    monthly: { amount: 2500, currency: "NGN", symbol: "₦" },
-    annual: { amount: 24000, currency: "NGN", symbol: "₦" },
-    annualMonthlyCost: 2000,
-    annualSavingPercent: 20,
+    monthly: { amount: 3500, currency: "NGN", symbol: "₦" },
+    annual: { amount: 35000, currency: "NGN", symbol: "₦" },
+    annualMonthlyCost: 2916.67,
+    annualSavingPercent: 17,
   },
   GBP: {
     monthly: { amount: 2.5, currency: "GBP", symbol: "£" },
@@ -146,10 +152,12 @@ export const BILLING_PLANS = {
       { title: "Unlimited text translation", included: true },
       { title: "Voice dictation (up to 60s)", included: true },
       { title: "30-day cloud history", included: true },
+      { title: "Auto-detect spoken language", included: true },
       { title: "Ad-free experience", included: false },
       { title: "Extended voice dictation (up to 10 min)", included: false },
-      { title: "1-year cloud history", included: false },
-      { title: "Auto-detect spoken language", included: false },
+      { title: "Offline Language Packs", included: false },
+      { title: "WhatsApp & Telegram Bot", included: false },
+      { title: "System Keyboard Extension", included: false },
     ] as PlanFeature[],
   },
   pro: {
@@ -162,9 +170,10 @@ export const BILLING_PLANS = {
       { title: "Ad-free experience", included: true },
       { title: "Extended voice dictation (up to 10 min)", included: true },
       { title: "1-year cloud history", included: true },
-      { title: "Auto-detect spoken language", included: true },
-      { title: "Custom avatar icons", included: true },
-      { title: "Priority AI processing", included: true },
+      { title: "Offline Language Packs", included: true },
+      { title: "WhatsApp & Telegram Bot", included: true },
+      { title: "System Keyboard Extension", included: true },
+      { title: "Priority AI context processing", included: true },
     ] as PlanFeature[],
   },
 } as const;

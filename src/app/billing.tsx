@@ -8,7 +8,7 @@ import { GradientMesh } from "@/components/GradientMesh";
 import { BillingToggle } from "@/components/billing/BillingToggle";
 import { FreePlanCard } from "@/components/billing/FreePlanCard";
 import { ProPlanCard } from "@/components/billing/ProPlanCard";
-import { Box, Text, ScrollArea } from "@/components/ui";
+import { Box, Text, Pressable, ScrollArea } from "@/components/ui";
 import { palette } from "@/constants/colors";
 import { useTheme, useTokens } from "@/hooks";
 import { useBilling } from "@/hooks/billing/useBilling";
@@ -24,6 +24,7 @@ export default function BillingScreen(): React.ReactElement {
     setIsAnnual,
     handleUpgrade,
     handleManage,
+    handleRestore,
     freePlan,
     proPlan,
   } = useBilling();
@@ -195,6 +196,20 @@ export default function BillingScreen(): React.ReactElement {
             Subscriptions are managed through your device's App Store. You can
             cancel anytime from your settings.
           </Text>
+          {!isPro && (
+            <Pressable
+              onPress={handleRestore}
+              style={{ marginTop: spacing.md }}
+              accessibilityLabel="Restore previous purchases"
+            >
+              <Text
+                variant="bodySmall"
+                style={{ color: color.primary, textDecorationLine: "underline" }}
+              >
+                Restore Purchases
+              </Text>
+            </Pressable>
+          )}
         </Box>
       </ScrollArea>
     </Box>

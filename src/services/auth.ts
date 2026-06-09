@@ -12,6 +12,7 @@ import { posthogClient } from "@/lib/posthog";
 import { supabase } from "@/services/supabase";
 import { auth$, authActions } from "@/store";
 import { isIOS } from "@/utils";
+import { track, identify, AnalyticsEvents } from "@/utils/analytics";
 import logger from "@/utils/logger";
 
 // ── Types ────────────────────────────────────────────────────────
@@ -44,6 +45,14 @@ export const initAuth = (): void => {
     logger.info(`Auth state changed: ${event}`, session?.user?.id);
     authActions.setSession(session);
     authActions.setInitialized(true);
+
+    if (event === "SIGNED_IN" && session?.user) {
+      identify(session.user.id, {
+        email: session.user.email ?? "",
+        is_pro: session.user.app_metadata?.is_pro === true,
+      });
+    }
+
     if (event === "SIGNED_OUT") {
       queryClient.invalidateQueries({ queryKey: ["translate"] });
       queryClient.invalidateQueries({ queryKey: ["transcribe"] });
@@ -92,6 +101,12 @@ export const verifyOtp = async (
     if (error) return { ok: false, error: error.message };
     if (!data.session)
       return { ok: false, error: "Verification didn't complete. Try again." };
+
+    track(
+      type === "signup" ? AnalyticsEvents.SIGN_UP : AnalyticsEvents.SIGN_IN,
+      { method: "otp" },
+    );
+
     return { ok: true };
   } catch (err) {
     logger.error("[Auth] verifyOtp error:", err);
@@ -140,6 +155,8 @@ export const signInWithApple = async (): Promise<AuthResult> => {
       }
     }
 
+    track(AnalyticsEvents.SIGN_IN, { method: "apple" });
+
     return { ok: true };
   } catch (err: unknown) {
     if (err instanceof Error && "code" in err) {
@@ -175,6 +192,9 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
     });
 
     if (error) return { ok: false, error: error.message };
+
+    track(AnalyticsEvents.SIGN_IN, { method: "google" });
+
     return { ok: true };
   } catch (err: unknown) {
     logger.error("[Auth] Google sign-in error:", err);
@@ -191,7 +211,9 @@ export const signOut = async (): Promise<AuthResult> => {
       await GoogleSignin.signOut();
     } catch {}
 
+    authActions.setSession(null);
     posthogClient?.reset();
+    track(AnalyticsEvents.SIGN_OUT);
 
     if (error) return { ok: false, error: error.message };
     return { ok: true };
@@ -209,18 +231,26 @@ export const deleteAccount = async (): Promise<AuthResult> => {
     const { error } = await supabase.rpc("delete_user");
     if (error) {
       logger.error("[Auth] delete_user RPC error:", error);
+    }
+
+    try {
+      await supabase.auth.signOut();
+    } catch {}
+    try {
+      await GoogleSignin.signOut();
+    } catch {}
+    queryClient.clear();
+    authActions.setSession(null);
+    posthogClient?.reset();
+    track(AnalyticsEvents.DELETE_ACCOUNT);
+
+    if (error) {
       return {
         ok: false,
         error:
           "Please contact support at support@ekwe.app to complete account deletion.",
       };
     }
-    await supabase.auth.signOut();
-    try {
-      await GoogleSignin.signOut();
-    } catch {}
-    queryClient.clear();
-    posthogClient?.reset();
     return { ok: true };
   } catch (err) {
     logger.error("[Auth] deleteAccount error:", err);

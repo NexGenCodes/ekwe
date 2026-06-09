@@ -5,7 +5,7 @@ import { useState, useMemo } from "react";
 
 import { BILLING_PLANS, DISPLAY_PRICING } from "@/constants/billing";
 import { supabase } from "@/services/supabase";
-import { auth$, settings$ } from "@/store";
+import { auth$, authActions, settings$ } from "@/store";
 import { AppAlert } from "@/utils/alert";
 import { fetchWithRetry } from "@/utils/networkUtils";
 
@@ -15,6 +15,7 @@ export interface UseBillingReturn {
   setIsAnnual: (isAnnual: boolean) => void;
   handleUpgrade: () => Promise<void>;
   handleManage: () => Promise<void>;
+  handleRestore: () => Promise<void>;
   freePlan: typeof BILLING_PLANS.free;
   proPlan: typeof BILLING_PLANS.pro & { annualSavingPercent: number };
   currentPrice: number;
@@ -138,6 +139,32 @@ export function useBilling(): UseBillingReturn {
     );
   };
 
+  const handleRestore = async (): Promise<void> => {
+    try {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error) throw error;
+      const restoredIsPro =
+        data.session?.user?.app_metadata?.is_pro === true;
+      authActions.setIsPro(restoredIsPro);
+      if (restoredIsPro) {
+        AppAlert.success(
+          "Purchases Restored",
+          "Your Pro subscription has been restored.",
+        );
+      } else {
+        AppAlert.info(
+          "No Purchases Found",
+          "We could not find any previous purchases to restore. If you believe this is an error, please contact support.",
+        );
+      }
+    } catch (err) {
+      AppAlert.error(
+        "Restore Failed",
+        "Could not verify purchases. Please try again or contact support.",
+      );
+    }
+  };
+
   const freePlan = BILLING_PLANS.free;
 
   const proPlan = useMemo(() => {
@@ -157,6 +184,7 @@ export function useBilling(): UseBillingReturn {
     setIsAnnual,
     handleUpgrade,
     handleManage,
+    handleRestore,
     freePlan,
     proPlan,
     currentPrice,

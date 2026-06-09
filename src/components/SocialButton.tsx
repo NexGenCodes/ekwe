@@ -16,7 +16,6 @@ interface SocialButtonProps {
   action?: "sign-in" | "sign-up";
   onPress: () => void;
   disabled?: boolean;
-  comingSoon?: boolean;
 }
 
 /** Official multicolour Google "G" logo */
@@ -51,7 +50,6 @@ export const SocialButton = ({
   action = "sign-in",
   onPress,
   disabled = false,
-  comingSoon = false,
 }: SocialButtonProps): React.ReactElement | null => {
   const { color, isDark } = useTheme();
 
@@ -72,9 +70,9 @@ export const SocialButton = ({
 
   return (
     <Pressable
-      onPress={disabled || comingSoon ? undefined : onPress}
+      onPress={disabled ? undefined : onPress}
       feedback="scale"
-      disabled={disabled || comingSoon}
+      disabled={disabled}
       style={{
         flex: 1,
         flexDirection: "row",
@@ -87,7 +85,7 @@ export const SocialButton = ({
         paddingHorizontal: spacing.lg,
         borderWidth: 1,
         borderColor,
-        opacity: disabled || comingSoon ? 0.5 : 1,
+        opacity: disabled ? 0.5 : 1,
       }}
       accessibilityLabel={`${action === "sign-in" ? "Sign in" : "Sign up"} with ${label}`}
     >
@@ -98,23 +96,6 @@ export const SocialButton = ({
         <Text variant="body" style={{ color: textColor }}>
           {label}
         </Text>
-        {comingSoon && (
-          <Box
-            style={{
-              backgroundColor: color.muted,
-              paddingHorizontal: 6,
-              paddingVertical: 2,
-              borderRadius: 10,
-            }}
-          >
-            <Text
-              variant="caption"
-              style={{ color: color.background, fontSize: 10 }}
-            >
-              Soon
-            </Text>
-          </Box>
-        )}
       </Box>
     </Pressable>
   );

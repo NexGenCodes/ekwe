@@ -18,8 +18,8 @@ import {
   Eye,
   Smartphone,
 } from "lucide-react-native";
-import React, { useState } from "react";
-import { Linking, Switch } from "react-native";
+import React, { useState, useCallback } from "react";
+import { Linking, Modal, Switch, TextInput } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import {
@@ -31,7 +31,7 @@ import {
   CurrencyPickerModal,
   ThemePickerModal,
 } from "@/components";
-import { Box, Text, ScrollArea } from "@/components/ui";
+import { Box, Text, Pressable, ScrollArea } from "@/components/ui";
 import {
   duration,
   borderRadius,
@@ -69,6 +69,8 @@ export default function ProfileScreen(): React.JSX.Element {
 
   const [isCurrencyModalVisible, setIsCurrencyModalVisible] = useState(false);
   const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const rawName =
     user?.user_metadata?.full_name || user?.user_metadata?.name || "";
@@ -101,23 +103,22 @@ export default function ProfileScreen(): React.JSX.Element {
 
   const handleDeleteAccount = async (): Promise<void> => {
     await triggerHaptic();
-    AppAlert.confirm(
-      "Delete Account",
-      "This will permanently delete your account and all associated data. This action cannot be undone. Are you sure?",
-      async () => {
-        const result = await deleteAccount();
-        if (!result.ok) {
-          AppAlert.error(
-            "Action Required",
-            result.error || "Failed to delete account.",
-          );
-        } else {
-          router.replace("/(auth)/login");
-        }
-      },
-      { confirmText: "Delete Permanently", isDestructive: true },
-    );
+    setDeleteConfirmText("");
+    setShowDeleteModal(true);
   };
+
+  const confirmDeleteAccount = useCallback(async (): Promise<void> => {
+    setShowDeleteModal(false);
+    const result = await deleteAccount();
+    if (!result.ok) {
+      AppAlert.error(
+        "Action Required",
+        result.error || "Failed to delete account.",
+      );
+    } else {
+      router.replace("/(auth)/login");
+    }
+  }, [router]);
 
   return (
     <Box style={[styles.flex1, { backgroundColor: color.background }]}>
@@ -547,6 +548,115 @@ export default function ProfileScreen(): React.JSX.Element {
         }}
         currentTheme={colorScheme}
       />
+
+      {/* ── Delete Account Confirmation Modal ── */}
+      <Modal
+        visible={showDeleteModal}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setShowDeleteModal(false)}
+      >
+        <Box
+          style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: color.overlay,
+            paddingHorizontal: spacing.xl,
+          }}
+        >
+          <Box
+            style={{
+              backgroundColor: color.surface,
+              borderRadius: borderRadius["2xl"],
+              padding: spacing.lg,
+              borderWidth: 1,
+              borderColor: color.border,
+              width: "100%",
+              maxWidth: 400,
+              gap: spacing.md,
+            }}
+          >
+            <Text variant="heading3" style={{ textAlign: "center" }}>
+              Delete Account
+            </Text>
+            <Text
+              variant="body"
+              style={{ textAlign: "center", color: color.muted }}
+            >
+              This will permanently delete your account and all associated data.
+              This action cannot be undone.
+            </Text>
+            <Text
+              variant="bodySmall"
+              style={{ textAlign: "center", color: color.error }}
+            >
+              Type DELETE below to confirm.
+            </Text>
+            <TextInput
+              value={deleteConfirmText}
+              onChangeText={setDeleteConfirmText}
+              placeholder='Type "DELETE"'
+              placeholderTextColor={color.muted}
+              autoCapitalize="characters"
+              style={{
+                borderWidth: 1,
+                borderColor:
+                  deleteConfirmText === "DELETE"
+                    ? color.error
+                    : color.border,
+                borderRadius: borderRadius.xl,
+                padding: spacing.md,
+                color: color.foreground,
+                fontSize: 16,
+                textAlign: "center",
+                fontWeight: "600",
+              }}
+            />
+            <Box style={{ flexDirection: "row", gap: spacing.md }}>
+              <Pressable
+                onPress={() => setShowDeleteModal(false)}
+                style={{
+                  flex: 1,
+                  height: 48,
+                  borderRadius: borderRadius.xl,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderWidth: 1,
+                  borderColor: color.border,
+                }}
+                feedback="none"
+              >
+                <Text variant="body" style={{ color: color.foreground }}>
+                  Cancel
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={confirmDeleteAccount}
+                disabled={deleteConfirmText !== "DELETE"}
+                style={{
+                  flex: 1,
+                  height: 48,
+                  borderRadius: borderRadius.xl,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: color.error,
+                  opacity: deleteConfirmText === "DELETE" ? 1 : 0.4,
+                }}
+                feedback="none"
+              >
+                <Text
+                  variant="body"
+                  style={{ color: color.onPrimary, fontWeight: "600" }}
+                >
+                  Delete Permanently
+                </Text>
+              </Pressable>
+            </Box>
+          </Box>
+        </Box>
+      </Modal>
     </Box>
   );
 }
