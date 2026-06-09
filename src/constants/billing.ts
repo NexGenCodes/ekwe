@@ -35,7 +35,7 @@ export const PLAN_LIMITS = {
   free: {
     maxPinnedLanguages: 5,
     maxSelectedLanguages: 5,
-    dictationDurationMs: 60_000, // 60 seconds
+    dictationDurationMs: 120_000, // 2 minutes
     historyLocalTtlDays: 7, // Flat for all users (tamper-safe)
     historyRemoteTtlDays: 30, // Cloud retention — enforced server-side
     textTranslationMaxChars: 3000,
@@ -43,14 +43,11 @@ export const PLAN_LIMITS = {
     customAvatarIcons: false,
     autoCopy: false,
     contextAwareness: false,
-    hasKeyboardExtension: false,
-    hasWhatsAppBot: false,
-    hasOfflinePacks: false,
   },
   pro: {
     maxPinnedLanguages: 5,
     maxSelectedLanguages: 5,
-    dictationDurationMs: 600_000, // 10 minutes
+    dictationDurationMs: 1_200_000, // 20 minutes
     historyLocalTtlDays: 7, // Flat for all users (tamper-safe)
     historyRemoteTtlDays: 365, // Cloud retention — 1 year for Pro
     textTranslationMaxChars: 10000,
@@ -58,9 +55,6 @@ export const PLAN_LIMITS = {
     customAvatarIcons: true,
     autoCopy: true,
     contextAwareness: true,
-    hasKeyboardExtension: true,
-    hasWhatsAppBot: true,
-    hasOfflinePacks: true,
   },
 } as const;
 
@@ -150,14 +144,11 @@ export const BILLING_PLANS = {
     fallbackPrice: { amount: 0, currency: "USD", symbol: "$" },
     features: [
       { title: "Unlimited text translation", included: true },
-      { title: "Voice dictation (up to 60s)", included: true },
+      { title: "Voice dictation (up to 2 min)", included: true },
       { title: "30-day cloud history", included: true },
       { title: "Auto-detect spoken language", included: true },
       { title: "Ad-free experience", included: false },
-      { title: "Extended voice dictation (up to 10 min)", included: false },
-      { title: "Offline Language Packs", included: false },
-      { title: "WhatsApp & Telegram Bot", included: false },
-      { title: "System Keyboard Extension", included: false },
+      { title: "Extended voice dictation (up to 20 min)", included: false },
     ] as PlanFeature[],
   },
   pro: {
@@ -168,11 +159,8 @@ export const BILLING_PLANS = {
     productIdAnnual: "ekwe_pro_annual",
     features: [
       { title: "Ad-free experience", included: true },
-      { title: "Extended voice dictation (up to 10 min)", included: true },
+      { title: "Extended voice dictation (up to 20 min)", included: true },
       { title: "1-year cloud history", included: true },
-      { title: "Offline Language Packs", included: true },
-      { title: "WhatsApp & Telegram Bot", included: true },
-      { title: "System Keyboard Extension", included: true },
       { title: "Priority AI context processing", included: true },
     ] as PlanFeature[],
   },
