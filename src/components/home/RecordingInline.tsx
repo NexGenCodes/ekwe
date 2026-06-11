@@ -1,13 +1,15 @@
 import { Play, Pause } from "lucide-react-native";
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   FadeIn,
   FadeOut,
-  interpolate,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withTiming,
+  useAnimatedReaction,
+  runOnJS,
   type SharedValue,
 } from "react-native-reanimated";
 
@@ -18,133 +20,118 @@ import { spacing } from "@/constants/spacing";
 import { useTheme, useSharedAudioPlayer } from "@/hooks";
 import type { DictationStatus } from "@/hooks/useVoiceDictation";
 
-const TOTAL_BARS = 35;
+/* ─── Constants ───────────────────────────────────────────────── */
+const BARS = 50;
+const BAR_W = 3;
+const BAR_R = 1.5;
+const MIN_H = 4;
+const MAX_H = 30;
+const RANGE = MAX_H - MIN_H;
 
-const getNormalizedWaveform = (
-  data: number[],
-  targetLength: number,
-): number[] => {
-  if (!data || data.length === 0) {
-    // Generate beautiful dome shape
+/* ─── Helpers ─────────────────────────────────────────────────── */
+const resample = (data: number[], n: number): number[] => {
+  if (!data?.length) {
     return Array.from(
-      { length: targetLength },
-      (_, i) => 0.15 + Math.sin((i / (targetLength - 1)) * Math.PI) * 0.45,
+      { length: n },
+      (_, i) => 0.15 + Math.sin((i / (n - 1)) * Math.PI) * 0.4,
     );
   }
-
-  const resampled: number[] = [];
-  let maxVal = 0.01;
-
-  for (let i = 0; i < targetLength; i++) {
-    const dataIndex = Math.floor((i / targetLength) * data.length);
-    const val = Math.abs(data[dataIndex] || 0);
-    if (val > maxVal) maxVal = val;
-    resampled.push(val);
+  const out: number[] = [];
+  let mx = 0.001;
+  for (let i = 0; i < n; i++) {
+    const lo = Math.floor((i / n) * data.length);
+    const hi = Math.max(lo + 1, Math.floor(((i + 1) / n) * data.length));
+    let sum = 0;
+    let pk = 0;
+    for (let j = lo; j < hi; j++) {
+      const v = data[j] ?? 0;
+      sum += v;
+      if (v > pk) pk = v;
+    }
+    const blended = (pk + sum / (hi - lo)) / 2;
+    if (blended > mx) mx = blended;
+    out.push(blended);
   }
-
-  return resampled.map((v) => v / maxVal);
+  return out.map((v) => Math.min(1, Math.max(0.02, v / mx)));
 };
 
-interface WaveBarProps {
-  index: number;
-  totalBars: number;
-  amplitude: SharedValue<number>;
-  phase: SharedValue<number>;
-  isPreview: boolean;
-  normalizedPeaks: number[];
-  progressSV: SharedValue<number>;
-  duration: number;
-}
+const fmtTime = (ms: number): string => {
+  "worklet";
+  if (!ms || ms < 0) return "0:00";
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+};
 
-function WaveBar({
-  index,
-  totalBars,
-  amplitude,
-  phase,
-  isPreview,
-  normalizedPeaks,
-  progressSV,
-  duration,
-}: WaveBarProps): React.ReactElement {
-  const { color } = useTheme();
-
-  const animStyle = useAnimatedStyle(() => {
-    let targetHeight = 4;
-    let isActive = false;
-
-    if (isPreview) {
-      const peak = normalizedPeaks[index] ?? 0.15;
-      targetHeight = interpolate(peak, [0, 1], [4, 36]);
-
-      if (duration > 0) {
-        const playedFraction = progressSV.value / duration;
-        isActive = index / totalBars <= playedFraction;
-      }
-    } else {
-      // Live recording: strictly use true amplitude data so the user sees their voice.
-      // Adding a tiny 5% noise just so it's not perfectly dead flat when silent.
-      const baseJitter = Math.sin(phase.value + index * 0.5) * 0.05 + 0.05;
-      const activeValue = Math.max(amplitude.value, baseJitter);
-      targetHeight = interpolate(activeValue, [0, 1], [4, 36]);
-    }
-
-    const isInactivePreview = isPreview && !isActive;
-
-    return {
-      height: withTiming(targetHeight, { duration: 100 }),
-      backgroundColor: isPreview
-        ? isActive
-          ? color.secondary
-          : color.foreground
-        : color.error,
-      opacity: isInactivePreview ? 0.15 : 1,
-    };
-  });
-
-  return (
-    <Animated.View
-      style={[{ width: 3, borderRadius: borderRadius.sm }, animStyle]}
-    />
-  );
-}
-
-function ProcessingBar({
-  index,
-  totalBars,
+/* ═══════════════════════════════════════════════════════════════ */
+/*  LIVE BAR — WhatsApp-style sliding waveform                     */
+/* ═══════════════════════════════════════════════════════════════ */
+const LiveBar = React.memo(function LiveBar({
+  i,
+  history,
+  head,
+  tint,
 }: {
-  index: number;
-  totalBars: number;
-}): React.ReactElement {
-  const { color } = useTheme();
-  const opacity = useSharedValue(1);
+  i: number;
+  history: SharedValue<number[]>;
+  head: SharedValue<number>;
+  tint: string;
+}) {
+  const style = useAnimatedStyle(() => {
+    "worklet";
+    const age = BARS - 1 - i;
+    const idx = (head.value - age + BARS) % BARS;
+    const raw = history.value[idx] ?? 0;
+    const clamped = Math.min(1, Math.max(0.05, raw));
 
-  useEffect(() => {
-    const delay = index * 40;
-    const timeout = setTimeout(() => {
-      opacity.value = withRepeat(withTiming(0.2, { duration: 600 }), -1, true);
-    }, delay);
-    return (): void => clearTimeout(timeout);
-  }, [index, opacity]);
-
-  const animStyle = useAnimatedStyle(() => {
-    const waveHeight = 8 + Math.sin((index / (totalBars - 1)) * Math.PI) * 20;
     return {
-      opacity: opacity.value,
-      height: withTiming(waveHeight, { duration: 200 }),
+      height: withTiming(MIN_H + clamped * RANGE, { duration: 100 }),
     };
   });
 
   return (
     <Animated.View
       style={[
-        { width: 3, borderRadius: borderRadius.sm },
-        animStyle,
-        { backgroundColor: color.muted },
+        { width: BAR_W, borderRadius: BAR_R, backgroundColor: tint },
+        style,
       ]}
     />
   );
-}
+});
 
+/* ═══════════════════════════════════════════════════════════════ */
+/*  PREVIEW BAR — color changes with playback progress             */
+/* ═══════════════════════════════════════════════════════════════ */
+const PrevBar = React.memo(function PrevBar({
+  i,
+  h,
+  prog,
+  dur,
+  on,
+  off,
+}: {
+  i: number;
+  h: number;
+  prog: SharedValue<number>;
+  dur: number;
+  on: string;
+  off: string;
+}) {
+  const style = useAnimatedStyle(() => {
+    "worklet";
+    const frac = dur > 0 ? prog.value / dur : 0;
+    return { backgroundColor: i / BARS <= frac ? on : off };
+  });
+
+  return (
+    <Animated.View
+      style={[{ width: BAR_W, borderRadius: BAR_R, height: h }, style]}
+    />
+  );
+});
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  MAIN COMPONENT                                                 */
+/* ═══════════════════════════════════════════════════════════════ */
 interface RecordingInlineProps {
   status: DictationStatus;
   amplitude: SharedValue<number>;
@@ -164,84 +151,156 @@ export function RecordingInline({
   const { color } = useTheme();
   const isProcessing = status === "processing";
   const isPreview = status === "preview";
+  const isRecording = status === "recording";
 
   const player = useSharedAudioPlayer(isPreview ? capturedUri : null);
-  const isPlaying = player.isPlaying;
 
-  const formatTime = (ms: number): string => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
+  // WhatsApp-style sliding history circular buffer
+  const history = useSharedValue<number[]>(new Array(BARS).fill(0));
+  const head = useSharedValue(0);
 
-  const dotOpacity = useSharedValue(1);
-  const phase = useSharedValue(0);
+  // Reanimated Reaction: Push new amplitude values into the circular buffer
+  useAnimatedReaction(
+    () => amplitude.value,
+    (val) => {
+      const nextHead = (head.value + 1) % BARS;
+      head.value = nextHead;
 
+      const newHistory = [...history.value];
+      newHistory[nextHead] = val;
+      history.value = newHistory;
+    },
+    [amplitude, history, head],
+  );
+
+  /* ── Blinking red dot ── */
+  const dotOp = useSharedValue(1);
   useEffect(() => {
-    if (status === "recording") {
-      dotOpacity.value = withRepeat(
-        withTiming(0.2, { duration: 600 }),
-        -1,
-        true,
-      );
-      phase.value = withRepeat(
-        withTiming(2 * Math.PI, { duration: 1500 }),
-        -1,
-        false,
-      );
-    } else if (status === "preview" && isPlaying) {
-      dotOpacity.value = 1;
-      phase.value = withRepeat(
-        withTiming(2 * Math.PI, { duration: 1500 }),
-        -1,
-        false,
-      );
+    if (isRecording) {
+      dotOp.value = withRepeat(withTiming(0.2, { duration: 600 }), -1, true);
+      // Reset history when starting
+      history.value = new Array(BARS).fill(0);
+      head.value = 0;
     } else {
-      dotOpacity.value = 1;
-      phase.value = 0;
+      dotOp.value = 1;
     }
-  }, [status, isPlaying, dotOpacity, phase]);
+  }, [isRecording, dotOp, history, head]);
+  const dotStyle = useAnimatedStyle(() => ({ opacity: dotOp.value }));
 
-  const dotStyle = useAnimatedStyle(() => ({
-    opacity: dotOpacity.value,
-  }));
+  /* ── Seek / scrub gesture ── */
+  const widthSV = useSharedValue(200);
 
-  const normalizedPeaks = useMemo(() => {
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .onBegin((e) => {
+          if (!isPreview || player.duration <= 0) return;
+          const frac = Math.max(0, Math.min(1, e.x / widthSV.value));
+          runOnJS(player.seek)(frac * player.duration);
+        })
+        .onChange((e) => {
+          if (!isPreview || player.duration <= 0) return;
+          const frac = Math.max(0, Math.min(1, e.x / widthSV.value));
+          runOnJS(player.seek)(frac * player.duration);
+        }),
+    [isPreview, player.seek, player.duration, widthSV],
+  );
+
+  /* ── Preview peaks from metering data ── */
+  const peaks = useMemo(() => {
     if (!isPreview) return [];
-    const sourcePeaks =
+    const src =
       player.realWaveform.length > 0 ? player.realWaveform : meteringData;
-    return getNormalizedWaveform(sourcePeaks, TOTAL_BARS);
+    return resample(src, BARS);
   }, [isPreview, player.realWaveform, meteringData]);
 
+  /* ── Build bars array (memoized, only re-creates on state change) ── */
   const bars = useMemo(() => {
-    return Array.from({ length: TOTAL_BARS }).map((_, i) =>
-      isProcessing ? (
-        <ProcessingBar key={i} index={i} totalBars={TOTAL_BARS} />
-      ) : (
-        <WaveBar
+    if (isProcessing) {
+      return Array.from({ length: BARS }, (_, i) => {
+        const h = 6 + Math.sin((i / (BARS - 1)) * Math.PI) * 18;
+        return (
+          <Animated.View
+            key={i}
+            style={{
+              width: BAR_W,
+              borderRadius: BAR_R,
+              height: h,
+              backgroundColor: color.muted,
+              opacity: 0.5,
+            }}
+          />
+        );
+      });
+    }
+    if (isPreview) {
+      return peaks.map((pk, i) => (
+        <PrevBar
           key={i}
-          index={i}
-          totalBars={TOTAL_BARS}
-          amplitude={amplitude}
-          phase={phase}
-          isPreview={isPreview}
-          normalizedPeaks={normalizedPeaks}
-          progressSV={player.progressSV}
-          duration={player.duration}
+          i={i}
+          h={MIN_H + pk * RANGE}
+          prog={player.progressSV}
+          dur={player.duration}
+          on={color.secondary} // played = bright color
+          off={color.muted} // unplayed = pure muted grey (like WhatsApp)
         />
-      ),
-    );
+      ));
+    }
+    // Recording — each bar reads from the history array
+    return Array.from({ length: BARS }, (_, i) => (
+      <LiveBar key={i} i={i} history={history} head={head} tint={color.error} />
+    ));
   }, [
     isProcessing,
     isPreview,
-    amplitude,
-    phase,
-    normalizedPeaks,
+    peaks,
+    history,
+    head,
     player.progressSV,
     player.duration,
+    color.muted,
+    color.secondary,
+    color.error,
   ]);
 
+  /* ── Thumb & Time ── */
+  const thumbStyle = useAnimatedStyle(() => {
+    const frac =
+      player.duration > 0 ? player.progressSV.value / player.duration : 0;
+    return { transform: [{ translateX: frac * widthSV.value }] };
+  });
+
+  /* ── Recording mini-waveform animated styles ── */
+  const s1 = useAnimatedStyle(() => {
+    const h = MIN_H + Math.max(0.05, (amplitude.value || 0.5) * 0.3) * RANGE;
+    return { height: withTiming(h, { duration: 100 }) };
+  });
+  const s2 = useAnimatedStyle(() => {
+    const h = MIN_H + Math.max(0.05, (amplitude.value || 0.5) * 0.6) * RANGE;
+    return { height: withTiming(h, { duration: 100 }) };
+  });
+  const s3 = useAnimatedStyle(() => {
+    const h = MIN_H + Math.max(0.05, (amplitude.value || 0.5) * 1.0) * RANGE;
+    return { height: withTiming(h, { duration: 100 }) };
+  });
+  const s4 = useAnimatedStyle(() => {
+    const h = MIN_H + Math.max(0.05, (amplitude.value || 0.5) * 0.7) * RANGE;
+    return { height: withTiming(h, { duration: 100 }) };
+  });
+  const s5 = useAnimatedStyle(() => {
+    const h = MIN_H + Math.max(0.05, (amplitude.value || 0.5) * 0.4) * RANGE;
+    return { height: withTiming(h, { duration: 100 }) };
+  });
+
+  const [displayTime, setDisplayTime] = useState("0:00");
+  useAnimatedReaction(
+    () => player.progressSV.value,
+    (ms) => {
+      runOnJS(setDisplayTime)(fmtTime(ms));
+    },
+  );
+
+  /* ── Render ────────────────────────────────────────────────── */
   return (
     <Animated.View
       entering={FadeIn.duration(200)}
@@ -256,90 +315,44 @@ export function RecordingInline({
       }}
     >
       {isPreview ? (
+        /* ── Preview: Play/Pause + Waveform + Seek + Time ────────── */
         <Box
           style={{
             flex: 1,
             flexDirection: "row",
             alignItems: "center",
-            justifyContent: "space-between",
-            paddingHorizontal: spacing.sm,
+            paddingHorizontal: spacing.xs,
           }}
         >
           <Pressable
             onPress={() => (player.isPlaying ? player.pause() : player.play())}
             style={{
-              width: 48,
-              height: 48,
-              borderRadius: borderRadius["2xl"],
+              width: 44,
+              height: 44,
+              borderRadius: 22,
               alignItems: "center",
               justifyContent: "center",
               ...shadows.soft,
               backgroundColor: color.secondary,
             }}
-            accessibilityLabel={
-              player.isPlaying ? "Pause playback" : "Play recording"
-            }
           >
             {player.isPlaying ? (
               <Pause
-                size={22}
+                size={20}
                 color={color.onSecondary}
                 fill={color.onSecondary}
               />
             ) : (
               <Play
-                size={22}
+                size={20}
                 color={color.onSecondary}
                 fill={color.onSecondary}
+                style={{ marginLeft: 3 }}
               />
             )}
           </Pressable>
-          <Box
-            style={{
-              flex: 1,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              height: 40,
-              marginLeft: spacing.md,
-            }}
-          >
-            {bars}
-          </Box>
-        </Box>
-      ) : (
-        <Box
-          style={{
-            flex: 1,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingHorizontal: spacing.sm,
-          }}
-        >
-          <Box
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: spacing.sm,
-            }}
-          >
-            <Animated.View
-              style={[
-                { width: 8, height: 8, borderRadius: borderRadius.sm },
-                dotStyle,
-                { backgroundColor: color.error },
-              ]}
-            />
-            <Text variant="body" style={{ color: color.foreground }}>
-              {formatTime(elapsedMs)}
-            </Text>
-          </Box>
-          {isProcessing ? (
-            <Text variant="bodySmall" style={{ color: color.muted }}>
-              Transcribing...
-            </Text>
-          ) : (
+
+          <GestureDetector gesture={pan}>
             <Box
               style={{
                 flex: 1,
@@ -348,11 +361,136 @@ export function RecordingInline({
                 justifyContent: "space-between",
                 height: 40,
                 marginLeft: spacing.md,
+                marginRight: spacing.sm,
+              }}
+              onLayout={(e) => {
+                widthSV.value = e.nativeEvent.layout.width;
               }}
             >
               {bars}
+              <Animated.View
+                style={[
+                  {
+                    position: "absolute",
+                    width: 12,
+                    height: 12,
+                    borderRadius: 6,
+                    backgroundColor: color.secondary,
+                    left: -6,
+                    top: 14,
+                    ...shadows.soft,
+                  },
+                  thumbStyle,
+                ]}
+              />
             </Box>
-          )}
+          </GestureDetector>
+
+          <Text
+            variant="bodySmall"
+            style={{ color: color.foreground, width: 40, textAlign: "right" }}
+          >
+            {player.isPlaying ? displayTime : fmtTime(player.duration)}
+          </Text>
+        </Box>
+      ) : (
+        /* ── Recording / Processing ────────────────────────── */
+        <Box
+          style={{
+            flex: 1,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingHorizontal: spacing.sm,
+          }}
+        >
+          {/* Left side: Timer & Dot */}
+          <Box
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: spacing.md,
+            }}
+          >
+            <Animated.View
+              style={[
+                {
+                  width: 10,
+                  height: 10,
+                  borderRadius: 5,
+                  backgroundColor: color.error,
+                },
+                dotStyle,
+              ]}
+            />
+            <Text variant="heading3" style={{ color: color.foreground }}>
+              {fmtTime(elapsedMs)}
+            </Text>
+          </Box>
+
+          {/* Right side: Live waveform or Processing state */}
+          <Box style={{ height: 40, justifyContent: "center" }}>
+            {isProcessing ? (
+              <Text variant="body" style={{ color: color.muted }}>
+                Transcribing...
+              </Text>
+            ) : (
+              <Box
+                style={{ flexDirection: "row", alignItems: "center", gap: 3 }}
+              >
+                <Animated.View
+                  style={[
+                    {
+                      width: BAR_W,
+                      borderRadius: BAR_R,
+                      backgroundColor: color.error,
+                    },
+                    s1,
+                  ]}
+                />
+                <Animated.View
+                  style={[
+                    {
+                      width: BAR_W,
+                      borderRadius: BAR_R,
+                      backgroundColor: color.error,
+                    },
+                    s2,
+                  ]}
+                />
+                <Animated.View
+                  style={[
+                    {
+                      width: BAR_W,
+                      borderRadius: BAR_R,
+                      backgroundColor: color.error,
+                    },
+                    s3,
+                  ]}
+                />
+                <Animated.View
+                  style={[
+                    {
+                      width: BAR_W,
+                      borderRadius: BAR_R,
+                      backgroundColor: color.error,
+                    },
+                    s4,
+                  ]}
+                />
+                <Animated.View
+                  style={[
+                    {
+                      width: BAR_W,
+                      borderRadius: BAR_R,
+                      backgroundColor: color.error,
+                    },
+                    s5,
+                  ]}
+                />
+              </Box>
+            )}
+          </Box>
         </Box>
       )}
     </Animated.View>

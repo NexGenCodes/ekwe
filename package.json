@@ -28,6 +28,7 @@
     "@shopify/flash-list": "2.0.2",
     "@supabase/supabase-js": "^2.103.0",
     "@tanstack/react-query": "^5.100.14",
+    "ekwe-native": "file:modules/ekwe-native",
     "expo": "~55.0.26",
     "expo-apple-authentication": "~55.0.13",
     "expo-asset": "~55.0.17",
@@ -84,6 +85,7 @@
     "jest-expo": "~55.0.18",
     "knip": "^6.4.1",
     "lint-staged": "^16.4.0",
+    "msw": "^2.14.6",
     "prettier": "^3.8.1",
     "react-test-renderer": "19.2.0",
     "typescript": "^5.9.0"
@@ -97,49 +99,5 @@
       "eslint --fix",
       "prettier --write"
     ]
-  },
-  "jest": {
-    "preset": "jest-expo",
-    "testEnvironment": "node",
-    "testPathIgnorePatterns": [
-      "/worker/",
-      "/node_modules/"
-    ],
-    "setupFilesAfterEnv": [
-      "@testing-library/jest-native/extend-expect",
-      "./jest.setup.js"
-    ],
-    "moduleNameMapper": {
-      "^@/(.*)$": "<rootDir>/src/$1",
-      "^src/(.*)$": "<rootDir>/src/$1"
-    },
-    "transformIgnorePatterns": [
-      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|native-base|react-native-svg|lucide-react-native)"
-    ],
-    "collectCoverageFrom": [
-      "src/utils/**/*.ts",
-      "src/constants/**/*.ts",
-      "src/types/**/*.ts",
-      "src/store/**/*.ts",
-      "src/hooks/**/*.ts",
-      "src/services/**/*.ts",
-      "!src/utils/index.ts",
-      "!src/constants/mockData.ts",
-      "!src/**/index.ts"
-    ],
-    "coverageThreshold": {
-      "global": {
-        "statements": 0,
-        "branches": 0,
-        "functions": 0,
-        "lines": 0
-      },
-      "./src/utils/": {
-        "statements": 0,
-        "branches": 0,
-        "functions": 0,
-        "lines": 0
-      }
-    }
   }
 }

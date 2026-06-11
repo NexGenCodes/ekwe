@@ -141,7 +141,9 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
             variant="primary"
             size="large"
             label={
-              isComplete ? "Create Account to Continue" : `Select ${remaining} more`
+              isComplete
+                ? "Create Account to Continue"
+                : `Select ${remaining} more`
             }
             disabled={!isComplete}
             onPress={handleContinue}

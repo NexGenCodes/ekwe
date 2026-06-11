@@ -55,6 +55,7 @@ const handleEchoSession = async (
         durationMs: 0,
         averageDb: -40,
         meteringData: [],
+        waveform: [],
       },
       "auto",
       signal,

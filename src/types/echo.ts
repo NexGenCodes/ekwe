@@ -39,6 +39,7 @@ export interface UseEchoFlowResult {
   audioUri: string | undefined;
   sourceApp: string;
   isResolving: boolean;
+  convertedWaveform: number[];
   themePreference: "light" | "dark" | "system" | null;
   handleTranscribe: (
     durationSeconds: number,

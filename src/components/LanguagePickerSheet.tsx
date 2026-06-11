@@ -190,7 +190,12 @@ export const LanguagePickerSheet = ({
             alignItems: "center",
           }}
         >
-          <Button label="Confirm" onPress={onClose} variant="primary" style={{ minWidth: 200 }} />
+          <Button
+            label="Confirm"
+            onPress={onClose}
+            variant="primary"
+            style={{ minWidth: 200 }}
+          />
         </Box>
       )}
     </Sheet>

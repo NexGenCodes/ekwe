@@ -204,7 +204,10 @@ export default function BillingScreen(): React.ReactElement {
             >
               <Text
                 variant="bodySmall"
-                style={{ color: color.primary, textDecorationLine: "underline" }}
+                style={{
+                  color: color.primary,
+                  textDecorationLine: "underline",
+                }}
               >
                 Restore Purchases
               </Text>

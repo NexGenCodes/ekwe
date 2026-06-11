@@ -21,7 +21,7 @@ export const LEGAL_DOCUMENTS: Record<string, LegalDocument> = {
     sections: [
       {
         title: "Introduction",
-        body: "This privacy policy explains how Ekwe (the app) handles your data. Ekwe was created by Odugu Emmanuel Chinagorom and is offered as a free and paid service. The app is provided \"as is,\" meaning we offer it without any guarantees beyond what's described here.",
+        body: 'This privacy policy explains how Ekwe (the app) handles your data. Ekwe was created by Odugu Emmanuel Chinagorom and is offered as a free and paid service. The app is provided "as is," meaning we offer it without any guarantees beyond what\'s described here.',
       },
       {
         title: "What We Collect and Why",

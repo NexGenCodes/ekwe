@@ -81,6 +81,19 @@ public class EkweNativeModule: Module {
     }
 
     // ------------------------------------
+    // Audio Conversion
+    // ------------------------------------
+    AsyncFunction("extractWavAndWaveform") { (inputPath: String, outputPath: String) -> [String: Any] in
+      let result = EkweAudioBridge.extractWavAndWaveform(inputPath, outputPath: outputPath)
+      return [
+        "success": result[0] as! Bool,
+        "error": result[1] as! String,
+        "durationMs": result[2] as! Int,
+        "waveform": result[3] as! [Float],
+      ]
+    }
+
+    // ------------------------------------
     // TODO: Live Activity / Dynamic Island (ActivityKit)
     // ------------------------------------
   }

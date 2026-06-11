@@ -24,7 +24,7 @@ const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 export const Input = forwardRef<TextInput, InputProps>(
   ({ error, label, helperText, style, ...props }, ref) => {
     const { color } = useTheme();
-    const [isFocused, setIsFocused] = useState(false);
+    const [, setIsFocused] = useState(false);
     const focusProgress = useSharedValue(0);
 
     const animatedBorderStyle = useAnimatedStyle(() => {

@@ -16,6 +16,7 @@ export interface IconContainerProps {
   /** Shape */
   rounded?: "full" | "lg";
   style?: StyleProp<ViewStyle>;
+  testID?: string;
 }
 
 const SIZE_MAP = {
@@ -36,6 +37,7 @@ export const IconContainer = ({
   backgroundColor,
   rounded = "full",
   style,
+  testID,
 }: IconContainerProps): React.ReactElement => {
   const { color } = useTheme();
 
@@ -49,6 +51,7 @@ export const IconContainer = ({
 
   return (
     <Box
+      testID={testID}
       style={[
         {
           width: dimension,

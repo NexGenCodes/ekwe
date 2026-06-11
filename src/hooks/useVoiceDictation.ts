@@ -7,10 +7,11 @@ import { EkweError, ErrorMessages } from "@/constants/errors";
 import { useMetering } from "@/hooks/audio/useMetering";
 import { usePermissions } from "@/hooks/usePermissions";
 import { AudioCapture } from "@/services/AudioCapture";
+import { AudioConverter } from "@/services/AudioConverter";
 import { AudioProcessor } from "@/services/AudioProcessor";
 import { transcribeAudio } from "@/services/transcribeAudio";
 import { audioActions, RecordingState } from "@/store";
-import { logger } from "@/utils";
+import { isAndroid, logger } from "@/utils";
 
 // Timer resolution for elapsed display
 const TIMER_TICK_MS = 100;
@@ -31,6 +32,7 @@ export interface UseVoiceDictationReturn {
   error: string | null;
   capturedUri: string | null;
   meteringData: number[];
+  nativeWaveform: number[];
   startDictation: (sourceLang: string) => Promise<void>;
   stopDictation: () => Promise<string | null>;
   confirmDictation: (sourceLang: string) => Promise<string | null>;
@@ -67,11 +69,13 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
   const capturedUriRef = useRef<string | null>(null);
   const capturedMeteringRef = useRef<number[]>([]);
   const capturedDurationRef = useRef<number>(0);
+  const capturedWaveformRef = useRef<number[]>([]);
 
   // stopDictation ref — updated at render time to avoid stale closure
   const stopDictationRef = useRef<() => Promise<string | null>>(
     async () => null,
   );
+  const isStoppingRef = useRef(false);
 
   // --- Cleanup all timers (pure ref mutation, no re-render) ---
   const clearTimers = useCallback(() => {
@@ -88,7 +92,11 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
   // --- Sync with native status changes (e.g. silence auto-stop) ---
   useEffect(() => {
     return AudioCapture.addStatusListener((s) => {
-      if (s === "stopped" && statusRef.current === "recording") {
+      if (
+        s === "stopped" &&
+        statusRef.current === "recording" &&
+        !isStoppingRef.current
+      ) {
         logger.info(
           "[VoiceDictation] Native recorder stopped externally (silence or cap), syncing...",
         );
@@ -110,13 +118,19 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
   // --- Stop recording and enter preview ---
   const stopDictation = useCallback(async (): Promise<string | null> => {
-    if (statusRef.current !== "recording" || !AudioCapture.isRecording()) {
-      if (statusRef.current === "recording") {
+    if (
+      statusRef.current !== "recording" ||
+      !AudioCapture.isRecording() ||
+      isStoppingRef.current
+    ) {
+      if (statusRef.current === "recording" && !isStoppingRef.current) {
         logger.warn("[VoiceDictation] stopDictation called but not recording");
         setStatus("idle");
       }
       return null;
     }
+
+    isStoppingRef.current = true;
 
     clearTimers();
     logger.info("[VoiceDictation] Stopping recording, entering preview");
@@ -131,6 +145,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
       );
       setError(msg);
       setStatus("error");
+      isStoppingRef.current = false;
       return null;
     }
 
@@ -140,10 +155,22 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     capturedDurationRef.current = durationMs;
     setMeteringData(meteringData);
 
+    // Convert hardware-encoded audio to FLAC via native C++ immediately.
+    // Fast enough (~50-300ms) to be synchronous, original deleted after.
+    if (isAndroid) {
+      const convertResult = await AudioConverter.convertToFlac(uri);
+      if (convertResult.ok) {
+        capturedUriRef.current = convertResult.value.uri;
+        capturedWaveformRef.current = convertResult.value.waveform;
+        FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+      }
+    }
+
     audioActions.setDuration(durationMs / 1000);
     audioActions.setRecordingState(RecordingState.Processing);
 
     setStatus("preview");
+    isStoppingRef.current = false;
     return uri;
   }, [clearTimers]);
 
@@ -403,6 +430,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     error,
     capturedUri: capturedUriRef.current,
     meteringData,
+    nativeWaveform: capturedWaveformRef.current,
     startDictation,
     stopDictation,
     confirmDictation,

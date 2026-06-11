@@ -13,22 +13,23 @@ export interface EchoConfigStepProps {
   player: SharedAudioPlayer;
   isResolving: boolean;
   isDark: boolean;
+  peaks: number[];
   onTranscribe: (duration: number, waveform: number[]) => void;
   children: React.ReactNode;
 }
 
 export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
-  ({ player, isResolving, onTranscribe, children }) => {
+  ({ player, isResolving, isDark, peaks, onTranscribe, children }) => {
     const { color } = useTheme();
     return (
       <Box>
         <PlaybackControl
           isPlaying={player.isPlaying}
-          isDecoding={player.isDecoding}
+          isDecoding={player.isDecoding || isResolving}
           progress={player.progress}
           progressSV={player.progressSV}
           duration={player.duration}
-          peaks={player.realWaveform}
+          peaks={peaks}
           onTogglePlay={() =>
             player.isPlaying ? player.pause() : player.play()
           }
@@ -41,7 +42,7 @@ export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
           feedback="opacity"
           onPress={() => {
             player.cleanup();
-            onTranscribe(player.duration, player.realWaveform);
+            onTranscribe(player.duration, peaks);
           }}
           disabled={isResolving}
           style={{

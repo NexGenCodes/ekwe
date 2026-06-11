@@ -10,17 +10,19 @@ export interface ProcessedAudio {
   durationMs: number;
   averageDb: number;
   meteringData: number[];
+  waveform: number[];
 }
 
 class AudioProcessorClass {
   /**
-   * Validates a recording result before sending to Groq/Deepgram.
-   * We defer silence detection and trimming to the backend since it's far more accurate.
+   * Validates a recording before sending for transcription.
+   * FLAC conversion already happened in stopDictation — this just validates.
    */
   async processRecording(
     uri: string,
     durationMs: number,
     meteringData: number[],
+    waveform?: number[],
   ): Promise<Result<ProcessedAudio, EkweError>> {
     if (durationMs < 500) return err(EkweError.TOO_SHORT);
     if (!uri) return err(EkweError.AUDIO_EMPTY);
@@ -35,6 +37,7 @@ class AudioProcessorClass {
       durationMs,
       averageDb,
       meteringData,
+      waveform: waveform ?? [],
     };
 
     return ok(processed);
@@ -51,7 +54,6 @@ class AudioProcessorClass {
     try {
       const file = new ExpoFile(uri);
 
-      // JSI metadata access
       if (!file.exists) {
         return err(EkweError.SHARE_COPY_FAIL);
       }

@@ -5,6 +5,7 @@ import type {
   BubblePosition,
   AudioEffectsResult,
   FloatingState,
+  ExtractWavAndWaveformResult,
 } from './EkweNative.types';
 
 declare class EkweNativeModule extends NativeModule<{
@@ -64,6 +65,9 @@ declare class EkweNativeModule extends NativeModule<{
   // --- Audio Effects (retained) ---
   attachEffects(audioSessionId: number): Promise<AudioEffectsResult>;
   releaseEffects(): Promise<void>;
+
+  // --- Audio Conversion ---
+  extractWavAndWaveform(inputPath: string, outputPath: string): Promise<ExtractWavAndWaveformResult>;
 }
 
 export default requireNativeModule<EkweNativeModule>('EkweNative');

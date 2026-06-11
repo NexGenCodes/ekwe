@@ -17,6 +17,7 @@ Pod::Spec.new do |s|
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
+    'SWIFT_OBJC_BRIDGING_HEADER' => '${PODS_TARGET_SRCROOT}/ios/EkweNative-Bridging-Header.h',
   }
 
   s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"

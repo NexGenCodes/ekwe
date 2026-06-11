@@ -14,3 +14,10 @@ export type AudioEffectsResult = {
   echoCanceler: boolean;
   gainControl: boolean;
 };
+
+export type ExtractWavAndWaveformResult = {
+  success: boolean;
+  error: string;
+  durationMs: number;
+  waveform: number[];
+};

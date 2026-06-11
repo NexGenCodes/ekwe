@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { AudioCapture } from "@/services/AudioCapture";
+import { AudioConverter } from "@/services/AudioConverter";
 import { IntentService } from "@/services/IntentService";
 import { settings$, auth$ } from "@/store";
 import { isIOS, AppAlert, logger } from "@/utils";
@@ -24,6 +25,7 @@ export const useEchoIntentResolver = (props: {
 }): {
   audioUri: string | undefined;
   isResolving: boolean;
+  convertedWaveform: number[];
   activeResolvedUri: MutableRefObject<string | undefined>;
   isSubsequentIntent: boolean;
   setIsSubsequentIntent: Dispatch<SetStateAction<boolean>>;
@@ -39,8 +41,10 @@ export const useEchoIntentResolver = (props: {
 
   const [audioUri, setAudioUri] = useState<string | undefined>(undefined);
   const [isResolving, setIsResolving] = useState(false);
+  const [convertedWaveform, setConvertedWaveform] = useState<number[]>([]);
 
   const activeResolvedUri = useRef<string | undefined>(undefined);
+  const convertedFlacUriRef = useRef<string | undefined>(undefined);
   const previousRawUri = useRef<string | undefined>(undefined);
 
   // Track if this is a subsequent intent (to know when to reset flow state)
@@ -85,13 +89,19 @@ export const useEchoIntentResolver = (props: {
     const isSubseq = previousRawUri.current !== undefined;
     previousRawUri.current = rawUri;
 
+    // Clean up previous session files
     if (activeResolvedUri.current) {
       cleanEchoCache(activeResolvedUri.current);
+    }
+    if (convertedFlacUriRef.current) {
+      cleanEchoCache(convertedFlacUriRef.current);
+      convertedFlacUriRef.current = undefined;
     }
 
     const resolve = async (): Promise<void> => {
       try {
         setIsResolving(true);
+        setConvertedWaveform([]);
         logger.info(
           "[IntentResolver] resolve() started. rawUri:",
           rawUri.substring(0, 60),
@@ -115,7 +125,7 @@ export const useEchoIntentResolver = (props: {
 
         logger.info("[IntentResolver] fileUri resolved:", fileUri);
 
-        // Validate + convert shared audio to WAV for broad format compatibility
+        // Validate shared audio file format
         const mimeType = hasIOSFiles
           ? props.value?.[0]?.mimeType
           : props.mimeType;
@@ -123,11 +133,31 @@ export const useEchoIntentResolver = (props: {
           fileUri,
           mimeType || "audio/*",
         );
-        const finalUri = result.ok ? result.value.uri : fileUri;
+        const validatedUri = result.ok ? result.value.uri : fileUri;
+        activeResolvedUri.current = validatedUri;
 
-        // Set audio URI immediately so useSharedAudioPlayer starts decoding
-        activeResolvedUri.current = finalUri;
-        setAudioUri(finalUri);
+        // Convert to FLAC + extract waveform via native C++ on both platforms
+        // (shared audio can be any format — convert to canonical FLAC for upload)
+        const convertResult = await AudioConverter.convertToFlac(validatedUri);
+
+        if (isStale) return;
+
+        if (convertResult.ok) {
+          const { uri: flacUri, waveform } = convertResult.value;
+          convertedFlacUriRef.current = flacUri;
+          setAudioUri(flacUri);
+          setConvertedWaveform(waveform);
+          logger.info(
+            "[IntentResolver] ✅ Converted to FLAC + waveform extracted",
+          );
+        } else {
+          // Fall back to validated URI if conversion fails
+          logger.warn(
+            "[IntentResolver] FLAC conversion failed, using original",
+          );
+          setAudioUri(validatedUri);
+        }
+
         setIsResolving(false);
         setIsSubsequentIntent(isSubseq);
         logger.info("[IntentResolver] ✅ audioUri set + isResolving=false");
@@ -147,6 +177,7 @@ export const useEchoIntentResolver = (props: {
   return {
     audioUri,
     isResolving,
+    convertedWaveform,
     activeResolvedUri,
     isSubsequentIntent,
     setIsSubsequentIntent,

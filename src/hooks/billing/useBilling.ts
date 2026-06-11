@@ -143,8 +143,7 @@ export function useBilling(): UseBillingReturn {
     try {
       const { data, error } = await supabase.auth.refreshSession();
       if (error) throw error;
-      const restoredIsPro =
-        data.session?.user?.app_metadata?.is_pro === true;
+      const restoredIsPro = data.session?.user?.app_metadata?.is_pro === true;
       authActions.setIsPro(restoredIsPro);
       if (restoredIsPro) {
         AppAlert.success(
@@ -157,7 +156,7 @@ export function useBilling(): UseBillingReturn {
           "We could not find any previous purchases to restore. If you believe this is an error, please contact support.",
         );
       }
-    } catch (err) {
+    } catch {
       AppAlert.error(
         "Restore Failed",
         "Could not verify purchases. Please try again or contact support.",

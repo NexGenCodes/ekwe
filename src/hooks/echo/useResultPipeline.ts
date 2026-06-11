@@ -3,9 +3,9 @@ import { File as ExpoFile } from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import { useState, useCallback, useEffect, useRef } from "react";
 
-import { useTranscription } from "../useTranscription";
 import { useTranslation } from "../useTranslation";
 
+import { batchTranscriber } from "@/services/BatchTranscriber";
 import { HistoryService } from "@/services/HistoryService";
 import { settings$, auth$, HistoryEntry, history$ } from "@/store";
 import { AppToast, logger } from "@/utils";
@@ -86,19 +86,16 @@ export const useResultPipeline = ({
     userSessionRef.current = userSession;
   }, [transcript, sourceLang, targetLang, userSession]);
 
-  const { transcribe } = useTranscription();
   const { translate } = useTranslation();
 
   const processSharedAudio = useCallback(
     async (audioUri: string): Promise<void> => {
       setIsProcessing(true);
       try {
-        const txResultResponse = await transcribe({
-          uri: audioUri,
-          durationMs: 0,
-          averageDb: -40,
-          meteringData: [],
-        });
+        const txResultResponse = await batchTranscriber.transcribe(
+          { uri: audioUri, durationMs: 0, meteringData: [], waveform: [] },
+          sourceLang,
+        );
 
         if (!txResultResponse.ok) {
           throw new Error(txResultResponse.error);
@@ -125,7 +122,7 @@ export const useResultPipeline = ({
         setIsProcessing(false);
       }
     },
-    [transcribe],
+    [sourceLang],
   );
 
   useEffect(() => {

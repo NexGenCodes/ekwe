@@ -1,8 +1,8 @@
 /**
  * Global Jest Setup — Ekwe
  *
- * Centralises mocks for native modules that crash in a pure-JS test
- * environment.
+ * Only essential polyfills and native module stubs that are needed
+ * by every test. Test-specific mocks live next to their tests.
  */
 
 // Babel in SDK 52 + Jest sometimes requires the Promise constructor to be explicitly global
@@ -49,6 +49,8 @@ jest.mock('react-native-reanimated', () => {
     Easing: {
       linear: (x) => x,
       ease: (x) => x,
+      bezier: () => (x) => x,
+      bezierFn: () => (x) => x,
       in: () => (x) => x,
       out: () => (x) => x,
       inOut: () => (x) => x,
@@ -107,7 +109,7 @@ jest.mock('react-native-gesture-handler', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  expo-haptics                                                       */
+/*  expo-haptics — needed by AudioService at import time               */
 /* ------------------------------------------------------------------ */
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(),
@@ -122,58 +124,7 @@ jest.mock('expo-haptics', () => ({
 }));
 
 /* ------------------------------------------------------------------ */
-/*  expo-blur                                                          */
-/* ------------------------------------------------------------------ */
-jest.mock('expo-blur', () => {
-  const React = require('react');
-  const RN = require('react-native');
-  return {
-    BlurView: ({ children }) => children,
-  };
-});
-
-/* ------------------------------------------------------------------ */
-/*  lucide-react-native — return simple Views with testIDs             */
-/* ------------------------------------------------------------------ */
-jest.mock('lucide-react-native', () => {
-  const React = require('react');
-  const RN = require('react-native');
-
-  const createIcon = (name) => {
-    const Icon = (props) => {
-      const { testID, ...rest } = props;
-      return <RN.View {...rest} testID={testID || `icon-${name}`} />;
-    };
-    Icon.displayName = name;
-    return Icon;
-  };
-
-  return new Proxy(
-    {},
-    {
-      get(_target, prop) {
-        if (prop === '__esModule') return true;
-        return createIcon(prop);
-      },
-    },
-  );
-});
-
-/* ------------------------------------------------------------------ */
-/*  react-native-safe-area-context                                     */
-/* ------------------------------------------------------------------ */
-jest.mock('react-native-safe-area-context', () => {
-  const React = require('react');
-  const RN = require('react-native');
-  return {
-    SafeAreaView: ({ children }) => children,
-    SafeAreaProvider: ({ children }) => children,
-    useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
-  };
-});
-
-/* ------------------------------------------------------------------ */
-/*  @op-engineering/op-sqlite                                         */
+/*  @op-engineering/op-sqlite                                          */
 /* ------------------------------------------------------------------ */
 const mockOpDb = {
   executeSync: jest.fn(() => ({ rows: [], rowsAffected: 0 })),
@@ -211,7 +162,6 @@ jest.mock('expo-linking', () => {
         queryParams: { uri },
       };
     }),
-    // Helper to simulate incoming URL in tests
     _dispatchUrl: (url) => {
       listeners.forEach((l) => l({ url }));
     },
@@ -222,6 +172,38 @@ jest.mock('expo-linking', () => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  react-native-mmkv                                                  */
+/* ------------------------------------------------------------------ */
+jest.mock('react-native-mmkv', () => {
+  const mockStorage = {
+    getString: jest.fn(() => null),
+    set: jest.fn(),
+    getAllKeys: jest.fn(() => []),
+    clearAll: jest.fn(),
+    delete: jest.fn(),
+    contains: jest.fn(() => false),
+    getNumber: jest.fn(() => 0),
+    getBoolean: jest.fn(() => false),
+  };
+  return {
+    createMMKV: jest.fn(() => mockStorage),
+    MMKV: jest.fn(() => mockStorage),
+  };
+});
+
+/* ------------------------------------------------------------------ */
+/*  @react-native-google-signin/google-signin                          */
+/* ------------------------------------------------------------------ */
+jest.mock('@react-native-google-signin/google-signin', () => ({
+  GoogleSignin: {
+    configure: jest.fn(),
+    signIn: jest.fn(),
+    signOut: jest.fn(),
+    getTokens: jest.fn().mockResolvedValue({ idToken: 'mock-google-token' }),
+  },
+}));
+
+/* ------------------------------------------------------------------ */
 /*  crypto.randomUUID                                                  */
 /* ------------------------------------------------------------------ */
 Object.defineProperty(global, 'crypto', {
@@ -229,8 +211,6 @@ Object.defineProperty(global, 'crypto', {
     randomUUID: jest.fn().mockReturnValue('test-uuid-1234'),
   },
 });
-/* ------------------------------------------------------------------ */
-
 
 /* ------------------------------------------------------------------ */
 /*  expo-file-system                                                   */
@@ -238,13 +218,19 @@ Object.defineProperty(global, 'crypto', {
 jest.mock('expo-file-system', () => ({
   getInfoAsync: jest.fn().mockResolvedValue({
     exists: true,
-    size: 1024 * 1024, // 1MB default
+    size: 1024 * 1024,
     uri: 'file://test.m4a',
   }),
-  File: jest.fn().mockImplementation(() => ({
+  File: jest.fn().mockImplementation((uri) => ({
     exists: true,
     size: 1024 * 1024,
+    uri,
   })),
+  Paths: {
+    cache: {
+      list: jest.fn().mockReturnValue([]),
+    },
+  },
 }));
 
 /* ------------------------------------------------------------------ */
@@ -266,56 +252,62 @@ jest.mock('./modules/ekwe-native', () => ({
 }));
 
 /* ------------------------------------------------------------------ */
-/*  @/services/supabase & @/store                                     */
+/*  @/store                                                            */
 /* ------------------------------------------------------------------ */
-jest.mock('@/services/supabase', () => ({
-  supabase: {
-    auth: {
-      getSession: jest
-        .fn()
-        .mockResolvedValue({
-          data: {
-            session: { access_token: 'mock-token', user: { id: 'user_123' } },
-          },
-        }),
-      onAuthStateChange: jest.fn(() => ({
-        data: { subscription: { unsubscribe: jest.fn() } },
-      })),
-      startAutoRefresh: jest.fn(),
-      stopAutoRefresh: jest.fn(),
-    },
-    from: jest.fn().mockReturnThis(),
-    insert: jest.fn().mockResolvedValue({ error: null }),
-  },
-  appStateSubscription: { remove: jest.fn() },
-}));
+const makeObservable = (val) => {
+  const observable = (newVal) => {
+    if (newVal !== undefined) val = newVal;
+    return val;
+  };
+  observable.get = () => val;
+  observable.peek = () => val;
+  observable.set = (v) => { val = v; };
+  observable.delete = () => { val = undefined; };
+  return observable;
+};
+
+const mockAuthVal = {
+  session: null,
+  user: null,
+  isPro: false,
+  isInitialized: false,
+  transactionsUsed: 0,
+  activeTier: 'FREE',
+  isFallback: false,
+};
+
+const mockHistory = {};
 
 jest.mock('@/store', () => ({
-  auth$: {
-    get: () => ({
-      session: null,
-      user: null,
-      isPro: false,
-      isInitialized: true,
-    }),
-  },
+  auth$: new Proxy(makeObservable(mockAuthVal), {
+    get(target, prop) {
+      if (prop === 'get') return target.get;
+      if (prop === 'peek') return target.peek;
+      if (prop === 'set') return target.set;
+      return makeObservable(mockAuthVal[prop]);
+    },
+  }),
   authActions: {
     setSession: jest.fn(),
     setUser: jest.fn(),
     setIsPro: jest.fn(),
+    setInitialized: jest.fn((v) => { mockAuthVal.isInitialized = v; }),
     clearAuth: jest.fn(),
+    updateBilling: jest.fn(),
   },
-  settings$: { get: () => ({ onboardingCompleted: false }) },
-  history$: { get: () => ({}) },
-  audio$: { get: () => ({}) },
+  settings$: makeObservable({ onboardingCompleted: false }),
+  history$: new Proxy(makeObservable({}), {
+    get(target, prop) {
+      if (prop === 'get') return target.get;
+      if (prop === 'peek') return target.peek;
+      if (prop === 'set') return target.set;
+      if (!mockHistory[prop]) {
+        mockHistory[prop] = makeObservable(null);
+      }
+      return mockHistory[prop];
+    },
+  }),
+  audio$: makeObservable({}),
 }));
 
-/* ------------------------------------------------------------------ */
-/*  @/utils/authHeaders (Global Mock)                                  */
-/* ------------------------------------------------------------------ */
-jest.mock('src/utils/authHeaders', () => ({
-  getAuthHeaders: jest.fn(async (h = {}) => ({
-    ...h,
-    Authorization: 'Bearer mock-token',
-  })),
-}));
+

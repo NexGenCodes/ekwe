@@ -7,10 +7,10 @@ import { AppState } from "react-native";
 
 import { useEchoIntentResolver } from "./useEchoIntentResolver";
 import { preWarmAudioEngine } from "../audio/useSharedAudioPlayer";
-import { useTranscription } from "../useTranscription";
 import { useTranslation } from "../useTranslation";
 
 import { usePermissions } from "@/hooks/usePermissions";
+import { batchTranscriber } from "@/services/BatchTranscriber";
 import { HistoryService } from "@/services/HistoryService";
 import { IntentService } from "@/services/IntentService";
 import { settings$, auth$ } from "@/store";
@@ -157,13 +157,13 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
   }, []);
 
   // API calls
-  const { transcribe } = useTranscription();
   const { translate } = useTranslation();
 
   // ── URI Resolution Pipeline ──────────────────────────────────────────
   const {
     audioUri,
     isResolving,
+    convertedWaveform,
     activeResolvedUri,
     isSubsequentIntent,
     setIsSubsequentIntent,
@@ -229,12 +229,12 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       const safeUri = audioUri;
 
       // Transcription Mutation
-      const trResult = await transcribe(
+      const trResult = await batchTranscriber.transcribe(
         {
           uri: safeUri,
           durationMs: durationSeconds * 1000,
-          averageDb: -40,
           meteringData: waveform,
+          waveform: [],
         },
         state.selectedLang,
       );
@@ -372,9 +372,12 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     }
 
     if (activeResolvedUri.current) cleanEchoCache(activeResolvedUri.current);
+    if (audioUri && audioUri !== activeResolvedUri.current) {
+      cleanEchoCache(audioUri);
+    }
     deactivateKeepAwake("echoSession")?.catch?.(() => {});
     IntentService.dismissEcho();
-  }, [sourceApp, session, audioUri]);
+  }, [sourceApp, session, audioUri, activeResolvedUri]);
 
   // Clean up and dismiss if the user minimizes the app (backgrounds it)
   useEffect(() => {
@@ -407,6 +410,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     audioUri,
     sourceApp,
     isResolving,
+    convertedWaveform,
     themePreference,
     handleTranscribe,
     handleTranslate,

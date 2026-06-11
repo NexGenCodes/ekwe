@@ -53,6 +53,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     audioUri,
     sourceApp,
     isResolving,
+    convertedWaveform,
     handleTranscribe,
     handleTranslate,
     audioDuration,
@@ -141,6 +142,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             player={player}
             isResolving={isResolving}
             isDark={isDark}
+            peaks={convertedWaveform}
             onTranscribe={handleTranscribe}
           >
             <Box

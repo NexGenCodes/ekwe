@@ -12,6 +12,7 @@ import android.media.audiofx.NoiseSuppressor
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.util.Log
+import kotlin.jvm.JvmStatic
 
 class EkweNativeModule : Module() {
   private var noiseSuppressor: NoiseSuppressor? = null
@@ -20,6 +21,10 @@ class EkweNativeModule : Module() {
 
   companion object {
     var instance: EkweNativeModule? = null
+
+    init {
+      System.loadLibrary("ekwe_native_jni")
+    }
     var isAppBackgrounded: Boolean = true
 
     fun emitStateChanged(state: String, previousState: String, reason: String) {
@@ -44,6 +49,10 @@ class EkweNativeModule : Module() {
         ))
       }
     }
+
+    // --- Native Audio Processing (JNI) ---
+    @JvmStatic external fun extractWavAndWaveformJNI(inputPath: String, outputPath: String): Array<Any?>
+    @JvmStatic external fun encodePcmToFlacJNI(pcmData: ShortArray, sampleRate: Int, channels: Int, outputPath: String): Array<Any?>
 
     fun emitAppForeground() {
       isAppBackgrounded = false
@@ -279,6 +288,21 @@ class EkweNativeModule : Module() {
         action = AudioCaptureService.ACTION_STOP
       }
       appContext.reactContext?.startService(intent)
+    }
+
+    // --- Audio Conversion Methods ---
+    AsyncFunction("extractWavAndWaveform") { inputPath: String, outputPath: String ->
+      val result = extractWavAndWaveformJNI(inputPath, outputPath)
+      val success = result[0] as Boolean
+      val error = result[1] as String
+      val durationMs = result[2] as Int
+      val waveform = (result[3] as FloatArray).toList()
+      return@AsyncFunction mapOf(
+        "success" to success,
+        "error" to error,
+        "durationMs" to durationMs,
+        "waveform" to waveform
+      )
     }
 
     // --- Audio Effects Methods ---

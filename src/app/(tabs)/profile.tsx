@@ -603,9 +603,7 @@ export default function ProfileScreen(): React.JSX.Element {
               style={{
                 borderWidth: 1,
                 borderColor:
-                  deleteConfirmText === "DELETE"
-                    ? color.error
-                    : color.border,
+                  deleteConfirmText === "DELETE" ? color.error : color.border,
                 borderRadius: borderRadius.xl,
                 padding: spacing.md,
                 color: color.foreground,

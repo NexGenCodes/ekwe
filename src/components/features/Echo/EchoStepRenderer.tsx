@@ -29,6 +29,7 @@ export interface EchoStepRendererProps {
   player: SharedAudioPlayer | null;
   isResolving: boolean;
   isDark: boolean;
+  peaks: number[];
   handleLanguageSelected: (code: string) => void;
   handleTranscribe:
     | ((durationSeconds: number, waveform: number[]) => Promise<void>)
@@ -56,6 +57,7 @@ export const EchoStepRenderer = React.memo(function EchoStepRenderer({
   player,
   isResolving,
   isDark,
+  peaks,
   handleLanguageSelected,
   handleTranscribe,
   handleTranslate,
@@ -124,6 +126,7 @@ export const EchoStepRenderer = React.memo(function EchoStepRenderer({
           player={player}
           isResolving={isResolving}
           isDark={isDark}
+          peaks={peaks}
           onTranscribe={
             handleTranscribe || ((): Promise<void> => Promise.resolve())
           }

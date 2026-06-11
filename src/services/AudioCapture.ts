@@ -41,9 +41,9 @@ class AudioCaptureClass {
   async requestPermission(): Promise<Result<boolean, EkweError>> {
     try {
       const status = await AudioService.requestPermission();
-      if (status === "Granted") return ok(true);
+      if (status === "granted") return ok(true);
 
-      if (status === "Denied" || status === "Restricted") {
+      if (status === "denied" || status === "restricted") {
         AppAlert.info(
           "Microphone Required",
           "Ekwe needs microphone access to record and translate voice notes. Please enable it in Settings.",
@@ -66,7 +66,7 @@ class AudioCaptureClass {
   async checkPermission(): Promise<Result<boolean, EkweError>> {
     try {
       const status = await AudioService.checkPermission();
-      return ok(status === "Granted");
+      return ok(status === "granted");
     } catch {
       return err(EkweError.PERMISSION_MIC);
     }
@@ -147,12 +147,21 @@ class AudioCaptureClass {
           silenceStartTime = null;
         }
 
-        const normalized = Math.max(0, Math.min(1, (db + 60) / 60));
-        this.currentMeteringData.push(db);
+        // WhatsApp-style noise gate:
+        // Assume noise floor is around -45dB.
+        // Scale -45..0 to 0..1 exponentially so voice pops and silence stays flat.
+        let normalized = 0;
+        if (db > -45) {
+          normalized = Math.pow((db + 45) / 45, 1.5);
+        } else {
+          normalized = 0.02; // tiny dot for absolute silence
+        }
+
+        this.currentMeteringData.push(normalized);
         if (this.listeners.length > 0) {
           this.notifyListeners(normalized);
         }
-      }, 32);
+      }, 60);
 
       this.maxDurationTimeout = setTimeout(async () => {
         if (this.isRecording()) {
@@ -205,13 +214,6 @@ class AudioCaptureClass {
     try {
       const { path, duration } = await AudioService.stopRecording();
       this.notifyStatusListeners("stopped");
-
-      if (duration < 500) {
-        this.currentSessionId = null;
-        this.currentMeteringData = [];
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        return err(EkweError.TOO_SHORT);
-      }
 
       const result: RecordingResult = {
         uri: path,

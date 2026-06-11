@@ -26,6 +26,16 @@ android {
   defaultConfig {
     versionCode 1
     versionName "0.7.10"
+    externalNativeBuild {
+      cmake {
+        abiFilters "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
+      }
+    }
+  }
+  externalNativeBuild {
+    cmake {
+      path = file("CMakeLists.txt")
+    }
   }
   lintOptions {
     abortOnError false

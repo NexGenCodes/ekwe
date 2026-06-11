@@ -14,11 +14,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import {
-  ErrorBoundary,
-  ToastContainer,
-  AppAlertModal,
-} from "@/components";
+import { ErrorBoundary, ToastContainer, AppAlertModal } from "@/components";
 import { Box } from "@/components/ui";
 import { useShareIntentHandler, useTheme, useTripleExclusivity } from "@/hooks";
 import { queryClient } from "@/hooks/queries/queryClient";

@@ -50,7 +50,7 @@ export const handleEchoSession = async (
     const processResult = await AudioProcessor.processRecording(uri, 0, []);
     const processedAudio = processResult.ok
       ? processResult.value
-      : { uri, durationMs: 0, averageDb: -40, meteringData: [] };
+      : { uri, durationMs: 0, averageDb: -40, meteringData: [], waveform: [] };
 
     // 3. Perform background transcription
     const transcriptionResult = await transcribeAudio(

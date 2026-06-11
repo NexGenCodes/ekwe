@@ -1,9 +1,11 @@
+import { http, HttpResponse } from "msw";
+
 import { translateText } from "../translateText";
 
 import { EkweError } from "@/constants/errors";
+import { server } from "@/mocks/server";
 import { supabase } from "@/services/supabase";
-import { authActions } from "@/store/auth";
-import * as networkUtils from "@/utils/networkUtils";
+import { authActions } from "@/store";
 
 jest.mock("@/services/supabase", () => ({
   supabase: {
@@ -13,16 +15,6 @@ jest.mock("@/services/supabase", () => ({
   },
 }));
 
-jest.mock("@/store/auth", () => ({
-  authActions: {
-    updateBilling: jest.fn(),
-  },
-}));
-
-jest.mock("@/utils/networkUtils", () => ({
-  fetchWithRetry: jest.fn(),
-}));
-
 jest.mock("@/utils/logger", () => ({
   __esModule: true,
   default: {
@@ -30,11 +22,15 @@ jest.mock("@/utils/logger", () => ({
   },
 }));
 
-describe("translateText", () => {
-  const mockUrl = "https://mock.worker.com";
+beforeAll(() => server.listen({ onUnhandledRequest: "bypass" }));
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
 
+const WORKER_URL = "http://localhost:8787";
+
+describe("translateText", () => {
   beforeAll(() => {
-    process.env.EXPO_PUBLIC_WORKER_URL = mockUrl;
+    process.env.EXPO_PUBLIC_WORKER_URL = WORKER_URL;
   });
 
   afterAll(() => {
@@ -63,15 +59,15 @@ describe("translateText", () => {
     if (!result.ok) {
       expect(result.error).toBe(EkweError.NETWORK_LOST);
     }
-    process.env.EXPO_PUBLIC_WORKER_URL = mockUrl;
+    process.env.EXPO_PUBLIC_WORKER_URL = WORKER_URL;
   });
 
   it("returns RATE_LIMITED when response is 429", async () => {
-    (networkUtils.fetchWithRetry as jest.Mock).mockResolvedValue({
-      ok: false,
-      status: 429,
-      json: jest.fn().mockResolvedValue({}),
-    });
+    server.use(
+      http.post(`${WORKER_URL}/translate`, () => {
+        return new HttpResponse(null, { status: 429 });
+      }),
+    );
 
     const result = await translateText("hello", "en", "es");
     expect(result.ok).toBe(false);
@@ -81,20 +77,19 @@ describe("translateText", () => {
   });
 
   it("parses valid response and updates billing", async () => {
-    const mockResponse = {
-      translation: "hola",
-      transliteration: "hola",
-      transaction: {
-        transactions_used: 1,
-        tier_active: "PREMIUM",
-        is_fallback: false,
-      },
-    };
-
-    (networkUtils.fetchWithRetry as jest.Mock).mockResolvedValue({
-      ok: true,
-      json: jest.fn().mockResolvedValue(mockResponse),
-    });
+    server.use(
+      http.post(`${WORKER_URL}/translate`, () => {
+        return HttpResponse.json({
+          translation: "hola",
+          transliteration: "hola",
+          transaction: {
+            transactions_used: 1,
+            tier_active: "PREMIUM",
+            is_fallback: false,
+          },
+        });
+      }),
+    );
 
     const result = await translateText("hello", "en", "es");
 
@@ -112,10 +107,11 @@ describe("translateText", () => {
   });
 
   it("returns TRANSLATION_FAIL if schema validation fails", async () => {
-    (networkUtils.fetchWithRetry as jest.Mock).mockResolvedValue({
-      ok: true,
-      json: jest.fn().mockResolvedValue({ wrong_schema: true }), // Missing 'translation' key
-    });
+    server.use(
+      http.post(`${WORKER_URL}/translate`, () => {
+        return HttpResponse.json({ wrong_schema: true });
+      }),
+    );
 
     const result = await translateText("hello", "en", "es");
     expect(result.ok).toBe(false);
@@ -125,22 +121,24 @@ describe("translateText", () => {
   });
 
   it("returns TRANSLATION_FAIL if API responds with non-ok and unknown code", async () => {
-    (networkUtils.fetchWithRetry as jest.Mock).mockResolvedValue({
-      ok: false,
-      status: 400,
-      json: jest.fn().mockResolvedValue({ error: "UNKNOWN_ERROR" }),
-    });
+    server.use(
+      http.post(`${WORKER_URL}/translate`, () => {
+        return HttpResponse.json({ error: "UNKNOWN_ERROR" }, { status: 400 });
+      }),
+    );
 
     const result = await translateText("hello", "en", "es");
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toBe(EkweError.TRANSLATION_FAIL); // Fallback
+      expect(result.error).toBe(EkweError.TRANSLATION_FAIL);
     }
   });
 
-  it("returns NETWORK_LOST on fetch throw", async () => {
-    (networkUtils.fetchWithRetry as jest.Mock).mockRejectedValue(
-      new Error("Network disconnect"),
+  it("returns NETWORK_LOST on fetch error", async () => {
+    server.use(
+      http.post(`${WORKER_URL}/translate`, () => {
+        return HttpResponse.error();
+      }),
     );
 
     const result = await translateText("hello", "en", "es");

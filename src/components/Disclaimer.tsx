@@ -12,14 +12,18 @@ interface DisclaimerProps {
   onToggleAgreement?: () => void;
 }
 
-const CheckIcon = ({ color }: { color: string }) => (
+const CheckIcon = ({ color }: { color: string }): React.JSX.Element => (
   <Svg width={16} height={16} viewBox="0 0 16 16">
     <Rect x="0.5" y="0.5" width={15} height={15} rx={3} fill="none" />
     <Path d="M4 8l3 3 5-5" stroke={color} strokeWidth={2} fill="none" />
   </Svg>
 );
 
-const UncheckedBox = ({ borderColor }: { borderColor: string }) => (
+const UncheckedBox = ({
+  borderColor,
+}: {
+  borderColor: string;
+}): React.JSX.Element => (
   <Svg width={16} height={16} viewBox="0 0 16 16">
     <Rect
       x="0.5"

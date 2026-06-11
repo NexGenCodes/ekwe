@@ -242,9 +242,6 @@ describe("signInWithGoogle", () => {
   });
 });
 
-
-
-
 describe("signOut", () => {
   it("signs out of supabase and google", async () => {
     (supabase.auth.signOut as jest.Mock).mockResolvedValueOnce({

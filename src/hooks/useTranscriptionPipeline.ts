@@ -3,8 +3,7 @@ import { useCallback } from "react";
 
 import { EkweError, ErrorMessages } from "@/constants/errors";
 import type { UseDictationStateReturn } from "@/hooks/useDictationState";
-import { AudioProcessor } from "@/services/AudioProcessor";
-import { transcribeAudio } from "@/services/transcribeAudio";
+import { batchTranscriber } from "@/services/BatchTranscriber";
 import { audioActions, RecordingState } from "@/store/audio";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 import logger from "@/utils/logger";
@@ -14,10 +13,6 @@ export type ConfirmResult = {
   detectedLang: string;
 } | null;
 
-/**
- * useTranscriptionPipeline — Extracted async transcription pipeline.
- * Handles audio processing, transcription API call, cleanup, and state updates.
- */
 export function useTranscriptionPipeline(
   state: UseDictationStateReturn,
 ): (sourceLang: string) => Promise<ConfirmResult> {
@@ -50,57 +45,36 @@ export function useTranscriptionPipeline(
         sourceLang: sourceLangRef.current,
         durationMs: capturedDurationRef.current,
       });
-      let processedUri: string | null = null;
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
       try {
         logger.info("[VoiceDictation] Confirming dictation, uri:", uri);
 
-        const processResult = await AudioProcessor.processRecording(
-          uri,
-          capturedDurationRef.current,
-          capturedMeteringRef.current,
-        );
-
-        if (!processResult.ok) {
-          const msg =
-            ErrorMessages[processResult.error] ?? "Audio processing failed.";
-          logger.error(
-            "[VoiceDictation] processRecording failed:",
-            processResult.error,
-          );
-          setError(msg);
-          setStatus("error");
-          return null;
-        }
-
-        processedUri = processResult.value.uri;
-
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
-
-        logger.info("[VoiceDictation] Transcribing with lang:", sourceLang);
-        const transcribeResult = await transcribeAudio(
-          processResult.value,
+        const result = await batchTranscriber.transcribe(
+          {
+            uri,
+            durationMs: capturedDurationRef.current,
+            meteringData: capturedMeteringRef.current,
+            waveform: capturedNativeWaveformRef.current,
+          },
           sourceLang,
           controller.signal,
         );
 
         abortControllerRef.current = null;
 
-        if (!transcribeResult.ok) {
+        if (!result.ok) {
           if (controller.signal.aborted) {
             logger.info("[VoiceDictation] Transcription aborted");
             return null;
           }
-          const msg =
-            ErrorMessages[transcribeResult.error] ?? "Transcription failed.";
-          logger.error(
-            "[VoiceDictation] Transcription failed:",
-            transcribeResult.error,
-          );
+          const msg = ErrorMessages[result.error] ?? "Transcription failed.";
+          logger.error("[VoiceDictation] Transcription failed:", result.error);
           setError(msg);
           setStatus("error");
-          audioActions.setError(transcribeResult.error as EkweError);
+          audioActions.setError(result.error as EkweError);
           track(AnalyticsEvents.TRANSCRIPTION_FAILED, {
             sourceLang: sourceLangRef.current,
             durationMs: capturedDurationRef.current,
@@ -109,7 +83,12 @@ export function useTranscriptionPipeline(
           return null;
         }
 
-        const { transcript, detectedLang } = transcribeResult.value;
+        const { transcript, detectedLang } = result.value;
+
+        if (capturedNativeWaveformRef.current.length > 0) {
+          setNativeWaveform(capturedNativeWaveformRef.current);
+        }
+
         track(AnalyticsEvents.TRANSCRIBING_COMPLETED, {
           sourceLang: sourceLangRef.current,
           durationMs: capturedDurationRef.current,
@@ -121,11 +100,10 @@ export function useTranscriptionPipeline(
 
         setStatus("idle");
         setMeteringData([]);
-        setNativeWaveform([]);
-        capturedNativeWaveformRef.current = [];
         capturedUriRef.current = null;
         return { transcript, detectedLang };
       } catch (err) {
+        abortControllerRef.current = null;
         logger.error("[VoiceDictation] Confirm error:", err);
         track(AnalyticsEvents.TRANSCRIPTION_FAILED, {
           sourceLang: sourceLangRef.current,
@@ -136,19 +114,7 @@ export function useTranscriptionPipeline(
         setStatus("error");
         return null;
       } finally {
-        const deletions: Promise<void>[] = [
-          FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {}),
-        ];
-        if (processedUri && processedUri !== uri) {
-          deletions.push(
-            FileSystem.deleteAsync(processedUri, { idempotent: true }).catch(
-              () => {},
-            ),
-          );
-        }
-        Promise.all(deletions).then(() =>
-          logger.info("[VoiceDictation] Cleaned up temporary audio files"),
-        );
+        FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
       }
     },
     [

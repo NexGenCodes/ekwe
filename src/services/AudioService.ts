@@ -13,7 +13,7 @@ import { PLAN_LIMITS } from "@/constants/billing";
 import { logger, isIOS } from "@/utils";
 import { releaseAudioEffects } from "@/utils/AudioEffectsModule";
 
-type PermissionStatus = "Granted" | "Denied" | "Undetermined" | "Restricted";
+type PermissionStatus = "granted" | "denied" | "undetermined" | "restricted";
 
 const RECORDING_OPTIONS: Partial<RecordingOptions> = {
   extension: ".flac",
@@ -22,9 +22,9 @@ const RECORDING_OPTIONS: Partial<RecordingOptions> = {
   bitRate: 256000,
   isMeteringEnabled: true,
   android: {
-    outputFormat: "default",
-    audioEncoder: "default",
-    extension: ".wav",
+    outputFormat: "mpeg4",
+    audioEncoder: "aac",
+    extension: ".m4a",
     sampleRate: 16000,
   },
   ios: {
@@ -83,9 +83,9 @@ class AudioService {
 
   public async startRecording(maxDurationMs?: number): Promise<void> {
     const status = await this.checkPermission();
-    if (status !== "Granted") {
+    if (status !== "granted") {
       const result = await this.requestPermission();
-      if (result !== "Granted") throw new Error("Permission denied");
+      if (result !== "granted") throw new Error("Permission denied");
     }
 
     await this.initialize();
