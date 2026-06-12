@@ -5,8 +5,12 @@ describe("platform", () => {
     jest.resetModules();
   });
 
+  afterEach(() => {
+    jest.resetModules();
+  });
+
   it("detects iOS", () => {
-    jest.spyOn(Platform, "OS", "get").mockReturnValue("ios");
+    Object.defineProperty(Platform, "OS", { get: () => "ios" });
     const {
       isIOS,
       isAndroid,
@@ -22,7 +26,7 @@ describe("platform", () => {
   });
 
   it("detects Android", () => {
-    jest.spyOn(Platform, "OS", "get").mockReturnValue("android");
+    Object.defineProperty(Platform, "OS", { get: () => "android" });
     const {
       isIOS,
       isAndroid,
@@ -38,13 +42,13 @@ describe("platform", () => {
   });
 
   it("falls back to android when web is not provided", () => {
-    jest.spyOn(Platform, "OS", "get").mockReturnValue("web");
+    Object.defineProperty(Platform, "OS", { get: () => "web" });
     const { selectPlatform } = require("../platform");
     expect(selectPlatform({ ios: "A", android: "B" })).toBe("B");
   });
 
   it("uses web option when provided", () => {
-    jest.spyOn(Platform, "OS", "get").mockReturnValue("web");
+    Object.defineProperty(Platform, "OS", { get: () => "web" });
     const { selectPlatform } = require("../platform");
     expect(selectPlatform({ ios: "A", android: "B", web: "C" })).toBe("C");
   });

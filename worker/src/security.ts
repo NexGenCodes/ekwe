@@ -25,17 +25,17 @@ const TIER_LIMITS = {
   FREE: {
     maxTextChars: 3_000, // ~500 words
     maxAudioBytes: 4 * 1024 * 1024, // 4MB (~60s)
-    autoDetectAllowed: true,
+    autoDetectAllowed: false,
   },
   PREMIUM: {
     maxTextChars: 10_000, // ~1,500 words
-    maxAudioBytes: 25 * 1024 * 1024, // 25MB (~10 min)
+    maxAudioBytes: 10 * 1024 * 1024, // 10MB
     autoDetectAllowed: true,
   },
   // CAPPED_PREMIUM users are silently downgraded
   CAPPED_PREMIUM: {
     maxTextChars: 5_000,
-    maxAudioBytes: 25 * 1024 * 1024, // 25MB (~10 min)
+    maxAudioBytes: 6 * 1024 * 1024, // 6MB
     autoDetectAllowed: true,
   },
 } as const;

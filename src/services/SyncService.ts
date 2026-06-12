@@ -84,7 +84,9 @@ class SyncServiceClass {
     this.trimHistoryWindow();
     this.refreshPendingCount();
 
-    this.pushToCloud(id).catch(() => {});
+    this.pushToCloud(id).catch((err) =>
+      logger.error("[Sync] pushToCloud failed", id, err),
+    );
 
     return id;
   }
@@ -139,7 +141,9 @@ class SyncServiceClass {
     history$[id].delete();
     this.refreshPendingCount();
 
-    this.drain().catch(() => {});
+    this.drain().catch((err) =>
+      logger.error("[Sync] drain after delete failed", err),
+    );
   }
 
   async deleteHistoryBatch(ids: string[], userId: string): Promise<void> {
@@ -173,7 +177,9 @@ class SyncServiceClass {
         history$[id].delete();
       }
       this.refreshPendingCount();
-      this.drain().catch(() => {});
+      this.drain().catch((err) =>
+        logger.error("[Sync] drain after batch delete failed", err),
+      );
     }
   }
 
@@ -357,7 +363,9 @@ class SyncServiceClass {
 
     this.unsubscribeNetInfo = subscribeToNetwork((isOnline) => {
       if (isOnline) {
-        this.drain().catch(() => {});
+        this.drain().catch((err) =>
+          logger.error("[Sync] drain on network change failed", err),
+        );
       }
     });
 
@@ -365,13 +373,19 @@ class SyncServiceClass {
       data: { session },
     } = await supabase.auth.getSession();
     if (session?.user?.id) {
-      this.pullFromCloud(session.user.id).catch(() => {});
+      this.pullFromCloud(session.user.id).catch((err) =>
+        logger.error("[Sync] initial pullFromCloud failed", err),
+      );
     }
 
     supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" && session?.user?.id) {
-        this.pullFromCloud(session.user.id).catch(() => {});
-        this.drain().catch(() => {});
+        this.pullFromCloud(session.user.id).catch((err) =>
+          logger.error("[Sync] authChange pullFromCloud failed", err),
+        );
+        this.drain().catch((err) =>
+          logger.error("[Sync] authChange drain failed", err),
+        );
       }
     });
   }

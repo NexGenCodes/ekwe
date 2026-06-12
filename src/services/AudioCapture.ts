@@ -158,6 +158,11 @@ class AudioCaptureClass {
         }
 
         this.currentMeteringData.push(normalized);
+        if (this.currentMeteringData.length > 10000) {
+          this.currentMeteringData = this.currentMeteringData.filter(
+            (_, i) => i % 2 === 0,
+          );
+        }
         if (this.listeners.length > 0) {
           this.notifyListeners(normalized);
         }

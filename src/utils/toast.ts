@@ -24,6 +24,7 @@ export const AppToast = {
     toast(title, {
       description: options?.description,
       duration: options?.duration || 3000,
+      richColors: true,
     });
   },
 
@@ -34,6 +35,7 @@ export const AppToast = {
     toast.success(title, {
       description: options?.description,
       duration: options?.duration || 3000,
+      richColors: true,
     });
   },
 
@@ -67,6 +69,7 @@ export const AppToast = {
     toast.error(title, {
       description,
       duration: options?.duration || 4000,
+      richColors: true,
     });
   },
 };

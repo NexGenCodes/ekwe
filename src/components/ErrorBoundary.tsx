@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/react-native";
 import { AlertCircle, RotateCcw } from "lucide-react-native";
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { Appearance } from "react-native";
@@ -30,7 +31,12 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    logger.error("ErrorBoundary caught:", error, errorInfo);
+    logger.error("ErrorBoundary caught:", error, errorInfo.componentStack);
+    Sentry.withScope((scope) => {
+      scope.setExtra("componentStack", errorInfo.componentStack);
+      scope.setTag("handled_by", "ErrorBoundary");
+      Sentry.captureException(error);
+    });
   }
 
   private handleReset = (): void => {

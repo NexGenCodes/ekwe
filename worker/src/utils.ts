@@ -1,4 +1,4 @@
-import { Env, Tier } from './types';
+import { CLIENT_ABORTED, Env, Tier } from './types';
 import { logger } from './logger';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -107,7 +107,7 @@ export async function abortableDelay(
   ms: number,
   signal: AbortSignal,
 ): Promise<void> {
-  if (signal.aborted) throw new Error('CLIENT_ABORTED');
+  if (signal.aborted) throw new Error(CLIENT_ABORTED);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       signal.removeEventListener('abort', onAbort);
@@ -115,7 +115,7 @@ export async function abortableDelay(
     }, ms);
     const onAbort = (): void => {
       clearTimeout(timer);
-      reject(new Error('CLIENT_ABORTED'));
+      reject(new Error(CLIENT_ABORTED));
     };
     signal.addEventListener('abort', onAbort);
   });
@@ -152,10 +152,13 @@ export async function rotateKeys(
     .map((k) => sanitizeKey(env[k]))
     .filter((k) => k.length > 10);
 
-  const shuffled = [...keys].sort(() => Math.random() - 0.5);
+  const array = new Uint32Array(keys.length);
+  crypto.getRandomValues(array);
+  const idx = keys.map((_, i) => i).sort((a, b) => array[a] - array[b]);
+  const shuffled = idx.map((i) => keys[i]);
 
   for (const key of shuffled) {
-    if (signal.aborted) throw new Error('CLIENT_ABORTED');
+    if (signal.aborted) throw new Error(CLIENT_ABORTED);
 
     const keyHash = await hashKey(key);
     if (await env.EKWE_KV.get(`blacklist:${namespace}:${keyHash}`)) continue;

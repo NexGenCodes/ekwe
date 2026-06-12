@@ -7,7 +7,7 @@ port = 8787
 
 [vars]
 SUPABASE_URL = "https://zsjcgebczzbmaarfcdny.supabase.co"
-ALLOWED_ORIGINS = ""  # Comma-separated: "https://ekwe.app,https://www.ekwe.app"
+ALLOWED_ORIGINS = "https://ekwe.app,https://www.ekwe.app"
 
 [[kv_namespaces]]
 binding = "EKWE_KV"

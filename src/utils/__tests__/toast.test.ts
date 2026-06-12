@@ -12,10 +12,16 @@ jest.mock("sonner-native", () => ({
 }));
 const { toast } = jest.requireMock("sonner-native");
 
-jest.mock("@/utils/haptics", () => ({
-  triggerHaptic: jest.fn(),
+jest.mock("expo-haptics", () => ({
+  impactAsync: jest.fn(),
+  notificationAsync: jest.fn(),
+  ImpactFeedbackStyle: { Light: "light", Medium: "medium", Heavy: "heavy" },
+  NotificationFeedbackType: {
+    Success: "success",
+    Error: "error",
+    Warning: "warning",
+  },
 }));
-const { triggerHaptic } = jest.requireMock("@/utils/haptics");
 
 jest.mock("@/utils/logger", () => ({
   __esModule: true,
@@ -42,16 +48,16 @@ describe("AppToast.info", () => {
     );
   });
 
-  it("calls triggerHaptic with Light by default", () => {
+  it("calls Haptics.impactAsync with Light by default", () => {
     AppToast.info("Hello");
-    expect(triggerHaptic).toHaveBeenCalledWith(
+    expect(Haptics.impactAsync).toHaveBeenCalledWith(
       Haptics.ImpactFeedbackStyle.Light,
     );
   });
 
   it("respects haptics: false", () => {
     AppToast.info("Hello", { haptics: false });
-    expect(triggerHaptic).not.toHaveBeenCalled();
+    expect(Haptics.impactAsync).not.toHaveBeenCalled();
   });
 
   it("passes description and custom duration", () => {
@@ -80,16 +86,16 @@ describe("AppToast.success", () => {
     );
   });
 
-  it("calls triggerHaptic with Success by default", () => {
+  it("calls Haptics.notificationAsync with Success by default", () => {
     AppToast.success("Done!");
-    expect(triggerHaptic).toHaveBeenCalledWith(
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
       Haptics.NotificationFeedbackType.Success,
     );
   });
 
   it("respects haptics: false", () => {
     AppToast.success("Done!", { haptics: false });
-    expect(triggerHaptic).not.toHaveBeenCalled();
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
   });
 });
 
@@ -106,16 +112,16 @@ describe("AppToast.error", () => {
     );
   });
 
-  it("calls triggerHaptic with Error by default", () => {
+  it("calls Haptics.notificationAsync with Error by default", () => {
     AppToast.error("Fail");
-    expect(triggerHaptic).toHaveBeenCalledWith(
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
       Haptics.NotificationFeedbackType.Error,
     );
   });
 
   it("respects haptics: false", () => {
     AppToast.error("Fail", { haptics: false });
-    expect(triggerHaptic).not.toHaveBeenCalled();
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
   });
 
   it("extracts description from string error", () => {

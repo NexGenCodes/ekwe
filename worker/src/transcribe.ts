@@ -6,7 +6,7 @@ import * as gladia from "./providers/gladia";
 import * as groq from "./providers/groq";
 import * as witai from "./providers/witai";
 import { guardAudioSize, guardAutoDetect, guardLanguageCode, getLimits } from "./security";
-import { Env, Tier, TranscribeResult } from "./types";
+import { CLIENT_ABORTED, Env, Tier, TranscribeResult } from "./types";
 
 // ─── Provider Pipeline Definition ─────────────────────────────────
 
@@ -186,7 +186,7 @@ export async function handleTranscribe(
     }
 
     try {
-      if (signal.aborted) throw new Error("CLIENT_ABORTED");
+      if (signal.aborted) throw new Error(CLIENT_ABORTED);
       logger.info(`[transcribe] Trying ${provider.name}`, {
         lang: effectiveLang,
         tier,
@@ -214,7 +214,7 @@ export async function handleTranscribe(
       }
       logger.info(`[transcribe] ${provider.name} returned null (no result)`);
     } catch (e: unknown) {
-      if (e instanceof Error && e.message === "CLIENT_ABORTED") throw e;
+      if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
       logger.error(`[transcribe] ${provider.name} threw`, {
         error: e instanceof Error ? e.message : String(e),
       });

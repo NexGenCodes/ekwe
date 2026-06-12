@@ -98,7 +98,7 @@ export const useTranscription = (): UseTranscriptionReturn => {
         const errType = error instanceof Error ? error.name : "";
         if (errType === "AbortError") {
           // Silent failure for aborted requests
-          return err(EkweError.NETWORK_LOST);
+          return err(EkweError.REQUEST_CANCELLED);
         }
         setError(EkweError.TRANSCRIPTION_FAIL);
         return err(EkweError.TRANSCRIPTION_FAIL);

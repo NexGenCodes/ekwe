@@ -6,26 +6,26 @@ import { logger } from "./logger";
 import { guardContentType, guardJsonSize } from "./security";
 import { handleTranscribe, handleStream } from "./transcribe";
 import { handleTranslate } from "./translate";
-import { Env, Tier } from "./types";
+import { CLIENT_ABORTED, Env, Tier } from "./types";
 import { checkPreflight, postflightDeduction } from "./utils";
 import { handleWebhook } from "./webhook";
 
 function getCorsHeaders(request: Request, env: Env): Record<string, string> {
   const origin = request.headers.get("Origin") || request.headers.get("origin");
   const allowedOrigins =
-    env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()) || [];
+    env.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()).filter(Boolean) || [];
 
-  const isProduction = env.APP_ENV === "production";
-  const isDevOrigin =
+  const isDev =
+    env.APP_ENV !== "production" &&
     !!origin &&
     (origin.startsWith("exp://") ||
       origin.includes(".expo.dev") ||
       origin.includes(".expo.io") ||
       origin.startsWith("http://localhost") ||
       origin.startsWith("http://127.0.0.1"));
-  const isAllowed =
-    !!origin &&
-    (allowedOrigins.includes(origin) || (!isProduction && isDevOrigin));
+
+  const isExactMatch = !!origin && allowedOrigins.includes(origin);
+  const isAllowed = isExactMatch || isDev;
 
   return {
     ...(isAllowed && { "Access-Control-Allow-Origin": origin }),
@@ -33,6 +33,7 @@ function getCorsHeaders(request: Request, env: Env): Record<string, string> {
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     Vary: "Origin",
+    "X-Content-Type-Options": "nosniff",
   };
 }
 
@@ -50,7 +51,7 @@ export default {
       const corsHeaders = getCorsHeaders(request, env);
       return this.addCorsHeaders(
         Response.json(
-          { error: "EKWE_NETWORK_LOST", message: errorMsg },
+          { error: "EKWE_SERVER_ERROR", message: errorMsg },
           { status: 500 },
         ),
         corsHeaders,
@@ -267,11 +268,11 @@ export default {
       }
     } catch (e: unknown) {
       const errorMsg = e instanceof Error ? e.message : String(e);
-      if (errorMsg === "CLIENT_ABORTED") {
+      if (errorMsg === CLIENT_ABORTED) {
         return new Response(null, { status: 499 });
       }
       response = Response.json(
-        { error: "EKWE_NETWORK_LOST", message: errorMsg },
+        { error: "EKWE_SERVER_ERROR", message: errorMsg },
         { status: 500 },
       );
     }

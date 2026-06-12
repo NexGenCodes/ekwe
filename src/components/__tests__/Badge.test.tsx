@@ -63,8 +63,8 @@ describe("Badge", () => {
   });
 
   it("applies custom style", () => {
-    render(<Badge label="PRO" style={{ marginTop: 10 }} />);
-    const container = screen.getByText("PRO").parent;
+    render(<Badge label="PRO" style={{ marginTop: 10 }} testID="badge" />);
+    const container = screen.getByTestId("badge");
     expect(container).toHaveStyle({ marginTop: 10 });
   });
 });

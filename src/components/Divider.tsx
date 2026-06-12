@@ -19,6 +19,7 @@ export const Divider = ({ label, style }: DividerProps): React.ReactElement => {
 
   return (
     <Box
+      testID="divider-container"
       style={[
         {
           flexDirection: "row",

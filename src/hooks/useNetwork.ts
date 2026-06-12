@@ -8,10 +8,10 @@ interface NetworkHook {
 }
 
 export const useNetwork = (): NetworkHook => {
-  const [isConnected, setIsConnected] = useState<boolean | null>(true);
+  const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [isInternetReachable, setIsInternetReachable] = useState<
     boolean | null
-  >(true);
+  >(null);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {

@@ -44,7 +44,6 @@ export const initAuth = (): void => {
   } = supabase.auth.onAuthStateChange((event, session) => {
     logger.info(`Auth state changed: ${event}`, session?.user?.id);
     authActions.setSession(session);
-    authActions.setInitialized(true);
 
     if (event === "SIGNED_IN" && session?.user) {
       identify(session.user.id, {
@@ -59,6 +58,7 @@ export const initAuth = (): void => {
     }
   });
   _authSubscription = subscription;
+  authActions.setInitialized(true);
 };
 
 export const cleanupAuth = (): void => {

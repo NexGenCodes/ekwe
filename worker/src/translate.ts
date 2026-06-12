@@ -14,7 +14,7 @@ import {
   sanitizeTranslationText,
   getLanguageName,
 } from "./security";
-import { Env, Tier, TranslateResult } from "./types";
+import { CLIENT_ABORTED, Env, Tier, TranslateResult } from "./types";
 
 // ─── Translation Provider Signature ───────────────────────────────
 
@@ -127,7 +127,7 @@ export async function handleTranslate(
 
   for (const provider of pipeline) {
     try {
-      if (signal.aborted) throw new Error("CLIENT_ABORTED");
+      if (signal.aborted) throw new Error(CLIENT_ABORTED);
       const targetName = getLanguageName(body.targetLang);
       const sourceName = getLanguageName(body.sourceLang);
 
@@ -165,7 +165,7 @@ export async function handleTranslate(
         return Response.json(result);
       }
     } catch (e: unknown) {
-      if (e instanceof Error && e.message === "CLIENT_ABORTED") throw e;
+      if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
       logger.error(`[translate] ${provider.name} failed`, {
         error: e instanceof Error ? e.message : String(e),
       });

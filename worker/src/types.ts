@@ -59,3 +59,5 @@ export interface JWTPayloadWithMeta extends JWTPayload {
   email?: string;
   app_metadata?: { is_pro?: boolean };
 }
+
+export const CLIENT_ABORTED = "CLIENT_ABORTED";

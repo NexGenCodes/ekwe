@@ -15,6 +15,7 @@ export interface BadgeProps {
   /** Text size preset */
   size?: "sm" | "md";
   style?: StyleProp<ViewStyle>;
+  testID?: string;
 }
 
 const VARIANT_CONFIG = {
@@ -35,6 +36,7 @@ export const Badge = ({
   icon,
   size = "sm",
   style,
+  testID,
 }: BadgeProps): React.ReactElement => {
   const { color } = useTheme();
   const config = VARIANT_CONFIG[variant];
@@ -43,6 +45,7 @@ export const Badge = ({
 
   return (
     <Box
+      testID={testID}
       style={[
         {
           flexDirection: "row",

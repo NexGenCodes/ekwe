@@ -22,6 +22,8 @@ export enum EkweError {
   AUDIO_EMPTY = "EKWE_AUDIO_EMPTY",
   FILE_TOO_LARGE = "EKWE_FILE_TOO_LARGE",
   TTS_FAIL = "EKWE_TTS_FAIL",
+  SERVER_ERROR = "EKWE_SERVER_ERROR",
+  REQUEST_CANCELLED = "EKWE_REQUEST_CANCELLED",
 }
 
 export const ErrorMessages: Record<EkweError, string> = {
@@ -61,4 +63,6 @@ export const ErrorMessages: Record<EkweError, string> = {
   [EkweError.FILE_TOO_LARGE]:
     "This file is too large to process. Maximum size is 25MB.",
   [EkweError.TTS_FAIL]: "Text-to-speech failed. Please try again.",
+  [EkweError.SERVER_ERROR]: "Server error. Please try again.",
+  [EkweError.REQUEST_CANCELLED]: "Request was cancelled.",
 };

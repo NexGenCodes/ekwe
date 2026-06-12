@@ -1,8 +1,9 @@
+import { observable } from "@legendapp/state";
+
 import { SyncService } from "../SyncService";
 import { Db } from "../db";
 
 import { supabase } from "@/services/supabase";
-import { history$ } from "@/store/history";
 import * as netInfo from "@/utils/netInfo";
 
 jest.mock("../db", () => ({
@@ -54,6 +55,18 @@ jest.mock("@/utils/netInfo", () => ({
   subscribeToNetwork: jest.fn(() => jest.fn()),
 }));
 
+jest.mock("@/store", () => {
+  const { observable } = jest.requireActual("@legendapp/state");
+  const mockHistory$ = observable<Record<string, HistoryEntry>>({});
+  return {
+    history$: mockHistory$,
+    HistoryEntry: {},
+    audio$: { get: jest.fn() },
+    audioActions: {},
+    settings$: {},
+  };
+});
+
 jest.mock("expo-crypto", () => ({
   randomUUID: jest.fn(() => "mock-uuid-123"),
 }));
@@ -69,8 +82,11 @@ jest.mock("@/utils/logger", () => ({
 }));
 
 describe("SyncService", () => {
+  let history$: ReturnType<typeof observable<Record<string, unknown>>>;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    history$ = jest.requireMock("@/store").history$;
     history$.set({}); // Reset legend state
   });
 

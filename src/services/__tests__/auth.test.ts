@@ -1,10 +1,17 @@
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
-import * as AppleAuthentication from "expo-apple-authentication";
 
 import { queryClient } from "@/hooks/queries/queryClient";
 import * as authModule from "@/services/auth";
 import { supabase } from "@/services/supabase";
 import logger from "@/utils/logger";
+
+jest.mock("expo-apple-authentication", () => ({
+  signInAsync: jest.fn(),
+  AppleAuthenticationScope: {
+    FULL_NAME: 0,
+    EMAIL: 1,
+  },
+}));
 
 jest.mock("@/services/supabase", () => ({
   supabase: {
@@ -137,7 +144,7 @@ describe("sendOtp", () => {
 
     const result = await authModule.sendOtp("test@ekwe.app");
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, needsOtp: true });
   });
 
   it("trims email before sending", async () => {
@@ -179,7 +186,8 @@ describe("verifyOtp", () => {
 
 describe("signInWithApple", () => {
   it("returns ok on success", async () => {
-    (AppleAuthentication.signInAsync as jest.Mock).mockResolvedValueOnce({
+    const AppleAuthentication = jest.requireMock("expo-apple-authentication");
+    AppleAuthentication.signInAsync.mockResolvedValueOnce({
       identityToken: "apple-token",
       fullName: { givenName: "Jane", familyName: "Doe" },
     });
@@ -196,7 +204,8 @@ describe("signInWithApple", () => {
   });
 
   it("returns error when identity token missing", async () => {
-    (AppleAuthentication.signInAsync as jest.Mock).mockResolvedValueOnce({
+    const AppleAuthentication = jest.requireMock("expo-apple-authentication");
+    AppleAuthentication.signInAsync.mockResolvedValueOnce({
       identityToken: null,
       fullName: null,
     });
@@ -207,9 +216,10 @@ describe("signInWithApple", () => {
   });
 
   it("handles cancellation gracefully", async () => {
-    (AppleAuthentication.signInAsync as jest.Mock).mockRejectedValueOnce({
-      code: "ERR_REQUEST_CANCELED",
-    });
+    const AppleAuthentication = jest.requireMock("expo-apple-authentication");
+    const appleError = new Error("Cancelled");
+    (appleError as { code: string }).code = "ERR_REQUEST_CANCELED";
+    AppleAuthentication.signInAsync.mockRejectedValueOnce(appleError);
 
     const result = await authModule.signInWithApple();
 
@@ -238,7 +248,10 @@ describe("signInWithGoogle", () => {
 
     const result = await authModule.signInWithGoogle();
 
-    expect(result).toEqual({ ok: false });
+    expect(result).toEqual({
+      ok: false,
+      error: "Google Sign In failed. Please try again.",
+    });
   });
 });
 
