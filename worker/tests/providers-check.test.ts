@@ -1,0 +1,35 @@
+import { describe, it, expect } from 'vitest';
+// @ts-expect-error — .d.ts sibling provides types; bundler resolves at runtime
+import { loadEnv, testTranslateProviders, testTranscribeProviders } from '../check-providers.mjs';
+
+const RUN_INTEGRATION = process.env.RUN_INTEGRATION_TESTS === 'true';
+
+function summarize(results: any[]) {
+  const passed = results.filter((r: any) => r.ok).length;
+  const failed = results.filter((r: any) => !r.ok);
+  const lines = failed.map((r: any) => `  FAIL  ${r.label}: ${r.error || r.status}`);
+  return { passed, failedCount: failed.length, total: results.length, lines };
+}
+
+describe.runIf(RUN_INTEGRATION)('Provider key validation', () => {
+  const env = loadEnv();
+
+  it('validates translate provider keys', async () => {
+    const results = await testTranslateProviders(env);
+    const s = summarize(results);
+    console.log(`\nTranslate: ${s.passed}/${s.total} passed, ${s.failedCount} failed`);
+    for (const l of s.lines) console.log(l);
+    expect(results.length).toBeGreaterThan(0);
+    expect(s.passed).toBeGreaterThan(0);
+  }, 30_000);
+
+  it('validates transcribe provider keys', async () => {
+    const results = await testTranscribeProviders(env);
+    const s = summarize(results);
+    console.log(`\nTranscribe: ${s.passed}/${s.total} passed, ${s.failedCount} failed`);
+    for (const l of s.lines) console.log(l);
+    expect(results.length).toBeGreaterThan(0);
+    // At least some transcribe keys should work
+    expect(s.passed).toBeGreaterThan(0);
+  }, 60_000);
+});

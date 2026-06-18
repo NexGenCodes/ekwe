@@ -1,11 +1,7 @@
 import { Env, TranscribeResult, TranslateResult } from '../types';
-import {
-  isHallucination,
-  getUserAgent,
-  fetchWithTimeout,
-  rotateKeys,
-  TIMEOUT_FAST,
-} from '../utils';
+import { rotateKeys } from '../utils/keys';
+import { isHallucination, buildTranslatePrompt } from '../utils/hallucination';
+import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from '../utils/fetch';
 import { logger } from '../logger';
 
 const GROQ_TRANSCRIBE = 'https://api.groq.com/openai/v1/audio/transcriptions';
@@ -141,14 +137,5 @@ export async function translate(
   return { translation: content, provider: 'groq-llama-3.3-70b' };
 }
 
-function buildPrompt(targetLang: string, sourceLang?: string): string {
-  return `You are an expert, highly accurate professional translator.
-Your sole task is to translate the user's text${sourceLang ? ` from ${sourceLang}` : ''} into fluent, natural-sounding ${targetLang}.
-Rules:
-1. Preserve the original tone, context, and formatting exactly.
-2. Do not add any explanations, conversational text, notes, or preambles.
-3. If the text is already in the target language, return it unchanged.
-4. Output ONLY the final translated text and nothing else.`;
-}
-
-export const supportsAutoLang = true;
+const buildPrompt = buildTranslatePrompt;
+export { ALL_LANGUAGES as supportedLanguages } from '../languages';

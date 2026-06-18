@@ -1,12 +1,8 @@
 import { logger } from '../logger';
 import { Env, TranscribeResult } from '../types';
-import {
-  sanitizeKey,
-  isHallucination,
-  getUserAgent,
-  fetchWithTimeout,
-  TIMEOUT_SLOW,
-} from '../utils';
+import { sanitizeKey } from '../utils/keys';
+import { isHallucination } from '../utils/hallucination';
+import { getUserAgent, fetchWithTimeout, TIMEOUT_SLOW } from '../utils/fetch';
 
 const WITAI_DICTATION = 'https://api.wit.ai/dictation?v=20240304';
 
@@ -39,7 +35,7 @@ export async function transcribe(
   const contentType = toWitMime(blob.type);
   if (!contentType) {
     logger.warn('[witai] Skipping: Unsupported MIME type', { type: blob.type });
-    return null; // Unsupported MIME — skip
+    return null;
   }
 
   logger.info('[witai] Sending request', {
@@ -90,63 +86,173 @@ export async function transcribe(
 }
 
 /**
- * Wit.ai returns a chunked stream of JSON objects.
- * We extract the last `text` field from the stream.
+ * Parses Wit.ai's newline-delimited JSON stream response.
+ * Splits on \r\n and builds partial chunks until valid JSON forms.
  */
 async function parseStream(res: Response): Promise<{ text: string } | null> {
-  let raw = await res.text();
+  const raw = await res.text();
+  return parseJsonStream(raw);
+}
 
-  // Strip BOM characters that Wit.ai occasionally prepends
-  raw = raw.replace(/^\uFEFF/, '');
+/**
+ * Handles a real-time streaming session via Wit.ai HTTP dictation.
+ * Pipes client WebSocket audio → ReadableStream → Wit.ai HTTP,
+ * then streams incremental transcripts back to the client.
+ * Returns true if the session was handled, false if the provider could not connect.
+ */
+export async function handleStream(
+  env: Env,
+  lang: string,
+  clientWs: WebSocket,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const targetLang = lang.toUpperCase().replace('-', '_');
+  const baseLang = targetLang.split('_')[0];
+  const witKey = sanitizeKey(
+    env[`WIT_KEY_${targetLang}`] ?? env[`WIT_KEY_${baseLang}`],
+  );
+  if (!witKey) return false;
 
-  // Always log the raw response for debugging (clamped to 500 chars)
-  logger.info('[witai] Raw response', {
-    length: raw.length,
-    snippet: raw.substring(0, 500),
+  logger.info('[witai:stream] Starting dictation session', { lang });
+
+  const audioStream = new ReadableStream({
+    start(controller) {
+      const onMessage = (event: MessageEvent): void => {
+        if (event.data instanceof ArrayBuffer) {
+          controller.enqueue(new Uint8Array(event.data));
+        } else if (event.data instanceof Blob) {
+          event.data.arrayBuffer().then(
+            buf => controller.enqueue(new Uint8Array(buf)),
+            () => {},
+          );
+        }
+      };
+
+      const onClose = (): void => {
+        try { controller.close(); } catch { /* already closed */ }
+      };
+
+      clientWs.addEventListener('message', onMessage);
+      clientWs.addEventListener('close', onClose);
+
+      signal.addEventListener('abort', () => {
+        clientWs.removeEventListener('message', onMessage);
+        clientWs.removeEventListener('close', onClose);
+        try { controller.close(); } catch { /* ignore */ }
+      });
+    },
   });
 
-  if (!raw.trim()) {
+  try {
+    const res = await fetchWithTimeout(
+      WITAI_DICTATION,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${witKey}`,
+          'Content-Type': 'audio/wav',
+        },
+        body: audioStream,
+        duplex: 'half',
+      } as RequestInit & { duplex: string },
+      TIMEOUT_SLOW,
+      signal,
+    );
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      logger.error('[witai:stream] HTTP error', { status: res.status, body: errText });
+      return false;
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      logger.error('[witai:stream] No response body');
+      return false;
+    }
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split('\n');
+      buffer = parts.pop() || '';
+
+      for (const part of parts) {
+        const trimmed = part.replace(/\r$/, '').trim();
+        if (!trimmed) continue;
+
+        try {
+          const data = JSON.parse(trimmed) as {
+            text?: string;
+            type?: string;
+            is_final?: boolean;
+            error?: string;
+          };
+
+          if (data.error) {
+            logger.error('[witai:stream] Error in stream', { error: data.error });
+            continue;
+          }
+
+          if (data.text && !isHallucination(data.text)) {
+            const isFinal = data.type === 'final' || data.is_final === true;
+            clientWs.send(JSON.stringify({
+              type: isFinal ? 'final' : 'interim',
+              text: data.text,
+              provider: `witai-${lang}`,
+            }));
+          }
+        } catch { /* incomplete JSON, wait for more data */ }
+      }
+    }
+
+    return true;
+  } catch (err) {
+    logger.error('[witai:stream] Request failed', { error: String(err) });
+    return false;
+  }
+}
+
+/**
+ * Shared JSON stream parser — splits on \r\n, builds partial chunks,
+ * returns the last successfully parsed object (which is the final transcript).
+ */
+function parseJsonStream(raw: string): { text: string } | null {
+  const cleaned = raw.replace(/^\uFEFF/, '');
+  logger.info('[witai] Raw response', {
+    length: cleaned.length,
+    snippet: cleaned.substring(0, 500),
+  });
+
+  if (!cleaned.trim()) {
     logger.warn('[witai] Empty response body');
     return null;
   }
 
-  // Wit.ai dictation often returns multiple JSON objects in one go or per line
-  // We use a regex that handles nested braces if any, but usually it's flat.
-  const jsonMatches = raw.match(/\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}/g);
+  const parts = cleaned.split('\n');
+  let last: { text?: string } | null = null;
+  let prev = '';
 
-  if (!jsonMatches || jsonMatches.length === 0) {
-    logger.warn('[witai] No JSON objects found in response', {
-      rawSnippet: raw.substring(0, 300),
-    });
-    return null;
-  }
+  for (const chunk of parts) {
+    const trimmed = chunk.replace(/\r$/, '').trim();
+    if (!trimmed) continue;
 
-  logger.info('[witai] Parsing chunks', { count: jsonMatches.length });
-
-  let finalTranscript = '';
-  for (const part of jsonMatches) {
     try {
-      const data = JSON.parse(part) as {
-        text?: string;
-        error?: string;
-        is_final?: boolean;
-      };
-      if (data.text) {
-        finalTranscript = data.text;
-        // Don't break on is_final, because sometimes the final text is in the very last chunk
-        // and we want the absolute latest.
-      }
-      if (data.error)
-        logger.error('[witai] Stream Error Chunk', { error: data.error });
-    } catch (e) {
-      logger.error('[witai] Malformed chunk', {
-        chunk: part.substring(0, 50),
-        error: e instanceof Error ? e.message : String(e),
-      });
-    }
+      prev += trimmed;
+      last = JSON.parse(prev) as { text?: string };
+      prev = '';
+    } catch { /* incomplete, keep building */ }
   }
 
-  return finalTranscript.trim() ? { text: finalTranscript.trim() } : null;
+  if (!last?.text?.trim()) return null;
+
+  logger.info('[witai] Final transcript', { text: last.text.substring(0, 100) });
+  return { text: last.text.trim() };
 }
 
 /**
@@ -176,5 +282,4 @@ function toWitMime(mime: string): string | null {
   return map[baseMime] ?? null;
 }
 
-export const supportsAutoLang = false;
-
+export { WITAI_LANGUAGES as supportedLanguages } from '../languages';

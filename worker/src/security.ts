@@ -1,10 +1,10 @@
 import { logger } from "./logger";
+import { getLimits } from "./config";
 import { Tier } from "./types";
 
 /**
  * ─── Ekwe Worker Security Module ──────────────────────────────────
  *
- * Single source of truth for ALL tier-based enforcement limits.
  * Every route handler imports from here instead of hardcoding values.
  *
  * If a malicious user tampers with the frontend (e.g. flipping isPro
@@ -16,35 +16,7 @@ import { Tier } from "./types";
  *   1. Rate Limiter      → Cloudflare binding (index.ts)
  *   2. Preflight Check   → Atomic cooldown via Supabase RPC (index.ts)
  *   3. Payload Guards     → This file (called by transcribe/translate)
- *   4. Postflight         → Background deduction (index.ts)
  */
-
-// ─── Tier Limits (mirrors frontend PLAN_LIMITS for backend enforcement) ──
-
-const TIER_LIMITS = {
-  FREE: {
-    maxTextChars: 3_000, // ~500 words
-    maxAudioBytes: 4 * 1024 * 1024, // 4MB (~60s)
-    autoDetectAllowed: false,
-  },
-  PREMIUM: {
-    maxTextChars: 10_000, // ~1,500 words
-    maxAudioBytes: 10 * 1024 * 1024, // 10MB
-    autoDetectAllowed: true,
-  },
-  // CAPPED_PREMIUM users are silently downgraded
-  CAPPED_PREMIUM: {
-    maxTextChars: 5_000,
-    maxAudioBytes: 6 * 1024 * 1024, // 6MB
-    autoDetectAllowed: true,
-  },
-} as const;
-
-type LimitsFor = (typeof TIER_LIMITS)[Tier];
-
-export function getLimits(tier: Tier): LimitsFor {
-  return TIER_LIMITS[tier] ?? TIER_LIMITS.FREE;
-}
 
 // ─── Valid Language Codes (allowlist) ─────────────────────────────
 // Derived from the frontend LANGUAGES constant. Any code not in this
@@ -383,7 +355,7 @@ export function guardAudioSize(fileSize: number, tier: Tier): GuardResult {
       response: Response.json(
         {
           error: "FILE_TOO_LARGE",
-          message: `Audio file exceeds the ${Math.round(maxAudioBytes / 1024 / 1024)}MB limit for your plan.`,
+          message: `Audio file too large. Try a shorter recording.`,
         },
         { status: 413 },
       ),
@@ -410,8 +382,8 @@ export function guardAutoDetect(
       allowed: false,
       response: Response.json(
         {
-          error: "AUTO_DETECT_PRO_ONLY",
-          message: "Auto-detect language is a Pro feature.",
+          error: "AUTO_DETECT_UNAVAILABLE",
+          message: "Language auto-detect is not available. Please select a language.",
         },
         { status: 403 },
       ),

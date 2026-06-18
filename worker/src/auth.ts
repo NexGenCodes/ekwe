@@ -1,12 +1,12 @@
 import { jwtVerify, createRemoteJWKSet } from 'jose';
-
+import { logger } from './logger';
 import { Env, Tier, JWTPayloadWithMeta } from './types';
 
 let JWKS: ReturnType<typeof createRemoteJWKSet>;
 let JWKS_TS = 0;
 const JWKS_TTL = 3_600_000;
 
-export function getJWKS(
+function getJWKS(
   env: Env,
   force = false,
 ): ReturnType<typeof createRemoteJWKSet> {
@@ -60,6 +60,7 @@ export async function authenticate(
         tier: meta.app_metadata?.is_pro ? 'PREMIUM' : 'FREE',
       };
     } catch {
+      logger.warn('[auth] JWT verification failed after JWKS refresh');
       return null;
     }
   }

@@ -1,4 +1,4 @@
-import { vi, beforeEach, afterEach } from 'vitest';
+import { vi, afterEach } from 'vitest';
 import type { Env } from '../src/types';
 
 // ─── Mock Env Factory ──────────────────────────────────────────────
@@ -8,7 +8,7 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
   const kv = {
     get: vi.fn(
       async (key: string) => store.get(key) ?? null,
-    ) as Env['EKWE_KV']['get'],
+    ) as unknown as Env['EKWE_KV']['get'],
     put: vi.fn(
       async (key: string, value: string, opts?: { expirationTtl?: number }) => {
         store.set(key, value);
@@ -16,8 +16,8 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
           setTimeout(() => store.delete(key), opts.expirationTtl * 1000);
         }
       },
-    ) as Env['EKWE_KV']['put'],
-  } as Env['EKWE_KV'];
+    ) as unknown as Env['EKWE_KV']['put'],
+  } as unknown as Env['EKWE_KV'];
 
   const ai = {
     run: vi.fn(async (_model: string, inputs: Record<string, unknown>) => {
@@ -31,8 +31,8 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
         return { response: 'translated text' };
       }
       return {};
-    }) as Env['AI']['run'],
-  } as Env['AI'];
+    }) as unknown as Env['AI']['run'],
+  } as unknown as Env['AI'];
 
   const rateLimiter = {
     limit: vi.fn(async () => ({ success: true })),
@@ -67,13 +67,12 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
     MISTRAL_KEY_4: 'mock-mistral-key-4-abcde',
     MISTRAL_KEY_5: 'mock-mistral-key-5-abcde',
     OPENROUTER_KEY: 'mock-openrouter-key',
-    AZURE_KEY_1: 'mock-azure-key-1-abcde',
-    AZURE_REGION: 'eastus',
+
     WIT_KEY_EN: 'mock-wit-en-key-10',
     WIT_KEY_FR: 'mock-wit-fr-key-10',
     WIT_KEY_ES: 'mock-wit-es-key-10',
     ...overrides,
-  } as Env;
+  } as unknown as Env;
 }
 
 // ─── Mock Blob / Audio Helpers ─────────────────────────────────────

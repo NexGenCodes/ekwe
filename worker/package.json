@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -12,12 +13,17 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "franc": "^6.2.0",
     "jose": "^6.2.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260511.1",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.9.3",
     "@vitest/coverage-v8": "^4.1.8",
+    "eslint": "^10.5.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1",
     "vitest": "^4.1.6",
-    "wrangler": "^4.93.0"
+    "wrangler": "^4.102.0"
   }
 }

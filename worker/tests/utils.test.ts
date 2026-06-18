@@ -1,11 +1,7 @@
-import { describe, test, expect, vi } from 'vitest';
-import {
-  isHallucination,
-  sanitizeKey,
-  getClientHeaders,
-  fetchWithTimeout,
-  abortableDelay,
-} from '../src/utils';
+import { describe, test, expect } from 'vitest';
+import { isHallucination } from '../src/utils/hallucination';
+import { sanitizeKey } from '../src/utils/keys';
+import { getClientHeaders, fetchWithTimeout, abortableDelay } from '../src/utils/fetch';
 import { mockEnv, jsonResponse, mockFetch } from './setup';
 
 // ─── sanitizeKey ───────────────────────────────────────────────────
@@ -167,7 +163,7 @@ describe('abortableDelay', () => {
 
 describe('rotateKeys', () => {
   test('returns first 2xx response', async () => {
-    const { rotateKeys, hashKey } = await import('../src/utils');
+    const { rotateKeys } = await import('../src/utils/keys');
     const env = mockEnv({
       GROQ_KEY_1: 'valid-key-1-abcde',
       GROQ_KEY_2: 'valid-key-2-abcde',
@@ -190,7 +186,7 @@ describe('rotateKeys', () => {
   });
 
   test('skips blacklisted keys', async () => {
-    const { rotateKeys, hashKey } = await import('../src/utils');
+    const { rotateKeys, hashKey } = await import('../src/utils/keys');
     const env = mockEnv({
       GROQ_KEY_1: 'blacklisted-key-abc',
       GROQ_KEY_2: 'valid-key-2-abcde',
@@ -217,7 +213,7 @@ describe('rotateKeys', () => {
   });
 
   test('blacklists 429 keys', async () => {
-    const { rotateKeys, hashKey } = await import('../src/utils');
+    const { rotateKeys } = await import('../src/utils/keys');
     const env = mockEnv({
       GROQ_KEY_1: 'rate-limited-key-abc',
     });
@@ -225,7 +221,7 @@ describe('rotateKeys', () => {
     await rotateKeys(
       env,
       'GROQ_KEY_',
-      async (key) => {
+      async (_key) => {
         return jsonResponse({}, 429);
       },
       new AbortController().signal,
@@ -239,7 +235,7 @@ describe('rotateKeys', () => {
   });
 
   test('skips 4xx and 5xx errors', async () => {
-    const { rotateKeys } = await import('../src/utils');
+    const { rotateKeys } = await import('../src/utils/keys');
     const env = mockEnv({
       GROQ_KEY_1: 'fail-key-1-abcde',
       GROQ_KEY_2: 'valid-key-2-abcde',
@@ -264,7 +260,7 @@ describe('rotateKeys', () => {
   });
 
   test('returns null when all keys fail', async () => {
-    const { rotateKeys } = await import('../src/utils');
+    const { rotateKeys } = await import('../src/utils/keys');
     const env = mockEnv({
       GROQ_KEY_1: 'fail-key-1-abcde',
       GROQ_KEY_2: 'fail-key-2-abcde',
@@ -280,7 +276,7 @@ describe('rotateKeys', () => {
   });
 
   test('throws on abort', async () => {
-    const { rotateKeys } = await import('../src/utils');
+    const { rotateKeys } = await import('../src/utils/keys');
     const env = mockEnv({ GROQ_KEY_1: 'valid-key-1-abcde' });
     const controller = new AbortController();
     controller.abort();

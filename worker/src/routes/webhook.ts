@@ -1,10 +1,6 @@
-import { Env } from './types';
-import { logger } from './logger';
-import { verifyWebhook, WebhookProvider } from './signatures';
-
-/**
- * ─── Subscription Lifecycle Management ────────────────────────────
- */
+import { Env } from '../types';
+import { logger } from '../logger';
+import { verifyWebhook, WebhookProvider } from '../signatures';
 
 async function setProStatus(
   env: Env,
@@ -19,9 +15,6 @@ async function setProStatus(
   }
 
   try {
-    // We use a custom RPC because updating app_metadata by email requires admin privileges
-    // and querying the auth.users table is restricted. The RPC 'set_pro_status' handles
-    // finding the user by email OR userId and updating their app_metadata.is_pro flag.
     const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/set_pro_status`, {
       method: 'POST',
       headers: {
@@ -56,7 +49,7 @@ async function setProStatus(
 async function activateSubscription(
   env: Env,
   emailOrUserId: string,
-  reference?: string,
+  _reference?: string,
 ): Promise<void> {
   const isEmail = emailOrUserId.includes('@');
   await setProStatus(
@@ -78,20 +71,6 @@ async function deactivateSubscription(
   );
 }
 
-/**
- * ─── Unified Webhook Handler ──────────────────────────────────────
- *
- * Receives POST requests at /webhook, verifies the signature using
- * the provider-agnostic verifier in signatures.ts, and then dispatches
- * the event to the correct processor.
- *
- * The handler reads the raw body ONCE as text (for signature verification),
- * then parses it as JSON only after the signature is confirmed valid.
- * This prevents any processing of untrusted payloads.
- */
-
-// ─── Provider-specific Event Processors ──────────────────────────
-
 async function processPaystackEvent(
   event: Record<string, unknown>,
   env: Env,
@@ -105,12 +84,8 @@ async function processPaystackEvent(
 
   switch (eventType) {
     case 'charge.success': {
-      // Prefer the user_id we embedded in metadata at checkout init time.
-      // This is the reliable path – immune to email typos on the checkout form.
       const metadata = data?.metadata as Record<string, unknown> | undefined;
       const userId = metadata?.user_id as string | undefined;
-
-      // Fall back to email only if user_id was not embedded (e.g. manual/dashboard charge)
       const email = (data?.customer as Record<string, unknown>)
         ?.email as string | undefined;
       const reference = data?.reference as string;
@@ -167,10 +142,8 @@ async function processFlutterwaveEvent(
         return Response.json({ received: true, action: 'skipped' });
       }
 
-      // Prefer user_id embedded in meta at checkout init time
       const meta = data?.meta as Record<string, unknown> | undefined;
       const userId = meta?.user_id as string | undefined;
-
       const email = (data?.customer as Record<string, unknown>)
         ?.email as string | undefined;
       const txRef = data?.tx_ref as string;
@@ -204,7 +177,6 @@ async function processRevenueCatEvent(
 
   logger.info(`[webhook:revenuecat] Event: ${eventType}`);
 
-  // RevenueCat event types for subscription lifecycle
   const activationEvents = new Set([
     'INITIAL_PURCHASE',
     'RENEWAL',
@@ -240,8 +212,6 @@ async function processRevenueCatEvent(
   return Response.json({ received: true, action: 'ignored' });
 }
 
-// ─── Dispatcher ───────────────────────────────────────────────────
-
 const PROCESSORS: Record<
   WebhookProvider,
   (event: Record<string, unknown>, env: Env) => Promise<Response>
@@ -253,16 +223,12 @@ const PROCESSORS: Record<
     Response.json({ error: 'UNKNOWN_PROVIDER' }, { status: 400 }),
 };
 
-// ─── Main Webhook Handler ─────────────────────────────────────────
-
 export async function handleWebhook(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  // 1. Read raw body ONCE (needed for signature verification)
   const rawBody = await request.text();
 
-  // 2. Verify signature (provider auto-detected from headers)
   const verification = await verifyWebhook(request, rawBody, env);
 
   if (!verification.isValid) {
@@ -280,16 +246,14 @@ export async function handleWebhook(
 
   logger.info(`[webhook] Verified: provider=${verification.provider}`);
 
-  // 3. Parse JSON ONLY after signature is confirmed valid
   let event: Record<string, unknown>;
   try {
     event = JSON.parse(rawBody) as Record<string, unknown>;
   } catch {
-    logger.warn('[webhook] Valid signature but malformed JSON body');
+    logger.warn('[webhook] Valid signature but malformed JSON body', { provider: verification.provider });
     return Response.json({ error: 'INVALID_JSON' }, { status: 400 });
   }
 
-  // 4. Dispatch to provider-specific processor
   const processor = PROCESSORS[verification.provider];
   return processor(event, env);
 }

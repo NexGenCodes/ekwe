@@ -19,7 +19,7 @@ describe('Cloudflare provider', () => {
 
     test('returns null when AI returns empty text', async () => {
       const env = mockEnv();
-      env.AI.run = async () => ({ text: '' });
+      env.AI.run = (async () => ({ text: '' })) as unknown as typeof env.AI.run;
       const result = await cloudflare.transcribe(
         makeAudioBlob(),
         'en',
@@ -31,7 +31,7 @@ describe('Cloudflare provider', () => {
 
     test('returns null on hallucination', async () => {
       const env = mockEnv();
-      env.AI.run = async () => ({ text: 'Thanks for watching' });
+      env.AI.run = (async () => ({ text: 'Thanks for watching' })) as unknown as typeof env.AI.run;
       const result = await cloudflare.transcribe(
         makeAudioBlob(),
         'en',
@@ -73,7 +73,7 @@ describe('Cloudflare provider', () => {
 
     test('returns null on empty response', async () => {
       const env = mockEnv();
-      env.AI.run = async () => ({});
+      env.AI.run = (async () => ({})) as unknown as typeof env.AI.run;
       const result = await cloudflare.translate(
         'Hello',
         'Spanish',

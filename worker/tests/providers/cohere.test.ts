@@ -13,6 +13,62 @@ describe('Cohere provider', () => {
     mockFetchReset();
   });
 
+  // ─── Transcribe ─────────────────────────────────────────────────
+
+  test('transcribe returns text on success', async () => {
+    mockFetch(async (url) => {
+      if (url.includes('api.cohere.com/v2/audio/transcriptions')) {
+        return jsonResponse({ text: 'hello world' });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    const blob = new Blob(['fake audio'], { type: 'audio/wav' });
+    const result = await cohere.transcribe(blob, 'en', mockEnv(), mockSignal());
+    expect(result).not.toBeNull();
+    expect(result!.text).toBe('hello world');
+    expect(result!.provider).toBe('cohere-transcribe');
+  });
+
+  test('transcribe returns null for unsupported language', async () => {
+    const blob = new Blob(['fake audio'], { type: 'audio/wav' });
+    const result = await cohere.transcribe(blob, 'ig', mockEnv(), mockSignal());
+    expect(result).toBeNull();
+  });
+
+  test('transcribe returns null on HTTP error', async () => {
+    mockFetch(async () => jsonResponse({ error: 'fail' }, 500));
+
+    const blob = new Blob(['fake audio'], { type: 'audio/wav' });
+    const result = await cohere.transcribe(blob, 'en', mockEnv(), mockSignal());
+    expect(result).toBeNull();
+  });
+
+  test('transcribe returns null on missing text', async () => {
+    mockFetch(async (url) => {
+      if (url.includes('api.cohere.com/v2/audio/transcriptions')) {
+        return jsonResponse({});
+      }
+      return jsonResponse({}, 404);
+    });
+
+    const blob = new Blob(['fake audio'], { type: 'audio/wav' });
+    const result = await cohere.transcribe(blob, 'en', mockEnv(), mockSignal());
+    expect(result).toBeNull();
+  });
+
+  test('transcribe does not skip supported languages', async () => {
+    const result = await cohere.transcribe(
+      new Blob(['fake'], { type: 'audio/wav' }),
+      'es',
+      mockEnv(),
+      mockSignal(),
+    );
+    expect(result).toBeNull(); // 404 from mock, but not rejected for language
+  });
+
+  // ─── Translate ─────────────────────────────────────────────────
+
   test('returns translation on success', async () => {
     mockFetch(async (url) => {
       if (url.includes('api.cohere.ai')) {

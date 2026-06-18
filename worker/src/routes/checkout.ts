@@ -1,6 +1,7 @@
-import { logger } from "./logger";
-import { PRICING_TABLE } from "./pricing";
-import { Env } from "./types";
+import { logger } from "../logger";
+import { PRICING_TABLE } from "../config";
+import { Env } from "../types";
+import { getRates, getRateFor, toLowestUnit, FALLBACK_RATES } from "../money";
 
 export async function handleCheckoutInitialize(
   request: Request,
@@ -21,19 +22,19 @@ export async function handleCheckoutInitialize(
       );
     }
 
-    const priceConfig = PRICING_TABLE[currency.toUpperCase()];
-    if (!priceConfig) {
+    const cur = currency.toUpperCase();
+    if (!FALLBACK_RATES[cur]) {
       return Response.json(
-        {
-          error: "INVALID_CURRENCY",
-          message: `Currency ${currency} not supported`,
-        },
+        { error: "INVALID_CURRENCY", message: `Currency ${cur} not supported` },
         { status: 400 },
       );
     }
 
-    const planDetail =
-      plan_id === "pro_annual" ? priceConfig.annual : priceConfig.monthly;
+    const rates = await getRates(env);
+    const rate = getRateFor(cur, rates);
+    const usdPrice = PRICING_TABLE.USD[plan_id === "pro_annual" ? "annual" : "monthly"];
+    const rawAmount = usdPrice.amount * rate;
+    const lowestUnit = toLowestUnit(rawAmount, cur);
 
     if (!env.PAYSTACK_SECRET_KEY) {
       logger.error("[checkout] PAYSTACK_SECRET_KEY is missing");
@@ -43,10 +44,8 @@ export async function handleCheckoutInitialize(
       );
     }
 
-    // Generate a secure, unique transaction reference
     const reference = `ekwe_${userId.replace(/-/g, "")}_${crypto.randomUUID()}`;
 
-    // Initialize transaction with Paystack
     const response = await fetch(
       "https://api.paystack.co/transaction/initialize",
       {
@@ -57,10 +56,9 @@ export async function handleCheckoutInitialize(
         },
         body: JSON.stringify({
           email: userEmail,
-          amount: planDetail.lowestUnit, // amount in lowest unit (e.g. kobo for NGN)
-          currency: currency.toUpperCase(),
+          amount: lowestUnit,
+          currency: cur,
           reference,
-          // Optional callback to redirect user after success
           callback_url: "https://ekwe.app/payment-callback",
           metadata: {
             user_id: userId,

@@ -1,14 +1,8 @@
 import { Env, TranscribeResult } from '../types';
-import {
-  rotateKeys,
-  isHallucination,
-  fetchWithTimeout,
-  getFirstKey,
-  connectWithTimeout,
-  createStreamInterceptor,
-  TIMEOUT_FAST,
-  abortableDelay,
-} from '../utils';
+import { rotateKeys } from '../utils/keys';
+import { isHallucination } from '../utils/hallucination';
+import { fetchWithTimeout, TIMEOUT_FAST, abortableDelay } from '../utils/fetch';
+import { getFirstKey, connectWithTimeout, createStreamInterceptor } from '../utils/stream';
 import { logger } from '../logger';
 
 const ASSEMBLYAI_UPLOAD = 'https://api.assemblyai.com/v2/upload';
@@ -161,7 +155,7 @@ interface AssemblyResult {
   language_code?: string;
 }
 
-export const supportsAutoLang = true;
+export { ALL_LANGUAGES as supportedLanguages } from '../languages';
 
 /**
  * Handles a real-time streaming session via AssemblyAI WebSocket.
@@ -171,7 +165,7 @@ export async function handleStream(
   env: Env,
   lang: string,
   clientWs: WebSocket,
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<boolean> {
   const key = getFirstKey(env, 'ASSEMBLYAI_KEY_');
   if (!key) return false;

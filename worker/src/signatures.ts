@@ -1,4 +1,5 @@
 import { logger } from './logger';
+import { hexEncode } from './utils/keys';
 
 export type WebhookProvider =
   | 'paystack'
@@ -10,15 +11,6 @@ export interface WebhookVerificationResult {
   isValid: boolean;
   provider: WebhookProvider;
   error?: string;
-}
-
-/**
- * Helper to convert ArrayBuffer to Hex String
- */
-function bufferToHex(buffer: ArrayBuffer): string {
-  return Array.from(new Uint8Array(buffer))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
 }
 
 /**
@@ -44,7 +36,7 @@ async function computeHMAC(
     encoder.encode(payload),
   );
 
-  return bufferToHex(signatureBuffer);
+  return hexEncode(signatureBuffer);
 }
 
 /**
@@ -53,16 +45,23 @@ async function computeHMAC(
  * Analyzes the headers to determine the provider, then computes
  * the appropriate cryptographic signature (or hash match) to verify
  * the authenticity of the webhook payload.
+ *
+ * Uses SHA-256 hashing before comparison to avoid leaking the expected
+ * value length via timing side-channel.
  */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  const aBuf = new TextEncoder().encode(a);
-  const bBuf = new TextEncoder().encode(b);
-  let result = 0;
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const [hashA, hashB] = await Promise.all([
+    crypto.subtle.digest('SHA-256', encoder.encode(a)),
+    crypto.subtle.digest('SHA-256', encoder.encode(b)),
+  ]);
+  const aBuf = new Uint8Array(hashA);
+  const bBuf = new Uint8Array(hashB);
+  let diff = 0;
   for (let i = 0; i < aBuf.length; i++) {
-    result |= aBuf[i] ^ bBuf[i];
+    diff |= aBuf[i] ^ bBuf[i];
   }
-  return result === 0;
+  return diff === 0;
 }
 
 export async function verifyWebhook(
@@ -93,7 +92,7 @@ export async function verifyWebhook(
       rawBody,
       'SHA-512',
     );
-    const isValid = timingSafeEqual(computed, paystackSig);
+    const isValid = await timingSafeEqual(computed, paystackSig);
     if (!isValid) logger.warn('[webhook] Paystack signature mismatch');
     return { isValid, provider: 'paystack' };
   }
@@ -109,7 +108,7 @@ export async function verifyWebhook(
         error: 'Server misconfiguration',
       };
     }
-    const isValid = timingSafeEqual(
+    const isValid = await timingSafeEqual(
       flutterwaveSig,
       env.FLUTTERWAVE_SECRET_HASH,
     );
@@ -134,7 +133,7 @@ export async function verifyWebhook(
       rawBody,
       'SHA-256',
     );
-    const isValid = timingSafeEqual(computed, revenueCatSig);
+    const isValid = await timingSafeEqual(computed, revenueCatSig);
     if (!isValid) logger.warn('[webhook] RevenueCat signature mismatch');
     return { isValid, provider: 'revenuecat' };
   }

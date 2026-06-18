@@ -1,13 +1,8 @@
 import { Env, TranscribeResult } from '../types';
-import {
-  isHallucination,
-  fetchWithTimeout,
-  rotateKeys,
-  getFirstKey,
-  connectWithTimeout,
-  createStreamInterceptor,
-  TIMEOUT_FAST,
-} from '../utils';
+import { rotateKeys } from '../utils/keys';
+import { isHallucination } from '../utils/hallucination';
+import { fetchWithTimeout, TIMEOUT_FAST } from '../utils/fetch';
+import { getFirstKey, connectWithTimeout, createStreamInterceptor } from '../utils/stream';
 import { logger } from '../logger';
 
 const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen';
@@ -91,7 +86,7 @@ interface DeepgramResponse {
   metadata?: { duration?: number };
 }
 
-export const supportsAutoLang = true;
+export { DEEPGRAM_LANGUAGES as supportedLanguages } from '../languages';
 
 /**
  * Handles a real-time streaming session via Deepgram WebSocket.
@@ -101,7 +96,7 @@ export async function handleStream(
   env: Env,
   lang: string,
   clientWs: WebSocket,
-  signal: AbortSignal,
+  _signal: AbortSignal,
 ): Promise<boolean> {
   const key =
     (env.DEEPGRAM_API_KEY as string | undefined) ||

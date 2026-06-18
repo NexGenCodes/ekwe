@@ -15,9 +15,7 @@ describe('Gladia provider', () => {
   });
 
   test('returns result on successful full flow', async () => {
-    let step = 0;
     mockFetch(async (url) => {
-      step++;
       if (url.includes('gladia.io/v2/upload')) {
         return jsonResponse({ audio_url: 'https://mock.audio/url' });
       }

@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest';
-import { handleTranslate } from '../src/translate';
+import { handleTranslate } from '../src/routes/translate';
 import { mockEnv, jsonResponse, mockFetch, mockFetchReset } from './setup';
 
 function makeRequest(
@@ -66,7 +66,7 @@ describe('handleTranslate pipeline', () => {
   });
 
   test('PREMIUM pipeline uses different provider order', async () => {
-    let providerOrder: string[] = [];
+    const providerOrder: string[] = [];
     mockFetch(async (url) => {
       if (url.includes('generativelanguage.googleapis.com')) {
         providerOrder.push('gemini');

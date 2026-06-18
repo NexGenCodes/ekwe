@@ -1,33 +1,42 @@
-import { logger } from "./logger";
-import { AiBinding } from "./types";
+import { franc } from 'franc';
 
-const AI_MODEL = "@cf/meta/llama-3.2-3b-instruct";
-const AI_TIMEOUT_MS = 3_000;
 const CACHE_TTL = 86_400 * 30;
 const MAX_CHARS = 2_000;
+const SHORT_TEXT_THRESHOLD = 10;
 
 interface KvLike {
   get(key: string): Promise<string | null>;
   put(key: string, value: string, opts?: { expirationTtl?: number }): Promise<void>;
 }
 
-function cacheKey(text: string): string {
-  let hash = 5381;
-  for (let i = 0; i < text.length; i++) {
-    hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
-  }
-  return `lang:${(hash >>> 0).toString(36)}`;
-}
+const ISO639_3_TO_1: Record<string, string> = {
+  eng: 'en', spa: 'es', fra: 'fr', deu: 'de', ita: 'it', por: 'pt',
+  nld: 'nl', rus: 'ru', cmn: 'zh', jpn: 'ja', kor: 'ko', arb: 'ar',
+  ara: 'ar', hin: 'hi', ell: 'el', vie: 'vi', tha: 'th', heb: 'he',
+  tur: 'tr', pol: 'pl', swe: 'sv', dan: 'da', fin: 'fi', nob: 'nb',
+  ces: 'cs', slk: 'sk', ron: 'ro', hun: 'hu', ukr: 'uk', ind: 'id',
+  msa: 'ms', bul: 'bg', hrv: 'hr', srp: 'sr', cat: 'ca', lit: 'lt',
+  lav: 'lv', est: 'et', slv: 'sl', sqi: 'sq', mkd: 'mk', afr: 'af',
+  ben: 'bn', fas: 'fa', urd: 'ur', swa: 'sw', tgl: 'tl', tam: 'ta',
+  tel: 'te', mal: 'ml', mar: 'mr', guj: 'gu', pan: 'pa', nep: 'ne',
+  sin: 'si', khm: 'km', lao: 'lo', mya: 'my', kat: 'ka', yor: 'yo',
+  ibo: 'ig', hau: 'ha', zul: 'zu', som: 'so', amh: 'am', aze: 'az',
+  uzb: 'uz', kaz: 'kk', mon: 'mn', hye: 'hy', jav: 'jv', sun: 'su',
+  bos: 'bs', isl: 'is', gle: 'ga', cym: 'cy', gla: 'gd', glg: 'gl',
+  eus: 'eu', mlt: 'mt', xho: 'xh', sna: 'sn', sot: 'st', nya: 'ny',
+  kin: 'rw', mlg: 'mg', tuk: 'tk', kir: 'ky', tgk: 'tg', pus: 'ps',
+  snd: 'sd', mni: 'mni', asm: 'as', ori: 'or',
+  nds: 'de', gmh: 'de', gsw: 'de', yue: 'zh', nan: 'zh', wuu: 'zh',
+};
 
-function isIsoCode(s: string): boolean {
-  return /^[a-z]{2}$/.test(s);
+function iso6393to1(code: string): string | undefined {
+  return ISO639_3_TO_1[code];
 }
 
 function detectWithUnicode(text: string): string {
-  if (!text.trim()) return "en";
+  if (!text.trim()) return 'en';
 
-  // Count characters by script ranges
-  let cjk = 0, cyrillic = 0, arabic = 0, devanagari = 0, latin = 0, total = 0;
+  let cjk = 0, cyrillic = 0, arabic = 0, devanagari = 0, total = 0;
 
   for (const ch of text) {
     const code = ch.codePointAt(0);
@@ -39,110 +48,65 @@ function detectWithUnicode(text: string): string {
     else if (code >= 0x0400 && code <= 0x04FF) cyrillic++;
     else if (code >= 0x0600 && code <= 0x06FF) arabic++;
     else if (code >= 0x0900 && code <= 0x097F) devanagari++;
-    else if (
-      (code >= 0x0041 && code <= 0x005A) ||
-      (code >= 0x0061 && code <= 0x007A) ||
-      (code >= 0x00C0 && code <= 0x024F)
-    ) latin++;
   }
 
-  if (total === 0) return "en";
+  if (total === 0) return 'en';
 
   const cjkPct = cjk / total;
   const cyrillicPct = cyrillic / total;
   const arabicPct = arabic / total;
   const devanagariPct = devanagari / total;
 
-  if (cjkPct > 0.5) return "zh";
-  if (cyrillicPct > 0.5) return "ru";
-  if (arabicPct > 0.5) return "ar";
-  if (devanagariPct > 0.5) return "hi";
-  return "en";
-}
-
-async function detectWithAI(
-  text: string,
-  ai: AiBinding,
-  signal: AbortSignal,
-): Promise<string | null> {
-  if (signal.aborted) return null;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
-
-  const onParentAbort = (): void => {
-    clearTimeout(timer);
-    controller.abort();
-  };
-  if (!signal.aborted)
-    signal.addEventListener("abort", onParentAbort, { once: true });
-
-  try {
-    const result = await ai.run(AI_MODEL, {
-      messages: [
-        {
-          role: "system",
-          content:
-            "Detect the language of the user's text. Reply with ONLY the ISO 639-1 two-letter code (en, fr, es, de, pt, it, nl, ru, zh, ja, ko, ar, hi, etc.). No explanation, no punctuation, just the code.",
-        },
-        { role: "user", content: text },
-      ],
-      max_tokens: 5,
-      temperature: 0,
-    });
-
-    if (signal.aborted) return null;
-
-    const lang = (result as { response?: string }).response
-      ?.trim()
-      .toLowerCase()
-      .slice(0, 2);
-
-    if (lang && isIsoCode(lang)) {
-      return lang;
-    }
-    return null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-    signal.removeEventListener("abort", onParentAbort);
-  }
+  if (cjkPct > 0.5) return 'zh';
+  if (cyrillicPct > 0.5) return 'ru';
+  if (arabicPct > 0.5) return 'ar';
+  if (devanagariPct > 0.5) return 'hi';
+  return 'en';
 }
 
 export async function detectTextLanguage(
   text: string,
-  ai: AiBinding,
+  _ai: unknown,
   kv: KvLike,
   signal: AbortSignal,
 ): Promise<string> {
-  if (!text?.trim()) return "en";
+  if (!text?.trim()) return 'en';
 
   const input = text.slice(0, MAX_CHARS);
 
-  // 1. KV cache hit
+  function cacheKey(s: string): string {
+    let hash = 5381;
+    for (let i = 0; i < s.length; i++) {
+      hash = ((hash << 5) + hash + s.charCodeAt(i)) | 0;
+    }
+    return `lang:${(hash >>> 0).toString(36)}`;
+  }
+
   const key = cacheKey(input);
   let fromCache: string | null = null;
   try {
     fromCache = await kv.get(key);
-  } catch {
-    /* carry on */
-  }
-  if (fromCache && isIsoCode(fromCache)) {
-    return fromCache;
-  }
+  } catch { /* cache miss — continue with live detection */ }
+  if (fromCache) return fromCache;
 
-  // 2. AI detection (with timeout)
-  const aiLang = await detectWithAI(input, ai, signal);
-  if (aiLang) {
+  if (signal.aborted) return 'en';
+
+  let detected: string;
+
+  if (input.length < SHORT_TEXT_THRESHOLD) {
+    detected = detectWithUnicode(input);
+  } else {
     try {
-      await kv.put(key, aiLang, { expirationTtl: CACHE_TTL });
+      const francResult = franc(input);
+      detected = iso6393to1(francResult) || detectWithUnicode(input);
     } catch {
-      /* non-fatal */
+      detected = detectWithUnicode(input);
     }
-    return aiLang;
   }
 
-  // 3. Unicode-range fallback
-  return detectWithUnicode(text);
+  try {
+    await kv.put(key, detected, { expirationTtl: CACHE_TTL });
+  } catch { /* cache write failure — non-critical, result still returned */ }
+
+  return detected;
 }

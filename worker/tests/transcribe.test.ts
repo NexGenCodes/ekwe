@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest';
-import { handleTranscribe } from '../src/transcribe';
+import { handleTranscribe } from '../src/routes/transcribe';
 import {
   mockEnv,
   makeAudioBlob,
@@ -25,8 +25,8 @@ describe('handleTranscribe pipeline', () => {
   });
 
   test('FREE pipeline returns result from first successful provider', async () => {
-    let calls: string[] = [];
-    mockFetch(async (url, init) => {
+    const calls: string[] = [];
+    mockFetch(async (url, _init) => {
       calls.push(url);
       if (url.includes('api.wit.ai'))
         return jsonResponse({ text: 'wit result' });
@@ -94,6 +94,56 @@ describe('handleTranscribe pipeline', () => {
     expect(res.status).toBe(400);
   });
 
+  test('supportedLanguages skips cohere for unsupported language', async () => {
+    let cohereCalled = false;
+    mockFetch(async (url) => {
+      if (url.includes('api.cohere.com/v2/audio/transcriptions')) {
+        cohereCalled = true;
+        return jsonResponse({ text: 'cohere result' });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    const env = mockEnv({
+      AI: { run: async () => { return {}; } },
+    } as any);
+
+    const res = await handleTranscribe(
+      makeRequest('ig'), // not in cohere's supportedLanguages
+      env,
+      'FREE',
+      new AbortController().signal,
+    );
+    expect(cohereCalled).toBe(false);
+    expect(res.status).toBe(503);
+  });
+
+  test('supportedLanguages does not skip cohere for supported language', async () => {
+    let cohereCalled = false;
+    mockFetch(async (url) => {
+      if (url.includes('api.cohere.com/v2/audio/transcriptions')) {
+        cohereCalled = true;
+        return jsonResponse({ text: 'cohere result' });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    const env = mockEnv({
+      WIT_KEY_ES: '', // witai skipped - no key for Spanish
+      AI: { run: async () => { return {}; } },
+    } as any);
+
+    const res = await handleTranscribe(
+      makeRequest('es'), // in cohere's supportedLanguages
+      env,
+      'FREE',
+      new AbortController().signal,
+    );
+    expect(cohereCalled).toBe(true);
+    const body = (await res.json()) as { text?: string };
+    expect(body.text).toBe('cohere result');
+  });
+
   test('returns 503 when all providers fail', async () => {
     mockFetch(async () => jsonResponse({ error: 'fail' }, 500));
     const env = mockEnv({
@@ -111,7 +161,7 @@ describe('handleTranscribe pipeline', () => {
   });
 
   test('PREMIUM pipeline uses different provider order', async () => {
-    let providerOrder: string[] = [];
+    const providerOrder: string[] = [];
     mockFetch(async (url) => {
       if (url.includes('api.deepgram.com')) {
         providerOrder.push('deepgram');

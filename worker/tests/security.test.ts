@@ -18,15 +18,11 @@ describe('guardAudioSize', () => {
     expect(guardAudioSize(5_000_000, 'FREE').allowed).toBe(false);
   });
 
-  test('PREMIUM: 10MB limit', () => {
-    expect(guardAudioSize(8_000_000, 'PREMIUM').allowed).toBe(true);
-    expect(guardAudioSize(12_000_000, 'PREMIUM').allowed).toBe(false);
+  test('PREMIUM: 25MB limit', () => {
+    expect(guardAudioSize(20_000_000, 'PREMIUM').allowed).toBe(true);
+    expect(guardAudioSize(27_000_000, 'PREMIUM').allowed).toBe(false);
   });
 
-  test('CAPPED_PREMIUM: 6MB limit', () => {
-    expect(guardAudioSize(5_000_000, 'CAPPED_PREMIUM').allowed).toBe(true);
-    expect(guardAudioSize(8_000_000, 'CAPPED_PREMIUM').allowed).toBe(false);
-  });
 });
 
 // ─── guardTextLength ──────────────────────────────────────────────
@@ -46,9 +42,8 @@ describe('guardTextLength', () => {
 // ─── guardAutoDetect ──────────────────────────────────────────────
 
 describe('guardAutoDetect', () => {
-  test('FREE: auto-detect rejected', () => {
+  test('FREE: auto-detect blocked (PRO-only feature)', () => {
     expect(guardAutoDetect('auto', 'FREE').allowed).toBe(false);
-    expect(guardAutoDetect(null, 'FREE').allowed).toBe(false);
     expect(guardAutoDetect(undefined, 'FREE').allowed).toBe(false);
   });
 

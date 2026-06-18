@@ -1,10 +1,6 @@
 import { Env, TranslateResult } from '../types';
-import {
-  rotateKeys,
-  fetchWithTimeout,
-  getClientHeaders,
-  TIMEOUT_FAST,
-} from '../utils';
+import { rotateKeys } from '../utils/keys';
+import { fetchWithTimeout, getClientHeaders, TIMEOUT_FAST } from '../utils/fetch';
 import { logger } from '../logger';
 
 const GEMINI_URL =

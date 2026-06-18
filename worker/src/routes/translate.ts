@@ -1,11 +1,12 @@
-import { logger } from "./logger";
-import * as cloudflare from "./providers/cloudflare";
-import * as cohere from "./providers/cohere";
-import * as gemini from "./providers/gemini";
-import * as groq from "./providers/groq";
-import * as mistral from "./providers/mistral";
-import * as openrouter from "./providers/openrouter";
-import { detectTextLanguage } from "./autoDetect";
+import { logger } from "../logger";
+import { getTranslateProviderNames } from "../config";
+import * as cloudflare from "../providers/cloudflare";
+import * as cohere from "../providers/cohere";
+import * as gemini from "../providers/gemini";
+import * as groq from "../providers/groq";
+import * as mistral from "../providers/mistral";
+import * as openrouter from "../providers/openrouter";
+import { detectTextLanguage } from "../autoDetect";
 import {
   guardTextLength,
   guardAutoDetect,
@@ -13,10 +14,9 @@ import {
   safeParseJSON,
   sanitizeTranslationText,
   getLanguageName,
-} from "./security";
-import { CLIENT_ABORTED, Env, Tier, TranslateResult } from "./types";
-
-// ─── Translation Provider Signature ───────────────────────────────
+} from "../security";
+import { hashKey } from "../utils/keys";
+import { CLIENT_ABORTED, Env, Tier, TranslateResult } from "../types";
 
 type TranslateFn = (
   text: string,
@@ -26,33 +26,23 @@ type TranslateFn = (
   signal: AbortSignal,
 ) => Promise<TranslateResult | null>;
 
-// ─── Tier-based Pipeline Definitions ──────────────────────────────
+const TRANSLATE_PROVIDER_MODULES: Record<string, TranslateFn> = {
+  gemini: gemini.translate,
+  cohere: cohere.translate,
+  mistral: mistral.translate,
+  groq: groq.translate,
+  openrouter: openrouter.translate,
+  cloudflare: cloudflare.translate,
+};
 
-const PREMIUM_PIPELINE: { name: string; fn: TranslateFn }[] = [
-  { name: "gemini", fn: gemini.translate },
-  { name: "cohere", fn: cohere.translate },
-  { name: "mistral", fn: mistral.translate },
-  { name: "groq", fn: groq.translate },
-  { name: "openrouter", fn: openrouter.translate },
-  { name: "cloudflare", fn: cloudflare.translate },
-];
-
-const FREE_PIPELINE: { name: string; fn: TranslateFn }[] = [
-  { name: "groq", fn: groq.translate },
-  { name: "gemini", fn: gemini.translate },
-  { name: "cohere", fn: cohere.translate },
-  { name: "openrouter", fn: openrouter.translate },
-  { name: "cloudflare", fn: cloudflare.translate },
-];
-
-async function sha256(message: string): Promise<string> {
-  const msgBuffer = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+function buildTranslatePipeline(tier: Tier): { name: string; fn: TranslateFn }[] {
+  return getTranslateProviderNames(tier)
+    .filter((name) => name in TRANSLATE_PROVIDER_MODULES)
+    .map((name) => ({ name, fn: TRANSLATE_PROVIDER_MODULES[name] }));
 }
 
-// ─── Orchestrator ─────────────────────────────────────────────────
+const PREMIUM_PIPELINE = buildTranslatePipeline('PREMIUM');
+const FREE_PIPELINE = buildTranslatePipeline('FREE');
 
 export async function handleTranslate(
   request: Request,
@@ -60,7 +50,6 @@ export async function handleTranslate(
   tier: Tier,
   signal: AbortSignal,
 ): Promise<Response> {
-  // ── Safe JSON parsing (prevents 500 on malformed body) ──
   const parsed = await safeParseJSON<{
     text: string;
     targetLang: string;
@@ -73,7 +62,6 @@ export async function handleTranslate(
     return Response.json({ error: "EKWE_EMPTY_TRANSCRIPT" }, { status: 400 });
   }
 
-  // ── Security Guards (centralized in security.ts) ──
   const textGuard = guardTextLength(body.text, tier);
   if (!textGuard.allowed) return textGuard.response;
 
@@ -86,13 +74,11 @@ export async function handleTranslate(
   const tgtLangGuard = guardLanguageCode(body.targetLang, "targetLang");
   if (!tgtLangGuard.allowed) return tgtLangGuard.response;
 
-  // ── Prompt Injection Defense (silent strip) ──
   const cleanText = sanitizeTranslationText(body.text);
 
-  // ── KV Cache Lookup (Fail-Closed) ──
   let cacheKey: string;
   try {
-    const textHash = await sha256(
+    const textHash = await hashKey(
       `${cleanText}_${body.sourceLang || "auto"}_${body.targetLang}`,
     );
     cacheKey = `trans:${textHash}`;
@@ -117,7 +103,6 @@ export async function handleTranslate(
 
   const pipeline = tier === "PREMIUM" ? PREMIUM_PIPELINE : FREE_PIPELINE;
 
-  // Kick off parallel language detection when source is auto
   const isAuto = !body.sourceLang || body.sourceLang === "auto";
   const detectPromise = isAuto
     ? detectTextLanguage(cleanText, env.AI, env.EKWE_KV, signal).catch(
@@ -143,7 +128,6 @@ export async function handleTranslate(
           provider: result.provider,
         });
 
-        // Add detected language if detection was requested
         if (detectPromise) {
           const detected = await detectPromise;
           if (detected) {
@@ -151,11 +135,10 @@ export async function handleTranslate(
           }
         }
 
-        // Write to cache (best-effort — fail-open so the user still gets their translation)
         try {
           await env.EKWE_KV.put(cacheKey, JSON.stringify(result), {
             expirationTtl: 30 * 24 * 60 * 60,
-          }); // 30 days
+          });
         } catch (err) {
           logger.error(`[translate] KV cache write error`, {
             error: String(err),

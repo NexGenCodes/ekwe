@@ -1,163 +1,187 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const PASS = '\x1b[32mPASS\x1b[0m';
+const FAIL = '\x1b[31mFAIL\x1b[0m';
+const SKIP = '\x1b[33mSKIP\x1b[0m';
 
-// ─── Parse .dev.vars ────────────────────────────────────────────
-function loadEnv(path) {
-  const text = readFileSync(path, 'utf-8');
+// ─── Env loading ────────────────────────────────────────────────
+
+export function loadEnv(path = resolve(__dirname, '.dev.vars')) {
+  const envPath = path;
+  if (!existsSync(envPath)) return {};
+  const text = readFileSync(envPath, 'utf-8');
   const env = {};
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    const match = trimmed.match(/^(\w+)=\"?(.+?)\"?$/);
+    const match = trimmed.match(/^(\w+)="?(.+?)"?$/);
     if (match) env[match[1]] = match[2].replace(/^"|"$/g, '');
   }
   return env;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────
-const PASS = '\x1b[32mPASS\x1b[0m';
-const FAIL = '\x1b[31mFAIL\x1b[0m';
-const SKIP = '\x1b[33mSKIP\x1b[0m';
+export function getMultiKeys(env, prefix) {
+  const keys = [];
+  for (let i = 1; i <= 10; i++) {
+    const key = env[`${prefix}${i}`];
+    if (key) keys.push(key);
+  }
+  return keys;
+}
 
-async function check(label, url, options) {
-  process.stdout.write(`  ${label.padEnd(20)} `);
+function checkUUID(key) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key.trim());
+}
+
+export async function checkKey(label, url, options) {
   try {
     const res = await fetch(url, {
       ...options,
       signal: AbortSignal.timeout(10_000),
     });
-    if (res.ok) {
-      console.log(PASS);
-      return true;
-    }
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function checkWithResult(label, url, options) {
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (res.ok) return { label, ok: true };
     const body = await res.text().catch(() => '');
-    console.log(
-      `${FAIL}  (HTTP ${res.status} ${body.slice(0, 60).replace(/\n/g, ' ')})`,
-    );
-    return false;
+    return { label, ok: false, status: res.status, error: body.slice(0, 60).replace(/\n/g, ' ') };
   } catch (err) {
-    console.log(`${FAIL}  (${err.message})`);
-    return false;
+    return { label, ok: false, error: err.message };
   }
 }
 
-function checkUUID(key) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    key.trim(),
-  );
-}
+export async function testTranslateProviders(env) {
+  const results = [];
 
-// ─── Group test runners ──────────────────────────────────────────
-
-async function testTranslateProviders(env) {
-  console.log('\n── Translate Providers ──────────────────────');
-
-  // Groq (multi-key rotation)
-  for (let i = 1; ; i++) {
-    const key = env[`GROQ_KEY_${i}`];
-    if (!key) break;
-    await check(`Groq key ${i}`, 'https://api.groq.com/openai/v1/models', {
-      headers: { Authorization: `Bearer ${key}` },
-    });
+  for (const key of getMultiKeys(env, 'GROQ_KEY_')) {
+    results.push(await checkWithResult(
+      `Groq`, 'https://api.groq.com/openai/v1/models',
+      { headers: { Authorization: `Bearer ${key}` } },
+    ));
   }
-
-  // Gemini (multi-key, query param auth)
-  for (let i = 1; ; i++) {
-    const key = env[`GEMINI_KEY_${i}`];
-    if (!key) break;
-    await check(
-      `Gemini key ${i}`,
+  for (const key of getMultiKeys(env, 'GEMINI_KEY_')) {
+    results.push(await checkWithResult(
+      `Gemini`,
       `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
-    );
+    ));
   }
-
-  // Cohere (multi-key)
-  for (let i = 1; ; i++) {
-    const key = env[`COHERE_KEY_${i}`];
-    if (!key) break;
-    await check(`Cohere key ${i}`, 'https://api.cohere.ai/v1/models', {
-      headers: { Authorization: `Bearer ${key}` },
-    });
+  for (const key of getMultiKeys(env, 'COHERE_KEY_')) {
+    results.push(await checkWithResult(
+      `Cohere`, 'https://api.cohere.ai/v1/models',
+      { headers: { Authorization: `Bearer ${key}` } },
+    ));
   }
-
-  // Mistral (multi-key)
-  for (let i = 1; ; i++) {
-    const key = env[`MISTRAL_KEY_${i}`];
-    if (!key) break;
-    await check(`Mistral key ${i}`, 'https://api.mistral.ai/v1/models', {
-      headers: { Authorization: `Bearer ${key}` },
-    });
+  for (const key of getMultiKeys(env, 'MISTRAL_KEY_')) {
+    results.push(await checkWithResult(
+      `Mistral`, 'https://api.mistral.ai/v1/models',
+      { headers: { Authorization: `Bearer ${key}` } },
+    ));
   }
-
-  // OpenRouter (single key)
   if (env.OPENROUTER_KEY) {
-    await check('OpenRouter', 'https://openrouter.ai/api/v1/auth/key', {
-      headers: { Authorization: `Bearer ${env.OPENROUTER_KEY}` },
-    });
+    results.push(await checkWithResult(
+      'OpenRouter', 'https://openrouter.ai/api/v1/auth/key',
+      { headers: { Authorization: `Bearer ${env.OPENROUTER_KEY}` } },
+    ));
   }
+
+  return results;
 }
 
-async function testTranscribeProviders(env) {
-  console.log('\n── Transcribe Providers ─────────────────────');
+export async function testTranscribeProviders(env) {
+  const results = [];
 
-  // Deepgram (multi-key)
-  for (let i = 1; ; i++) {
-    const key = env[`DEEPGRAM_KEY_${i}`];
-    if (!key) break;
-    await check(`Deepgram key ${i}`, 'https://api.deepgram.com/v1/projects', {
-      headers: { Authorization: `Token ${key}` },
-    });
+  for (const key of getMultiKeys(env, 'DEEPGRAM_KEY_')) {
+    results.push(await checkWithResult(
+      `Deepgram`, 'https://api.deepgram.com/v1/projects',
+      { headers: { Authorization: `Token ${key}` } },
+    ));
+  }
+  for (const key of getMultiKeys(env, 'ASSEMBLYAI_KEY_')) {
+    results.push(await checkWithResult(
+      `AssemblyAI`, 'https://api.assemblyai.com/v2/account',
+      { headers: { Authorization: key } },
+    ));
+  }
+  for (const key of getMultiKeys(env, 'GLADIA_KEY_')) {
+    results.push({ label: `Gladia`, ok: checkUUID(key) });
   }
 
-  // AssemblyAI (multi-key)
-  for (let i = 1; ; i++) {
-    const key = env[`ASSEMBLYAI_KEY_${i}`];
-    if (!key) break;
-    await check(
-      `AssemblyAI key ${i}`,
-      'https://api.assemblyai.com/v2/account',
-      {
-        headers: { Authorization: key },
-      },
-    );
-  }
-
-  // Gladia (multi-key, UUID format check only — no simple validation endpoint)
-  for (let i = 1; ; i++) {
-    const key = env[`GLADIA_KEY_${i}`];
-    if (!key) break;
-    const valid = checkUUID(key);
-    console.log(
-      `  Gladia key ${i}${' '.repeat(10)}${valid ? PASS : FAIL}  ${valid ? '(UUID format OK)' : '(invalid UUID)'}`,
-    );
-  }
-
-  // Wit.ai (per-language keys)
-  const witLangs = ['EN', 'FR', 'ES', 'PT', 'DE', 'IT', 'ZH', 'IG', 'YO', 'HA'];
+  const witLangs = ['EN', 'FR', 'ES', 'PT', 'DE', 'IT', 'ZH', 'IG', 'YO', 'HA',
+    'AF', 'AK', 'SQ', 'AM', 'AR', 'HY', 'AS', 'AY', 'AZ', 'EU',
+    'BE', 'BN', 'BS', 'BR', 'BG', 'MY', 'CA', 'NY', 'HR', 'CS',
+    'DA', 'DV', 'NL', 'EO', 'ET', 'FO', 'FI', 'FF', 'GL', 'LG',
+    'KA', 'EL', 'GN', 'GU', 'HT', 'HE', 'HI', 'HU', 'IS', 'ID',
+    'IU', 'GA', 'JA', 'JV', 'KL', 'KN', 'KS', 'KK', 'KM', 'RW',
+    'KY', 'KO', 'KU', 'LO', 'LA', 'LV', 'LI', 'LN', 'LT', 'MK',
+    'MG', 'MS', 'ML', 'MT', 'MI', 'MR', 'MN', 'NE', 'SE', 'NO',
+    'NB', 'OR', 'OM', 'PA', 'PS', 'FA', 'PL', 'QU', 'RM', 'RO',
+    'RU', 'SA', 'SC', 'GD', 'SR', 'SN', 'SD', 'SI', 'SK', 'SL',
+    'SO', 'ST', 'NR', 'SU', 'SW', 'SS', 'SV', 'TL', 'TG', 'TA',
+    'TT', 'TE', 'TH', 'BO', 'TI', 'TS', 'TN', 'TR', 'UG', 'UK',
+    'UR', 'UZ', 'VE', 'VI', 'CY', 'FY', 'WO', 'XH', 'YI', 'ZU',
+  ];
   for (const lang of witLangs) {
     const key = env[`WIT_KEY_${lang}`];
     if (!key) {
-      console.log(`  Wit.ai ${lang.padEnd(16)} ${SKIP}  (no key configured)`);
+      results.push({ label: `Wit.ai ${lang}`, ok: false, error: 'no key configured' });
       continue;
     }
-    await check(
+    results.push(await checkWithResult(
       `Wit.ai ${lang}`,
       `https://api.wit.ai/message?v=20240304&q=hello`,
-      {
-        headers: { Authorization: `Bearer ${key}` },
-      },
-    );
+      { headers: { Authorization: `Bearer ${key}` } },
+    ));
   }
+
+  return results;
 }
 
-// ─── Main ────────────────────────────────────────────────────────
-const env = loadEnv(resolve(__dirname, '.dev.vars'));
-console.log(`Loaded ${Object.keys(env).length} vars from .dev.vars\n`);
+// ─── CLI entry point ───────────────────────────────────────────
 
-await testTranslateProviders(env);
-await testTranscribeProviders(env);
+async function main() {
+  const env = loadEnv();
+  console.log(`Loaded ${Object.keys(env).length} vars from .dev.vars\n`);
 
-console.log('\n── Done ─────────────────────────────────────────');
+  let allOk = true;
+
+  const translateResults = await testTranslateProviders(env);
+  if (translateResults.length > 0) {
+    console.log('── Translate Providers ──────────────────────');
+    for (const r of translateResults) {
+      const icon = r.ok ? PASS : r.error === 'no key configured' ? SKIP : FAIL;
+      const detail = r.ok ? '' : `  (${r.error}${r.status ? ` HTTP ${r.status}` : ''})`;
+      console.log(`  ${r.label.padEnd(20)} ${icon}${detail}`);
+      if (!r.ok && r.error !== 'no key configured') allOk = false;
+    }
+  }
+
+  const transcribeResults = await testTranscribeProviders(env);
+  if (transcribeResults.length > 0) {
+    console.log('\n── Transcribe Providers ─────────────────────');
+    for (const r of transcribeResults) {
+      const icon = r.ok ? PASS : FAIL;
+      const detail = r.error ? `  (${r.error}${r.status ? ` HTTP ${r.status}` : ''})` : '';
+      console.log(`  ${r.label.padEnd(20)} ${icon}${detail}`);
+      if (!r.ok) allOk = false;
+    }
+  }
+
+  console.log(`\n── Done ─────────────────────────────────────────`);
+  process.exit(allOk ? 0 : 1);
+}
+
+if (process.argv[1]?.includes('check-providers')) {
+  main();
+}
