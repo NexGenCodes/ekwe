@@ -1,6 +1,6 @@
 -- Adjust rate limit cooldowns for better UX
--- FREE tier: reduced from 12s to 3s cooldown between requests
--- PREMIUM tier: reduced from 2s to 1s
+-- FREE tier: 3s cooldown between requests, unlimited monthly
+-- PREMIUM tier: 1s cooldown, 1000 transactions/month hard cap (no silent fallback)
 
 CREATE OR REPLACE FUNCTION public.check_preflight(p_user_id UUID, p_tier TEXT)
 RETURNS JSONB
@@ -13,15 +13,13 @@ DECLARE
   v_cooldown_seconds INT;
   v_limit NUMERIC;
   v_time_since_last_req INTERVAL;
-  v_is_fallback BOOLEAN := false;
-  v_tier_active TEXT := p_tier;
 BEGIN
   -- Determine cooldowns and limits based on tier
-  IF p_tier = 'PREMIUM' THEN
-    v_cooldown_seconds := 1;  -- Was 2, now 1s for faster response
-    v_limit := 200;
+  IF p_tier = 'PREMIUM' OR p_tier = 'CAPPED_PREMIUM' THEN
+    v_cooldown_seconds := 1;
+    v_limit := 1000;
   ELSE
-    v_cooldown_seconds := 3;  -- Was 12, now 3s - much more responsive
+    v_cooldown_seconds := 3;
     v_limit := -1; -- Unlimited
   END IF;
 
@@ -37,17 +35,18 @@ BEGIN
   WHERE user_id = p_user_id AND month = to_char(now(), 'YYYY-MM')
   FOR UPDATE;
 
-  -- Check Fallback for Premium
-  IF p_tier = 'PREMIUM' AND v_transactions_used >= v_limit THEN
-    v_cooldown_seconds := 3;
-    v_is_fallback := true;
-    v_tier_active := 'FREE';
+  -- Hard block: monthly limit exceeded
+  IF v_limit > 0 AND v_transactions_used >= v_limit THEN
+    RETURN jsonb_build_object(
+      'allowed', false,
+      'reason', 'MONTHLY_LIMIT',
+      'cooldown_remaining', 0
+    );
   END IF;
 
   -- Check Cooldown
   v_time_since_last_req := now() - v_last_request_at;
   IF EXTRACT(EPOCH FROM v_time_since_last_req) < v_cooldown_seconds THEN
-    -- Rate limited
     RETURN jsonb_build_object(
       'allowed', false,
       'reason', 'RATE_LIMIT',
@@ -63,8 +62,8 @@ BEGIN
   -- Allowed
   RETURN jsonb_build_object(
     'allowed', true,
-    'tier_active', v_tier_active,
-    'is_fallback', v_is_fallback,
+    'tier_active', p_tier,
+    'is_fallback', false,
     'transactions_used', v_transactions_used
   );
 END;

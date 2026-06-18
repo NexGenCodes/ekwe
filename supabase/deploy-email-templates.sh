@@ -23,6 +23,11 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
+# Auto-load from supabase/.env if env vars not already set
+if [ -f "$SCRIPT_DIR/.env" ]; then
+  set -a; source "$SCRIPT_DIR/.env"; set +a
+fi
+
 # Read the HTML templates from the file system
 MAGIC_LINK_HTML=$(cat "$PROJECT_ROOT/supabase/templates/magic_link.html")
 CONFIRMATION_HTML=$(cat "$PROJECT_ROOT/supabase/templates/confirmation.html")

@@ -1,4 +1,5 @@
 import { Env, Tier } from "../types";
+import { getLimits } from "../config";
 import { logger } from "../logger";
 
 export interface PreflightResponse {
@@ -21,6 +22,8 @@ export async function checkPreflight(
     };
   }
 
+  const cooldownSeconds = getLimits(requestedTier).cooldownSeconds;
+
   try {
     const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/check_preflight`, {
       method: 'POST',
@@ -29,7 +32,7 @@ export async function checkPreflight(
         Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ p_user_id: userId, p_tier: requestedTier }),
+      body: JSON.stringify({ p_user_id: userId, p_tier: requestedTier, p_cooldown_seconds: cooldownSeconds }),
     });
 
     if (res.ok) {

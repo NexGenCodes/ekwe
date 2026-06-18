@@ -5,15 +5,14 @@
 # This avoids the dashboard entirely — run this after editing templates locally.
 #
 # Usage:
-#   $env:SUPABASE_ACCESS_TOKEN = "sbp_..."
-#   $env:SUPABASE_PROJECT_REF = "your-project-ref"
 #   .\supabase\deploy-email-templates.ps1
+# (reads SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF from supabase\.env)
 # ──────────────────────────────────────────────────────────────────────────────
 
 $ErrorActionPreference = "Stop"
 
-# Auto-load from .env if env vars not already set
-$EnvFile = Join-Path (Split-Path -Parent $PSScriptRoot) ".env"
+# Auto-load from supabase/.env if env vars not already set
+$EnvFile = Join-Path $PSScriptRoot ".env"
 if (Test-Path $EnvFile) {
     Get-Content $EnvFile | Where-Object { $_ -match "^\s*[^#].*=.*" } | ForEach-Object {
         $parts = $_ -split "=", 2
