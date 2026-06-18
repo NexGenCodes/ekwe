@@ -1,13 +1,5 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
 # dependencies
 node_modules/
-
-# Expo
-.expo/
-dist/
-web-build/
-expo-env.d.ts
 
 # Native
 .kotlin/
@@ -22,9 +14,6 @@ expo-env.d.ts
 *.aab
 *.ipa
 
-# Metro
-.metro-health-check*
-
 # debug
 npm-debug.*
 yarn-debug.*
@@ -35,27 +24,10 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env
-.env.production
-.env*.local
-
 # typescript
 *.tsbuildinfo
 
-# generated native folders
-/ios
-/android
-
-# local module build artifacts
-modules/**/android/build/
-modules/**/ios/build/
-.cxx/
-
-# tests
-coverage/
-
-# IDE files
+# IDE
 .vscode/
 .idea/
 .agents/
@@ -63,24 +35,45 @@ coverage/
 .fallow/
 .opencode/
 
-# OS specific
+# OS
 Thumbs.db
 desktop.ini
 
-# local# Environment
-.env*
-.env.example
-.env.example.local
-!.env.example
+# logs
 *.log
-
-# Expo extras
-.expo-shared/
 
 # Cloudflare Workers
 .dev.vars
 .wrangler/
 skills-lock.json
 
-# MCP configuration
+# MCP
 mcp_config.json
+
+# Supabase
+.branches
+.temp
+.env.keys
+.env.local
+.env.*.local
+
+# Embedded git repos (thirdparty)
+mobile/modules/ekwe-native/cpp/thirdparty/flac/
+
+# Mobile (Expo)
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+.env
+.env.production
+.env*.local
+mobile/ios/
+mobile/android/
+mobile/modules/**/android/build/
+modules/**/android/build/
+modules/**/ios/build/
+.cxx/
+coverage/
+.expo-shared/
