@@ -43,7 +43,7 @@ export function PreferencesSection({
       <ProfileRow
         icon={Globe}
         sfIcon="globe"
-        iconColor={color.primary}
+        iconColor={color.foreground}
         title="Edit Language Grid"
         subtitle={`${selectedLanguages}/5 active languages`}
         hasDivider
@@ -52,7 +52,7 @@ export function PreferencesSection({
       <ProfileRow
         icon={Smartphone}
         sfIcon="hand.tap.fill"
-        iconColor={color.primary}
+        iconColor={color.foreground}
         title="Haptic Feedback"
         subtitle="Vibrate on user actions"
         hasDivider
@@ -67,7 +67,7 @@ export function PreferencesSection({
       <ProfileRow
         icon={Globe}
         sfIcon="globe"
-        iconColor={color.primary}
+        iconColor={color.foreground}
         title="Display Currency"
         subtitle="Choose your preferred currency"
         hasDivider
@@ -91,7 +91,7 @@ export function PreferencesSection({
       <ProfileRow
         icon={Palette}
         sfIcon="paintpalette.fill"
-        iconColor={color.primary}
+        iconColor={color.foreground}
         title="Appearance"
         subtitle="Light, Dark, or System"
         onPress={async () => {

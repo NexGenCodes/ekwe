@@ -70,7 +70,7 @@ export const Disclaimer: React.FC<DisclaimerProps> = ({
             accessibilityState={{ checked: agreed }}
           >
             {agreed ? (
-              <CheckIcon color={color.primary} />
+              <CheckIcon color={color.foreground} />
             ) : (
               <UncheckedBox borderColor={color.border} />
             )}
@@ -89,7 +89,7 @@ export const Disclaimer: React.FC<DisclaimerProps> = ({
           <Link
             href="/legal/terms"
             style={{
-              color: color.secondary,
+              color: color.brand,
               textDecorationLine: "underline",
               padding: spacing.xs,
             }}
@@ -101,7 +101,7 @@ export const Disclaimer: React.FC<DisclaimerProps> = ({
           <Link
             href="/legal/privacy"
             style={{
-              color: color.secondary,
+              color: color.brand,
               textDecorationLine: "underline",
               padding: spacing.xs,
             }}

@@ -1,52 +1,36 @@
-import { FlashList } from "@shopify/flash-list";
-import React, { memo, useCallback } from "react";
+import React, { memo, useMemo } from "react";
 import { View } from "react-native";
 
 import { LanguageGridCard } from "@/components/language";
 import { LANGUAGES, getLanguageName } from "@/constants/languages";
 import { spacing } from "@/constants/spacing";
-import { useTokens } from "@/hooks/ui";
 
 export interface LanguageSelectionGridProps {
   selected: string[];
   onToggle: (code: string) => void;
+  isMaxed?: boolean;
 }
-
-interface ItemData {
-  code: string;
-  label: string;
-}
-
-const NUM_COLUMNS = 2;
-const COLUMN_GAP = spacing.sm + spacing.xs;
 
 const LanguageGridItem = memo(function LanguageGridItem({
   code,
   label,
   isSelected,
+  isMaxed,
   onToggle,
-  index,
 }: {
   code: string;
   label: string;
   isSelected: boolean;
+  isMaxed: boolean;
   onToggle: (code: string) => void;
-  index: number;
 }) {
-  const columnIndex = index % NUM_COLUMNS;
   return (
-    <View
-      style={{
-        flex: 1,
-        paddingLeft: columnIndex === 1 ? COLUMN_GAP / 2 : 0,
-        paddingRight: columnIndex === 0 ? COLUMN_GAP / 2 : 0,
-        paddingBottom: COLUMN_GAP,
-      }}
-    >
+    <View style={{ width: "50%", padding: spacing.xs }}>
       <LanguageGridCard
         code={code}
         label={label}
         isSelected={isSelected}
+        disabled={!isSelected && isMaxed}
         onPress={() => onToggle(code)}
         width="100%"
         aspectRatio={2.2}
@@ -58,44 +42,39 @@ const LanguageGridItem = memo(function LanguageGridItem({
 export function LanguageSelectionGrid({
   selected,
   onToggle,
+  isMaxed = false,
 }: LanguageSelectionGridProps): React.ReactElement {
-  const { spacing } = useTokens();
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
 
-  const data: ItemData[] = React.useMemo(
+  const items = useMemo(
     () =>
-      LANGUAGES.map((lang) => ({
-        code: lang.code,
-        label: getLanguageName(lang.code),
-      })),
-    [],
+      LANGUAGES.map((lang) => {
+        const code = lang.code;
+        return (
+          <LanguageGridItem
+            key={code}
+            code={code}
+            label={getLanguageName(code)}
+            isSelected={selectedSet.has(code)}
+            isMaxed={isMaxed}
+            onToggle={onToggle}
+          />
+        );
+      }),
+    [selectedSet, isMaxed, onToggle],
   );
-
-  const renderItem = useCallback(
-    ({ item, index }: { item: ItemData; index: number }) => (
-      <LanguageGridItem
-        code={item.code}
-        label={item.label}
-        isSelected={selected.includes(item.code)}
-        onToggle={onToggle}
-        index={index}
-      />
-    ),
-    [selected, onToggle],
-  );
-
-  const keyExtractor = useCallback((item: ItemData) => item.code, []);
 
   return (
-    <FlashList
-      data={data}
-      renderItem={renderItem}
-      keyExtractor={keyExtractor}
-      numColumns={NUM_COLUMNS}
-      contentContainerStyle={{
+    <View
+      style={{
+        flexDirection: "row",
+        flexWrap: "wrap",
         paddingTop: spacing.md,
         paddingBottom: spacing["2xl"],
+        marginHorizontal: -spacing.xs,
       }}
-      scrollEnabled={false}
-    />
+    >
+      {items}
+    </View>
   );
 }

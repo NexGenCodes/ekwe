@@ -46,7 +46,7 @@ export function SmartFeaturesSection({
       <ProfileRow
         icon={Type}
         sfIcon="textformat"
-        iconColor={color.primary}
+        iconColor={color.foreground}
         title="Show Transliteration"
         subtitle="Pronunciation guide for translations"
         onPress={async () => {
@@ -67,7 +67,7 @@ export function SmartFeaturesSection({
       <ProfileRow
         icon={Copy}
         sfIcon="doc.on.doc.fill"
-        iconColor={color.primary}
+        iconColor={color.foreground}
         title="Auto-copy to Clipboard"
         subtitle="Copy translation automatically"
         onPress={async () => {
@@ -80,7 +80,7 @@ export function SmartFeaturesSection({
       <ProfileRow
         icon={Eye}
         sfIcon="eye.fill"
-        iconColor={color.primary}
+        iconColor={color.foreground}
         title="Floating Translation Bubble"
         subtitle="Translate inline in external apps"
         onPress={async () => {

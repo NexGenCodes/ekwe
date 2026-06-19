@@ -38,8 +38,8 @@ export function AppAlertModal(): React.JSX.Element | null {
     type === "error" || type === "confirm"
       ? color.error
       : type === "success"
-        ? color.secondary
-        : color.secondary;
+        ? color.brand
+        : color.brand;
 
   const handleClose = (): void => {
     if (cancelable) {
@@ -156,7 +156,7 @@ export function AppAlertModal(): React.JSX.Element | null {
                       justifyContent: "center",
                       paddingHorizontal: spacing.md,
                     },
-                    isPrimary && { backgroundColor: color.secondary },
+                    isPrimary && { backgroundColor: color.brand },
                     isDestructive && { backgroundColor: color.error },
                     isCancel && {
                       backgroundColor: "transparent",
@@ -172,8 +172,8 @@ export function AppAlertModal(): React.JSX.Element | null {
                   <Text
                     variant="body"
                     style={[
-                      isPrimary && { color: color.onSecondary },
-                      isDestructive && { color: color.onPrimary },
+                      isPrimary && { color: color.onBrand },
+                      isDestructive && { color: color.onBrand },
                       isCancel && { color: color.foreground },
                     ]}
                   >

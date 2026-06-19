@@ -241,7 +241,7 @@ export function RecordingInline({
           h={MIN_H + pk * RANGE}
           prog={player.progressSV}
           dur={player.duration}
-          on={color.secondary} // played = bright color
+          on={color.brand} // played = bright color
           off={color.muted} // unplayed = pure muted grey (like WhatsApp)
         />
       ));
@@ -259,7 +259,7 @@ export function RecordingInline({
     player.progressSV,
     player.duration,
     color.muted,
-    color.secondary,
+    color.brand,
     color.error,
   ]);
 
@@ -333,20 +333,20 @@ export function RecordingInline({
               alignItems: "center",
               justifyContent: "center",
               ...shadows.soft,
-              backgroundColor: color.secondary,
+              backgroundColor: color.brand,
             }}
           >
             {player.isPlaying ? (
               <Pause
                 size={20}
-                color={color.onSecondary}
-                fill={color.onSecondary}
+                color={color.onBrand}
+                fill={color.onBrand}
               />
             ) : (
               <Play
                 size={20}
-                color={color.onSecondary}
-                fill={color.onSecondary}
+                color={color.onBrand}
+                fill={color.onBrand}
                 style={{ marginLeft: 3 }}
               />
             )}
@@ -375,7 +375,7 @@ export function RecordingInline({
                     width: 12,
                     height: 12,
                     borderRadius: 6,
-                    backgroundColor: color.secondary,
+                    backgroundColor: color.brand,
                     left: -6,
                     top: 14,
                     ...shadows.soft,

@@ -64,7 +64,7 @@ export const EchoErrorStep = React.memo(function EchoErrorStep({
       </Text>
       <Button
         variant="primary"
-        leftIcon={<RefreshCw size={16} color={color.onSecondary} />}
+        leftIcon={<RefreshCw size={16} color={color.onBrand} />}
         label="Start Over"
         onPress={() => onRetry("PickLanguage")}
       />

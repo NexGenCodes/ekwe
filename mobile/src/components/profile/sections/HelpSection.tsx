@@ -70,7 +70,7 @@ export function HelpSection(): React.JSX.Element {
       <ProfileRow
         icon={Mail}
         sfIcon="envelope.fill"
-        iconColor={color.primary}
+        iconColor={color.foreground}
         title="Contact Support"
         subtitle={CONTACT_EMAIL}
         hasDivider
@@ -82,7 +82,7 @@ export function HelpSection(): React.JSX.Element {
       <ProfileRow
         icon={Star}
         sfIcon="star.fill"
-        iconColor={color.primary}
+        iconColor={color.foreground}
         title="Rate Us"
         hasDivider
         onPress={handleRateUs}
@@ -90,7 +90,7 @@ export function HelpSection(): React.JSX.Element {
       <ProfileRow
         icon={Shield}
         sfIcon="shield.fill"
-        iconColor={color.primary}
+        iconColor={color.foreground}
         title="Privacy Policy"
         hasDivider
         onPress={async () => {
@@ -101,7 +101,7 @@ export function HelpSection(): React.JSX.Element {
       <ProfileRow
         icon={FileText}
         sfIcon="doc.text.fill"
-        iconColor={color.primary}
+        iconColor={color.foreground}
         title="Terms of Service"
         onPress={async () => {
           await triggerHaptic();

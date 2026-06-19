@@ -25,7 +25,7 @@ export const AuthHeader = ({
           opacity: 0.9,
         }}
       >
-        <EkweLogo size={56} color={color.secondary} />
+        <EkweLogo size={56} color={color.brand} />
       </Box>
       <Text
         variant="bodyLarge"

@@ -268,7 +268,7 @@ class SyncServiceClass {
 
       let query = supabase
         .from("history")
-        .select("id, user_id, source_lang, target_lang, transcript, translation_text, transliteration_text, duration, source_app, provider, created_at")
+        .select("id, user_id, source_lang, target_lang, transcript, translation_text, transliteration_text, duration, source_app, provider, created_at, deleted")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(200);

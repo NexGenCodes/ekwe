@@ -14,7 +14,7 @@ export default function LegalLayout(): React.JSX.Element {
         headerTransparent: false,
         headerShadowVisible: false,
         headerStyle: { backgroundColor: color.background },
-        headerTintColor: color.primary,
+        headerTintColor: color.foreground,
         headerTitleStyle: {
           fontFamily: typography.heading2.fontFamily,
           fontSize: 24,

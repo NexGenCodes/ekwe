@@ -67,14 +67,14 @@ export function SwapButton({
           justifyContent: "center",
           marginHorizontal: spacing.xs,
           ...shadows.soft,
-          backgroundColor: color.secondary,
+          backgroundColor: color.brand,
         },
         (pressed || isSwapDisabled) && { opacity: opacity.disabled },
         pressed && !isSwapDisabled && { transform: [{ scale: 0.9 }] },
       ]}
     >
       <Animated.View style={animatedSwapStyle}>
-        <ArrowRightLeft size={16} color={color.onSecondary} strokeWidth={2.5} />
+        <ArrowRightLeft size={16} color={color.onBrand} strokeWidth={2.5} />
       </Animated.View>
     </Pressable>
   );

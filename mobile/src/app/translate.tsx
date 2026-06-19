@@ -25,7 +25,7 @@ export default function TranslateScreen(): React.JSX.Element {
   const { setPinnedLanguages } = settingsActions;
 
   const { color, isDark } = useTheme();
-  const primaryColor = color.primary;
+  const primaryColor = color.foreground;
   const mutedColor = color.muted;
   const { copied, copy } = useClipboard();
   const { translate } = useTranslation();

@@ -149,7 +149,7 @@ export const EchoStepRenderer = React.memo(function EchoStepRenderer({
               style={{
                 flex: 1,
                 marginLeft: spacing.sm,
-                color: color.secondary,
+                color: color.brand,
               }}
             >
               {selectedLangName}

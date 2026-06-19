@@ -53,15 +53,15 @@ export function LanguageGridCard({
         paddingHorizontal: spacing.md,
         flexDirection: isLandscape ? "row" : "column",
         borderStyle: dashed ? "dashed" : "solid",
-        backgroundColor: isSelected ? color.secondary : color.background,
-        borderColor: isSelected ? color.secondary : color.border,
+        backgroundColor: isSelected ? color.brand : color.background,
+        borderColor: isSelected ? color.brand : color.border,
         opacity: disabled ? opacity.disabled : 1,
       }}
     >
       {code === "auto" ? (
         <Globe
           size={20}
-          color={isSelected ? color.onSecondary : color.secondary}
+          color={isSelected ? color.onBrand : color.brand}
         />
       ) : (
         <LanguageFlag code={code} size="md" />
@@ -71,7 +71,7 @@ export function LanguageGridCard({
         style={{
           textAlign: "center",
           flex: isLandscape ? 1 : undefined,
-          color: isSelected ? color.onSecondary : color.foreground,
+          color: isSelected ? color.onBrand : color.foreground,
           marginLeft: isLandscape ? spacing.sm : 0,
           marginTop: isLandscape ? 0 : spacing.xs,
         }}
@@ -81,7 +81,7 @@ export function LanguageGridCard({
       </Text>
       {isSelected && isLandscape && (
         <Box style={{ marginLeft: spacing.xs }}>
-          <Check size={18} color={color.onSecondary} strokeWidth={3} />
+          <Check size={18} color={color.onBrand} strokeWidth={3} />
         </Box>
       )}
     </Pressable>

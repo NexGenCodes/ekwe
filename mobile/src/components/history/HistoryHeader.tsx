@@ -87,18 +87,18 @@ export const HistoryHeader = React.memo(function HistoryHeader({
           styles.searchBar,
           {
             backgroundColor: color.card,
-            borderColor: isFocused ? color.secondary : color.border,
+            borderColor: isFocused ? color.brand : color.border,
           },
         ]}
       >
         <Search
           size={iconSize.sm}
-          color={isFocused ? color.secondary : color.muted}
+          color={isFocused ? color.brand : color.muted}
         />
         <TextInput
           style={[styles.searchInput, { color: color.foreground }]}
           placeholder="Search transcripts..."
-          placeholderTextColor={color.placeholder}
+          placeholderTextColor={color.disabled}
           value={query}
           onChangeText={setQuery}
           onFocus={() => setIsFocused(true)}
@@ -127,22 +127,22 @@ export const HistoryHeader = React.memo(function HistoryHeader({
                 styles.chip,
                 {
                   backgroundColor: isActive
-                    ? `${color.secondary}12`
+                    ? `${color.brand}12`
                     : color.card,
-                  borderColor: isActive ? color.secondary : color.border,
+                  borderColor: isActive ? color.brand : color.border,
                 },
               ]}
             >
               {option === "all" && (
                 <Filter
                   size={12}
-                  color={isActive ? color.secondary : color.muted}
+                  color={isActive ? color.brand : color.muted}
                 />
               )}
               <Text
                 variant="caption"
                 style={{
-                  color: isActive ? color.secondary : color.muted,
+                  color: isActive ? color.brand : color.muted,
                   fontWeight: isActive ? "600" : "400",
                 }}
               >

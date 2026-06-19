@@ -20,7 +20,7 @@ export function ResultTextBlock({
   variant = "default",
 }: ResultTextBlockProps): React.JSX.Element {
   const { color } = useTheme();
-  const primaryColor = color.primary;
+  const primaryColor = color.foreground;
   const { copied, copy } = useClipboard();
 
   const handleCopy = (): void => {
@@ -45,16 +45,16 @@ export function ResultTextBlock({
             style={({ pressed }) => [
               styles.iconButton,
               {
-                backgroundColor: color.secondary,
+                backgroundColor: color.brand,
                 opacity: pressed ? 0.8 : 1,
               },
             ]}
             hitSlop={spacing.sm}
           >
             {copied ? (
-              <Check size={16} color={color.onSecondary} strokeWidth={2.5} />
+              <Check size={16} color={color.onBrand} strokeWidth={2.5} />
             ) : (
-              <Copy size={16} color={color.onSecondary} strokeWidth={2.5} />
+              <Copy size={16} color={color.onBrand} strokeWidth={2.5} />
             )}
           </Pressable>
         </Box>

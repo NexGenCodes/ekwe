@@ -21,7 +21,7 @@ export const Spinner = React.memo(
       <ActivityIndicator
         ref={ref}
         size={sizeValue}
-        color={color ?? tokens.primary}
+        color={color ?? tokens.foreground}
         accessibilityRole="progressbar"
         {...props}
       />

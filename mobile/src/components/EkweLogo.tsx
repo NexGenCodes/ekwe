@@ -29,7 +29,7 @@ export const EkweLogo = ({
   const { color: themeColor } = useTheme();
 
   // Default to secondary (brand blue) which matches the splash PNG color
-  const fill = color ?? themeColor.secondary;
+  const fill = color ?? themeColor.brand;
 
   return (
     <Svg

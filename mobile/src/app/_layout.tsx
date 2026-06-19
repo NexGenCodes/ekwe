@@ -18,7 +18,6 @@ import { ErrorBoundary, ToastContainer, AppAlertModal } from "@/components";
 import { Box } from "@/components/ui";
 import { useShareIntentHandler, useTheme, useTripleExclusivity } from "@/hooks";
 import { queryClient } from "@/hooks/queries/queryClient";
-import { useAppFonts } from "@/hooks/useFonts";
 import { ShareIntentProvider } from "@/providers/ShareIntentProvider";
 import { HistoryService } from "@/services/HistoryService";
 import { SyncService } from "@/services/SyncService";
@@ -70,6 +69,7 @@ function InnerLayout(): React.ReactElement {
             <Stack
               screenOptions={{
                 headerShown: false,
+                contentStyle: { backgroundColor: color.background },
                 animation: "slide_from_bottom",
               }}
             >
@@ -79,7 +79,10 @@ function InnerLayout(): React.ReactElement {
                 options={{ animation: "fade" }}
               />
               <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
-              <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
+              <Stack.Screen
+                name="(tabs)"
+                options={{ animation: "fade" }}
+              />
               <Stack.Screen
                 name="accessibility-disclosure"
                 options={{
@@ -134,18 +137,13 @@ function InnerLayout(): React.ReactElement {
   );
 }
 
-function RootLayout(): React.ReactElement | null {
-  const fontsLoaded = useAppFonts();
-  const [appReady, setAppReady] = React.useState(false);
-
+function RootLayout(): React.ReactElement {
   useEffect(() => {
     const activate = async (): Promise<void> => {
-      try {
-        await activateKeepAwakeAsync();
-      } catch {
-        /* Silently fail if activity is not ready */
-      }
-      await initializeMMKV();
+      await Promise.all([
+        initializeMMKV(),
+        activateKeepAwakeAsync().catch(() => {}),
+      ]);
       await initAuth();
       SyncService.start();
     };
@@ -157,18 +155,6 @@ function RootLayout(): React.ReactElement | null {
       cleanupAuth();
     };
   }, []);
-
-  // Once fonts are loaded, set appReady to true
-  React.useEffect(() => {
-    if (fontsLoaded) {
-      setAppReady(true);
-    }
-  }, [fontsLoaded]);
-
-  if (!appReady) {
-    // Return null to keep the native splash screen visible while loading fonts
-    return null;
-  }
 
   return (
     <SafeAreaProvider>

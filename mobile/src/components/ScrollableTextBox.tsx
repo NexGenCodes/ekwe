@@ -34,7 +34,7 @@ export const ScrollableTextBox: React.FC<ScrollableTextBoxProps> = ({
   textStyle,
 }) => {
   const { color } = useTheme();
-  const activeBrandPrimary = brandPrimary || color.primary;
+  const activeBrandPrimary = brandPrimary || color.foreground;
 
   return (
     <Card

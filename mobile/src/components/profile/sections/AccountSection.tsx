@@ -27,7 +27,7 @@ export function AccountSection({
       <ProfileRow
         icon={CreditCard}
         sfIcon="creditcard.fill"
-        iconColor={color.primary}
+        iconColor={color.foreground}
         title={isPro ? "Ekwe Pro" : "Plan & Billing"}
         subtitle={
           isPro ? "Unlimited translations" : "Free Tier · Standard limits"
@@ -55,10 +55,10 @@ export function AccountSection({
                   paddingVertical: spacing.sm,
                   borderRadius: borderRadius.md,
                 },
-                { backgroundColor: color.secondary },
+                { backgroundColor: color.brand },
               ]}
             >
-              <Text variant="caption" style={{ color: color.onSecondary }}>
+              <Text variant="caption" style={{ color: color.onBrand }}>
                 Upgrade
               </Text>
             </Box>

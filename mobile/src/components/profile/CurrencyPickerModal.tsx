@@ -99,10 +99,10 @@ export function CurrencyPickerModal({
                       marginVertical: 2,
                     },
                     pressed && {
-                      backgroundColor: `${color.primary}1A`,
+                      backgroundColor: `${color.foreground}1A`,
                     },
                     isSelected && {
-                      backgroundColor: `${color.primary}0D`,
+                      backgroundColor: `${color.foreground}0D`,
                     },
                   ]}
                   onPress={() => onSelect(item.code)}
@@ -123,7 +123,7 @@ export function CurrencyPickerModal({
                     <Text
                       variant="body"
                       style={{
-                        color: isSelected ? color.primary : color.foreground,
+                        color: isSelected ? color.foreground : color.foreground,
                         fontWeight: isSelected ? "600" : "400",
                       }}
                     >
@@ -139,7 +139,7 @@ export function CurrencyPickerModal({
                       {item.region}
                     </Text>
                   </Box>
-                  {isSelected && <Check size={20} color={color.primary} />}
+                  {isSelected && <Check size={20} color={color.foreground} />}
                 </Pressable>
               );
             })}

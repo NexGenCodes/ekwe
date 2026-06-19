@@ -81,12 +81,12 @@ export const InputFooterActions = React.memo(
               isRecording || isProcessing
                 ? color.error
                 : isPreview
-                  ? color.secondary
+                  ? color.brand
                   : valueLength > 0
                     ? canTranslate
-                      ? color.secondary
+                      ? color.brand
                       : color.border
-                    : color.secondary,
+                    : color.brand,
           },
           pressed &&
             !isProcessing &&
@@ -188,14 +188,14 @@ export const InputFooterActions = React.memo(
                 {isRecording ? (
                   <Square
                     size={22}
-                    color={color.onSecondary}
-                    fill={color.onSecondary}
+                    color={color.onBrand}
+                    fill={color.onBrand}
                     strokeWidth={2.5}
                   />
                 ) : isProcessing ? (
-                  <Spinner size="sm" color={color.onSecondary} />
+                  <Spinner size="sm" color={color.onBrand} />
                 ) : (
-                  <Send size={18} color={color.onSecondary} strokeWidth={2.5} />
+                  <Send size={18} color={color.onBrand} strokeWidth={2.5} />
                 )}
               </Pressable>
             </Box>
@@ -253,7 +253,7 @@ export const InputFooterActions = React.memo(
                   hitSlop={15}
                 >
                   {isInitializing ? (
-                    <Spinner size="sm" color={color.onSecondary} />
+                    <Spinner size="sm" color={color.onBrand} />
                   ) : valueLength > 0 ? (
                     <Box
                       style={{
@@ -265,21 +265,21 @@ export const InputFooterActions = React.memo(
                       <Text
                         variant="body"
                         style={{
-                          color: color.onSecondary,
+                          color: color.onBrand,
                         }}
                       >
                         {isTranslating ? "Translating..." : "Translate"}
                       </Text>
                       <Send
                         size={18}
-                        color={color.onSecondary}
+                        color={color.onBrand}
                         strokeWidth={2.5}
                       />
                     </Box>
                   ) : (
                     <Mic
                       size={24}
-                      color={color.onSecondary}
+                      color={color.onBrand}
                       strokeWidth={2.5}
                     />
                   )}

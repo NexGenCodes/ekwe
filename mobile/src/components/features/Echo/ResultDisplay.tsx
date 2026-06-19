@@ -43,7 +43,7 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
     );
 
     const { color } = useTheme();
-    const brandPrimary = color.secondary;
+    const brandPrimary = color.brand;
 
     const handleTabPress = React.useCallback(
       (tab: "Translation" | "Transcription"): void => {
@@ -95,7 +95,7 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
                 style={{
                   color:
                     activeTab === "Translation"
-                      ? color.onSecondary
+                      ? color.onBrand
                       : color.muted,
                 }}
               >
@@ -126,7 +126,7 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
                 style={{
                   color:
                     activeTab === "Transcription"
-                      ? color.onSecondary
+                      ? color.onBrand
                       : color.muted,
                 }}
               >

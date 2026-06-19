@@ -69,8 +69,8 @@ export function LanguageRow({
               marginRight: spacing.sm,
             }}
           >
-            <Lock size={10} color={color.secondary} strokeWidth={2.5} />
-            <Text variant="caption" style={{ color: color.secondary }}>
+            <Lock size={10} color={color.brand} strokeWidth={2.5} />
+            <Text variant="caption" style={{ color: color.brand }}>
               Pro
             </Text>
           </Box>
@@ -84,8 +84,8 @@ export function LanguageRow({
           >
             <Star
               size={20}
-              color={isPinned ? color.secondary : color.muted}
-              fill={isPinned ? color.secondary : "transparent"}
+              color={isPinned ? color.brand : color.muted}
+              fill={isPinned ? color.brand : "transparent"}
             />
           </Pressable>
         )}
@@ -102,12 +102,12 @@ export function LanguageRow({
               borderWidth: 1,
             },
             isSelected
-              ? { backgroundColor: color.secondary, borderWidth: 0 }
+              ? { backgroundColor: color.brand, borderWidth: 0 }
               : { backgroundColor: "transparent", borderColor: color.border },
           ]}
         >
           {isSelected && (
-            <Check size={12} color={color.onSecondary} strokeWidth={3} />
+            <Check size={12} color={color.onBrand} strokeWidth={3} />
           )}
         </Box>
       </Box>

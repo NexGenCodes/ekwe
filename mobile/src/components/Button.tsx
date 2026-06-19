@@ -95,20 +95,20 @@ export const Button = React.memo(function Button({
   };
 
   const { variantStyle, sizeStyle } = useMemo(() => {
-    let vStyle = { container: {}, text: {}, spinner: color.secondary };
+    let vStyle = { container: {}, text: {}, spinner: color.brand };
     switch (variant) {
       case "primary":
         vStyle = {
-          container: { backgroundColor: color.secondary },
-          text: { color: color.onSecondary },
-          spinner: color.onSecondary,
+          container: { backgroundColor: color.brand },
+          text: { color: color.onBrand },
+          spinner: color.onBrand,
         };
         break;
       case "secondary":
         vStyle = {
-          container: { backgroundColor: `${color.secondary}1A` },
-          text: { color: color.secondary },
-          spinner: color.secondary,
+          container: { backgroundColor: `${color.brand}1A` },
+          text: { color: color.brand },
+          spinner: color.brand,
         };
         break;
       case "outline":
@@ -116,17 +116,17 @@ export const Button = React.memo(function Button({
           container: {
             backgroundColor: "transparent",
             borderWidth: 1,
-            borderColor: color.secondary,
+            borderColor: color.brand,
           },
-          text: { color: color.secondary },
-          spinner: color.secondary,
+          text: { color: color.brand },
+          spinner: color.brand,
         };
         break;
       case "ghost":
         vStyle = {
           container: { backgroundColor: "transparent" },
-          text: { color: color.secondary },
-          spinner: color.secondary,
+          text: { color: color.brand },
+          spinner: color.brand,
         };
         break;
     }

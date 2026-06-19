@@ -160,7 +160,7 @@ export default function ProfileScreen(): React.JSX.Element {
             <ProfileRow
               icon={CreditCard}
               sfIcon="creditcard.fill"
-              iconColor={color.primary}
+              iconColor={color.foreground}
               title={isPro ? "Ekwe Pro" : "Plan & Billing"}
               subtitle={
                 isPro ? "Unlimited translations" : "Free Tier · Standard limits"
@@ -184,12 +184,12 @@ export default function ProfileScreen(): React.JSX.Element {
                   <Box
                     style={[
                       styles.upgradeBadge,
-                      { backgroundColor: color.secondary },
+                      { backgroundColor: color.brand },
                     ]}
                   >
                     <Text
                       variant="caption"
-                      style={{ color: color.onSecondary }}
+                      style={{ color: color.onBrand }}
                     >
                       Upgrade
                     </Text>
@@ -208,7 +208,7 @@ export default function ProfileScreen(): React.JSX.Element {
             <ProfileRow
               icon={Globe}
               sfIcon="globe"
-              iconColor={color.primary}
+              iconColor={color.foreground}
               title="Edit Language Grid"
               subtitle={`${selectedLanguages.length}/5 active languages`}
               hasDivider
@@ -220,7 +220,7 @@ export default function ProfileScreen(): React.JSX.Element {
             <ProfileRow
               icon={Smartphone}
               sfIcon="hand.tap.fill"
-              iconColor={color.primary}
+              iconColor={color.foreground}
               title="Haptic Feedback"
               subtitle="Vibrate on user actions"
               onPress={async () => {
@@ -235,7 +235,7 @@ export default function ProfileScreen(): React.JSX.Element {
                     setHapticsEnabled(val);
                   }}
                   trackColor={{
-                    true: color.primary,
+                    true: color.foreground,
                     false: color.border,
                   }}
                   thumbColor={color.card}
@@ -245,7 +245,7 @@ export default function ProfileScreen(): React.JSX.Element {
             <ProfileRow
               icon={Globe}
               sfIcon="globe"
-              iconColor={color.primary}
+              iconColor={color.foreground}
               title="Display Currency"
               subtitle="Choose your preferred currency"
               hasDivider
@@ -269,7 +269,7 @@ export default function ProfileScreen(): React.JSX.Element {
             <ProfileRow
               icon={Palette}
               sfIcon="paintpalette.fill"
-              iconColor={color.primary}
+              iconColor={color.foreground}
               title="Appearance"
               subtitle="Light, Dark, or System"
               onPress={async () => {
@@ -303,7 +303,7 @@ export default function ProfileScreen(): React.JSX.Element {
             <ProfileRow
               icon={Copy}
               sfIcon="doc.on.doc.fill"
-              iconColor={color.primary}
+              iconColor={color.foreground}
               title="Auto-copy to Clipboard"
               subtitle="Copy translation automatically"
               onPress={async () => {
@@ -328,7 +328,7 @@ export default function ProfileScreen(): React.JSX.Element {
                     setAutoCopy(val);
                   }}
                   trackColor={{
-                    true: color.primary,
+                    true: color.foreground,
                     false: color.border,
                   }}
                   thumbColor={color.card}
@@ -339,7 +339,7 @@ export default function ProfileScreen(): React.JSX.Element {
             <ProfileRow
               icon={Eye}
               sfIcon="eye.fill"
-              iconColor={color.primary}
+              iconColor={color.foreground}
               title="Floating Translation Bubble"
               subtitle="Translate inline in external apps"
               onPress={async () => {
@@ -357,7 +357,7 @@ export default function ProfileScreen(): React.JSX.Element {
                     }
                   }}
                   trackColor={{
-                    true: color.primary,
+                    true: color.foreground,
                     false: color.border,
                   }}
                   thumbColor={color.card}
@@ -376,7 +376,7 @@ export default function ProfileScreen(): React.JSX.Element {
             <ProfileRow
               icon={Mail}
               sfIcon="envelope.fill"
-              iconColor={color.primary}
+              iconColor={color.foreground}
               title="Contact Support"
               hasDivider
               onPress={async () => {
@@ -387,7 +387,7 @@ export default function ProfileScreen(): React.JSX.Element {
             <ProfileRow
               icon={Star}
               sfIcon="star.fill"
-              iconColor={color.primary}
+              iconColor={color.foreground}
               title="Rate Us"
               hasDivider
               onPress={async () => {
@@ -444,7 +444,7 @@ export default function ProfileScreen(): React.JSX.Element {
             <ProfileRow
               icon={Shield}
               sfIcon="shield.fill"
-              iconColor={color.primary}
+              iconColor={color.foreground}
               title="Privacy Policy"
               hasDivider
               onPress={async () => {
@@ -455,7 +455,7 @@ export default function ProfileScreen(): React.JSX.Element {
             <ProfileRow
               icon={FileText}
               sfIcon="doc.text.fill"
-              iconColor={color.primary}
+              iconColor={color.foreground}
               title="Terms of Service"
               onPress={async () => {
                 triggerHaptic();
@@ -646,7 +646,7 @@ export default function ProfileScreen(): React.JSX.Element {
               >
                 <Text
                   variant="body"
-                  style={{ color: color.onPrimary, fontWeight: "600" }}
+                  style={{ color: color.onBrand, fontWeight: "600" }}
                 >
                   Delete Permanently
                 </Text>

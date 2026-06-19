@@ -44,7 +44,7 @@ export const IconContainer = ({
   const bg = ((): string => {
     if (variant === "custom" && backgroundColor) return backgroundColor;
     if (variant === "muted") return `${color.muted}20`;
-    return `${color.primary}15`;
+    return `${color.foreground}15`;
   })();
 
   const dimension = typeof size === "number" ? size : SIZE_MAP[size];

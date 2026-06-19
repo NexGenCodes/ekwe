@@ -59,7 +59,7 @@ export function LensBubble(): React.ReactElement | null {
   }, [recordingState, resetAudioState]);
 
   // THEME COLORS
-  const onPrimaryColor = color.onPrimary;
+  const onPrimaryColor = color.onBrand;
   const stateColor = useMemo(() => {
     switch (recordingState) {
       case RecordingState.Recording:

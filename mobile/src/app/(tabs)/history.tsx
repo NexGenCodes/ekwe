@@ -168,11 +168,11 @@ export default function HistoryScreen(): React.JSX.Element {
               styles.searchContainer,
               {
                 backgroundColor: color.card,
-                borderColor: isFocused ? color.secondary : color.border,
+                borderColor: isFocused ? color.brand : color.border,
               },
             ]}
           >
-            <Search size={iconSize.md} color={color.secondary} />
+            <Search size={iconSize.md} color={color.brand} />
             <TextInput
               style={[
                 styles.searchInput,
@@ -222,8 +222,8 @@ export default function HistoryScreen(): React.JSX.Element {
                   styles.chip,
                   filter === option
                     ? {
-                        backgroundColor: `${color.secondary}15`,
-                        borderColor: color.secondary,
+                        backgroundColor: `${color.brand}15`,
+                        borderColor: color.brand,
                       }
                     : {
                         backgroundColor: color.card,
@@ -236,8 +236,8 @@ export default function HistoryScreen(): React.JSX.Element {
                   variant="label"
                   style={[
                     filter === option
-                      ? { color: color.secondary }
-                      : { color: color.primary },
+                      ? { color: color.brand }
+                      : { color: color.foreground },
                   ]}
                 >
                   {option.charAt(0).toUpperCase() + option.slice(1)}
@@ -262,15 +262,15 @@ export default function HistoryScreen(): React.JSX.Element {
             <EmptyState
               animate
               icon={
-                <IconContainer size="lg" backgroundColor={`${color.primary}15`}>
+                <IconContainer size="lg" backgroundColor={`${color.foreground}15`}>
                   {isIOS ? (
                     <ExpoImage
                       source="sf:clock.fill"
                       style={{ width: iconSize.lg, height: iconSize.lg }}
-                      tintColor={color.primary}
+                      tintColor={color.foreground}
                     />
                   ) : (
-                    <AudioLines size={iconSize.lg} color={color.primary} />
+                    <AudioLines size={iconSize.lg} color={color.foreground} />
                   )}
                 </IconContainer>
               }

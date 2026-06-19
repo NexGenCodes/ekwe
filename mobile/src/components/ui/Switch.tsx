@@ -14,8 +14,8 @@ export const Switch = React.memo(
     const { color, isDark } = useTokens();
 
     const track = useMemo(
-      () => trackColor ?? { true: color.secondary, false: color.border },
-      [trackColor, color.secondary, color.border],
+      () => trackColor ?? { true: color.brand, false: color.border },
+      [trackColor, color.brand, color.border],
     );
 
     const thumb = useMemo(

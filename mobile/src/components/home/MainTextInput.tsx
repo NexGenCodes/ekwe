@@ -46,7 +46,7 @@ export const MainTextInput = React.memo(
           onChangeText={onChangeText}
           multiline
           textAlignVertical="top"
-          selectionColor={color.secondary}
+          selectionColor={color.brand}
           maxLength={maxChars}
           scrollEnabled
           onFocus={onFocus}

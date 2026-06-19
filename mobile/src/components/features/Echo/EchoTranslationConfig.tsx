@@ -42,7 +42,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
       handleTranslate,
     }) => {
       const { color } = useTheme();
-      const brandPrimary = color.secondary;
+      const brandPrimary = color.brand;
       const brandWarning = color.warning;
 
       const isMismatch =
@@ -120,7 +120,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                   <Text
                     variant="bodySmall"
                     style={{
-                      color: isMismatch ? brandWarning : color.primary,
+                      color: isMismatch ? brandWarning : color.foreground,
                     }}
                   >
                     {selectedName}
@@ -158,7 +158,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                   >
                     Detected
                   </Text>
-                  <Text variant="bodySmall" style={{ color: color.primary }}>
+                  <Text variant="bodySmall" style={{ color: color.foreground }}>
                     {detectedName}
                   </Text>
                 </Box>
@@ -210,8 +210,8 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                     style={{
                       color:
                         targetLang === lang.code
-                          ? color.onSecondary
-                          : color.primary,
+                          ? color.onBrand
+                          : color.foreground,
                     }}
                   >
                     {lang.englishName}
@@ -236,7 +236,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                   borderColor: color.border,
                 }}
               >
-                <Text variant="bodySmall" style={{ color: color.primary }}>
+                <Text variant="bodySmall" style={{ color: color.foreground }}>
                   Copy
                 </Text>
               </AnimatedCopyButton>
@@ -257,8 +257,8 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                   opacity: targetLang ? 1 : opacity.disabled,
                 }}
               >
-                <Zap size={16} color={color.onSecondary} />
-                <Text variant="bodySmall" style={{ color: color.onSecondary }}>
+                <Zap size={16} color={color.onBrand} />
+                <Text variant="bodySmall" style={{ color: color.onBrand }}>
                   Translate
                 </Text>
               </Pressable>

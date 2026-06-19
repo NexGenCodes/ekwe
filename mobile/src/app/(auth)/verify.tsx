@@ -100,7 +100,7 @@ export default function VerifyScreen(): React.JSX.Element {
             <Text
               variant="bodySmall"
               style={{
-                color: cooldown > 0 ? color.muted : color.primary,
+                color: cooldown > 0 ? color.muted : color.foreground,
                 marginTop: spacing.xs,
               }}
             >

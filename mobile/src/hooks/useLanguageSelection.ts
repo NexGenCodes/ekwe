@@ -1,12 +1,16 @@
 import * as Haptics from "expo-haptics";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useSelector } from "@legendapp/state/react";
 
+import { LANGUAGES } from "@/constants/languages";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { settingsActions, settings$ } from "@/store";
 import { triggerHaptic } from "@/utils/haptics";
 
 const MAX_LANGUAGES = 5;
+const DEFAULT_LANGUAGES = LANGUAGES.filter((l) => l.defaultSelected).map(
+  (l) => l.code,
+);
 
 export interface UseLanguageSelectionReturn {
   selected: string[];
@@ -18,6 +22,12 @@ export interface UseLanguageSelectionReturn {
 
 export function useLanguageSelection(): UseLanguageSelectionReturn {
   const selected = useSelector(() => settings$.selectedLanguages.get());
+
+  useEffect(() => {
+    if (selected.length === 0) {
+      settingsActions.setSelectedLanguages(DEFAULT_LANGUAGES);
+    }
+  }, []);
 
   const commitToggle = useCallback((code: string): void => {
     const prev = settings$.selectedLanguages.peek();
@@ -48,7 +58,7 @@ export function useLanguageSelection(): UseLanguageSelectionReturn {
     [debouncedToggle],
   );
 
-  const isComplete = selected.length > 0;
+  const isComplete = selected.length === MAX_LANGUAGES;
   const remaining = MAX_LANGUAGES - selected.length;
   const isMaxed = selected.length >= MAX_LANGUAGES;
 

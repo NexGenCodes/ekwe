@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/splash-icon-light.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FAFAFA",
+      "backgroundColor": "#FFFFFF",
       "dark": {
         "image": "./assets/splash-icon.png",
         "backgroundColor": "#09090B"
@@ -42,12 +42,23 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#FAFAFA",
+          "backgroundColor": "#FFFFFF",
           "image": "./assets/splash-icon-light.png",
           "dark": {
             "backgroundColor": "#09090B",
             "image": "./assets/splash-icon.png"
           }
+        }
+      ],
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "assets/fonts/Outfit-Regular.ttf",
+            "assets/fonts/Outfit-Medium.ttf",
+            "assets/fonts/Outfit-Bold.ttf",
+            "assets/fonts/SpaceMono-Regular.ttf"
+          ]
         }
       ],
       [

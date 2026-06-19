@@ -57,7 +57,7 @@ export default function LegalScreen(): React.JSX.Element {
                 onPress={() => router.back()}
                 leftIcon={
                   <Box style={{ marginRight: -spacing.sm }}>
-                    <LucideChevronLeft size={28} color={color.primary} />
+                    <LucideChevronLeft size={28} color={color.foreground} />
                   </Box>
                 }
                 label=""

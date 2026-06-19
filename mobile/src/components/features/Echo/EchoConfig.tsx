@@ -52,19 +52,19 @@ export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
             gap: spacing.sm,
             paddingVertical: spacing.md,
             borderRadius: borderRadius["2xl"],
-            backgroundColor: color.secondary,
+            backgroundColor: color.brand,
             opacity: isResolving ? opacity.inactive : 1,
           }}
         >
           {isResolving && (
             <Spinner
               size="sm"
-              color={color.onSecondary}
+              color={color.onBrand}
               style={{ marginRight: spacing.sm }}
             />
           )}
-          <Zap size={18} color={color.onSecondary} fill={color.onSecondary} />
-          <Text variant="body" style={{ color: color.onSecondary }}>
+          <Zap size={18} color={color.onBrand} fill={color.onBrand} />
+          <Text variant="body" style={{ color: color.onBrand }}>
             {isResolving ? "Preparing Audio..." : "Transcribe"}
           </Text>
         </Pressable>

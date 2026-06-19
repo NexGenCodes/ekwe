@@ -101,13 +101,13 @@ export const ThemeToggler = ({
           ]}
         >
           <Animated.View style={sunStyle}>
-            <Sun size={24} color={color.primary} strokeWidth={2.5} />
+            <Sun size={24} color={color.foreground} strokeWidth={2.5} />
           </Animated.View>
           <Animated.View style={moonStyle}>
-            <Moon size={24} color={color.primary} strokeWidth={2.5} />
+            <Moon size={24} color={color.foreground} strokeWidth={2.5} />
           </Animated.View>
           <Animated.View style={systemStyle}>
-            <Monitor size={24} color={color.primary} strokeWidth={2.5} />
+            <Monitor size={24} color={color.foreground} strokeWidth={2.5} />
           </Animated.View>
         </Animated.View>
       </Pressable>

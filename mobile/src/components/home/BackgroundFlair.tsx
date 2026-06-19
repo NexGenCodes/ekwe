@@ -56,7 +56,7 @@ export const BackgroundFlair = (): React.ReactElement => {
             width: SCREEN_WIDTH * 0.85,
             height: SCREEN_WIDTH * 0.85,
             borderRadius: (SCREEN_WIDTH * 0.85) / 2,
-            backgroundColor: color.secondary,
+            backgroundColor: color.brand,
             opacity: 0.15,
             top: -SCREEN_HEIGHT * 0.08,
             right: -SCREEN_WIDTH * 0.25,

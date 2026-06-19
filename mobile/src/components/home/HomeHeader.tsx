@@ -36,9 +36,9 @@ export const HomeHeader = React.memo(function HomeHeader(): React.ReactElement {
         <IconContainer
           size="xl"
           variant="custom"
-          backgroundColor={`${color.secondary}15`}
+          backgroundColor={`${color.brand}15`}
         >
-          <EkweLogo size={iconSize.xl} color={color.secondary} />
+          <EkweLogo size={iconSize.xl} color={color.brand} />
         </IconContainer>
         <Box>
           <Text variant="display">Ekwe</Text>

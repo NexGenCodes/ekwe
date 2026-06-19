@@ -71,7 +71,7 @@ export function CustomTabBarItem({
     backgroundColor: interpolateColor(
       progress.value,
       [0, 1],
-      ["transparent", `${color.secondary}22`],
+      ["transparent", `${color.brand}22`],
     ),
     paddingHorizontal: interpolate(progress.value, [0, 1], [12, 18]),
   }));
@@ -89,7 +89,7 @@ export function CustomTabBarItem({
   }));
 
   const Icon = options.tabBarIcon;
-  const iconColor = isFocused ? color.secondary : color.muted;
+  const iconColor = isFocused ? color.brand : color.muted;
 
   return (
     <Animated.View
@@ -146,7 +146,7 @@ export function CustomTabBarItem({
             <Text
               variant="label"
               style={{
-                color: color.secondary,
+                color: color.brand,
               }}
               numberOfLines={1}
             >

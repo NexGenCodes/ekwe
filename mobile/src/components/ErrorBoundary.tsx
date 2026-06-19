@@ -98,7 +98,7 @@ export class ErrorBoundary extends Component<Props, State> {
               label="Try again"
               variant="primary"
               onPress={this.handleReset}
-              leftIcon={<RotateCcw size={20} color={color.onPrimary} />}
+              leftIcon={<RotateCcw size={20} color={color.onBrand} />}
             />
           </Box>
 

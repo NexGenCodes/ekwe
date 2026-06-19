@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { Stack, useRouter } from "expo-router";
 import React from "react";
+import { View } from "react-native";
 import Animated from "react-native-reanimated";
 
 import { Button, LanguageSelectionGrid } from "@/components";
@@ -12,10 +13,12 @@ import { useLanguageSelection } from "@/hooks/useLanguageSelection";
 import { settings$, settingsActions } from "@/store";
 import { triggerHaptic } from "@/utils/haptics";
 
+const MAX_LANGUAGES = 5;
+
 export default function EditLanguagesScreen(): React.ReactElement {
   const router = useRouter();
-  const { color, typography } = useTokens();
-  const { selected, toggleLanguage, isComplete, remaining } =
+  const { color, spacing, typography, borderRadius } = useTokens();
+  const { selected, toggleLanguage, isComplete, remaining, isMaxed } =
     useLanguageSelection();
 
   const headerStyle = useFadeIn({ duration: 400 });
@@ -40,6 +43,7 @@ export default function EditLanguagesScreen(): React.ReactElement {
       paddingTop: t.spacing.md,
       borderTopWidth: 1,
       borderTopColor: t.color.border,
+      gap: t.spacing.sm,
     },
   }));
 
@@ -56,6 +60,8 @@ export default function EditLanguagesScreen(): React.ReactElement {
     router.back();
   };
 
+  const countColor = remaining === 0 ? color.success : color.muted;
+
   return (
     <Box style={styles.flex1}>
       <Stack.Screen
@@ -69,14 +75,14 @@ export default function EditLanguagesScreen(): React.ReactElement {
             fontFamily: typography.heading3.fontFamily,
             color: color.foreground,
           },
-          headerTintColor: color.primary,
+          headerTintColor: color.foreground,
         }}
       />
 
       <Animated.View style={[styles.header, headerStyle]}>
         <Text variant="bodySmall" style={styles.subtitle}>
-          Select exactly 5 languages to use in your translation studio. You can
-          change these anytime.
+          Select exactly 5 languages you work with. Tap to select, tap again to
+          remove.
         </Text>
       </Animated.View>
 
@@ -85,10 +91,48 @@ export default function EditLanguagesScreen(): React.ReactElement {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}
       >
-        <LanguageSelectionGrid selected={selected} onToggle={toggleLanguage} />
+        <LanguageSelectionGrid selected={selected} onToggle={toggleLanguage} isMaxed={isMaxed} />
       </ScrollArea>
 
       <Box style={styles.bottomSection}>
+        <Box
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: spacing.xs,
+          }}
+        >
+          <View
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: borderRadius.full,
+              backgroundColor: countColor,
+            }}
+          />
+          <Text
+            variant="caption"
+            style={{ color: countColor }}
+          >
+            {isMaxed
+              ? `${selected.length}/${MAX_LANGUAGES} selected`
+              : `${selected.length}/${MAX_LANGUAGES} selected — ${remaining} more needed`}
+          </Text>
+        </Box>
+
+        {isMaxed && (
+          <Text
+            variant="caption"
+            style={{
+              color: color.muted,
+              textAlign: "center",
+            }}
+          >
+            Unselect a language to pick a different one
+          </Text>
+        )}
+
         <Button
           variant="primary"
           size="large"

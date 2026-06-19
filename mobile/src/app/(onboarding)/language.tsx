@@ -1,17 +1,9 @@
-import { BlurView } from "expo-blur";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect } from "react";
-import { StyleSheet, View } from "react-native";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  Easing,
-} from "react-native-reanimated";
+import React, { useCallback } from "react";
+import { View } from "react-native";
 
 import { Button, LanguageSelectionGrid } from "@/components";
 import { Box, ScreenContainer, Text } from "@/components/ui";
-import { duration } from "@/constants/motion";
 import { useTokens } from "@/hooks/ui";
 import { useLanguageSelection } from "@/hooks/useLanguageSelection";
 import { settingsActions, auth$ } from "@/store";
@@ -20,32 +12,13 @@ import { triggerHaptic } from "@/utils/haptics";
 
 const HEADING = "Pick your languages";
 const SUBTITLE =
-  "Choose up to 5 languages you work with. Tap to select, tap again to remove. You can always change these later.";
+  "Choose exactly 5 languages you work with. Tap to select, tap again to remove. You can always change these later.";
 
 export default function OnboardingLanguagesScreen(): React.ReactElement {
   const router = useRouter();
-  const { color, spacing, isDark } = useTokens();
-  const { selected, toggleLanguage, isComplete, remaining } =
+  const { color, spacing, borderRadius } = useTokens();
+  const { selected, toggleLanguage, isComplete, remaining, isMaxed } =
     useLanguageSelection();
-
-  const opacity = useSharedValue(0);
-  const translateY = useSharedValue<number>(spacing.md);
-
-  useEffect(() => {
-    opacity.value = withTiming(1, {
-      duration: duration.slower,
-      easing: Easing.out(Easing.cubic),
-    });
-    translateY.value = withTiming(0, {
-      duration: duration.slower,
-      easing: Easing.out(Easing.cubic),
-    });
-  }, [opacity, translateY]);
-
-  const containerStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: translateY.value }],
-  }));
 
   const handleContinue = useCallback(async (): Promise<void> => {
     if (!isComplete) return;
@@ -64,6 +37,8 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
     router.replace(session ? "/(tabs)" : "/(auth)/login");
   }, [isComplete, selected, router]);
 
+  const countColor = remaining === 0 ? color.success : color.muted;
+
   return (
     <View style={{ flex: 1, backgroundColor: color.background }}>
       <ScreenContainer
@@ -74,84 +49,108 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
         }}
         style={{ backgroundColor: color.background }}
       >
-        <Animated.View style={containerStyle}>
-          <Box
+        <Box
+          style={{
+            paddingTop: spacing["2xl"],
+            paddingBottom: spacing.md,
+          }}
+        >
+          <Text
+            variant="display"
             style={{
-              paddingTop: spacing["2xl"],
-              paddingBottom: spacing.md,
+              marginBottom: spacing.sm,
+              color: color.foreground,
+              letterSpacing: -0.5,
             }}
           >
-            <Text
-              variant="display"
-              style={{
-                marginBottom: spacing.sm,
-                color: color.foreground,
-                letterSpacing: -0.5,
-              }}
-            >
-              {HEADING}
-            </Text>
-            <Text
-              variant="body"
-              style={{
-                color: color.muted,
-                lineHeight: 24,
-              }}
-            >
-              {SUBTITLE}
-            </Text>
-          </Box>
+            {HEADING}
+          </Text>
+          <Text
+            variant="body"
+            style={{
+              color: color.muted,
+              lineHeight: 24,
+            }}
+          >
+            {SUBTITLE}
+          </Text>
+        </Box>
 
-          <LanguageSelectionGrid
-            selected={selected}
-            onToggle={toggleLanguage}
-          />
-        </Animated.View>
+        <LanguageSelectionGrid
+          selected={selected}
+          onToggle={toggleLanguage}
+          isMaxed={isMaxed}
+        />
       </ScreenContainer>
 
-      {/* Floating Blurred Footer */}
-      <View style={styles.footerContainer}>
-        <BlurView
-          intensity={80}
-          tint={isDark ? "dark" : "light"}
-          style={[
-            styles.blurView,
-            {
-              paddingVertical: spacing.md,
-              paddingHorizontal: spacing.md,
-              borderTopWidth: 1,
-              borderTopColor: color.border + "80", // 50% opacity border
-              backgroundColor: color.background + "99", // 60% opacity background
-              alignItems: "center", // Center the button
-            },
-          ]}
+      <Box
+        style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: color.background,
+          borderTopWidth: 1,
+          borderTopColor: color.border,
+          paddingTop: spacing.md,
+          paddingBottom: spacing["3xl"],
+          paddingHorizontal: spacing.md,
+          gap: spacing.sm,
+        }}
+      >
+        <Box
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: spacing.xs,
+          }}
         >
-          <Button
-            variant="primary"
-            size="large"
-            label={
-              isComplete
-                ? "Create Account to Continue"
-                : `Select ${remaining} more`
-            }
-            disabled={!isComplete}
-            onPress={handleContinue}
-            style={{ minWidth: 250 }}
+          <View
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: borderRadius.full,
+              backgroundColor: countColor,
+            }}
           />
-        </BlurView>
-      </View>
+          <Text
+            variant="caption"
+            style={{ color: countColor }}
+          >
+            {isMaxed
+              ? `${selected.length}/${MAX_LANGUAGES} selected`
+              : `${selected.length}/${MAX_LANGUAGES} selected — ${remaining} more needed`}
+          </Text>
+        </Box>
+
+        {isMaxed && (
+          <Text
+            variant="caption"
+            style={{
+              color: color.muted,
+              textAlign: "center",
+            }}
+          >
+            Unselect a language to pick a different one
+          </Text>
+        )}
+
+        <Button
+          variant="primary"
+          size="large"
+          label={
+            isComplete
+              ? "Create Account to Continue"
+              : `Select ${remaining} more`
+          }
+          disabled={!isComplete}
+          onPress={handleContinue}
+          style={{ minWidth: 250 }}
+        />
+      </Box>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  footerContainer: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-  },
-  blurView: {
-    width: "100%",
-  },
-});
+const MAX_LANGUAGES = 5;

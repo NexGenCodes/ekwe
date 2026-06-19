@@ -83,7 +83,7 @@ export const GradientMesh = (): React.JSX.Element => {
           <RadialGradient id="grad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
             <Stop
               offset="0%"
-              stopColor={isDark ? `${color.primary}20` : `${color.primary}10`}
+              stopColor={isDark ? `${color.foreground}20` : `${color.foreground}10`}
             />
             <Stop offset="100%" stopColor="transparent" />
           </RadialGradient>

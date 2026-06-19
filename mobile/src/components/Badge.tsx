@@ -19,9 +19,9 @@ export interface BadgeProps {
 }
 
 const VARIANT_CONFIG = {
-  primary: { bgOpacity: "20", textKey: "primary" },
+  primary: { bgOpacity: "20", textKey: "foreground" },
   muted: { bgOpacity: "20", textKey: "muted" },
-  success: { bgOpacity: "20", textKey: "primary" },
+  success: { bgOpacity: "20", textKey: "foreground" },
   warning: { bgOpacity: "20", textKey: "warning" },
   error: { bgOpacity: "20", textKey: "error" },
 } as const;

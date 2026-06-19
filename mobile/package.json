@@ -15,9 +15,7 @@
     "prepare": ""
   },
   "dependencies": {
-    "@expo-google-fonts/merriweather": "^0.2.3",
-    "@expo-google-fonts/outfit": "^0.2.3",
-    "@expo-google-fonts/space-mono": "^0.4.2",
+
     "@hookform/resolvers": "^5.2.2",
     "@legendapp/state": "^2.1.15",
     "@op-engineering/op-sqlite": "^16.1.0",

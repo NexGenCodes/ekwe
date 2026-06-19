@@ -41,7 +41,7 @@ export function BillingToggle({
       <Animated.View
         style={[
           styles.toggleIndicator,
-          { backgroundColor: color.secondary },
+          { backgroundColor: color.brand },
           indicatorStyle,
         ]}
       />
@@ -52,7 +52,7 @@ export function BillingToggle({
       >
         <Text
           variant="body"
-          style={{ color: !isAnnual ? color.onSecondary : color.foreground }}
+          style={{ color: !isAnnual ? color.onBrand : color.foreground }}
         >
           Monthly
         </Text>
@@ -64,7 +64,7 @@ export function BillingToggle({
       >
         <Text
           variant="body"
-          style={{ color: isAnnual ? color.onSecondary : color.foreground }}
+          style={{ color: isAnnual ? color.onBrand : color.foreground }}
         >
           Annual
         </Text>

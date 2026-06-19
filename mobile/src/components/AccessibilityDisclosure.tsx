@@ -25,7 +25,7 @@ export const AccessibilityDisclosure: React.FC<
   AccessibilityDisclosureProps
 > = ({ onAgree, onDeny }) => {
   const { color, isDark } = useTheme();
-  const primaryColor = color.primary;
+  const primaryColor = color.foreground;
 
   return (
     <View style={{ flex: 1, backgroundColor: color.background }}>

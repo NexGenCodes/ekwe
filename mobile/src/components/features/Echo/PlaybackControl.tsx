@@ -69,23 +69,23 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
             borderRadius: borderRadius["2xl"],
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: color.secondary,
+            backgroundColor: color.brand,
             opacity: isDecoding ? opacity.disabled : 1,
           }}
         >
           {isDecoding ? (
-            <Spinner size="sm" color={color.onSecondary} />
+            <Spinner size="sm" color={color.onBrand} />
           ) : isPlaying ? (
             <Pause
               size={18}
-              color={color.onSecondary}
-              fill={color.onSecondary}
+              color={color.onBrand}
+              fill={color.onBrand}
             />
           ) : (
             <Play
               size={18}
-              color={color.onSecondary}
-              fill={color.onSecondary}
+              color={color.onBrand}
+              fill={color.onBrand}
             />
           )}
         </Pressable>
@@ -108,7 +108,7 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
 
         <Text
           variant="caption"
-          style={{ width: 50, textAlign: "right", color: color.secondary }}
+          style={{ width: 50, textAlign: "right", color: color.brand }}
         >
           {formatDuration(scrubTime !== null ? scrubTime : progress)}
         </Text>

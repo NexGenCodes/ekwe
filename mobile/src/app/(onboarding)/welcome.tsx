@@ -9,8 +9,6 @@ import Animated, {
   withTiming,
   Easing,
   FadeInDown,
-  withRepeat,
-  withSequence,
 } from "react-native-reanimated";
 
 import { Button, EkweLogo, FeatureCard } from "@/components";
@@ -43,57 +41,33 @@ export default function WelcomeScreen(): React.ReactElement {
   const { color } = useTokens();
 
   const progress = useSharedValue(0);
-  const gradientOpacity = useSharedValue(0.5);
 
   useEffect(() => {
     progress.value = withTiming(1, {
-      duration: duration.slower,
+      duration: duration.slow,
       easing: Easing.out(Easing.cubic),
     });
 
-    gradientOpacity.value = withRepeat(
-      withSequence(
-        withTiming(1, {
-          duration: duration.slower * 6,
-          easing: Easing.inOut(Easing.ease),
-        }),
-        withTiming(0.5, {
-          duration: duration.slower * 6,
-          easing: Easing.inOut(Easing.ease),
-        }),
-      ),
-      -1,
-      true,
-    );
-
     router.prefetch("/language");
-  }, [progress, gradientOpacity, router]);
+  }, [progress, router]);
 
   const containerStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
-    transform: [{ translateY: (1 - progress.value) * 30 }],
-  }));
-
-  const animatedGradientStyle = useAnimatedStyle(() => ({
-    opacity: gradientOpacity.value,
+    transform: [{ translateY: (1 - progress.value) * 20 }],
   }));
 
   return (
     <View style={{ flex: 1, backgroundColor: color.background }}>
-      <Animated.View
-        style={[StyleSheet.absoluteFillObject, animatedGradientStyle]}
-      >
-        <LinearGradient
-          colors={[
-            color.background,
-            color.secondary + "1A", // 10% opacity hex
-            color.background,
-          ]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
-        />
-      </Animated.View>
+      <LinearGradient
+        colors={[
+          color.background,
+          color.brand + "1A",
+          color.background,
+        ]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
 
       <ScreenContainer
         scroll
@@ -117,7 +91,7 @@ export default function WelcomeScreen(): React.ReactElement {
           <Box>
             <Box style={{ alignItems: "center", marginBottom: spacing.xl }}>
               <Box style={{ marginBottom: spacing.md }}>
-                <EkweLogo size={spacing["6xl"]} color={color.secondary} />
+                <EkweLogo size={spacing["6xl"]} color={color.brand} />
               </Box>
               <Text
                 variant="display"
@@ -171,7 +145,7 @@ export default function WelcomeScreen(): React.ReactElement {
               rightIcon={
                 <ChevronRight
                   size={iconSize.md}
-                  color={color.onSecondary}
+                  color={color.onBrand}
                   strokeWidth={spinnerSize.strokeWidth}
                 />
               }

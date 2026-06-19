@@ -41,7 +41,7 @@ export const FeatureCard = React.memo(function FeatureCard({
         rounded="lg"
         style={{ marginRight: spacing.md }}
       >
-        <Icon size={iconSize.md} color={color.primary} strokeWidth={2.5} />
+        <Icon size={iconSize.md} color={color.foreground} strokeWidth={2.5} />
       </IconContainer>
       <Box style={{ flex: 1 }}>
         <Text

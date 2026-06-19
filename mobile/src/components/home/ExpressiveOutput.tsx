@@ -141,22 +141,22 @@ export const ExpressiveOutput = React.memo(
     }, [isSpeaking, isTTSLoading, translation, targetLang]);
 
     const transliterationStyle = useMemo(
-      () => ({ paddingTop: spacing.sm, color: `${color.onSecondary}CC` }),
-      [color.onSecondary],
+      () => ({ paddingTop: spacing.sm, color: `${color.onBrand}CC` }),
+      [color.onBrand],
     );
 
     const listenLabelStyle = useMemo(
       () => ({
-        color: isSpeaking ? color.onSecondary : `${color.onSecondary}CC`,
+        color: isSpeaking ? color.onBrand : `${color.onBrand}CC`,
       }),
-      [isSpeaking, color.onSecondary],
+      [isSpeaking, color.onBrand],
     );
 
     const copyLabelStyle = useMemo(
       () => ({
-        color: copied ? color.onSecondary : `${color.onSecondary}CC`,
+        color: copied ? color.onBrand : `${color.onBrand}CC`,
       }),
-      [copied, color.onSecondary],
+      [copied, color.onBrand],
     );
 
     if (!translation && !isTranslating) return null;
@@ -168,7 +168,7 @@ export const ExpressiveOutput = React.memo(
           borderRadius: borderRadius["2xl"],
           padding: spacing.lg,
           ...shadows.soft,
-          backgroundColor: color.secondary,
+          backgroundColor: color.brand,
         }}
       >
         {isTranslating ? (
@@ -204,7 +204,7 @@ export const ExpressiveOutput = React.memo(
               <Text
                 variant="bodyLarge"
                 selectable
-                style={{ color: color.onSecondary }}
+                style={{ color: color.onBrand }}
               >
                 {translation}
               </Text>
@@ -229,7 +229,7 @@ export const ExpressiveOutput = React.memo(
                   }
                   onPress={handleSpeakToggle}
                   backgroundColor={
-                    isSpeaking ? color.onSecondary : `${color.onSecondary}33`
+                    isSpeaking ? color.onBrand : `${color.onBrand}33`
                   }
                   icon={
                     isTTSLoading ? (
@@ -240,7 +240,7 @@ export const ExpressiveOutput = React.memo(
                         <Spinner
                           size="sm"
                           color={
-                            isSpeaking ? color.secondary : color.onSecondary
+                            isSpeaking ? color.brand : color.onBrand
                           }
                         />
                       </Animated.View>
@@ -251,7 +251,7 @@ export const ExpressiveOutput = React.memo(
                       >
                         <VolumeX
                           size={24}
-                          color={color.secondary}
+                          color={color.brand}
                           strokeWidth={2.5}
                         />
                       </Animated.View>
@@ -262,7 +262,7 @@ export const ExpressiveOutput = React.memo(
                       >
                         <Volume2
                           size={24}
-                          color={color.onSecondary}
+                          color={color.onBrand}
                           strokeWidth={2.5}
                         />
                       </Animated.View>
@@ -285,7 +285,7 @@ export const ExpressiveOutput = React.memo(
                       }
                     }}
                     backgroundColor={
-                      copied ? color.onSecondary : `${color.onSecondary}33`
+                      copied ? color.onBrand : `${color.onBrand}33`
                     }
                     icon={
                       copied ? (
@@ -295,7 +295,7 @@ export const ExpressiveOutput = React.memo(
                         >
                           <Check
                             size={24}
-                            color={color.secondary}
+                            color={color.brand}
                             strokeWidth={3}
                           />
                         </Animated.View>
@@ -306,7 +306,7 @@ export const ExpressiveOutput = React.memo(
                         >
                           <Copy
                             size={24}
-                            color={color.onSecondary}
+                            color={color.onBrand}
                             strokeWidth={2.5}
                           />
                         </Animated.View>

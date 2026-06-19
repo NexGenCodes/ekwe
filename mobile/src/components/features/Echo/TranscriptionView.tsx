@@ -47,7 +47,7 @@ export const TranscriptionView = ({
               height: 10,
               borderRadius: borderRadius.md,
               marginRight: spacing.sm,
-              backgroundColor: color.primary,
+              backgroundColor: color.foreground,
             }}
           />
           <Text variant="caption" style={{ color: color.muted }}>

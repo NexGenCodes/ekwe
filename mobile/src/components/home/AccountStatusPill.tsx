@@ -35,7 +35,7 @@ export function AccountStatusPill(): React.ReactElement {
         <Text
           variant="bodySmall"
           style={{
-            color: color.primary,
+            color: color.foreground,
             textTransform: "uppercase",
           }}
         >
@@ -63,8 +63,8 @@ export function AccountStatusPill(): React.ReactElement {
           alignItems: "center",
           justifyContent: "center",
           minWidth: 80,
-          backgroundColor: color.secondary,
-          borderColor: color.secondary,
+          backgroundColor: color.brand,
+          borderColor: color.brand,
         },
         pressed && {
           opacity: 0.8,
@@ -75,7 +75,7 @@ export function AccountStatusPill(): React.ReactElement {
       <Text
         variant="bodySmall"
         style={{
-          color: color.onSecondary,
+          color: color.onBrand,
         }}
       >
         Go Pro

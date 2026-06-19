@@ -51,15 +51,15 @@ export function HistoryEmptyState({
         <EmptyState
           animate
           icon={
-            <IconContainer size="lg" backgroundColor={`${color.primary}10`}>
+            <IconContainer size="lg" backgroundColor={`${color.foreground}10`}>
               {isIOS ? (
                 <ExpoImage
                   source="sf:clock.fill"
                   style={{ width: iconSize.lg, height: iconSize.lg }}
-                  tintColor={color.primary}
+                  tintColor={color.foreground}
                 />
               ) : (
-                <Clock size={iconSize.lg} color={color.primary} />
+                <Clock size={iconSize.lg} color={color.foreground} />
               )}
             </IconContainer>
           }

@@ -163,7 +163,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
                 style={{
                   flex: 1,
                   marginLeft: spacing.sm,
-                  color: color.secondary,
+                  color: color.brand,
                 }}
               >
                 {selectedLangName}
@@ -176,10 +176,10 @@ export const Echo = (props: EchoProps): React.ReactElement => {
                   paddingVertical: spacing.sm,
                   paddingHorizontal: spacing.md,
                   borderRadius: borderRadius["2xl"],
-                  backgroundColor: color.secondary,
+                  backgroundColor: color.brand,
                 }}
               >
-                <Text variant="bodySmall" style={{ color: color.onSecondary }}>
+                <Text variant="bodySmall" style={{ color: color.onBrand }}>
                   Change
                 </Text>
               </Pressable>
@@ -340,11 +340,11 @@ export const Echo = (props: EchoProps): React.ReactElement => {
                 paddingHorizontal: spacing.lg,
                 borderRadius: borderRadius["2xl"],
                 gap: spacing.sm,
-                backgroundColor: color.secondary,
+                backgroundColor: color.brand,
               }}
             >
-              <RefreshCw size={16} color={color.onSecondary} />
-              <Text variant="bodySmall" style={{ color: color.onSecondary }}>
+              <RefreshCw size={16} color={color.onBrand} />
+              <Text variant="bodySmall" style={{ color: color.onBrand }}>
                 Start Over
               </Text>
             </Pressable>
@@ -388,7 +388,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
                 width: 8,
                 height: 8,
                 borderRadius: borderRadius.sm,
-                backgroundColor: color.secondary,
+                backgroundColor: color.brand,
               }}
             />
             <Text variant="bodySmall" style={{ color: color.muted }}>

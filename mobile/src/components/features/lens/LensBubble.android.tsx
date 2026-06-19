@@ -201,7 +201,7 @@ export function LensBubble(): React.ReactElement | null {
     }
   }, [recordingState, bubbleTheme]);
 
-  const onPrimaryColor = color.onPrimary;
+  const onPrimaryColor = color.onBrand;
 
   const bubbleColor = useSharedValue(bubbleTheme.idle);
   useEffect((): void => {

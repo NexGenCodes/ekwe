@@ -41,8 +41,8 @@ export const Card = ({
     switch (variant) {
       case "accent":
         return {
-          backgroundColor: `${color.primary}08`,
-          borderColor: `${color.primary}30`,
+          backgroundColor: `${color.foreground}08`,
+          borderColor: `${color.foreground}30`,
           borderWidth: 1,
         };
       case "outlined":

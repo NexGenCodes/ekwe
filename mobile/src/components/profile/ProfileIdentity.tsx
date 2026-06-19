@@ -87,13 +87,13 @@ export function ProfileIdentity({
                 height: "100%",
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: `${color.secondary}1A`,
+                backgroundColor: `${color.brand}1A`,
               }}
             >
               <Text
                 variant="display"
                 style={{
-                  color: color.secondary,
+                  color: color.brand,
                 }}
               >
                 {rawName?.[0] || userName[0]?.toUpperCase() || "U"}
@@ -112,7 +112,7 @@ export function ProfileIdentity({
             alignItems: "center",
             justifyContent: "center",
             borderWidth: 3,
-            backgroundColor: color.secondary,
+            backgroundColor: color.brand,
             borderColor: color.background,
           }}
           onPress={onEditAvatar}
@@ -121,10 +121,10 @@ export function ProfileIdentity({
             <ExpoImage
               source="sf:pencil"
               style={{ width: 14, height: 14 }}
-              tintColor={color.onSecondary}
+              tintColor={color.onBrand}
             />
           ) : (
-            <Edit3 size={14} color={color.onSecondary} />
+            <Edit3 size={14} color={color.onBrand} />
           )}
         </Pressable>
       </Box>
@@ -154,12 +154,12 @@ export function ProfileIdentity({
               <ExpoImage
                 source="sf:crown.fill"
                 style={{ width: 14, height: 14 }}
-                tintColor={isPro ? color.warning : color.secondary}
+                tintColor={isPro ? color.warning : color.brand}
               />
             ) : (
               <Crown
                 size={14}
-                color={isPro ? color.warning : color.secondary}
+                color={isPro ? color.warning : color.brand}
               />
             )
           }

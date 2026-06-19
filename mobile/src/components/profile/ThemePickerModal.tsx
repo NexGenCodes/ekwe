@@ -104,10 +104,10 @@ export function ThemePickerModal({
                       marginVertical: spacing.hairline,
                     },
                     pressed && {
-                      backgroundColor: `${color.primary}1A`,
+                      backgroundColor: `${color.foreground}1A`,
                     },
                     isSelected && {
-                      backgroundColor: `${color.primary}0D`,
+                      backgroundColor: `${color.foreground}0D`,
                     },
                   ]}
                   onPress={() => onSelect(item.value)}
@@ -119,7 +119,7 @@ export function ThemePickerModal({
                   <Box style={{ marginRight: spacing.md }}>
                     <item.icon
                       size={20}
-                      color={isSelected ? color.primary : color.foreground}
+                      color={isSelected ? color.foreground : color.foreground}
                       strokeWidth={2}
                     />
                   </Box>
@@ -127,14 +127,14 @@ export function ThemePickerModal({
                     <Text
                       variant="body"
                       style={{
-                        color: isSelected ? color.primary : color.foreground,
+                        color: isSelected ? color.foreground : color.foreground,
                         fontWeight: isSelected ? "600" : "400",
                       }}
                     >
                       {item.label}
                     </Text>
                   </Box>
-                  {isSelected && <Check size={20} color={color.primary} />}
+                  {isSelected && <Check size={20} color={color.foreground} />}
                 </Pressable>
               );
             })}

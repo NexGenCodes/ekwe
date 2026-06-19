@@ -112,9 +112,9 @@ export default function BillingScreen(): React.ReactElement {
             ]}
           >
             {isPro ? (
-              <Crown size={32} color={color.primary} strokeWidth={2.5} />
+              <Crown size={32} color={color.foreground} strokeWidth={2.5} />
             ) : (
-              <Sparkles size={32} color={color.primary} strokeWidth={2.5} />
+              <Sparkles size={32} color={color.foreground} strokeWidth={2.5} />
             )}
           </Animated.View>
           <Animated.View entering={FadeIn.duration(duration.slow).delay(450)}>
@@ -205,7 +205,7 @@ export default function BillingScreen(): React.ReactElement {
               <Text
                 variant="bodySmall"
                 style={{
-                  color: color.primary,
+                  color: color.foreground,
                   textDecorationLine: "underline",
                 }}
               >

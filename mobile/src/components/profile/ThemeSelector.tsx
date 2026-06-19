@@ -60,7 +60,7 @@ export function ThemeSelector(): React.ReactElement {
             width: SEGMENT_SIZE,
             height: SEGMENT_SIZE,
             borderRadius: borderRadius.lg,
-            backgroundColor: color.primary,
+            backgroundColor: color.foreground,
           },
           indicatorStyle,
         ]}
@@ -83,7 +83,7 @@ export function ThemeSelector(): React.ReactElement {
           >
             <Icon
               size={16}
-              color={isActive ? color.onPrimary : color.muted}
+              color={isActive ? color.onBrand : color.muted}
               strokeWidth={2.5}
             />
           </Pressable>

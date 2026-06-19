@@ -81,7 +81,7 @@ export function LensOverlay(): React.ReactElement {
               shadowRadius: 5,
               shadowOffset: { width: 0, height: 4 },
               zIndex: zIndex.modal,
-              backgroundColor: color.primary,
+              backgroundColor: color.foreground,
             },
             animatedStyle,
           ]}
@@ -99,7 +99,7 @@ export function LensOverlay(): React.ReactElement {
               alignItems: "center",
             }}
           >
-            <Icon icon={Mic} size="lg" color={color.onPrimary} />
+            <Icon icon={Mic} size="lg" color={color.onBrand} />
           </Pressable>
         </Animated.View>
       </GestureDetector>
@@ -137,7 +137,7 @@ export function LensOverlay(): React.ReactElement {
       >
         <Box style={{ flexDirection: "row", alignItems: "center" }}>
           <Box style={{ marginRight: spacing.sm }}>
-            <Icon icon={Globe} size="sm" color={color.primary} />
+            <Icon icon={Globe} size="sm" color={color.foreground} />
           </Box>
           <Text variant="body" style={{ fontWeight: "bold" }}>
             Lens Translator
@@ -174,7 +174,7 @@ export function LensOverlay(): React.ReactElement {
               alignItems: "center",
             }}
           >
-            <Text variant="label" style={{ color: color.primary }}>
+            <Text variant="label" style={{ color: color.foreground }}>
               {translatedText}
             </Text>
             <Pressable
@@ -182,7 +182,7 @@ export function LensOverlay(): React.ReactElement {
               feedback="opacity"
               style={{ padding: spacing.xs }}
             >
-              <Icon icon={Copy} size="sm" color={color.primary} />
+              <Icon icon={Copy} size="sm" color={color.foreground} />
             </Pressable>
           </Box>
         ) : null}
@@ -197,7 +197,7 @@ export function LensOverlay(): React.ReactElement {
               borderRadius: borderRadius.md,
               alignItems: "center",
               marginHorizontal: spacing.xs,
-              backgroundColor: isStreaming ? color.error : color.primary,
+              backgroundColor: isStreaming ? color.error : color.foreground,
             },
           ]}
           onPress={async () => {
@@ -211,7 +211,7 @@ export function LensOverlay(): React.ReactElement {
         >
           <Text
             variant="body"
-            style={{ color: color.onPrimary, fontWeight: "bold" }}
+            style={{ color: color.onBrand, fontWeight: "bold" }}
           >
             {isStreaming ? "Stop" : "Listen"}
           </Text>
@@ -224,7 +224,7 @@ export function LensOverlay(): React.ReactElement {
               borderRadius: borderRadius.md,
               alignItems: "center",
               marginHorizontal: spacing.xs,
-              backgroundColor: color.secondary,
+              backgroundColor: color.brand,
               opacity: transcript ? 1 : opacity.disabled,
             },
           ]}
@@ -233,7 +233,7 @@ export function LensOverlay(): React.ReactElement {
         >
           <Text
             variant="body"
-            style={{ color: color.onSecondary, fontWeight: "bold" }}
+            style={{ color: color.onBrand, fontWeight: "bold" }}
           >
             Translate
           </Text>

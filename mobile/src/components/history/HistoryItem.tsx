@@ -149,14 +149,14 @@ export const HistoryItem = React.memo(
             <Box
               style={[
                 styles.translationBlock,
-                { borderLeftColor: color.secondary },
+                { borderLeftColor: color.brand },
               ]}
             >
               <Text
                 variant="body"
                 numberOfLines={2}
                 ellipsizeMode="tail"
-                style={{ color: color.secondary }}
+                style={{ color: color.brand }}
               >
                 {entry.translation?.trim()}
               </Text>
@@ -168,7 +168,7 @@ export const HistoryItem = React.memo(
       // Transcription or translation-only: show the single available text
       const textToShow = entry.translation?.trim() || entry.transcript?.trim();
       const textColor =
-        entryType === "transcription" ? color.foreground : color.secondary;
+        entryType === "transcription" ? color.foreground : color.brand;
       return (
         <Text
           variant="bodySmall"

@@ -105,9 +105,9 @@ export function ProPlanCard({
         styles.proCard,
         {
           backgroundColor: glassBg,
-          borderColor: color.secondary,
+          borderColor: color.brand,
           borderWidth: 1,
-          shadowColor: color.secondary,
+          shadowColor: color.brand,
           shadowOffset: { width: 0, height: 4 },
           shadowOpacity: 0.08,
           shadowRadius: 12,
@@ -120,8 +120,8 @@ export function ProPlanCard({
           style={[
             styles.currentBadge,
             {
-              backgroundColor: color.secondary,
-              shadowColor: color.secondary,
+              backgroundColor: color.brand,
+              shadowColor: color.brand,
               shadowOffset: { width: 0, height: 1 },
               shadowOpacity: 0.12,
               shadowRadius: 3,
@@ -144,7 +144,7 @@ export function ProPlanCard({
         <Text variant="heading2" style={{ color: color.foreground }}>
           {proPlan.name}
         </Text>
-        <Zap size={20} color={color.secondary} fill={color.secondary} />
+        <Zap size={20} color={color.brand} fill={color.brand} />
       </Box>
 
       <Box style={styles.priceRow}>
@@ -160,7 +160,7 @@ export function ProPlanCard({
             {price.originalPrice.toFixed(2)}
           </Text>
         )}
-        <Text variant="body" style={{ color: color.secondary }}>
+        <Text variant="body" style={{ color: color.brand }}>
           {price.symbol}
         </Text>
         <Text variant="heading1" style={{ color: color.foreground }}>
@@ -181,7 +181,7 @@ export function ProPlanCard({
               Save {price.savingPercent}%
             </Text>
           </Box>
-          <Text variant="body" style={{ color: color.secondary }}>
+          <Text variant="body" style={{ color: color.brand }}>
             Billed {price.symbol}
             {price.annualTotal.toFixed(2)} annually
           </Text>
@@ -197,7 +197,7 @@ export function ProPlanCard({
         <React.Fragment key={f.title}>
           <FeatureRow
             feature={{ ...f, included: true }}
-            accentColor={color.secondary}
+            accentColor={color.brand}
             mutedColor={color.muted}
             textColor={color.foreground}
             isPro

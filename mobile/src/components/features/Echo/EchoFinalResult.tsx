@@ -34,7 +34,7 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
     handleClose,
   }) => {
     const { color } = useTheme();
-    const brandPrimary = color.secondary;
+    const brandPrimary = color.brand;
 
     const [activeTab, setActiveTab] = React.useState<
       "Translation" | "Transcription"
@@ -122,7 +122,7 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
               borderColor: color.border,
             }}
           >
-            <Text variant="bodySmall" style={{ color: color.primary }}>
+            <Text variant="bodySmall" style={{ color: color.foreground }}>
               Copy
             </Text>
           </AnimatedCopyButton>
@@ -142,8 +142,8 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
               backgroundColor: brandPrimary,
             }}
           >
-            <CheckCircle2 size={16} color={color.onSecondary} />
-            <Text variant="bodySmall" style={{ color: color.onSecondary }}>
+            <CheckCircle2 size={16} color={color.onBrand} />
+            <Text variant="bodySmall" style={{ color: color.onBrand }}>
               Done
             </Text>
           </Pressable>

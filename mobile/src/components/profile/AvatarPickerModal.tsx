@@ -149,10 +149,10 @@ export function AvatarPickerModal({
                   alignItems: "center",
                   justifyContent: "center",
                   backgroundColor: color.card,
-                  borderColor: !currentIcon ? color.primary : color.border,
+                  borderColor: !currentIcon ? color.foreground : color.border,
                 },
                 pressed && {
-                  backgroundColor: `${color.primary}1A`,
+                  backgroundColor: `${color.foreground}1A`,
                   transform: [{ scale: 0.95 }],
                 },
               ]}
@@ -162,12 +162,12 @@ export function AvatarPickerModal({
             >
               <User
                 size={32}
-                color={!currentIcon ? color.primary : color.foreground}
+                color={!currentIcon ? color.foreground : color.foreground}
               />
               <Text
                 variant="caption"
                 style={{
-                  color: !currentIcon ? color.primary : color.muted,
+                  color: !currentIcon ? color.foreground : color.muted,
                   marginTop: spacing.xs,
                 }}
               >

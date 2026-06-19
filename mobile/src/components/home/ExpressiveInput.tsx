@@ -222,8 +222,8 @@ export const ExpressiveInput = React.memo(
       activeBorderColor = color.success;
       activeShadowColor = color.success;
     } else if (isFocused) {
-      activeBorderColor = color.secondary;
-      activeShadowColor = color.secondary;
+      activeBorderColor = color.brand;
+      activeShadowColor = color.brand;
     }
 
     return (

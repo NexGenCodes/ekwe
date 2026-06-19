@@ -37,7 +37,7 @@ export default function TabLayout(): React.ReactElement | null {
           fontFamily: typography.heading3.fontFamily,
           color: color.foreground,
         },
-        headerTintColor: color.primary,
+        headerTintColor: color.foreground,
       }}
     >
       <Tabs.Screen

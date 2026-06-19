@@ -34,7 +34,7 @@ export const Input = forwardRef<TextInput, InputProps>(
       const borderColorValue = interpolateColor(
         focusProgress.value,
         [0, 1],
-        [color.border, color.secondary],
+        [color.border, color.brand],
       );
       return { borderColor: borderColorValue };
     });
