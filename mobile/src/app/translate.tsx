@@ -11,7 +11,7 @@ import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTranslation, useClipboard, useTheme } from "@/hooks";
 import { HistoryService } from "@/services/HistoryService";
-import { settings$, settingsActions, auth$ } from "@/store";
+import { settings$, auth$ } from "@/store";
 import { AppToast, isIOS } from "@/utils";
 
 export default function TranslateScreen(): React.JSX.Element {

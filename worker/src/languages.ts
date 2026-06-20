@@ -87,17 +87,6 @@ export const DEEPGRAM_LANGUAGES = new Set([
 export const ASSEMBLYAI_STREAM_LANGUAGES = new Set(['en']);
 
 // ─── Provider name → language set map (used by pipeline) ─────────────
-
-const BATCH_STT_LANGUAGES: Record<string, ReadonlySet<string>> = {
-  witai: WITAI_LANGUAGES,
-  cohere: COHERE_LANGUAGES,
-  gladia: ALL_LANGUAGES,
-  cloudflare: ALL_LANGUAGES,
-  groq: ALL_LANGUAGES,
-  deepgram: DEEPGRAM_LANGUAGES,
-  assemblyai: ALL_LANGUAGES,
-};
-
 export const STREAM_STT_LANGUAGES: Record<string, ReadonlySet<string>> = {
   deepgram: DEEPGRAM_LANGUAGES,
   assemblyai: ASSEMBLYAI_STREAM_LANGUAGES,

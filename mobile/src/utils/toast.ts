@@ -29,6 +29,17 @@ export const AppToast = {
     });
   },
 
+  warning: (title: string, options?: AppToastOptions): void => {
+    if (options?.haptics !== false) {
+      triggerHaptic(Haptics.NotificationFeedbackType.Warning);
+    }
+    toast.warning(title, {
+      description: options?.description,
+      duration: options?.duration || 3500,
+      richColors: true,
+    });
+  },
+
   success: (title: string, options?: AppToastOptions): void => {
     if (options?.haptics !== false) {
       triggerHaptic(Haptics.NotificationFeedbackType.Success);
