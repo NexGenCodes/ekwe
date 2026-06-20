@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -37,7 +38,7 @@ export default function VerifyScreen(): React.JSX.Element {
       params.source === "signup" ? "signup" : "email";
     const result = await verify(email, data.token, type);
     if (result.ok) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      triggerHaptic(Haptics.NotificationFeedbackType.Success);
       router.replace("/(tabs)");
     }
   };

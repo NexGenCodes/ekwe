@@ -1,4 +1,4 @@
-import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import { Stack } from "expo-router";
 import { Crown, Sparkles } from "lucide-react-native";
 import React, { useMemo } from "react";
@@ -135,7 +135,7 @@ export default function BillingScreen(): React.ReactElement {
             <BillingToggle
               isAnnual={isAnnual}
               onToggle={async (annual) => {
-                await Haptics.selectionAsync();
+                await triggerHaptic("selection");
                 setIsAnnual(annual);
               }}
               color={color}

@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { toast } from "sonner-native";
 
+import { triggerHaptic } from "./haptics";
 import logger from "./logger";
 
 export interface AppToastOptions {
@@ -19,7 +20,7 @@ export interface AppToastOptions {
 export const AppToast = {
   info: (title: string, options?: AppToastOptions): void => {
     if (options?.haptics !== false) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      triggerHaptic();
     }
     toast(title, {
       description: options?.description,
@@ -30,7 +31,7 @@ export const AppToast = {
 
   success: (title: string, options?: AppToastOptions): void => {
     if (options?.haptics !== false) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      triggerHaptic(Haptics.NotificationFeedbackType.Success);
     }
     toast.success(title, {
       description: options?.description,
@@ -63,7 +64,7 @@ export const AppToast = {
     }
 
     if (options?.haptics !== false) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerHaptic(Haptics.NotificationFeedbackType.Error);
     }
 
     toast.error(title, {

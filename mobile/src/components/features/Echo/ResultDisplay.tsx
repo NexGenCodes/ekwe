@@ -1,4 +1,4 @@
-import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import React, { useState } from "react";
 
 import { ScrollableTextBox } from "../../ScrollableTextBox";
@@ -46,7 +46,7 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
 
     const handleTabPress = React.useCallback(
       (tab: "Translation" | "Transcription"): void => {
-        Haptics.selectionAsync();
+        triggerHaptic("selection");
         setActiveTab(tab);
         onTabChange?.(tab);
       },

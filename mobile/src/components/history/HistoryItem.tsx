@@ -1,4 +1,5 @@
 import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import { Image as ExpoImage } from "expo-image";
 import { Mic, Trash2, Upload, Type } from "lucide-react-native";
 import React, { useRef, useCallback, useMemo } from "react";
@@ -37,12 +38,12 @@ export const HistoryItem = React.memo(
     const { color } = useTheme();
 
     const handlePress = useCallback((): void => {
-      Haptics.selectionAsync();
+      triggerHaptic("selection");
       onPress(entry);
     }, [entry, onPress]);
 
     const handleDelete = useCallback((): void => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      triggerHaptic(Haptics.NotificationFeedbackType.Warning);
       onDelete(entry.id);
       swipeableRef.current?.close();
     }, [entry.id, onDelete]);

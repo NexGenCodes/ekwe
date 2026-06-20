@@ -10,7 +10,7 @@ import type { AudioRecorder, RecordingOptions } from "expo-audio";
 import * as Haptics from "expo-haptics";
 
 import { PLAN_LIMITS } from "@/constants/billing";
-import { logger, isIOS } from "@/utils";
+import { logger, isIOS, triggerHaptic } from "@/utils";
 import { releaseAudioEffects } from "@/utils/AudioEffectsModule";
 
 type PermissionStatus = "granted" | "denied" | "undetermined" | "restricted";
@@ -101,7 +101,7 @@ class AudioService {
         : undefined,
     );
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
   }
 
   public async stopRecording(): Promise<{ path: string; duration: number }> {
@@ -111,7 +111,7 @@ class AudioService {
 
     await this.recorder.stop();
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic();
 
     const path = this.recorder.uri || "";
     const duration = this.recorder.currentTime * 1000;

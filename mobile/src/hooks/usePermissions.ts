@@ -5,7 +5,6 @@ import { PLAN_FEATURES, PLAN_LIMITS } from "@/constants/billing";
 import { auth$ } from "@/store";
 
 interface PlanLimits {
-  maxPinnedLanguages: number;
   maxSelectedLanguages: number;
   dictationDurationMs: number;
   historyLocalTtlDays: number;
@@ -18,7 +17,6 @@ interface PlanLimits {
 }
 
 const HARDCODED_LIMITS = {
-  maxPinnedLanguages: 5,
   maxSelectedLanguages: 10,
   historyLocalTtlDays: 90,
 };
@@ -29,7 +27,6 @@ export function usePermissions(): PlanLimits {
   const limits = isPro ? PLAN_LIMITS.pro : PLAN_LIMITS.free;
 
   return useMemo(() => ({
-    maxPinnedLanguages: HARDCODED_LIMITS.maxPinnedLanguages,
     maxSelectedLanguages: HARDCODED_LIMITS.maxSelectedLanguages,
     dictationDurationMs: limits.dictationDurationMs,
     historyLocalTtlDays: HARDCODED_LIMITS.historyLocalTtlDays,

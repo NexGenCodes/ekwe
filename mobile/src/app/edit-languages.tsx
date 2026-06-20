@@ -10,7 +10,7 @@ import { useStyles, useTokens } from "@/hooks/ui";
 import type { Tokens } from "@/hooks/ui";
 import { useFadeIn } from "@/hooks/useAnimation";
 import { useLanguageSelection } from "@/hooks/useLanguageSelection";
-import { settings$, settingsActions } from "@/store";
+import { settingsActions } from "@/store";
 import { triggerHaptic } from "@/utils/haptics";
 
 export default function EditLanguagesScreen(): React.ReactElement {
@@ -49,10 +49,6 @@ export default function EditLanguagesScreen(): React.ReactElement {
     if (!isComplete) return;
 
     settingsActions.setSelectedLanguages(selected);
-
-    const pinned = settings$.pinnedLanguages.get();
-    const newPinned = pinned.filter((p) => selected.includes(p));
-    settingsActions.setPinnedLanguages(newPinned);
 
     triggerHaptic(Haptics.NotificationFeedbackType.Success);
     router.back();

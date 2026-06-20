@@ -1,6 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { AlertButton } from "react-native";
 
+import { triggerHaptic } from "./haptics";
 import logger from "./logger";
 
 import { appAlertActions } from "@/store/appAlert";
@@ -34,7 +35,7 @@ export const AppAlert = {
     options?: AppAlertOptions,
   ): void => {
     if (options?.haptics !== false) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      triggerHaptic();
     }
 
     appAlertActions.show({
@@ -68,7 +69,7 @@ export const AppAlert = {
     logger.error(`[AppAlert Error] ${title} - ${message}`);
 
     if (options?.haptics !== false) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerHaptic(Haptics.NotificationFeedbackType.Error);
     }
 
     appAlertActions.show({
@@ -90,7 +91,7 @@ export const AppAlert = {
     options?: AppAlertOptions,
   ): void => {
     if (options?.haptics !== false) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      triggerHaptic(Haptics.NotificationFeedbackType.Success);
     }
 
     appAlertActions.show({
@@ -116,7 +117,7 @@ export const AppAlert = {
     } & AppAlertOptions,
   ): void => {
     if (options?.haptics !== false) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
     }
 
     appAlertActions.show({

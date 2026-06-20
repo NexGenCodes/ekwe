@@ -1,5 +1,5 @@
 import { logger } from "../logger";
-import { getTranslateProviderNames } from "../config";
+import { getTranslateProviderNames, getLimits } from "../config";
 import * as cloudflare from "../providers/cloudflare";
 import * as cohere from "../providers/cohere";
 import * as gemini from "../providers/gemini";
@@ -128,11 +128,19 @@ export async function handleTranslate(
           provider: result.provider,
         });
 
-        if (detectPromise) {
+        const limits = getLimits(tier);
+        const r = result as unknown as Record<string, unknown>;
+        if (!limits.transliterationAllowed && "transliteration" in r) {
+          delete r.transliteration;
+        }
+
+        if (limits.autoDetectAllowed && detectPromise) {
           const detected = await detectPromise;
           if (detected) {
             result.language = detected;
           }
+        } else if (!limits.autoDetectAllowed && "language" in r) {
+          delete r.language;
         }
 
         try {

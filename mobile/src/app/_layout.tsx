@@ -18,7 +18,6 @@ import { ErrorBoundary, ToastContainer, AppAlertModal } from "@/components";
 import { Box } from "@/components/ui";
 import { useShareIntentHandler, useTheme, useTripleExclusivity } from "@/hooks";
 import { queryClient } from "@/hooks/queries/queryClient";
-import { ShareIntentProvider } from "@/providers/ShareIntentProvider";
 import { HistoryService } from "@/services/HistoryService";
 import { SyncService } from "@/services/SyncService";
 import { initAuth, cleanupAuth } from "@/services/auth";
@@ -160,9 +159,7 @@ function RootLayout(): React.ReactElement {
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
-        <ShareIntentProvider>
-          <InnerLayout />
-        </ShareIntentProvider>
+        <InnerLayout />
       </QueryClientProvider>
     </SafeAreaProvider>
   );

@@ -1,4 +1,4 @@
-import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import React, { useEffect } from "react";
 import Animated, {
   interpolate,
@@ -108,7 +108,7 @@ export function CustomTabBarItem({
         testID={options.tabBarTestID}
         onPress={() => {
           if (!isFocused) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            triggerHaptic();
           }
           onPress();
         }}

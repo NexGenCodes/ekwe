@@ -8,7 +8,7 @@ import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import * as AppleAuthentication from "expo-apple-authentication";
 
 import { queryClient } from "@/hooks/queries/queryClient";
-import { posthogClient } from "@/lib/posthog";
+import { posthogClient } from "@/services/posthog";
 import { SyncService } from "@/services/SyncService";
 import { mmkv } from "@/services/mmkv";
 import { supabase } from "@/services/supabase";

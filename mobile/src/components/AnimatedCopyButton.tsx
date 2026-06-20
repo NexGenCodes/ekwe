@@ -1,5 +1,5 @@
 import * as Clipboard from "expo-clipboard";
-import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import { Copy, CheckCircle2 } from "lucide-react-native";
 import React, { useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
@@ -32,7 +32,7 @@ export const AnimatedCopyButton: React.FC<Props> = ({
   const handleCopy = async (): Promise<void> => {
     if (copied || !textToCopy) return;
 
-    Haptics.selectionAsync();
+    triggerHaptic("selection");
     await Clipboard.setStringAsync(textToCopy);
     setCopied(true);
 

@@ -1,6 +1,7 @@
 import { useSelector } from "@legendapp/state/react";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { useEffect, useCallback, useReducer, useRef } from "react";
 import { AppState } from "react-native";
@@ -209,7 +210,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       return;
     }
 
-    Haptics.selectionAsync();
+    triggerHaptic("selection");
     dispatch({ type: "SET_STEP", payload: "Transcribing" });
     IntentService.updateBubbleMode("MAGIC");
 
@@ -259,7 +260,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
         },
       });
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      triggerHaptic(Haptics.NotificationFeedbackType.Success);
       dispatch({ type: "SET_STEP", payload: "TranscribeResult" });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -283,7 +284,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
 
     if (!textToTranslate || !source) return;
 
-    Haptics.selectionAsync();
+    triggerHaptic("selection");
     // Clear old translation immediately to prevent "brief text flash"
     dispatch({ type: "SET_TRANSLATION", payload: { text: null } });
     dispatch({ type: "SET_STEP", payload: "Translating" });
@@ -344,7 +345,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       session,
     );
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    triggerHaptic(Haptics.NotificationFeedbackType.Success);
     dispatch({ type: "SET_STEP", payload: "FullResult" });
   };
 

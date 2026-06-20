@@ -1,4 +1,4 @@
-import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import { Zap, CheckCircle2 } from "lucide-react-native";
 import React from "react";
 
@@ -84,7 +84,7 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
           <Pressable
             feedback="opacity"
             onPress={() => {
-              Haptics.selectionAsync();
+              triggerHaptic("selection");
               setStep("TranscribeResult");
             }}
             style={{

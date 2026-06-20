@@ -1,5 +1,5 @@
 import { useAudioPlayer, setIsAudioActiveAsync } from "expo-audio";
-import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSharedValue, SharedValue } from "react-native-reanimated";
 
@@ -73,7 +73,7 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
         progressSV.value = dur;
         setProgress(dur);
         stopProgressTimer();
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        triggerHaptic();
       } else {
         progressSV.value = currentTime;
         const now = Date.now();
@@ -98,7 +98,7 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
     try {
       await setIsAudioActiveAsync(true);
       player.play();
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      triggerHaptic();
     } catch (error) {
       logger.error("[SharedAudioPlayer] Play failed:", error);
     }

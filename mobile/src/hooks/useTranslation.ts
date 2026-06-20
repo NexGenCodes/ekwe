@@ -5,12 +5,13 @@ import { Keyboard } from "react-native";
 
 import { EkweError } from "@/constants/errors";
 import { useTranslateMutation } from "@/hooks/queries/useTranslateMutation";
+import { usePermissions } from "@/hooks/usePermissions";
 import { translationSchema } from "@/schemas/translation";
 import { HistoryService } from "@/services/HistoryService";
 import { TranslationResult } from "@/services/translateText";
 import { audioActions, settings$, auth$, audio$ } from "@/store";
 import { Result, ok, err } from "@/types/Result";
-import { AppToast, logger } from "@/utils";
+import { AppToast, logger, triggerHaptic } from "@/utils";
 import {
   getDefaultSourceLang,
   resolveDetectedLanguage,
@@ -26,6 +27,7 @@ export interface UseTranslationReturn {
   isTranslating: boolean;
   translation: string | null;
   transliteration: string | null;
+  detectedLanguage: string | null;
 
   sourceText: string;
   setSourceText: (text: string) => void;
@@ -50,12 +52,17 @@ export const useTranslation = (): UseTranslationReturn => {
 
   const [translation, setTranslation] = useState<string | null>(null);
   const [transliteration, setTransliteration] = useState<string | null>(null);
+  const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
 
   const [sourceText, setSourceText] = useState("");
 
-  // Auto-detect is free for all — always default to "auto"
-  const defaultSourceLang = getDefaultSourceLang();
-  const initialTargetLang = defaultTargetLang || "es";
+  const permissions = usePermissions();
+  const myLanguages = useSelector(() => settings$.selectedLanguages.get()) || [];
+  const defaultSourceLang = getDefaultSourceLang(permissions.autoLanguageDetect);
+  let initialTargetLang = defaultTargetLang || myLanguages[0] || "es";
+  if (defaultSourceLang !== "auto" && defaultSourceLang === initialTargetLang) {
+    initialTargetLang = myLanguages[1] || myLanguages[0] || (initialTargetLang === "es" ? "it" : "es");
+  }
 
   const [sourceLang, setSourceLang] = useState<string>(defaultSourceLang);
   const [targetLang, setTargetLang] = useState<string>(initialTargetLang);
@@ -142,6 +149,7 @@ export const useTranslation = (): UseTranslationReturn => {
 
         setTranslation(result.value.translation);
         setTransliteration(result.value.transliteration ?? null);
+        setDetectedLanguage(result.value.language ?? null);
 
         return ok(result.value);
       } catch (e: unknown) {
@@ -165,20 +173,26 @@ export const useTranslation = (): UseTranslationReturn => {
     translationAbortRef.current?.abort();
     translationAbortRef.current = null;
     lastRequestRef.current = null;
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await triggerHaptic();
     setSourceText("");
     setTranslation(null);
     setTransliteration(null);
+    setDetectedLanguage(null);
     audioActions.resetAudioState();
   }, [saveTranscriptionOnly]);
 
   const handleSwap = useCallback(async () => {
-    if (sourceLang === "auto" || targetLang === "none" || targetLang === "")
+    if (
+      sourceLang === "auto" ||
+      targetLang === "none" ||
+      targetLang === "" ||
+      sourceLang === targetLang
+    )
       return;
     // Abort any in-flight translation before swapping languages
     translationAbortRef.current?.abort();
     translationAbortRef.current = null;
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await triggerHaptic();
     lastRequestRef.current = null;
 
     setSourceLang(targetLang);
@@ -197,6 +211,13 @@ export const useTranslation = (): UseTranslationReturn => {
         typeof textOverride === "string" ? textOverride : sourceText
       ).trim();
       if (!textToTranslate) return;
+
+      if (sourceLang === targetLang) {
+        AppToast.info(
+          "Source and target languages are the same. Change one to translate.",
+        );
+        return;
+      }
 
       const requestSignature = `${textToTranslate}|${sourceLang}|${targetLang}`;
 
@@ -220,11 +241,11 @@ export const useTranslation = (): UseTranslationReturn => {
       translationAbortRef.current = controller;
 
       if (lastRequestRef.current === requestSignature && translation) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        triggerHaptic(Haptics.NotificationFeedbackType.Success);
         return;
       }
 
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await triggerHaptic();
       try {
         const result = await translate(
           textToTranslate,
@@ -238,7 +259,7 @@ export const useTranslation = (): UseTranslationReturn => {
 
         lastRequestRef.current = requestSignature;
 
-        await Haptics.notificationAsync(
+        await triggerHaptic(
           Haptics.NotificationFeedbackType.Success,
         );
 
@@ -292,13 +313,14 @@ export const useTranslation = (): UseTranslationReturn => {
     [sourceText, sourceLang, targetLang, userSession, translate, translation],
   );
 
-  const canTranslate = sourceText.trim().length > 0;
+  const canTranslate = sourceText.trim().length > 0 && sourceLang !== targetLang;
 
   return {
     translate,
     isTranslating: translateMutation.isPending,
     translation,
     transliteration,
+    detectedLanguage,
     sourceText,
     setSourceText,
     sourceLang,

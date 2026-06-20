@@ -1,8 +1,8 @@
 import { useSelector } from "@legendapp/state/react";
-import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import React from "react";
 
+import { triggerHaptic } from "@/utils/haptics";
 import { Box, Text, Pressable } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
@@ -48,7 +48,7 @@ export function AccountStatusPill(): React.ReactElement {
   return (
     <Pressable
       onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        triggerHaptic();
         router.push("/billing");
       }}
       accessible

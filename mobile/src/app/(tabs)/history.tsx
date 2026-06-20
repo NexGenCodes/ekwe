@@ -1,5 +1,5 @@
 import { FlashList } from "@shopify/flash-list";
-import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
 import { AudioLines, Search, X } from "lucide-react-native";
@@ -45,7 +45,7 @@ export default function HistoryScreen(): React.JSX.Element {
 
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await triggerHaptic();
 
     const userId = auth$.user.get()?.id;
     if (userId) {
@@ -189,7 +189,7 @@ export default function HistoryScreen(): React.JSX.Element {
             {query.length > 0 && (
               <Pressable
                 onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  triggerHaptic();
                   setQuery("");
                 }}
                 hitSlop={spacing.md}
@@ -215,7 +215,7 @@ export default function HistoryScreen(): React.JSX.Element {
               <Pressable
                 key={option}
                 onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  triggerHaptic();
                   setFilter(option);
                 }}
                 style={[

@@ -1,10 +1,6 @@
 import { Tier } from "./types";
-import { PLAN_CONFIG as SHARED_PLAN_CONFIG } from "../../shared/plans";
+import { PLAN_CONFIG as SHARED_PLAN_CONFIG, USD_PRICE } from "../../shared/plans";
 import type { PlanPricing } from "../../shared/plans";
-
-// ─── Raw Data ──────────────────────────────────────────────────────
-
-const USD_PRICE: PlanPricing = { monthly: { amount: 3.00, currency: 'USD', lowestUnit: 300 }, annual: { amount: 28.80, currency: 'USD', lowestUnit: 2880 } };
 
 const PLAN_CONFIG = {
   plans: SHARED_PLAN_CONFIG,

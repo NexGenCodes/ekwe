@@ -16,7 +16,6 @@ export interface SettingsState {
   retentionDays: number;
   selectedLanguages: string[];
   targetLanguage: string;
-  pinnedLanguages: string[];
   autoRaiseVolume: boolean;
   forceSpeakerMode: boolean;
   showVolumeRaiseBanner: boolean;
@@ -33,7 +32,6 @@ const initialSettings: SettingsState = {
   retentionDays: 7,
   selectedLanguages: [],
   targetLanguage: "en",
-  pinnedLanguages: [],
   autoRaiseVolume: true,
   forceSpeakerMode: true,
   showVolumeRaiseBanner: true,
@@ -67,9 +65,6 @@ export const settingsActions = {
   },
   setTargetLanguage: (code: string): void => {
     settings$.targetLanguage.set(code);
-  },
-  setPinnedLanguages: (codes: string[]): void => {
-    settings$.pinnedLanguages.set(codes);
   },
   setAutoRaiseVolume: (val: boolean): void => {
     settings$.autoRaiseVolume.set(val);

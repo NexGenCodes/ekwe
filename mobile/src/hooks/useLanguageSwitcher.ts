@@ -1,5 +1,4 @@
 import { useSelector } from "@legendapp/state/react";
-import * as Haptics from "expo-haptics";
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
   useSharedValue,
@@ -8,6 +7,8 @@ import {
 } from "react-native-reanimated";
 
 import { settings$ } from "@/store";
+import { DEFAULT_LANGUAGES } from "@/utils/languageUtils";
+import { triggerHaptic } from "@/utils/haptics";
 
 export type DropdownType = "source" | "target" | null;
 
@@ -39,8 +40,8 @@ export function useLanguageSwitcher({
   onSourceChange,
   onTargetChange,
 }: UseLanguageSwitcherProps): LanguageSwitcherReturn {
-  const myLanguages = (useSelector(() => settings$.selectedLanguages.get()) ||
-    []) as string[];
+  const storedLanguages = useSelector(() => settings$.selectedLanguages.get()) || [];
+  const myLanguages = (storedLanguages.length > 0 ? storedLanguages : DEFAULT_LANGUAGES) as string[];
 
   const myLanguagesRef = useRef(myLanguages);
   myLanguagesRef.current = myLanguages;
@@ -63,7 +64,7 @@ export function useLanguageSwitcher({
 
   const handleSelect = useCallback(
     (code: string) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      triggerHaptic();
       const langs = myLanguagesRef.current;
 
       if (activeDropdown === "source") {

@@ -1,4 +1,4 @@
-import { Check, Lock, Star } from "lucide-react-native";
+import { Check, Lock } from "lucide-react-native";
 import type { JSX } from "react";
 
 import { LanguageFlag } from "./LanguageFlag";
@@ -10,21 +10,17 @@ import { useTokens } from "@/hooks/ui";
 export interface LanguageRowProps {
   code: string;
   isSelected: boolean;
-  isPinned?: boolean;
   showLock?: boolean;
   disabled?: boolean;
   onPress: () => void;
-  onTogglePin?: () => void;
 }
 
 export function LanguageRow({
   code,
   isSelected,
-  isPinned = false,
   showLock = false,
   disabled = false,
   onPress,
-  onTogglePin,
 }: LanguageRowProps): JSX.Element {
   const { color, spacing, borderRadius } = useTokens();
   const langName = getLanguageName(code);
@@ -74,20 +70,6 @@ export function LanguageRow({
               Pro
             </Text>
           </Box>
-        )}
-
-        {onTogglePin && (
-          <Pressable
-            onPress={onTogglePin}
-            hitSlop={8}
-            style={{ padding: spacing.sm }}
-          >
-            <Star
-              size={20}
-              color={isPinned ? color.brand : color.muted}
-              fill={isPinned ? color.brand : "transparent"}
-            />
-          </Pressable>
         )}
 
         <Box

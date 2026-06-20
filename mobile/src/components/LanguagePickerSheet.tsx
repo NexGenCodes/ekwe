@@ -14,11 +14,7 @@ import { AppAlert } from "@/utils";
 export interface LanguagePickerSheetProps {
   isVisible: boolean;
   selectedLanguages: string[];
-  pinnedLanguages: string[];
-  onSelectionChange: (
-    selectedLanguages: string[],
-    pinnedLanguages: string[],
-  ) => void;
+  onSelectionChange: (selectedLanguages: string[]) => void;
   onClose: () => void;
   singleSelect?: boolean;
 }
@@ -26,14 +22,12 @@ export interface LanguagePickerSheetProps {
 export const LanguagePickerSheet = ({
   isVisible,
   selectedLanguages,
-  pinnedLanguages,
   onSelectionChange,
   onClose,
   singleSelect = false,
 }: LanguagePickerSheetProps): React.ReactElement => {
   const { color, spacing } = useTokens();
   const permissions = usePermissions();
-  const maxPinnedLanguages = permissions.maxPinnedLanguages;
   const maxSelectedLanguages = permissions.maxSelectedLanguages;
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -49,19 +43,9 @@ export const LanguagePickerSheet = ({
     );
   }, [searchQuery, availableLanguages]);
 
-  const pinnedItems = useMemo(
-    () => filteredLanguages.filter((l) => pinnedLanguages.includes(l.code)),
-    [filteredLanguages, pinnedLanguages],
-  );
-
-  const otherItems = useMemo(
-    () => filteredLanguages.filter((l) => !pinnedLanguages.includes(l.code)),
-    [filteredLanguages, pinnedLanguages],
-  );
-
   const toggleSelection = useCallback((code: string): void => {
     if (singleSelect) {
-      onSelectionChange([code], pinnedLanguages);
+      onSelectionChange([code]);
       return;
     }
 
@@ -80,41 +64,20 @@ export const LanguagePickerSheet = ({
     const next = isCurrentlySelected
       ? selectedLanguages.filter((c) => c !== code)
       : [...selectedLanguages, code];
-    onSelectionChange(next, pinnedLanguages);
-  }, [singleSelect, selectedLanguages, maxSelectedLanguages, onSelectionChange, pinnedLanguages]);
-
-  const togglePin = useCallback((code: string): void => {
-    const isCurrentlyPinned = pinnedLanguages.includes(code);
-    if (!isCurrentlyPinned && pinnedLanguages.length >= maxPinnedLanguages) {
-      AppAlert.info(
-        "Language Limit Reached",
-        `You can only pin up to ${maxPinnedLanguages} languages on your current plan. Upgrade to Pro for more.`,
-      );
-      return;
-    }
-
-    const next = isCurrentlyPinned
-      ? pinnedLanguages.filter((c) => c !== code)
-      : [...pinnedLanguages, code];
-    onSelectionChange(selectedLanguages, next);
-  }, [pinnedLanguages, maxPinnedLanguages, selectedLanguages, onSelectionChange]);
+    onSelectionChange(next);
+  }, [singleSelect, selectedLanguages, maxSelectedLanguages, onSelectionChange]);
 
   const sections = useMemo(() => {
     const list: {
       title: string;
       data: Language[];
-      isPinnedSection: boolean;
     }[] = [];
-    if (pinnedItems.length > 0) {
-      list.push({ title: "PINNED", data: pinnedItems, isPinnedSection: true });
-    }
     list.push({
       title: searchQuery ? "RESULTS" : "ALL LANGUAGES",
-      data: otherItems,
-      isPinnedSection: false,
+      data: filteredLanguages,
     });
     return list;
-  }, [pinnedItems, otherItems, searchQuery]);
+  }, [filteredLanguages, searchQuery]);
 
   const renderSectionHeader = useCallback(
     ({ section }: { section: { title: string } }) => (
@@ -136,20 +99,16 @@ export const LanguagePickerSheet = ({
   const renderItem = useCallback(
     ({
       item,
-      section,
     }: {
       item: Language;
-      section: { data: Language[]; isPinnedSection: boolean };
     }) => (
       <LanguageRow
         code={item.code}
         isSelected={selectedLanguages.includes(item.code)}
-        isPinned={section.isPinnedSection}
         onPress={() => toggleSelection(item.code)}
-        onTogglePin={() => togglePin(item.code)}
       />
     ),
-    [selectedLanguages, toggleSelection, togglePin],
+    [selectedLanguages, toggleSelection],
   );
 
   return (

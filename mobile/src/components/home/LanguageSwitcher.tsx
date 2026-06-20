@@ -10,11 +10,12 @@ import { SwapButton } from "./SwapButton";
 
 import { borderRadius, zIndex } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useTheme, useLanguageSwitcher } from "@/hooks";
+import { useTheme, useLanguageSwitcher, usePermissions } from "@/hooks";
 
 interface LanguageSwitcherProps {
   sourceLang: string;
   targetLang: string;
+  detectedLanguage?: string | null;
   onSwap: () => void;
   onSourceChange: (code: string) => void;
   onTargetChange: (code: string) => void;
@@ -23,11 +24,13 @@ interface LanguageSwitcherProps {
 export function LanguageSwitcher({
   sourceLang,
   targetLang,
+  detectedLanguage,
   onSwap,
   onSourceChange,
   onTargetChange,
 }: LanguageSwitcherProps): React.ReactElement {
   const { color } = useTheme();
+  const permissions = usePermissions();
 
   const {
     activeDropdown,
@@ -52,6 +55,12 @@ export function LanguageSwitcher({
     };
   });
 
+  const gatedOptions = React.useMemo(() => {
+    const gates = new Set<string>();
+    if (!permissions?.autoLanguageDetect) gates.add("auto");
+    return gates;
+  }, [permissions?.autoLanguageDetect]);
+
   const sourceOptions = React.useMemo(
     () => ["auto", ...myLanguages],
     [myLanguages],
@@ -73,7 +82,7 @@ export function LanguageSwitcher({
         layout={LinearTransition.springify()}
         style={{ flex: 1 }}
       >
-        <LanguagePill langCode={sourceLang} onPress={sourcePillOnPress} />
+        <LanguagePill langCode={sourceLang} detectedLanguage={detectedLanguage} onPress={sourcePillOnPress} />
       </Animated.View>,
       <SwapButton
         key="swap-button"
@@ -93,6 +102,7 @@ export function LanguageSwitcher({
     [
       sourceLang,
       targetLang,
+      detectedLanguage,
       onSwap,
       swapRotation,
       sourcePillOnPress,
@@ -124,6 +134,7 @@ export function LanguageSwitcher({
         oppositeLang={activeDropdown === "source" ? targetLang : sourceLang}
         onSelect={handleSelect}
         animatedStyle={animatedDropdownStyle}
+        gatedOptions={gatedOptions}
       />
 
       {items}

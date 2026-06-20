@@ -1,4 +1,4 @@
-import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import { Loader } from "lucide-react-native";
 import React, { useMemo } from "react";
 import { StyleProp, TextStyle, ViewStyle } from "react-native";
@@ -87,7 +87,7 @@ export const Button = React.memo(function Button({
   const handlePressIn = (): void => {
     if (disabled || loading) return;
     scaleAnim.value = withTiming(0.95, { duration: 100 });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic();
   };
 
   const handlePressOut = (): void => {

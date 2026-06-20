@@ -1,5 +1,5 @@
 import React from "react";
-import { Modal } from "react-native";
+import { Modal, View, StyleSheet } from "react-native";
 import Animated from "react-native-reanimated";
 
 import { LanguageRow } from "@/components/language";
@@ -15,6 +15,7 @@ export interface LanguageDropdownProps {
   oppositeLang?: string;
   onSelect: (code: string) => void;
   animatedStyle?: object;
+  gatedOptions?: Set<string>;
 }
 
 export function LanguageDropdown({
@@ -25,6 +26,7 @@ export function LanguageDropdown({
   oppositeLang,
   onSelect,
   animatedStyle,
+  gatedOptions,
 }: LanguageDropdownProps): React.ReactElement | null {
   const { color, spacing, borderRadius } = useTokens();
 
@@ -37,67 +39,79 @@ export function LanguageDropdown({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <Pressable
-        onPress={onClose}
-        feedback="none"
-        style={{
-          flex: 1,
-          justifyContent: "center",
-          alignItems: "center",
-          backgroundColor: color.overlay,
-        }}
-      >
-        <Animated.View
-          style={[
-            {
-              width: "80%",
-              maxHeight: "55%",
-              borderRadius: borderRadius["2xl"],
-              borderWidth: 1,
-              padding: spacing.xs,
-              ...shadows.softLg,
-              backgroundColor: color.card,
-              borderColor: color.border,
-            },
-            animatedStyle,
-          ]}
+      <View style={StyleSheet.absoluteFill}>
+        <Pressable
+          onPress={onClose}
+          feedback="none"
+          style={StyleSheet.absoluteFill}
         >
-          <Box
-            style={{
-              paddingHorizontal: spacing.md,
-              paddingTop: spacing.md,
-              paddingBottom: spacing.sm,
-            }}
+          <View style={{ flex: 1, backgroundColor: color.overlay }} />
+        </Pressable>
+
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+            padding: spacing.lg,
+          }}
+          pointerEvents="box-none"
+        >
+          <Animated.View
+            style={[
+              {
+                width: "100%",
+                maxWidth: 400,
+                maxHeight: "60%",
+                borderRadius: borderRadius["2xl"],
+                borderWidth: 1,
+                padding: spacing.xs,
+                overflow: "hidden",
+                ...shadows.softLg,
+                backgroundColor: color.card,
+                borderColor: color.border,
+              },
+              animatedStyle,
+            ]}
           >
-            <Text
-              variant="caption"
+            <Box
               style={{
-                textTransform: "uppercase",
-                color: color.muted,
+                paddingHorizontal: spacing.md,
+                paddingTop: spacing.md,
+                paddingBottom: spacing.sm,
               }}
             >
-              Select Language
-            </Text>
-          </Box>
+              <Text
+                variant="caption"
+                style={{
+                  textTransform: "uppercase",
+                  color: color.muted,
+                }}
+              >
+                Select Language
+              </Text>
+            </Box>
 
-          <ScrollArea bounces={false}>
-            {options.map((code) => {
-              const isSelected = currentLang === code;
-              const isOtherLang = code === oppositeLang && code !== "auto";
+            <ScrollArea bounces={false}>
+              {options.map((code) => {
+                const isSelected = currentLang === code;
+                const isOtherLang = code === oppositeLang && code !== "auto";
 
-              return (
-                <LanguageRow
-                  key={code}
-                  code={code}
-                  isSelected={isSelected}
-                  disabled={isOtherLang}
-                  onPress={() => onSelect(code)}
-                />
-              );
-            })}
-          </ScrollArea>
-        </Animated.View>
-      </Pressable>
+                return (
+                  <LanguageRow
+                    key={code}
+                    code={code}
+                    isSelected={isSelected}
+                    disabled={isOtherLang || (gatedOptions?.has(code) ?? false)}
+                    showLock={gatedOptions?.has(code) ?? false}
+                    onPress={() => onSelect(code)}
+                  />
+                );
+              })}
+            </ScrollArea>
+          </Animated.View>
+        </View>
+      </View>
     </Modal>
   );
 }

@@ -12,7 +12,7 @@ import { duration, shadows } from "@/constants";
 import { borderRadius, opacity } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
-import { AppToast } from "@/utils";
+import { AppToast, triggerHaptic } from "@/utils";
 
 interface SwapButtonProps {
   sourceLang: string;
@@ -33,7 +33,8 @@ export function SwapButton({
     sourceLang === "auto" ||
     targetLang === "auto" ||
     sourceLang === "" ||
-    targetLang === "";
+    targetLang === "" ||
+    sourceLang === targetLang;
 
   const animatedSwapStyle = useAnimatedStyle(() => {
     return {
@@ -43,14 +44,18 @@ export function SwapButton({
 
   const handlePress = async (): Promise<void> => {
     if (isSwapDisabled) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      AppToast.info("Cannot swap when source is set to Auto Detect");
+      triggerHaptic(Haptics.NotificationFeedbackType.Warning);
+      const message =
+        sourceLang === "auto" || targetLang === "auto"
+          ? "Cannot swap when source is set to Auto Detect"
+          : "Source and target languages must be different";
+      AppToast.info(message);
       return;
     }
     swapRotation.value = withTiming(swapRotation.value + 180, {
       duration: duration.normal,
     });
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
     onSwap();
   };
 

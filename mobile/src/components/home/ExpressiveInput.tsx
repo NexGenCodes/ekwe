@@ -14,12 +14,12 @@ import { MainTextInput } from "./MainTextInput";
 import { RecordingInline } from "./RecordingInline";
 import { Divider } from "../Divider";
 
-import { Box } from "@/components/ui";
+import { Box, Text } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme, usePermissions } from "@/hooks";
 import type { DictationStatus } from "@/hooks/useVoiceDictation";
-import { isIOS, AppToast } from "@/utils";
+import { isIOS, AppToast, triggerHaptic } from "@/utils";
 
 interface ExpressiveInputProps {
   value: string;
@@ -30,6 +30,7 @@ interface ExpressiveInputProps {
   isTranslating?: boolean;
   sourceLang: string;
   targetLang: string;
+  detectedLanguage?: string | null;
   onSwap: () => void;
   onSourceChange: (code: string) => void;
   onTargetChange: (code: string) => void;
@@ -63,6 +64,7 @@ export const ExpressiveInput = React.memo(
     onSwap,
     onSourceChange,
     onTargetChange,
+    detectedLanguage,
     dictationState,
     canTranslate = true,
     onFocus,
@@ -92,6 +94,7 @@ export const ExpressiveInput = React.memo(
 
     const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
     const [isFocused, setIsFocused] = useState(false);
+    const languagesConflict = sourceLang === targetLang;
 
     useEffect(() => {
       const showEvent = isIOS ? "keyboardWillShow" : "keyboardDidShow";
@@ -110,6 +113,15 @@ export const ExpressiveInput = React.memo(
       };
     }, []);
 
+    useEffect(() => {
+      if (languagesConflict && value.length > 0) {
+        AppToast.warning("Language Conflict", {
+          description: "Source and target languages must be different to translate.",
+          duration: 3000,
+        });
+      }
+    }, [languagesConflict, value.length]);
+
     const handleFocus = useCallback(() => {
       setIsFocused(true);
       onFocus?.();
@@ -121,7 +133,7 @@ export const ExpressiveInput = React.memo(
     }, [onBlur]);
 
     const handleCancelPress = useCallback(async () => {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await triggerHaptic();
       onCancel();
     }, [onCancel]);
 
@@ -129,21 +141,21 @@ export const ExpressiveInput = React.memo(
       maxDurationMs > 0 ? Math.min(elapsedMs / maxDurationMs, 1) : 0;
 
     const handleClear = useCallback(async () => {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await triggerHaptic();
       onClear();
     }, [onClear]);
 
     const handleRightButtonPress = useCallback(async () => {
       if (isRecording) {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        await triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
         onStop();
       } else if (isPreview) {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        await triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
         onConfirm();
       } else if (value.length > 0) {
         const isTargetLangValid = targetLang !== "none" && targetLang !== "";
         if (!isTargetLangValid) {
-          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          await triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
           AppToast.error("Target Language Required", {
             description: "Please select a language to translate into.",
             duration: 3000,
@@ -153,7 +165,7 @@ export const ExpressiveInput = React.memo(
         if (!canTranslate) return; // e.g., source text too short
         onTranslate();
       } else {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        await triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
         onMicPress();
       }
     }, [
@@ -175,8 +187,8 @@ export const ExpressiveInput = React.memo(
     // If there is no text, the button is "Mic" and does NOT need a targetLang.
     const isDisabled =
       value.length > 0
-        ? isGlobalDisabled || !canTranslate || !isTargetLangValid
-        : isGlobalDisabled;
+        ? isGlobalDisabled || !canTranslate || !isTargetLangValid || languagesConflict
+        : isGlobalDisabled || languagesConflict;
 
     // Animated scale: card lifts up subtly when focused or active
     const animatedCardStyle = useAnimatedStyle(() => {
@@ -255,6 +267,7 @@ export const ExpressiveInput = React.memo(
           <LanguageSwitcher
             sourceLang={sourceLang}
             targetLang={targetLang}
+            detectedLanguage={detectedLanguage}
             onSwap={onSwap}
             onSourceChange={onSourceChange}
             onTargetChange={onTargetChange}
@@ -278,6 +291,23 @@ export const ExpressiveInput = React.memo(
               capturedUri={capturedUri}
               meteringData={meteringData}
             />
+          </Box>
+        ) : languagesConflict ? (
+          <Box
+            style={{
+              flex: 1,
+              minHeight: 120,
+              justifyContent: "center",
+              alignItems: "center",
+              paddingHorizontal: spacing.lg,
+            }}
+          >
+            <Text
+              variant="body"
+              style={{ color: color.muted, textAlign: "center" }}
+            >
+              Source and target languages must be different
+            </Text>
           </Box>
         ) : (
           <MainTextInput

@@ -49,6 +49,7 @@ export const TranslationInterface = forwardRef<
     setTranslation,
     transliteration,
     setTransliteration,
+    detectedLanguage,
     isTranslating,
     handleTranslate,
     handleClear,
@@ -164,6 +165,7 @@ export const TranslationInterface = forwardRef<
         }}
         sourceLang={sourceLang}
         targetLang={targetLang}
+        detectedLanguage={detectedLanguage}
         onSwap={handleSwap}
         onSourceChange={handleSourceChange}
         onTargetChange={handleTargetChange}

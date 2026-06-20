@@ -6,7 +6,7 @@ import AudioService from "@/services/AudioService";
 import { VolumeManager } from "@/services/VolumeManager";
 import { PLAN_LIMITS } from "@/constants/billing";
 import { Result, ok, err } from "@/types/Result";
-import { isAndroid } from "@/utils";
+import { isAndroid, triggerHaptic } from "@/utils";
 import {
   attachAudioEffects,
   releaseAudioEffects,
@@ -104,7 +104,7 @@ class AudioCaptureClass {
       await AudioService.startRecording(safetyCapMs);
       this.notifyStatusListeners("started");
 
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
 
       if (isAndroid) {
         await attachAudioEffects(0);
@@ -130,7 +130,7 @@ class AudioCaptureClass {
               this.meteringInterval = null;
             }
 
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            triggerHaptic(Haptics.NotificationFeedbackType.Warning);
 
             if (this.onAutoStopCallback) {
               this.onAutoStopCallback();
@@ -186,7 +186,7 @@ class AudioCaptureClass {
       }
       this.currentSessionId = null;
       this.isStartingParams = false;
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerHaptic(Haptics.NotificationFeedbackType.Error);
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
   }
@@ -232,12 +232,12 @@ class AudioCaptureClass {
         await releaseAudioEffects();
       }
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      triggerHaptic(Haptics.NotificationFeedbackType.Success);
       return ok(result);
     } catch {
       this.currentSessionId = null;
       this.notifyStatusListeners("stopped");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerHaptic(Haptics.NotificationFeedbackType.Error);
       return err(EkweError.INTERRUPTED);
     }
   }

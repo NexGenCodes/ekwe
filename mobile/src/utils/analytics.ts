@@ -1,4 +1,4 @@
-import { posthogClient } from "@/lib/posthog";
+import { posthogClient } from "@/services/posthog";
 
 export const AnalyticsEvents = {
   // Onboarding & Auth

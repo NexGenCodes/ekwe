@@ -1,4 +1,4 @@
-import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import React from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 
@@ -39,7 +39,7 @@ export const IconButton = ({
       }}
       onLongPress={async () => {
         if (!disabled && onLongPress) {
-          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          await triggerHaptic();
           await onLongPress();
         }
       }}

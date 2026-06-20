@@ -21,8 +21,6 @@ export default function TranslateScreen(): React.JSX.Element {
   // Store & Settings
   const userSession = useSelector(() => auth$.session.get());
   const defaultTargetLang = useSelector(() => settings$.targetLanguage.get());
-  const pinnedLanguages = useSelector(() => settings$.pinnedLanguages.get());
-  const { setPinnedLanguages } = settingsActions;
 
   const { color, isDark } = useTheme();
   const primaryColor = color.foreground;
@@ -52,10 +50,7 @@ export default function TranslateScreen(): React.JSX.Element {
     setPickerVisible(true);
   };
 
-  const handleLanguageSelect = (
-    selectedCodes: string[],
-    newPinned: string[],
-  ): void => {
+  const handleLanguageSelect = (selectedCodes: string[]): void => {
     if (selectedCodes.length > 0) {
       const selected = selectedCodes[selectedCodes.length - 1];
       if (pickerMode === "source") {
@@ -66,12 +61,17 @@ export default function TranslateScreen(): React.JSX.Element {
         setTranslation(null);
       }
     }
-    setPinnedLanguages(newPinned);
     setPickerVisible(false);
   };
 
   const handleTranslate = async (): Promise<void> => {
     if (!text) return;
+    if (sourceLang === targetLang) {
+      AppToast.info(
+        "Source and target languages are the same. Change one to translate.",
+      );
+      return;
+    }
     translateAbortRef.current?.abort();
     const controller = new AbortController();
     translateAbortRef.current = controller;
@@ -122,7 +122,12 @@ export default function TranslateScreen(): React.JSX.Element {
   };
 
   const handleSwap = (): void => {
-    if (sourceLang === "auto" || targetLang === "" || targetLang === "none")
+    if (
+      sourceLang === "auto" ||
+      targetLang === "" ||
+      targetLang === "none" ||
+      sourceLang === targetLang
+    )
       return;
     translateAbortRef.current?.abort();
     translateAbortRef.current = null;
@@ -272,7 +277,6 @@ export default function TranslateScreen(): React.JSX.Element {
         selectedLanguages={
           pickerMode === "source" ? [sourceLang] : [targetLang]
         }
-        pinnedLanguages={pinnedLanguages}
         onSelectionChange={handleLanguageSelect}
         onClose={() => setPickerVisible(false)}
       />

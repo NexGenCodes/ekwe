@@ -1,6 +1,7 @@
 import { useSelector } from "@legendapp/state/react";
 import { File as ExpoFile } from "expo-file-system";
 import * as Haptics from "expo-haptics";
+import { triggerHaptic } from "@/utils/haptics";
 import { useState, useCallback, useEffect, useRef } from "react";
 
 import { useTranslation } from "../useTranslation";
@@ -112,7 +113,7 @@ export const useResultPipeline = ({
           /* file may not exist */
         }
 
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        triggerHaptic(Haptics.NotificationFeedbackType.Success);
         setHasPolished(true);
       } catch (err) {
         AppToast.error("Translation failed", {
@@ -177,7 +178,7 @@ export const useResultPipeline = ({
 
       const val = trResultResponse.value;
       setTranslation(val.translation);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      triggerHaptic(Haptics.NotificationFeedbackType.Success);
 
       if (!isReplay) {
         savedRef.current = true;

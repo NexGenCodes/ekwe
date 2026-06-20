@@ -6,7 +6,7 @@ import * as deepgram from "../providers/deepgram";
 import * as gladia from "../providers/gladia";
 import * as groq from "../providers/groq";
 import * as witai from "../providers/witai";
-import { getTranscribeProviderNames } from "../config";
+import { getTranscribeProviderNames, getLimits } from "../config";
 import { guardAudioSize, guardAutoDetect, guardLanguageCode } from "../security";
 import { hashBytes } from "../utils/keys";
 import { CLIENT_ABORTED, Env, Tier, TranscribeResult } from "../types";
@@ -212,6 +212,12 @@ export async function handleTranscribe(
           lang: result.language,
           provider: result.provider,
         });
+
+        const limits = getLimits(tier);
+        const r = result as unknown as Record<string, unknown>;
+        if (!limits.autoDetectAllowed && "language" in r) {
+          delete r.language;
+        }
 
         try {
           await env.EKWE_KV.put(cacheKey, JSON.stringify(result), {

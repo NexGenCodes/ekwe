@@ -2,15 +2,12 @@ import * as Haptics from "expo-haptics";
 import { useCallback, useEffect } from "react";
 import { useSelector } from "@legendapp/state/react";
 
-import { LANGUAGES } from "@/constants/languages";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { settingsActions, settings$ } from "@/store";
+import { DEFAULT_LANGUAGES } from "@/utils/languageUtils";
 import { triggerHaptic } from "@/utils/haptics";
 
 const MAX_LANGUAGES = 5;
-const DEFAULT_LANGUAGES = LANGUAGES.filter((l) => l.defaultSelected).map(
-  (l) => l.code,
-);
 
 export interface UseLanguageSelectionReturn {
   selected: string[];
