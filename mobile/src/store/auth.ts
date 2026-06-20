@@ -9,6 +9,7 @@ interface AuthState {
   user: User | null;
   isPro: boolean;
   isInitialized: boolean;
+  sessionLoaded: boolean;
 }
 
 const initialAuth: AuthState = {
@@ -16,6 +17,7 @@ const initialAuth: AuthState = {
   user: null,
   isPro: false,
   isInitialized: false,
+  sessionLoaded: false,
 };
 
 export const auth$ = observable<AuthState>(initialAuth);
@@ -44,5 +46,8 @@ export const authActions = {
   },
   setInitialized: (initialized: boolean): void => {
     auth$.isInitialized.set(initialized);
+  },
+  setSessionLoaded: (loaded: boolean): void => {
+    auth$.sessionLoaded.set(loaded);
   },
 };

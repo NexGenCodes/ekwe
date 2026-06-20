@@ -86,7 +86,7 @@ export const HistoryItem = React.memo(
           </Pressable>
         </Box>
       ),
-      [rightActionBg, handleDelete, deleteAccessibilityLabel, color.error],
+      [rightActionBg, handleDelete, deleteAccessibilityLabel, color.error, trashIconStyle],
     );
 
     // Format duration nicely
@@ -179,7 +179,7 @@ export const HistoryItem = React.memo(
           {textToShow}
         </Text>
       );
-    }, [entry.transcript, entry.translation, entryType, color, spacing]);
+    }, [entry.transcript, entry.translation, entryType, color]);
 
     // Resolve media badge label — transcription/translation entries get clear type labels
     const mediaBadgeLabel = useMemo(() => {

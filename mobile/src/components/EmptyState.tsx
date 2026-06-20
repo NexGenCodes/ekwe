@@ -65,7 +65,7 @@ export const EmptyState = ({
         );
       }
     }
-  }, [animate, scale]);
+  }, [animate, scale, reduceMotionEnabled]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],

@@ -55,6 +55,7 @@ export function LensBubble(): React.ReactElement | null {
         translateY.value = pos.y;
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-reset timers
@@ -115,6 +116,7 @@ export function LensBubble(): React.ReactElement | null {
       pulseScale.value = withTiming(1);
       pulseOpacity.value = withTiming(0);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordingState]);
 
   // LIVE METERING
@@ -164,6 +166,7 @@ export function LensBubble(): React.ReactElement | null {
     if (recordingState !== RecordingState.Recording) {
       history.forEach((h) => (h.value = 0));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordingState]);
 
   // SPINNER
@@ -179,6 +182,7 @@ export function LensBubble(): React.ReactElement | null {
       cancelAnimation(spinRotation);
       spinRotation.value = 0;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordingState]);
 
   const spinnerStyle = useAnimatedStyle(() => ({

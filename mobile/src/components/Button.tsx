@@ -21,7 +21,7 @@ import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks";
 
-type ButtonVariant = "primary" | "secondary" | "outline" | "ghost";
+type ButtonVariant = "primary" | "outline" | "ghost";
 type ButtonSize = "small" | "medium" | "large" | "md";
 
 export interface ButtonProps {
@@ -102,13 +102,6 @@ export const Button = React.memo(function Button({
           container: { backgroundColor: color.brand },
           text: { color: color.onBrand },
           spinner: color.onBrand,
-        };
-        break;
-      case "secondary":
-        vStyle = {
-          container: { backgroundColor: `${color.brand}1A` },
-          text: { color: color.brand },
-          spinner: color.brand,
         };
         break;
       case "outline":

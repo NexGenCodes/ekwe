@@ -31,6 +31,7 @@ function InnerLayout(): React.ReactElement {
   const { isDark, color } = useTheme();
 
   const isInitialized = useSelector(() => auth$.isInitialized.get());
+  const sessionLoaded = useSelector(() => auth$.sessionLoaded.get());
 
   // Real-time Exclusivity Guard & Share Intent Listener
   useTripleExclusivity();
@@ -48,11 +49,11 @@ function InnerLayout(): React.ReactElement {
   );
 
   useEffect((): void => {
-    if (isInitialized) {
+    if (isInitialized && sessionLoaded) {
       SplashScreen.hideAsync();
       HistoryService.cleanupLocalHistory();
     }
-  }, [isInitialized]);
+  }, [isInitialized, sessionLoaded]);
 
   return (
     <ThemeProvider value={theme}>

@@ -1,4 +1,3 @@
-import { useSelector } from "@legendapp/state/react";
 import React, { useMemo, useState, useCallback } from "react";
 import { SectionList } from "react-native";
 
@@ -10,7 +9,6 @@ import { Box, Text } from "@/components/ui";
 import { LANGUAGES, type Language } from "@/constants/languages";
 import { usePermissions } from "@/hooks";
 import { useTokens } from "@/hooks/ui";
-import { auth$ } from "@/store";
 import { AppAlert } from "@/utils";
 
 export interface LanguagePickerSheetProps {
@@ -34,16 +32,12 @@ export const LanguagePickerSheet = ({
   singleSelect = false,
 }: LanguagePickerSheetProps): React.ReactElement => {
   const { color, spacing } = useTokens();
-  const isPro = useSelector(() => auth$.isPro.get());
   const permissions = usePermissions();
   const maxPinnedLanguages = permissions.maxPinnedLanguages;
   const maxSelectedLanguages = permissions.maxSelectedLanguages;
   const [searchQuery, setSearchQuery] = useState("");
 
-  const availableLanguages = useMemo(() => {
-    if (isPro) return LANGUAGES;
-    return LANGUAGES.filter((l) => !l.proOnly);
-  }, [isPro]);
+  const availableLanguages = LANGUAGES;
 
   const filteredLanguages = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -65,7 +59,7 @@ export const LanguagePickerSheet = ({
     [filteredLanguages, pinnedLanguages],
   );
 
-  const toggleSelection = (code: string): void => {
+  const toggleSelection = useCallback((code: string): void => {
     if (singleSelect) {
       onSelectionChange([code], pinnedLanguages);
       return;
@@ -87,9 +81,9 @@ export const LanguagePickerSheet = ({
       ? selectedLanguages.filter((c) => c !== code)
       : [...selectedLanguages, code];
     onSelectionChange(next, pinnedLanguages);
-  };
+  }, [singleSelect, selectedLanguages, maxSelectedLanguages, onSelectionChange, pinnedLanguages]);
 
-  const togglePin = (code: string): void => {
+  const togglePin = useCallback((code: string): void => {
     const isCurrentlyPinned = pinnedLanguages.includes(code);
     if (!isCurrentlyPinned && pinnedLanguages.length >= maxPinnedLanguages) {
       AppAlert.info(
@@ -103,7 +97,7 @@ export const LanguagePickerSheet = ({
       ? pinnedLanguages.filter((c) => c !== code)
       : [...pinnedLanguages, code];
     onSelectionChange(selectedLanguages, next);
-  };
+  }, [pinnedLanguages, maxPinnedLanguages, selectedLanguages, onSelectionChange]);
 
   const sections = useMemo(() => {
     const list: {

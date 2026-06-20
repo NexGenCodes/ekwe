@@ -13,3 +13,4 @@ export { AppToast } from "./toast";
 export { formatSourceApp } from "./formatsource";
 export { formatDuration } from "./formatDuration";
 export * from "./platform";
+export { alpha } from "./color";

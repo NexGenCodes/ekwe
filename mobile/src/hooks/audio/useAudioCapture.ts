@@ -49,7 +49,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
         AudioCapture.cancelRecording();
       }
     };
-  }, []);
+  }, [setRecordingState]);
 
   /**
    * Requests microphone permission via AudioCapture.
@@ -83,7 +83,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
     }
 
     return ok(undefined);
-  }, [recordingState]);
+  }, [recordingState, setSessionId, setRecordingState, setError]);
 
   /**
    * Stops the current recording, processes it, and updates the store.
@@ -119,7 +119,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
     setRecordingState(RecordingState.Done);
 
     return ok(undefined);
-  }, []);
+  }, [setRecordingState, setError, setAudioPath, setDuration]);
 
   /**
    * Cancels the current recording and resets the audio store.
@@ -127,7 +127,7 @@ export const useAudioCapture = (): UseAudioCaptureReturn => {
   const cancelRecording = useCallback(async (): Promise<void> => {
     await AudioCapture.cancelRecording();
     resetAudioState();
-  }, []);
+  }, [resetAudioState]);
 
   return {
     startRecording,

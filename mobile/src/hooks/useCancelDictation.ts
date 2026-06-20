@@ -56,6 +56,7 @@ export function useCancelDictation(
     }
 
     if (deletions.length > 0) await Promise.all(deletions);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return useCallback(async (): Promise<void> => {
@@ -86,5 +87,6 @@ export function useCancelDictation(
     setNativeWaveform([]);
     capturedNativeWaveformRef.current = [];
     audioActions.resetAudioState();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearTimers, cleanupTempFiles]);
 }

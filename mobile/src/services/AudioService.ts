@@ -77,7 +77,6 @@ class AudioService {
       }
     }
 
-    // eslint-disable-next-line import/namespace -- AudioRecorder is a property on NativeAudioModule
     this.recorder = new AudioModule.AudioRecorder(RECORDING_OPTIONS);
   }
 

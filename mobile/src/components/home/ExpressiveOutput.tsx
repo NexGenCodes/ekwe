@@ -49,6 +49,7 @@ export const ExpressiveOutput = React.memo(
         setIsTTSLoading(false);
       }
       // Only react to translation changes, not isSpeaking changes
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [translation]);
 
     // Stop speech when the user navigates away from the screen
@@ -112,7 +113,7 @@ export const ExpressiveOutput = React.memo(
                 return;
               }
 
-              // eslint-disable-next-line @typescript-eslint/no-var-requires
+              // eslint-disable-next-line @typescript-eslint/no-require-imports
               const { AppToast } = require("@/utils");
               AppToast.error("Speech Unavailable", {
                 description:
@@ -130,7 +131,7 @@ export const ExpressiveOutput = React.memo(
           const errorMsg = err instanceof Error ? err.message : String(err);
           logger.warn("Speech.speak threw exception:", errorMsg);
 
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
           const { AppToast } = require("@/utils");
           AppToast.error("Speech Unavailable", {
             description:

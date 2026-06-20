@@ -1,59 +1,16 @@
-export interface PlanFeature {
-  title: string;
-  included: boolean;
-}
+import { FREE_FEATURES, FREE_LIMITS, PREMIUM_FEATURES, PREMIUM_LIMITS } from "@shared/plans";
+import type { PlanFeatures as SharedPlanFeatures, PlanLimits as SharedPlanLimits } from "@shared/plans";
 
-export interface PlanLimits {
-  maxAudioBytes: number;
-  maxTextChars: number;
-  autoDetectAllowed: boolean;
-  dictationDurationMs: number;
-  historyRemoteTtlDays: number;
-  streamingAllowed: boolean;
-  transliterationAllowed: boolean;
-  contextAwareness: boolean;
-  customAvatarIcons: boolean;
-  maxTargetLanguages: number;
-  exportFormats: string[];
-  ttsQuality: string;
-  cooldownSeconds: number;
-}
+export type PlanLimits = SharedPlanLimits;
 
-/**
- * Fallback defaults used until the live config is fetched from the worker.
- * The worker always enforces the real limits server-side.
- */
 export const PLAN_LIMITS: { free: PlanLimits; pro: PlanLimits } = {
-  free: {
-    maxAudioBytes: 4_194_304,
-    maxTextChars: 3_000,
-    autoDetectAllowed: false,
-    dictationDurationMs: 120_000,
-    historyRemoteTtlDays: 30,
-    streamingAllowed: false,
-    transliterationAllowed: false,
-    contextAwareness: false,
-    customAvatarIcons: false,
-    maxTargetLanguages: 1,
-    exportFormats: ['text'],
-    ttsQuality: 'standard',
-    cooldownSeconds: 3,
-  },
-  pro: {
-    maxAudioBytes: 26_214_400,
-    maxTextChars: 10_000,
-    autoDetectAllowed: true,
-    dictationDurationMs: 1_200_000,
-    historyRemoteTtlDays: 365,
-    streamingAllowed: true,
-    transliterationAllowed: true,
-    contextAwareness: true,
-    customAvatarIcons: true,
-    maxTargetLanguages: 3,
-    exportFormats: ['text', 'pdf', 'srt'],
-    ttsQuality: 'premium',
-    cooldownSeconds: 1,
-  },
+  free: FREE_LIMITS,
+  pro: PREMIUM_LIMITS,
+};
+
+export const PLAN_FEATURES: { free: SharedPlanFeatures; pro: SharedPlanFeatures } = {
+  free: FREE_FEATURES,
+  pro: PREMIUM_FEATURES,
 };
 
 export interface FallbackPrice {
@@ -62,11 +19,10 @@ export interface FallbackPrice {
   symbol: string;
 }
 
-/**
- * USD-only fallback pricing used while the server response loads or when offline.
- * The server (via GET /plan) is the single source of truth for all currencies
- * using live FX conversion via Frankfurter API.
- */
+function computeSavingPercent(monthlyAmount: number, annualAmount: number): number {
+  return Math.round((1 - annualAmount / (monthlyAmount * 12)) * 100);
+}
+
 export const DISPLAY_PRICING: Record<
   string,
   {
@@ -76,13 +32,28 @@ export const DISPLAY_PRICING: Record<
     annualSavingPercent: number;
   }
 > = {
-  USD: {
-    monthly: { amount: 3.00, currency: "USD", symbol: "$" },
-    annual: { amount: 28.80, currency: "USD", symbol: "$" },
-    annualMonthlyCost: 2.40,
-    annualSavingPercent: 20,
-  },
+  USD: ((): {
+    monthly: FallbackPrice;
+    annual: FallbackPrice;
+    annualMonthlyCost: number;
+    annualSavingPercent: number;
+  } => {
+    const monthly = { amount: 3.00, currency: "USD", symbol: "$" };
+    const annual = { amount: 28.80, currency: "USD", symbol: "$" };
+    const annualMonthlyCost = +(annual.amount / 12).toFixed(2);
+    return {
+      monthly,
+      annual,
+      annualMonthlyCost,
+      annualSavingPercent: computeSavingPercent(monthly.amount, annual.amount),
+    };
+  })(),
 };
+
+export interface PlanFeature {
+  title: string;
+  included: boolean;
+}
 
 export const BILLING_PLANS = {
   free: {
@@ -94,8 +65,10 @@ export const BILLING_PLANS = {
     features: [
       { title: "Unlimited text translation", included: true },
       { title: "Voice dictation (up to 2 min)", included: true },
+      { title: "Auto-copy translations", included: true },
       { title: "30-day cloud history", included: true },
       { title: "Auto-detect spoken language", included: true },
+      { title: "Custom avatar icons", included: false },
       { title: "Ad-free experience", included: false },
       { title: "Extended voice dictation (up to 20 min)", included: false },
     ] as PlanFeature[],
@@ -111,6 +84,7 @@ export const BILLING_PLANS = {
       { title: "Extended voice dictation (up to 20 min)", included: true },
       { title: "1-year cloud history", included: true },
       { title: "Priority AI context processing", included: true },
+      { title: "Custom avatar icons", included: true },
     ] as PlanFeature[],
   },
 } as const;

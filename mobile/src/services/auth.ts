@@ -10,11 +10,14 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import { queryClient } from "@/hooks/queries/queryClient";
 import { posthogClient } from "@/lib/posthog";
 import { SyncService } from "@/services/SyncService";
+import { mmkv } from "@/services/mmkv";
 import { supabase } from "@/services/supabase";
-import { auth$, authActions, planConfigActions } from "@/store";
+import { auth$, authActions } from "@/store";
 import { isIOS } from "@/utils";
 import { track, identify, AnalyticsEvents } from "@/utils/analytics";
 import logger from "@/utils/logger";
+
+const SESSION_CACHE_KEY = "hasSession";
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -46,6 +49,7 @@ export const initAuth = async (): Promise<void> => {
   } = supabase.auth.onAuthStateChange((event, session) => {
     logger.info(`Auth state changed: ${event}`, session?.user?.id);
     authActions.setSession(session);
+    mmkv.set(SESSION_CACHE_KEY, session !== null);
 
     if (event === "SIGNED_IN" && session?.user) {
       identify(session.user.id, {
@@ -62,19 +66,30 @@ export const initAuth = async (): Promise<void> => {
   });
   _authSubscription = subscription;
 
-  // Recover existing session from SecureStore
-  try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (session) {
-      authActions.setSession(session);
+  // Mark initialized immediately so the UI can render past the splash
+  authActions.setInitialized(true);
+
+  // Sync read from MMKV — tells us if we need to hit SecureStore
+  const cachedSession = mmkv.getBoolean(SESSION_CACHE_KEY);
+
+  if (cachedSession) {
+    // Might have a session — recover from SecureStore (async, can be slow)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session) {
+        authActions.setSession(session);
+      } else {
+        // Stale cache — clear it
+        mmkv.set(SESSION_CACHE_KEY, false);
+      }
+    } catch (err) {
+      logger.error("[Auth] getSession recovery error:", err);
     }
-  } catch (err) {
-    logger.error("[Auth] getSession recovery error:", err);
   }
 
-  authActions.setInitialized(true);
+  authActions.setSessionLoaded(true);
 };
 
 export const cleanupAuth = (): void => {
@@ -251,11 +266,11 @@ export const signOut = async (): Promise<AuthResult> => {
     const { error } = await supabase.auth.signOut();
     try {
       await GoogleSignin.signOut();
-    } catch {}
+    } catch { /* ignore */ }
 
     authActions.setSession(null);
+    mmkv.set(SESSION_CACHE_KEY, false);
     queryClient.removeQueries({ queryKey: ["plan"] });
-    planConfigActions.clearConfig();
     posthogClient?.reset();
     track(AnalyticsEvents.SIGN_OUT);
 
@@ -284,13 +299,13 @@ export const deleteAccount = async (): Promise<AuthResult> => {
 
     try {
       await supabase.auth.signOut();
-    } catch {}
+    } catch { /* ignore */ }
     try {
       await GoogleSignin.signOut();
-    } catch {}
+    } catch { /* ignore */ }
     queryClient.clear();
     authActions.setSession(null);
-    planConfigActions.clearConfig();
+    mmkv.set(SESSION_CACHE_KEY, false);
     posthogClient?.reset();
     track(AnalyticsEvents.DELETE_ACCOUNT);
 

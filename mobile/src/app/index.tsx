@@ -12,6 +12,7 @@ import { settings$, auth$ } from "@/store";
  */
 export default function Index(): React.ReactElement | null {
   const isInitialized = useSelector(() => auth$.isInitialized.get());
+  const sessionLoaded = useSelector(() => auth$.sessionLoaded.get());
   const session = useSelector(() => auth$.session.get());
   const onboardingCompleted = useSelector(() =>
     settings$.onboardingCompleted.get(),
@@ -19,6 +20,9 @@ export default function Index(): React.ReactElement | null {
 
   // Supabase still hydrating from MMKV — keep splash visible
   if (!isInitialized) return null;
+
+  // Session still loading from SecureStore — don't route yet
+  if (!sessionLoaded) return null;
 
   // Route decision tree
   if (!onboardingCompleted) return <Redirect href="/(onboarding)/welcome" />;

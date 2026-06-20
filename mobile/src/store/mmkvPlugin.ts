@@ -39,7 +39,7 @@ export class ObservablePersistMMKV implements ObservablePersistLocal {
   }
 
   // Sets
-  set(table: string, changes: Change[], config: PersistOptionsLocal): void {
+  set(table: string, changes: Change[], _config: PersistOptionsLocal): void {
     if (!this.data[table]) {
       this.data[table] = {};
     }
@@ -58,13 +58,13 @@ export class ObservablePersistMMKV implements ObservablePersistLocal {
   async setMetadata(
     table: string,
     metadata: PersistMetadata,
-    config: PersistOptionsLocal,
+    _config: PersistOptionsLocal,
   ): Promise<void> {
     this.data[table + MetadataSuffix] = metadata;
     this.save(table + MetadataSuffix);
   }
 
-  deleteTable(table: string, config: PersistOptionsLocal): void {
+  deleteTable(table: string, _config: PersistOptionsLocal): void {
     delete this.data[table];
     mmkv.remove(table);
   }

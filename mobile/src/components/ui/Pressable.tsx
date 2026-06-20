@@ -19,16 +19,16 @@ export const Pressable = React.memo(
         feedback === "opacity"
           ? ({ pressed }: { pressed: boolean }): ViewStyle[] => [
               typeof style === "function"
-                ? (style as Function)({ pressed })
+                ? (style as (args: { pressed: boolean }) => ViewStyle)({ pressed })
                 : (style as ViewStyle),
-              pressed && { opacity: opacity.inactive },
+              pressed ? { opacity: opacity.inactive } : {},
             ]
           : feedback === "scale"
             ? ({ pressed }: { pressed: boolean }): ViewStyle[] => [
                 typeof style === "function"
-                  ? (style as Function)({ pressed })
+                ? (style as (args: { pressed: boolean }) => ViewStyle)({ pressed })
                   : (style as ViewStyle),
-                pressed && { transform: [{ scale: 0.95 }] },
+                pressed ? { transform: [{ scale: 0.95 }] } : {},
               ]
             : style;
 

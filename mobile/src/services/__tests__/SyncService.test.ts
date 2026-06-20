@@ -122,7 +122,7 @@ describe("SyncService", () => {
       expect(Db.deleteOutbox).toHaveBeenCalledWith("mock-uuid-123");
       const historyEntry = history$[id].get();
       expect(historyEntry).toBeDefined();
-      expect((historyEntry as any)?.transcript).toBe("Hello");
+      expect((historyEntry as { transcript?: string })?.transcript).toBe("Hello");
     });
   });
 

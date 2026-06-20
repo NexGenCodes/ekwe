@@ -258,7 +258,7 @@ export default function TranslateScreen(): React.JSX.Element {
           ]}
         >
           <Button
-            variant="secondary"
+            variant="outline"
             size="large"
             label={copied ? "Copied" : "Copy Full Translation"}
             onPress={() => handleCopy(`${text}\n\n---\n\n${translation}`)}

@@ -15,6 +15,7 @@ import { Button, EkweLogo, FeatureCard } from "@/components";
 import { Box, ScreenContainer, Text } from "@/components/ui";
 import { duration, spacing, iconSize, spinnerSize } from "@/constants";
 import { useTokens } from "@/hooks/ui";
+import { alpha } from "@/utils";
 import { triggerHaptic } from "@/utils/haptics";
 
 const FEATURES = [
@@ -61,7 +62,7 @@ export default function WelcomeScreen(): React.ReactElement {
       <LinearGradient
         colors={[
           color.background,
-          color.brand + "1A",
+          alpha(color.brand, 0.1),
           color.background,
         ]}
         start={{ x: 0, y: 0 }}

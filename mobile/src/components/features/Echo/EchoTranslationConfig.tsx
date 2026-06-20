@@ -32,7 +32,6 @@ interface EchoTranslationConfigProps {
 export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
   React.memo(
     ({
-      step,
       selectedLang,
       detectedLang,
       targetLang,

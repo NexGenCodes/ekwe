@@ -191,6 +191,7 @@ export const useBubble = (): UseBubbleReturn => {
     setRecordingState,
     setAudioPath,
     setDuration,
+    strategy.recommendedMode,
   ]);
 
   return {

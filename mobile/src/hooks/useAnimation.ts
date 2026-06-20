@@ -56,6 +56,7 @@ export function useStaggerEntrance(
       delay,
       withSpring(1, { damping, stiffness: stiffness + 10 }),
     );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return useAnimatedStyle(() => ({
@@ -76,6 +77,7 @@ export function useHeaderEntrance(): ReturnType<typeof useAnimatedStyle> {
     opacity.value = withTiming(1, { duration: 1000 });
     scale.value = withSpring(1, { damping: 15, stiffness: 60 });
     translateY.value = withSpring(0, { damping: 15, stiffness: 60 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return useAnimatedStyle(() => ({
@@ -100,6 +102,7 @@ export function useFadeIn(
     } else {
       opacity.value = withTiming(1, { duration });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return useAnimatedStyle(() => ({ opacity: opacity.value }));
@@ -133,6 +136,7 @@ export function useSlideIn(
       return (): void => clearTimeout(timer);
     }
     start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return useAnimatedStyle(() => ({

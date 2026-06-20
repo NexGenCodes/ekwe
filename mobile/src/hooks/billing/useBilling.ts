@@ -4,8 +4,7 @@ import * as WebBrowser from "expo-web-browser";
 import { useState, useMemo } from "react";
 
 import { BILLING_PLANS, DISPLAY_PRICING } from "@/constants/billing";
-import { SUPPORTED_CURRENCIES } from "@/constants/currency";
-import { usePlanConfigQuery } from "@/hooks/queries/usePlanConfigQuery";
+import { usePricingQuery } from "@/hooks/queries/usePricingQuery";
 import { supabase } from "@/services/supabase";
 import { auth$, authActions, settings$ } from "@/store";
 import { AppAlert } from "@/utils/alert";
@@ -28,24 +27,24 @@ export function useBilling(): UseBillingReturn {
   const isPro = useSelector(() => auth$.isPro.get());
   const currency = useSelector(() => settings$.currency.get());
   const [isAnnual, setIsAnnual] = useState(true);
-  const { data: config } = usePlanConfigQuery();
+  const { data: pricingData } = usePricingQuery();
 
   const activePricing = useMemo(() => {
-    const serverPricing = config?.pricing?.[currency] ?? config?.pricing?.USD;
+    const serverPricing = pricingData?.pricing?.[currency] ?? pricingData?.pricing?.USD;
     if (serverPricing) {
-      const symbol =
-        SUPPORTED_CURRENCIES.find((c) => c.code === serverPricing.monthly.currency)?.symbol ?? "$";
+      const cur = serverPricing.monthly.currency;
+      const symbol: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", NGN: "₦" };
       const monthlyAmount = serverPricing.monthly.amount;
       const annualAmount = serverPricing.annual.amount;
       return {
-        monthly: { amount: monthlyAmount, currency, symbol },
-        annual: { amount: annualAmount, currency, symbol },
+        monthly: { amount: monthlyAmount, currency: cur, symbol: symbol[cur] ?? "$" },
+        annual: { amount: annualAmount, currency: cur, symbol: symbol[cur] ?? "$" },
         annualMonthlyCost: +(annualAmount / 12).toFixed(2),
         annualSavingPercent: Math.round((1 - annualAmount / (monthlyAmount * 12)) * 100),
       };
     }
     return DISPLAY_PRICING[currency] || DISPLAY_PRICING.USD;
-  }, [currency, config]);
+  }, [currency, pricingData]);
 
   const checkoutMutation = useMutation({
     mutationFn: async ({

@@ -164,6 +164,8 @@ export const ExpressiveInput = React.memo(
       onConfirm,
       onTranslate,
       onMicPress,
+      canTranslate,
+      targetLang,
     ]);
 
     const isTargetLangValid = targetLang !== "none" && targetLang !== "";

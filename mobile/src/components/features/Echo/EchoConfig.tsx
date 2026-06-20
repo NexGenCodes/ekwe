@@ -19,7 +19,7 @@ export interface EchoConfigStepProps {
 }
 
 export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
-  ({ player, isResolving, isDark, peaks, onTranscribe, children }) => {
+  ({ player, isResolving, peaks, onTranscribe, children }) => {
     const { color } = useTheme();
     return (
       <Box>

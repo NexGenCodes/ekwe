@@ -311,7 +311,6 @@ export default function HistoryScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
   entryContainer: { marginBottom: spacing.sm },
-  topSection: { paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -379,11 +378,5 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
     paddingBottom: spacing["6xl"],
     alignItems: "center",
-  },
-  loadMoreButton: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xl,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
   },
 });

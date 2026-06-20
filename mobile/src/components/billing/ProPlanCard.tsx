@@ -8,8 +8,7 @@ import { Button } from "@/components/Button";
 import { Box, Text } from "@/components/ui";
 import { DISPLAY_PRICING } from "@/constants/billing";
 import type { BILLING_PLANS, PlanFeature } from "@/constants/billing";
-import { SUPPORTED_CURRENCIES } from "@/constants/currency";
-import { planConfig$ } from "@/store/planConfig";
+import { usePricingQuery } from "@/hooks/queries/usePricingQuery";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import type { ThemeTokens } from "@/hooks/ui/useTheme";
@@ -28,23 +27,23 @@ function usePriceBreakdown(
   isAnnual: boolean,
 ): PriceBreakdown {
   const currency = useSelector(() => settings$.currency.get());
-  const config = useSelector(() => planConfig$.config.get());
+  const { data: pricingData } = usePricingQuery();
 
   return useMemo(() => {
-    const serverPricing = config?.pricing?.[currency] ?? config?.pricing?.USD;
+    const serverPricing = pricingData?.pricing?.[currency] ?? pricingData?.pricing?.USD;
     if (serverPricing) {
-      const symbol =
-        SUPPORTED_CURRENCIES.find((c) => c.code === serverPricing.monthly.currency)?.symbol ?? "$";
+      const cur = serverPricing.monthly.currency;
+      const symbol: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", NGN: "₦" };
       const monthlyPrice = serverPricing.monthly.amount;
       const annualTotal = serverPricing.annual.amount;
       const effectiveMonthly = +(annualTotal / 12).toFixed(2);
       const savingPercent = Math.round((1 - annualTotal / (monthlyPrice * 12)) * 100);
 
+      const sym = symbol[cur] ?? "$";
       if (!isAnnual) {
-        return { displayPrice: monthlyPrice, originalPrice: monthlyPrice, symbol, annualTotal: 0, savingPercent: 0 };
+        return { displayPrice: monthlyPrice, originalPrice: monthlyPrice, symbol: sym, annualTotal: 0, savingPercent: 0 };
       }
-
-      return { displayPrice: effectiveMonthly, originalPrice: monthlyPrice, symbol, annualTotal, savingPercent };
+      return { displayPrice: effectiveMonthly, originalPrice: monthlyPrice, symbol: sym, annualTotal, savingPercent };
     }
 
     const activePricing = DISPLAY_PRICING[currency] || DISPLAY_PRICING.USD;
@@ -72,7 +71,7 @@ function usePriceBreakdown(
       annualTotal,
       savingPercent,
     };
-  }, [currency, isAnnual, config]);
+  }, [currency, isAnnual, pricingData]);
 }
 
 export interface ProPlanCardProps {
@@ -217,7 +216,7 @@ export function ProPlanCard({
       <Box style={styles.ctaContainer}>
         <Button
           label={isPro ? "Manage Subscription" : "Go Pro"}
-          variant="secondary"
+          variant="outline"
           onPress={isPro ? handleManage : handleUpgrade}
           size="large"
         />

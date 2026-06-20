@@ -92,5 +92,5 @@ export const useTripleExclusivity = (): void => {
           );
       }
     });
-  }, []);
+  }, [setActiveFloatingHead]);
 };

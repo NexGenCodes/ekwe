@@ -110,6 +110,6 @@ export function useStartDictation(
         stopDictationRef.current();
       }, maxDurationMs);
     },
-    [maxDurationMs],
+    [maxDurationMs], // eslint-disable-line react-hooks/exhaustive-deps
   );
 }

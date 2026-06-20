@@ -27,7 +27,7 @@ export function useLanguageSelection(): UseLanguageSelectionReturn {
     if (selected.length === 0) {
       settingsActions.setSelectedLanguages(DEFAULT_LANGUAGES);
     }
-  }, []);
+  }, [selected.length]);
 
   const commitToggle = useCallback((code: string): void => {
     const prev = settings$.selectedLanguages.peek();

@@ -172,7 +172,7 @@ export const useEchoIntentResolver = (props: {
     return (): void => {
       isStale = true;
     };
-  }, [rawUri, props.mimeType, hasIOSFiles]);
+  }, [rawUri, props.mimeType, hasIOSFiles, isInitialized, onboardingCompleted, props.value, session]);
 
   return {
     audioUri,

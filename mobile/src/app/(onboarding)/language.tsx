@@ -119,8 +119,8 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
             style={{ color: countColor }}
           >
             {isMaxed
-              ? `${selected.length}/${MAX_LANGUAGES} selected`
-              : `${selected.length}/${MAX_LANGUAGES} selected — ${remaining} more needed`}
+              ? `${selected.length}/${5} selected`
+              : `${selected.length}/${5} selected — ${remaining} more needed`}
           </Text>
         </Box>
 
@@ -152,5 +152,3 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
     </View>
   );
 }
-
-const MAX_LANGUAGES = 5;

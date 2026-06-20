@@ -21,7 +21,6 @@ import { sendOtp } from "@/services/auth";
 
 export default function WelcomeScreen(): React.JSX.Element {
   const router = useRouter();
-  const [hasConsented, setHasConsented] = React.useState(false);
 
   const { isLoading, error, run, handleApple, handleGoogle } = useAuthFlow();
   const { isOffline } = useNetwork();
@@ -31,7 +30,7 @@ export default function WelcomeScreen(): React.JSX.Element {
     defaultValues: { email: "" },
   });
 
-  const disabled = isLoading || isOffline || !hasConsented;
+  const disabled = isLoading || isOffline;
 
   const onSubmit = async (data: LoginForm): Promise<void> => {
     const result = await run(() => sendOtp(data.email));
@@ -93,10 +92,7 @@ export default function WelcomeScreen(): React.JSX.Element {
           disabled={disabled}
         />
 
-        <Disclaimer
-          agreed={hasConsented}
-          onToggleAgreement={() => setHasConsented((v) => !v)}
-        />
+        <Disclaimer />
       </Box>
     </AuthShell>
   );

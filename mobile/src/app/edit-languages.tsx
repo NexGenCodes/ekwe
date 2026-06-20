@@ -13,8 +13,6 @@ import { useLanguageSelection } from "@/hooks/useLanguageSelection";
 import { settings$, settingsActions } from "@/store";
 import { triggerHaptic } from "@/utils/haptics";
 
-const MAX_LANGUAGES = 5;
-
 export default function EditLanguagesScreen(): React.ReactElement {
   const router = useRouter();
   const { color, spacing, typography, borderRadius } = useTokens();
@@ -116,8 +114,8 @@ export default function EditLanguagesScreen(): React.ReactElement {
             style={{ color: countColor }}
           >
             {isMaxed
-              ? `${selected.length}/${MAX_LANGUAGES} selected`
-              : `${selected.length}/${MAX_LANGUAGES} selected — ${remaining} more needed`}
+              ? `${selected.length}/${5} selected`
+              : `${selected.length}/${5} selected — ${remaining} more needed`}
           </Text>
         </Box>
 

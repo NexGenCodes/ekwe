@@ -27,7 +27,7 @@ let sentryCaptureException: ((err: unknown) => void) | null = null;
 
 if (!IS_DEV && SENTRY_DSN && SENTRY_DSN.startsWith("https://")) {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Sentry = require("@sentry/react-native");
     Sentry.init({
       dsn: SENTRY_DSN,

@@ -1,7 +1,32 @@
 import { logger } from "../logger";
 import { PRICING_TABLE } from "../config";
 import { Env } from "../types";
-import { getRates, getRateFor, toLowestUnit, FALLBACK_RATES } from "../money";
+import { getRates, getRateFor, roundToCurrency, toLowestUnit, FALLBACK_RATES } from "../money";
+import type { PlanPricing } from "../../../shared/plans";
+import { USD_PRICE } from "../../../shared/plans";
+
+type PricingTable = Record<string, PlanPricing>;
+
+function buildPricing(rates: Record<string, number> | null): PricingTable {
+  const supported = Object.keys(FALLBACK_RATES);
+  const pricing: PricingTable = { USD: USD_PRICE };
+  for (const currency of supported) {
+    if (currency === 'USD') continue;
+    const rate = getRateFor(currency, rates);
+    const monthlyAmount = roundToCurrency(USD_PRICE.monthly.amount * rate, currency);
+    const annualAmount = roundToCurrency(USD_PRICE.annual.amount * rate, currency);
+    pricing[currency] = {
+      monthly: { amount: monthlyAmount, currency, lowestUnit: toLowestUnit(monthlyAmount, currency) },
+      annual: { amount: annualAmount, currency, lowestUnit: toLowestUnit(annualAmount, currency) },
+    };
+  }
+  return pricing;
+}
+
+export async function handlePricing(env: Env): Promise<Response> {
+  const rates = await getRates(env);
+  return Response.json({ pricing: buildPricing(rates) });
+}
 
 export async function handleCheckoutInitialize(
   request: Request,

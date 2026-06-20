@@ -4,7 +4,7 @@ import { Linking } from "react-native";
 import { EkweError } from "@/constants/errors";
 import AudioService from "@/services/AudioService";
 import { VolumeManager } from "@/services/VolumeManager";
-import { auth$, planConfigActions } from "@/store";
+import { PLAN_LIMITS } from "@/constants/billing";
 import { Result, ok, err } from "@/types/Result";
 import { isAndroid } from "@/utils";
 import {
@@ -100,7 +100,7 @@ class AudioCaptureClass {
       this.currentMeteringData = [];
       this.onAutoStopCallback = onAutoStop ?? null;
 
-      const safetyCapMs = planConfigActions.getLimits().dictationDurationMs;
+      const safetyCapMs = PLAN_LIMITS.pro.dictationDurationMs;
       await AudioService.startRecording(safetyCapMs);
       this.notifyStatusListeners("started");
 

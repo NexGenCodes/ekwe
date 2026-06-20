@@ -106,7 +106,6 @@ export const TranslationInterface = forwardRef<
     setSourceText,
     setTranslation,
     setTransliteration,
-    elapsedMs,
   ]);
 
   const handleSourceChange = useCallback(

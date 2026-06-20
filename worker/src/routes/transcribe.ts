@@ -7,7 +7,7 @@ import * as gladia from "../providers/gladia";
 import * as groq from "../providers/groq";
 import * as witai from "../providers/witai";
 import { getTranscribeProviderNames } from "../config";
-import { guardAudioSize, guardAutoDetect, guardLanguageCode, getLimits } from "../security";
+import { guardAudioSize, guardAutoDetect, guardLanguageCode } from "../security";
 import { hashBytes } from "../utils/keys";
 import { CLIENT_ABORTED, Env, Tier, TranscribeResult } from "../types";
 

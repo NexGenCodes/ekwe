@@ -33,7 +33,6 @@ export const ResultDisplay: React.FC<ResultDisplayProps> = React.memo(
     translation,
     defaultTab = "Translation",
     onTabChange,
-    isDark = false,
     sourceLang,
     targetLang,
     isLoading = false,

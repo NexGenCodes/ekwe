@@ -28,7 +28,7 @@ export function ResultActionBar({
   return (
     <Box style={actionBarStyle}>
       <Button
-        variant="secondary"
+        variant="outline"
         size="large"
         label={isCopied ? "Copied" : "Copy Full Translation"}
         onPress={onCopyAll}

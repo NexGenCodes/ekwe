@@ -36,7 +36,7 @@ export const ThemeToggler = ({
       colorScheme === "system" ? 0 : colorScheme === "light" ? 1 : 2,
       spring.smooth,
     );
-  }, [colorScheme]);
+  }, [colorScheme, transition]);
 
   const handlePress = (): void => {
     setIsModalVisible(true);

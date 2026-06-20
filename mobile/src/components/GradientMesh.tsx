@@ -63,7 +63,7 @@ export const GradientMesh = (): React.JSX.Element => {
       stopAnimations();
       sub.remove();
     };
-  }, [reduceMotionEnabled]);
+  }, [reduceMotionEnabled, x, y]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: x.value }, { translateY: y.value }],

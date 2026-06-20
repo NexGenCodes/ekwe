@@ -7,7 +7,7 @@ import React from "react";
  * without immediately loading the full Expo Router tree and its side effects.
  */
 export default function App(): React.ReactElement {
-  // @ts-ignore - require.context is an Expo/Metro special feature
+  // @ts-expect-error - require.context is an Expo/Metro special feature
   const ctx = require.context(".");
   return <ExpoRoot context={ctx} />;
 }

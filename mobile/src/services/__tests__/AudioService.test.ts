@@ -137,7 +137,6 @@ describe("AudioService", () => {
         playsInSilentMode: true,
         interruptionMode: "doNotMix",
       });
-      // eslint-disable-next-line import/namespace
       expect(AudioModule.AudioRecorder).toHaveBeenCalled();
     });
 
@@ -147,7 +146,6 @@ describe("AudioService", () => {
           .fn()
           .mockRejectedValue(new Error("prepare failed")),
       };
-      // eslint-disable-next-line import/namespace
       (AudioModule.AudioRecorder as jest.Mock).mockImplementationOnce(
         () => failRecorder,
       );

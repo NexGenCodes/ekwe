@@ -1,5 +1,6 @@
 /* global __dirname */
 const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
@@ -13,5 +14,10 @@ const workerExclusion = /[/\\]worker[/\\]/;
 config.resolver.blockList = Array.isArray(config.resolver.blockList)
   ? [...config.resolver.blockList, workerExclusion]
   : [workerExclusion];
+
+// Watch the shared directory so Metro resolves @shared imports
+config.watchFolders = [
+  path.resolve(__dirname, '..', 'shared'),
+];
 
 module.exports = config;

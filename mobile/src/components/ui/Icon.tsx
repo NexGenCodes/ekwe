@@ -17,7 +17,7 @@ export type IconProps = {
 
 export const Icon = React.memo(
   forwardRef<View, IconProps>(
-    ({ icon: IconComponent, size = "md", color, strokeWidth }, ref) => {
+    ({ icon: IconComponent, size = "md", color, strokeWidth }, _ref) => {
       const { color: tokens } = useTokens();
 
       const iconColor = color ?? tokens.foreground;

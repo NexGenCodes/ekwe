@@ -5,8 +5,8 @@ import { guardContentType, guardJsonSize } from "./security";
 import { handleTranscribe } from "./routes/transcribe";
 import { handleStream } from "./routes/stream";
 import { handleTranslate } from "./routes/translate";
-import { handleCheckoutInitialize } from "./routes/checkout";
-import { handlePlan } from "./routes/plan";
+import { handleCheckoutInitialize, handlePricing } from "./routes/checkout";
+
 import { handleWebhook } from "./routes/webhook";
 import { CLIENT_ABORTED, Env, Tier } from "./types";
 import { checkPreflight } from "./utils/preflight";
@@ -94,11 +94,6 @@ async function handleRequest(
     }
   }
 
-  // ─── PLAN CONFIG (no preflight needed) ───
-  if (request.method === "GET" && url.pathname === "/plan") {
-    return addCorsHeaders(await handlePlan(env), corsHeaders);
-  }
-
   // ─── 1. PRE-FLIGHT CHECK (ATOMIC COOLDOWN + CACHED) ───
   let preflight: Awaited<ReturnType<typeof checkPreflight>>;
   const cacheKey = `preflight:${userId}`;
@@ -147,6 +142,9 @@ async function handleRequest(
         preflight.tier_active,
         request.signal,
       );
+    } else if (request.method === "GET" && url.pathname === "/checkout/pricing") {
+      response = await handlePricing(env);
+      return addCorsHeaders(response, corsHeaders);
     } else if (request.method === "POST" && url.pathname === "/translate") {
       const ctGuard = guardContentType(request, "json");
       if (!ctGuard.allowed)
