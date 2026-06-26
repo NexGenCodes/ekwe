@@ -94,6 +94,35 @@ public class EkweNativeModule: Module {
     }
 
     // ------------------------------------
+    // Voice Session — iOS voice processing (NS + AEC + AGC via voiceChat mode)
+    // ------------------------------------
+    AsyncFunction("configureVoiceSession") { () in
+      let session = AVAudioSession.sharedInstance()
+      try session.setCategory(.playAndRecord,
+                              mode: .voiceChat,
+                              options: [.allowBluetooth, .defaultToSpeaker])
+      try session.setPreferredIOBufferDuration(0.005)
+      try session.setActive(true)
+    }
+
+    // ------------------------------------
+    // AudioRecord — iOS stubs (uses AVAudioRecorder via expo-audio instead)
+    // ------------------------------------
+    AsyncFunction("startAudioRecording") { (_: String, _: Int) -> [String: Any] in
+      return ["success": false, "error": "Use expo-audio on iOS"]
+    }
+
+    AsyncFunction("stopAudioRecording") { () -> [String: Any] in
+      return ["success": false, "error": "Use expo-audio on iOS",
+              "durationMs": 0, "waveform": [] as [Float]]
+    }
+
+    AsyncFunction("resolveAndConvertToFlac") { (_: String, _: String) -> [String: Any] in
+      return ["success": false, "error": "Use extractWavAndWaveform on iOS",
+              "durationMs": 0, "waveform": [] as [Float]]
+    }
+
+    // ------------------------------------
     // TODO: Live Activity / Dynamic Island (ActivityKit)
     // ------------------------------------
   }

@@ -2,22 +2,33 @@ package expo.modules.ekwenative
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.util.Log
 import android.webkit.MimeTypeMap
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-
-import android.media.audiofx.NoiseSuppressor
-import android.media.audiofx.AcousticEchoCanceler
-import android.media.audiofx.AutomaticGainControl
-import android.util.Log
-import kotlin.jvm.JvmStatic
+import java.io.File
+import java.io.FileOutputStream
+import kotlin.concurrent.thread
 
 class EkweNativeModule : Module() {
   private var noiseSuppressor: NoiseSuppressor? = null
   private var echoCanceler: AcousticEchoCanceler? = null
   private var gainControl: AutomaticGainControl? = null
+
+  // AudioRecord capture state
+  private var audioRecord: AudioRecord? = null
+  private var isAudioRecording = false
+  private var recordingThread: Thread? = null
+  @Volatile
+  private var currentAmplitude: Float = 0f
 
   companion object {
     var instance: EkweNativeModule? = null
@@ -54,6 +65,14 @@ class EkweNativeModule : Module() {
     @JvmStatic external fun extractWavAndWaveformJNI(inputPath: String, outputPath: String): Array<Any?>
     @JvmStatic external fun encodePcmToFlacJNI(pcmData: ShortArray, sampleRate: Int, channels: Int, outputPath: String): Array<Any?>
 
+    // New: memory-based decode (no temp file for content:// → FLAC)
+    @JvmStatic external fun extractFromMemoryJNI(data: ByteArray, outputPath: String): Array<Any?>
+
+    // New: streaming FLAC encoder for AudioRecord
+    @JvmStatic external fun nativeInitFlacEncoder(outputPath: String, sampleRate: Int, channels: Int): Boolean
+    @JvmStatic external fun nativeFeedPcm(pcmData: ShortArray, numSamples: Int): Boolean
+    @JvmStatic external fun nativeStopFlacEncoder(): Array<Any?>
+
     fun emitAppForeground() {
       isAppBackgrounded = false
       instance?.let { module ->
@@ -76,7 +95,7 @@ class EkweNativeModule : Module() {
   }
 
   override fun definition() = ModuleDefinition {
-    
+
     Name("EkweNative")
 
     OnCreate {
@@ -110,7 +129,6 @@ class EkweNativeModule : Module() {
     }
 
     AsyncFunction("dismissEcho") { ->
-      // Dismiss native loader first, then finish
       val activity = appContext.currentActivity
       if (activity is ShareActivity) {
         activity.dismissNativeLoader()
@@ -207,7 +225,7 @@ class EkweNativeModule : Module() {
       )
       val x = prefs?.getFloat("bubble_x", -1f) ?: -1f
       val y = prefs?.getFloat("bubble_y", -1f) ?: -1f
-      
+
       if (x < 0f || y < 0f) {
         null
       } else {
@@ -229,27 +247,25 @@ class EkweNativeModule : Module() {
     AsyncFunction("resolveContentUri") { uriString: String ->
       val context = appContext.reactContext ?: return@AsyncFunction null
       val uri = android.net.Uri.parse(uriString)
-      
+
       if (uri.scheme != "content") return@AsyncFunction uriString
 
       try {
-        // Detect the real MIME type from ContentResolver
         val mimeType = context.contentResolver.getType(uri) ?: "audio/ogg"
-        
-        // Get the real file extension from MIME or fallback to original name
+
         val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
             ?: getExtensionFromContentUri(context, uri)
-            ?: "opus" // WhatsApp default
-        
+            ?: "opus"
+
         val fileName = "shared_voice_${System.currentTimeMillis()}.$extension"
         val cacheFile = java.io.File(context.cacheDir, fileName)
-        
+
         context.contentResolver.openInputStream(uri)?.use { input ->
           java.io.FileOutputStream(cacheFile).use { output ->
             input.copyTo(output)
           }
         }
-        
+
         Log.d("EkweNative", "Resolved content URI: mime=$mimeType, ext=$extension, path=${cacheFile.absolutePath}")
         return@AsyncFunction "file://${cacheFile.absolutePath}"
       } catch (e: Exception) {
@@ -258,36 +274,161 @@ class EkweNativeModule : Module() {
       }
     }
 
-    AsyncFunction("isAccessibilityEnabled") { ->
-      val context = appContext.reactContext ?: return@AsyncFunction false
-      val enabledServices = Settings.Secure.getString(
-          context.contentResolver, 
-          Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-      ) ?: ""
-      val serviceName = "${context.packageName}/${EkweAccessibilityService::class.java.canonicalName}"
-      enabledServices.contains(serviceName)
+    // ─── New: Resolve content:// URI → FLAC directly (no temp file) ─────
+    AsyncFunction("resolveAndConvertToFlac") { uriString: String, outputPath: String ->
+      val context = appContext.reactContext ?: return@AsyncFunction mapOf(
+        "success" to false, "error" to "No context", "durationMs" to 0, "waveform" to emptyList<Float>()
+      )
+
+      try {
+        val uri = android.net.Uri.parse(uriString)
+        val inputStream = context.contentResolver.openInputStream(uri)
+            ?: return@AsyncFunction mapOf(
+              "success" to false, "error" to "Cannot open content URI",
+              "durationMs" to 0, "waveform" to emptyList<Float>()
+            )
+
+        val bytes = inputStream.use { it.readBytes() }
+
+        val result = extractFromMemoryJNI(bytes, outputPath)
+        val success = result[0] as Boolean
+        val error = result[1] as String
+        val durationMs = result[2] as Int
+        val waveform = (result[3] as FloatArray).toList()
+
+        return@AsyncFunction mapOf(
+          "success" to success,
+          "error" to error,
+          "durationMs" to durationMs,
+          "waveform" to waveform
+        )
+      } catch (e: Exception) {
+        Log.e("EkweNative", "resolveAndConvertToFlac failed", e)
+        return@AsyncFunction mapOf(
+          "success" to false, "error" to (e.message ?: "Unknown error"),
+          "durationMs" to 0, "waveform" to emptyList<Float>()
+        )
+      }
     }
 
-    AsyncFunction("requestAccessibilityPermission") { ->
-      val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    // ─── New: AudioRecord direct capture ─────────────────────────────────
+    AsyncFunction("startAudioRecording") { outputPath: String, sampleRate: Int ->
+      if (isAudioRecording) {
+        return@AsyncFunction mapOf("success" to false, "error" to "Already recording")
       }
-      appContext.reactContext?.startActivity(intent)
+
+      try {
+        val bufferSize = AudioRecord.getMinBufferSize(
+          sampleRate,
+          AudioFormat.CHANNEL_IN_MONO,
+          AudioFormat.ENCODING_PCM_16BIT
+        )
+
+        if (bufferSize == AudioRecord.ERROR || bufferSize == AudioRecord.ERROR_BAD_VALUE) {
+          return@AsyncFunction mapOf("success" to false, "error" to "Invalid buffer size")
+        }
+
+        val initOk = nativeInitFlacEncoder(outputPath, sampleRate, 1)
+        if (!initOk) {
+          return@AsyncFunction mapOf("success" to false, "error" to "Failed to init FLAC encoder")
+        }
+
+        audioRecord = AudioRecord(
+          MediaRecorder.AudioSource.MIC,
+          sampleRate,
+          AudioFormat.CHANNEL_IN_MONO,
+          AudioFormat.ENCODING_PCM_16BIT,
+          bufferSize
+        )
+
+        if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+          nativeStopFlacEncoder()
+          audioRecord?.release()
+          audioRecord = null
+          return@AsyncFunction mapOf("success" to false, "error" to "AudioRecord init failed")
+        }
+
+        // Attach audio effects to the AudioRecord session
+        val sessionId = audioRecord!!.audioSessionId
+        attachEffectsInternal(sessionId)
+
+        audioRecord?.startRecording()
+        isAudioRecording = true
+
+        recordingThread = thread(name = "AudioRecord") {
+          try {
+            val buffer = ShortArray(bufferSize / 2)
+            while (isAudioRecording) {
+              val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
+              if (read > 0) {
+                nativeFeedPcm(buffer, read)
+                // Compute RMS amplitude (0..1) for metering
+                var sumSq = 0.0
+                for (i in 0 until read) {
+                  val s = buffer[i].toDouble()
+                  sumSq += s * s
+                }
+                val rms = Math.sqrt(sumSq / read)
+                currentAmplitude = (rms / 32768.0).toFloat()
+              } else if (read == AudioRecord.ERROR_INVALID_OPERATION) {
+                break
+              }
+            }
+          } catch (e: Exception) {
+            Log.e("EkweNative", "AudioRecord thread crashed", e)
+            currentAmplitude = 0f
+          }
+        }
+
+        return@AsyncFunction mapOf("success" to true, "error" to "")
+      } catch (e: Exception) {
+        Log.e("EkweNative", "startAudioRecording failed", e)
+        isAudioRecording = false
+        audioRecord?.release()
+        audioRecord = null
+        return@AsyncFunction mapOf("success" to false, "error" to (e.message ?: "Unknown error"))
+      }
     }
 
-    // --- System Audio Capture ---
-    AsyncFunction("requestMediaProjection") { ->
-      val intent = Intent(appContext.reactContext, MediaProjectionActivity::class.java).apply {
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    AsyncFunction("stopAudioRecording") { ->
+      if (!isAudioRecording) {
+        return@AsyncFunction mapOf(
+          "success" to false, "error" to "Not recording",
+          "durationMs" to 0, "waveform" to emptyList<Float>()
+        )
       }
-      appContext.reactContext?.startActivity(intent)
-    }
 
-    AsyncFunction("stopAudioCapture") { ->
-      val intent = Intent(appContext.reactContext, AudioCaptureService::class.java).apply {
-        action = AudioCaptureService.ACTION_STOP
+      isAudioRecording = false
+
+      recordingThread?.interrupt()
+      try {
+        recordingThread?.join(3000)
+      } catch (_: InterruptedException) {
+        recordingThread?.interrupt()
       }
-      appContext.reactContext?.startService(intent)
+      recordingThread = null
+
+      try {
+        audioRecord?.stop()
+      } catch (_: IllegalStateException) { }
+
+      audioRecord?.release()
+      audioRecord = null
+
+      releaseEffectsInternal()
+
+      val result = nativeStopFlacEncoder()
+      val success = result[0] as Boolean
+      val error = result[1] as String
+      val durationMs = result[2] as Int
+      val waveform = (result[3] as FloatArray).toList()
+
+      return@AsyncFunction mapOf(
+        "success" to success,
+        "error" to error,
+        "durationMs" to durationMs,
+        "waveform" to waveform
+      )
     }
 
     // --- Audio Conversion Methods ---
@@ -306,59 +447,70 @@ class EkweNativeModule : Module() {
     }
 
     // --- Audio Effects Methods ---
+    // ─── New: Get current recording amplitude (0..1) for metering ─────
+    AsyncFunction("getRecordingAmplitude") { ->
+      currentAmplitude.toDouble()
+    }
+
     AsyncFunction("attachEffects") { audioSessionId: Double ->
       val sessionId = audioSessionId.toInt()
-      val result = mutableMapOf<String, Boolean>()
-      try {
-        if (NoiseSuppressor.isAvailable()) {
-          noiseSuppressor = NoiseSuppressor.create(sessionId)
-          noiseSuppressor?.enabled = true
-          result.put("noiseSuppressor", true)
-        } else {
-          result.put("noiseSuppressor", false)
-        }
-      } catch (e: Exception) {
-        result.put("noiseSuppressor", false)
-      }
-      try {
-        if (AcousticEchoCanceler.isAvailable()) {
-          echoCanceler = AcousticEchoCanceler.create(sessionId)
-          echoCanceler?.enabled = true
-          result.put("echoCanceler", true)
-        } else {
-          result.put("echoCanceler", false)
-        }
-      } catch (e: Exception) {
-        result.put("echoCanceler", false)
-      }
-      try {
-        if (AutomaticGainControl.isAvailable()) {
-          gainControl = AutomaticGainControl.create(sessionId)
-          gainControl?.enabled = true
-          result.put("gainControl", true)
-        } else {
-          result.put("gainControl", false)
-        }
-      } catch (e: Exception) {
-        result.put("gainControl", false)
-      }
-      return@AsyncFunction result
+      attachEffectsInternal(sessionId)
     }
 
     AsyncFunction("releaseEffects") { ->
-      noiseSuppressor?.release()
-      echoCanceler?.release()
-      gainControl?.release()
-      noiseSuppressor = null
-      echoCanceler = null
-      gainControl = null
-      Unit
+      releaseEffectsInternal()
     }
+  }
+
+  private fun attachEffectsInternal(sessionId: Int): Map<String, Boolean> {
+    val result = mutableMapOf<String, Boolean>()
+    try {
+      if (NoiseSuppressor.isAvailable()) {
+        noiseSuppressor = NoiseSuppressor.create(sessionId)
+        noiseSuppressor?.enabled = true
+        result.put("noiseSuppressor", true)
+      } else {
+        result.put("noiseSuppressor", false)
+      }
+    } catch (e: Exception) {
+      result.put("noiseSuppressor", false)
+    }
+    try {
+      if (AcousticEchoCanceler.isAvailable()) {
+        echoCanceler = AcousticEchoCanceler.create(sessionId)
+        echoCanceler?.enabled = true
+        result.put("echoCanceler", true)
+      } else {
+        result.put("echoCanceler", false)
+      }
+    } catch (e: Exception) {
+      result.put("echoCanceler", false)
+    }
+    try {
+      if (AutomaticGainControl.isAvailable()) {
+        gainControl = AutomaticGainControl.create(sessionId)
+        gainControl?.enabled = true
+        result.put("gainControl", true)
+      } else {
+        result.put("gainControl", false)
+      }
+    } catch (e: Exception) {
+      result.put("gainControl", false)
+    }
+    return result
+  }
+
+  private fun releaseEffectsInternal() {
+    noiseSuppressor?.release()
+    echoCanceler?.release()
+    gainControl?.release()
+    noiseSuppressor = null
+    echoCanceler = null
+    gainControl = null
   }
 
   /**
    * Extracts file extension from the content URI's display name.
-   * E.g., "AUD-20260412-WA0003.opus" → "opus"
    */
   private fun getExtensionFromContentUri(context: Context, uri: android.net.Uri): String? {
     try {

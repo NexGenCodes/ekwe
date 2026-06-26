@@ -270,28 +270,6 @@ export function RecordingInline({
     return { transform: [{ translateX: frac * widthSV.value }] };
   });
 
-  /* ── Recording mini-waveform animated styles ── */
-  const s1 = useAnimatedStyle(() => {
-    const h = MIN_H + Math.max(0.05, (amplitude.value || 0.5) * 0.3) * RANGE;
-    return { height: withTiming(h, { duration: 100 }) };
-  });
-  const s2 = useAnimatedStyle(() => {
-    const h = MIN_H + Math.max(0.05, (amplitude.value || 0.5) * 0.6) * RANGE;
-    return { height: withTiming(h, { duration: 100 }) };
-  });
-  const s3 = useAnimatedStyle(() => {
-    const h = MIN_H + Math.max(0.05, (amplitude.value || 0.5) * 1.0) * RANGE;
-    return { height: withTiming(h, { duration: 100 }) };
-  });
-  const s4 = useAnimatedStyle(() => {
-    const h = MIN_H + Math.max(0.05, (amplitude.value || 0.5) * 0.7) * RANGE;
-    return { height: withTiming(h, { duration: 100 }) };
-  });
-  const s5 = useAnimatedStyle(() => {
-    const h = MIN_H + Math.max(0.05, (amplitude.value || 0.5) * 0.4) * RANGE;
-    return { height: withTiming(h, { duration: 100 }) };
-  });
-
   const [displayTime, setDisplayTime] = useState("0:00");
   useAnimatedReaction(
     () => player.progressSV.value,
@@ -400,7 +378,6 @@ export function RecordingInline({
             flex: 1,
             flexDirection: "row",
             alignItems: "center",
-            justifyContent: "space-between",
             paddingHorizontal: spacing.sm,
           }}
         >
@@ -409,7 +386,8 @@ export function RecordingInline({
             style={{
               flexDirection: "row",
               alignItems: "center",
-              gap: spacing.md,
+              gap: spacing.sm,
+              marginRight: spacing.sm,
             }}
           >
             <Animated.View
@@ -428,66 +406,32 @@ export function RecordingInline({
             </Text>
           </Box>
 
-          {/* Right side: Live waveform or Processing state */}
-          <Box style={{ height: 40, justifyContent: "center" }}>
+          {/* Center: Live 50-bar waveform or Processing state */}
+          <Box
+            style={{
+              flex: 1,
+              height: 40,
+              justifyContent: "center",
+              overflow: "hidden",
+            }}
+          >
             {isProcessing ? (
-              <Text variant="body" style={{ color: color.muted }}>
+              <Text
+                variant="body"
+                style={{ color: color.muted, textAlign: "center" }}
+              >
                 Transcribing...
               </Text>
             ) : (
               <Box
-                style={{ flexDirection: "row", alignItems: "center", gap: 3 }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 2,
+                  flex: 1,
+                }}
               >
-                <Animated.View
-                  style={[
-                    {
-                      width: BAR_W,
-                      borderRadius: BAR_R,
-                      backgroundColor: color.error,
-                    },
-                    s1,
-                  ]}
-                />
-                <Animated.View
-                  style={[
-                    {
-                      width: BAR_W,
-                      borderRadius: BAR_R,
-                      backgroundColor: color.error,
-                    },
-                    s2,
-                  ]}
-                />
-                <Animated.View
-                  style={[
-                    {
-                      width: BAR_W,
-                      borderRadius: BAR_R,
-                      backgroundColor: color.error,
-                    },
-                    s3,
-                  ]}
-                />
-                <Animated.View
-                  style={[
-                    {
-                      width: BAR_W,
-                      borderRadius: BAR_R,
-                      backgroundColor: color.error,
-                    },
-                    s4,
-                  ]}
-                />
-                <Animated.View
-                  style={[
-                    {
-                      width: BAR_W,
-                      borderRadius: BAR_R,
-                      backgroundColor: color.error,
-                    },
-                    s5,
-                  ]}
-                />
+                {bars}
               </Box>
             )}
           </Box>

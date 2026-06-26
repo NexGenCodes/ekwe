@@ -145,6 +145,24 @@ export const ExpressiveInput = React.memo(
       onClear();
     }, [onClear]);
 
+    const handleHoldStart = useCallback(() => {
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+      onMicPress();
+    }, [onMicPress]);
+
+    const handleHoldEnd = useCallback(
+      (swipedLeft: boolean, swipedUp: boolean) => {
+        if (swipedLeft) {
+          onCancel();
+        } else if (!swipedUp) {
+          // Release without swipe-up = stop recording (only if currently recording)
+          if (isRecording) onStop();
+        }
+        // Swiped up = lock mode — release doesn't stop, user uses visible Stop button
+      },
+      [onCancel, onStop, isRecording],
+    );
+
     const handleRightButtonPress = useCallback(async () => {
       if (isRecording) {
         await triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
@@ -336,6 +354,8 @@ export const ExpressiveInput = React.memo(
           handleCancelPress={handleCancelPress}
           handleClear={handleClear}
           handleRightButtonPress={handleRightButtonPress}
+          onHoldStart={handleHoldStart}
+          onHoldEnd={handleHoldEnd}
         />
       </Animated.View>
     );

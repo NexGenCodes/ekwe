@@ -1,3 +1,4 @@
+import * as FileSystem from "expo-file-system/legacy";
 import * as Haptics from "expo-haptics";
 import { Linking } from "react-native";
 
@@ -6,14 +7,13 @@ import AudioService from "@/services/AudioService";
 import { VolumeManager } from "@/services/VolumeManager";
 import { PLAN_LIMITS } from "@/constants/billing";
 import { Result, ok, err } from "@/types/Result";
-import { isAndroid, triggerHaptic } from "@/utils";
-import {
-  attachAudioEffects,
-  releaseAudioEffects,
-} from "@/utils/AudioEffectsModule";
+import { isAndroid, isIOS, triggerHaptic } from "@/utils";
+import { releaseAudioEffects } from "@/utils/AudioEffectsModule";
 import { AppAlert } from "@/utils/alert";
 import { validateSharedAudio } from "@/utils/fileValidation";
 import logger from "@/utils/logger";
+
+import EkweNative from "../../modules/ekwe-native";
 
 export interface CaptureSession {
   sessionId: string;
@@ -25,12 +25,14 @@ export interface RecordingResult {
   durationMs: number;
   sessionId: string;
   meteringData: number[];
+  waveform?: number[];
 }
 
 class AudioCaptureClass {
   private meteringInterval: ReturnType<typeof setInterval> | null = null;
   private currentSessionId: string | null = null;
   private currentMeteringData: number[] = [];
+  private currentRecordingPath: string | null = null;
   private maxDurationTimeout: ReturnType<typeof setTimeout> | null = null;
   private listeners: ((amplitude: number) => void)[] = [];
   private statusListeners: ((status: "started" | "stopped") => void)[] = [];
@@ -78,9 +80,9 @@ class AudioCaptureClass {
     if (this.isStartingParams) return err(EkweError.AUDIO_RECORD_FAIL);
     this.onAutoStopCallback = null;
 
-    if (AudioService.isRecording()) {
+    if (this.isRecording()) {
       logger.info(
-        "AudioCapture: Native recorder already active, stopping before restart...",
+        "AudioCapture: Already recording, stopping before restart...",
       );
       await this.stopRecording().catch(() => {});
     }
@@ -101,14 +103,39 @@ class AudioCaptureClass {
       this.onAutoStopCallback = onAutoStop ?? null;
 
       const safetyCapMs = PLAN_LIMITS.pro.dictationDurationMs;
-      await AudioService.startRecording(safetyCapMs);
+
+      if (isAndroid) {
+        const cacheDir = FileSystem.cacheDirectory;
+        if (!cacheDir) {
+          this.isStartingParams = false;
+          return err(EkweError.AUDIO_RECORD_FAIL);
+        }
+        const outputPath = `${cacheDir}ekwe_recording_${sessionId}.flac`;
+        const startResult = await EkweNative.startAudioRecording(
+          outputPath,
+          16000,
+        );
+        if (!startResult.success) {
+          logger.error(
+            "AudioCapture: AudioRecord start failed:",
+            startResult.error,
+          );
+          this.isStartingParams = false;
+          return err(EkweError.AUDIO_RECORD_FAIL);
+        }
+        this.currentRecordingPath = outputPath;
+      } else {
+        try {
+          await EkweNative.configureVoiceSession();
+        } catch (e) {
+          logger.warn("AudioCapture: configureVoiceSession failed", e);
+        }
+        await AudioService.startRecording(safetyCapMs);
+      }
+
       this.notifyStatusListeners("started");
 
       triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
-
-      if (isAndroid) {
-        await attachAudioEffects(0);
-      }
 
       let silenceStartTime: number | null = null;
       const SILENCE_THRESHOLD_DB = -45;
@@ -117,7 +144,15 @@ class AudioCaptureClass {
       this.meteringInterval = setInterval(async () => {
         if (!this.currentSessionId) return;
 
-        const db = AudioService.getMetering();
+        let db: number;
+        if (isAndroid) {
+          const amp = await EkweNative.getRecordingAmplitude();
+          db = amp > 0.0001 ? 20 * Math.log10(amp) : -160;
+        } else if (isIOS) {
+          db = AudioService.getMetering();
+        } else {
+          db = -160;
+        }
 
         if (db < SILENCE_THRESHOLD_DB) {
           if (silenceStartTime === null) {
@@ -143,14 +178,11 @@ class AudioCaptureClass {
           silenceStartTime = null;
         }
 
-        // WhatsApp-style noise gate:
-        // Assume noise floor is around -45dB.
-        // Scale -45..0 to 0..1 exponentially so voice pops and silence stays flat.
         let normalized = 0;
         if (db > -45) {
           normalized = Math.pow((db + 45) / 45, 1.5);
         } else {
-          normalized = 0.02; // tiny dot for absolute silence
+          normalized = 0.02;
         }
 
         this.currentMeteringData.push(normalized);
@@ -193,8 +225,7 @@ class AudioCaptureClass {
 
   async stopRecording(): Promise<Result<RecordingResult, EkweError>> {
     const sessionId = this.currentSessionId;
-    const isRecording = AudioService.isRecording();
-    if (!isRecording || !sessionId) {
+    if (!sessionId) {
       this.currentSessionId = null;
       this.currentMeteringData = [];
       return err(EkweError.AUDIO_RECORD_FAIL);
@@ -213,14 +244,42 @@ class AudioCaptureClass {
     this.onAutoStopCallback = null;
 
     try {
-      const { path, duration } = await AudioService.stopRecording();
+      let uri: string;
+      let durationMs: number;
+      let waveform: number[] | undefined;
+
+      if (isAndroid) {
+        const result = await EkweNative.stopAudioRecording();
+        if (!result.success) {
+          this.currentSessionId = null;
+          this.currentMeteringData = [];
+          this.notifyStatusListeners("stopped");
+          return err(EkweError.INTERRUPTED);
+        }
+        uri = this.currentRecordingPath ?? "";
+        durationMs = result.durationMs;
+        waveform = result.waveform;
+        this.currentRecordingPath = null;
+      } else {
+        const isNativeRecording = AudioService.isRecording();
+        if (!isNativeRecording) {
+          this.currentSessionId = null;
+          this.currentMeteringData = [];
+          return err(EkweError.AUDIO_RECORD_FAIL);
+        }
+        const { path, duration } = await AudioService.stopRecording();
+        uri = path;
+        durationMs = duration;
+      }
+
       this.notifyStatusListeners("stopped");
 
       const result: RecordingResult = {
-        uri: path,
-        durationMs: duration,
+        uri,
+        durationMs,
         sessionId,
         meteringData: [...this.currentMeteringData],
+        ...(waveform !== undefined ? { waveform } : {}),
       };
 
       this.currentSessionId = null;
@@ -257,8 +316,18 @@ class AudioCaptureClass {
     }
 
     try {
-      const result = await AudioService.stopRecording();
-      path = result.path;
+      if (isAndroid) {
+        if (this.currentSessionId) {
+          await EkweNative.stopAudioRecording();
+          path = this.currentRecordingPath;
+          this.currentRecordingPath = null;
+        }
+      } else {
+        if (AudioService.isRecording()) {
+          const result = await AudioService.stopRecording();
+          path = result.path;
+        }
+      }
       this.notifyStatusListeners("stopped");
     } catch {
       // Ignore errors during cancel
@@ -300,6 +369,9 @@ class AudioCaptureClass {
   }
 
   isRecording(): boolean {
+    if (isAndroid) {
+      return this.currentSessionId !== null;
+    }
     return AudioService.isRecording();
   }
 

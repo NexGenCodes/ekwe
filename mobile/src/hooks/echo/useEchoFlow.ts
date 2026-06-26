@@ -153,7 +153,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
   useEffect((): (() => void) => {
     activateKeepAwakeAsync("echoSession").catch(() => {});
     return () => {
-      deactivateKeepAwake("echoSession")?.catch?.(() => {});
+      deactivateKeepAwake("echoSession").catch(() => {});
     };
   }, []);
 
@@ -376,7 +376,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     if (audioUri && audioUri !== activeResolvedUri.current) {
       cleanEchoCache(audioUri);
     }
-    deactivateKeepAwake("echoSession")?.catch?.(() => {});
+    deactivateKeepAwake("echoSession").catch(() => {});
     IntentService.dismissEcho();
   }, [sourceApp, session, audioUri, activeResolvedUri]);
 

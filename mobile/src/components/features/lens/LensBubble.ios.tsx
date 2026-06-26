@@ -55,7 +55,7 @@ export function LensBubble(): React.ReactElement | null {
     } else if (recordingState === RecordingState.Error) {
       timer = setTimeout(() => resetAudioState(), 5000);
     }
-    return (): void => timer && clearTimeout(timer);
+    return (): void => { if (timer) clearTimeout(timer); };
   }, [recordingState, resetAudioState]);
 
   // THEME COLORS

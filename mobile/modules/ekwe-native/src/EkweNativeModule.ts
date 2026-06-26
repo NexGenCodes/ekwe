@@ -6,10 +6,11 @@ import type {
   AudioEffectsResult,
   FloatingState,
   ExtractWavAndWaveformResult,
+  AudioRecordingResult,
+  StartRecordingResult,
 } from './EkweNative.types';
 
 declare class EkweNativeModule extends NativeModule<{
-  // Unified window lifecycle events
   onStateChanged: (event: {
     state: FloatingState;
     previousState: FloatingState;
@@ -18,14 +19,13 @@ declare class EkweNativeModule extends NativeModule<{
   onIntentQueued: (event: { audioPath: string; sourceApp: string }) => void;
   onAppForeground: (event: {}) => void;
   onAppBackground: (event: {}) => void;
-  // Retained from old API
   onForegroundAppChanged: (event: { packageName: string }) => void;
 }> {
   // --- Bubble ---
   hasOverlayPermission(): Promise<boolean>;
   requestOverlayPermission(): Promise<void>;
   showBubble(x: number, y: number): Promise<void>;
-  hideBubble(): Promise<void>; // (Optional synonym for dismissBubble)
+  hideBubble(): Promise<void>;
   dismissBubble(): Promise<void>;
   expandBubble(): Promise<void>;
   collapseBubble(): Promise<void>;
@@ -47,27 +47,50 @@ declare class EkweNativeModule extends NativeModule<{
   // --- State ---
   getWindowState(): Promise<FloatingState>;
 
-  // --- Position (retained) ---
+  // --- Position ---
   getSavedPosition(): Promise<BubblePosition>;
   savePosition(x: number, y: number): Promise<void>;
 
-  // --- Content URI Resolution (retained) ---
+  // --- Content URI Resolution ---
   resolveContentUri(uri: string): Promise<string | null>;
 
-  // --- Accessibility (retained) ---
+  // --- Accessibility ---
   isAccessibilityEnabled(): Promise<boolean>;
   requestAccessibilityPermission(): Promise<void>;
 
-  // --- System Audio (retained) ---
+  // --- System Audio ---
   requestMediaProjection(): Promise<void>;
   stopAudioCapture(): Promise<void>;
 
-  // --- Audio Effects (retained) ---
+  // --- iOS Voice Session (voiceChat mode → built-in NS, AEC, AGC) ---
+  configureVoiceSession(): Promise<void>;
+
+  // --- AudioRecord metering (Android) ---
+  getRecordingAmplitude(): Promise<number>;
+
+  // --- Audio Effects ---
   attachEffects(audioSessionId: number): Promise<AudioEffectsResult>;
   releaseEffects(): Promise<void>;
 
   // --- Audio Conversion ---
-  extractWavAndWaveform(inputPath: string, outputPath: string): Promise<ExtractWavAndWaveformResult>;
+  extractWavAndWaveform(
+    inputPath: string,
+    outputPath: string,
+  ): Promise<ExtractWavAndWaveformResult>;
+
+  // --- AudioRecord (Android) / stub (iOS) ---
+  startAudioRecording(
+    outputPath: string,
+    sampleRate: number,
+  ): Promise<StartRecordingResult>;
+
+  stopAudioRecording(): Promise<AudioRecordingResult>;
+
+  // --- Direct content:// → FLAC (no temp file, Android only) ---
+  resolveAndConvertToFlac(
+    contentUri: string,
+    outputPath: string,
+  ): Promise<ExtractWavAndWaveformResult>;
 }
 
 export default requireNativeModule<EkweNativeModule>('EkweNative');

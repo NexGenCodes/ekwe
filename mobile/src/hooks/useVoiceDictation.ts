@@ -1,5 +1,9 @@
 import * as Crypto from "expo-crypto";
 import * as FileSystem from "expo-file-system/legacy";
+import {
+  activateKeepAwakeAsync,
+  deactivateKeepAwake,
+} from "expo-keep-awake";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SharedValue } from "react-native-reanimated";
 
@@ -7,7 +11,6 @@ import { EkweError, ErrorMessages } from "@/constants/errors";
 import { useMetering } from "@/hooks/audio/useMetering";
 import { usePermissions } from "@/hooks/usePermissions";
 import { AudioCapture } from "@/services/AudioCapture";
-import { AudioConverter } from "@/services/AudioConverter";
 import { AudioProcessor } from "@/services/AudioProcessor";
 import { transcribeAudio } from "@/services/transcribeAudio";
 import { audioActions, RecordingState } from "@/store";
@@ -15,6 +18,7 @@ import { isAndroid, logger } from "@/utils";
 
 // Timer resolution for elapsed display
 const TIMER_TICK_MS = 100;
+const KEEP_AWAKE_TAG = "ekwe-dictation-recording";
 
 export type DictationStatus =
   | "idle"
@@ -108,6 +112,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
   // --- Full cleanup on unmount ---
   useEffect(() => {
     return (): void => {
+      deactivateKeepAwake(KEEP_AWAKE_TAG);
       clearTimers();
       abortControllerRef.current?.abort();
       if (AudioCapture.isRecording()) {
@@ -155,17 +160,14 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     capturedDurationRef.current = durationMs;
     setMeteringData(meteringData);
 
-    // Convert hardware-encoded audio to FLAC via native C++ immediately.
-    // Fast enough (~50-300ms) to be synchronous, original deleted after.
-    if (isAndroid) {
-      const convertResult = await AudioConverter.convertToFlac(uri);
-      if (convertResult.ok) {
-        capturedUriRef.current = convertResult.value.uri;
-        capturedWaveformRef.current = convertResult.value.waveform;
-        FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
-      }
+    // Android: AudioRecord already recorded directly to FLAC in real-time
+    // via the streaming encoder (see AudioCapture → EkweNative.startAudioRecording).
+    // No post-recording conversion needed.
+    if (isAndroid && captureResult.value.waveform) {
+      capturedWaveformRef.current = captureResult.value.waveform;
     }
 
+    deactivateKeepAwake(KEEP_AWAKE_TAG);
     audioActions.setDuration(durationMs / 1000);
     audioActions.setRecordingState(RecordingState.Processing);
 
@@ -350,6 +352,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
       }
 
       setStatus("recording");
+      activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
       logger.info(
         "[VoiceDictation] Recording started, maxDuration:",
         maxDurationMs,
@@ -378,6 +381,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
       statusRef.current,
     );
     clearTimers();
+    deactivateKeepAwake(KEEP_AWAKE_TAG);
 
     // Abort any in-flight transcription fetch
     if (abortControllerRef.current) {

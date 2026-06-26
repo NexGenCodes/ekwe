@@ -1,4 +1,5 @@
 import { useSelector } from "@legendapp/state/react";
+import * as FileSystem from "expo-file-system/legacy";
 import {
   useState,
   useEffect,
@@ -107,6 +108,42 @@ export const useEchoIntentResolver = (props: {
           rawUri.substring(0, 60),
         );
 
+        const cacheDir = FileSystem.cacheDirectory;
+        if (!cacheDir) {
+          logger.warn("[IntentResolver] No cache directory");
+          setIsResolving(false);
+          AppAlert.error("Error", "Could not access storage.");
+          return;
+        }
+
+        // Attempt combined resolve + FLAC conversion (Android only, no temp file)
+        const flacPath = `${cacheDir}ekwe_converted_${Date.now()}.flac`;
+        const combinedResult = await IntentService.resolveAndConvertToFlac(
+          rawUri,
+          flacPath,
+        );
+
+        if (isStale) return;
+
+        if (combinedResult && combinedResult.success) {
+          // Combined path succeeded — FLAC ready, waveform extracted
+          convertedFlacUriRef.current = flacPath;
+          activeResolvedUri.current = flacPath;
+          setAudioUri(flacPath);
+          setConvertedWaveform(combinedResult.waveform);
+          setIsResolving(false);
+          setIsSubsequentIntent(isSubseq);
+          logger.info(
+            "[IntentResolver] ✅ Combined resolve+convert succeeded",
+          );
+          return;
+        }
+
+        // Fallback: separate resolve → validate → convert (iOS or Android fallback)
+        logger.info(
+          "[IntentResolver] Combined path not available, using fallback",
+        );
+
         const fileUri = await IntentService.resolveToFileUri(rawUri);
 
         if (isStale) {
@@ -137,7 +174,6 @@ export const useEchoIntentResolver = (props: {
         activeResolvedUri.current = validatedUri;
 
         // Convert to FLAC + extract waveform via native C++ on both platforms
-        // (shared audio can be any format — convert to canonical FLAC for upload)
         const convertResult = await AudioConverter.convertToFlac(validatedUri);
 
         if (isStale) return;

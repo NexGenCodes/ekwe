@@ -3,9 +3,8 @@ import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
-} from "@react-navigation/native";
+} from "expo-router/react-navigation";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { Stack } from "expo-router/stack";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -139,18 +138,13 @@ function InnerLayout(): React.ReactElement {
 
 function RootLayout(): React.ReactElement {
   useEffect(() => {
-    const activate = async (): Promise<void> => {
-      await Promise.all([
-        initializeMMKV(),
-        activateKeepAwakeAsync().catch(() => {}),
-      ]);
+    (async (): Promise<void> => {
+      await initializeMMKV();
       await initAuth();
       SyncService.start();
-    };
-    activate();
+    })();
 
     return (): void => {
-      deactivateKeepAwake().catch(() => {});
       SyncService.stop();
       cleanupAuth();
     };

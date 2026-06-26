@@ -1,7 +1,12 @@
 import { Mic, X, Square, Trash2, Send } from "lucide-react-native";
 import React, { useMemo } from "react";
 import { StyleProp, ViewStyle } from "react-native";
-import Animated, { useAnimatedProps } from "react-native-reanimated";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  useAnimatedProps,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import Svg, { Circle } from "react-native-svg";
 
 import { IconButton } from "../IconButton";
@@ -13,6 +18,9 @@ import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+const SWIPE_CANCEL_THRESHOLD = -80;
+const SWIPE_LOCK_THRESHOLD = -60;
 
 interface InputFooterActionsProps {
   valueLength: number;
@@ -29,6 +37,8 @@ interface InputFooterActionsProps {
   handleCancelPress: () => void;
   handleClear: () => void;
   handleRightButtonPress: () => void;
+  onHoldStart?: () => void;
+  onHoldEnd?: (swipedLeft: boolean, swipedUp: boolean) => void;
 }
 
 export const InputFooterActions = React.memo(
@@ -47,6 +57,8 @@ export const InputFooterActions = React.memo(
     handleCancelPress,
     handleClear,
     handleRightButtonPress,
+    onHoldStart,
+    onHoldEnd,
   }: InputFooterActionsProps) => {
     const { color } = useTheme();
 
@@ -58,9 +70,42 @@ export const InputFooterActions = React.memo(
       strokeDashoffset: circumference - progress * circumference,
     }));
 
+    // Hold-to-record gesture — only active when idle (no text, not active)
+    const isIdle = !isActive && valueLength === 0 && !isTranslating && !isInitializing;
+    const translateX = useSharedValue(0);
+    const translateY = useSharedValue(0);
+    const holdPan = useMemo(
+      () =>
+        Gesture.Pan()
+          .enabled(isIdle)
+          .minDistance(0)
+          .maxPointers(1)
+          .onBegin(() => {
+            translateX.value = 0;
+            translateY.value = 0;
+            onHoldStart?.();
+          })
+          .onUpdate((e) => {
+            translateX.value = e.translationX;
+            translateY.value = e.translationY;
+          })
+          .onEnd(() => {
+            const dx = translateX.value;
+            const dy = translateY.value;
+            translateX.value = withSpring(0);
+            translateY.value = withSpring(0);
+            onHoldEnd?.(dx < SWIPE_CANCEL_THRESHOLD, dy < SWIPE_LOCK_THRESHOLD);
+          })
+          .onFinalize(() => {
+            translateX.value = withSpring(0);
+            translateY.value = withSpring(0);
+          }),
+      [isIdle, onHoldStart, onHoldEnd, translateX, translateY],
+    );
+
     // no-op in production; previous dev-only contrast checks were removed per request
 
-    const micBtnStyle = useMemo(
+    const btnStyle = useMemo(
       () =>
         ({ pressed }: { pressed: boolean }): StyleProp<ViewStyle> => [
           {
@@ -108,18 +153,69 @@ export const InputFooterActions = React.memo(
       ],
     );
 
-    return (
-      <Box style={{ paddingHorizontal: spacing.lg }}>
-        {isActive ? (
+    /* ── Action button content — changes by state ── */
+    const actionContent = useMemo(() => {
+      if (isRecording) {
+        return (
+          <Square
+            size={22}
+            color={color.onBrand}
+            fill={color.onBrand}
+            strokeWidth={2.5}
+          />
+        );
+      }
+      if (isProcessing) {
+        return <Spinner size="sm" color={color.onBrand} />;
+      }
+      if (isPreview) {
+        return (
+          <Send size={18} color={color.onBrand} strokeWidth={2.5} />
+        );
+      }
+      if (valueLength > 0) {
+        return (
           <Box
             style={{
               flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "flex-end",
-              width: "100%",
+              alignItems: "center",
+              gap: spacing.sm,
             }}
           >
-            <Box style={{ flexDirection: "row", gap: spacing.md }}>
+            <Text variant="body" style={{ color: color.onBrand }}>
+              {isTranslating ? "Translating..." : "Translate"}
+            </Text>
+            <Send size={18} color={color.onBrand} strokeWidth={2.5} />
+          </Box>
+        );
+      }
+      return (
+        <Mic size={24} color={color.onBrand} strokeWidth={2.5} />
+      );
+    }, [isRecording, isProcessing, isPreview, valueLength, isTranslating, color.onBrand]);
+
+    const actionLabel = useMemo(() => {
+      if (isPreview) return "Confirm audio and transcribe";
+      if (isRecording) return "Stop recording";
+      if (valueLength > 0) return isTranslating ? "Translating" : "Translate text";
+      return "Start voice dictation";
+    }, [isPreview, isRecording, valueLength, isTranslating]);
+
+    const actionDisabled = isTranslating || isProcessing || isInitializing;
+
+    return (
+      <Box style={{ paddingHorizontal: spacing.lg }}>
+        <Box
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "flex-end",
+            width: "100%",
+          }}
+        >
+          {/* ── Left side ── */}
+          <Box style={{ flexDirection: "row", gap: spacing.md }}>
+            {isActive ? (
               <Box style={{ alignItems: "center", gap: spacing.xs }}>
                 <IconButton
                   accessibilityLabel="Discard recording"
@@ -136,158 +232,74 @@ export const InputFooterActions = React.memo(
                   </Text>
                 )}
               </Box>
-            </Box>
-
-            <Box
-              style={{
-                minWidth: 60,
-                height: 60,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {(isRecording || isProcessing) && (
-                <Box
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                  }}
-                >
-                  <Svg width={60} height={60} viewBox="0 0 60 60">
-                    <AnimatedCircle
-                      cx="30"
-                      cy="30"
-                      r={radius}
-                      stroke={color.error}
-                      strokeWidth={strokeWidth}
-                      strokeLinecap="round"
-                      fill="none"
-                      strokeDasharray={circumference}
-                      animatedProps={animatedProps}
-                      transform="rotate(-90 30 30)"
-                    />
-                  </Svg>
-                </Box>
-              )}
-              <Pressable
-                accessibilityLabel={
-                  isPreview
-                    ? "Confirm audio and transcribe"
-                    : isRecording
-                      ? "Stop recording"
-                      : "Recording action"
-                }
-                style={micBtnStyle}
-                onPress={handleRightButtonPress}
-                disabled={isTranslating || isProcessing || isInitializing}
-                hitSlop={15}
-              >
-                {isRecording ? (
-                  <Square
-                    size={22}
-                    color={color.onBrand}
-                    fill={color.onBrand}
-                    strokeWidth={2.5}
-                  />
-                ) : isProcessing ? (
-                  <Spinner size="sm" color={color.onBrand} />
-                ) : (
-                  <Send size={18} color={color.onBrand} strokeWidth={2.5} />
-                )}
-              </Pressable>
-            </Box>
-          </Box>
-        ) : (
-          <Box style={{ width: "100%" }}>
-            <Box
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "flex-end",
-                width: "100%",
-              }}
-            >
-              <Box style={{ flexDirection: "row", gap: spacing.md }}>
-                {valueLength > 0 ? (
-                  <Box style={{ alignItems: "center", gap: spacing.xs }}>
-                    <IconButton
-                      accessibilityLabel="Clear text"
-                      onPress={handleClear}
-                      backgroundColor={color.surface}
-                      size={52}
-                      icon={
-                        <X size={22} color={color.muted} strokeWidth={2.5} />
-                      }
-                    />
-                    <Text variant="caption" style={{ color: color.muted }}>
-                      Clear
-                    </Text>
-                  </Box>
-                ) : (
-                  <Box style={{ width: 52, height: 52 }} />
-                )}
+            ) : valueLength > 0 ? (
+              <Box style={{ alignItems: "center", gap: spacing.xs }}>
+                <IconButton
+                  accessibilityLabel="Clear text"
+                  onPress={handleClear}
+                  backgroundColor={color.surface}
+                  size={52}
+                  icon={
+                    <X size={22} color={color.muted} strokeWidth={2.5} />
+                  }
+                />
+                <Text variant="caption" style={{ color: color.muted }}>
+                  Clear
+                </Text>
               </Box>
+            ) : (
+              <Box style={{ width: 52, height: 52 }} />
+            )}
+          </Box>
 
+          {/* ── Right side: Action button (always mounted) ── */}
+          <Box
+            style={{
+              minWidth: 60,
+              height: 60,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {(isRecording || isProcessing) && (
               <Box
                 style={{
-                  minWidth: 60,
-                  height: 60,
-                  alignItems: "center",
-                  justifyContent: "center",
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
                 }}
               >
-                <Pressable
-                  accessibilityLabel={
-                    valueLength > 0
-                      ? isTranslating
-                        ? "Translating"
-                        : "Translate text"
-                      : "Start voice dictation"
-                  }
-                  style={micBtnStyle}
-                  onPress={handleRightButtonPress}
-                  disabled={isTranslating || isProcessing || isInitializing}
-                  hitSlop={15}
-                >
-                  {isInitializing ? (
-                    <Spinner size="sm" color={color.onBrand} />
-                  ) : valueLength > 0 ? (
-                    <Box
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: spacing.sm,
-                      }}
-                    >
-                      <Text
-                        variant="body"
-                        style={{
-                          color: color.onBrand,
-                        }}
-                      >
-                        {isTranslating ? "Translating..." : "Translate"}
-                      </Text>
-                      <Send
-                        size={18}
-                        color={color.onBrand}
-                        strokeWidth={2.5}
-                      />
-                    </Box>
-                  ) : (
-                    <Mic
-                      size={24}
-                      color={color.onBrand}
-                      strokeWidth={2.5}
-                    />
-                  )}
-                </Pressable>
+                <Svg width={60} height={60} viewBox="0 0 60 60">
+                  <AnimatedCircle
+                    cx="30"
+                    cy="30"
+                    r={radius}
+                    stroke={color.error}
+                    strokeWidth={strokeWidth}
+                    strokeLinecap="round"
+                    fill="none"
+                    strokeDasharray={circumference}
+                    animatedProps={animatedProps}
+                    transform="rotate(-90 30 30)"
+                  />
+                </Svg>
               </Box>
-            </Box>
+            )}
+            <GestureDetector gesture={holdPan}>
+              <Pressable
+                accessibilityLabel={actionLabel}
+                style={btnStyle}
+                onPress={handleRightButtonPress}
+                disabled={actionDisabled}
+                hitSlop={15}
+              >
+                {actionContent}
+              </Pressable>
+            </GestureDetector>
           </Box>
-        )}
+        </Box>
       </Box>
     );
   },

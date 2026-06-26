@@ -86,7 +86,7 @@ export function SkeletonBox({
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={[
-          StyleSheet.absoluteFillObject,
+          StyleSheet.absoluteFill,
           { width: SCREEN_WIDTH },
           animatedStyle,
         ]}

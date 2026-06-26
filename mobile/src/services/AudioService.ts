@@ -21,12 +21,6 @@ const RECORDING_OPTIONS: Partial<RecordingOptions> = {
   numberOfChannels: 1,
   bitRate: 256000,
   isMeteringEnabled: true,
-  android: {
-    outputFormat: "mpeg4",
-    audioEncoder: "aac",
-    extension: ".m4a",
-    sampleRate: 16000,
-  },
   ios: {
     outputFormat: "flac",
     audioQuality: AudioQuality.MAX,

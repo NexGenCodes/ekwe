@@ -1,5 +1,3 @@
-// Application-specific types for the EkweNative module
-
 export type FloatingState =
   | 'IDLE'
   | 'BUBBLE_VISIBLE'
@@ -20,4 +18,16 @@ export type ExtractWavAndWaveformResult = {
   error: string;
   durationMs: number;
   waveform: number[];
+};
+
+export type AudioRecordingResult = {
+  success: boolean;
+  error: string;
+  durationMs: number;
+  waveform: number[];
+};
+
+export type StartRecordingResult = {
+  success: boolean;
+  error: string;
 };

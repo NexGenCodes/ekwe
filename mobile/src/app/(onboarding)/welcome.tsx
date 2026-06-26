@@ -67,7 +67,7 @@ export default function WelcomeScreen(): React.ReactElement {
         ]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
       />
 
       <ScreenContainer
