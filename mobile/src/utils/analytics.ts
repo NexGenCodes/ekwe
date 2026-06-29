@@ -1,4 +1,4 @@
-import { posthogClient } from "@/services/posthog";
+import { getPosthogClient } from "@/services/posthog";
 
 export const AnalyticsEvents = {
   // Onboarding & Auth
@@ -49,24 +49,28 @@ type JsonValue =
 type AnalyticsProperties = Record<string, JsonValue>;
 
 export function track(event: string, properties?: AnalyticsProperties): void {
-  if (!posthogClient) return;
-  posthogClient.capture(event, properties);
+  const client = getPosthogClient();
+  if (!client) return;
+  client.capture(event, properties);
 }
 
 export function identify(
   userId: string,
   properties?: AnalyticsProperties,
 ): void {
-  if (!posthogClient) return;
-  posthogClient.identify(userId, properties);
+  const client = getPosthogClient();
+  if (!client) return;
+  client.identify(userId, properties);
 }
 
 export function reset(): void {
-  if (!posthogClient) return;
-  posthogClient.reset();
+  const client = getPosthogClient();
+  if (!client) return;
+  client.reset();
 }
 
 export function setPersonProperties(properties: AnalyticsProperties): void {
-  if (!posthogClient) return;
-  posthogClient.setPersonProperties(properties);
+  const client = getPosthogClient();
+  if (!client) return;
+  client.setPersonProperties(properties);
 }

@@ -96,6 +96,7 @@ class SyncServiceClass {
     translation: string,
     transliteration: string | null,
     targetLang: string,
+    userId: string,
   ): Promise<void> {
     Db.transaction(() => {
       Db.updateHistoryTranslation(id, translation, transliteration, targetLang);
@@ -108,7 +109,7 @@ class SyncServiceClass {
           transliteration_text: transliteration ?? null,
           target_lang: targetLang,
         }),
-        user_id: "",
+        user_id: userId,
         created_at: new Date().toISOString(),
       });
     });

@@ -9,18 +9,18 @@ class ShareViewController: SLComposeServiceViewController {
     private let APP_GROUP_ID = "group.com.anonymous.ekwe"
     private let APP_SCHEME = "ekwe://share"
 
-    override fun isContentValid() -> Bool {
+    override func isContentValid() -> Bool {
         // Validation logic - always valid for simple audio share
         return true
     }
 
-    override fun didSelectPost() {
+    override func didSelectPost() {
         // This is called after the user taps "Post"
         // We handle the file processing here
         handleSharedAudio()
     }
 
-    override fun configurationItems() -> [Any]! {
+    override func configurationItems() -> [Any]! {
         // To add custom configuration items, return an array of SLComposeSheetConfigurationItem
         return []
     }
@@ -80,7 +80,7 @@ class ShareViewController: SLComposeServiceViewController {
                 var responder: UIResponder? = self
                 while responder != nil {
                     if let application = responder as? UIApplication {
-                        application.open(openURL, options: [:], completionHandler: null)
+                        application.open(openURL, options: [:], completionHandler: nil)
                         break
                     }
                     responder = responder?.next

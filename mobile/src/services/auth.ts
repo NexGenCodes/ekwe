@@ -8,10 +8,10 @@ import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import * as AppleAuthentication from "expo-apple-authentication";
 
 import { queryClient } from "@/hooks/queries/queryClient";
-import { posthogClient } from "@/services/posthog";
+import { getPosthogClient } from "@/services/posthog";
 import { SyncService } from "@/services/SyncService";
 import { mmkv } from "@/services/mmkv";
-import { supabase } from "@/services/supabase";
+import { supabase, setupAppStateListener } from "@/services/supabase";
 import { auth$, authActions } from "@/store";
 import { isIOS } from "@/utils";
 import { track, identify, AnalyticsEvents } from "@/utils/analytics";
@@ -33,6 +33,8 @@ let _authSubscription: { unsubscribe: () => void } | null = null;
 
 export const initAuth = async (): Promise<void> => {
   if (auth$.isInitialized.peek()) return;
+
+  setupAppStateListener();
 
   try {
     GoogleSignin.configure({
@@ -271,7 +273,7 @@ export const signOut = async (): Promise<AuthResult> => {
     authActions.setSession(null);
     mmkv.set(SESSION_CACHE_KEY, false);
     queryClient.removeQueries({ queryKey: ["plan"] });
-    posthogClient?.reset();
+    getPosthogClient()?.reset();
     track(AnalyticsEvents.SIGN_OUT);
 
     if (error) return { ok: false, error: error.message };
@@ -306,7 +308,7 @@ export const deleteAccount = async (): Promise<AuthResult> => {
     queryClient.clear();
     authActions.setSession(null);
     mmkv.set(SESSION_CACHE_KEY, false);
-    posthogClient?.reset();
+    getPosthogClient()?.reset();
     track(AnalyticsEvents.DELETE_ACCOUNT);
 
     return { ok: true };

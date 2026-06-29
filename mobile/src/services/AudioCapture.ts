@@ -4,7 +4,6 @@ import { Linking } from "react-native";
 
 import { EkweError } from "@/constants/errors";
 import AudioService from "@/services/AudioService";
-import { VolumeManager } from "@/services/VolumeManager";
 import { PLAN_LIMITS } from "@/constants/billing";
 import { Result, ok, err } from "@/types/Result";
 import { isAndroid, isIOS, triggerHaptic } from "@/utils";
@@ -40,7 +39,6 @@ class AudioCaptureClass {
   private currentSessionId: string | null = null;
   private currentMeteringData: number[] = [];
   private currentRecordingPath: string | null = null;
-  private maxDurationTimeout: ReturnType<typeof setTimeout> | null = null;
   private listeners: ((amplitude: number) => void)[] = [];
   private opusPacketListeners: ((packet: OpusPacket) => void)[] = [];
   private statusListeners: ((status: "started" | "stopped") => void)[] = [];
@@ -107,14 +105,10 @@ class AudioCaptureClass {
         return err(EkweError.PERMISSION_MIC);
       }
 
-      await VolumeManager.raiseVolumeIfNeeded();
-
       this.currentSessionId = sessionId;
       this.currentMeteringData = [];
       this.currentMode = mode;
       this.onAutoStopCallback = onAutoStop ?? null;
-
-      const safetyCapMs = PLAN_LIMITS.pro.dictationDurationMs;
 
       if (isAndroid) {
         const rawCacheDir = Paths?.cache?.uri;
@@ -202,21 +196,6 @@ class AudioCaptureClass {
 
       triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
 
-
-
-      this.maxDurationTimeout = setTimeout(async () => {
-        if (this.isRecording()) {
-          logger.info(
-            `AudioCapture: Max duration safety cap reached (${safetyCapMs / 1000}s), auto-stopping`,
-          );
-          if (this.onAutoStopCallback) {
-            this.onAutoStopCallback();
-          } else {
-            await this.stopRecording();
-          }
-        }
-      }, safetyCapMs);
-
       this.isStartingParams = false;
       return ok(undefined);
     } catch {
@@ -237,11 +216,6 @@ class AudioCaptureClass {
       this.currentSessionId = null;
       this.currentMeteringData = [];
       return err(EkweError.AUDIO_RECORD_FAIL);
-    }
-
-    if (this.maxDurationTimeout !== null) {
-      clearTimeout(this.maxDurationTimeout);
-      this.maxDurationTimeout = null;
     }
 
     this.opusPacketSub?.remove();
@@ -276,8 +250,6 @@ class AudioCaptureClass {
       this.currentSessionId = null;
       this.currentMeteringData = [];
 
-      await VolumeManager.restoreVolume();
-
       if (isAndroid) {
         await releaseAudioEffects();
       }
@@ -301,11 +273,6 @@ class AudioCaptureClass {
     this.vadSilenceSub?.remove();
     this.vadSilenceSub = null;
 
-    if (this.maxDurationTimeout !== null) {
-      clearTimeout(this.maxDurationTimeout);
-      this.maxDurationTimeout = null;
-    }
-
     try {
       if (isAndroid || isIOS) {
         if (this.currentSessionId) {
@@ -321,7 +288,6 @@ class AudioCaptureClass {
     this.currentSessionId = null;
     this.currentMeteringData = [];
     this.notifyListeners(0);
-    await VolumeManager.restoreVolume();
 
     if (isAndroid) {
       await releaseAudioEffects();

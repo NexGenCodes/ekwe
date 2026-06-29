@@ -60,6 +60,9 @@ mcp_config.json
 # Embedded git repos (thirdparty)
 mobile/modules/ekwe-native/cpp/thirdparty/flac/
 
+# Design review artifacts
+design-review*.html
+
 # Mobile (Expo)
 .expo/
 dist/

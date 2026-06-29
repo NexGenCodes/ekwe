@@ -1,11 +1,8 @@
 import { Mic, X, Square, Trash2, Send } from "lucide-react-native";
 import React, { useMemo } from "react";
 import { StyleProp, ViewStyle } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedProps,
-  useSharedValue,
-  withSpring,
 } from "react-native-reanimated";
 import Svg, { Circle } from "react-native-svg";
 
@@ -18,9 +15,6 @@ import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-
-const SWIPE_CANCEL_THRESHOLD = -80;
-const SWIPE_LOCK_THRESHOLD = -60;
 
 interface InputFooterActionsProps {
   valueLength: number;
@@ -37,8 +31,6 @@ interface InputFooterActionsProps {
   handleCancelPress: () => void;
   handleClear: () => void;
   handleRightButtonPress: () => void;
-  onHoldStart?: () => void;
-  onHoldEnd?: (swipedLeft: boolean, swipedUp: boolean) => void;
 }
 
 export const InputFooterActions = React.memo(
@@ -57,8 +49,6 @@ export const InputFooterActions = React.memo(
     handleCancelPress,
     handleClear,
     handleRightButtonPress,
-    onHoldStart,
-    onHoldEnd,
   }: InputFooterActionsProps) => {
     const { color } = useTheme();
 
@@ -69,39 +59,6 @@ export const InputFooterActions = React.memo(
     const animatedProps = useAnimatedProps(() => ({
       strokeDashoffset: circumference - progress * circumference,
     }));
-
-    // Hold-to-record gesture — only active when idle (no text, not active)
-    const isIdle = !isActive && valueLength === 0 && !isTranslating && !isInitializing;
-    const translateX = useSharedValue(0);
-    const translateY = useSharedValue(0);
-    const holdPan = useMemo(
-      () =>
-        Gesture.Pan()
-          .enabled(isIdle)
-          .minDistance(0)
-          .maxPointers(1)
-          .onBegin(() => {
-            translateX.value = 0;
-            translateY.value = 0;
-            onHoldStart?.();
-          })
-          .onUpdate((e) => {
-            translateX.value = e.translationX;
-            translateY.value = e.translationY;
-          })
-          .onEnd(() => {
-            const dx = translateX.value;
-            const dy = translateY.value;
-            translateX.value = withSpring(0);
-            translateY.value = withSpring(0);
-            onHoldEnd?.(dx < SWIPE_CANCEL_THRESHOLD, dy < SWIPE_LOCK_THRESHOLD);
-          })
-          .onFinalize(() => {
-            translateX.value = withSpring(0);
-            translateY.value = withSpring(0);
-          }),
-      [isIdle, onHoldStart, onHoldEnd, translateX, translateY],
-    );
 
     // no-op in production; previous dev-only contrast checks were removed per request
 
@@ -114,7 +71,7 @@ export const InputFooterActions = React.memo(
             borderRadius: borderRadius["2xl"],
             alignItems: "center" as const,
             justifyContent: "center" as const,
-            ...shadows.soft,
+            boxShadow: shadows.soft,
           },
           (valueLength > 0 || isPreview) &&
             ({
@@ -287,17 +244,15 @@ export const InputFooterActions = React.memo(
                 </Svg>
               </Box>
             )}
-            <GestureDetector gesture={holdPan}>
-              <Pressable
-                accessibilityLabel={actionLabel}
-                style={btnStyle}
-                onPress={handleRightButtonPress}
-                disabled={actionDisabled}
-                hitSlop={15}
-              >
-                {actionContent}
-              </Pressable>
-            </GestureDetector>
+            <Pressable
+              accessibilityLabel={actionLabel}
+              style={btnStyle}
+              onPress={handleRightButtonPress}
+              disabled={actionDisabled}
+              hitSlop={15}
+            >
+              {actionContent}
+            </Pressable>
           </Box>
         </Box>
       </Box>

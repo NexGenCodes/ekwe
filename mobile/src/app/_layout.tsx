@@ -22,6 +22,7 @@ import { SyncService } from "@/services/SyncService";
 import { initAuth, cleanupAuth } from "@/services/auth";
 import { initializeMMKV } from "@/services/mmkv";
 import { auth$ } from "@/store";
+import { logger } from "@/utils";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -47,9 +48,11 @@ function InnerLayout(): React.ReactElement {
   );
 
   useEffect((): void => {
-    if (isInitialized && sessionLoaded) {
+    if (isInitialized) {
       SplashScreen.hideAsync();
-      HistoryService.cleanupLocalHistory();
+      if (sessionLoaded) {
+        HistoryService.cleanupLocalHistory();
+      }
     }
   }, [isInitialized, sessionLoaded]);
 
@@ -138,11 +141,13 @@ function InnerLayout(): React.ReactElement {
 
 function RootLayout(): React.ReactElement {
   useEffect(() => {
-    (async (): Promise<void> => {
-      await initializeMMKV();
-      await initAuth();
-      SyncService.start();
-    })();
+    initAuth().catch((err: unknown) => {
+      logger.error("[RootLayout] initAuth failed", err);
+    });
+    initializeMMKV().catch((err: unknown) => {
+      logger.error("[RootLayout] initializeMMKV failed", err);
+    });
+    SyncService.start();
 
     return (): void => {
       SyncService.stop();

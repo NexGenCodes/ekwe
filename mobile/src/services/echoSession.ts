@@ -109,7 +109,11 @@ export const handleEchoSession = async (
       /* Activity may be destroyed */
     }
     // CLEANUP: Deleting the audio cache after processing is done
-    EkweNative?.deleteFile(uri);
+    try {
+      await EkweNative?.deleteFile(uri);
+    } catch {
+      // best-effort cleanup
+    }
     BubbleNative.updateState("IDLE");
   }
 };

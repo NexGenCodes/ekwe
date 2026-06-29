@@ -5,6 +5,8 @@ import logger from "@/utils/logger";
 const API_KEY = process.env.EXPO_PUBLIC_POSTHOG_API_KEY;
 const HOST = process.env.EXPO_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
 
+let _client: PostHog | undefined;
+
 function createClient(): PostHog | undefined {
   if (!API_KEY) {
     logger.debug(
@@ -18,4 +20,9 @@ function createClient(): PostHog | undefined {
   });
 }
 
-export const posthogClient = createClient();
+export function getPosthogClient(): PostHog | undefined {
+  if (!_client) {
+    _client = createClient();
+  }
+  return _client;
+}

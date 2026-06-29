@@ -17,6 +17,7 @@ import {
   Globe,
   Eye,
   Smartphone,
+  Radio,
 } from "lucide-react-native";
 import React, { useState, useCallback } from "react";
 import { Linking, Modal, Switch, TextInput } from "react-native";
@@ -60,11 +61,15 @@ export default function ProfileScreen(): React.JSX.Element {
 
   const hapticsEnabled = useSelector(() => settings$.hapticsEnabled.get());
   const currency = useSelector(() => settings$.currency.get());
-  const { setHapticsEnabled, setAutoCopy, setCurrency } = settingsActions;
+  const { setHapticsEnabled, setAutoCopy, setCurrency, setLiveTranscriptionEnabled } =
+    settingsActions;
   const selectedLanguages = useSelector(() =>
     settings$.selectedLanguages.get(),
   );
   const autoCopy = useSelector(() => settings$.autoCopy.get());
+  const liveTranscriptionEnabled = useSelector(() =>
+    settings$.liveTranscriptionEnabled.get(),
+  );
   const { hasPermission } = useForegroundApp();
 
   const [isCurrencyModalVisible, setIsCurrencyModalVisible] = useState(false);
@@ -300,6 +305,48 @@ export default function ProfileScreen(): React.JSX.Element {
           entering={FadeInDown.duration(duration.normal).delay(200)}
         >
           <ProfileSection title="Smart Features">
+            <ProfileRow
+              icon={Radio}
+              sfIcon="waveform"
+              iconColor={color.foreground}
+              title="Live Transcription"
+              subtitle="See transcription appear in real time during recording"
+              onPress={async () => {
+                if (!isPro) {
+                  AppAlert.info(
+                    "Ekwe Pro Required",
+                    "Live Transcription is a premium feature. Please upgrade to use this.",
+                  );
+                  router.push("/billing");
+                  return;
+                }
+                await triggerHaptic();
+                setLiveTranscriptionEnabled(!liveTranscriptionEnabled);
+              }}
+              hasDivider
+              trailing={
+                <Switch
+                  value={isPro ? liveTranscriptionEnabled : false}
+                  onValueChange={(val) => {
+                    if (!isPro) {
+                      AppAlert.info(
+                        "Ekwe Pro Required",
+                        "Live Transcription is a premium feature. Please upgrade to use this.",
+                      );
+                      router.push("/billing");
+                      return;
+                    }
+                    setLiveTranscriptionEnabled(val);
+                  }}
+                  trackColor={{
+                    true: color.foreground,
+                    false: color.border,
+                  }}
+                  thumbColor={color.card}
+                  disabled={!isPro}
+                />
+              }
+            />
             <ProfileRow
               icon={Copy}
               sfIcon="doc.on.doc.fill"

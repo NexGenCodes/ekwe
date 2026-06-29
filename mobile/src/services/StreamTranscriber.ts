@@ -43,7 +43,7 @@ class StreamTranscriberClass {
     this.startTime = Date.now();
     this.notifyStatus("connecting");
 
-    const url = `${config.serverUrl}/transcribe/stream?token=${encodeURIComponent(config.token)}&lang=${encodeURIComponent(config.lang)}`;
+    const url = `${config.serverUrl}/transcribe/stream`;
 
     try {
       this.ws = new WebSocket(url);
@@ -55,6 +55,8 @@ class StreamTranscriberClass {
 
         this.sendJson({
           type: "config",
+          token: config.token,
+          lang: config.lang,
           codec: "opus",
           sampleRate: 16000,
           frameSizeMs: 20,
@@ -87,6 +89,8 @@ class StreamTranscriberClass {
             if (data.type === "config_request") {
               this.sendJson({
                 type: "config",
+                token: this.config?.token,
+                lang: this.config?.lang,
                 codec: "opus",
                 sampleRate: 16000,
                 frameSizeMs: 20,

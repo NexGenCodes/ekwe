@@ -20,6 +20,7 @@
     "@react-native-google-signin/google-signin": "^16.1.2",
     "@sentry/react-native": "~7.11.0",
     "@shopify/flash-list": "2.0.2",
+    "@shopify/react-native-skia": "2.6.2",
     "@supabase/supabase-js": "^2.103.0",
     "@tanstack/react-query": "^5.100.14",
     "ekwe-native": "file:modules/ekwe-native",

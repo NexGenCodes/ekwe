@@ -37,6 +37,7 @@ private:
     std::FILE* file_;
     int serial_number_;
     int page_number_;
+    int page_log_counter_;
     uint32_t sample_rate_;
     int64_t last_granule_position_;
 

@@ -14,6 +14,8 @@ import { ExpressiveOutput } from "./ExpressiveOutput";
 import { EmptyState } from "../EmptyState";
 import { IconContainer } from "../IconContainer";
 
+import { useSelector } from "@legendapp/state/react";
+
 import { duration, spacing } from "@/constants";
 import { iconSize } from "@/constants/sizes";
 import {
@@ -24,6 +26,8 @@ import {
 } from "@/hooks";
 import { isIOS, logger } from "@/utils";
 import { AppAlert } from "@/utils/alert";
+import { auth$ } from "@/store/auth";
+import { settings$ } from "@/store/settings";
 
 export interface TranslationInterfaceProps {
   onInputFocusChange?: (focused: boolean) => void;
@@ -66,6 +70,7 @@ export const TranslationInterface = forwardRef<
     maxDurationMs,
     error: dictationError,
     capturedUri,
+    meteringData,
     interimText,
     finalText,
     isLive,
@@ -75,6 +80,12 @@ export const TranslationInterface = forwardRef<
     cancelDictation,
   } = useVoiceDictation();
 
+  const isPro = useSelector(() => auth$.isPro.get());
+  const liveTranscriptionEnabled = useSelector(() =>
+    settings$.liveTranscriptionEnabled.get(),
+  );
+  const isLivePro = isPro && liveTranscriptionEnabled;
+
   const dictatingRef = useRef(false);
 
   const handleDictate = useCallback(async (): Promise<void> => {
@@ -82,13 +93,13 @@ export const TranslationInterface = forwardRef<
     dictatingRef.current = true;
     try {
       await handleClear();
-      await startDictation(sourceLang);
+      await startDictation(sourceLang, isLivePro);
     } catch (err) {
       logger.error("[Dictation] handleDictate error:", err);
     } finally {
       dictatingRef.current = false;
     }
-  }, [startDictation, sourceLang, handleClear]);
+  }, [startDictation, sourceLang, handleClear, isLivePro]);
 
   useEffect(() => {
     if (dictationError) {
@@ -176,6 +187,7 @@ export const TranslationInterface = forwardRef<
           onConfirm: handleConfirmDictation,
           onCancel: cancelDictation,
           capturedUri,
+          meteringData,
           interimText,
           finalText,
           isLive,

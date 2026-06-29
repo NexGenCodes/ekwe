@@ -1,4 +1,3 @@
-import * as Haptics from "expo-haptics";
 import React, { useCallback, useState, useEffect } from "react";
 import { Keyboard, Dimensions } from "react-native";
 import Animated, {
@@ -45,6 +44,9 @@ interface ExpressiveInputProps {
     onConfirm: () => void;
     capturedUri: string | null;
     meteringData?: number[];
+    interimText?: string;
+    finalText?: string;
+    isLive?: boolean;
   };
   canTranslate?: boolean;
   onFocus?: () => void;
@@ -84,6 +86,9 @@ export const ExpressiveInput = React.memo(
       onConfirm,
       capturedUri,
       meteringData = [],
+      interimText = "",
+      finalText = "",
+      isLive = false,
     } = dictationState;
 
     const isInitializing = dictationStatus === "initializing";
@@ -145,35 +150,17 @@ export const ExpressiveInput = React.memo(
       onClear();
     }, [onClear]);
 
-    const handleHoldStart = useCallback(() => {
-      triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
-      onMicPress();
-    }, [onMicPress]);
-
-    const handleHoldEnd = useCallback(
-      (swipedLeft: boolean, swipedUp: boolean) => {
-        if (swipedLeft) {
-          onCancel();
-        } else if (!swipedUp) {
-          // Release without swipe-up = stop recording (only if currently recording)
-          if (isRecording) onStop();
-        }
-        // Swiped up = lock mode — release doesn't stop, user uses visible Stop button
-      },
-      [onCancel, onStop, isRecording],
-    );
-
     const handleRightButtonPress = useCallback(async () => {
       if (isRecording) {
-        await triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+        await triggerHaptic();
         onStop();
       } else if (isPreview) {
-        await triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+        await triggerHaptic();
         onConfirm();
       } else if (value.length > 0) {
         const isTargetLangValid = targetLang !== "none" && targetLang !== "";
         if (!isTargetLangValid) {
-          await triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+          await triggerHaptic();
           AppToast.error("Target Language Required", {
             description: "Please select a language to translate into.",
             duration: 3000,
@@ -183,7 +170,7 @@ export const ExpressiveInput = React.memo(
         if (!canTranslate) return; // e.g., source text too short
         onTranslate();
       } else {
-        await triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+        await triggerHaptic();
         onMicPress();
       }
     }, [
@@ -305,9 +292,11 @@ export const ExpressiveInput = React.memo(
               status={dictationStatus}
               amplitude={amplitude}
               elapsedMs={elapsedMs}
-              maxDurationMs={maxDurationMs}
               capturedUri={capturedUri}
               meteringData={meteringData}
+              isLive={isLive}
+              interimText={interimText}
+              finalText={finalText}
             />
           </Box>
         ) : languagesConflict ? (
@@ -354,8 +343,6 @@ export const ExpressiveInput = React.memo(
           handleCancelPress={handleCancelPress}
           handleClear={handleClear}
           handleRightButtonPress={handleRightButtonPress}
-          onHoldStart={handleHoldStart}
-          onHoldEnd={handleHoldEnd}
         />
       </Animated.View>
     );

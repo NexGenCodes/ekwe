@@ -11,10 +11,12 @@ import { useTheme } from "@/hooks";
 
 export interface ResultAudioWaveformProps {
   progressSV: SharedValue<number>;
+  amplitudes: number[];
 }
 
 export function ResultAudioWaveform({
   progressSV,
+  amplitudes,
 }: ResultAudioWaveformProps): React.JSX.Element {
   const { color } = useTheme();
 
@@ -32,7 +34,7 @@ export function ResultAudioWaveform({
         Voice Architecture
       </Text>
       <AudioWaveform
-        amplitudes={[]}
+        amplitudes={amplitudes}
         progressSV={progressSV}
         duration={1}
         height={60}

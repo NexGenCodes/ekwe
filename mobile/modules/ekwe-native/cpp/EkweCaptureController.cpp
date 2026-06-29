@@ -20,6 +20,7 @@ CaptureController::CaptureController(uint32_t sample_rate,
     , sample_rate_(sample_rate)
     , channels_(channels)
     , frame_size_(sample_rate / 50) // 20ms frames
+    , frame_counter_(0)
     , total_samples_encoded_(0)
     , granule_position_(0)
     , current_rms_(0.0f)
@@ -123,9 +124,8 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
     size_t total = frame_samples * channels_;
 
     // Log first frames and then every 100 frames (2s)
-    static int frame_counter = 0;
-    if (++frame_counter <= 5 || frame_counter % 100 == 0) {
-        ALOG("process_frame: #%d total=%zu rms_before=%.4f", frame_counter, total, current_rms_.load());
+    if (++frame_counter_ <= 5 || frame_counter_ % 100 == 0) {
+        ALOG("process_frame: #%d total=%zu rms_before=%.4f", frame_counter_, total, current_rms_.load());
     }
     for (size_t i = 0; i < total; ++i) {
         double s = static_cast<double>(frame_data[i]);
@@ -133,6 +133,15 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
     }
     current_rms_ = static_cast<float>(std::sqrt(sum_sq / total) / 32768.0);
     rms_history_.push_back(current_rms_);
+
+    if (rms_history_.size() > 9000) {
+        std::vector<float> downsampled;
+        downsampled.reserve(4500);
+        for (size_t i = 0; i < rms_history_.size() - 1; i += 2) {
+            downsampled.push_back(std::max(rms_history_[i], rms_history_[i+1]));
+        }
+        rms_history_ = std::move(downsampled);
+    }
 
     // Apply DC blocker
     std::vector<int16_t> processed_data;

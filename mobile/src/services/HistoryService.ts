@@ -34,6 +34,7 @@ export const HistoryService = {
             payload.translation,
             payload.transliteration,
             payload.targetLang,
+            session.user.id,
           );
         }
         return existingId;

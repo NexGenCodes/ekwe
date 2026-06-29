@@ -5,8 +5,6 @@ import { useSharedValue, SharedValue } from "react-native-reanimated";
 
 import logger from "@/utils/logger";
 
-export const preWarmAudioEngine = (): void => {};
-
 export interface SharedAudioPlayer {
   play: () => Promise<void>;
   pause: () => void;
@@ -18,7 +16,6 @@ export interface SharedAudioPlayer {
   duration: number;
   isDecoding: boolean;
   isLoaded: boolean;
-  realWaveform: number[];
 }
 
 export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
@@ -28,7 +25,6 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
   const [duration, setDuration] = useState(0);
   const [isDecoding, setIsDecoding] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [realWaveform] = useState<number[]>([]);
 
   const isPlayingRef = useRef(false);
 
@@ -137,6 +133,5 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
     duration,
     isDecoding,
     isLoaded,
-    realWaveform,
   };
 };

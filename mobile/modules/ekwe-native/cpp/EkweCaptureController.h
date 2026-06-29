@@ -64,6 +64,7 @@ private:
     uint32_t sample_rate_;
     uint16_t channels_;
     uint32_t frame_size_;
+    int frame_counter_;
     uint64_t total_samples_encoded_;
     int64_t granule_position_;
     std::atomic<float> current_rms_;

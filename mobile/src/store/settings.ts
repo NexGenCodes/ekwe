@@ -24,6 +24,7 @@ export interface SettingsState {
   autoCopy: boolean;
   hapticsEnabled: boolean;
   currency: string;
+  liveTranscriptionEnabled: boolean;
 }
 
 const initialSettings: SettingsState = {
@@ -40,6 +41,7 @@ const initialSettings: SettingsState = {
   autoCopy: true,
   hapticsEnabled: true,
   currency: detectDeviceCurrency(),
+  liveTranscriptionEnabled: false,
 };
 
 export const settings$ = observable<SettingsState>(initialSettings);
@@ -89,5 +91,8 @@ export const settingsActions = {
   },
   setCurrency: (val: string): void => {
     settings$.currency.set(val);
+  },
+  setLiveTranscriptionEnabled: (val: boolean): void => {
+    settings$.liveTranscriptionEnabled.set(val);
   },
 };

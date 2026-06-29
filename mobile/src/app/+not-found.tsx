@@ -25,9 +25,7 @@ export default function NotFoundScreen(): React.ReactElement {
             variant="primary"
             size="large"
             label="Go to home screen!"
-            onPress={function (): void {
-              throw new Error("Function not implemented.");
-            }}
+            onPress={(): void => {}}
           />
         </Link>
       </Box>

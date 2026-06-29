@@ -7,7 +7,7 @@ import { useEffect, useCallback, useReducer, useRef } from "react";
 import { AppState } from "react-native";
 
 import { useEchoIntentResolver } from "./useEchoIntentResolver";
-import { preWarmAudioEngine } from "../audio/useSharedAudioPlayer";
+
 import { useTranslation } from "../useTranslation";
 
 import { usePermissions } from "@/hooks/usePermissions";
@@ -89,7 +89,7 @@ const echoReducer = (state: EchoState, action: EchoAction): EchoState => {
 
 export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
   useEffect(() => {
-    preWarmAudioEngine();
+    // Audio engine is now handled natively
   }, []);
 
   const themePreference = useSelector(() => settings$.themePreference.get());

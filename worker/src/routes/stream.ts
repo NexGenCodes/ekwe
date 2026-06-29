@@ -109,7 +109,8 @@ export async function handleStream(
   };
 
   try {
-    const signal = new AbortController().signal;
+    const abortController = new AbortController();
+    const signal = abortController.signal;
     const limits = getLimits(tier);
     const maxAudioBytes = limits.maxAudioBytes;
     const maxDurationMs = limits.maxStreamDurationMs;
@@ -200,6 +201,7 @@ export async function handleStream(
 
     server.addEventListener('close', () => {
       clearTimers();
+      abortController.abort();
       const count = activeStreams.get(userId) ?? 1;
       if (count <= 1) {
         activeStreams.delete(userId);

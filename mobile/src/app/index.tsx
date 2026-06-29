@@ -1,5 +1,6 @@
 import { useSelector } from "@legendapp/state/react";
 import { Redirect } from "expo-router";
+import { ActivityIndicator, View } from "react-native";
 
 import { settings$, auth$ } from "@/store";
 
@@ -8,7 +9,8 @@ import { settings$, auth$ } from "@/store";
  *
  * Single decision point for the entire app.
  * Reads Supabase auth state + MMKV onboarding flag and redirects accordingly.
- * While Supabase is hydrating from MMKV, returns null (splash stays visible).
+ * While isInitialized is false, splash is still visible.
+ * Once initialized, shows a brief loading spinner if session is still recovering.
  */
 export default function Index(): React.ReactElement | null {
   const isInitialized = useSelector(() => auth$.isInitialized.get());
@@ -18,11 +20,17 @@ export default function Index(): React.ReactElement | null {
     settings$.onboardingCompleted.get(),
   );
 
-  // Supabase still hydrating from MMKV — keep splash visible
+  // Splash still visible — keep gatekeeper invisible
   if (!isInitialized) return null;
 
-  // Session still loading from SecureStore — don't route yet
-  if (!sessionLoaded) return null;
+  // Initialized but session still loading from SecureStore — show spinner
+  if (!sessionLoaded) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
 
   // Route decision tree
   if (!onboardingCompleted) return <Redirect href="/(onboarding)/welcome" />;

@@ -14,7 +14,13 @@ import { palette } from "@/constants/colors";
 import { borderRadius, opacity, zIndex } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
-import { useAudioStream } from "@/hooks/audio/useAudioStream";
+// Removed useAudioStream import due to deletion (BUG-06)
+const useAudioStream = () => ({
+  isStreaming: false,
+  transcript: "",
+  startStream: (mode: string) => {},
+  stopStream: () => {},
+});
 import { triggerHaptic } from "@/utils/haptics";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");

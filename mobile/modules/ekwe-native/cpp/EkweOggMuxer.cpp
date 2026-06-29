@@ -19,6 +19,7 @@ OggMuxer::OggMuxer(const std::string& output_path, uint32_t sample_rate, int ser
     , file_(nullptr)
     , serial_number_(serial_number)
     , page_number_(0)
+    , page_log_counter_(0)
     , sample_rate_(sample_rate)
     , last_granule_position_(0)
 {
@@ -83,6 +84,10 @@ bool OggMuxer::write_opus_comment(const std::string& vendor) {
     ALOG("write_opus_comment: vendor=%s", vendor.c_str());
 
     std::vector<uint8_t> comment;
+    // Magic string "OpusTags"
+    const char* magic = "OpusTags";
+    comment.insert(comment.end(), magic, magic + 8);
+
     // Vendor string length (32-bit LE)
     uint32_t vendor_len = static_cast<uint32_t>(vendor.size());
     comment.push_back(static_cast<uint8_t>(vendor_len & 0xFF));
@@ -136,8 +141,7 @@ bool OggMuxer::write_page(const OggPage& page) {
         return false;
     }
 
-    static int page_log_counter = 0;
-    if (++page_log_counter % 50 == 1 || page.page_number < 5) {
+    if (++page_log_counter_ % 50 == 1 || page.page_number < 5) {
         ALOG("write_page: pn=%d gp=%lld size=%zu", page.page_number, (long long)page.granule_position, page.data.size());
     }
 

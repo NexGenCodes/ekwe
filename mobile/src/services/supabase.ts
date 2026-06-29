@@ -1,5 +1,4 @@
 import { createClient, SupportedStorage } from "@supabase/supabase-js";
-import { AppState } from "react-native";
 
 import { supabaseStorage } from "@/services/supabaseStorage";
 
@@ -15,10 +14,18 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-AppState.addEventListener("change", (state) => {
-  if (state === "active") {
-    supabase.auth.startAutoRefresh();
-  } else {
-    supabase.auth.stopAutoRefresh();
-  }
-});
+let _appStateSetup = false;
+
+export function setupAppStateListener(): void {
+  if (_appStateSetup) return;
+  _appStateSetup = true;
+  // Deferred to avoid blocking startup — lazy-required to keep import side-effect free
+  const { AppState } = require("react-native");
+  AppState.addEventListener("change", (state: string) => {
+    if (state === "active") {
+      supabase.auth.startAutoRefresh();
+    } else {
+      supabase.auth.stopAutoRefresh();
+    }
+  });
+}

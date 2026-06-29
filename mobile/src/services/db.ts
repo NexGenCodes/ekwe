@@ -138,8 +138,6 @@ export function getDb(): DB {
   return db;
 }
 
-getDb();
-
 export const Db = {
   transaction: (fn: () => void): void => {
     getDb().executeSync("BEGIN TRANSACTION");
