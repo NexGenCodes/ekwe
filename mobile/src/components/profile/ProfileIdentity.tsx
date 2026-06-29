@@ -53,7 +53,7 @@ export function ProfileIdentity({
             height: 100,
             borderRadius: borderRadius.full,
             borderWidth: 4,
-            ...shadows.softLg,
+            boxShadow: shadows.softLg,
             alignItems: "center",
             justifyContent: "center",
             overflow: "hidden",

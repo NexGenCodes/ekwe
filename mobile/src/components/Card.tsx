@@ -67,7 +67,7 @@ export const Card = ({
           borderRadius: borderRadius.xl,
           padding: PADDING_MAP[padding],
           overflow: overflow ? "hidden" : undefined,
-          ...(variant === "default" ? shadows.soft : {}),
+          boxShadow: variant === "default" ? shadows.soft : undefined,
         },
         variantStyles,
         style,

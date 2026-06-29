@@ -93,7 +93,7 @@ export function AppAlertModal(): React.JSX.Element | null {
               borderRadius: borderRadius["2xl"],
               padding: spacing.lg,
               borderWidth: 1,
-              ...shadows.softLg,
+              boxShadow: shadows.softLg,
             },
             {
               backgroundColor: color.surface,

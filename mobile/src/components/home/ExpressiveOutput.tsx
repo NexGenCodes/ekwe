@@ -167,8 +167,9 @@ export const ExpressiveOutput = React.memo(
         layout={LinearTransition.springify()}
         style={{
           borderRadius: borderRadius["2xl"],
+          borderCurve: "continuous",
           padding: spacing.lg,
-          ...shadows.soft,
+          boxShadow: shadows.soft,
           backgroundColor: color.brand,
         }}
       >

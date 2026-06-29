@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius["2xl"],
     borderWidth: 1,
     gap: spacing.sm,
-    ...shadows.soft,
+    boxShadow: shadows.soft,
   },
   searchInput: {
     flex: 1,

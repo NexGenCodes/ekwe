@@ -16,15 +16,15 @@ import { releaseAudioEffects } from "@/utils/AudioEffectsModule";
 type PermissionStatus = "granted" | "denied" | "undetermined" | "restricted";
 
 const RECORDING_OPTIONS: Partial<RecordingOptions> = {
-  extension: ".flac",
+  extension: ".ogg",
   sampleRate: 16000,
   numberOfChannels: 1,
-  bitRate: 256000,
+  bitRate: 32000,
   isMeteringEnabled: true,
   ios: {
     outputFormat: "flac",
     audioQuality: AudioQuality.MAX,
-    extension: ".flac",
+    extension: ".ogg",
     sampleRate: 16000,
   },
   web: {

@@ -1,20 +1,6 @@
-import { palette } from "./colors";
-
 export const shadows = {
-  soft: {
-    shadowColor: palette.neutral950,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 12,
-    elevation: 1,
-  },
-  softLg: {
-    shadowColor: palette.neutral950,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 16,
-    elevation: 2,
-  },
+  soft: "0 2px 12px rgba(9, 9, 11, 0.03)",
+  softLg: "0 4px 16px rgba(9, 9, 11, 0.05)",
 } as const;
 
 export type ShadowKey = keyof typeof shadows;

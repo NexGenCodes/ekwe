@@ -14,26 +14,22 @@ export const IntentService = {
     return rawUri;
   },
 
-  // ─── Combined resolve + FLAC conversion (no temp file) ──────────────
-  // Reads content:// URI directly into memory, passes to C++ decoder,
-  // encodes to FLAC, returns path + waveform + duration.
-  // Available on Android only; falls back to separate resolve+convert on iOS.
-  resolveAndConvertToFlac: async (
+  // ─── Combined resolve + Ogg Opus conversion (no temp file) ──────────────
+  resolveAndConvertToOpus: async (
     contentUri: string,
     outputPath: string,
   ): Promise<ExtractWavAndWaveformResult | null> => {
     if (isAndroid && contentUri.startsWith("content://")) {
       try {
-        return await EkweNative.resolveAndConvertToFlac(contentUri, outputPath);
+        return await EkweNative.resolveAndConvertToOpus(contentUri, outputPath);
       } catch (err) {
         logger.error(
-          "[IntentService] resolveAndConvertToFlac failed:",
+          "[IntentService] resolveAndConvertToOpus failed:",
           err,
         );
         return null;
       }
     }
-    // iOS: return null so caller falls back to resolveToFileUri + AudioConverter
     return null;
   },
 

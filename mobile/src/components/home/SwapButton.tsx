@@ -71,7 +71,7 @@ export function SwapButton({
           alignItems: "center",
           justifyContent: "center",
           marginHorizontal: spacing.xs,
-          ...shadows.soft,
+          boxShadow: shadows.soft,
           backgroundColor: color.brand,
         },
         (pressed || isSwapDisabled) && { opacity: opacity.disabled },

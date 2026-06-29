@@ -1,4 +1,4 @@
-import * as FileSystem from "expo-file-system/legacy";
+import { Paths } from "expo-file-system";
 
 import EkweNative from "../../modules/ekwe-native";
 
@@ -12,16 +12,16 @@ export interface ConvertedAudio {
 }
 
 class AudioConverterClass {
-  async convertToFlac(
+  async convertToOpus(
     inputUri: string,
   ): Promise<Result<ConvertedAudio, EkweError>> {
     if (!inputUri) return err(EkweError.AUDIO_EMPTY);
 
     try {
-      const cacheDir = FileSystem.cacheDirectory;
+      const cacheDir = Paths.cache.uri;
       if (!cacheDir) return err(EkweError.AUDIO_RECORD_FAIL);
 
-      const outputPath = `${cacheDir}ekwe_converted_${Date.now()}.flac`;
+      const outputPath = `${cacheDir}ekwe_converted_${Date.now()}.ogg`;
 
       const result = await EkweNative.extractWavAndWaveform(
         inputUri,

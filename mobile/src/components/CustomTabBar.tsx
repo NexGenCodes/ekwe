@@ -40,7 +40,7 @@ export function CustomTabBar({
         paddingBottom: Math.max(insets.bottom, 16),
         paddingTop: spacing.sm,
         paddingHorizontal: spacing.md,
-        ...shadows.soft,
+        boxShadow: shadows.soft,
       }}
     >
       {state.routes.map((route: TabRoute, index: number) => {

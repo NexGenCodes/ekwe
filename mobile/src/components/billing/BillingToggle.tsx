@@ -88,7 +88,7 @@ const styles = {
     width: 150,
     height: "100%",
     borderRadius: borderRadius.full,
-    ...shadows.soft,
+    boxShadow: shadows.soft,
   } as const,
   toggleOption: {
     width: 150,

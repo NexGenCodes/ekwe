@@ -1,6 +1,7 @@
 import { Env, TranscribeResult, TranslateResult } from '../types';
 import { rotateKeys } from '../utils/keys';
 import { isHallucination, buildTranslatePrompt } from '../utils/hallucination';
+import { mimeToExt } from '../utils/mime';
 import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from '../utils/fetch';
 import { logger } from '../logger';
 
@@ -22,8 +23,7 @@ export async function transcribe(
     'GROQ_KEY_',
     (key) => {
       const body = new FormData();
-      const ext = blob.type === 'audio/flac' ? 'flac' : 'wav';
-      body.append('file', blob, `audio.${ext}`);
+      body.append('file', blob, `audio.${mimeToExt(blob.type)}`);
       body.append('model', 'whisper-large-v3');
       if (lang && lang !== 'auto') body.append('language', lang);
       body.append('response_format', 'json');

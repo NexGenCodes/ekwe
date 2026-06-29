@@ -3,6 +3,8 @@ import { Env, TranscribeResult } from '../types';
 import { sanitizeKey } from '../utils/keys';
 import { isHallucination } from '../utils/hallucination';
 import { getUserAgent, fetchWithTimeout, TIMEOUT_SLOW } from '../utils/fetch';
+import { decodeOpusFrame, isOpusDecoderReady } from '../utils/opus';
+import { pcmToWav } from '../utils/wav';
 
 const WITAI_DICTATION = 'https://api.wit.ai/dictation?v=20240304';
 
@@ -115,20 +117,55 @@ export async function handleStream(
 
   logger.info('[witai:stream] Starting dictation session', { lang });
 
+  // Buffer for accumulating decoded PCM frames for WAV wrapping
+  let pcmFrames: Int16Array[] = [];
+  let lastFlush = Date.now();
+
   const audioStream = new ReadableStream({
     start(controller) {
-      const onMessage = (event: MessageEvent): void => {
-        if (event.data instanceof ArrayBuffer) {
-          controller.enqueue(new Uint8Array(event.data));
-        } else if (event.data instanceof Blob) {
-          event.data.arrayBuffer().then(
-            buf => controller.enqueue(new Uint8Array(buf)),
-            () => {},
-          );
+      const flushPcm = (): void => {
+        if (pcmFrames.length === 0) return;
+        const totalLen = pcmFrames.reduce((sum, arr) => sum + arr.length, 0);
+        const merged = new Int16Array(totalLen);
+        let offset = 0;
+        for (const arr of pcmFrames) {
+          merged.set(arr, offset);
+          offset += arr.length;
+        }
+        pcmFrames = [];
+        const wav = pcmToWav(merged, 16000);
+        controller.enqueue(wav);
+      };
+
+      const onMessage = async (event: MessageEvent): Promise<void> => {
+        if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
+          let data: Uint8Array;
+          if (event.data instanceof ArrayBuffer) {
+            data = new Uint8Array(event.data);
+          } else {
+            data = new Uint8Array(await event.data.arrayBuffer());
+          }
+
+          if (isOpusDecoderReady()) {
+            const pcm = decodeOpusFrame(data, 16000);
+            if (pcm) {
+              pcmFrames.push(pcm);
+              // Flush periodically (every 500ms) to send WAV chunks
+              const now = Date.now();
+              if (now - lastFlush > 500 || pcmFrames.length >= 25) {
+                flushPcm();
+                lastFlush = now;
+              }
+            }
+          } else {
+            // Fallback: forward raw data
+            controller.enqueue(data);
+          }
         }
       };
 
       const onClose = (): void => {
+        flushPcm();
         try { controller.close(); } catch { /* already closed */ }
       };
 
@@ -136,6 +173,7 @@ export async function handleStream(
       clientWs.addEventListener('close', onClose);
 
       signal.addEventListener('abort', () => {
+        flushPcm();
         clientWs.removeEventListener('message', onMessage);
         clientWs.removeEventListener('close', onClose);
         try { controller.close(); } catch { /* ignore */ }
@@ -273,8 +311,6 @@ function toWitMime(mime: string): string | null {
     'audio/x-wav': 'audio/wav',
     'audio/ogg': 'audio/ogg',
     'audio/opus': 'audio/ogg',
-    'audio/flac': 'audio/flac',
-    'audio/x-flac': 'audio/flac',
     'audio/webm': 'audio/webm',
     'audio/ulaw': 'audio/ulaw',
     'audio/raw': 'audio/raw',

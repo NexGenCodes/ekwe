@@ -68,11 +68,6 @@ async function handleRequest(
     return body;
   }
 
-  // ─── Streaming WebSocket Route (after auth, before rate limits) ───
-  if (isStream) {
-    return handleStream(request, env, userId, tier);
-  }
-
   // ─── SECURITY GATING: Cloudflare Rate Limiting ───
   if (env.RATE_LIMITER) {
     const clientIp = request.headers.get("CF-Connecting-IP") || "";
@@ -81,6 +76,9 @@ async function handleRequest(
     const { success } = await env.RATE_LIMITER.limit({ key: rateLimitKey });
     if (!success) {
       logger.warn(`[rate-limiter] Blocked request for key: ${rateLimitKey}`);
+      if (isStream) {
+        return new Response('Rate limit exceeded', { status: 429 });
+      }
       return addCorsHeaders(
         Response.json(
           {
@@ -94,7 +92,12 @@ async function handleRequest(
     }
   }
 
-  // ─── 1. PRE-FLIGHT CHECK (ATOMIC COOLDOWN + CACHED) ───
+  // ─── Streaming WebSocket Route (after auth + rate limits) ───
+  if (isStream) {
+    return handleStream(request, env, userId, tier);
+  }
+
+  // ─── PRE-FLIGHT CHECK (ATOMIC COOLDOWN + CACHED) ───
   let preflight: Awaited<ReturnType<typeof checkPreflight>>;
   const cacheKey = `preflight:${userId}`;
   const cached = await env.EKWE_KV.get(cacheKey);

@@ -36,6 +36,11 @@ class EkweNativeModule : Module() {
     init {
       System.loadLibrary("ekwe_native_jni")
     }
+
+    // Strip file:// prefix from JS paths — C/C++ fopen() doesn't understand URIs
+    private fun resolvePath(path: String): String {
+      return if (path.startsWith("file://")) path.substring(7) else path
+    }
     var isAppBackgrounded: Boolean = true
 
     fun emitStateChanged(state: String, previousState: String, reason: String) {
@@ -61,17 +66,38 @@ class EkweNativeModule : Module() {
       }
     }
 
+    @JvmStatic fun emitOpusPacketFromNative(packetData: ByteArray, rms: Float) {
+      instance?.let { module ->
+        module.sendEvent("onOpusPacket", mapOf(
+          "packet" to packetData,
+          "rms" to rms
+        ))
+      }
+    }
+
+    @JvmStatic fun emitVadSilenceFromNative() {
+      instance?.let { module ->
+        module.isAudioRecording = false
+        module.sendEvent("onVadSilence", emptyMap<String, Any>())
+      }
+    }
+
+    // --- JSI bindings: access C++ RMS from JS thread via host function ---
+    @JvmStatic external fun nativeInstallJsi(jsContextPointer: Long)
+
     // --- Native Audio Processing (JNI) ---
     @JvmStatic external fun extractWavAndWaveformJNI(inputPath: String, outputPath: String): Array<Any?>
-    @JvmStatic external fun encodePcmToFlacJNI(pcmData: ShortArray, sampleRate: Int, channels: Int, outputPath: String): Array<Any?>
+    @JvmStatic external fun encodePcmToOpusJNI(pcmData: ShortArray, sampleRate: Int, channels: Int, outputPath: String): Array<Any?>
 
     // New: memory-based decode (no temp file for content:// → FLAC)
     @JvmStatic external fun extractFromMemoryJNI(data: ByteArray, outputPath: String): Array<Any?>
 
-    // New: streaming FLAC encoder for AudioRecord
-    @JvmStatic external fun nativeInitFlacEncoder(outputPath: String, sampleRate: Int, channels: Int): Boolean
+    // Capture controller JNI (dual-path: file or live)
+    @JvmStatic external fun nativeInitCapture(outputPath: String, sampleRate: Int, channels: Int, isLive: Boolean): Boolean
     @JvmStatic external fun nativeFeedPcm(pcmData: ShortArray, numSamples: Int): Boolean
-    @JvmStatic external fun nativeStopFlacEncoder(): Array<Any?>
+    @JvmStatic external fun nativeStopCapture(): Boolean
+    @JvmStatic external fun nativeGetAmplitude(): Float
+    @JvmStatic external fun nativeGetLastWaveform(): FloatArray
 
     fun emitAppForeground() {
       isAppBackgrounded = false
@@ -100,13 +126,14 @@ class EkweNativeModule : Module() {
 
     OnCreate {
       instance = this@EkweNativeModule
+      installJsiBindings()
     }
 
     OnDestroy {
       instance = null
     }
 
-    Events("onStateChanged", "onIntentQueued", "onAppForeground", "onAppBackground", "onForegroundAppChanged")
+    Events("onStateChanged", "onIntentQueued", "onAppForeground", "onAppBackground", "onForegroundAppChanged", "onOpusPacket", "onVadSilence")
 
     // --- State Methods ---
     AsyncFunction("getWindowState") { ->
@@ -146,7 +173,7 @@ class EkweNativeModule : Module() {
 
     AsyncFunction("deleteFile") { uriString: String ->
       try {
-        val uri = if (uriString.startsWith("file://")) uriString.substring(7) else uriString
+        val uri = resolvePath(uriString)
         val file = java.io.File(uri)
         if (file.exists()) {
           file.delete()
@@ -255,7 +282,7 @@ class EkweNativeModule : Module() {
 
         val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
             ?: getExtensionFromContentUri(context, uri)
-            ?: "opus"
+            ?: "ogg"
 
         val fileName = "shared_voice_${System.currentTimeMillis()}.$extension"
         val cacheFile = java.io.File(context.cacheDir, fileName)
@@ -274,8 +301,8 @@ class EkweNativeModule : Module() {
       }
     }
 
-    // ─── New: Resolve content:// URI → FLAC directly (no temp file) ─────
-    AsyncFunction("resolveAndConvertToFlac") { uriString: String, outputPath: String ->
+    // ─── Resolve content:// URI → Ogg Opus directly (no temp file) ─────
+    AsyncFunction("resolveAndConvertToOpus") { uriString: String, outputPath: String ->
       val context = appContext.reactContext ?: return@AsyncFunction mapOf(
         "success" to false, "error" to "No context", "durationMs" to 0, "waveform" to emptyList<Float>()
       )
@@ -290,7 +317,7 @@ class EkweNativeModule : Module() {
 
         val bytes = inputStream.use { it.readBytes() }
 
-        val result = extractFromMemoryJNI(bytes, outputPath)
+        val result = extractFromMemoryJNI(bytes, resolvePath(outputPath))
         val success = result[0] as Boolean
         val error = result[1] as String
         val durationMs = result[2] as Int
@@ -303,7 +330,7 @@ class EkweNativeModule : Module() {
           "waveform" to waveform
         )
       } catch (e: Exception) {
-        Log.e("EkweNative", "resolveAndConvertToFlac failed", e)
+        Log.e("EkweNative", "resolveAndConvertToOpus failed", e)
         return@AsyncFunction mapOf(
           "success" to false, "error" to (e.message ?: "Unknown error"),
           "durationMs" to 0, "waveform" to emptyList<Float>()
@@ -311,9 +338,11 @@ class EkweNativeModule : Module() {
       }
     }
 
-    // ─── New: AudioRecord direct capture ─────────────────────────────────
-    AsyncFunction("startAudioRecording") { outputPath: String, sampleRate: Int ->
+    // ─── AudioRecord direct capture (dual-path: file or live) ────────────
+    AsyncFunction("startAudioRecording") { outputPath: String, sampleRate: Int, isLive: Boolean ->
+      Log.d("EkweAudio", "startAudioRecording: path=$outputPath sr=$sampleRate live=$isLive")
       if (isAudioRecording) {
+        Log.w("EkweAudio", "startAudioRecording: already recording, rejecting")
         return@AsyncFunction mapOf("success" to false, "error" to "Already recording")
       }
 
@@ -323,16 +352,22 @@ class EkweNativeModule : Module() {
           AudioFormat.CHANNEL_IN_MONO,
           AudioFormat.ENCODING_PCM_16BIT
         )
+        Log.d("EkweAudio", "startAudioRecording: bufferSize=$bufferSize")
 
         if (bufferSize == AudioRecord.ERROR || bufferSize == AudioRecord.ERROR_BAD_VALUE) {
+          Log.e("EkweAudio", "startAudioRecording: invalid buffer size")
           return@AsyncFunction mapOf("success" to false, "error" to "Invalid buffer size")
         }
 
-        val initOk = nativeInitFlacEncoder(outputPath, sampleRate, 1)
+        val nativeOutputPath = resolvePath(outputPath)
+        Log.d("EkweAudio", "startAudioRecording: calling nativeInitCapture...")
+        val initOk = nativeInitCapture(nativeOutputPath, sampleRate, 1, isLive)
+        Log.d("EkweAudio", "startAudioRecording: nativeInitCapture returned $initOk")
         if (!initOk) {
-          return@AsyncFunction mapOf("success" to false, "error" to "Failed to init FLAC encoder")
+          return@AsyncFunction mapOf("success" to false, "error" to "Failed to init capture")
         }
 
+        Log.d("EkweAudio", "startAudioRecording: creating AudioRecord...")
         audioRecord = AudioRecord(
           MediaRecorder.AudioSource.MIC,
           sampleRate,
@@ -340,9 +375,11 @@ class EkweNativeModule : Module() {
           AudioFormat.ENCODING_PCM_16BIT,
           bufferSize
         )
+        Log.d("EkweAudio", "startAudioRecording: AudioRecord state=${audioRecord?.state}")
 
         if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-          nativeStopFlacEncoder()
+          Log.e("EkweAudio", "startAudioRecording: AudioRecord not initialized, stopping capture")
+          nativeStopCapture()
           audioRecord?.release()
           audioRecord = null
           return@AsyncFunction mapOf("success" to false, "error" to "AudioRecord init failed")
@@ -350,39 +387,43 @@ class EkweNativeModule : Module() {
 
         // Attach audio effects to the AudioRecord session
         val sessionId = audioRecord!!.audioSessionId
+        Log.d("EkweAudio", "startAudioRecording: sessionId=$sessionId, attaching effects...")
         attachEffectsInternal(sessionId)
 
+        Log.d("EkweAudio", "startAudioRecording: calling startRecording...")
         audioRecord?.startRecording()
         isAudioRecording = true
+        Log.d("EkweAudio", "startAudioRecording: recording started, spinning up thread...")
 
         recordingThread = thread(name = "AudioRecord") {
           try {
             val buffer = ShortArray(bufferSize / 2)
+            var frameCount = 0
+            Log.d("EkweAudio", "AudioRecord thread: starting loop")
             while (isAudioRecording) {
               val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
               if (read > 0) {
+                frameCount++
+                if (frameCount == 1) Log.d("EkweAudio", "AudioRecord thread: first frame read=$read")
                 nativeFeedPcm(buffer, read)
-                // Compute RMS amplitude (0..1) for metering
-                var sumSq = 0.0
-                for (i in 0 until read) {
-                  val s = buffer[i].toDouble()
-                  sumSq += s * s
-                }
-                val rms = Math.sqrt(sumSq / read)
-                currentAmplitude = (rms / 32768.0).toFloat()
+                // RMS from native capture controller
+                currentAmplitude = nativeGetAmplitude()
               } else if (read == AudioRecord.ERROR_INVALID_OPERATION) {
+                Log.w("EkweAudio", "AudioRecord thread: ERROR_INVALID_OPERATION, breaking")
                 break
               }
             }
+            Log.d("EkweAudio", "AudioRecord thread: exiting loop, processed $frameCount frames")
           } catch (e: Exception) {
-            Log.e("EkweNative", "AudioRecord thread crashed", e)
+            Log.e("EkweAudio", "AudioRecord thread crashed: ${e.message}", e)
             currentAmplitude = 0f
           }
         }
 
+        Log.d("EkweAudio", "startAudioRecording: returning success")
         return@AsyncFunction mapOf("success" to true, "error" to "")
       } catch (e: Exception) {
-        Log.e("EkweNative", "startAudioRecording failed", e)
+        Log.e("EkweAudio", "startAudioRecording failed: ${e.message}", e)
         isAudioRecording = false
         audioRecord?.release()
         audioRecord = null
@@ -390,7 +431,14 @@ class EkweNativeModule : Module() {
       }
     }
 
+    AsyncFunction("getRecordingAmplitude") { ->
+      val amp = currentAmplitude
+      Log.d("EkweAudio", "getRecordingAmplitude: $amp")
+      amp.toDouble()
+    }
+
     AsyncFunction("stopAudioRecording") { ->
+      Log.d("EkweAudio", "stopAudioRecording called, isRecording=$isAudioRecording")
       if (!isAudioRecording) {
         return@AsyncFunction mapOf(
           "success" to false, "error" to "Not recording",
@@ -417,23 +465,26 @@ class EkweNativeModule : Module() {
 
       releaseEffectsInternal()
 
-      val result = nativeStopFlacEncoder()
-      val success = result[0] as Boolean
-      val error = result[1] as String
-      val durationMs = result[2] as Int
-      val waveform = (result[3] as FloatArray).toList()
+      Log.d("EkweAudio", "stopAudioRecording: calling nativeStopCapture...")
+      val stopOk = nativeStopCapture()
+      Log.d("EkweAudio", "stopAudioRecording: nativeStopCapture returned $stopOk")
+
+      val waveform = nativeGetLastWaveform().toList()
+      Log.d("EkweAudio", "stopAudioRecording: waveform bins=${waveform.size}")
 
       return@AsyncFunction mapOf(
-        "success" to success,
-        "error" to error,
-        "durationMs" to durationMs,
+        "success" to true,
+        "error" to "",
+        "durationMs" to 0,
         "waveform" to waveform
       )
     }
 
+
+
     // --- Audio Conversion Methods ---
     AsyncFunction("extractWavAndWaveform") { inputPath: String, outputPath: String ->
-      val result = extractWavAndWaveformJNI(inputPath, outputPath)
+      val result = extractWavAndWaveformJNI(resolvePath(inputPath), resolvePath(outputPath))
       val success = result[0] as Boolean
       val error = result[1] as String
       val durationMs = result[2] as Int
@@ -447,11 +498,6 @@ class EkweNativeModule : Module() {
     }
 
     // --- Audio Effects Methods ---
-    // ─── New: Get current recording amplitude (0..1) for metering ─────
-    AsyncFunction("getRecordingAmplitude") { ->
-      currentAmplitude.toDouble()
-    }
-
     AsyncFunction("attachEffects") { audioSessionId: Double ->
       val sessionId = audioSessionId.toInt()
       attachEffectsInternal(sessionId)
@@ -507,6 +553,18 @@ class EkweNativeModule : Module() {
     noiseSuppressor = null
     echoCanceler = null
     gainControl = null
+  }
+
+  /**
+   * Installs the ekweNativeGetAmplitude JSI host function on the JS runtime,
+   * giving the JS thread direct synchronous access to the capture controller's
+   * current RMS value without bridge overhead.
+   */
+  private fun installJsiBindings() {
+    val reactContext = appContext.reactContext as? com.facebook.react.bridge.ReactContext ?: return
+    val holder = reactContext.javaScriptContextHolder ?: return
+    nativeInstallJsi(holder.get())
+    Log.d("EkweNative", "JSI bindings installed")
   }
 
   /**

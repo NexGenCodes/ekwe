@@ -3,6 +3,7 @@ export interface PlanLimits {
   maxTextChars: number;
   autoDetectAllowed: boolean;
   dictationDurationMs: number;
+  maxStreamDurationMs: number;
   historyRemoteTtlDays: number;
   streamingAllowed: boolean;
   transliterationAllowed: boolean;
@@ -41,10 +42,11 @@ export interface PlanConfigPlans {
 }
 
 export const FREE_LIMITS: PlanLimits = {
-  maxAudioBytes: 4_194_304,
+  maxAudioBytes: 5_242_880,
   maxTextChars: 3_000,
   autoDetectAllowed: false,
   dictationDurationMs: 120_000,
+  maxStreamDurationMs: 0,
   historyRemoteTtlDays: 30,
   streamingAllowed: false,
   transliterationAllowed: false,
@@ -60,7 +62,8 @@ export const PREMIUM_LIMITS: PlanLimits = {
   maxAudioBytes: 26_214_400,
   maxTextChars: 10_000,
   autoDetectAllowed: true,
-  dictationDurationMs: 1_200_000,
+  dictationDurationMs: 1_800_000,
+  maxStreamDurationMs: 120_000,
   historyRemoteTtlDays: 365,
   streamingAllowed: true,
   transliterationAllowed: true,

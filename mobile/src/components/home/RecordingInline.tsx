@@ -84,7 +84,7 @@ const LiveBar = React.memo(function LiveBar({
     const clamped = Math.min(1, Math.max(0.05, raw));
 
     return {
-      height: withTiming(MIN_H + clamped * RANGE, { duration: 100 }),
+      height: MIN_H + clamped * RANGE,
     };
   });
 
@@ -166,9 +166,10 @@ export function RecordingInline({
       const nextHead = (head.value + 1) % BARS;
       head.value = nextHead;
 
-      const newHistory = [...history.value];
-      newHistory[nextHead] = val;
-      history.value = newHistory;
+      history.modify((arr: number[]) => {
+        arr[nextHead] = val;
+        return arr;
+      });
     },
     [amplitude, history, head],
   );
@@ -288,6 +289,7 @@ export function RecordingInline({
         alignItems: "center",
         height: 72,
         borderRadius: borderRadius["2xl"],
+        borderCurve: "continuous",
         paddingHorizontal: spacing.md,
         backgroundColor: color.surface,
       }}
@@ -310,7 +312,7 @@ export function RecordingInline({
               borderRadius: 22,
               alignItems: "center",
               justifyContent: "center",
-              ...shadows.soft,
+              boxShadow: shadows.soft,
               backgroundColor: color.brand,
             }}
           >
@@ -356,7 +358,7 @@ export function RecordingInline({
                     backgroundColor: color.brand,
                     left: -6,
                     top: 14,
-                    ...shadows.soft,
+                    boxShadow: shadows.soft,
                   },
                   thumbStyle,
                 ]}

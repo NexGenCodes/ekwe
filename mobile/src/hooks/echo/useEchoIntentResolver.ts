@@ -1,5 +1,5 @@
 import { useSelector } from "@legendapp/state/react";
-import * as FileSystem from "expo-file-system/legacy";
+import { Paths } from "expo-file-system";
 import {
   useState,
   useEffect,
@@ -45,10 +45,9 @@ export const useEchoIntentResolver = (props: {
   const [convertedWaveform, setConvertedWaveform] = useState<number[]>([]);
 
   const activeResolvedUri = useRef<string | undefined>(undefined);
-  const convertedFlacUriRef = useRef<string | undefined>(undefined);
+  const convertedUriRef = useRef<string | undefined>(undefined);
   const previousRawUri = useRef<string | undefined>(undefined);
 
-  // Track if this is a subsequent intent (to know when to reset flow state)
   const [isSubsequentIntent, setIsSubsequentIntent] = useState(false);
 
   const rawUri = useMemo(
@@ -77,26 +76,24 @@ export const useEchoIntentResolver = (props: {
       return;
     }
 
-    // Check if we are already handling this URI or have finished it
     if (rawUri === previousRawUri.current && activeResolvedUri.current) {
       logger.debug("[IntentResolver] Already resolved this URI — skipping");
       return;
     }
 
     if (rawUri === previousRawUri.current) {
-      return; // Silently skip while processing
+      return;
     }
 
     const isSubseq = previousRawUri.current !== undefined;
     previousRawUri.current = rawUri;
 
-    // Clean up previous session files
     if (activeResolvedUri.current) {
       cleanEchoCache(activeResolvedUri.current);
     }
-    if (convertedFlacUriRef.current) {
-      cleanEchoCache(convertedFlacUriRef.current);
-      convertedFlacUriRef.current = undefined;
+    if (convertedUriRef.current) {
+      cleanEchoCache(convertedUriRef.current);
+      convertedUriRef.current = undefined;
     }
 
     const resolve = async (): Promise<void> => {
@@ -108,28 +105,21 @@ export const useEchoIntentResolver = (props: {
           rawUri.substring(0, 60),
         );
 
-        const cacheDir = FileSystem.cacheDirectory;
-        if (!cacheDir) {
-          logger.warn("[IntentResolver] No cache directory");
-          setIsResolving(false);
-          AppAlert.error("Error", "Could not access storage.");
-          return;
-        }
+        const cacheDir = Paths.cache.uri;
 
-        // Attempt combined resolve + FLAC conversion (Android only, no temp file)
-        const flacPath = `${cacheDir}ekwe_converted_${Date.now()}.flac`;
-        const combinedResult = await IntentService.resolveAndConvertToFlac(
+        // Attempt combined resolve + Ogg Opus conversion (Android only, no temp file)
+        const opusPath = `${cacheDir}ekwe_converted_${Date.now()}.ogg`;
+        const combinedResult = await IntentService.resolveAndConvertToOpus(
           rawUri,
-          flacPath,
+          opusPath,
         );
 
         if (isStale) return;
 
         if (combinedResult && combinedResult.success) {
-          // Combined path succeeded — FLAC ready, waveform extracted
-          convertedFlacUriRef.current = flacPath;
-          activeResolvedUri.current = flacPath;
-          setAudioUri(flacPath);
+          convertedUriRef.current = opusPath;
+          activeResolvedUri.current = opusPath;
+          setAudioUri(opusPath);
           setConvertedWaveform(combinedResult.waveform);
           setIsResolving(false);
           setIsSubsequentIntent(isSubseq);
@@ -139,7 +129,7 @@ export const useEchoIntentResolver = (props: {
           return;
         }
 
-        // Fallback: separate resolve → validate → convert (iOS or Android fallback)
+        // Fallback: separate resolve → validate → convert
         logger.info(
           "[IntentResolver] Combined path not available, using fallback",
         );
@@ -162,7 +152,6 @@ export const useEchoIntentResolver = (props: {
 
         logger.info("[IntentResolver] fileUri resolved:", fileUri);
 
-        // Validate shared audio file format
         const mimeType = hasIOSFiles
           ? props.value?.[0]?.mimeType
           : props.mimeType;
@@ -173,23 +162,22 @@ export const useEchoIntentResolver = (props: {
         const validatedUri = result.ok ? result.value.uri : fileUri;
         activeResolvedUri.current = validatedUri;
 
-        // Convert to FLAC + extract waveform via native C++ on both platforms
-        const convertResult = await AudioConverter.convertToFlac(validatedUri);
+        // Convert to Opus + extract waveform via native C++
+        const convertResult = await AudioConverter.convertToOpus(validatedUri);
 
         if (isStale) return;
 
         if (convertResult.ok) {
-          const { uri: flacUri, waveform } = convertResult.value;
-          convertedFlacUriRef.current = flacUri;
-          setAudioUri(flacUri);
+          const { uri: opusUri, waveform } = convertResult.value;
+          convertedUriRef.current = opusUri;
+          setAudioUri(opusUri);
           setConvertedWaveform(waveform);
           logger.info(
-            "[IntentResolver] ✅ Converted to FLAC + waveform extracted",
+            "[IntentResolver] ✅ Converted to Opus + waveform extracted",
           );
         } else {
-          // Fall back to validated URI if conversion fails
           logger.warn(
-            "[IntentResolver] FLAC conversion failed, using original",
+            "[IntentResolver] Opus conversion failed, using original",
           );
           setAudioUri(validatedUri);
         }

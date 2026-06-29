@@ -1,19 +1,21 @@
-import { FlashList } from "@shopify/flash-list";
 import { triggerHaptic } from "@/utils/haptics";
 import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
 import { AudioLines, Search, X } from "lucide-react-native";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { TextInput, ScrollView, StyleSheet } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 
-import { HistoryItem, EmptyState, IconContainer } from "@/components";
+import { type FlashListRef } from "@shopify/flash-list";
+import { EmptyState, IconContainer } from "@/components";
+import { HistoryListSection } from "@/components/history/HistoryListSection";
 import { Box, Text, Pressable } from "@/components/ui";
 import { duration, shadows } from "@/constants";
 import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
-import { useHistory, useHistorySearch, useTheme } from "@/hooks";
+import { useHistory, useHistoryListData, useHistorySearch, useTheme } from "@/hooks";
+import type { ListItem } from "@/hooks/useHistoryListData";
 import { HistoryFilterOption } from "@/hooks/useHistorySearch";
 import { SyncService } from "@/services/SyncService";
 import { HistoryEntry, auth$ } from "@/store";
@@ -43,6 +45,8 @@ export default function HistoryScreen(): React.JSX.Element {
 
   const { color } = useTheme();
 
+  const listRef = useRef<FlashListRef<ListItem>>(null!);
+
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
     await triggerHaptic();
@@ -66,6 +70,14 @@ export default function HistoryScreen(): React.JSX.Element {
   // When browsing, use the date-grouped buckets from useHistory.
   const isGrouped = !isSearching && filter === "all" && query.length === 0;
 
+  const listData = useHistoryListData({
+    isGrouped,
+    todayEntries,
+    yesterdayEntries,
+    earlierEntries,
+    filteredEntries,
+  });
+
   const handleEntryPress = useCallback(
     (entry: HistoryEntry): void => {
       router.push({
@@ -81,81 +93,6 @@ export default function HistoryScreen(): React.JSX.Element {
       });
     },
     [router],
-  );
-
-  /** Flat list data: interleave section headers for grouped mode */
-  type ListItem =
-    | { type: "header"; title: string }
-    | { type: "entry"; entry: HistoryEntry };
-
-  const listData = useMemo((): ListItem[] => {
-    if (isGrouped) {
-      const result: ListItem[] = [];
-      const buckets = [
-        { title: "Today", data: todayEntries },
-        { title: "Yesterday", data: yesterdayEntries },
-        { title: "Earlier", data: earlierEntries },
-      ];
-      for (const bucket of buckets) {
-        if (bucket.data.length === 0) continue;
-        result.push({ type: "header", title: bucket.title });
-        for (const e of bucket.data) {
-          result.push({ type: "entry", entry: e });
-        }
-      }
-      return result;
-    }
-    return filteredEntries.map((e) => ({ type: "entry" as const, entry: e }));
-  }, [
-    isGrouped,
-    todayEntries,
-    yesterdayEntries,
-    earlierEntries,
-    filteredEntries,
-  ]);
-
-  const renderListItem = useCallback(
-    ({ item }: { item: ListItem }): React.ReactElement => {
-      if (item.type === "header") {
-        return (
-          <Box style={styles.sectionHeader}>
-            <Text
-              variant="label"
-              style={{
-                color: color.muted,
-                textTransform: "uppercase",
-                letterSpacing: 1,
-              }}
-            >
-              {item.title}
-            </Text>
-          </Box>
-        );
-      }
-      return (
-        <Box style={styles.entryContainer}>
-          <HistoryItem
-            entry={item.entry}
-            onPress={handleEntryPress}
-            onDelete={deleteEntry}
-          />
-        </Box>
-      );
-    },
-    [handleEntryPress, deleteEntry, color.muted],
-  );
-
-  const listFooter = useCallback(
-    (): React.ReactElement => (
-      <Box style={styles.listFooter}>
-        {!isSearching && !hasMore && listData.length > 0 ? (
-          <Text variant="caption" style={{ color: color.muted }}>
-            You've reached the end.
-          </Text>
-        ) : null}
-      </Box>
-    ),
-    [isSearching, hasMore, listData.length, color.muted],
   );
 
   return (
@@ -284,25 +221,17 @@ export default function HistoryScreen(): React.JSX.Element {
           </Box>
         </Animated.View>
       ) : (
-        <Box style={styles.listContainer}>
-          <FlashList<ListItem>
-            data={listData}
-            renderItem={renderListItem}
-            keyExtractor={(item, index) =>
-              item.type === "header"
-                ? `header-${item.title}`
-                : `entry-${item.entry.id || index}`
-            }
-            getItemType={(item) => item.type}
-            ListFooterComponent={listFooter}
-            onEndReached={!isSearching && hasMore ? loadMore : undefined}
-            onEndReachedThreshold={0.5}
-            refreshing={isRefreshing}
-            onRefresh={onRefresh}
-            showsVerticalScrollIndicator={false}
-            contentInsetAdjustmentBehavior="automatic"
-          />
-        </Box>
+        <HistoryListSection
+          listRef={listRef}
+          listData={listData}
+          isRefreshing={isRefreshing}
+          onRefresh={onRefresh}
+          isSearching={isSearching}
+          hasMore={hasMore}
+          onLoadMore={loadMore}
+          handleEntryPress={handleEntryPress}
+          deleteEntry={deleteEntry}
+        />
       )}
     </Box>
   );
@@ -310,7 +239,6 @@ export default function HistoryScreen(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
-  entryContainer: { marginBottom: spacing.sm },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -324,8 +252,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     height: spacing["3xl"],
     borderRadius: borderRadius.lg,
+    borderCurve: "continuous",
     borderWidth: 1,
-    ...shadows.soft,
+    boxShadow: shadows.soft,
   },
   searchInput: {
     flex: 1,
@@ -342,18 +271,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingVertical: spacing.xs,
   },
-  // Pill-shaped filter chips per design system "Language Selectors" spec
   chip: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.full,
     borderWidth: 1,
-  },
-  // Section header (Today / Yesterday / Earlier)
-  sectionHeader: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xs,
   },
   emptyStateContainer: {
     flex: 1,
@@ -369,14 +291,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderStyle: "dashed",
-  },
-  listContainer: {
-    flex: 1,
-    padding: spacing.md,
-  },
-  listFooter: {
-    paddingVertical: spacing.xl,
-    paddingBottom: spacing["6xl"],
-    alignItems: "center",
   },
 });

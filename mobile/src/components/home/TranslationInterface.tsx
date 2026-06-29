@@ -5,6 +5,7 @@ import React, {
   useImperativeHandle,
   useCallback,
   useEffect,
+  useRef,
 } from "react";
 import Animated, { FadeIn, LinearTransition } from "react-native-reanimated";
 
@@ -21,7 +22,7 @@ import {
   useClipboard,
   useVoiceDictation,
 } from "@/hooks";
-import { isIOS } from "@/utils";
+import { isIOS, logger } from "@/utils";
 import { AppAlert } from "@/utils/alert";
 
 export interface TranslationInterfaceProps {
@@ -65,15 +66,28 @@ export const TranslationInterface = forwardRef<
     maxDurationMs,
     error: dictationError,
     capturedUri,
+    interimText,
+    finalText,
+    isLive,
     startDictation,
     stopDictation,
     confirmDictation,
     cancelDictation,
   } = useVoiceDictation();
 
+  const dictatingRef = useRef(false);
+
   const handleDictate = useCallback(async (): Promise<void> => {
-    await handleClear();
-    await startDictation(sourceLang);
+    if (dictatingRef.current) return;
+    dictatingRef.current = true;
+    try {
+      await handleClear();
+      await startDictation(sourceLang);
+    } catch (err) {
+      logger.error("[Dictation] handleDictate error:", err);
+    } finally {
+      dictatingRef.current = false;
+    }
   }, [startDictation, sourceLang, handleClear]);
 
   useEffect(() => {
@@ -162,6 +176,9 @@ export const TranslationInterface = forwardRef<
           onConfirm: handleConfirmDictation,
           onCancel: cancelDictation,
           capturedUri,
+          interimText,
+          finalText,
+          isLive,
         }}
         sourceLang={sourceLang}
         targetLang={targetLang}

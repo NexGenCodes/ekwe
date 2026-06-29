@@ -1,14 +1,11 @@
-import { File as ExpoFile } from "expo-file-system";
-import { readAsStringAsync, EncodingType } from "expo-file-system/legacy";
+import { File as ExpoFile, FileMode } from "expo-file-system";
 
 import { EkweError } from "@/constants/errors";
 import { Result, ok, err } from "@/types/Result";
 
 export const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB Groq limit
 export const VOICE_NOTE_EXTENSIONS = [
-  ".opus",
   ".ogg",
-  ".flac",
   ".m4a",
   ".aac",
   ".amr",
@@ -19,8 +16,6 @@ export const VOICE_NOTE_MIME_TYPES = [
   "audio/ogg",
   "audio/opus",
   "audio/x-opus",
-  "audio/flac",
-  "audio/x-flac",
   "audio/m4a",
   "audio/x-m4a",
   "audio/aac",
@@ -83,21 +78,24 @@ export const validateFileSize = async (
  */
 export const sniffAudioHeader = async (uri: string): Promise<boolean> => {
   try {
-    // Read only the first 12 bytes as base64 to avoid out-of-memory crashes on large files.
-    // Reading a 25MB file completely as base64 allocates >33MB of JS memory.
-    const header = await readAsStringAsync(uri, {
-      encoding: EncodingType.Base64,
-      length: 12,
-      position: 0,
-    });
+    // Read only the first 12 bytes using FileHandle to avoid out-of-memory crashes on large files.
+    const file = new ExpoFile(uri);
+    if (!file.exists) return false;
+    const handle = file.open(FileMode.ReadOnly);
+    const rawBytes = handle.readBytes(12);
+    handle.close();
+
+    let binary = "";
+    for (let i = 0; i < rawBytes.length; i++) {
+      binary += String.fromCharCode(rawBytes[i]);
+    }
+    const header = btoa(binary);
     if (!header) return false;
 
-    // Check for common signatures (case-insensitive fuzzy match)
     const signatures = [
       "T2dnUw", // "OggS"
-      "OpusHead", // raw string in some encodings
-      "Zkxh", // "fLaC" (FLAC)
-      "ZnR5c", // "ftyp"
+      "OpusHead",
+      "ZnR5c", // "ftyp" (MP4/M4A)
       "I0FNUg", // "#!AMR"
       "UklGR", // "RIFF" (WAV)
     ];

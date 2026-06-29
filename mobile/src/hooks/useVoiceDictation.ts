@@ -1,22 +1,26 @@
 import * as Crypto from "expo-crypto";
-import * as FileSystem from "expo-file-system/legacy";
+import { File } from "expo-file-system";
 import {
   activateKeepAwakeAsync,
   deactivateKeepAwake,
 } from "expo-keep-awake";
+import { observable } from "@legendapp/state";
+import { useSelector } from "@legendapp/state/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, AppStateStatus } from "react-native";
 import type { SharedValue } from "react-native-reanimated";
 
 import { EkweError, ErrorMessages } from "@/constants/errors";
 import { useMetering } from "@/hooks/audio/useMetering";
 import { usePermissions } from "@/hooks/usePermissions";
 import { AudioCapture } from "@/services/AudioCapture";
-import { AudioProcessor } from "@/services/AudioProcessor";
-import { transcribeAudio } from "@/services/transcribeAudio";
+import { StreamTranscriber } from "@/services/StreamTranscriber";
+import { batchTranscriber } from "@/services/BatchTranscriber";
 import { audioActions, RecordingState } from "@/store";
-import { isAndroid, logger } from "@/utils";
+import { getToken } from "@/store/auth";
+import { AnalyticsEvents, track } from "@/utils/analytics";
+import { logger } from "@/utils";
 
-// Timer resolution for elapsed display
 const TIMER_TICK_MS = 100;
 const KEEP_AWAKE_TAG = "ekwe-dictation-recording";
 
@@ -37,394 +41,452 @@ export interface UseVoiceDictationReturn {
   capturedUri: string | null;
   meteringData: number[];
   nativeWaveform: number[];
-  startDictation: (sourceLang: string) => Promise<void>;
+  interimText: string;
+  finalText: string;
+  isLive: boolean;
+  startDictation: (sourceLang: string, isLive?: boolean) => Promise<void>;
   stopDictation: () => Promise<string | null>;
   confirmDictation: (sourceLang: string) => Promise<string | null>;
   cancelDictation: () => Promise<void>;
 }
 
-export function useVoiceDictation(): UseVoiceDictationReturn {
-  const permissions = usePermissions();
-  const maxDurationMs = permissions.dictationDurationMs;
+interface MachineState {
+  status: DictationStatus;
+  meteringData: number[];
+  nativeWaveform: number[];
+  error: string | null;
+  capturedUri: string | null;
+  capturedDurationMs: number;
+  interimText: string;
+  finalText: string;
+  isLive: boolean;
+}
 
-  const [status, _setStatus] = useState<DictationStatus>("idle");
-  const statusRef = useRef<DictationStatus>("idle");
-  const setStatus = (s: DictationStatus): void => {
-    statusRef.current = s;
-    _setStatus(s);
-  };
+const INITIAL_STATE: MachineState = {
+  status: "idle",
+  meteringData: [],
+  nativeWaveform: [],
+  error: null,
+  capturedUri: null,
+  capturedDurationMs: 0,
+  interimText: "",
+  finalText: "",
+  isLive: false,
+};
 
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const [meteringData, setMeteringData] = useState<number[]>([]);
-  const [error, setError] = useState<string | null>(null);
+const dictation$ = observable<MachineState>({ ...INITIAL_STATE });
 
-  // Real-time amplitude SharedValue driven by AudioCapture at ~60fps on the UI thread.
-  // useMetering subscribes to AudioCapture.addListener() — zero React re-renders for waveform.
-  const amplitude = useMetering();
+let abortController: AbortController | null = null;
+let timerInterval: ReturnType<typeof setInterval> | null = null;
+let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
+let streamUnsub: (() => void) | null = null;
 
-  // Refs to hold mutable values that shouldn't trigger re-renders
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const maxDurationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const sourceLangRef = useRef<string>("auto");
-  const elapsedMsRef = useRef(0);
-  const capturedUriRef = useRef<string | null>(null);
-  const capturedMeteringRef = useRef<number[]>([]);
-  const capturedDurationRef = useRef<number>(0);
-  const capturedWaveformRef = useRef<number[]>([]);
+function clearTimers(): void {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  if (maxDurationTimer) {
+    clearTimeout(maxDurationTimer);
+    maxDurationTimer = null;
+  }
+}
 
-  // stopDictation ref — updated at render time to avoid stale closure
-  const stopDictationRef = useRef<() => Promise<string | null>>(
-    async () => null,
-  );
-  const isStoppingRef = useRef(false);
+export const dictationActions = {
+  reset(): void {
+    dictation$.set({ ...INITIAL_STATE });
+  },
 
-  // --- Cleanup all timers (pure ref mutation, no re-render) ---
-  const clearTimers = useCallback(() => {
-    if (timerIntervalRef.current !== null) {
-      clearInterval(timerIntervalRef.current);
-      timerIntervalRef.current = null;
-    }
-    if (maxDurationTimeoutRef.current !== null) {
-      clearTimeout(maxDurationTimeoutRef.current);
-      maxDurationTimeoutRef.current = null;
-    }
-  }, []);
-
-  // --- Sync with native status changes (e.g. silence auto-stop) ---
-  useEffect(() => {
-    return AudioCapture.addStatusListener((s) => {
-      if (
-        s === "stopped" &&
-        statusRef.current === "recording" &&
-        !isStoppingRef.current
-      ) {
-        logger.info(
-          "[VoiceDictation] Native recorder stopped externally (silence or cap), syncing...",
-        );
-        stopDictationRef.current();
-      }
-    });
-  }, [clearTimers]);
-
-  // --- Full cleanup on unmount ---
-  useEffect(() => {
-    return (): void => {
-      deactivateKeepAwake(KEEP_AWAKE_TAG);
-      clearTimers();
-      abortControllerRef.current?.abort();
-      if (AudioCapture.isRecording()) {
-        AudioCapture.cancelRecording().catch(() => {});
-      }
-    };
-  }, [clearTimers]);
-
-  // --- Stop recording and enter preview ---
-  const stopDictation = useCallback(async (): Promise<string | null> => {
-    if (
-      statusRef.current !== "recording" ||
-      !AudioCapture.isRecording() ||
-      isStoppingRef.current
-    ) {
-      if (statusRef.current === "recording" && !isStoppingRef.current) {
-        logger.warn("[VoiceDictation] stopDictation called but not recording");
-        setStatus("idle");
-      }
-      return null;
-    }
-
-    isStoppingRef.current = true;
-
-    clearTimers();
-    logger.info("[VoiceDictation] Stopping recording, entering preview");
-
-    // 1. Stop the native recorder
-    const captureResult = await AudioCapture.stopRecording();
-    if (!captureResult.ok) {
-      const msg = ErrorMessages[captureResult.error] ?? "Recording failed.";
-      logger.error(
-        "[VoiceDictation] stopRecording failed:",
-        captureResult.error,
-      );
-      setError(msg);
-      setStatus("error");
-      isStoppingRef.current = false;
-      return null;
-    }
-
-    const { uri, durationMs, meteringData } = captureResult.value;
-    capturedUriRef.current = uri;
-    capturedMeteringRef.current = meteringData;
-    capturedDurationRef.current = durationMs;
-    setMeteringData(meteringData);
-
-    // Android: AudioRecord already recorded directly to FLAC in real-time
-    // via the streaming encoder (see AudioCapture → EkweNative.startAudioRecording).
-    // No post-recording conversion needed.
-    if (isAndroid && captureResult.value.waveform) {
-      capturedWaveformRef.current = captureResult.value.waveform;
-    }
-
-    deactivateKeepAwake(KEEP_AWAKE_TAG);
-    audioActions.setDuration(durationMs / 1000);
-    audioActions.setRecordingState(RecordingState.Processing);
-
-    setStatus("preview");
-    isStoppingRef.current = false;
-    return uri;
-  }, [clearTimers]);
-
-  // Keep stopDictationRef current at render time so it's never stale
-  stopDictationRef.current = stopDictation;
-
-  // --- Confirm preview and send for transcription ---
-  const confirmDictation = useCallback(
-    async (sourceLang: string): Promise<string | null> => {
-      const uri = capturedUriRef.current;
-      if (!uri || statusRef.current !== "preview") {
-        logger.warn(
-          "[VoiceDictation] confirmDictation called without valid preview",
-        );
-        return null;
-      }
-
-      setStatus("processing");
-      let processedUri: string | null = null;
-
-      try {
-        logger.info("[VoiceDictation] Confirming dictation, uri:", uri);
-
-        // 2. Validate & trim audio
-        const processResult = await AudioProcessor.processRecording(
-          uri,
-          capturedDurationRef.current,
-          capturedMeteringRef.current,
-        );
-
-        if (!processResult.ok) {
-          const msg =
-            ErrorMessages[processResult.error] ?? "Audio processing failed.";
-          logger.error(
-            "[VoiceDictation] processRecording failed:",
-            processResult.error,
-          );
-          setError(msg);
-          setStatus("error");
-          return null;
-        }
-
-        processedUri = processResult.value.uri;
-
-        // 3. Send to /transcribe
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
-
-        // Use the live sourceLang passed at confirm-time, not the stale ref from record-time.
-        // This ensures language changes made in the preview state are respected.
-        logger.info("[VoiceDictation] Transcribing with lang:", sourceLang);
-        const transcribeResult = await transcribeAudio(
-          processResult.value,
-          sourceLang,
-          controller.signal,
-        );
-
-        abortControllerRef.current = null;
-
-        if (!transcribeResult.ok) {
-          if (controller.signal.aborted) {
-            logger.info("[VoiceDictation] Transcription aborted");
-            return null;
+  async startDictation(
+    sourceLang: string,
+    maxDurationMs: number,
+    isLive: boolean = false,
+  ): Promise<void> {
+    try {
+      if (dictation$.status.peek() === "error" || dictation$.status.peek() === "preview") {
+        const uri = dictation$.capturedUri.peek();
+        if (uri) {
+          try {
+            const f = new File(uri);
+            if (f.exists) f.delete();
+          } catch {
+            // best-effort cleanup
           }
-          const msg =
-            ErrorMessages[transcribeResult.error] ?? "Transcription failed.";
-          logger.error(
-            "[VoiceDictation] Transcription failed:",
-            transcribeResult.error,
-          );
-          setError(msg);
-          setStatus("error");
-          audioActions.setError(transcribeResult.error as EkweError);
-          return null;
         }
-
-        const { transcript } = transcribeResult.value;
-        logger.info("[VoiceDictation] Transcription success");
-        audioActions.appendTranscript(transcript);
-        audioActions.setRecordingState(RecordingState.Done);
-
-        setStatus("idle");
-        setElapsedMs(0);
-        setMeteringData([]);
-        elapsedMsRef.current = 0;
-        capturedUriRef.current = null;
-        return transcript;
-      } catch (err) {
-        logger.error("[VoiceDictation] Confirm error:", err);
-        setError("Failed to process voice input.");
-        setStatus("error");
-        return null;
-      } finally {
-        // --- ALWAYS Cleanup audio files ---
-        try {
-          if (uri) await FileSystem.deleteAsync(uri, { idempotent: true });
-          if (processedUri && processedUri !== uri) {
-            await FileSystem.deleteAsync(processedUri, { idempotent: true });
-          }
-          logger.info("[VoiceDictation] Cleaned up temporary audio files");
-        } catch (e) {
-          logger.error("[VoiceDictation] Cleanup error:", e);
-        }
-      }
-    },
-    [],
-  );
-
-  // --- Start dictation ---
-  const startDictation = useCallback(
-    async (sourceLang: string): Promise<void> => {
-      // Auto-recover from stale states on new attempt
-      if (statusRef.current === "error" || statusRef.current === "preview") {
-        // Cleanup any preview file before resetting
-        if (capturedUriRef.current) {
-          FileSystem.deleteAsync(capturedUriRef.current, {
-            idempotent: true,
-          }).catch(() => {});
-          capturedUriRef.current = null;
-        }
-        setStatus("idle");
-        setError(null);
+        dictation$.set({ ...INITIAL_STATE });
       }
 
-      if (statusRef.current !== "idle") {
-        logger.warn(
-          "[VoiceDictation] startDictation called while status is:",
-          statusRef.current,
-        );
+      if (dictation$.status.peek() !== "idle") {
+        logger.warn("[VoiceDictation] startDictation called while status is:", dictation$.status.peek());
         return;
       }
 
-      logger.info(
-        "[VoiceDictation] Starting dictation, lang:",
-        sourceLang,
-        "permissions:",
-        permissions,
-      );
-      sourceLangRef.current = sourceLang;
-      setError(null);
-      elapsedMsRef.current = 0;
-      setElapsedMs(0);
+      logger.info("[VoiceDictation] Starting dictation", { lang: sourceLang, isLive });
+      dictation$.set({
+        ...INITIAL_STATE,
+        isLive,
+        status: "initializing",
+      });
 
-      // Explicit Loading State for instant UI feedback without faking a recording
-      setStatus("initializing");
-
-      // Request microphone permission (shows OS prompt if needed)
       const permResult = await AudioCapture.requestPermission();
       if (!permResult.ok) {
         logger.warn("[VoiceDictation] Microphone permission denied");
-        setError(ErrorMessages[EkweError.PERMISSION_MIC]);
-        setStatus("error");
+        dictation$.status.set("error");
+        dictation$.error.set(ErrorMessages[EkweError.PERMISSION_MIC]);
         return;
       }
 
-      // Start native recording (attaches Android audio effects: NS, EC, AGC)
       const sessionId = Crypto.randomUUID();
       audioActions.setSessionId(sessionId);
       audioActions.setSourceLang(sourceLang);
       audioActions.setRecordingState(RecordingState.Recording);
 
-      const startResult = await AudioCapture.startRecording(
-        sessionId,
-        stopDictationRef.current,
-      );
+      // Start native capture (mode depends on isLive)
+      const startResult = await AudioCapture.startRecording(sessionId, () => {
+        dictationActions.stopDictation();
+      }, isLive ? "live" : "file");
       if (!startResult.ok) {
-        logger.error(
-          "[VoiceDictation] startRecording failed:",
-          startResult.error,
+        logger.error("[VoiceDictation] startRecording failed:", startResult.error);
+        dictation$.status.set("error");
+        dictation$.error.set(
+          ErrorMessages[startResult.error] ?? ErrorMessages[EkweError.AUDIO_RECORD_FAIL],
         );
-        setError(
-          ErrorMessages[startResult.error] ??
-            ErrorMessages[EkweError.AUDIO_RECORD_FAIL],
-        );
-        setStatus("error");
         return;
       }
 
-      setStatus("recording");
-      activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
-      logger.info(
-        "[VoiceDictation] Recording started, maxDuration:",
-        maxDurationMs,
-        "ms",
+      // Connect streaming WebSocket for live mode
+      if (isLive) {
+        const token = getToken();
+        const serverUrl = process.env.EXPO_PUBLIC_WORKER_URL ?? "";
+        if (!token || !serverUrl) {
+          logger.error("[VoiceDictation] Missing token or server URL for live mode");
+          dictation$.status.set("error");
+          dictation$.error.set("Cannot start live dictation: missing authentication");
+          await AudioCapture.cancelRecording();
+          return;
+        }
+        StreamTranscriber.connect({ token, lang: sourceLang, serverUrl });
+
+        const removeCb = StreamTranscriber.addCallback((event) => {
+          if ("error" in event) return;
+          dictation$.interimText.set(
+            event.type === "interim" ? event.text : dictation$.interimText.peek()
+          );
+          if (event.type === "final") {
+            dictation$.finalText.set((prev) => prev + " " + event.text);
+          }
+        });
+        const removeOpus = AudioCapture.addOpusPacketListener((packet) => {
+          StreamTranscriber.sendOpus(packet.data);
+        });
+        streamUnsub = (): void => {
+          removeCb();
+          removeOpus();
+        };
+      }
+
+      dictation$.status.set("recording");
+      track(AnalyticsEvents.DICTATION_STARTED, { sourceLang, maxDurationMs, isLive });
+
+      maxDurationTimer = setTimeout(() => {
+        logger.info("[VoiceDictation] Max duration reached, auto-stopping");
+        dictationActions.stopDictation().catch((e) => {
+          logger.error("[VoiceDictation] maxDurationTimer stopDictation failed:", e);
+        });
+      }, maxDurationMs);
+    } catch (e) {
+      logger.error("[VoiceDictation] startDictation caught top-level error:", e);
+      dictation$.status.set("error");
+      dictation$.error.set(
+        e instanceof Error ? `startDictation: ${e.message}` : "Unknown error",
+      );
+      try {
+        if (AudioCapture.isRecording()) {
+          await AudioCapture.cancelRecording();
+        }
+      } catch { /* best-effort */ }
+    }
+  },
+
+  async stopDictation(): Promise<string | null> {
+    const currentStatus = dictation$.status.peek();
+    if (currentStatus !== "recording" || !AudioCapture.isRecording()) {
+      return null;
+    }
+
+    clearTimers();
+    logger.info("[VoiceDictation] Stopping recording");
+
+    // Disconnect streaming first
+    if (streamUnsub) {
+      streamUnsub();
+      streamUnsub = null;
+    }
+    StreamTranscriber.disconnect();
+
+    const captureResult = await AudioCapture.stopRecording();
+    if (!captureResult.ok) {
+      if (dictation$.status.peek() !== "preview") {
+        dictation$.status.set("error");
+        dictation$.error.set(ErrorMessages[captureResult.error] ?? "Recording failed.");
+      }
+      logger.error("[VoiceDictation] stopRecording failed:", captureResult.error);
+      return null;
+    }
+
+    const { uri, durationMs, meteringData, waveform } = captureResult.value;
+
+    if (!uri) {
+      dictation$.set({ ...INITIAL_STATE });
+      return null;
+    }
+
+    // Use real native waveform (60 bins from C++ get_waveform) when available
+    const realWaveform = waveform ?? [];
+
+    dictation$.set({
+      ...dictation$.peek(),
+      status: "preview",
+      capturedUri: uri,
+      capturedDurationMs: durationMs,
+      meteringData: realWaveform.length > 0 ? realWaveform : meteringData,
+      nativeWaveform: realWaveform,
+    });
+
+    audioActions.setDuration(durationMs / 1000);
+    audioActions.setRecordingState(RecordingState.Processing);
+
+    // For live mode, stay in preview — transcript is already in interimText/finalText
+    // No auto-submit; user taps send to commit
+
+    return uri;
+  },
+
+  async cancelDictation(): Promise<void> {
+    clearTimers();
+    logger.info("[VoiceDictation] Cancelling dictation, status:", dictation$.status.peek());
+    track(AnalyticsEvents.DICTATION_CANCELLED, {
+      status: dictation$.status.peek(),
+      durationMs: dictation$.capturedDurationMs.peek(),
+    });
+
+    if (streamUnsub) {
+      streamUnsub();
+      streamUnsub = null;
+    }
+    StreamTranscriber.disconnect();
+
+    if (AudioCapture.isRecording()) {
+      await AudioCapture.cancelRecording();
+    }
+
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
+    }
+
+    dictation$.set({ ...INITIAL_STATE });
+    audioActions.resetAudioState();
+  },
+
+  async confirmDictation(sourceLang: string): Promise<string | null> {
+    const uri = dictation$.capturedUri.peek();
+    if (!uri || dictation$.status.peek() !== "preview") {
+      logger.warn("[VoiceDictation] confirmDictation called without valid preview");
+      return null;
+    }
+
+    // For live mode, use accumulated transcript directly — no batch transcription needed
+    const isLive = dictation$.isLive.peek();
+    if (isLive) {
+      const transcript = dictation$.finalText.peek().trim();
+      if (transcript) {
+        logger.info("[VoiceDictation] Live mode: using accumulated transcript");
+        audioActions.appendTranscript(transcript);
+        audioActions.setRecordingState(RecordingState.Done);
+        dictation$.set({ ...INITIAL_STATE });
+        return transcript;
+      }
+      // Fall through to batch transcription if no accumulated text
+    }
+
+    dictation$.status.set("processing");
+    track(AnalyticsEvents.TRANSCRIBING_STARTED, {
+      sourceLang,
+      durationMs: dictation$.capturedDurationMs.peek(),
+    });
+
+    const controller = new AbortController();
+    abortController = controller;
+
+    try {
+      logger.info("[VoiceDictation] Confirming dictation, uri:", uri);
+
+      const result = await batchTranscriber.transcribe(
+        {
+          uri,
+          durationMs: dictation$.capturedDurationMs.peek(),
+          meteringData: dictation$.meteringData.peek(),
+          waveform: dictation$.nativeWaveform.peek(),
+        },
+        sourceLang,
+        controller.signal,
       );
 
-      // Elapsed counter (100ms ticks for smooth countdown display)
-      timerIntervalRef.current = setInterval(() => {
-        elapsedMsRef.current += TIMER_TICK_MS;
-        setElapsedMs(elapsedMsRef.current);
-      }, TIMER_TICK_MS);
+      abortController = null;
 
-      // Hard cap — auto-stop when max duration is reached
-      maxDurationTimeoutRef.current = setTimeout(() => {
-        logger.info("[VoiceDictation] Max duration reached, auto-stopping");
-        stopDictationRef.current();
-      }, maxDurationMs);
-    },
-    [maxDurationMs, permissions],
-  );
-
-  // --- Cancel dictation ---
-  const cancelDictation = useCallback(async (): Promise<void> => {
-    logger.info(
-      "[VoiceDictation] Cancelling dictation, status:",
-      statusRef.current,
-    );
-    clearTimers();
-    deactivateKeepAwake(KEEP_AWAKE_TAG);
-
-    // Abort any in-flight transcription fetch
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-
-    // Cancel native recording and cleanup partial file
-    if (AudioCapture.isRecording()) {
-      const cancelResult = await AudioCapture.cancelRecording();
-      if (cancelResult.ok && cancelResult.value) {
-        try {
-          await FileSystem.deleteAsync(cancelResult.value, {
-            idempotent: true,
-          });
-          logger.info(
-            "[VoiceDictation] Cleaned up partial recording:",
-            cancelResult.value,
-          );
-        } catch (e) {
-          logger.error(
-            "[VoiceDictation] Failed to cleanup partial recording:",
-            e,
-          );
+      if (!result.ok) {
+        if (controller.signal.aborted) {
+          logger.info("[VoiceDictation] Transcription aborted");
+          return null;
         }
+        const msg = ErrorMessages[result.error] ?? "Transcription failed.";
+        logger.error("[VoiceDictation] Transcription failed:", result.error);
+        dictation$.status.set("error");
+        dictation$.error.set(msg);
+        audioActions.setError(result.error as EkweError);
+        track(AnalyticsEvents.TRANSCRIPTION_FAILED, {
+          sourceLang,
+          durationMs: dictation$.capturedDurationMs.peek(),
+          error: EkweError.TRANSCRIPTION_FAIL,
+        });
+        return null;
+      }
+
+      const { transcript, detectedLang } = result.value;
+
+      track(AnalyticsEvents.TRANSCRIBING_COMPLETED, {
+        sourceLang,
+        durationMs: dictation$.capturedDurationMs.peek(),
+        detectedLang,
+      });
+      logger.info("[VoiceDictation] Transcription success");
+      audioActions.appendTranscript(transcript);
+      audioActions.setRecordingState(RecordingState.Done);
+
+      dictation$.set({ ...INITIAL_STATE });
+      return transcript;
+    } catch (err) {
+      abortController = null;
+      logger.error("[VoiceDictation] Confirm error:", err);
+      track(AnalyticsEvents.TRANSCRIPTION_FAILED, {
+        sourceLang,
+        durationMs: dictation$.capturedDurationMs.peek(),
+        error: "exception",
+      });
+      dictation$.status.set("error");
+      dictation$.error.set("Failed to process voice input.");
+      return null;
+    } finally {
+      try {
+        const f = new File(uri);
+        if (f.exists) f.delete();
+      } catch {
+        // cleanup best-effort
       }
     }
+  },
+};
 
-    // Cleanup any preview file
-    if (capturedUriRef.current) {
-      FileSystem.deleteAsync(capturedUriRef.current, {
-        idempotent: true,
-      }).catch(() => {});
-      capturedUriRef.current = null;
-    }
+export function useVoiceDictation(): UseVoiceDictationReturn {
+  const maxDurationMs = usePermissions().dictationDurationMs;
+  const amplitude = useMetering();
 
-    setStatus("idle");
-    setError(null);
-    setElapsedMs(0);
-    setMeteringData([]);
+  const status = useSelector(() => dictation$.status.get());
+  const error = useSelector(() => dictation$.error.get());
+  const meteringData = useSelector(() => dictation$.meteringData.get());
+  const nativeWaveform = useSelector(() => dictation$.nativeWaveform.get());
+  const capturedUri = useSelector(() => dictation$.capturedUri.get());
+  const interimText = useSelector(() => dictation$.interimText.get());
+  const finalText = useSelector(() => dictation$.finalText.get());
+  const isLive = useSelector(() => dictation$.isLive.get());
+
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const elapsedMsRef = useRef(0);
+
+  // AppState background listener — stop + cleanup
+  useEffect(() => {
+    const handleAppState = (nextState: AppStateStatus): void => {
+      if (nextState === "background" || nextState === "inactive") {
+        if (dictation$.status.peek() === "recording") {
+          logger.info("[VoiceDictation] App backgrounded, stopping dictation");
+          dictationActions.cancelDictation();
+        }
+      }
+    };
+    const sub = AppState.addEventListener("change", handleAppState);
+    return (): void => { sub.remove(); };
+  }, []);
+
+  useEffect(() => {
+    return AudioCapture.addStatusListener((s) => {
+      if (s === "stopped" && dictation$.status.peek() === "recording") {
+        dictationActions.stopDictation().catch((err) => {
+          logger.warn("[VoiceDictation] stopDictation from status listener failed", err);
+        });
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    return (): void => {
+      deactivateKeepAwake(KEEP_AWAKE_TAG);
+      clearTimers();
+      abortController?.abort();
+      if (streamUnsub) {
+        streamUnsub();
+        streamUnsub = null;
+      }
+      StreamTranscriber.disconnect();
+      if (AudioCapture.isRecording()) {
+        AudioCapture.cancelRecording().catch(() => {});
+      }
+    };
+  }, []);
+
+  const startDictation = useCallback(
+    async (sourceLang: string, isLiveMode: boolean = false): Promise<void> => {
+      elapsedMsRef.current = 0;
+      setElapsedMs(0);
+
+      await dictationActions.startDictation(sourceLang, maxDurationMs, isLiveMode).catch((e) => {
+        logger.error("[VoiceDictation] hook startDictation caught rejection:", e);
+      });
+
+      if (dictation$.status.peek() === "recording") {
+        activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
+        timerInterval = setInterval(() => {
+          elapsedMsRef.current += TIMER_TICK_MS;
+          setElapsedMs(elapsedMsRef.current);
+        }, TIMER_TICK_MS);
+      }
+    },
+    [maxDurationMs],
+  );
+
+  const stopDictation = useCallback(async (): Promise<string | null> => {
+    deactivateKeepAwake(KEEP_AWAKE_TAG);
+    return dictationActions.stopDictation();
+  }, []);
+
+  const confirmDictation = useCallback(
+    async (sourceLang: string): Promise<string | null> => {
+      const transcript = await dictationActions.confirmDictation(sourceLang);
+      if (transcript) {
+        setElapsedMs(0);
+        elapsedMsRef.current = 0;
+      }
+      return transcript;
+    },
+    [],
+  );
+
+  const cancelDictation = useCallback(async (): Promise<void> => {
+    deactivateKeepAwake(KEEP_AWAKE_TAG);
     elapsedMsRef.current = 0;
-    audioActions.resetAudioState();
-  }, [clearTimers]);
+    setElapsedMs(0);
+    await dictationActions.cancelDictation();
+  }, []);
 
   return {
     status,
@@ -432,9 +494,12 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     elapsedMs,
     maxDurationMs,
     error,
-    capturedUri: capturedUriRef.current,
+    capturedUri,
     meteringData,
-    nativeWaveform: capturedWaveformRef.current,
+    nativeWaveform,
+    interimText,
+    finalText,
+    isLive,
     startDictation,
     stopDictation,
     confirmDictation,

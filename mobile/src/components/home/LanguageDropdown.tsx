@@ -67,7 +67,7 @@ export function LanguageDropdown({
                 borderWidth: 1,
                 padding: spacing.xs,
                 overflow: "hidden",
-                ...shadows.softLg,
+                boxShadow: shadows.softLg,
                 backgroundColor: color.card,
                 borderColor: color.border,
               },

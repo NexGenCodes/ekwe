@@ -269,6 +269,54 @@ export function guardJsonSize(request: Request, maxBytes: number): GuardResult {
   return { allowed: true };
 }
 
+/**
+ * Guards streaming access — checks if the user's tier allows live streaming.
+ * Used by: /transcribe/stream
+ */
+export function guardStreamingAllowed(tier: Tier): GuardResult {
+  const { streamingAllowed } = getLimits(tier);
+
+  if (!streamingAllowed) {
+    logger.warn(`[security] Rejected streaming for tier ${tier}`);
+    return {
+      allowed: false,
+      response: new Response(
+        JSON.stringify({
+          error: 'STREAM_PRO_ONLY',
+          message: 'Live transcription is a Pro feature.',
+        }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } },
+      ),
+    };
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Guards streaming duration — checks if the session exceeds the tier's max duration.
+ * Used by: /transcribe/stream
+ */
+export function guardStreamDuration(elapsedMs: number, tier: Tier): GuardResult {
+  const { maxStreamDurationMs } = getLimits(tier);
+
+  if (maxStreamDurationMs > 0 && elapsedMs > maxStreamDurationMs) {
+    logger.warn(`[security] Stream duration exceeded for tier ${tier}: ${elapsedMs}ms > ${maxStreamDurationMs}ms`);
+    return {
+      allowed: false,
+      response: new Response(
+        JSON.stringify({
+          error: 'STREAM_DURATION_EXCEEDED',
+          message: `Stream duration limit of ${Math.round(maxStreamDurationMs / 1000)} seconds exceeded.`,
+        }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } },
+      ),
+    };
+  }
+
+  return { allowed: true };
+}
+
 export function sanitizeTranslationText(text: string): string {
   let sanitized = text;
   for (const pattern of INJECTION_PATTERNS) {

@@ -2,6 +2,7 @@ import { Env, TranscribeResult, TranslateResult } from '../types';
 import { rotateKeys } from '../utils/keys';
 import { buildTranslatePrompt } from '../utils/hallucination';
 import { fetchWithTimeout, getClientHeaders, TIMEOUT_FAST } from '../utils/fetch';
+import { mimeToExt } from '../utils/mime';
 import { logger } from '../logger';
 import { COHERE_LANGUAGES } from '../languages';
 
@@ -82,7 +83,7 @@ export async function transcribe(
   const body = new FormData();
   body.append('model', COHERE_MODEL);
   body.append('language', lang === 'auto' ? 'en' : lang);
-  body.append('file', blob, 'audio.wav');
+  body.append('file', blob, `audio.${mimeToExt(blob.type)}`);
 
   const res = await rotateKeys(
     env,

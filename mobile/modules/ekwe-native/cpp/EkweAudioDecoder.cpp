@@ -1,4 +1,6 @@
 #include "EkweAudioDecoder.h"
+#include "EkweOpusEncoder.h"
+#include "EkweOggMuxer.h"
 
 #include <iostream>
 #include <fstream>
@@ -10,11 +12,7 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include "thirdparty/miniaudio.h"
 
-// For Opus decoding
 #include "thirdparty/opusfile/include/opusfile.h"
-
-// For FLAC encoding
-#include "FLAC/stream_encoder.h"
 
 namespace ekwe {
 
@@ -28,7 +26,6 @@ static bool is_ogg_opus(const std::string& path) {
     return false;
 }
 
-// Extract max amplitude for 60 bins
 static std::vector<float> compute_waveform(const std::vector<int16_t>& pcm_data) {
     std::vector<float> waveform;
     if (pcm_data.empty()) return waveform;
@@ -57,10 +54,6 @@ static std::vector<float> compute_waveform(const std::vector<int16_t>& pcm_data)
         if (bin_max > max_val) max_val = bin_max;
     }
 
-    // Normalize — but apply a noise floor so quiet recordings
-    // don't get stretched to full height (the "flat block" bug).
-    // If the peak is below 2% of full scale, cap the divisor
-    // so the waveform stays proportionally small.
     const float NOISE_FLOOR = 0.02f;
     if (max_val > 0.0f) {
         float divisor = std::max(max_val, NOISE_FLOOR);
@@ -72,53 +65,38 @@ static std::vector<float> compute_waveform(const std::vector<int16_t>& pcm_data)
     return waveform;
 }
 
-static bool encode_flac(const std::vector<int16_t>& pcm_data, uint32_t sample_rate,
+static bool encode_opus(const std::vector<int16_t>& pcm_data, uint32_t sample_rate,
                         uint16_t channels, const std::string& output_path) {
-    FLAC__StreamEncoder* encoder = FLAC__stream_encoder_new();
-    if (!encoder) return false;
+    OpusStreamEncoder encoder(sample_rate, channels, 5);
+    if (!encoder.is_ok()) return false;
 
-    FLAC__stream_encoder_set_channels(encoder, channels);
-    FLAC__stream_encoder_set_bits_per_sample(encoder, 16);
-    FLAC__stream_encoder_set_sample_rate(encoder, sample_rate);
-    FLAC__stream_encoder_set_compression_level(encoder, 5); // Good balance of speed vs compression
-    FLAC__stream_encoder_set_verify(encoder, false); // Skip verify for speed on mobile
+    OggMuxer muxer(output_path, sample_rate, 1);
+    if (!muxer.is_ok()) return false;
 
-    FLAC__StreamEncoderInitStatus init_status =
-        FLAC__stream_encoder_init_file(encoder, output_path.c_str(), nullptr, nullptr);
+    if (!muxer.write_opus_header(channels, encoder.lookahead(), sample_rate)) return false;
+    if (!muxer.write_opus_comment()) return false;
 
-    if (init_status != FLAC__STREAM_ENCODER_INIT_STATUS_OK) {
-        FLAC__stream_encoder_delete(encoder);
-        return false;
-    }
+    size_t frame_size = sample_rate / 50;
+    size_t total_samples = pcm_data.size();
+    int64_t granule_position = 0;
 
-    // FLAC encoder expects FLAC__int32 samples, not int16_t
-    // Process in chunks to avoid massive memory allocation
-    const size_t CHUNK_FRAMES = 4096;
-    const size_t total_samples = pcm_data.size();
-    const size_t total_frames = total_samples / channels;
-    std::vector<FLAC__int32> buffer(CHUNK_FRAMES * channels);
+    for (size_t offset = 0; offset < total_samples; offset += frame_size * channels) {
+        size_t remaining_frames = (total_samples - offset) / channels;
+        size_t this_frame = std::min(frame_size, remaining_frames);
 
-    size_t frames_processed = 0;
-    bool ok = true;
-
-    while (frames_processed < total_frames) {
-        size_t frames_this_chunk = std::min(CHUNK_FRAMES, total_frames - frames_processed);
-        size_t sample_offset = frames_processed * channels;
-
-        for (size_t i = 0; i < frames_this_chunk * channels; ++i) {
-            buffer[i] = (FLAC__int32)pcm_data[sample_offset + i];
+        std::vector<uint8_t> packet;
+        if (!encoder.encode_frame(pcm_data.data() + offset, this_frame * channels, packet)) {
+            return false;
         }
 
-        if (!FLAC__stream_encoder_process_interleaved(encoder, buffer.data(), frames_this_chunk)) {
-            ok = false;
-            break;
+        granule_position += static_cast<int64_t>(this_frame);
+        if (!muxer.write_packet(packet.data(), packet.size(), granule_position)) {
+            return false;
         }
-        frames_processed += frames_this_chunk;
     }
 
-    FLAC__stream_encoder_finish(encoder);
-    FLAC__stream_encoder_delete(encoder);
-    return ok;
+    muxer.finalize();
+    return true;
 }
 
 DecodeResult extract_audio_and_waveform(const std::string& input_path, const std::string& output_path) {
@@ -130,7 +108,6 @@ DecodeResult extract_audio_and_waveform(const std::string& input_path, const std
     uint16_t out_channels = 1;
 
     if (is_ogg_opus(input_path)) {
-        // Decode using libopusfile
         int err = 0;
         OggOpusFile* of = op_open_file(input_path.c_str(), &err);
         if (of == nullptr) {
@@ -138,8 +115,8 @@ DecodeResult extract_audio_and_waveform(const std::string& input_path, const std
             return result;
         }
 
-        out_sample_rate = 48000; // opusfile decodes to 48kHz
-        out_channels = 1; // Force mono
+        out_sample_rate = 48000;
+        out_channels = 1;
 
         const int MAX_FRAME_SIZE = 9600;
         std::vector<int16_t> buffer(MAX_FRAME_SIZE);
@@ -153,7 +130,6 @@ DecodeResult extract_audio_and_waveform(const std::string& input_path, const std
 
         op_free(of);
     } else {
-        // Decode using miniaudio (handles WAV, MP3, M4A, AAC, FLAC, WMA, etc.)
         ma_decoder decoder;
         ma_decoder_config config = ma_decoder_config_init(ma_format_s16, 1, 16000);
 
@@ -192,23 +168,19 @@ DecodeResult extract_audio_and_waveform(const std::string& input_path, const std
         return result;
     }
 
-    // Encode to FLAC
-    if (!encode_flac(pcm_data, out_sample_rate, out_channels, output_path)) {
-        result.error_message = "Failed to encode FLAC output.";
+    if (!encode_opus(pcm_data, out_sample_rate, out_channels, output_path)) {
+        result.error_message = "Failed to encode Ogg Opus output.";
         return result;
     }
 
-    // Calculate duration in ms
     result.duration_ms = (pcm_data.size() / out_channels) * 1000 / out_sample_rate;
-
-    // Compute waveform
     result.waveform = compute_waveform(pcm_data);
 
     result.success = true;
     return result;
 }
 
-// ─── Memory-based decoder (for content:// → FLAC without temp file) ─────
+// ─── Memory-based decoder (for content:// → Ogg Opus without temp file) ───
 
 struct MemStream {
     const uint8_t* data;
@@ -266,13 +238,11 @@ DecodeResult extract_audio_and_waveform_from_memory(
     uint32_t out_sample_rate = 16000;
     uint16_t out_channels = 1;
 
-    // Detect Ogg Opus via magic bytes
     bool is_opus = (data_size >= 4 &&
                     data[0] == 'O' && data[1] == 'g' &&
                     data[2] == 'g' && data[3] == 'S');
 
     if (is_opus) {
-        // Decode opus from memory via custom callbacks
         MemStream ms = { data, data_size, 0 };
         OpusFileCallbacks callbacks = { mem_read, mem_seek, mem_tell, mem_close };
 
@@ -297,7 +267,6 @@ DecodeResult extract_audio_and_waveform_from_memory(
 
         op_free(of);
     } else {
-        // Use miniaudio from memory (auto-detects FLAC, WAV, MP3, M4A, etc.)
         ma_decoder decoder;
         ma_decoder_config config = ma_decoder_config_init(ma_format_s16, 1, 16000);
 
@@ -330,9 +299,8 @@ DecodeResult extract_audio_and_waveform_from_memory(
         return result;
     }
 
-    // Encode to FLAC
-    if (!encode_flac(pcm_data, out_sample_rate, out_channels, output_path)) {
-        result.error_message = "Failed to encode FLAC from memory-decoded audio.";
+    if (!encode_opus(pcm_data, out_sample_rate, out_channels, output_path)) {
+        result.error_message = "Failed to encode Ogg Opus from memory-decoded audio.";
         return result;
     }
 
@@ -342,7 +310,7 @@ DecodeResult extract_audio_and_waveform_from_memory(
     return result;
 }
 
-DecodeResult encode_pcm_to_flac(const int16_t* pcm_data, size_t num_samples,
+DecodeResult encode_pcm_to_opus(const int16_t* pcm_data, size_t num_samples,
                                 uint32_t sample_rate, uint16_t channels,
                                 const std::string& output_path) {
     DecodeResult result;
@@ -353,162 +321,15 @@ DecodeResult encode_pcm_to_flac(const int16_t* pcm_data, size_t num_samples,
         return result;
     }
 
-    // Wrap raw pointer in a vector for reuse of existing helpers
     std::vector<int16_t> pcm_vec(pcm_data, pcm_data + num_samples);
 
-    // Encode to FLAC
-    if (!encode_flac(pcm_vec, sample_rate, channels, output_path)) {
-        result.error_message = "Failed to encode FLAC from PCM data.";
+    if (!encode_opus(pcm_vec, sample_rate, channels, output_path)) {
+        result.error_message = "Failed to encode Ogg Opus from PCM data.";
         return result;
     }
 
-    // Calculate duration
     result.duration_ms = (num_samples / channels) * 1000 / sample_rate;
-
-    // Compute waveform
     result.waveform = compute_waveform(pcm_vec);
-
-    result.success = true;
-    return result;
-}
-
-// ─── FlacStreamEncoder (streaming AudioRecord → FLAC) ────────────────────
-
-FlacStreamEncoder::FlacStreamEncoder(const std::string& output_path,
-                                     uint32_t sample_rate,
-                                     uint16_t channels,
-                                     bool enable_dc_filter)
-    : ok_(false)
-    , encoder_(nullptr)
-    , sample_rate_(sample_rate)
-    , channels_(channels)
-    , finalized_(false)
-    , dc_filter_enabled_(enable_dc_filter)
-    , dc_blocker_prev_in_(0.0)
-    , dc_blocker_prev_out_(0.0)
-{
-    FLAC__StreamEncoder* enc = FLAC__stream_encoder_new();
-    if (!enc) return;
-
-    FLAC__stream_encoder_set_channels(enc, channels);
-    FLAC__stream_encoder_set_bits_per_sample(enc, 16);
-    FLAC__stream_encoder_set_sample_rate(enc, sample_rate);
-    FLAC__stream_encoder_set_compression_level(enc, 5);
-    FLAC__stream_encoder_set_verify(enc, false);
-
-    FLAC__StreamEncoderInitStatus init_status =
-        FLAC__stream_encoder_init_file(enc, output_path.c_str(), nullptr, nullptr);
-
-    if (init_status != FLAC__STREAM_ENCODER_INIT_STATUS_OK) {
-        FLAC__stream_encoder_delete(enc);
-        return;
-    }
-
-    encoder_ = enc;
-    ok_ = true;
-}
-
-FlacStreamEncoder::~FlacStreamEncoder() {
-    if (encoder_ && !finalized_) {
-        auto* enc = static_cast<FLAC__StreamEncoder*>(encoder_);
-        FLAC__stream_encoder_finish(enc);
-        FLAC__stream_encoder_delete(enc);
-        encoder_ = nullptr;
-    }
-}
-
-bool FlacStreamEncoder::feed_pcm(const int16_t* data, size_t num_samples) {
-    if (!ok_ || finalized_ || !encoder_) return false;
-
-    // Apply DC-blocking high-pass filter (~80Hz cutoff at 16kHz) before
-    // accumulation and encoding.  Removes subsonic rumble (wind,
-    // handling noise, HVAC) without affecting speech frequencies.
-    // Reuses dc_filter_scratch_ to avoid heap allocation per audio chunk.
-    const int16_t* process_data = data;
-    if (dc_filter_enabled_ && num_samples > 0) {
-        dc_filter_scratch_.assign(data, data + num_samples);
-        apply_dc_blocker(dc_filter_scratch_.data(), num_samples);
-        process_data = dc_filter_scratch_.data();
-    }
-
-    // Accumulate PCM for waveform computation at finalize time
-    pcm_accumulator_.insert(pcm_accumulator_.end(), process_data, process_data + num_samples);
-
-    auto* enc = static_cast<FLAC__StreamEncoder*>(encoder_);
-    const size_t total_frames = num_samples / channels_;
-    const size_t CHUNK_FRAMES = 4096;
-
-    // Ensure buffer is large enough; after first call capacity is correct → no realloc
-    const size_t buffer_capacity = CHUNK_FRAMES * channels_;
-    if (flac_buffer_.size() < buffer_capacity) {
-        flac_buffer_.resize(buffer_capacity);
-    }
-
-    size_t frames_processed = 0;
-    while (frames_processed < total_frames) {
-        size_t frames = std::min(CHUNK_FRAMES, total_frames - frames_processed);
-        size_t sample_offset = frames_processed * channels_;
-
-        for (size_t i = 0; i < frames * channels_; ++i) {
-            flac_buffer_[i] = static_cast<FLAC__int32>(process_data[sample_offset + i]);
-        }
-
-        if (!FLAC__stream_encoder_process_interleaved(enc, flac_buffer_.data(), frames)) {
-            ok_ = false;
-            return false;
-        }
-        frames_processed += frames;
-    }
-
-    return true;
-}
-
-void FlacStreamEncoder::apply_dc_blocker(int16_t* data, size_t num_samples) {
-    // First-order high-pass: y[n] = x[n] - x[n-1] + R * y[n-1]
-    // R = 0.995 gives ~13Hz cutoff at 16kHz, gentle roll-off below 80Hz
-    // This removes DC offset and subsonic rumble while preserving speech.
-    const double R = 0.995;
-    double prev_in = dc_blocker_prev_in_;
-    double prev_out = dc_blocker_prev_out_;
-
-    for (size_t i = 0; i < num_samples; ++i) {
-        double in = static_cast<double>(data[i]);
-        double out = in - prev_in + R * prev_out;
-        // Clamp to int16 range to avoid overflow
-        data[i] = static_cast<int16_t>(std::max(-32768.0, std::min(32767.0, out)));
-        prev_in = in;
-        prev_out = out;
-    }
-
-    dc_blocker_prev_in_ = prev_in;
-    dc_blocker_prev_out_ = prev_out;
-}
-
-DecodeResult FlacStreamEncoder::finalize() {
-    DecodeResult result;
-    result.success = false;
-
-    if (!encoder_) {
-        result.error_message = "Encoder not initialized.";
-        return result;
-    }
-
-    if (finalized_) {
-        result.error_message = "Encoder already finalized.";
-        return result;
-    }
-
-    finalized_ = true;
-    auto* enc = static_cast<FLAC__StreamEncoder*>(encoder_);
-
-    FLAC__stream_encoder_finish(enc);
-    FLAC__stream_encoder_delete(enc);
-    encoder_ = nullptr;
-
-    if (!pcm_accumulator_.empty()) {
-        result.duration_ms = (pcm_accumulator_.size() / channels_) * 1000 / sample_rate_;
-        result.waveform = compute_waveform(pcm_accumulator_);
-    }
 
     result.success = true;
     return result;

@@ -34,7 +34,7 @@ export const ErrorMessages: Record<EkweError, string> = {
   [EkweError.LOW_VOLUME]:
     "Volume too low. Speaker volume has been raised — try again.",
   [EkweError.INTERRUPTED]:
-    "Recording stopped by an incoming call. Tap the bubble to retry.",
+    "Recording was interrupted. Please try again.",
   [EkweError.BAD_FORMAT]: "This audio format is not supported.",
   [EkweError.PROCESSOR_FAIL]: "Audio processing failed. Please try again.",
   [EkweError.EMPTY_TRANSCRIPT]:

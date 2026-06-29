@@ -157,14 +157,12 @@ export async function transcribeAudio(
 function getMimeType(extension: string): string {
   const map: Record<string, string> = {
     ogg: "audio/ogg",
-    opus: "audio/ogg",
-    flac: "audio/flac",
     m4a: "audio/m4a",
     mp4: "audio/mp4",
     wav: "audio/wav",
     mp3: "audio/mpeg",
   };
-  return map[extension] || "audio/m4a";
+  return map[extension] || "audio/ogg";
 }
 
 function processTranscript(

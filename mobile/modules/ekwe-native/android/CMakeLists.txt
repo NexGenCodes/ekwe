@@ -34,37 +34,20 @@ target_include_directories(opusfile PUBLIC
     ../cpp/thirdparty/libogg/include
     ../cpp/thirdparty/opus/include
 )
-target_link_libraries(opusfile PRIVATE ogg opus)
+target_link_libraries(opusfile PUBLIC ogg opus)
 
-# libFLAC encoder
-set(LIBFLAC_SRC
-    ../cpp/thirdparty/flac/src/libFLAC/bitmath.c
-    ../cpp/thirdparty/flac/src/libFLAC/bitwriter.c
-    ../cpp/thirdparty/flac/src/libFLAC/cpu.c
-    ../cpp/thirdparty/flac/src/libFLAC/crc.c
-    ../cpp/thirdparty/flac/src/libFLAC/fixed.c
-    ../cpp/thirdparty/flac/src/libFLAC/float.c
-    ../cpp/thirdparty/flac/src/libFLAC/format.c
-    ../cpp/thirdparty/flac/src/libFLAC/lpc.c
-    ../cpp/thirdparty/flac/src/libFLAC/md5.c
-    ../cpp/thirdparty/flac/src/libFLAC/memory.c
-    ../cpp/thirdparty/flac/src/libFLAC/metadata_object.c
-    ../cpp/thirdparty/flac/src/libFLAC/stream_encoder.c
-    ../cpp/thirdparty/flac/src/libFLAC/stream_encoder_framing.c
-    ../cpp/thirdparty/flac/src/libFLAC/window.c
-    ../cpp/thirdparty/flac/src/libFLAC/bitreader.c
-    ../cpp/thirdparty/flac/src/libFLAC/stream_decoder.c
+# Shared Opus/Ogg utilities (used by decoder and capture engine)
+add_library(ekwe_opus_util STATIC
+    ../cpp/EkweOpusEncoder.cpp
+    ../cpp/EkweOggMuxer.cpp
 )
-add_library(flac STATIC ${LIBFLAC_SRC})
-target_include_directories(flac PUBLIC
-    ../cpp/thirdparty/flac/include
-    ../cpp/thirdparty/flac/src/libFLAC/include
-    ../cpp/thirdparty/flac
+target_include_directories(ekwe_opus_util PUBLIC
+    ../cpp
+    ../cpp/thirdparty
+    ../cpp/thirdparty/opus/include
+    ../cpp/thirdparty/libogg/include
 )
-target_compile_definitions(flac PRIVATE
-    FLAC__NO_DLL=1
-    HAVE_CONFIG_H=1
-)
+target_link_libraries(ekwe_opus_util PUBLIC opus ogg)
 
 # Our EkweAudioDecoder
 add_library(ekwe_audio_decoder STATIC
@@ -74,16 +57,43 @@ target_include_directories(ekwe_audio_decoder PUBLIC
     ../cpp
     ../cpp/thirdparty
     ../cpp/thirdparty/opusfile/include
-    ../cpp/thirdparty/flac/include
+    ../cpp/thirdparty/opus/include
+    ../cpp/thirdparty/libogg/include
 )
-target_link_libraries(ekwe_audio_decoder PRIVATE opusfile ogg opus flac)
+target_link_libraries(ekwe_audio_decoder PRIVATE opusfile ekwe_opus_util)
+
+# Capture engine (CaptureController)
+add_library(ekwe_capture_engine STATIC
+    ../cpp/EkweCaptureController.cpp
+)
+target_include_directories(ekwe_capture_engine PUBLIC
+    ../cpp
+    ../cpp/thirdparty
+    ../cpp/thirdparty/opus/include
+    ../cpp/thirdparty/libogg/include
+)
+target_link_libraries(ekwe_capture_engine PRIVATE ekwe_opus_util)
+
+# Consume JSI and fbjni from ReactAndroid prefab
+find_package(fbjni REQUIRED CONFIG)
+find_package(ReactAndroid REQUIRED CONFIG)
 
 # JNI Interface
 add_library(ekwe_native_jni SHARED
     EkweNativeModuleJNI.cpp
 )
 
+target_include_directories(ekwe_native_jni PRIVATE
+    ../../../node_modules/react-native/ReactCommon
+    ../../../node_modules/react-native/ReactCommon/jsi
+)
+
+target_compile_features(ekwe_native_jni PUBLIC cxx_std_17)
+
 target_link_libraries(ekwe_native_jni PRIVATE 
     ekwe_audio_decoder
+    ekwe_capture_engine
     log
+    ReactAndroid::jsi
+    fbjni::fbjni
 )

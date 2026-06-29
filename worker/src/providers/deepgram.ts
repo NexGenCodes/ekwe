@@ -105,7 +105,7 @@ export async function handleStream(
 
   const params = new URLSearchParams({
     access_token: key,
-    encoding: 'linear16',
+    encoding: 'opus',
     sample_rate: '16000',
     channels: '1',
     model: 'nova-2',

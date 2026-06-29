@@ -2,7 +2,7 @@ import { Env, TranscribeResult } from '../types';
 import { rotateKeys } from '../utils/keys';
 import { isHallucination } from '../utils/hallucination';
 import { fetchWithTimeout, TIMEOUT_FAST, abortableDelay } from '../utils/fetch';
-import { getFirstKey, connectWithTimeout, createStreamInterceptor } from '../utils/stream';
+import { getFirstKey, connectWithTimeout, createOpusDecodingInterceptor } from '../utils/stream';
 import { logger } from '../logger';
 
 const ASSEMBLYAI_UPLOAD = 'https://api.assemblyai.com/v2/upload';
@@ -182,7 +182,7 @@ export async function handleStream(
   );
   if (!aaiWs) return false;
 
-  createStreamInterceptor(clientWs, aaiWs, (data) => {
+  createOpusDecodingInterceptor(clientWs, aaiWs, (data) => {
     try {
       const payload = JSON.parse(data);
       if (payload.message_type === 'PartialTranscript' || payload.message_type === 'FinalTranscript') {

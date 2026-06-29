@@ -64,13 +64,14 @@ export const BILLING_PLANS = {
     fallbackPrice: { amount: 0, currency: "USD", symbol: "$" },
     features: [
       { title: "Unlimited text translation", included: true },
-      { title: "Voice dictation (up to 2 min)", included: true },
+      { title: "Voice dictation (up to 2 min per session)", included: true },
       { title: "Auto-copy translations", included: true },
       { title: "30-day cloud history", included: true },
       { title: "Auto-detect spoken language", included: true },
       { title: "Custom avatar icons", included: false },
       { title: "Ad-free experience", included: false },
-      { title: "Extended voice dictation (up to 20 min)", included: false },
+      { title: "Extended dictation (up to 30 min)", included: false },
+      { title: "Live dictation with real-time results", included: false },
     ] as PlanFeature[],
   },
   pro: {
@@ -81,7 +82,8 @@ export const BILLING_PLANS = {
     productIdAnnual: "ekwe_pro_annual",
     features: [
       { title: "Ad-free experience", included: true },
-      { title: "Extended voice dictation (up to 20 min)", included: true },
+      { title: "Extended voice dictation (up to 30 min)", included: true },
+      { title: "Live dictation with real-time results", included: true },
       { title: "1-year cloud history", included: true },
       { title: "Priority AI context processing", included: true },
       { title: "Custom avatar icons", included: true },

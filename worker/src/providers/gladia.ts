@@ -2,7 +2,8 @@ import { Env, TranscribeResult } from '../types';
 import { rotateKeys } from '../utils/keys';
 import { isHallucination } from '../utils/hallucination';
 import { fetchWithTimeout, TIMEOUT_FAST, abortableDelay } from '../utils/fetch';
-import { getFirstKey, connectWithTimeout, createStreamInterceptor } from '../utils/stream';
+import { mimeToExt } from '../utils/mime';
+import { getFirstKey, connectWithTimeout, createOpusDecodingInterceptor } from '../utils/stream';
 import { logger } from '../logger';
 
 const GLADIA_UPLOAD = 'https://api.gladia.io/v2/upload';
@@ -47,7 +48,7 @@ async function attemptTranscription(
 ): Promise<Response> {
   // Step 1: Upload audio
   const uploadForm = new FormData();
-  uploadForm.append('audio', blob, 'audio.wav');
+  uploadForm.append('audio', blob, `audio.${mimeToExt(blob.type)}`);
 
   const uploadRes = await fetchWithTimeout(
     GLADIA_UPLOAD,
@@ -172,7 +173,7 @@ export async function handleStream(
   );
   if (!glWs) return false;
 
-  createStreamInterceptor(clientWs, glWs, (data) => {
+  createOpusDecodingInterceptor(clientWs, glWs, (data) => {
     try {
       const payload = JSON.parse(data);
       if (payload.type === 'transcript' && payload.transcription) {
@@ -190,7 +191,7 @@ export async function handleStream(
         }
       }
     } catch { /* ignore parse errors */ }
-  });
+  }, true);
 
   return true;
 }

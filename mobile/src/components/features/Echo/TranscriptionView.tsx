@@ -24,7 +24,7 @@ export const TranscriptionView = ({
         padding: spacing.lg,
         borderWidth: 1,
         minHeight: 140,
-        ...shadows.soft,
+        boxShadow: shadows.soft,
         backgroundColor: color.card,
         borderColor: color.border,
       }}

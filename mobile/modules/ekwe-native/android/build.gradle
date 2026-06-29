@@ -1,6 +1,8 @@
 apply plugin: 'com.android.library'
 apply plugin: 'expo-module-gradle-plugin'
 
+import expo.modules.plugin.gradle.ExpoModuleExtension
+
 // Inherit global properties
 buildscript {
   // Simple helper that allows the root project to override versions declared by this library.
@@ -11,6 +13,8 @@ buildscript {
 
 group = 'expo.modules.ekwenative'
 version = '0.7.10'
+
+def expoModuleExtension = project.extensions.getByType(ExpoModuleExtension)
 
 dependencies {
   implementation "androidx.cardview:cardview:1.0.0"
@@ -28,9 +32,16 @@ android {
     versionName "0.7.10"
     externalNativeBuild {
       cmake {
+        arguments(
+          "-DANDROID_STL=c++_shared",
+          "-DREACT_NATIVE_DIR=${expoModuleExtension.reactNativeDir}",
+        )
         abiFilters "arm64-v8a", "armeabi-v7a", "x86", "x86_64"
       }
     }
+  }
+  buildFeatures {
+    prefab true
   }
   externalNativeBuild {
     cmake {

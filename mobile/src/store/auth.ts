@@ -27,6 +27,11 @@ persistObservable(auth$.isPro, {
   pluginLocal: ObservablePersistMMKV,
 });
 
+export function getToken(): string | null {
+  const session = auth$.session.peek();
+  return session?.access_token ?? null;
+}
+
 // Actions
 export const authActions = {
   setSession: (session: Session | null): void => {

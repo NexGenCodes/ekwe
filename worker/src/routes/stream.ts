@@ -6,8 +6,17 @@ import * as witai from "../providers/witai";
 import { STREAM_STT_LANGUAGES } from "../languages";
 import { getStreamingProviderNames } from "../config";
 import { getLimits } from "../config";
-import { guardAutoDetect, guardLanguageCode } from "../security";
+import { guardAutoDetect, guardLanguageCode, guardStreamingAllowed } from "../security";
 import { Env, Tier } from "../types";
+
+// WebSocket close codes
+const WS_CLOSE = {
+  NORMAL: 1000,
+  TIER_BLOCKED: 4001,
+  IDLE_TIMEOUT: 4002,
+  NO_PROVIDER: 4004,
+  DURATION_EXCEEDED: 4005,
+} as const;
 
 interface StreamPipelineEntry {
   name: string;
@@ -39,7 +48,16 @@ const STREAMING_PIPELINE: StreamPipelineEntry[] = getStreamingProviderNames().ma
 
 const activeStreams = new Map<string, number>();
 const MAX_CONCURRENT_STREAMS = 3;
-const IDLE_TIMEOUT_MS = 30_000;
+const IDLE_TIMEOUT_MS = 60_000;
+const PING_INTERVAL_MS = 15_000;
+const CONFIG_NEGOTIATION_TIMEOUT_MS = 5_000;
+
+interface StreamSession {
+  startTime: number;
+  cumulativeBytes: number;
+  limitExceeded: boolean;
+  configReceived: boolean;
+}
 
 export async function handleStream(
   request: Request,
@@ -52,11 +70,10 @@ export async function handleStream(
     return new Response('Expected WebSocket upgrade', { status: 426 });
   }
 
-  if (tier === 'FREE') {
-    return new Response(
-      JSON.stringify({ error: 'STREAM_PRO_ONLY', message: 'Live transcription is a Pro feature.' }),
-      { status: 403, headers: { 'Content-Type': 'application/json' } },
-    );
+  // Gate streaming access by tier
+  const streamingGuard = guardStreamingAllowed(tier);
+  if (!streamingGuard.allowed) {
+    return streamingGuard.response;
   }
 
   const url = new URL(request.url);
@@ -84,44 +101,105 @@ export async function handleStream(
 
   server.accept();
 
+  const session: StreamSession = {
+    startTime: Date.now(),
+    cumulativeBytes: 0,
+    limitExceeded: false,
+    configReceived: false,
+  };
+
   try {
     const signal = new AbortController().signal;
-    const maxAudioBytes = getLimits(tier).maxAudioBytes;
-    let cumulativeBytes = 0;
-    let limitExceeded = false;
+    const limits = getLimits(tier);
+    const maxAudioBytes = limits.maxAudioBytes;
+    const maxDurationMs = limits.maxStreamDurationMs;
 
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let pingTimer: ReturnType<typeof setInterval> | undefined;
+
+    const clearTimers = (): void => {
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = undefined; }
+      if (pingTimer) { clearInterval(pingTimer); pingTimer = undefined; }
+    };
+
     const resetIdle = (): void => {
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
         logger.info('[stream] Idle timeout', { userId });
-        try { server.close(); } catch { /* ignore */ }
+        clearTimers();
+        try { server.close(WS_CLOSE.IDLE_TIMEOUT, 'Idle timeout'); } catch { /* ignore */ }
       }, IDLE_TIMEOUT_MS);
     };
     resetIdle();
 
+    // Ping keepalive
+    pingTimer = setInterval(() => {
+      try { server.send(JSON.stringify({ type: 'ping' })); } catch { clearTimers(); }
+    }, PING_INTERVAL_MS);
+
+    // Send config negotiation request
+    setTimeout(() => {
+      if (!session.configReceived) {
+        server.send(JSON.stringify({
+          type: 'config_request',
+          codec: 'opus',
+          sampleRate: 16000,
+          frameSizeMs: 20,
+        }));
+      }
+    }, CONFIG_NEGOTIATION_TIMEOUT_MS);
+
     server.addEventListener('message', (event: MessageEvent) => {
-      if (limitExceeded) return;
+      if (session.limitExceeded) return;
+
+      // Handle config negotiation
+      if (typeof event.data === 'string') {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'config' && msg.codec === 'opus') {
+            session.configReceived = true;
+            server.send(JSON.stringify({ type: 'config_ack', status: 'ready' }));
+            return;
+          }
+          if (msg.type === 'pong') return;
+        } catch { /* not JSON, treat as data */ }
+      }
+
       const isAudio = event.data instanceof ArrayBuffer || event.data instanceof Blob;
       if (isAudio) {
         resetIdle();
-        cumulativeBytes += event.data instanceof ArrayBuffer
+        session.cumulativeBytes += event.data instanceof ArrayBuffer
           ? event.data.byteLength
           : event.data.size;
-      }
-      if (cumulativeBytes > maxAudioBytes) {
-        limitExceeded = true;
-        if (idleTimer) clearTimeout(idleTimer);
-        server.send(JSON.stringify({
-          error: 'FILE_TOO_LARGE',
-          message: `Audio exceeds ${Math.round(maxAudioBytes / 1024 / 1024)}MB limit.`,
-        }));
-        server.close();
+
+        // Check duration limit
+        const elapsedMs = Date.now() - session.startTime;
+        if (maxDurationMs > 0 && elapsedMs > maxDurationMs) {
+          session.limitExceeded = true;
+          clearTimers();
+          server.send(JSON.stringify({
+            error: 'STREAM_DURATION_EXCEEDED',
+            message: `Stream duration limit of ${Math.round(maxDurationMs / 1000)} seconds exceeded.`,
+          }));
+          try { server.close(WS_CLOSE.DURATION_EXCEEDED, 'Duration exceeded'); } catch { /* ignore */ }
+          return;
+        }
+
+        // Check size limit
+        if (session.cumulativeBytes > maxAudioBytes) {
+          session.limitExceeded = true;
+          clearTimers();
+          server.send(JSON.stringify({
+            error: 'FILE_TOO_LARGE',
+            message: `Audio exceeds ${Math.round(maxAudioBytes / 1024 / 1024)}MB limit.`,
+          }));
+          try { server.close(WS_CLOSE.NORMAL, 'File too large'); } catch { /* ignore */ }
+        }
       }
     });
 
     server.addEventListener('close', () => {
-      if (idleTimer) clearTimeout(idleTimer);
+      clearTimers();
       const count = activeStreams.get(userId) ?? 1;
       if (count <= 1) {
         activeStreams.delete(userId);
@@ -161,7 +239,7 @@ export async function handleStream(
         error: 'NO_PROVIDER_AVAILABLE',
         message: 'No transcription provider could be reached.',
       }));
-      server.close();
+      try { server.close(WS_CLOSE.NO_PROVIDER, 'No provider'); } catch { /* ignore */ }
     }
   } catch (err) {
     logger.error('[stream] Internal error', { error: err instanceof Error ? err.message : String(err) });

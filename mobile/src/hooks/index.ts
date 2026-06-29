@@ -7,6 +7,7 @@ export * from "./platform";
 export * from "./ui";
 export { useHistory } from "./useHistory";
 export { useHistorySearch } from "./useHistorySearch";
+export { useHistoryListData } from "./useHistoryListData";
 export * from "./useLanguageSwitcher";
 export * from "./useVoiceDictation";
 export * from "./usePermissions";

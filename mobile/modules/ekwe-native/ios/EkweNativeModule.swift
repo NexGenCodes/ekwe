@@ -1,30 +1,50 @@
 import ExpoModulesCore
+import AVFoundation
 
 public class EkweNativeModule: Module {
+  private var audioEngine: AVAudioEngine?
+  private var isAudioRecording = false
+  private var currentAmplitude: Float = 0
+  private var captureMode: String = "file"
+  private var outputPath: String = ""
+
   public func definition() -> ModuleDefinition {
     Name("EkweNative")
 
+    OnCreate {
+      do {
+        let rt = try appContext.runtime
+        try rt.execute {
+          rt.withUnsafePointee { pointer in
+            installEkweNativeJSI(pointer)
+          }
+        }
+      } catch {
+        NSLog("[EkweNative] Failed to install JSI binding: \(error.localizedDescription)")
+      }
+    }
+
+    // ------------------------------------
+    // Events
+    // ------------------------------------
+    Events("onStateChanged", "onIntentQueued", "onAppForeground", "onAppBackground",
+           "onForegroundAppChanged", "onOpusPacket", "onVadSilence")
+
     // ------------------------------------
     // Bubble Overlay — iOS stubs
-    // On iOS the bubble is rendered in-app (no SYSTEM_ALERT_WINDOW),
-    // so these resolve with sensible defaults.
     // ------------------------------------
 
     AsyncFunction("hasOverlayPermission") { () -> Bool in
-      // iOS doesn't need overlay permission — always true
       return true
     }
 
     AsyncFunction("requestOverlayPermission") { () in
-      // No-op on iOS
     }
 
     AsyncFunction("startBubbleService") { () in
-      // No foreground service on iOS — handled by background modes
     }
 
     AsyncFunction("stopBubbleService") { () in
-      // No-op on iOS
     }
 
     AsyncFunction("getSavedPosition") { () -> [String: Double]? in
@@ -43,8 +63,6 @@ public class EkweNativeModule: Module {
 
     // ------------------------------------
     // Audio Effects — iOS stubs
-    // iOS handles audio processing at the AVAudioSession level,
-    // so these are no-ops. Expand here for custom CoreAudio work.
     // ------------------------------------
 
     AsyncFunction("attachEffects") { (_: Double) -> [String: Bool] in
@@ -56,27 +74,20 @@ public class EkweNativeModule: Module {
     }
 
     AsyncFunction("releaseEffects") { () in
-      // No-op on iOS
     }
 
     AsyncFunction("updateBubbleVisibility") { (visible: Bool) in
-      // iOS — Bubbles are in-app only, visibility is handled in JS
     }
 
     AsyncFunction("updateBubbleState") { (mode: String, data: String?) in
-      // iOS — Update Live Activity state
       print("[Ekwe] Updating iOS Live Activity state: \(mode)")
     }
 
     AsyncFunction("showFloatingCard") { (transcription: String, translation: String) in
-      // iOS — True floating cards are blocked by Apple.
-      // We fall back to the in-app SharedVoiceNoteOverlay handled in useShareIntentHandler.
       print("[Ekwe] iOS Ghost Mode: Falling back to in-app overlay")
     }
 
     OnAppForegrounded {
-      // PRO-GRADE EXCLUSIVITY: Kill all background UI (Live Activities)
-      // when the user enters the main app.
       print("[Ekwe] App foregrounded — cleaning up iOS background tasks")
     }
 
@@ -94,7 +105,7 @@ public class EkweNativeModule: Module {
     }
 
     // ------------------------------------
-    // Voice Session — iOS voice processing (NS + AEC + AGC via voiceChat mode)
+    // Voice Session — iOS voice processing
     // ------------------------------------
     AsyncFunction("configureVoiceSession") { () in
       let session = AVAudioSession.sharedInstance()
@@ -106,24 +117,115 @@ public class EkweNativeModule: Module {
     }
 
     // ------------------------------------
-    // AudioRecord — iOS stubs (uses AVAudioRecorder via expo-audio instead)
+    // AudioRecord — iOS native AVAudioEngine capture (dual-path)
     // ------------------------------------
-    AsyncFunction("startAudioRecording") { (_: String, _: Int) -> [String: Any] in
-      return ["success": false, "error": "Use expo-audio on iOS"]
+    AsyncFunction("startAudioRecording") { (path: String, sampleRate: Int, isLive: Bool) -> [String: Any] in
+      if self.isAudioRecording {
+        return ["success": false, "error": "Already recording"]
+      }
+
+      self.outputPath = path
+      self.captureMode = isLive ? "live" : "file"
+
+      do {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playAndRecord,
+                                mode: .voiceChat,
+                                options: [.allowBluetooth, .defaultToSpeaker])
+        try session.setPreferredIOBufferDuration(0.005)
+        try session.setActive(true)
+
+        let engine = AVAudioEngine()
+        let inputNode = engine.inputNode
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+
+        let desiredFormat = AVAudioFormat(commonFormat: .pcmFormatInt16,
+                                          sampleRate: 16000,
+                                          channels: 1,
+                                          interleaved: false)!
+
+        // Initialize C++ capture controller through bridge with callbacks
+        let captureOk = EkweAudioBridge.initCapture(path,
+                                                     sampleRate: Int32(sampleRate),
+                                                     channels: 1,
+                                                     isLive: isLive,
+                                                     opusPacketBlock: { [weak self] packet, rms in
+          guard let self = self else { return }
+          self.sendEvent("onOpusPacket", [
+            "packet": packet,
+            "rms": rms
+          ])
+        }, vadSilenceBlock: { [weak self] in
+          guard let self = self else { return }
+          self.sendEvent("onVadSilence", [:])
+        })
+        if !captureOk {
+          return ["success": false, "error": "Failed to init capture"]
+        }
+
+        inputNode.installTap(onBus: 0,
+                             bufferSize: 960,
+                             format: inputFormat) { (buffer, time) in
+          guard let channelData = buffer.floatChannelData else { return }
+
+          let frameLength = Int(buffer.frameLength)
+          var pcmBuffer = [Int16](repeating: 0, count: frameLength)
+
+          for i in 0..<frameLength {
+            let sample = channelData[0][i]
+            let clamped = max(-1.0, min(1.0, Double(sample)))
+            pcmBuffer[i] = clamped >= 0
+              ? Int16(clamped * 32767.0)
+              : Int16(clamped * 32768.0)
+          }
+
+          EkweAudioBridge.feedPcm(&pcmBuffer, numSamples: Int32(frameLength))
+
+          self.currentAmplitude = EkweAudioBridge.getAmplitude()
+        }
+
+        engine.prepare()
+        try engine.start()
+        self.audioEngine = engine
+        self.isAudioRecording = true
+
+        return ["success": true, "error": ""]
+      } catch {
+        self.isAudioRecording = false
+        self.audioEngine = nil
+        return ["success": false, "error": error.localizedDescription]
+      }
     }
 
     AsyncFunction("stopAudioRecording") { () -> [String: Any] in
-      return ["success": false, "error": "Use expo-audio on iOS",
-              "durationMs": 0, "waveform": [] as [Float]]
+      if !self.isAudioRecording {
+        return ["success": false, "error": "Not recording",
+                "durationMs": 0, "waveform": [] as [Float]]
+      }
+
+      self.isAudioRecording = false
+
+      if let engine = self.audioEngine {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        self.audioEngine = nil
+      }
+
+      EkweAudioBridge.stopCapture()
+
+      let waveformNs = EkweAudioBridge.lastWaveform()
+      let waveform = (waveformNs as? [NSNumber])?.map { $0.floatValue } ?? []
+      return ["success": true, "error": "",
+              "durationMs": 0, "waveform": waveform]
     }
 
-    AsyncFunction("resolveAndConvertToFlac") { (_: String, _: String) -> [String: Any] in
+    AsyncFunction("resolveAndConvertToOpus") { (_: String, _: String) -> [String: Any] in
       return ["success": false, "error": "Use extractWavAndWaveform on iOS",
               "durationMs": 0, "waveform": [] as [Float]]
     }
 
-    // ------------------------------------
-    // TODO: Live Activity / Dynamic Island (ActivityKit)
-    // ------------------------------------
+    AsyncFunction("getRecordingAmplitude") { () -> Double in
+      return Double(self.currentAmplitude)
+    }
   }
 }

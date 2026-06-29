@@ -117,13 +117,6 @@ export async function handleTranscribe(
       headerView[3] === 0x53
     ) {
       mimeType = "audio/ogg";
-    } else if (
-      headerView[0] === 0x66 &&
-      headerView[1] === 0x4c &&
-      headerView[2] === 0x61 &&
-      headerView[3] === 0x43
-    ) {
-      mimeType = "audio/flac";
     } else if (!mimeType || mimeType === "application/octet-stream") {
       mimeType = "audio/wav";
     }

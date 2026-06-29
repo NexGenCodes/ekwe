@@ -10,6 +10,15 @@ import type {
   StartRecordingResult,
 } from './EkweNative.types';
 
+declare global {
+  /**
+   * Installed by nativeInstallJsi() during module init.
+   * Returns the current RMS value [0,1] from the capture controller,
+   * or 0 if no recording is active.
+   */
+  var ekweNativeGetAmplitude: (() => number) | undefined;
+}
+
 declare class EkweNativeModule extends NativeModule<{
   onStateChanged: (event: {
     state: FloatingState;
@@ -20,6 +29,8 @@ declare class EkweNativeModule extends NativeModule<{
   onAppForeground: (event: {}) => void;
   onAppBackground: (event: {}) => void;
   onForegroundAppChanged: (event: { packageName: string }) => void;
+  onOpusPacket: (event: { packet: number[]; rms: number }) => void;
+  onVadSilence: (event: {}) => void;
 }> {
   // --- Bubble ---
   hasOverlayPermission(): Promise<boolean>;
@@ -78,16 +89,17 @@ declare class EkweNativeModule extends NativeModule<{
     outputPath: string,
   ): Promise<ExtractWavAndWaveformResult>;
 
-  // --- AudioRecord (Android) / stub (iOS) ---
+  // --- AudioRecord (dual-path: file or live) ---
   startAudioRecording(
     outputPath: string,
     sampleRate: number,
+    isLive?: boolean,
   ): Promise<StartRecordingResult>;
 
   stopAudioRecording(): Promise<AudioRecordingResult>;
 
-  // --- Direct content:// → FLAC (no temp file, Android only) ---
-  resolveAndConvertToFlac(
+  // --- Direct content:// → Ogg Opus (no temp file, Android only) ---
+  resolveAndConvertToOpus(
     contentUri: string,
     outputPath: string,
   ): Promise<ExtractWavAndWaveformResult>;

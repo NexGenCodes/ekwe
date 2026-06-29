@@ -77,3 +77,4 @@ modules/**/ios/build/
 .cxx/
 coverage/
 .expo-shared/
+.gstack/
