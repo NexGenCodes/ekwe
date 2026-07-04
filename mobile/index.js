@@ -2,6 +2,10 @@ import { registerRootComponent } from 'expo';
 import { AppRegistry } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+if (typeof globalThis !== 'undefined') {
+  globalThis.appStartTime = Date.now();
+}
+
 // Global unhandled promise rejection handler — logs full stack to Metro
 if (typeof ErrorUtils !== 'undefined') {
   const origHandler = ErrorUtils.getGlobalHandler();

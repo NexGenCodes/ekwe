@@ -152,7 +152,7 @@ public class EkweNativeModule: Module {
                                                      opusPacketBlock: { [weak self] packet, rms in
           guard let self = self else { return }
           self.sendEvent("onOpusPacket", [
-            "packet": packet,
+            "packet": packet.base64EncodedString(),
             "rms": rms
           ])
         }, vadSilenceBlock: { [weak self] in

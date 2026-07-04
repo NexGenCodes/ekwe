@@ -1,12 +1,13 @@
 import * as Crypto from "expo-crypto";
 import { File } from "expo-file-system";
+import * as Haptics from "expo-haptics";
 import {
   activateKeepAwakeAsync,
   deactivateKeepAwake,
 } from "expo-keep-awake";
 import { observable } from "@legendapp/state";
 import { useSelector } from "@legendapp/state/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import type { SharedValue } from "react-native-reanimated";
 
@@ -57,6 +58,7 @@ interface MachineState {
   error: string | null;
   capturedUri: string | null;
   capturedDurationMs: number;
+  elapsedMs: number;
   interimText: string;
   finalText: string;
   isLive: boolean;
@@ -69,6 +71,7 @@ const INITIAL_STATE: MachineState = {
   error: null,
   capturedUri: null,
   capturedDurationMs: 0,
+  elapsedMs: 0,
   interimText: "",
   finalText: "",
   isLive: false,
@@ -142,9 +145,13 @@ export const dictationActions = {
       audioActions.setRecordingState(RecordingState.Recording);
 
       // Start native capture (mode depends on isLive)
+      const startRecTime = Date.now();
       const startResult = await AudioCapture.startRecording(sessionId, () => {
         dictationActions.stopDictation();
       }, isLive ? "live" : "file");
+      const recStartDuration = Date.now() - startRecTime;
+      logger.info(`[Performance] AudioCapture.startRecording took: ${recStartDuration}ms`);
+      
       if (!startResult.ok) {
         logger.error("[VoiceDictation] startRecording failed:", startResult.error);
         dictation$.status.set("error");
@@ -214,6 +221,9 @@ export const dictationActions = {
       return null;
     }
 
+    // Set intermediate state immediately to prevent re-entrant calls
+    dictation$.status.set("processing");
+
     clearTimers();
     logger.info("[VoiceDictation] Stopping recording");
 
@@ -224,7 +234,11 @@ export const dictationActions = {
     }
     StreamTranscriber.disconnect();
 
+    const stopRecTime = Date.now();
     const captureResult = await AudioCapture.stopRecording();
+    const recStopDuration = Date.now() - stopRecTime;
+    logger.info(`[Performance] AudioCapture.stopRecording took: ${recStopDuration}ms`);
+    
     if (!captureResult.ok) {
       if (dictation$.status.peek() !== "preview") {
         dictation$.status.set("error");
@@ -400,9 +414,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
   const interimText = useSelector(() => dictation$.interimText.get());
   const finalText = useSelector(() => dictation$.finalText.get());
   const isLive = useSelector(() => dictation$.isLive.get());
-
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const elapsedMsRef = useRef(0);
+  const elapsedMs = useSelector(() => dictation$.elapsedMs.get());
 
   // AppState background listener — stop + cleanup
   useEffect(() => {
@@ -430,7 +442,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
   useEffect(() => {
     return (): void => {
-      deactivateKeepAwake(KEEP_AWAKE_TAG);
+      deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
       clearTimers();
       abortController?.abort();
       if (streamUnsub) {
@@ -446,8 +458,8 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
   const startDictation = useCallback(
     async (sourceLang: string, isLiveMode: boolean = false): Promise<void> => {
-      elapsedMsRef.current = 0;
-      setElapsedMs(0);
+      // Provide immediate haptic feedback before the async native initialization
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
       await dictationActions.startDictation(sourceLang, maxDurationMs, isLiveMode).catch((e) => {
         logger.error("[VoiceDictation] hook startDictation caught rejection:", e);
@@ -455,9 +467,9 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
       if (dictation$.status.peek() === "recording") {
         activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
+        const startTime = Date.now();
         timerInterval = setInterval(() => {
-          elapsedMsRef.current += TIMER_TICK_MS;
-          setElapsedMs(elapsedMsRef.current);
+          dictation$.elapsedMs.set(Date.now() - startTime);
         }, TIMER_TICK_MS);
       }
     },
@@ -471,20 +483,13 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
   const confirmDictation = useCallback(
     async (sourceLang: string): Promise<string | null> => {
-      const transcript = await dictationActions.confirmDictation(sourceLang);
-      if (transcript) {
-        setElapsedMs(0);
-        elapsedMsRef.current = 0;
-      }
-      return transcript;
+      return dictationActions.confirmDictation(sourceLang);
     },
     [],
   );
 
   const cancelDictation = useCallback(async (): Promise<void> => {
     deactivateKeepAwake(KEEP_AWAKE_TAG);
-    elapsedMsRef.current = 0;
-    setElapsedMs(0);
     await dictationActions.cancelDictation();
   }, []);
 

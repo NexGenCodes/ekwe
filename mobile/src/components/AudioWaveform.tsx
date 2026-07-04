@@ -34,6 +34,7 @@ export interface AudioWaveformProps {
   interactive?: boolean;
   onSeek?: (progress: number) => void;
   onSeeking?: (progress: number) => void;
+  onScrubStateChange?: (isScrubbing: boolean) => void;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -108,6 +109,7 @@ export function AudioWaveform({
   interactive = true,
   onSeek,
   onSeeking,
+  onScrubStateChange,
   style,
 }: AudioWaveformProps): React.ReactElement {
   const { color } = useTheme();
@@ -166,26 +168,43 @@ export function AudioWaveform({
 
   const gesture = Gesture.Pan()
     .enabled(interactive)
+    .onBegin(() => {
+      if (onScrubStateChange) runOnJS(onScrubStateChange)(true);
+    })
     .onUpdate((event) => {
+      const progress = Math.max(0, Math.min(1, event.x / measuredWidth.value));
+      if (progressSV && duration) {
+        progressSV.value = progress * duration;
+      }
       if (onSeeking) {
-        const progress = Math.max(0, Math.min(1, event.x / measuredWidth.value));
         runOnJS(onSeeking)(progress);
       }
     })
     .onEnd((event) => {
+      if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
       if (onSeek) {
         const progress = Math.max(0, Math.min(1, event.x / measuredWidth.value));
         runOnJS(onSeek)(progress);
       }
+    })
+    .onFinalize(() => {
+      if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
     });
 
   const tap = Gesture.Tap()
     .enabled(interactive)
+    .onBegin(() => {
+      if (onScrubStateChange) runOnJS(onScrubStateChange)(true);
+    })
     .onEnd((event) => {
+      if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
       if (onSeek) {
         const progress = Math.max(0, Math.min(1, event.x / measuredWidth.value));
         runOnJS(onSeek)(progress);
       }
+    })
+    .onFinalize(() => {
+      if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
     });
 
   const composed = Gesture.Exclusive(gesture, tap);

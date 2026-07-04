@@ -22,10 +22,10 @@ import type { DictationStatus } from "@/hooks/useVoiceDictation";
 
 const BARS = 40;
 
-const fmtTime = (ms: number): string => {
+const fmtTime = (seconds: number): string => {
   "worklet";
-  if (!ms || ms < 0) return "0:00";
-  const s = Math.floor(ms / 1000);
+  if (!seconds || seconds < 0) return "0:00";
+  const s = Math.floor(seconds);
   return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 };
 
@@ -101,13 +101,31 @@ export function RecordingInline({
 
   const dotOp = useSharedValue(1);
   useEffect(() => {
+    let active = true;
     if (isRecording) {
       dotOp.value = withRepeat(withTiming(0.2, { duration: 600 }), -1, true);
       history.value = new Array(BARS).fill(0);
+      
+      let lastUpdate = 0;
+      const loop = (timestamp: number): void => {
+        if (!active) return;
+        if (timestamp - lastUpdate >= 33) {
+          const globalObj = globalThis as unknown as { ekweNativeGetAmplitude?: () => number };
+          if (typeof globalObj.ekweNativeGetAmplitude === "function") {
+            amplitude.value = globalObj.ekweNativeGetAmplitude();
+          }
+          lastUpdate = timestamp;
+        }
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
     } else {
       dotOp.value = 1;
     }
-  }, [isRecording, dotOp, history]);
+    return (): void => {
+      active = false;
+    };
+  }, [isRecording, dotOp, history, amplitude]);
   const dotStyle = useAnimatedStyle(() => ({ opacity: dotOp.value }));
 
   const widthSV = useSharedValue(200);
@@ -213,6 +231,10 @@ export function RecordingInline({
                 inactiveColor={color.muted}
                 interactive
                 onSeek={(p) => player.seek(p * player.duration)}
+                onScrubStateChange={(isScrubbing) => {
+                  if (isScrubbing) player.pauseTimer();
+                  else player.resumeTimer();
+                }}
               />
               <Animated.View
                 style={[
@@ -268,7 +290,7 @@ export function RecordingInline({
               ]}
             />
             <Text variant="heading3" style={{ color: color.foreground }}>
-              {fmtTime(elapsedMs)}
+              {fmtTime(elapsedMs / 1000)}
             </Text>
           </Box>
 

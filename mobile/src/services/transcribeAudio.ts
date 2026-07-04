@@ -77,7 +77,7 @@ export async function transcribeAudio(
       uri: audio.uri,
       name: `audio.${extension}`,
       type: mimeType,
-    } as unknown as Blob);
+    } as any);
     formData.append("lang", sourceLang || "auto");
     formData.append("timestamp_granularities", "word");
 

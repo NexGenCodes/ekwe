@@ -4,7 +4,6 @@ import { Linking } from "react-native";
 
 import { EkweError } from "@/constants/errors";
 import AudioService from "@/services/AudioService";
-import { PLAN_LIMITS } from "@/constants/billing";
 import { Result, ok, err } from "@/types/Result";
 import { isAndroid, isIOS, triggerHaptic } from "@/utils";
 import { releaseAudioEffects } from "@/utils/AudioEffectsModule";
@@ -43,6 +42,7 @@ class AudioCaptureClass {
   private opusPacketListeners: ((packet: OpusPacket) => void)[] = [];
   private statusListeners: ((status: "started" | "stopped") => void)[] = [];
   private onAutoStopCallback: (() => void) | null = null;
+  private amplitudeRafId: number | null = null;
   private isStartingParams = false;
   private currentMode: CaptureMode = "file";
   private opusPacketSub: { remove: () => void } | null = null;
@@ -171,9 +171,13 @@ class AudioCaptureClass {
 
       // Subscribe to native Opus packets (live mode) and VAD silence (both modes)
       if (mode === "live") {
-        this.opusPacketSub = EkweNative.addListener("onOpusPacket", (event: { packet: number[]; rms: number }) => {
-          const buffer = new Uint8Array(event.packet).buffer;
-          const opusPacket: OpusPacket = { data: buffer, sessionId };
+        this.opusPacketSub = EkweNative.addListener("onOpusPacket", (event: { packet: string; rms: number }) => {
+          const binaryString = atob(event.packet);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const opusPacket: OpusPacket = { data: bytes.buffer, sessionId };
           this.opusPacketListeners.forEach((l) => l(opusPacket));
         });
       }
@@ -193,6 +197,19 @@ class AudioCaptureClass {
       });
 
       this.notifyStatusListeners("started");
+
+      if (this.amplitudeRafId) cancelAnimationFrame(this.amplitudeRafId);
+      
+      const pollAmplitude = () => {
+        const globalObj = globalThis as unknown as { ekweNativeGetAmplitude?: () => number };
+        if (typeof globalObj.ekweNativeGetAmplitude === "function") {
+          const val = globalObj.ekweNativeGetAmplitude();
+          this.currentMeteringData.push(val);
+          this.notifyListeners(val);
+        }
+        this.amplitudeRafId = requestAnimationFrame(pollAmplitude);
+      };
+      this.amplitudeRafId = requestAnimationFrame(pollAmplitude);
 
       triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -223,6 +240,11 @@ class AudioCaptureClass {
     this.vadSilenceSub?.remove();
     this.vadSilenceSub = null;
     this.onAutoStopCallback = null;
+    
+    if (this.amplitudeRafId) {
+      cancelAnimationFrame(this.amplitudeRafId);
+      this.amplitudeRafId = null;
+    }
 
     try {
       const result = await EkweNative.stopAudioRecording();
@@ -236,6 +258,7 @@ class AudioCaptureClass {
       const durationMs = result.durationMs;
       const waveform = result.waveform;
       this.currentRecordingPath = null;
+      this.currentSessionId = null; // MUST clear before notify
 
       this.notifyStatusListeners("stopped");
 
@@ -272,6 +295,11 @@ class AudioCaptureClass {
     this.opusPacketSub = null;
     this.vadSilenceSub?.remove();
     this.vadSilenceSub = null;
+    
+    if (this.amplitudeRafId) {
+      cancelAnimationFrame(this.amplitudeRafId);
+      this.amplitudeRafId = null;
+    }
 
     try {
       if (isAndroid || isIOS) {

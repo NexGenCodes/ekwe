@@ -17,10 +17,6 @@ import { ErrorBoundary, ToastContainer, AppAlertModal } from "@/components";
 import { Box } from "@/components/ui";
 import { useShareIntentHandler, useTheme, useTripleExclusivity } from "@/hooks";
 import { queryClient } from "@/hooks/queries/queryClient";
-import { HistoryService } from "@/services/HistoryService";
-import { SyncService } from "@/services/SyncService";
-import { initAuth, cleanupAuth } from "@/services/auth";
-import { initializeMMKV } from "@/services/mmkv";
 import { auth$ } from "@/store";
 import { logger } from "@/utils";
 
@@ -51,6 +47,8 @@ function InnerLayout(): React.ReactElement {
     if (isInitialized) {
       SplashScreen.hideAsync();
       if (sessionLoaded) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { HistoryService } = require("@/services/HistoryService");
         HistoryService.cleanupLocalHistory();
       }
     }
@@ -141,6 +139,13 @@ function InnerLayout(): React.ReactElement {
 
 function RootLayout(): React.ReactElement {
   useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { initAuth, cleanupAuth } = require("@/services/auth");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { initializeMMKV } = require("@/services/mmkv");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { SyncService } = require("@/services/SyncService");
+
     initAuth().catch((err: unknown) => {
       logger.error("[RootLayout] initAuth failed", err);
     });

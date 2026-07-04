@@ -75,23 +75,43 @@ export const initAuth = async (): Promise<void> => {
   const cachedSession = mmkv.getBoolean(SESSION_CACHE_KEY);
 
   if (cachedSession) {
-    // Might have a session — recover from SecureStore (async, can be slow)
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session) {
-        authActions.setSession(session);
-      } else {
-        // Stale cache — clear it
-        mmkv.set(SESSION_CACHE_KEY, false);
+      // 1. Sync read directly from mmkv to instantly populate the UI
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "";
+      const projectRef = supabaseUrl.match(/https:\/\/(.*?)\.supabase\.co/)?.[1];
+      const storageKey = projectRef ? `sb-${projectRef}-auth-token` : "supabase.auth.token";
+      
+      const rawSession = mmkv.getString(storageKey);
+      if (rawSession) {
+        const parsed = JSON.parse(rawSession);
+        authActions.setSession(parsed);
       }
+      
+      // 2. Fire the async fetch in the background to refresh tokens 
+      // without blocking the splash screen!
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          authActions.setSession(session);
+        } else {
+          mmkv.set(SESSION_CACHE_KEY, false);
+        }
+      }).catch(err => {
+        logger.error("[Auth] Background getSession error:", err);
+      });
+      
     } catch (err) {
-      logger.error("[Auth] getSession recovery error:", err);
+      logger.error("[Auth] MMKV session parse error:", err);
     }
   }
 
   authActions.setSessionLoaded(true);
+
+  // Telemetry: measure app startup to auth ready
+  const globalObj = globalThis as any;
+  if (globalObj.appStartTime) {
+    const timeToAuthInit = Date.now() - globalObj.appStartTime;
+    logger.info(`[Performance] Startup -> Auth Init complete: ${timeToAuthInit}ms`);
+  }
 };
 
 export const cleanupAuth = (): void => {

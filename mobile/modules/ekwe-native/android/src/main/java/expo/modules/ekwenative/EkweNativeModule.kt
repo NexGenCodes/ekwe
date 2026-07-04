@@ -68,8 +68,9 @@ class EkweNativeModule : Module() {
 
     @JvmStatic fun emitOpusPacketFromNative(packetData: ByteArray, rms: Float) {
       instance?.let { module ->
+        val base64Data = android.util.Base64.encodeToString(packetData, android.util.Base64.NO_WRAP)
         module.sendEvent("onOpusPacket", mapOf(
-          "packet" to packetData,
+          "packet" to base64Data,
           "rms" to rms
         ))
       }
@@ -340,6 +341,7 @@ class EkweNativeModule : Module() {
 
     // ─── AudioRecord direct capture (dual-path: file or live) ────────────
     AsyncFunction("startAudioRecording") { outputPath: String, sampleRate: Int, isLive: Boolean ->
+      val methodStart = System.currentTimeMillis()
       Log.d("EkweAudio", "startAudioRecording: path=$outputPath sr=$sampleRate live=$isLive")
       if (isAudioRecording) {
         Log.w("EkweAudio", "startAudioRecording: already recording, rejecting")
@@ -385,14 +387,22 @@ class EkweNativeModule : Module() {
           return@AsyncFunction mapOf("success" to false, "error" to "AudioRecord init failed")
         }
 
-        // Attach audio effects to the AudioRecord session
         val sessionId = audioRecord!!.audioSessionId
-        Log.d("EkweAudio", "startAudioRecording: sessionId=$sessionId, attaching effects...")
-        attachEffectsInternal(sessionId)
 
         Log.d("EkweAudio", "startAudioRecording: calling startRecording...")
         audioRecord?.startRecording()
         isAudioRecording = true
+        
+        Log.d("EkweAudio", "startAudioRecording: sessionId=$sessionId, attaching effects...")
+        try {
+          val effStart = System.currentTimeMillis()
+          attachEffectsInternal(sessionId)
+          val effEnd = System.currentTimeMillis()
+          Log.d("EkweAudioPerf", "attachEffectsInternal JNI took \${effEnd - effStart}ms")
+        } catch (e: Exception) {
+          Log.e("EkweAudio", "Failed to attach audio effects", e)
+        }
+
         Log.d("EkweAudio", "startAudioRecording: recording started, spinning up thread...")
 
         recordingThread = thread(name = "AudioRecord") {
@@ -421,6 +431,8 @@ class EkweNativeModule : Module() {
         }
 
         Log.d("EkweAudio", "startAudioRecording: returning success")
+        val methodEnd = System.currentTimeMillis()
+        Log.d("EkweAudioPerf", "startAudioRecording JNI took \${methodEnd - methodStart}ms")
         return@AsyncFunction mapOf("success" to true, "error" to "")
       } catch (e: Exception) {
         Log.e("EkweAudio", "startAudioRecording failed: ${e.message}", e)
@@ -438,6 +450,7 @@ class EkweNativeModule : Module() {
     }
 
     AsyncFunction("stopAudioRecording") { ->
+      val methodStart = System.currentTimeMillis()
       Log.d("EkweAudio", "stopAudioRecording called, isRecording=$isAudioRecording")
       if (!isAudioRecording) {
         return@AsyncFunction mapOf(
@@ -448,17 +461,18 @@ class EkweNativeModule : Module() {
 
       isAudioRecording = false
 
+      // Unblock the audioRecord.read() loop IMMEDIATELY
+      try {
+        audioRecord?.stop()
+      } catch (_: IllegalStateException) { }
+
       recordingThread?.interrupt()
       try {
-        recordingThread?.join(3000)
+        recordingThread?.join(500) // Should die instantly now
       } catch (_: InterruptedException) {
         recordingThread?.interrupt()
       }
       recordingThread = null
-
-      try {
-        audioRecord?.stop()
-      } catch (_: IllegalStateException) { }
 
       audioRecord?.release()
       audioRecord = null
@@ -471,6 +485,9 @@ class EkweNativeModule : Module() {
 
       val waveform = nativeGetLastWaveform().toList()
       Log.d("EkweAudio", "stopAudioRecording: waveform bins=${waveform.size}")
+
+      val methodEnd = System.currentTimeMillis()
+      Log.d("EkweAudioPerf", "stopAudioRecording JNI took \${methodEnd - methodStart}ms")
 
       return@AsyncFunction mapOf(
         "success" to true,

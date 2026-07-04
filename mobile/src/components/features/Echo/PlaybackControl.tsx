@@ -19,6 +19,7 @@ interface PlaybackControlProps {
   peaks: number[];
   onTogglePlay: () => void;
   onSeek: (seconds: number) => void;
+  onScrubStateChange?: (isScrubbing: boolean) => void;
 }
 
 /**
@@ -35,6 +36,7 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
   peaks,
   onTogglePlay,
   onSeek,
+  onScrubStateChange,
 }) => {
   const [scrubTime, setScrubTime] = useState<number | null>(null);
 
@@ -103,6 +105,7 @@ export const PlaybackControl: React.FC<PlaybackControlProps> = ({
               setScrubTime(null);
               onSeek(targetTime);
             }}
+            onScrubStateChange={onScrubStateChange}
           />
         </Box>
 

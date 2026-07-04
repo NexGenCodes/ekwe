@@ -15,11 +15,16 @@ import { borderRadius, opacity, zIndex } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 // Removed useAudioStream import due to deletion (BUG-06)
-const useAudioStream = () => ({
+const useAudioStream = (): {
+  isStreaming: boolean;
+  transcript: string;
+  startStream: (_mode: string) => void;
+  stopStream: () => void;
+} => ({
   isStreaming: false,
   transcript: "",
-  startStream: (mode: string) => {},
-  stopStream: () => {},
+  startStream: (_mode: string): void => {},
+  stopStream: (): void => {},
 });
 import { triggerHaptic } from "@/utils/haptics";
 

@@ -10,6 +10,8 @@ export interface SharedAudioPlayer {
   pause: () => void;
   seek: (seconds: number) => Promise<void>;
   cleanup: () => void;
+  pauseTimer: () => void;
+  resumeTimer: () => void;
   isPlaying: boolean;
   progress: number;
   progressSV: SharedValue<number>;
@@ -27,8 +29,9 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
   const [isLoaded, setIsLoaded] = useState(false);
 
   const isPlayingRef = useRef(false);
+  const isScrubbingRef = useRef(false);
 
-  const player = useAudioPlayer(uri);
+  const player = useAudioPlayer(uri, { downloadFirst: true });
 
   useEffect(() => {
     isPlayingRef.current = player.playing;
@@ -48,11 +51,11 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
     progressSV,
   ]);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<number | null>(null);
 
   const stopProgressTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
+    if (timerRef.current !== null) {
+      cancelAnimationFrame(timerRef.current);
       timerRef.current = null;
     }
   }, []);
@@ -61,7 +64,12 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
     stopProgressTimer();
     let lastStateUpdate = 0;
 
-    timerRef.current = setInterval(() => {
+    const loop = (): void => {
+      if (isScrubbingRef.current) {
+        timerRef.current = requestAnimationFrame(loop);
+        return;
+      }
+
       const currentTime = player.currentTime;
       const dur = player.duration;
 
@@ -70,15 +78,20 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
         setProgress(dur);
         stopProgressTimer();
         triggerHaptic();
-      } else {
-        progressSV.value = currentTime;
-        const now = Date.now();
-        if (now - lastStateUpdate > 100) {
-          setProgress(currentTime);
-          lastStateUpdate = now;
-        }
+        return;
       }
-    }, 16);
+
+      progressSV.value = currentTime;
+      const now = Date.now();
+      if (now - lastStateUpdate > 100) {
+        setProgress(currentTime);
+        lastStateUpdate = now;
+      }
+      
+      timerRef.current = requestAnimationFrame(loop);
+    };
+
+    timerRef.current = requestAnimationFrame(loop);
   }, [player, stopProgressTimer, progressSV]);
 
   useEffect(() => {
@@ -93,40 +106,70 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
   const play = useCallback(async (): Promise<void> => {
     try {
       await setIsAudioActiveAsync(true);
+      if (player.currentTime >= player.duration && player.duration > 0) {
+        player.seekTo(0);
+        progressSV.value = 0;
+        setProgress(0);
+      }
       player.play();
       triggerHaptic();
     } catch (error) {
       logger.error("[SharedAudioPlayer] Play failed:", error);
     }
-  }, [player]);
+  }, [player, progressSV]);
 
   const pause = useCallback((): void => {
     player.pause();
-    setIsAudioActiveAsync(false).catch(() => {});
   }, [player]);
+
+  const seekLockRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const seek = useCallback(
     async (seconds: number): Promise<void> => {
       const clampedPos = Math.max(0, Math.min(seconds, player.duration));
+      
+      // Lock timer to prevent rubber-banding while native seek executes
+      isScrubbingRef.current = true;
+      if (seekLockRef.current) clearTimeout(seekLockRef.current);
+      
       player.seekTo(clampedPos);
       progressSV.value = clampedPos;
       setProgress(clampedPos);
+
+      // Release lock after a short buffer to allow native currentTime to catch up
+      seekLockRef.current = setTimeout(() => {
+        isScrubbingRef.current = false;
+        seekLockRef.current = null;
+      }, 150);
     },
     [player, progressSV],
   );
 
   const cleanup = useCallback((): void => {
     stopProgressTimer();
+    if (seekLockRef.current) clearTimeout(seekLockRef.current);
     player.pause();
     player.replace(null);
     setIsAudioActiveAsync(false).catch(() => {});
   }, [player, stopProgressTimer]);
+
+  const pauseTimer = useCallback(() => {
+    isScrubbingRef.current = true;
+  }, []);
+
+  const resumeTimer = useCallback(() => {
+    if (!seekLockRef.current) {
+      isScrubbingRef.current = false;
+    }
+  }, []);
 
   return {
     play,
     pause,
     seek,
     cleanup,
+    pauseTimer,
+    resumeTimer,
     isPlaying: player.playing,
     progress,
     progressSV,

@@ -34,6 +34,10 @@ export const EchoConfigStep: React.FC<EchoConfigStepProps> = React.memo(
             player.isPlaying ? player.pause() : player.play()
           }
           onSeek={player.seek}
+          onScrubStateChange={(isScrubbing) => {
+            if (isScrubbing) player.pauseTimer();
+            else player.resumeTimer();
+          }}
         />
 
         {children}

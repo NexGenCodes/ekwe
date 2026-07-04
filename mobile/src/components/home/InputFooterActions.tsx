@@ -3,6 +3,9 @@ import React, { useMemo } from "react";
 import { StyleProp, ViewStyle } from "react-native";
 import Animated, {
   useAnimatedProps,
+  useSharedValue,
+  withTiming,
+  Easing,
 } from "react-native-reanimated";
 import Svg, { Circle } from "react-native-svg";
 
@@ -56,8 +59,13 @@ export const InputFooterActions = React.memo(
     const strokeWidth = 3;
     const circumference = 2 * Math.PI * radius;
 
+    const progressSV = useSharedValue(0);
+    React.useEffect(() => {
+      progressSV.value = withTiming(progress, { duration: 100, easing: Easing.linear });
+    }, [progress, progressSV]);
+
     const animatedProps = useAnimatedProps(() => ({
-      strokeDashoffset: circumference - progress * circumference,
+      strokeDashoffset: circumference - progressSV.value * circumference,
     }));
 
     // no-op in production; previous dev-only contrast checks were removed per request

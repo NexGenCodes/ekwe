@@ -149,13 +149,8 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     [],
   );
 
-  // Keep screen awake for the entire Echo session
-  useEffect((): (() => void) => {
-    activateKeepAwakeAsync("echoSession").catch(() => {});
-    return () => {
-      deactivateKeepAwake("echoSession").catch(() => {});
-    };
-  }, []);
+  // KeepAwake is now activated only during active processing steps
+  // (Transcribing / Translating) — see handleTranscribe & handleTranslate
 
   // API calls
   const { translate } = useTranslation();
@@ -226,6 +221,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     }
 
     try {
+      activateKeepAwakeAsync("echoSession").catch(() => {});
       // Audio is already decoded and pre-warmed during the Intent Resolution phase
       const safeUri = audioUri;
 
@@ -268,6 +264,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       dispatch({ type: "SET_ERROR", payload: message });
       dispatch({ type: "SET_STEP", payload: "Error" });
     } finally {
+      deactivateKeepAwake("echoSession").catch(() => {});
       IntentService.updateBubbleMode("IDLE");
     }
   };
@@ -302,6 +299,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     let translationResultText = null;
 
     try {
+      activateKeepAwakeAsync("echoSession").catch(() => {});
       const trResult = await translate(textToTranslate, source, target);
 
       if (!trResult.ok) {
@@ -326,6 +324,8 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       dispatch({ type: "SET_ERROR", payload: message });
       dispatch({ type: "SET_STEP", payload: "Error" });
       return; // Stop flow on translation error
+    } finally {
+      deactivateKeepAwake("echoSession").catch(() => {});
     }
 
     // Record to history safely: single "both" write (Full Transaction)
