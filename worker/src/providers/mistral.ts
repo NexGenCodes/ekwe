@@ -1,6 +1,6 @@
 import { Env, TranslateResult } from '../types';
 import { rotateKeys } from '../utils/keys';
-import { buildTranslatePrompt } from '../utils/hallucination';
+import { buildTranslatePrompt } from '../utils/prompts';
 import { fetchWithTimeout, getClientHeaders, TIMEOUT_FAST } from '../utils/fetch';
 import { logger } from '../logger';
 
@@ -31,9 +31,9 @@ export async function translate(
             ...getClientHeaders(),
           },
           body: JSON.stringify({
-            model: 'mistral-small-latest',
+            model: 'mistral-small-2603',
             messages: [
-              { role: 'system', content: buildPrompt(targetLang, sourceLang) },
+              { role: 'system', content: buildTranslatePrompt(targetLang, sourceLang) },
               { role: 'user', content: text },
             ],
             temperature: 0,
@@ -60,7 +60,7 @@ export async function translate(
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) return null;
 
-  return { translation: content, provider: 'mistral-small' };
+  return { translation: content, provider: 'mistral' };
 }
 
-const buildPrompt = buildTranslatePrompt;
+export { ALL_LANGUAGES as supportedLanguages } from '../languages';

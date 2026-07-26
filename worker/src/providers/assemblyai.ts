@@ -1,8 +1,8 @@
 import { Env, TranscribeResult } from '../types';
 import { rotateKeys } from '../utils/keys';
-import { isHallucination } from '../utils/hallucination';
+import { isHallucination } from '../utils/prompts';
 import { fetchWithTimeout, TIMEOUT_FAST, abortableDelay } from '../utils/fetch';
-import { getFirstKey, connectWithTimeout, createOpusDecodingInterceptor } from '../utils/stream';
+import { rotateWsKeys, createOpusDecodingInterceptor } from '../utils/websocket';
 import { logger } from '../logger';
 
 const ASSEMBLYAI_UPLOAD = 'https://api.assemblyai.com/v2/upload';
@@ -51,7 +51,7 @@ export async function transcribe(
             body: err,
           });
         }
-        return new Response(null, { status: uploadRes.status }); // Pass status back to rotateKeys so it can retry
+        return new Response(null, { status: uploadRes.status });
       }
       const { upload_url } = (await uploadRes.json()) as { upload_url: string };
 
@@ -101,10 +101,12 @@ export async function transcribe(
       for (let i = 0; i < MAX_POLLS; i++) {
         await abortableDelay(POLL_INTERVAL, signal);
 
-        const poll = await fetch(`${ASSEMBLYAI_TRANSCRIPT}/${id}`, {
-          headers: { Authorization: key },
+        const poll = await fetchWithTimeout(
+          `${ASSEMBLYAI_TRANSCRIPT}/${id}`,
+          { headers: { Authorization: key }, signal },
+          TIMEOUT_FAST,
           signal,
-        });
+        );
 
         const data = (await poll.json()) as AssemblyResult;
 
@@ -120,10 +122,10 @@ export async function transcribe(
         }
         if (data.status === 'error') {
           logger.error('[assemblyai] Processing error', { error: data.error });
-          return new Response(null, { status: 500 }); // Break polling
+          return new Response(null, { status: 500 });
         }
       }
-      return new Response(null, { status: 504 }); // Timeout
+      return new Response(null, { status: 504 });
     },
     signal,
   );
@@ -135,7 +137,8 @@ export async function transcribe(
     duration?: number;
     language?: string;
   };
-  if (!isHallucination(finalData.text)) {
+  const durationMs = finalData.duration ? finalData.duration * 1000 : undefined;
+  if (!isHallucination(finalData.text, durationMs)) {
     return {
       text: finalData.text,
       provider: 'assemblyai',
@@ -167,19 +170,14 @@ export async function handleStream(
   clientWs: WebSocket,
   _signal: AbortSignal,
 ): Promise<boolean> {
-  const key = getFirstKey(env, 'ASSEMBLYAI_KEY_');
-  if (!key) return false;
-
-  const params = new URLSearchParams({
-    sample_rate: '16000',
-    token: key,
+  const aaiWs = await rotateWsKeys(env, 'ASSEMBLYAI_KEY_', (key) => {
+    const params = new URLSearchParams({
+      sample_rate: '16000',
+      token: key,
+    });
+    if (lang && lang !== 'auto') params.set('language_code', lang);
+    return `wss://api.assemblyai.com/v2/realtime/ws?${params}`;
   });
-  // AssemblyAI supports auto-detection; omit language_code for auto
-  if (lang && lang !== 'auto') params.set('language_code', lang);
-
-  const aaiWs = await connectWithTimeout(
-    `wss://api.assemblyai.com/v2/realtime/ws?${params}`,
-  );
   if (!aaiWs) return false;
 
   createOpusDecodingInterceptor(clientWs, aaiWs, (data) => {

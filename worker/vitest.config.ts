@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
+      '@ekwe/shared': resolve(__dirname, '../shared/index.ts'),
     },
   },
   test: {

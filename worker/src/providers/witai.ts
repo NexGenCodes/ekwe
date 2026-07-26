@@ -1,10 +1,11 @@
 import { logger } from '../logger';
 import { Env, TranscribeResult } from '../types';
 import { sanitizeKey } from '../utils/keys';
-import { isHallucination } from '../utils/hallucination';
+import { isHallucination } from '../utils/prompts';
 import { getUserAgent, fetchWithTimeout, TIMEOUT_SLOW } from '../utils/fetch';
 import { decodeOpusFrame, isOpusDecoderReady } from '../utils/opus';
 import { pcmToWav } from '../utils/wav';
+import { mergePcmFrames } from '../utils/pcm';
 
 const WITAI_DICTATION = 'https://api.wit.ai/dictation?v=20240304';
 
@@ -73,7 +74,7 @@ export async function transcribe(
 
   const data = await parseStream(res);
   if (data?.text && !isHallucination(data.text)) {
-    return { text: data.text, provider: `witai-${lang}`, language: lang };
+    return { text: data.text, provider: 'witai', language: lang };
   }
 
   if (data?.text) {
@@ -125,13 +126,7 @@ export async function handleStream(
     start(controller) {
       const flushPcm = (): void => {
         if (pcmFrames.length === 0) return;
-        const totalLen = pcmFrames.reduce((sum, arr) => sum + arr.length, 0);
-        const merged = new Int16Array(totalLen);
-        let offset = 0;
-        for (const arr of pcmFrames) {
-          merged.set(arr, offset);
-          offset += arr.length;
-        }
+        const merged = mergePcmFrames(pcmFrames);
         pcmFrames = [];
         const wav = pcmToWav(merged, 16000);
         controller.enqueue(wav);
@@ -242,7 +237,7 @@ export async function handleStream(
             clientWs.send(JSON.stringify({
               type: isFinal ? 'final' : 'interim',
               text: data.text,
-              provider: `witai-${lang}`,
+              provider: 'witai',
             }));
           }
         } catch { /* incomplete JSON, wait for more data */ }

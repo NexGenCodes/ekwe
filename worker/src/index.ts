@@ -10,6 +10,11 @@ import { handleCheckoutInitialize, handlePricing } from "./routes/checkout";
 import { handleWebhook } from "./routes/webhook";
 import { CLIENT_ABORTED, Env, Tier } from "./types";
 import { checkPreflight } from "./utils/preflight";
+import { initOpusDecoder } from "./utils/opus";
+
+initOpusDecoder().catch((err) => {
+  logger.error("[opus] Module-level init failed", { error: String(err) });
+});
 
 async function handleRequest(
   request: Request,
@@ -25,6 +30,14 @@ async function handleRequest(
 
   const url = new URL(request.url);
   let response: Response;
+
+  // ─── Health Check (no auth required) ───
+  if (request.method === "GET" && url.pathname === "/health") {
+    return addCorsHeaders(
+      Response.json({ status: 'ok', timestamp: Date.now() }),
+      corsHeaders,
+    );
+  }
 
   // ─── Webhook Route (no JWT auth — uses signature verification) ───
   if (request.method === "POST" && url.pathname === "/webhook") {
@@ -77,7 +90,10 @@ async function handleRequest(
     if (!success) {
       logger.warn(`[rate-limiter] Blocked request for key: ${rateLimitKey}`);
       if (isStream) {
-        return new Response('Rate limit exceeded', { status: 429 });
+        return new Response('Rate limit exceeded', {
+          status: 429,
+          headers: { 'Retry-After': '60' },
+        });
       }
       return addCorsHeaders(
         Response.json(
@@ -85,7 +101,7 @@ async function handleRequest(
             error: "TOO_MANY_REQUESTS",
             message: "Rate limit exceeded. Please slow down.",
           },
-          { status: 429 },
+          { status: 429, headers: { 'Retry-After': '60' } },
         ),
         corsHeaders,
       );
@@ -113,13 +129,14 @@ async function handleRequest(
   }
 
   if (!preflight.allowed) {
+    const retryAfter = Math.ceil(preflight.cooldown_remaining || 0);
     return addCorsHeaders(
       Response.json(
         {
           error: "EKWE_RATE_LIMIT",
-          message: `Please wait ${Math.ceil(preflight.cooldown_remaining || 0)} seconds.`,
+          message: `Please wait ${retryAfter} seconds.`,
         },
-        { status: 429 },
+        { status: 429, headers: { 'Retry-After': String(retryAfter) } },
       ),
       corsHeaders,
     );

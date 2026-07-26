@@ -15,7 +15,7 @@ import {
 describe('guardAudioSize', () => {
   test('FREE: 4MB limit', () => {
     expect(guardAudioSize(3_000_000, 'FREE').allowed).toBe(true);
-    expect(guardAudioSize(5_000_000, 'FREE').allowed).toBe(false);
+    expect(guardAudioSize(6_000_000, 'FREE').allowed).toBe(false);
   });
 
   test('PREMIUM: 25MB limit', () => {

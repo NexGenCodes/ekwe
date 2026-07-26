@@ -9,6 +9,7 @@ import * as witai from "../providers/witai";
 import { getTranscribeProviderNames, getLimits } from "../config";
 import { guardAudioSize, guardAutoDetect, guardLanguageCode } from "../security";
 import { hashBytes } from "../utils/keys";
+import { validateTranscriptLanguage } from "../autoDetect";
 import { CLIENT_ABORTED, Env, Tier, TranscribeResult } from "../types";
 
 interface PipelineEntry {
@@ -196,11 +197,20 @@ export async function handleTranscribe(
       let result: TranscribeResult | null = null;
       try {
         result = await provider.fn(audioBlob, effectiveLang, env, timeoutCtrl.signal);
+        if (!result && !timeoutCtrl.signal.aborted) {
+          await new Promise((r) => setTimeout(r, 100));
+          result = await provider.fn(audioBlob, effectiveLang, env, timeoutCtrl.signal);
+        }
       } finally {
         clearTimeout(timeoutId);
         signal.removeEventListener('abort', onClientAbort);
       }
       if (result) {
+        if (isAuto && result.language && !validateTranscriptLanguage(result.text, result.language)) {
+          logger.info(`[transcribe] ${provider.name} rejected (language mismatch)`);
+          continue;
+        }
+
         logger.info(`[transcribe] Success: ${provider.name}`, {
           lang: result.language,
           provider: result.provider,

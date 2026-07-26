@@ -1,6 +1,6 @@
 import { Env, TranscribeResult, TranslateResult } from '../types';
 import { rotateKeys } from '../utils/keys';
-import { isHallucination, buildTranslatePrompt } from '../utils/hallucination';
+import { isHallucination, buildTranslatePrompt } from '../utils/prompts';
 import { mimeToExt } from '../utils/mime';
 import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from '../utils/fetch';
 import { logger } from '../logger';
@@ -24,7 +24,7 @@ export async function transcribe(
     (key) => {
       const body = new FormData();
       body.append('file', blob, `audio.${mimeToExt(blob.type)}`);
-      body.append('model', 'whisper-large-v3');
+      body.append('model', 'whisper-large-v3-turbo');
       if (lang && lang !== 'auto') body.append('language', lang);
       body.append('response_format', 'json');
       body.append('temperature', '0');
@@ -106,7 +106,7 @@ export async function translate(
           body: JSON.stringify({
             model: 'llama-3.3-70b-versatile',
             messages: [
-              { role: 'system', content: buildPrompt(targetLang, sourceLang) },
+              { role: 'system', content: buildTranslatePrompt(targetLang, sourceLang) },
               { role: 'user', content: text },
             ],
             temperature: 0,
@@ -134,8 +134,7 @@ export async function translate(
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) return null;
 
-  return { translation: content, provider: 'groq-llama-3.3-70b' };
+  return { translation: content, provider: 'groq' };
 }
 
-const buildPrompt = buildTranslatePrompt;
 export { ALL_LANGUAGES as supportedLanguages } from '../languages';

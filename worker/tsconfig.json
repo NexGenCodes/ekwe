@@ -9,8 +9,9 @@
     "isolatedModules": true,
     "types": ["vitest/globals"],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@ekwe/shared": ["../shared/index.ts"]
     }
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts", "worker-configuration.d.ts", "check-providers.mjs.d.ts", "../shared/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts", "worker-configuration.d.ts", "check-providers.mjs.d.ts"]
 }

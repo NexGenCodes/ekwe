@@ -26,6 +26,15 @@ export interface AuthResult {
   tier: Tier;
 }
 
+function extractAuthResult(payload: JWTPayloadWithMeta): AuthResult | null {
+  if (!payload.sub) return null;
+  return {
+    userId: payload.sub,
+    userEmail: payload.email || '',
+    tier: payload.app_metadata?.is_pro ? 'PREMIUM' : 'FREE',
+  };
+}
+
 /**
  * Verifies a Supabase JWT and returns the user's ID, email, and tier.
  * Retries once with a fresh JWKS on verification failure (key rotation).
@@ -39,26 +48,14 @@ export async function authenticate(
       issuer: `${env.SUPABASE_URL}/auth/v1`,
       audience: 'authenticated',
     });
-    const meta = payload as JWTPayloadWithMeta;
-    if (!meta.sub) return null;
-    return {
-      userId: meta.sub,
-      userEmail: meta.email || '',
-      tier: meta.app_metadata?.is_pro ? 'PREMIUM' : 'FREE',
-    };
+    return extractAuthResult(payload as JWTPayloadWithMeta);
   } catch {
     try {
       const { payload } = await jwtVerify(token, getJWKS(env, true), {
         issuer: `${env.SUPABASE_URL}/auth/v1`,
         audience: 'authenticated',
       });
-      const meta = payload as JWTPayloadWithMeta;
-      if (!meta.sub) return null;
-      return {
-        userId: meta.sub,
-        userEmail: meta.email || '',
-        tier: meta.app_metadata?.is_pro ? 'PREMIUM' : 'FREE',
-      };
+      return extractAuthResult(payload as JWTPayloadWithMeta);
     } catch {
       logger.warn('[auth] JWT verification failed after JWKS refresh');
       return null;

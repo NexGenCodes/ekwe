@@ -6,7 +6,7 @@ import * as witai from "../providers/witai";
 import { STREAM_STT_LANGUAGES } from "../languages";
 import { getStreamingProviderNames } from "../config";
 import { getLimits } from "../config";
-import { guardAutoDetect, guardLanguageCode, guardStreamingAllowed } from "../security";
+import { guardAutoDetect, guardLanguageCode, guardStreamingAllowed, guardStreamDuration } from "../security";
 import { Env, Tier } from "../types";
 
 // WebSocket close codes
@@ -113,14 +113,15 @@ export async function handleStream(
     const signal = abortController.signal;
     const limits = getLimits(tier);
     const maxAudioBytes = limits.maxAudioBytes;
-    const maxDurationMs = limits.maxStreamDurationMs;
 
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let pingTimer: ReturnType<typeof setInterval> | undefined;
+    let configTimeoutTimer: ReturnType<typeof setTimeout> | undefined;
 
     const clearTimers = (): void => {
       if (idleTimer) { clearTimeout(idleTimer); idleTimer = undefined; }
       if (pingTimer) { clearInterval(pingTimer); pingTimer = undefined; }
+      if (configTimeoutTimer) { clearTimeout(configTimeoutTimer); configTimeoutTimer = undefined; }
     };
 
     const resetIdle = (): void => {
@@ -150,6 +151,21 @@ export async function handleStream(
       }
     }, CONFIG_NEGOTIATION_TIMEOUT_MS);
 
+    // Close if no config received within timeout
+    configTimeoutTimer = setTimeout(() => {
+      if (!session.configReceived) {
+        logger.warn('[stream] No config received, closing', { userId });
+        clearTimers();
+        try {
+          server.send(JSON.stringify({
+            error: 'CONFIG_TIMEOUT',
+            message: 'Client did not send config within timeout.',
+          }));
+          server.close(WS_CLOSE.NORMAL, 'Config timeout');
+        } catch { /* ignore */ }
+      }
+    }, CONFIG_NEGOTIATION_TIMEOUT_MS * 3);
+
     server.addEventListener('message', (event: MessageEvent) => {
       if (session.limitExceeded) return;
 
@@ -175,13 +191,10 @@ export async function handleStream(
 
         // Check duration limit
         const elapsedMs = Date.now() - session.startTime;
-        if (maxDurationMs > 0 && elapsedMs > maxDurationMs) {
+        const durationGuard = guardStreamDuration(elapsedMs, tier);
+        if (!durationGuard.allowed) {
           session.limitExceeded = true;
           clearTimers();
-          server.send(JSON.stringify({
-            error: 'STREAM_DURATION_EXCEEDED',
-            message: `Stream duration limit of ${Math.round(maxDurationMs / 1000)} seconds exceeded.`,
-          }));
           try { server.close(WS_CLOSE.DURATION_EXCEEDED, 'Duration exceeded'); } catch { /* ignore */ }
           return;
         }

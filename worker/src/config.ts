@@ -1,16 +1,20 @@
 import { Tier } from "./types";
-import { PLAN_CONFIG as SHARED_PLAN_CONFIG, USD_PRICE } from "../../shared/plans";
-import type { PlanPricing } from "../../shared/plans";
+import { PLAN_CONFIG as SHARED_PLAN_CONFIG, USD_PRICE } from "@ekwe/shared";
+import type { PlanPricing } from "@ekwe/shared";
+
+type TranscribeProvider = 'witai' | 'cohere' | 'gladia' | 'cloudflare' | 'groq' | 'deepgram' | 'assemblyai';
+type StreamProvider = 'deepgram' | 'witai' | 'assemblyai' | 'gladia';
+type TranslateProvider = 'groq' | 'gemini' | 'cohere' | 'openrouter' | 'cloudflare' | 'mistral';
 
 const PLAN_CONFIG = {
   plans: SHARED_PLAN_CONFIG,
   pipelines: {
-    FREE: ['witai', 'cohere', 'gladia', 'cloudflare', 'groq'] as readonly string[],
-    PREMIUM: ['deepgram', 'gladia', 'assemblyai', 'witai', 'groq', 'cloudflare'] as readonly string[],
-    STREAMING: ['deepgram', 'witai', 'assemblyai', 'gladia'] as readonly string[],
+    FREE: ['witai', 'cohere', 'gladia', 'cloudflare', 'groq'] as readonly TranscribeProvider[],
+    PREMIUM: ['deepgram', 'gladia', 'assemblyai', 'witai', 'groq', 'cloudflare'] as readonly TranscribeProvider[],
+    STREAMING: ['deepgram', 'witai', 'assemblyai', 'gladia'] as readonly StreamProvider[],
     TRANSLATE: {
-      FREE: ['groq', 'gemini', 'cohere', 'openrouter', 'cloudflare'] as readonly string[],
-      PREMIUM: ['gemini', 'cohere', 'mistral', 'groq', 'openrouter', 'cloudflare'] as readonly string[],
+      FREE: ['groq', 'gemini', 'cohere', 'openrouter', 'cloudflare'] as readonly TranslateProvider[],
+      PREMIUM: ['gemini', 'cohere', 'mistral', 'groq', 'openrouter', 'cloudflare'] as readonly TranslateProvider[],
     },
   },
   pricing: {
@@ -22,7 +26,7 @@ export { PLAN_CONFIG };
 
 // ─── Limits ────────────────────────────────────────────────────────
 
-import { FREE_LIMITS, PREMIUM_LIMITS } from "../../shared/plans";
+import { FREE_LIMITS, PREMIUM_LIMITS } from "@ekwe/shared";
 
 export function getLimits(tier: Tier): typeof FREE_LIMITS {
   return tier === "PREMIUM" ? PREMIUM_LIMITS : FREE_LIMITS;

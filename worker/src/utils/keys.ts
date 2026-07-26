@@ -1,6 +1,6 @@
 import { CLIENT_ABORTED, Env } from "../types";
 
-function getRandomInt(max: number): number {
+export function getRandomInt(max: number): number {
   const arr = new Uint32Array(1);
   crypto.getRandomValues(arr);
   return arr[0] % max;
@@ -66,7 +66,7 @@ export async function rotateKeys(
       continue;
     }
 
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401 || res.status === 402 || res.status === 403) {
       await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, 'true', {
         expirationTtl: 86400,
       });

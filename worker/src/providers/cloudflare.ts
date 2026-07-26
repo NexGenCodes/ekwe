@@ -1,5 +1,5 @@
 import { Env, TranscribeResult, TranslateResult } from '../types';
-import { isHallucination, buildTranslatePrompt } from '../utils/hallucination';
+import { isHallucination, buildTranslatePrompt } from '../utils/prompts';
 import { logger } from '../logger';
 
 /**
@@ -11,13 +11,16 @@ import { logger } from '../logger';
 
 export async function transcribe(
   blob: Blob,
-  _lang: string,
+  lang: string,
   env: Env,
   _signal: AbortSignal,
 ): Promise<TranscribeResult | null> {
   try {
     const audio = Array.from(new Uint8Array(await blob.arrayBuffer()));
-    const result = await env.AI.run('@cf/openai/whisper', { audio });
+    const input = lang && lang !== 'auto'
+      ? { audio, language: lang }
+      : { audio };
+    const result = await env.AI.run('@cf/openai/whisper', input);
     const text = typeof result?.text === 'string' ? result.text : '';
 
     if (text && !isHallucination(text)) {
@@ -52,7 +55,7 @@ export async function translate(
     const response =
       typeof result?.response === 'string' ? result.response : '';
     if (response) {
-      return { translation: response, provider: 'cloudflare-ai-llama3' };
+      return { translation: response, provider: 'cloudflare' };
     }
   } catch (e) {
     logger.error('[cloudflare] Translation error', {

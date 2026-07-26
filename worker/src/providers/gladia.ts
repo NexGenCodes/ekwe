@@ -1,9 +1,9 @@
 import { Env, TranscribeResult } from '../types';
 import { rotateKeys } from '../utils/keys';
-import { isHallucination } from '../utils/hallucination';
+import { isHallucination } from '../utils/prompts';
 import { fetchWithTimeout, TIMEOUT_FAST, abortableDelay } from '../utils/fetch';
 import { mimeToExt } from '../utils/mime';
-import { getFirstKey, connectWithTimeout, createOpusDecodingInterceptor } from '../utils/stream';
+import { rotateWsKeys, createStreamInterceptor } from '../utils/websocket';
 import { logger } from '../logger';
 
 const GLADIA_UPLOAD = 'https://api.gladia.io/v2/upload';
@@ -28,8 +28,6 @@ export async function transcribe(
     signal,
   );
 
-  // rotateKeys expects Response, but Gladia is multi-step.
-  // We use a workaround: return a synthetic Response from attemptTranscription.
   if (!res?.ok) return null;
 
   const data = (await res.json()) as { text?: string; language?: string };
@@ -107,10 +105,10 @@ async function attemptTranscription(
   for (let i = 0; i < MAX_POLLS; i++) {
     await abortableDelay(POLL_INTERVAL, signal);
 
-    const poll = await fetch(result_url, {
+    const poll = await fetchWithTimeout(result_url, {
       headers: { 'x-gladia-key': apiKey },
       signal,
-    });
+    }, TIMEOUT_FAST, signal);
 
     const data = (await poll.json()) as GladiaResult;
 
@@ -131,7 +129,6 @@ async function attemptTranscription(
     });
   }
 
-  // Timeout
   return Response.json({ error: 'gladia_timeout' }, { status: 504 });
 }
 
@@ -157,28 +154,24 @@ export async function handleStream(
   clientWs: WebSocket,
   _signal: AbortSignal,
 ): Promise<boolean> {
-  const key = getFirstKey(env, 'GLADIA_KEY_');
-  if (!key) return false;
-
-  const params = new URLSearchParams({
-    sample_rate: '16000',
-    channels: '1',
-    encoding: 'wav/pcm',
-    x_gladia_key: key,
+  const glWs = await rotateWsKeys(env, 'GLADIA_KEY_', (key) => {
+    const params = new URLSearchParams({
+      sample_rate: '16000',
+      channels: '1',
+      encoding: 'opus',
+      x_gladia_key: key,
+    });
+    if (lang && lang !== 'auto') params.set('language', lang);
+    return `wss://api.gladia.io/audio/text/audio-transcription?${params}`;
   });
-  if (lang && lang !== 'auto') params.set('language', lang);
-
-  const glWs = await connectWithTimeout(
-    `wss://api.gladia.io/audio/text/audio-transcription?${params}`,
-  );
   if (!glWs) return false;
 
-  createOpusDecodingInterceptor(clientWs, glWs, (data) => {
+  createStreamInterceptor(clientWs, glWs, (data) => {
     try {
       const payload = JSON.parse(data);
       if (payload.type === 'transcript' && payload.transcription) {
         const text = payload.transcription;
-        const isFinal = payload.time_end !== undefined && payload.type === 'final';
+        const isFinal = payload.time_end !== undefined;
 
         if (text && !isHallucination(text)) {
           clientWs.send(
@@ -191,7 +184,7 @@ export async function handleStream(
         }
       }
     } catch { /* ignore parse errors */ }
-  }, true);
+  });
 
   return true;
 }

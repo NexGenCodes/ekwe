@@ -27,7 +27,7 @@ describe('Cohere provider', () => {
     const result = await cohere.transcribe(blob, 'en', mockEnv(), mockSignal());
     expect(result).not.toBeNull();
     expect(result!.text).toBe('hello world');
-    expect(result!.provider).toBe('cohere-transcribe');
+    expect(result!.provider).toBe('cohere');
   });
 
   test('transcribe returns null for unsupported language', async () => {
@@ -88,7 +88,7 @@ describe('Cohere provider', () => {
     );
     expect(result).not.toBeNull();
     expect(result!.translation).toBe('Bonjour le monde');
-    expect(result!.provider).toBe('cohere-command-r-plus');
+    expect(result!.provider).toBe('cohere');
   });
 
   test('returns null on HTTP error', async () => {

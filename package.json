@@ -1,0 +1,11 @@
+{
+  "name": "ekwe-monorepo",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "worker"
+  ],
+  "dependencies": {
+    "libopus-wasm": "^0.2.0"
+  }
+}

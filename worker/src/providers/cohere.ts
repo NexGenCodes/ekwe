@@ -1,6 +1,6 @@
 import { Env, TranscribeResult, TranslateResult } from '../types';
 import { rotateKeys } from '../utils/keys';
-import { buildTranslatePrompt } from '../utils/hallucination';
+import { buildTranslatePrompt } from '../utils/prompts';
 import { fetchWithTimeout, getClientHeaders, TIMEOUT_FAST } from '../utils/fetch';
 import { mimeToExt } from '../utils/mime';
 import { logger } from '../logger';
@@ -39,7 +39,7 @@ export async function translate(
           body: JSON.stringify({
             model: 'command-r7b-12-2024',
             messages: [
-              { role: 'system', content: buildPrompt(targetLang, sourceLang) },
+              { role: 'system', content: buildTranslatePrompt(targetLang, sourceLang) },
               { role: 'user', content: text },
             ],
             temperature: 0.1,
@@ -66,7 +66,7 @@ export async function translate(
   const translation = data.message?.content?.[0]?.text?.trim();
   if (!translation) return null;
 
-  return { translation, provider: 'cohere-command-r-plus' };
+  return { translation, provider: 'cohere' };
 }
 
 export async function transcribe(
@@ -115,7 +115,5 @@ export async function transcribe(
   const text = data.text?.trim();
   if (!text) return null;
 
-  return { text, provider: 'cohere-transcribe', language: lang !== 'auto' ? lang : undefined };
+  return { text, provider: 'cohere', language: lang !== 'auto' ? lang : undefined };
 }
-
-const buildPrompt = buildTranslatePrompt;

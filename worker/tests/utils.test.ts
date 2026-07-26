@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { isHallucination } from '../src/utils/hallucination';
+import { isHallucination } from '../src/utils/prompts';
 import { sanitizeKey } from '../src/utils/keys';
 import { getClientHeaders, fetchWithTimeout, abortableDelay } from '../src/utils/fetch';
 import { mockEnv, jsonResponse, mockFetch } from './setup';

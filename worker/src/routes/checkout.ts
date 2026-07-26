@@ -2,8 +2,8 @@ import { logger } from "../logger";
 import { PRICING_TABLE } from "../config";
 import { Env } from "../types";
 import { getRates, getRateFor, roundToCurrency, toLowestUnit, FALLBACK_RATES } from "../money";
-import type { PlanPricing } from "../../../shared/plans";
-import { USD_PRICE } from "../../../shared/plans";
+import type { PlanPricing } from "@ekwe/shared";
+import { USD_PRICE } from "@ekwe/shared";
 
 type PricingTable = Record<string, PlanPricing>;
 

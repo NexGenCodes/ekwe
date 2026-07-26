@@ -2,6 +2,9 @@ import { Env } from '../types';
 import { logger } from '../logger';
 import { verifyWebhook, WebhookProvider } from '../signatures';
 
+const WEBHOOK_MAX_BYTES = 256 * 1024; // 256KB
+const IDEMPOTENCY_TTL = 86400; // 24 hours
+
 async function setProStatus(
   env: Env,
   identifier: { email?: string; userId?: string },
@@ -46,28 +49,16 @@ async function setProStatus(
   }
 }
 
-async function activateSubscription(
+async function setSubscriptionStatus(
   env: Env,
   emailOrUserId: string,
-  _reference?: string,
+  isPro: boolean,
 ): Promise<void> {
   const isEmail = emailOrUserId.includes('@');
   await setProStatus(
     env,
     isEmail ? { email: emailOrUserId } : { userId: emailOrUserId },
-    true,
-  );
-}
-
-async function deactivateSubscription(
-  env: Env,
-  emailOrUserId: string,
-): Promise<void> {
-  const isEmail = emailOrUserId.includes('@');
-  await setProStatus(
-    env,
-    isEmail ? { email: emailOrUserId } : { userId: emailOrUserId },
-    false,
+    isPro,
   );
 }
 
@@ -88,7 +79,6 @@ async function processPaystackEvent(
       const userId = metadata?.user_id as string | undefined;
       const email = (data?.customer as Record<string, unknown>)
         ?.email as string | undefined;
-      const reference = data?.reference as string;
 
       if (!userId && !email) {
         logger.warn(
@@ -98,7 +88,7 @@ async function processPaystackEvent(
       }
 
       const identifier = userId ?? email!;
-      await activateSubscription(env, identifier, reference);
+      await setSubscriptionStatus(env, identifier, true);
 
       logger.info(
         `[webhook:paystack] charge.success processed for ${identifier} (via ${userId ? 'user_id' : 'email'})`,
@@ -111,7 +101,7 @@ async function processPaystackEvent(
       const email = (data?.customer as Record<string, unknown>)
         ?.email as string;
       if (email) {
-        await deactivateSubscription(env, email);
+        await setSubscriptionStatus(env, email, false);
         logger.info(`[webhook:paystack] Subscription ended for ${email}`);
       }
       return Response.json({ received: true, action: 'deactivated' });
@@ -146,7 +136,6 @@ async function processFlutterwaveEvent(
       const userId = meta?.user_id as string | undefined;
       const email = (data?.customer as Record<string, unknown>)
         ?.email as string | undefined;
-      const txRef = data?.tx_ref as string;
 
       if (!userId && !email) {
         logger.warn('[webhook:flutterwave] Missing both user_id and email');
@@ -154,7 +143,7 @@ async function processFlutterwaveEvent(
       }
 
       const identifier = userId ?? email!;
-      await activateSubscription(env, identifier, txRef);
+      await setSubscriptionStatus(env, identifier, true);
 
       logger.info(
         `[webhook:flutterwave] Payment successful for ${identifier} (via ${userId ? 'user_id' : 'email'})`,
@@ -197,13 +186,13 @@ async function processRevenueCatEvent(
   }
 
   if (activationEvents.has(eventType)) {
-    await activateSubscription(env, appUserId);
+    await setSubscriptionStatus(env, appUserId, true);
     logger.info(`[webhook:revenuecat] Subscription activated for ${appUserId}`);
     return Response.json({ received: true, action: 'activated' });
   }
 
   if (deactivationEvents.has(eventType)) {
-    await deactivateSubscription(env, appUserId);
+    await setSubscriptionStatus(env, appUserId, false);
     logger.info(`[webhook:revenuecat] Subscription ended for ${appUserId}`);
     return Response.json({ received: true, action: 'deactivated' });
   }
@@ -227,7 +216,31 @@ export async function handleWebhook(
   request: Request,
   env: Env,
 ): Promise<Response> {
+  // Max size guard
+  const contentLength = request.headers.get('Content-Length');
+  if (contentLength && parseInt(contentLength, 10) > WEBHOOK_MAX_BYTES) {
+    logger.warn(`[webhook] Payload too large: ${contentLength} bytes`);
+    return Response.json({ error: 'PAYLOAD_TOO_LARGE' }, { status: 413 });
+  }
+
   const rawBody = await request.text();
+
+  if (rawBody.length > WEBHOOK_MAX_BYTES) {
+    logger.warn(`[webhook] Body exceeds size limit: ${rawBody.length} bytes`);
+    return Response.json({ error: 'PAYLOAD_TOO_LARGE' }, { status: 413 });
+  }
+
+  // Idempotency: hash body to deduplicate duplicate webhook deliveries
+  const bodyHash = await hashString(rawBody);
+  const idempotencyKey = `webhook:idempotency:${bodyHash}`;
+
+  if (env.EKWE_KV) {
+    const existing = await env.EKWE_KV.get(idempotencyKey);
+    if (existing) {
+      logger.info(`[webhook] Duplicate event detected (hash: ${bodyHash.slice(0, 8)})`);
+      return Response.json({ received: true, action: 'duplicate' });
+    }
+  }
 
   const verification = await verifyWebhook(request, rawBody, env);
 
@@ -255,5 +268,26 @@ export async function handleWebhook(
   }
 
   const processor = PROCESSORS[verification.provider];
-  return processor(event, env);
+  const response = await processor(event, env);
+
+  // Store idempotency key after successful processing
+  if (env.EKWE_KV && response.ok) {
+    const ctx = (globalThis as { currentExecutionContext?: ExecutionContext }).currentExecutionContext;
+    if (ctx) {
+      ctx.waitUntil(
+        env.EKWE_KV.put(idempotencyKey, '1', { expirationTtl: IDEMPOTENCY_TTL })
+          .catch((err: unknown) => logger.error('[webhook] Failed to store idempotency key', { error: String(err) })),
+      );
+    }
+  }
+
+  return response;
+}
+
+async function hashString(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = new Uint8Array(hashBuffer);
+  return Array.from(hashArray).map(b => b.toString(16).padStart(2, '0')).join('');
 }

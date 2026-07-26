@@ -1,8 +1,8 @@
 import { Env, TranscribeResult } from '../types';
 import { rotateKeys } from '../utils/keys';
-import { isHallucination } from '../utils/hallucination';
+import { isHallucination } from '../utils/prompts';
 import { fetchWithTimeout, TIMEOUT_FAST } from '../utils/fetch';
-import { getFirstKey, connectWithTimeout, createStreamInterceptor } from '../utils/stream';
+import { rotateWsKeys, createStreamInterceptor } from '../utils/websocket';
 import { logger } from '../logger';
 
 const DEEPGRAM_URL = 'https://api.deepgram.com/v1/listen';
@@ -22,7 +22,7 @@ export async function transcribe(
     size: blob.size,
     type: blob.type,
   });
-  const params = new URLSearchParams({ model: 'nova-2' });
+  const params = new URLSearchParams({ model: 'nova-3' });
   if (lang && lang !== 'auto') params.set('language', lang);
 
   const res = await rotateKeys(
@@ -98,26 +98,19 @@ export async function handleStream(
   clientWs: WebSocket,
   _signal: AbortSignal,
 ): Promise<boolean> {
-  const key =
-    (env.DEEPGRAM_API_KEY as string | undefined) ||
-    getFirstKey(env, 'DEEPGRAM_KEY_');
-  if (!key) return false;
-
-  const params = new URLSearchParams({
-    access_token: key,
-    encoding: 'opus',
-    sample_rate: '16000',
-    channels: '1',
-    model: 'nova-2',
-    interim_results: 'true',
-    smart_format: 'true',
+  const dgWs = await rotateWsKeys(env, 'DEEPGRAM_KEY_', (key) => {
+    const params = new URLSearchParams({
+      access_token: key,
+      encoding: 'opus',
+      sample_rate: '16000',
+      channels: '1',
+      model: 'nova-3',
+      interim_results: 'true',
+      smart_format: 'true',
+    });
+    if (lang && lang !== 'auto') params.set('language', lang);
+    return `wss://api.deepgram.com/v1/listen?${params}`;
   });
-  // Omit language param for auto-detect; Deepgram auto-detects when absent
-  if (lang && lang !== 'auto') params.set('language', lang);
-
-  const dgWs = await connectWithTimeout(
-    `wss://api.deepgram.com/v1/listen?${params}`,
-  );
   if (!dgWs) return false;
 
   createStreamInterceptor(clientWs, dgWs, (data) => {

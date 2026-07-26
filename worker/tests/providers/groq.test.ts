@@ -92,7 +92,7 @@ describe('Groq provider', () => {
       );
       expect(result).not.toBeNull();
       expect(result!.translation).toBe('Hola mundo');
-      expect(result!.provider).toBe('groq-llama-3.3-70b');
+      expect(result!.provider).toBe('groq');
     });
 
     test('returns null on HTTP error', async () => {

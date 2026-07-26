@@ -32,7 +32,7 @@ describe('Mistral provider', () => {
     );
     expect(result).not.toBeNull();
     expect(result!.translation).toBe('Ciao mondo');
-    expect(result!.provider).toBe('mistral-small');
+    expect(result!.provider).toBe('mistral');
   });
 
   test('returns null on HTTP error', async () => {

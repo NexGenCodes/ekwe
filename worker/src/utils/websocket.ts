@@ -2,12 +2,44 @@ import { Env } from "../types";
 import { logger } from "../logger";
 import { decodeOpusFrame, isOpusDecoderReady } from "./opus";
 import { pcmToWav } from "./wav";
+import { mergePcmFrames } from "./pcm";
 
 export function getFirstKey(env: Env, prefix: string): string | null {
   for (let i = 1; i <= 10; i++) {
     const key = env[`${prefix}${i}`] as string | undefined;
     if (key && typeof key === 'string') return key;
   }
+  return null;
+}
+
+export async function rotateWsKeys(
+  env: Env,
+  prefix: string,
+  buildUrl: (key: string) => string,
+): Promise<WebSocket | null> {
+  const keys = Object.keys(env)
+    .filter((k) => k.startsWith(prefix))
+    .map((k) => {
+      const v = env[k];
+      return typeof v === 'string' ? v.replace(/[^\x20-\x7E]/g, '').trim() : '';
+    })
+    .filter((k) => k.length > 10);
+
+  if (keys.length === 0) return null;
+
+  const arr = new Uint32Array(keys.length);
+  crypto.getRandomValues(arr);
+  const shuffled = keys
+    .map((k, i) => ({ k, r: arr[i] }))
+    .sort((a, b) => a.r - b.r)
+    .map(({ k }) => k);
+
+  for (const key of shuffled) {
+    const url = buildUrl(key);
+    const ws = await connectWithTimeout(url);
+    if (ws) return ws;
+  }
+
   return null;
 }
 
@@ -70,13 +102,7 @@ export function createOpusDecodingInterceptor(
   function flushPcm(): void {
     if (pcmBuffer.length === 0) return;
 
-    const totalLen = pcmBuffer.reduce((sum, arr) => sum + arr.length, 0);
-    const merged = new Int16Array(totalLen);
-    let offset = 0;
-    for (const arr of pcmBuffer) {
-      merged.set(arr, offset);
-      offset += arr.length;
-    }
+    const merged = mergePcmFrames(pcmBuffer);
     pcmBuffer = [];
 
     if (wrapInWav) {

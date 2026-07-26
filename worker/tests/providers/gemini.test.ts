@@ -32,7 +32,7 @@ describe('Gemini provider', () => {
     );
     expect(result).not.toBeNull();
     expect(result!.translation).toBe('Hola mundo');
-    expect(result!.provider).toBe('gemini-2.5-flash');
+    expect(result!.provider).toBe('gemini');
   });
 
   test('returns null on HTTP error', async () => {

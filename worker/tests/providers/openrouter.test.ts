@@ -32,7 +32,7 @@ describe('OpenRouter provider', () => {
     );
     expect(result).not.toBeNull();
     expect(result!.translation).toBe('Hola mundo');
-    expect(result!.provider).toBe('openrouter-free');
+    expect(result!.provider).toBe('openrouter');
   });
 
   test('returns null when key is missing', async () => {

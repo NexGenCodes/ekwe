@@ -115,7 +115,10 @@ export async function testTranscribeProviders(env) {
     ));
   }
   for (const key of getMultiKeys(env, 'GLADIA_KEY_')) {
-    results.push({ label: `Gladia`, ok: checkUUID(key) });
+    results.push(await checkWithResult(
+      `Gladia`, 'https://api.gladia.io/v2/live',
+      { headers: { 'x-gladia-key': key } },
+    ));
   }
 
   const witLangs = ['EN', 'FR', 'ES', 'PT', 'DE', 'IT', 'ZH', 'IG', 'YO', 'HA',

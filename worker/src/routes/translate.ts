@@ -116,13 +116,23 @@ export async function handleTranslate(
       const targetName = getLanguageName(body.targetLang);
       const sourceName = getLanguageName(body.sourceLang);
 
-      const result = await provider.fn(
+      let result = await provider.fn(
         cleanText,
         targetName,
         sourceName,
         env,
         signal,
       );
+      if (!result && !signal.aborted) {
+        await new Promise((r) => setTimeout(r, 100));
+        result = await provider.fn(
+          cleanText,
+          targetName,
+          sourceName,
+          env,
+          signal,
+        );
+      }
       if (result) {
         logger.info(`[translate] Success: ${provider.name}`, {
           provider: result.provider,

@@ -68,7 +68,7 @@ describe('Cloudflare provider', () => {
       );
       expect(result).not.toBeNull();
       expect(result!.translation).toBe('translated text');
-      expect(result!.provider).toBe('cloudflare-ai-llama3');
+      expect(result!.provider).toBe('cloudflare');
     });
 
     test('returns null on empty response', async () => {

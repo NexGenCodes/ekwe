@@ -1,13 +1,14 @@
 import { Env, TranslateResult } from '../types';
 import { rotateKeys } from '../utils/keys';
+import { buildTranslatePrompt } from '../utils/prompts';
 import { fetchWithTimeout, getClientHeaders, TIMEOUT_FAST } from '../utils/fetch';
 import { logger } from '../logger';
 
 const GEMINI_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
 
 /**
- * Google Gemini 1.5 Flash — Multi-key rotation support.
+ * Google Gemini 2.5 Flash — Multi-key rotation support.
  * Best-in-class multilingual translation.
  */
 export async function translate(
@@ -33,10 +34,11 @@ export async function translate(
               ...getClientHeaders(),
             },
             body: JSON.stringify({
+              systemInstruction: {
+                parts: [{ text: buildTranslatePrompt(targetLang, sourceLang) }],
+              },
               contents: [
-                {
-                  parts: [{ text: buildPrompt(text, targetLang, sourceLang) }],
-                },
+                { role: 'user', parts: [{ text }] },
               ],
               generationConfig: { temperature: 0.1 },
             }),
@@ -64,7 +66,7 @@ export async function translate(
       return null;
     }
 
-    return { translation, provider: 'gemini-2.5-flash' };
+    return { translation, provider: 'gemini' };
   } catch (e) {
     logger.error('[gemini] Translate exception', {
       error: e instanceof Error ? e.message : String(e),
@@ -73,25 +75,10 @@ export async function translate(
   }
 }
 
-function buildPrompt(
-  text: string,
-  targetLang: string,
-  sourceLang?: string,
-): string {
-  return `You are an expert, highly accurate professional translator.
-Your sole task is to translate the user's text${sourceLang ? ` from ${sourceLang}` : ''} into fluent, natural-sounding ${targetLang}.
-Rules:
-1. Preserve the original tone, context, and formatting exactly.
-2. Do not add any explanations, conversational text, notes, or preambles.
-3. If the text is already in the target language, return it unchanged.
-4. Output ONLY the final translated text and nothing else.
-
-Text to translate:
-${text}`;
-}
-
 interface GeminiResponse {
   candidates?: Array<{
     content?: { parts?: Array<{ text?: string }> };
   }>;
 }
+
+export { ALL_LANGUAGES as supportedLanguages } from '../languages';

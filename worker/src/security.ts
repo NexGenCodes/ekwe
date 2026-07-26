@@ -1,4 +1,4 @@
-import { LANGUAGES } from "../../shared/languages";
+import { LANGUAGES } from "@ekwe/shared";
 import { logger } from "./logger";
 import { getLimits } from "./config";
 import { Tier } from "./types";
