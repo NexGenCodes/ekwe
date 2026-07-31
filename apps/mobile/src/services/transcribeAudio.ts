@@ -1,0 +1,216 @@
+import { File as ExpoFile } from "expo-file-system";
+import { z } from "zod";
+
+import { EkweError } from "@/constants/errors";
+import { ProcessedAudio } from "@/services/AudioProcessor";
+import { supabase } from "@/services/supabase";
+import { Result, ok, err } from "@/types/Result";
+import { resolveDetectedLanguage } from "@/utils/languageUtils";
+import logger from "@/utils/logger";
+import { fetchWithRetry } from "@/utils/networkUtils";
+
+const transcriptionResponseSchema = z.object({
+  text: z.string(),
+  words: z
+    .array(
+      z.object({
+        word: z.string(),
+        start: z.number(),
+        end: z.number(),
+      }),
+    )
+    .optional(),
+  language: z.string().optional(),
+  provider: z.string().optional(),
+});
+
+const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? "";
+const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25MB Groq limit
+
+export interface WordTimestamp {
+  word: string;
+  start: number; // seconds
+  end: number;
+}
+
+export interface TranscriptionResult {
+  transcript: string;
+  detectedLang: string;
+  sourceLang: string;
+  wordTimestamps: WordTimestamp[];
+  durationSeconds: number;
+  isLowQuality: boolean;
+  provider?: string;
+}
+
+export async function transcribeAudio(
+  audio: ProcessedAudio,
+  sourceLang: string,
+  signal?: AbortSignal,
+): Promise<Result<TranscriptionResult, EkweError>> {
+  try {
+    const file = new ExpoFile(audio.uri);
+    if (!file.exists) {
+      return err(EkweError.SHARE_COPY_FAIL);
+    }
+
+    if (file.size && file.size > MAX_FILE_SIZE_BYTES) {
+      return err(EkweError.FILE_TOO_LARGE);
+    }
+
+    const workerUrl = getWorkerUrl();
+    if (!workerUrl) {
+      logger.error("[transcribeAudio] workerUrl is EMPTY!");
+      return err(EkweError.NETWORK_LOST);
+    }
+
+    const extension = audio.uri.split(".").pop()?.toLowerCase() || "m4a";
+    const mimeType = getMimeType(extension);
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
+    const formData = new FormData();
+    formData.append("file", {
+      uri: audio.uri,
+      name: `audio.${extension}`,
+      type: mimeType,
+    } as unknown as Blob);
+    formData.append("lang", sourceLang || "auto");
+    formData.append("timestamp_granularities", "word");
+
+    const fetchResponse = await fetchWithRetry(`${workerUrl}/transcribe`, {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+      signal,
+      retries: 2,
+      backoff: 1000,
+      timeout: 30000,
+    });
+
+    if (!fetchResponse.ok) {
+      let errorCode = "EKWE_TRANSCRIPTION_FAIL";
+      try {
+        const errorBody = await fetchResponse.text();
+        const parsed = JSON.parse(errorBody) as { error?: string };
+        errorCode = parsed.error ?? errorCode;
+      } catch {
+        /* ignore parse failures on error body */
+      }
+      logger.error(
+        "[transcribeAudio] FAIL: non-ok response",
+        fetchResponse.status,
+        errorCode,
+      );
+
+      if (fetchResponse.status === 429) {
+        return err(EkweError.RATE_LIMITED);
+      }
+      if (fetchResponse.status === 401) {
+        return err(EkweError.TRANSCRIPTION_FAIL);
+      }
+      return mapErrorCode(errorCode);
+    }
+
+    const json = await fetchResponse.json();
+    const parsed = transcriptionResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      logger.error(
+        "[transcribeAudio] Response validation failed:",
+        parsed.error.message,
+      );
+      return err(EkweError.TRANSCRIPTION_FAIL);
+    }
+
+    const data = parsed.data;
+
+    return processTranscript(
+      data.text,
+      data.words ?? [],
+      data.language ?? sourceLang,
+      sourceLang,
+      audio,
+      data.provider,
+    );
+  } catch (e: unknown) {
+    if (e instanceof Error) {
+      if (e.name === "AbortError") {
+        logger.info("[transcribeAudio] Request was aborted");
+        return err(EkweError.INTERRUPTED);
+      }
+      if (e.message === "CLIENT_ABORTED") {
+        return err(EkweError.INTERRUPTED);
+      }
+      logger.error("[transcribeAudio] FAIL: exception", e.message);
+    } else {
+      logger.error("[transcribeAudio] FAIL: unknown error", String(e));
+    }
+    return err(EkweError.NETWORK_LOST);
+  }
+}
+
+function getMimeType(extension: string): string {
+  const map: Record<string, string> = {
+    ogg: "audio/ogg",
+    m4a: "audio/m4a",
+    mp4: "audio/mp4",
+    wav: "audio/wav",
+    mp3: "audio/mpeg",
+  };
+  return map[extension] || "audio/ogg";
+}
+
+function processTranscript(
+  rawText: string,
+  words: { word: string; start: number; end: number }[],
+  returnedLang: string,
+  sourceLang: string,
+  audio: ProcessedAudio,
+  provider?: string,
+): Result<TranscriptionResult, EkweError> {
+  if (rawText.trim().length === 0) {
+    return err(EkweError.EMPTY_TRANSCRIPT);
+  }
+
+  const detectedLang = resolveDetectedLanguage(returnedLang, sourceLang, "en");
+
+  const adjustedWords: WordTimestamp[] = words.map((w) => ({
+    word: w.word,
+    start: w.start,
+    end: w.end,
+  }));
+
+  return ok({
+    transcript: rawText.trim(),
+    detectedLang,
+    sourceLang,
+    wordTimestamps: adjustedWords,
+    durationSeconds:
+      audio.durationMs > 0
+        ? audio.durationMs / 1000
+        : adjustedWords.length > 0
+          ? adjustedWords[adjustedWords.length - 1].end
+          : 0,
+    isLowQuality: audio.averageDb < -60,
+    provider,
+  });
+}
+
+function mapErrorCode(code: string): Result<never, EkweError> {
+  const map: Record<string, EkweError> = {
+    EKWE_NETWORK_LOST: EkweError.NETWORK_LOST,
+    EKWE_ALL_PROVIDERS_FAIL: EkweError.ALL_PROVIDERS_FAIL,
+    EKWE_SHARE_COPY_FAIL: EkweError.SHARE_COPY_FAIL,
+    EKWE_EMPTY_TRANSCRIPT: EkweError.EMPTY_TRANSCRIPT,
+    EKWE_TRANSCRIPTION_FAIL: EkweError.TRANSCRIPTION_FAIL,
+    EKWE_TRANSCRIBE_TIMEOUT: EkweError.TRANSCRIBE_TIMEOUT,
+    EKWE_FILE_TOO_LARGE: EkweError.FILE_TOO_LARGE,
+    EKWE_RATE_LIMITED: EkweError.RATE_LIMITED,
+  };
+  return err(map[code] ?? EkweError.TRANSCRIPTION_FAIL);
+}

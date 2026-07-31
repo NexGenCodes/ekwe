@@ -1,5 +1,9 @@
 # dependencies
-node_modules/
+/node_modules/
+/apps/mobile/node_modules/
+/apps/worker/node_modules/
+/packages/shared/node_modules/
+apps/mobile/modules/*/node_modules/
 
 # Native
 .kotlin/
@@ -45,6 +49,7 @@ desktop.ini
 # Cloudflare Workers
 .dev.vars
 .wrangler/
+**/.wrangler/
 skills-lock.json
 
 # MCP
@@ -58,7 +63,7 @@ mcp_config.json
 .env.*.local
 
 # Embedded git repos (thirdparty)
-mobile/modules/ekwe-native/cpp/thirdparty/flac/
+apps/mobile/modules/ekwe-native/cpp/thirdparty/flac/
 
 # Design review artifacts
 design-review*.html
@@ -72,12 +77,16 @@ expo-env.d.ts
 .env
 .env.production
 .env*.local
-mobile/ios/
-mobile/android/
-mobile/modules/**/android/build/
+*.hprof
+apps/mobile/modules/**/android/build/
 modules/**/android/build/
 modules/**/ios/build/
 .cxx/
 coverage/
 .expo-shared/
 .gstack/
+
+# Turborepo
+.turbo/
+
+

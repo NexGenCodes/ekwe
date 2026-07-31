@@ -1,11 +1,28 @@
 {
   "name": "ekwe-monorepo",
   "private": true,
-  "workspaces": [
-    "shared",
-    "worker"
-  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "build": "turbo run build",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\" --ignore-path .gitignore",
+    "android": "turbo run android",
+    "ios": "turbo run ios",
+    "start": "turbo run start",
+    "prebuild": "cd apps/mobile && npx expo prebuild"
+  },
   "dependencies": {
     "libopus-wasm": "^0.2.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.8.1",
+    "turbo": "^2.8.0",
+    "typescript": "~6.0.3"
+  },
+  "packageManager": "pnpm@10.10.0",
+  "engines": {
+    "node": ">=18"
   }
 }
