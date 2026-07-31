@@ -2,7 +2,6 @@
 import createLibopusModuleRaw from "../../node_modules/libopus-wasm/dist/generated/libopus.generated.mjs";
 import libopusWasm from "./libopus.wasm";
 import { logger } from "../logger";
-import { mergePcmFrames } from "./pcm";
 
 interface LibopusModule {
   _malloc(size: number): number;
@@ -189,22 +188,6 @@ export function decodeOpusFrame(
     logger.error("[opus] Decode failed", { error: String(err) });
     return null;
   }
-}
-
-export function decodeOpusFrames(
-  frames: Uint8Array[],
-  sampleRate: number = 16000,
-): Int16Array | null {
-  const decoded: Int16Array[] = [];
-
-  for (const frame of frames) {
-    const pcm = decodeOpusFrame(frame, sampleRate);
-    if (pcm) decoded.push(pcm);
-  }
-
-  if (decoded.length === 0) return null;
-
-  return mergePcmFrames(decoded);
 }
 
 export function isOpusDecoderReady(): boolean {

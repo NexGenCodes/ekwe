@@ -7,7 +7,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "isolatedModules": true,
-    "types": ["vitest/globals"],
+    "types": ["vitest/globals", "@cloudflare/vitest-pool-workers/types"],
     "paths": {
       "@/*": ["./src/*"],
       "@ekwe/shared": ["../../packages/shared/index.ts"]
@@ -16,8 +16,7 @@
   "include": [
     "src/**/*.ts",
     "tests/**/*.ts",
-    "vitest.config.ts",
-    "worker-configuration.d.ts",
-    "check-providers.d.mts"
+    "vitest.config.mts",
+    "worker-configuration.d.ts"
   ]
 }

@@ -1,6 +1,6 @@
 import { logger } from "../logger";
-import { PRICING_TABLE } from "../config";
 import { Env } from "../types";
+import { safeParseJSON } from "../security";
 import {
   getRates,
   getRateFor,
@@ -12,6 +12,8 @@ import type { PlanPricing } from "@ekwe/shared";
 import { USD_PRICE } from "@ekwe/shared";
 
 type PricingTable = Record<string, PlanPricing>;
+
+const VALID_PLANS = new Set(["pro_monthly", "pro_annual"]);
 
 function buildPricing(rates: Record<string, number> | null): PricingTable {
   const supported = Object.keys(FALLBACK_RATES);
@@ -55,9 +57,21 @@ export async function handleCheckoutInitialize(
   userEmail: string,
 ): Promise<Response> {
   try {
-    const { plan_id, currency } = (await request.json()) as {
-      plan_id: "pro_monthly" | "pro_annual";
-      currency: string;
+    const parsed = await safeParseJSON<{
+      plan_id?: unknown;
+      currency?: unknown;
+    }>(request);
+
+    if (!parsed.ok) {
+      return Response.json(
+        { error: "INVALID_JSON", message: "Request body must be valid JSON." },
+        { status: 400 },
+      );
+    }
+
+    const { plan_id, currency } = parsed.data as {
+      plan_id?: string;
+      currency?: string;
     };
 
     if (!plan_id || !currency) {
@@ -75,10 +89,16 @@ export async function handleCheckoutInitialize(
       );
     }
 
+    if (!VALID_PLANS.has(plan_id)) {
+      return Response.json(
+        { error: "INVALID_PLAN", message: `Unknown plan: ${plan_id}` },
+        { status: 400 },
+      );
+    }
+
     const rates = await getRates(env);
     const rate = getRateFor(cur, rates);
-    const usdPrice =
-      PRICING_TABLE.USD[plan_id === "pro_annual" ? "annual" : "monthly"];
+    const usdPrice = USD_PRICE[plan_id === "pro_annual" ? "annual" : "monthly"];
     const rawAmount = usdPrice.amount * rate;
     const lowestUnit = toLowestUnit(rawAmount, cur);
 
@@ -110,6 +130,7 @@ export async function handleCheckoutInitialize(
             user_id: userId,
             plan_id,
             currency: currency.toUpperCase(),
+            amount: lowestUnit,
           },
         }),
       },
@@ -127,7 +148,7 @@ export async function handleCheckoutInitialize(
       );
     }
 
-    const resData = (await response.json()) as {
+    const resData = await response.json<{
       status: boolean;
       message: string;
       data: {
@@ -135,7 +156,7 @@ export async function handleCheckoutInitialize(
         access_code: string;
         reference: string;
       };
-    };
+    }>();
 
     if (!resData.status || !resData.data.authorization_url) {
       logger.error(

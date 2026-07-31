@@ -24,9 +24,10 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
   const ai = {
     run: vi.fn(async (_model: string, inputs: Record<string, unknown>) => {
       if (_model === "@cf/openai/whisper") {
-        const text = Array.isArray(inputs?.audio)
-          ? "mock whisper transcription"
-          : "";
+        const text =
+          typeof inputs?.audio === "string" || Array.isArray(inputs?.audio)
+            ? "mock whisper transcription"
+            : "";
         return { text };
       }
       if (_model === "@cf/meta/llama-3-8b-instruct") {

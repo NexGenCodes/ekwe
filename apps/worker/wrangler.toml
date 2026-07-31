@@ -13,7 +13,9 @@ port = 8787
 [vars]
 SUPABASE_URL = "https://zsjcgebczzbmaarfcdny.supabase.co"
 ALLOWED_ORIGINS = "https://ekwe.app,https://www.ekwe.app"
-APP_ENV = "development"
+# Default to production so deploys never ship with debug logging / dev CORS.
+# Override to "development" locally via .dev.vars (precedence over [vars]).
+APP_ENV = "production"
 
 [observability]
 enabled = true
@@ -26,8 +28,21 @@ id = "2a61656b51414ff4ae7cbc13a53fb459"
 
 [[ratelimits]]
 name = "RATE_LIMITER"
-namespace_id = "1"
+# Must be a string containing a positive integer, unique per Cloudflare account.
+# Two bindings with the same namespace_id SHARE counters, so don't reuse "1".
+# Value derived from the worker name ("ekwe-proxy"): ekwe=1100, proxy=28401.
+namespace_id = "28401"
 simple = { limit = 500, period = 60 } # 500 requests per minute - global edge guard
 
 [ai]
 binding = "AI"
+
+# Live-transcription sessions. One DO instance per user (getByName(userId))
+# so WebSockets survive worker-isolate churn and idle sessions can hibernate.
+[[durable_objects.bindings]]
+name = "STREAM_DO"
+class_name = "StreamDurableObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["StreamDurableObject"]

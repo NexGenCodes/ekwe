@@ -30,7 +30,7 @@ export async function transcribe(
 
   if (!res?.ok) return null;
 
-  const data = (await res.json()) as { text?: string; language?: string };
+  const data = await res.json<{ text?: string; language?: string }>();
   if (data.text && !isHallucination(data.text)) {
     return { text: data.text, provider: "gladia", language: data.language };
   }
@@ -68,7 +68,7 @@ async function attemptTranscription(
     return uploadRes;
   }
 
-  const { audio_url } = (await uploadRes.json()) as { audio_url: string };
+  const { audio_url } = await uploadRes.json<{ audio_url: string }>();
 
   // Step 2: Submit transcription request
   const isAuto = !lang || lang === "auto";
@@ -99,7 +99,7 @@ async function attemptTranscription(
     return submitRes;
   }
 
-  const { result_url } = (await submitRes.json()) as { result_url: string };
+  const { result_url } = await submitRes.json<{ result_url: string }>();
 
   // Step 3: Poll for result
   for (let i = 0; i < MAX_POLLS; i++) {
@@ -115,7 +115,7 @@ async function attemptTranscription(
       signal,
     );
 
-    const data = (await poll.json()) as GladiaResult;
+    const data = await poll.json<GladiaResult>();
 
     if (data.status === "done") {
       const text = data.result?.transcription?.full_transcript || "";
@@ -173,7 +173,11 @@ export async function handleStream(
 
   createStreamInterceptor(clientWs, glWs, (data) => {
     try {
-      const payload = JSON.parse(data);
+      const payload = JSON.parse(data) as {
+        type?: string;
+        transcription?: string;
+        time_end?: number;
+      };
       if (payload.type === "transcript" && payload.transcription) {
         const text = payload.transcription;
         const isFinal = payload.time_end !== undefined;

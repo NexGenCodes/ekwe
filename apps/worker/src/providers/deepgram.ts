@@ -58,7 +58,7 @@ export async function transcribe(
     return null;
   }
 
-  const data = (await res.json()) as DeepgramResponse;
+  const data = await res.json<DeepgramResponse>();
   const transcript = data.results?.channels?.[0]?.alternatives?.[0]?.transcript;
   const detectedLang = data.results?.channels?.[0]?.detected_language;
   const duration = data.metadata?.duration;
@@ -115,12 +115,18 @@ export async function handleStream(
 
   createStreamInterceptor(clientWs, dgWs, (data) => {
     try {
-      const payload = JSON.parse(data);
+      const payload = JSON.parse(data) as {
+        type?: string;
+        channel?: { alternatives?: Array<{ transcript?: string }> };
+        is_final?: boolean;
+      };
+      const alternatives = payload.channel?.alternatives;
       if (
         payload.type === "Results" &&
-        payload.channel?.alternatives?.length > 0
+        alternatives &&
+        alternatives.length > 0
       ) {
-        const text = payload.channel.alternatives[0].transcript;
+        const text = alternatives[0].transcript;
         const isFinal = payload.is_final === true;
 
         if (text && !isHallucination(text)) {

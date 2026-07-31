@@ -145,6 +145,38 @@ describe("safeParseJSON", () => {
     const result = await safeParseJSON(req);
     expect(result.ok).toBe(false);
   });
+
+  test("rejects oversized JSON bodies with 413", async () => {
+    const req = new Request("http://test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "a".repeat(5000) }),
+    });
+    const result = await safeParseJSON<{ text: string }>(req, 1024);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(413);
+  });
+
+  test("rejects oversized chunked bodies without Content-Length", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("x".repeat(2048)));
+        controller.enqueue(encoder.encode("y".repeat(2048)));
+        controller.close();
+      },
+    });
+    const req = new Request("http://test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: stream,
+      // @ts-expect-error undici requires duplex for streaming bodies
+      duplex: "half",
+    });
+    const result = await safeParseJSON(req, 2048);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(413);
+  });
 });
 
 // ─── sanitizeTranslationText ─────────────────────────────────────

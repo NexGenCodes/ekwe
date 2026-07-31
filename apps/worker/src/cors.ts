@@ -1,5 +1,30 @@
 import { Env } from "./types";
 
+function isDevOrigin(origin: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+
+  // Expo Go client (exp://<host>:<port>)
+  if (url.protocol === "exp:") return true;
+
+  const hostname = url.hostname.toLowerCase();
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") {
+    return true;
+  }
+  // Hostname-suffix match with a domain boundary — `evil.expo.dev.attacker.com`
+  // must NOT match.
+  return (
+    hostname === "expo.dev" ||
+    hostname.endsWith(".expo.dev") ||
+    hostname === "expo.io" ||
+    hostname.endsWith(".expo.io")
+  );
+}
+
 export function getCorsHeaders(
   request: Request,
   env: Env,
@@ -10,14 +35,7 @@ export function getCorsHeaders(
       .map((o: string) => o.trim())
       .filter(Boolean) || [];
 
-  const isDev =
-    env.APP_ENV !== "production" &&
-    !!origin &&
-    (origin.startsWith("exp://") ||
-      origin.includes(".expo.dev") ||
-      origin.includes(".expo.io") ||
-      origin.startsWith("http://localhost") ||
-      origin.startsWith("http://127.0.0.1"));
+  const isDev = env.APP_ENV !== "production" && !!origin && isDevOrigin(origin);
 
   const isExactMatch = !!origin && allowedOrigins.includes(origin);
   const isAllowed = isExactMatch || isDev;

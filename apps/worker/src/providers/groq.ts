@@ -53,11 +53,11 @@ export async function transcribe(
     return null;
   }
 
-  const data = (await res.json()) as {
+  const data = await res.json<{
     text?: string;
     duration?: number;
     language?: string;
-  };
+  }>();
   const durationMs = data.duration ? data.duration * 1000 : undefined;
 
   if (data.text && !isHallucination(data.text, durationMs)) {
@@ -131,9 +131,9 @@ export async function translate(
     return null;
   }
 
-  const data = (await res.json()) as {
+  const data = await res.json<{
     choices?: Array<{ message?: { content?: string } }>;
-  };
+  }>();
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) return null;
 

@@ -1,4 +1,5 @@
 import { CLIENT_ABORTED, Env } from "../types";
+import { logger } from "../logger";
 
 export function getRandomInt(max: number): number {
   const arr = new Uint32Array(1);
@@ -53,7 +54,16 @@ export async function rotateKeys(
     const keyHash = await hashKey(key);
     if (await env.EKWE_KV.get(`blacklist:${namespace}:${keyHash}`)) continue;
 
-    const res = await execute(key);
+    let res: Response;
+    try {
+      res = await execute(key);
+    } catch (err) {
+      // A single key failing must not abort rotation for the remaining keys.
+      logger.error("[keys] Rotation attempt failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
 
     if (res.ok) return res;
 

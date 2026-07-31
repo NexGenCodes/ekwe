@@ -62,9 +62,9 @@ export async function translate(
     return null;
   }
 
-  const data = (await res.json()) as {
+  const data = await res.json<{
     choices?: Array<{ message?: { content?: string } }>;
-  };
+  }>();
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) return null;
 

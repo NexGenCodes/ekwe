@@ -2,7 +2,7 @@ import { logger } from "../logger";
 import { Env, TranscribeResult } from "../types";
 import { sanitizeKey } from "../utils/keys";
 import { isHallucination } from "../utils/prompts";
-import { getUserAgent, fetchWithTimeout, TIMEOUT_SLOW } from "../utils/fetch";
+import { getUserAgent, fetchWithIdleTimeout, TIMEOUT_SLOW } from "../utils/fetch";
 import { decodeOpusFrame, isOpusDecoderReady } from "../utils/opus";
 import { pcmToWav } from "../utils/wav";
 import { mergePcmFrames } from "../utils/pcm";
@@ -48,7 +48,7 @@ export async function transcribe(
     blobType: blob.type,
   });
 
-  const res = await fetchWithTimeout(
+  const res = await fetchWithIdleTimeout(
     WITAI_DICTATION,
     {
       method: "POST",
@@ -132,7 +132,11 @@ export async function handleStream(
         controller.enqueue(wav);
       };
 
-      const onMessage = async (event: MessageEvent): Promise<void> => {
+      const onMessage = (event: MessageEvent): void => {
+        void handleMessage(event);
+      };
+
+      const handleMessage = async (event: MessageEvent): Promise<void> => {
         if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
           let data: Uint8Array;
           if (event.data instanceof ArrayBuffer) {
@@ -185,7 +189,7 @@ export async function handleStream(
   });
 
   try {
-    const res = await fetchWithTimeout(
+    const res = await fetchWithIdleTimeout(
       WITAI_DICTATION,
       {
         method: "POST",

@@ -1,5 +1,6 @@
 import { francAll } from "franc";
 import { logger } from "./logger";
+import { hashKey } from "./utils/keys";
 
 const CACHE_TTL = 86_400 * 30;
 const MAX_CHARS = 2_000;
@@ -123,10 +124,15 @@ function iso6393to1(code: string): string | undefined {
   return ISO639_3_TO_1[code];
 }
 
+function normalizeLangCode(code: string): string {
+  return code.trim().toLowerCase().split(/[-_]/)[0] || "";
+}
+
 function detectWithUnicode(text: string): string {
   if (!text.trim()) return "en";
 
   let cjk = 0,
+    kana = 0,
     cyrillic = 0,
     arabic = 0,
     devanagari = 0,
@@ -139,8 +145,7 @@ function detectWithUnicode(text: string): string {
     if (!code) continue;
     total++;
     if (code >= 0x4e00 && code <= 0x9fff) cjk++;
-    else if (code >= 0x3040 && code <= 0x30ff)
-      cjk++; // Japanese hiragana/katakana → still CJK bucket
+    else if (code >= 0x3040 && code <= 0x30ff) kana++;
     else if (code >= 0xac00 && code <= 0xd7af) hangul++;
     else if (code >= 0x0400 && code <= 0x04ff) cyrillic++;
     else if (code >= 0x0600 && code <= 0x06ff) arabic++;
@@ -151,6 +156,7 @@ function detectWithUnicode(text: string): string {
   if (total === 0) return "en";
 
   const cjkPct = (cjk + hangul) / total;
+  const kanaPct = kana / total;
   const hangulPct = hangul / total;
   const cyrillicPct = cyrillic / total;
   const arabicPct = arabic / total;
@@ -159,7 +165,8 @@ function detectWithUnicode(text: string): string {
 
   if (hangulPct > 0.3) return "ko";
   if (thaiPct > 0.3) return "th";
-  if (cjkPct > 0.5) return "zh";
+  if (kanaPct > 0.3) return "ja";
+  if (cjkPct > 0.5) return kanaPct > 0.02 ? "ja" : "zh";
   if (cyrillicPct > 0.5) return "ru";
   if (arabicPct > 0.5) return "ar";
   if (devanagariPct > 0.5) return "hi";
@@ -168,7 +175,6 @@ function detectWithUnicode(text: string): string {
 
 export async function detectTextLanguage(
   text: string,
-  _ai: unknown,
   kv: KvLike,
   signal: AbortSignal,
 ): Promise<string> {
@@ -176,15 +182,11 @@ export async function detectTextLanguage(
 
   const input = text.slice(0, MAX_CHARS);
 
-  function cacheKey(s: string): string {
-    let hash = 5381;
-    for (let i = 0; i < s.length; i++) {
-      hash = ((hash << 5) + hash + s.charCodeAt(i)) | 0;
-    }
-    return `lang:${(hash >>> 0).toString(36)}`;
+  async function cacheKey(s: string): Promise<string> {
+    return `lang:${await hashKey(s)}`;
   }
 
-  const key = cacheKey(input);
+  const key = await cacheKey(input);
   let fromCache: string | null = null;
   try {
     fromCache = await kv.get(key);
@@ -257,7 +259,7 @@ export function validateTranscriptLanguage(
     const francLang = iso6393to1(topCode);
     if (!francLang) return true;
 
-    const match = francLang === detectedLang;
+    const match = francLang === normalizeLangCode(detectedLang);
     if (!match) {
       logger.warn("[autoDetect] Transcript language mismatch", {
         provider: detectedLang,

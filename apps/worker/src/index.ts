@@ -1,20 +1,22 @@
 import { authenticate } from "./auth";
 import { getCorsHeaders, addCorsHeaders } from "./cors";
 import { logger, setDebugEnabled } from "./logger";
-import { guardContentType, guardJsonSize } from "./security";
+import {
+  guardContentType,
+  guardJsonSize,
+  guardAutoDetect,
+  guardLanguageCode,
+  guardStreamingAllowed,
+} from "./security";
 import { handleTranscribe } from "./routes/transcribe";
-import { handleStream } from "./routes/stream";
 import { handleTranslate } from "./routes/translate";
 import { handleCheckoutInitialize, handlePricing } from "./routes/checkout";
 
 import { handleWebhook } from "./routes/webhook";
 import { CLIENT_ABORTED, Env, Tier } from "./types";
 import { checkPreflight } from "./utils/preflight";
-import { initOpusDecoder } from "./utils/opus";
 
-initOpusDecoder().catch((err) => {
-  logger.error("[opus] Module-level init failed", { error: String(err) });
-});
+export { StreamDurableObject } from "./stream-do";
 
 async function handleRequest(
   request: Request,
@@ -41,7 +43,7 @@ async function handleRequest(
 
   // ─── Webhook Route (no JWT auth — uses signature verification) ───
   if (request.method === "POST" && url.pathname === "/webhook") {
-    response = await handleWebhook(request, env);
+    response = await handleWebhook(request, env, ctx);
     return addCorsHeaders(response, corsHeaders);
   }
 
@@ -110,7 +112,29 @@ async function handleRequest(
 
   // ─── Streaming WebSocket Route (after auth + rate limits) ───
   if (isStream) {
-    return handleStream(request, env, userId, tier);
+    // Validate in the Worker first to avoid DO billing for invalid requests.
+    const upgradeHeader = request.headers.get("Upgrade");
+    if (!upgradeHeader || upgradeHeader !== "websocket") {
+      return new Response("Expected WebSocket upgrade", { status: 426 });
+    }
+
+    const streamingGuard = guardStreamingAllowed(tier);
+    if (!streamingGuard.allowed) return streamingGuard.response;
+
+    const streamUrl = new URL(request.url);
+    const streamLang = streamUrl.searchParams.get("lang") || "en";
+
+    const autoGuard = guardAutoDetect(streamLang, tier);
+    if (!autoGuard.allowed) return autoGuard.response;
+
+    const langGuard = guardLanguageCode(streamLang, "lang");
+    if (!langGuard.allowed) return langGuard.response;
+
+    // One DO per user: persistent, hibernating, per-user concurrency cap.
+    const doUrl = new URL(request.url);
+    doUrl.searchParams.set("tier", tier);
+    const stub = env.STREAM_DO.getByName(userId);
+    return stub.fetch(new Request(doUrl.toString(), request));
   }
 
   // ─── PRE-FLIGHT CHECK (ATOMIC COOLDOWN + CACHED) ───
@@ -119,7 +143,9 @@ async function handleRequest(
   const cached = await env.EKWE_KV.get(cacheKey);
   if (cached) {
     try {
-      preflight = JSON.parse(cached);
+      preflight = JSON.parse(cached) as Awaited<
+        ReturnType<typeof checkPreflight>
+      >;
     } catch {
       logger.debug("[index] Cache parse failed, fetching fresh preflight");
       preflight = await checkPreflight(env, userId, tier);
@@ -161,6 +187,7 @@ async function handleRequest(
         env,
         preflight.tier_active,
         request.signal,
+        userId,
       );
     } else if (
       request.method === "GET" &&
@@ -180,6 +207,7 @@ async function handleRequest(
         env,
         preflight.tier_active,
         request.signal,
+        userId,
       );
     } else if (
       request.method === "POST" &&

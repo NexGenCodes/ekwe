@@ -38,6 +38,7 @@ describe("handleTranscribe pipeline", () => {
       mockEnv(),
       "FREE",
       new AbortController().signal,
+      "test-user",
     );
     const body = (await res.json()) as { text?: string };
     expect(body.text).toBe("wit result");
@@ -72,6 +73,7 @@ describe("handleTranscribe pipeline", () => {
       } as any),
       "PREMIUM",
       new AbortController().signal,
+      "test-user",
     );
     const body = (await res.json()) as { text?: string };
     expect(witCalled).toBe(false);
@@ -90,6 +92,7 @@ describe("handleTranscribe pipeline", () => {
       mockEnv(),
       "FREE",
       new AbortController().signal,
+      "test-user",
     );
     expect(res.status).toBe(400);
   });
@@ -117,6 +120,7 @@ describe("handleTranscribe pipeline", () => {
       env,
       "FREE",
       new AbortController().signal,
+      "test-user",
     );
     expect(cohereCalled).toBe(false);
     expect(res.status).toBe(503);
@@ -146,6 +150,7 @@ describe("handleTranscribe pipeline", () => {
       env,
       "FREE",
       new AbortController().signal,
+      "test-user",
     );
     expect(cohereCalled).toBe(true);
     const body = (await res.json()) as { text?: string };
@@ -164,6 +169,7 @@ describe("handleTranscribe pipeline", () => {
       env,
       "FREE",
       new AbortController().signal,
+      "test-user",
     );
     expect(res.status).toBe(503);
   });
@@ -200,6 +206,7 @@ describe("handleTranscribe pipeline", () => {
       mockEnv(),
       "PREMIUM",
       new AbortController().signal,
+      "test-user",
     );
     const body = (await res.json()) as { text?: string };
     expect(body.text).toContain("deepgram");

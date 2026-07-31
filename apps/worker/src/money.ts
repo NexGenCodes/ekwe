@@ -8,8 +8,8 @@ const MEM_TTL = 60_000;
 export const FALLBACK_RATES: Record<string, number> = {
   USD: 1,
   NGN: 1000,
-  GBP: 1,
-  EUR: 1,
+  GBP: 0.79,
+  EUR: 0.92,
   GHS: 14,
   KES: 140,
   ZAR: 18,
@@ -72,7 +72,7 @@ export async function getRates(
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { rates: Record<string, number> };
+    const data = await res.json<{ rates: Record<string, number> }>();
     const entry = { rates: data.rates, ts: Date.now() };
     await env.EKWE_KV.put(CACHE_KEY_FX, JSON.stringify(entry), {
       expirationTtl: FX_TTL,

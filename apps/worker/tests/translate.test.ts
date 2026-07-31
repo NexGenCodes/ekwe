@@ -36,6 +36,7 @@ describe("handleTranslate pipeline", () => {
       mockEnv(),
       "FREE",
       new AbortController().signal,
+      "test-user",
     );
     const body = (await res.json()) as { translation?: string };
     expect(body.translation).toBe("Hola mundo");
@@ -47,6 +48,7 @@ describe("handleTranslate pipeline", () => {
       mockEnv(),
       "FREE",
       new AbortController().signal,
+      "test-user",
     );
     expect(res.status).toBe(400);
   });
@@ -61,6 +63,7 @@ describe("handleTranslate pipeline", () => {
       } as any),
       "FREE",
       new AbortController().signal,
+      "test-user",
     );
     expect(res.status).toBe(503);
   });
@@ -86,6 +89,7 @@ describe("handleTranslate pipeline", () => {
       mockEnv(),
       "PREMIUM",
       new AbortController().signal,
+      "test-user",
     );
     const body = (await res.json()) as { translation?: string };
     expect(body.translation).toBe("Hola");
@@ -99,6 +103,7 @@ describe("handleTranslate pipeline", () => {
       mockEnv(),
       "FREE",
       new AbortController().signal,
+      "test-user",
     );
     expect(res.status).toBe(413);
   });
@@ -122,6 +127,7 @@ describe("handleTranslate pipeline", () => {
       mockEnv(),
       "FREE",
       new AbortController().signal,
+      "test-user",
     );
     expect(res.ok).toBe(true);
   });

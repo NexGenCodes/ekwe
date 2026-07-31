@@ -3,7 +3,7 @@ import {
   loadEnv,
   testTranslateProviders,
   testTranscribeProviders,
-} from "../check-providers.mjs";
+} from "./helpers/check-providers.mjs";
 
 const RUN_INTEGRATION = process.env.RUN_INTEGRATION_TESTS === "true";
 

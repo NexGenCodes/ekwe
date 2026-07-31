@@ -67,9 +67,9 @@ export async function translate(
     return null;
   }
 
-  const data = (await res.json()) as {
+  const data = await res.json<{
     message?: { content?: Array<{ text?: string }> };
-  };
+  }>();
   const translation = data.message?.content?.[0]?.text?.trim();
   if (!translation) return null;
 
@@ -118,7 +118,7 @@ export async function transcribe(
     return null;
   }
 
-  const data = (await res.json()) as { text?: string };
+  const data = await res.json<{ text?: string }>();
   const text = data.text?.trim();
   if (!text) return null;
 

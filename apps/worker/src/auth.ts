@@ -48,14 +48,14 @@ export async function authenticate(
       issuer: `${env.SUPABASE_URL}/auth/v1`,
       audience: "authenticated",
     });
-    return extractAuthResult(payload as JWTPayloadWithMeta);
+    return extractAuthResult(payload);
   } catch {
     try {
       const { payload } = await jwtVerify(token, getJWKS(env, true), {
         issuer: `${env.SUPABASE_URL}/auth/v1`,
         audience: "authenticated",
       });
-      return extractAuthResult(payload as JWTPayloadWithMeta);
+      return extractAuthResult(payload);
     } catch {
       logger.warn("[auth] JWT verification failed after JWKS refresh");
       return null;

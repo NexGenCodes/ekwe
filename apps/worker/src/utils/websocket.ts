@@ -4,14 +4,6 @@ import { decodeOpusFrame, isOpusDecoderReady } from "./opus";
 import { pcmToWav } from "./wav";
 import { mergePcmFrames } from "./pcm";
 
-export function getFirstKey(env: Env, prefix: string): string | null {
-  for (let i = 1; i <= 10; i++) {
-    const key = env[`${prefix}${i}`] as string | undefined;
-    if (key && typeof key === "string") return key;
-  }
-  return null;
-}
-
 export async function rotateWsKeys(
   env: Env,
   prefix: string,
@@ -73,7 +65,11 @@ export function createOpusDecodingInterceptor(
     }
   }
 
-  const onClientMessage = async (event: MessageEvent): Promise<void> => {
+  const onClientMessage = (event: MessageEvent): void => {
+    void handleClientMessage(event);
+  };
+
+  const handleClientMessage = async (event: MessageEvent): Promise<void> => {
     if (isClosed) return;
     try {
       if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
@@ -100,7 +96,7 @@ export function createOpusDecodingInterceptor(
         }
       } else if (typeof event.data === "string") {
         try {
-          const payload = JSON.parse(event.data);
+          const payload = JSON.parse(event.data) as { type?: string };
           if (payload.type === "stop") closeBoth();
         } catch {
           /* ignore */
@@ -177,24 +173,39 @@ export function connectWithTimeout(
   protocols?: string | string[],
 ): Promise<WebSocket | null> {
   return new Promise((resolve) => {
+    let ws: WebSocket | null = null;
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = (result: WebSocket | null): void => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (ws) {
+        ws.removeEventListener("open", onOpen);
+        ws.removeEventListener("error", onError);
+      }
+      resolve(result);
+    };
+    const onOpen = (): void => cleanup(ws);
+    const onError = (): void => cleanup(null);
+
     try {
-      const ws = new WebSocket(url, protocols);
-      const timer = setTimeout(() => {
-        if (ws.readyState !== WebSocket.OPEN) {
-          ws.close();
-          resolve(null);
+      ws = new WebSocket(url, protocols);
+      timer = setTimeout(() => {
+        if (ws && ws.readyState !== WebSocket.OPEN) {
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
+          cleanup(null);
         }
       }, 5000);
-      ws.addEventListener("open", () => {
-        clearTimeout(timer);
-        resolve(ws);
-      });
-      ws.addEventListener("error", () => {
-        clearTimeout(timer);
-        resolve(null);
-      });
+      ws.addEventListener("open", onOpen);
+      ws.addEventListener("error", onError);
     } catch {
-      resolve(null);
+      cleanup(null);
     }
   });
 }
@@ -224,11 +235,16 @@ export function createStreamInterceptor(
   const onClientMessage = (event: MessageEvent): void => {
     if (isClosed) return;
     try {
-      if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
+      if (event.data instanceof ArrayBuffer) {
         providerWs.send(event.data);
+      } else if (event.data instanceof Blob) {
+        // Blob is not a valid WebSocket.send() payload type — forward the bytes.
+        void event.data.arrayBuffer().then((buf) => {
+          if (!isClosed) providerWs.send(buf);
+        });
       } else if (typeof event.data === "string") {
         try {
-          const payload = JSON.parse(event.data);
+          const payload = JSON.parse(event.data) as { type?: string };
           if (payload.type === "stop") closeBoth();
         } catch {
           /* ignore */

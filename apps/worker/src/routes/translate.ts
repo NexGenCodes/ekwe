@@ -51,6 +51,7 @@ export async function handleTranslate(
   env: Env,
   tier: Tier,
   signal: AbortSignal,
+  userId: string,
 ): Promise<Response> {
   const parsed = await safeParseJSON<{
     text: string;
@@ -76,6 +77,16 @@ export async function handleTranslate(
   const tgtLangGuard = guardLanguageCode(body.targetLang, "targetLang");
   if (!tgtLangGuard.allowed) return tgtLangGuard.response;
 
+  if (!body.targetLang || body.targetLang === "auto") {
+    return Response.json(
+      {
+        error: "INVALID_TARGET_LANGUAGE",
+        message: "A concrete target language is required.",
+      },
+      { status: 400 },
+    );
+  }
+
   const cleanText = sanitizeTranslationText(body.text);
 
   let cacheKey: string;
@@ -83,7 +94,7 @@ export async function handleTranslate(
     const textHash = await hashKey(
       `${cleanText}_${body.sourceLang || "auto"}_${body.targetLang}`,
     );
-    cacheKey = `trans:${textHash}`;
+    cacheKey = `trans:${userId}:${textHash}`;
     const cached = await env.EKWE_KV.get(cacheKey);
     if (cached) {
       logger.info(`[translate] KV Cache Hit for hash ${textHash}`);
@@ -107,7 +118,7 @@ export async function handleTranslate(
 
   const isAuto = !body.sourceLang || body.sourceLang === "auto";
   const detectPromise = isAuto
-    ? detectTextLanguage(cleanText, env.AI, env.EKWE_KV, signal).catch(
+    ? detectTextLanguage(cleanText, env.EKWE_KV, signal).catch(
         () => null as string | null,
       )
     : null;

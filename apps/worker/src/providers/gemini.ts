@@ -61,7 +61,7 @@ export async function translate(
       return null;
     }
 
-    const data = (await res.json()) as GeminiResponse;
+    const data = await res.json<GeminiResponse>();
     const translation = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!translation) {
       logger.warn("[gemini] Empty translation returned");

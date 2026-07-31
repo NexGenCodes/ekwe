@@ -40,7 +40,7 @@ export async function checkPreflight(
     });
 
     if (res.ok) {
-      return (await res.json()) as PreflightResponse;
+      return await res.json<PreflightResponse>();
     }
   } catch (err) {
     logger.error("[preflight] check failed, failing closed", { error: err });

@@ -1,5 +1,4 @@
-import { requireNativeModule } from "expo";
-import type { NativeModule } from "expo-modules-core";
+import { requireNativeModule, type NativeModule } from "expo";
 
 import type {
   BubblePosition,

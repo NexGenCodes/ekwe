@@ -1,9 +1,84 @@
 import { Env } from "../types";
 import { logger } from "../logger";
 import { verifyWebhook, WebhookProvider } from "../signatures";
+import { getRates, getRateFor, toLowestUnit } from "../money";
+import { USD_PRICE } from "@ekwe/shared";
+import { readLimitedBody } from "../security";
 
 const WEBHOOK_MAX_BYTES = 256 * 1024; // 256KB
 const IDEMPOTENCY_TTL = 86400; // 24 hours
+
+/**
+ * Fraction of the expected price a charged amount may drift from the
+ * amount quoted at checkout time (FX rates move between checkout and
+ * the webhook arrival). Exact metadata.amount match is preferred.
+ */
+const CHARGE_TOLERANCE_RATIO = 0.05;
+
+function toPlanPeriod(planId: string | undefined): "monthly" | "annual" | null {
+  if (planId === "pro_monthly") return "monthly";
+  if (planId === "pro_annual") return "annual";
+  return null;
+}
+
+function amountsMatch(charged: number, expected: number): boolean {
+  if (!Number.isFinite(charged) || !Number.isFinite(expected)) return false;
+  return Math.abs(charged - expected) <= Math.max(1, Math.round(expected * CHARGE_TOLERANCE_RATIO));
+}
+
+/**
+ * Validates that a successful charge actually paid for a Pro plan before
+ * granting access. Prevents granting Pro from forged/mismatched payloads.
+ * Returns the userId to activate, or null if the charge should be ignored.
+ */
+async function validateProCharge(
+  env: Env,
+  data: Record<string, unknown>,
+): Promise<string | null> {
+  const metadata = data.metadata as Record<string, unknown> | undefined;
+  const planId = metadata?.plan_id as string | undefined;
+  const period = toPlanPeriod(planId);
+  const currency = (metadata?.currency as string | undefined) ?? (data.currency as string | undefined);
+  const charged = data.amount as number | undefined;
+  const expectedAmount = metadata?.amount as number | undefined;
+
+  if (!period || !currency || typeof charged !== "number") {
+    logger.warn(
+      "[webhook] Charge missing plan/currency/amount; refusing to activate",
+      { planId, currency, charged },
+    );
+    return null;
+  }
+
+  const rates = await getRates(env);
+  const rate = getRateFor(currency, rates);
+  const expected = toLowestUnit(USD_PRICE[period].amount * rate, currency);
+  const expectedLowestUnit = Math.round(expected);
+
+  if (expectedAmount !== undefined && !amountsMatch(charged, Number(expectedAmount))) {
+    logger.warn(
+      `[webhook] Charge amount ${charged} does not match quoted amount ${expectedAmount}; refusing to activate`,
+    );
+    return null;
+  }
+
+  if (!amountsMatch(charged, expectedLowestUnit)) {
+    logger.warn(
+      `[webhook] Charge amount ${charged} deviates from expected ${expectedLowestUnit} (${currency}, ${period}); refusing to activate`,
+    );
+    return null;
+  }
+
+  const metadataUserId = metadata?.user_id as string | undefined;
+  return metadataUserId ?? null;
+}
+
+function userIdFromReference(data: Record<string, unknown>): string | null {
+  const reference = data.reference as string | undefined;
+  if (typeof reference !== "string") return null;
+  const match = reference.match(/^ekwe_([A-Za-z0-9]+)_/);
+  return match ? match[1] : null;
+}
 
 async function setProStatus(
   env: Env,
@@ -80,18 +155,20 @@ async function processPaystackEvent(
       const email = (data?.customer as Record<string, unknown>)?.email as
         string | undefined;
 
-      if (!userId && !email) {
+      const validatedUserId = await validateProCharge(env, data);
+
+      if (!validatedUserId && !email) {
         logger.warn(
-          "[webhook:paystack] Missing both user_id and email in charge.success",
+          "[webhook:paystack] Charge validation failed or missing identity in charge.success",
         );
         return Response.json({ received: true, action: "skipped" });
       }
 
-      const identifier = userId ?? email!;
+      const identifier = validatedUserId ?? userId ?? email!;
       await setSubscriptionStatus(env, identifier, true);
 
       logger.info(
-        `[webhook:paystack] charge.success processed for ${identifier} (via ${userId ? "user_id" : "email"})`,
+        `[webhook:paystack] charge.success processed for ${identifier} (via ${validatedUserId ? "validated user_id" : userId ? "user_id" : "email"})`,
       );
       return Response.json({ received: true, action: "activated" });
     }
@@ -137,16 +214,19 @@ async function processFlutterwaveEvent(
       const email = (data?.customer as Record<string, unknown>)?.email as
         string | undefined;
 
-      if (!userId && !email) {
+      if (!userId && !email && !userIdFromReference(data)) {
         logger.warn("[webhook:flutterwave] Missing both user_id and email");
         return Response.json({ received: true, action: "skipped" });
       }
 
-      const identifier = userId ?? email!;
+      const validatedUserId = await validateProCharge(env, data);
+
+      const identifier =
+        validatedUserId ?? userId ?? email ?? userIdFromReference(data)!;
       await setSubscriptionStatus(env, identifier, true);
 
       logger.info(
-        `[webhook:flutterwave] Payment successful for ${identifier} (via ${userId ? "user_id" : "email"})`,
+        `[webhook:flutterwave] Payment successful for ${identifier} (via ${validatedUserId ? "validated user_id" : userId ? "user_id" : "email"})`,
       );
       return Response.json({ received: true, action: "activated" });
     }
@@ -155,6 +235,27 @@ async function processFlutterwaveEvent(
       logger.info(`[webhook:flutterwave] Unhandled event: ${eventType}`);
       return Response.json({ received: true, action: "ignored" });
   }
+}
+
+// RevenueCat product identifiers for the Pro subscription (see
+// apps/mobile/src/constants/billing.ts). Activation events for any other
+// product must NOT grant Pro access.
+const RC_PRO_PRODUCT_IDS = new Set(["ekwe_pro_monthly", "ekwe_pro_annual"]);
+const RC_PRO_ENTITLEMENT = "pro";
+
+function isProPurchase(eventData: Record<string, unknown>): boolean {
+  const productId = eventData.product_id;
+  if (typeof productId === "string" && RC_PRO_PRODUCT_IDS.has(productId)) {
+    return true;
+  }
+  const entitlementIds = eventData.entitlement_ids;
+  if (
+    Array.isArray(entitlementIds) &&
+    entitlementIds.some((e) => e === RC_PRO_ENTITLEMENT)
+  ) {
+    return true;
+  }
+  return eventData.entitlement_id === RC_PRO_ENTITLEMENT;
 }
 
 async function processRevenueCatEvent(
@@ -180,12 +281,19 @@ async function processRevenueCatEvent(
   ]);
 
   const appUserId = eventData?.app_user_id as string;
-  if (!appUserId) {
-    logger.warn("[webhook:revenuecat] Missing app_user_id");
+  if (!eventData || !appUserId) {
+    logger.warn("[webhook:revenuecat] Missing event data or app_user_id");
     return Response.json({ received: true, action: "skipped" });
   }
 
   if (activationEvents.has(eventType)) {
+    if (!isProPurchase(eventData)) {
+      logger.warn(
+        "[webhook:revenuecat] Activation event for non-Pro product; refusing to grant",
+        { productId: eventData.product_id, eventType },
+      );
+      return Response.json({ received: true, action: "skipped" });
+    }
     await setSubscriptionStatus(env, appUserId, true);
     logger.info(`[webhook:revenuecat] Subscription activated for ${appUserId}`);
     return Response.json({ received: true, action: "activated" });
@@ -208,13 +316,14 @@ const PROCESSORS: Record<
   paystack: processPaystackEvent,
   flutterwave: processFlutterwaveEvent,
   revenuecat: processRevenueCatEvent,
-  unknown: async () =>
-    Response.json({ error: "UNKNOWN_PROVIDER" }, { status: 400 }),
+  unknown: () =>
+    Promise.resolve(Response.json({ error: "UNKNOWN_PROVIDER" }, { status: 400 })),
 };
 
 export async function handleWebhook(
   request: Request,
   env: Env,
+  ctx: ExecutionContext,
 ): Promise<Response> {
   // Max size guard
   const contentLength = request.headers.get("Content-Length");
@@ -223,11 +332,17 @@ export async function handleWebhook(
     return Response.json({ error: "PAYLOAD_TOO_LARGE" }, { status: 413 });
   }
 
-  const rawBody = await request.text();
-
-  if (rawBody.length > WEBHOOK_MAX_BYTES) {
-    logger.warn(`[webhook] Body exceeds size limit: ${rawBody.length} bytes`);
-    return Response.json({ error: "PAYLOAD_TOO_LARGE" }, { status: 413 });
+  let rawBody: string;
+  try {
+    const bytes = await readLimitedBody(request, WEBHOOK_MAX_BYTES);
+    if (bytes === null) {
+      logger.warn(`[webhook] Body exceeds size limit: ${WEBHOOK_MAX_BYTES} bytes`);
+      return Response.json({ error: "PAYLOAD_TOO_LARGE" }, { status: 413 });
+    }
+    rawBody = new TextDecoder().decode(bytes);
+  } catch (err) {
+    logger.warn("[webhook] Failed to read body", { error: String(err) });
+    return Response.json({ error: "INVALID_BODY" }, { status: 400 });
   }
 
   // Idempotency: hash body to deduplicate duplicate webhook deliveries
@@ -276,19 +391,15 @@ export async function handleWebhook(
 
   // Store idempotency key after successful processing
   if (env.EKWE_KV && response.ok) {
-    const ctx = (globalThis as { currentExecutionContext?: ExecutionContext })
-      .currentExecutionContext;
-    if (ctx) {
-      ctx.waitUntil(
-        env.EKWE_KV.put(idempotencyKey, "1", {
-          expirationTtl: IDEMPOTENCY_TTL,
-        }).catch((err: unknown) =>
-          logger.error("[webhook] Failed to store idempotency key", {
-            error: String(err),
-          }),
-        ),
-      );
-    }
+    ctx.waitUntil(
+      env.EKWE_KV.put(idempotencyKey, "1", {
+        expirationTtl: IDEMPOTENCY_TTL,
+      }).catch((err: unknown) =>
+        logger.error("[webhook] Failed to store idempotency key", {
+          error: String(err),
+        }),
+      ),
+    );
   }
 
   return response;

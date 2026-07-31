@@ -8,8 +8,10 @@ const FAIL = '\x1b[31mFAIL\x1b[0m';
 const SKIP = '\x1b[33mSKIP\x1b[0m';
 
 // ─── Env loading ────────────────────────────────────────────────
+// Default to the worker root's .dev.vars (this file lives in tests/helpers/).
+const DEFAULT_DEV_VARS = resolve(__dirname, '../../.dev.vars');
 
-export function loadEnv(path = resolve(__dirname, '.dev.vars')) {
+export function loadEnv(path = DEFAULT_DEV_VARS) {
   const envPath = path;
   if (!existsSync(envPath)) return {};
   const text = readFileSync(envPath, 'utf-8');

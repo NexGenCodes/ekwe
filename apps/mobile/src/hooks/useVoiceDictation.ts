@@ -187,7 +187,12 @@ export const dictationActions = {
           await AudioCapture.cancelRecording();
           return;
         }
-        StreamTranscriber.connect({ token, lang: sourceLang, serverUrl });
+        StreamTranscriber.connect({
+          token,
+          lang: sourceLang,
+          serverUrl,
+          getToken,
+        });
 
         const removeCb = StreamTranscriber.addCallback((event) => {
           if ("error" in event) return;

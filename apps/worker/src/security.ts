@@ -43,14 +43,23 @@ const INJECTION_PATTERNS: RegExp[] = [
   /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/gi,
   /disregard\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/gi,
   /forget\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/gi,
+  /disregard\s+your\s+(instructions?|prompts?|rules?)/gi,
   /you\s+are\s+(now|a|an)\s+/gi,
   /act\s+as\s+(a|an)\s+/gi,
   /pretend\s+(you('re|\s+are)\s+)/gi,
   /system\s*prompt/gi,
+  /system\s+message/gi,
+  /developer\s+message/gi,
   /\[INST\]/gi,
   /\[\/INST\]/gi,
   /<\|im_start\|>/gi,
   /<\|im_end\|>/gi,
+  /<system>/gi,
+  /<\\?system\\?>/gi,
+  /(?:now\s+)?(?:output|reply|respond)\s+(?:only\s+)?(?:in\s+)?(?:json|markdown|html)/gi,
+  /\[SYS\]/gi,
+  /\[\/SYS\]/gi,
+  /do\s+not\s+(?:follow|obey)\s+previous/gi,
 ];
 
 // ─── Guard Results ───────────────────────────────────────────────
@@ -101,15 +110,85 @@ export function guardContentType(
 }
 
 /**
- * Safely parses JSON from a request body.
- * Returns the parsed body or a 400 response on malformed input.
- * Used by: /translate
+ * Reads a request body up to a byte cap, enforcing the limit even when the
+ * client sends a chunked body with no (or a lying) Content-Length header.
+ * Returns null when the body exceeds `maxBytes`; throws on stream I/O errors.
+ */
+export async function readLimitedBody(
+  request: Request,
+  maxBytes: number,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  if (!request.body) return new Uint8Array(0);
+
+  const contentLength = request.headers.get("Content-Length");
+  const parsedLength = contentLength ? Number(contentLength) : NaN;
+  if (!isNaN(parsedLength) && parsedLength > maxBytes) return null;
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+/**
+ * Safely parses JSON from a request body, enforcing a byte cap while
+ * streaming the body (chunked bodies without Content-Length are capped too).
+ * Returns the parsed body or a 4xx response on malformed/oversized input.
+ * Used by: /translate, /checkout/initialize
  */
 export async function safeParseJSON<T>(
   request: Request,
+  maxBytes = 128_000,
 ): Promise<{ ok: true; data: T } | { ok: false; response: Response }> {
+  let bytes: Uint8Array | null;
   try {
-    const data = (await request.json()) as T;
+    bytes = await readLimitedBody(request, maxBytes);
+  } catch {
+    logger.warn("[security] Failed to read JSON request body");
+    return {
+      ok: false,
+      response: Response.json(
+        { error: "INVALID_JSON", message: "Request body is not valid JSON." },
+        { status: 400 },
+      ),
+    };
+  }
+
+  if (bytes === null) {
+    logger.warn(
+      `[security] Rejected oversized JSON body (> ${Math.round(maxBytes / 1024)}KB)`,
+    );
+    return {
+      ok: false,
+      response: Response.json(
+        {
+          error: "PAYLOAD_TOO_LARGE",
+          message: `Request body exceeds ${Math.round(maxBytes / 1024)}KB limit.`,
+        },
+        { status: 413 },
+      ),
+    };
+  }
+
+  try {
+    const data = JSON.parse(new TextDecoder().decode(bytes)) as T;
     return { ok: true, data };
   } catch {
     logger.warn("[security] Malformed JSON in request body");
@@ -236,12 +315,6 @@ export function guardLanguageCode(
 }
 
 /**
- * Strips common prompt injection patterns from user text.
- * Does NOT reject — silently removes the injection markers so the
- * user still gets a valid translation minus the attack payload.
- * Used by: /translate (before sending to LLM)
- */
-/**
  * Rejects JSON request bodies that exceed a byte-size limit.
  * Uses Content-Length header when available (avoids reading the body).
  * Used by: /translate, /checkout/initialize
@@ -260,6 +333,49 @@ export function guardJsonSize(request: Request, maxBytes: number): GuardResult {
         {
           error: "PAYLOAD_TOO_LARGE",
           message: `Request body exceeds ${Math.round(maxBytes / 1024)}KB limit.`,
+        },
+        { status: 413 },
+      ),
+    };
+  }
+  return { allowed: true };
+}
+
+/**
+ * Rejects oversized multipart bodies BEFORE they are buffered by request.formData().
+ * Without this, an unbounded upload could exhaust memory before guardAudioSize runs.
+ * Uses Content-Length (avoids reading the body). The file limit is the tier's
+ * maxAudioBytes plus a generous margin for multipart framing/metadata overhead.
+ * Used by: /transcribe
+ */
+export function guardMultipartSize(
+  request: Request,
+  tier: Tier,
+  overheadBytes = 256 * 1024,
+): GuardResult {
+  const contentLength = request.headers.get("Content-Length");
+  const parsedLength = contentLength ? Number(contentLength) : NaN;
+  if (isNaN(parsedLength)) {
+    // No Content-Length (rare with FormData clients). We can't pre-guard
+    // without buffering; rely on the post-buffer guardAudioSize instead.
+    logger.debug(
+      `[security] Multipart request without Content-Length for tier ${tier}; skipping pre-guard`,
+    );
+    return { allowed: true };
+  }
+
+  const { maxAudioBytes } = getLimits(tier);
+  if (parsedLength > maxAudioBytes + overheadBytes) {
+    logger.warn(
+      `[security] Rejected oversized multipart for tier ${tier}. ` +
+        `Content-Length: ${parsedLength} > Max: ${maxAudioBytes + overheadBytes}`,
+    );
+    return {
+      allowed: false,
+      response: Response.json(
+        {
+          error: "FILE_TOO_LARGE",
+          message: `Audio file too large. Try a shorter recording.`,
         },
         { status: 413 },
       ),
@@ -322,7 +438,11 @@ export function guardStreamDuration(
 }
 
 export function sanitizeTranslationText(text: string): string {
-  let sanitized = text;
+  // Strip Unicode bidi control characters (can be used to spoof/hide injected text).
+  let sanitized = text.replace(
+    /[\u202A-\u202E\u2066-\u2069\u200E\u200F]/g,
+    "",
+  );
   for (const pattern of INJECTION_PATTERNS) {
     sanitized = sanitized.replace(pattern, "");
   }

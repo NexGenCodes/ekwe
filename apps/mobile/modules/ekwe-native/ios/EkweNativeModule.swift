@@ -4,6 +4,7 @@ import AVFoundation
 public class EkweNativeModule: Module {
   private var audioEngine: AVAudioEngine?
   private var isAudioRecording = false
+  private var recordingStartTime: Date?
   private var currentAmplitude: Float = 0
   private var captureMode: String = "file"
   private var outputPath: String = ""
@@ -188,6 +189,7 @@ public class EkweNativeModule: Module {
         try engine.start()
         self.audioEngine = engine
         self.isAudioRecording = true
+        self.recordingStartTime = Date()
 
         return ["success": true, "error": ""]
       } catch {
@@ -215,8 +217,11 @@ public class EkweNativeModule: Module {
 
       let waveformNs = EkweAudioBridge.lastWaveform()
       let waveform = (waveformNs as? [NSNumber])?.map { $0.floatValue } ?? []
+      let durationMs = self.recordingStartTime.map {
+        Int(Date().timeIntervalSince($0) * 1000)
+      } ?? 0
       return ["success": true, "error": "",
-              "durationMs": 0, "waveform": waveform]
+              "durationMs": durationMs, "waveform": waveform]
     }
 
     AsyncFunction("resolveAndConvertToOpus") { (_: String, _: String) -> [String: Any] in

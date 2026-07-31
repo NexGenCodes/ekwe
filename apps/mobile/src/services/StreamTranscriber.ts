@@ -5,6 +5,7 @@ export interface StreamConfig {
   token: string;
   lang: string;
   serverUrl: string;
+  getToken?: () => string | null;
 }
 
 export interface TranscriptEvent {
@@ -45,7 +46,13 @@ class StreamTranscriberClass {
     this.startTime = Date.now();
     this.notifyStatus("connecting");
 
-    const url = `${config.serverUrl}/transcribe/stream`;
+    const token = config.getToken?.() ?? config.token;
+    const wsBase = config.serverUrl.replace(/^http/, "ws");
+    const query = new URLSearchParams({
+      token,
+      lang: config.lang,
+    });
+    const url = `${wsBase}/transcribe/stream?${query.toString()}`;
 
     try {
       this.ws = new WebSocket(url);

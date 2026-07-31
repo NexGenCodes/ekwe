@@ -11,8 +11,11 @@ import {
   guardAudioSize,
   guardAutoDetect,
   guardLanguageCode,
+  guardMultipartSize,
+  readLimitedBody,
 } from "../security";
 import { hashBytes } from "../utils/keys";
+import { sniffAudioMime } from "../utils/mime";
 import { validateTranscriptLanguage } from "../autoDetect";
 import { CLIENT_ABORTED, Env, Tier, TranscribeResult } from "../types";
 
@@ -28,6 +31,9 @@ interface PipelineEntry {
     signal: AbortSignal,
   ) => Promise<TranscribeResult | null>;
 }
+
+// Matches the framing/metadata margin used by guardMultipartSize.
+const MULTIPART_OVERHEAD = 256 * 1024;
 
 const PROVIDER_TIMEOUT = {
   deepgram: { premium: 5_000, free: 8_000 },
@@ -93,7 +99,7 @@ function buildPipeline(
     supportedLanguages: PROVIDER_MODULES[name]?.supportedLanguages ?? new Set(),
     timeoutMs:
       PROVIDER_TIMEOUT[name as keyof typeof PROVIDER_TIMEOUT]?.[tier] ?? 15_000,
-    fn: PROVIDER_MODULES[name]?.transcribe ?? (async () => null),
+    fn: PROVIDER_MODULES[name]?.transcribe ?? (() => Promise.resolve(null)),
   }));
 }
 
@@ -108,12 +114,33 @@ export async function handleTranscribe(
   env: Env,
   tier: Tier,
   signal: AbortSignal,
+  userId: string,
 ): Promise<Response> {
   logger.info(`[transcribe] handleTranscribe started`, { tier });
 
+  // Reject oversized uploads BEFORE buffering the whole body into memory.
+  const sizePreGuard = guardMultipartSize(request, tier);
+  if (!sizePreGuard.allowed) return sizePreGuard.response;
+
   let formData: FormData;
   try {
-    formData = await request.formData();
+    const maxBodyBytes = getLimits(tier).maxAudioBytes + MULTIPART_OVERHEAD;
+    const bodyBytes = await readLimitedBody(request, maxBodyBytes);
+    if (bodyBytes === null) {
+      return Response.json(
+        {
+          error: "FILE_TOO_LARGE",
+          message: "Audio file too large. Try a shorter recording.",
+        },
+        { status: 413 },
+      );
+    }
+    formData = await new Response(bodyBytes, {
+      headers: {
+        "Content-Type":
+          request.headers.get("Content-Type") || "multipart/form-data",
+      },
+    }).formData();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error(`[transcribe] formData() FAILED: ${msg}`);
@@ -145,19 +172,7 @@ export async function handleTranscribe(
   try {
     audioBuffer = await file.arrayBuffer();
 
-    mimeType = file.type;
-    const headerView = new Uint8Array(audioBuffer, 0, 4);
-
-    if (
-      headerView[0] === 0x4f &&
-      headerView[1] === 0x67 &&
-      headerView[2] === 0x67 &&
-      headerView[3] === 0x53
-    ) {
-      mimeType = "audio/ogg";
-    } else if (!mimeType || mimeType === "application/octet-stream") {
-      mimeType = "audio/wav";
-    }
+    mimeType = sniffAudioMime(new Uint8Array(audioBuffer), file.type);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error(`[transcribe] file.arrayBuffer() FAILED: ${msg}`);
@@ -173,7 +188,7 @@ export async function handleTranscribe(
   let cacheKey: string;
   try {
     const audioHash = await hashBytes(audioBuffer);
-    cacheKey = `transcribe:${audioHash}:${lang || "auto"}`;
+    cacheKey = `transcribe:${userId}:${audioHash}:${lang || "auto"}`;
     const cached = await env.EKWE_KV.get(cacheKey);
     if (cached) {
       return Response.json(JSON.parse(cached) as TranscribeResult);
@@ -268,9 +283,9 @@ export async function handleTranscribe(
         });
 
         const limits = getLimits(tier);
-        const r = result as unknown as Record<string, unknown>;
-        if (!limits.autoDetectAllowed && "language" in r) {
-          delete r.language;
+        if (!limits.autoDetectAllowed && "language" in result) {
+          result = { ...result };
+          delete result.language;
         }
 
         try {

@@ -56,7 +56,7 @@ export async function transcribe(
         }
         return new Response(null, { status: uploadRes.status });
       }
-      const { upload_url } = (await uploadRes.json()) as { upload_url: string };
+      const { upload_url } = await uploadRes.json<{ upload_url: string }>();
 
       // Step 2: Create transcript
       const isAuto = !lang || lang === "auto";
@@ -98,7 +98,7 @@ export async function transcribe(
         }
         return new Response(null, { status: createRes.status });
       }
-      const { id } = (await createRes.json()) as { id: string };
+      const { id } = await createRes.json<{ id: string }>();
 
       // Step 3: Poll for result
       for (let i = 0; i < MAX_POLLS; i++) {
@@ -111,7 +111,7 @@ export async function transcribe(
           signal,
         );
 
-        const data = (await poll.json()) as AssemblyResult;
+        const data = await poll.json<AssemblyResult>();
 
         if (data.status === "completed" && data.text) {
           return new Response(
@@ -135,11 +135,11 @@ export async function transcribe(
 
   if (!res?.ok) return null;
 
-  const finalData = (await res.json()) as {
+  const finalData = await res.json<{
     text: string;
     duration?: number;
     language?: string;
-  };
+  }>();
   const durationMs = finalData.duration ? finalData.duration * 1000 : undefined;
   if (!isHallucination(finalData.text, durationMs)) {
     return {
@@ -185,7 +185,10 @@ export async function handleStream(
 
   createOpusDecodingInterceptor(clientWs, aaiWs, (data) => {
     try {
-      const payload = JSON.parse(data);
+      const payload = JSON.parse(data) as {
+        message_type?: string;
+        text?: string;
+      };
       if (
         payload.message_type === "PartialTranscript" ||
         payload.message_type === "FinalTranscript"

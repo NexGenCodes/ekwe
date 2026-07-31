@@ -2,10 +2,5 @@
   "name": "ekwe-native",
   "version": "0.7.10",
   "description": "Custom native module for Ekwe",
-  "main": "index.ts",
-  "peerDependencies": {
-    "expo": "*",
-    "react": "*",
-    "react-native": "*"
-  }
+  "main": "index.ts"
 }

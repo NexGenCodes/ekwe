@@ -27,6 +27,7 @@ class EkweNativeModule : Module() {
   private var audioRecord: AudioRecord? = null
   private var isAudioRecording = false
   private var recordingThread: Thread? = null
+  private var recordingStartedAt = 0L
   @Volatile
   private var currentAmplitude: Float = 0f
 
@@ -392,6 +393,7 @@ class EkweNativeModule : Module() {
         Log.d("EkweAudio", "startAudioRecording: calling startRecording...")
         audioRecord?.startRecording()
         isAudioRecording = true
+        recordingStartedAt = System.currentTimeMillis()
         
         Log.d("EkweAudio", "startAudioRecording: sessionId=$sessionId, attaching effects...")
         try {
@@ -489,10 +491,14 @@ class EkweNativeModule : Module() {
       val methodEnd = System.currentTimeMillis()
       Log.d("EkweAudioPerf", "stopAudioRecording JNI took \${methodEnd - methodStart}ms")
 
+      val durationMs = (System.currentTimeMillis() - recordingStartedAt)
+        .toInt()
+        .coerceAtLeast(0)
+
       return@AsyncFunction mapOf(
         "success" to true,
         "error" to "",
-        "durationMs" to 0,
+        "durationMs" to durationMs,
         "waveform" to waveform
       )
     }
