@@ -10,7 +10,6 @@ export default tseslint.config(
       'dist/',
       'coverage/',
       '.wrangler/',
-      'tests/helpers/check-providers.mjs',
     ],
   },
   js.configs.recommended,
@@ -55,6 +54,20 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-return': 'off',
       '@typescript-eslint/unbound-method': 'off',
       '@typescript-eslint/no-base-to-string': 'off',
+    },
+  },
+  {
+    files: ['tests/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        fetch: 'readonly',
+        AbortSignal: 'readonly',
+        process: 'readonly',
+        console: 'readonly',
+      },
+    },
+    rules: {
+      'no-undef': 'off',
     },
   },
 );

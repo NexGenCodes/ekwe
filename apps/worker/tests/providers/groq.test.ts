@@ -1,31 +1,18 @@
 import { describe, test, expect } from "vitest";
 import * as groq from "../../src/providers/groq";
-import {
-  mockEnv,
-  makeAudioBlob,
-  jsonResponse,
-  mockFetch,
-  mockFetchReset,
-  mockSignal,
-} from "../setup";
+import { mockEnv, makeAudioBlob, jsonResponse, mockSignal } from "../setup";
+import { http } from "msw";
+import { server } from "../msw/server";
+import { PROVIDER_URLS } from "../msw/handlers";
 
 describe("Groq provider", () => {
-  afterEach(() => {
-    mockFetchReset();
-  });
-
   describe("transcribe", () => {
     test("returns result on success", async () => {
-      mockFetch(async (url) => {
-        if (url.includes("groq.com/openai/v1/audio/transcriptions")) {
-          return jsonResponse({
-            text: "Hello world",
-            duration: 3.0,
-            language: "en",
-          });
-        }
-        return jsonResponse({}, 404);
-      });
+      server.use(
+        http.post(PROVIDER_URLS.groqTranscriptions, () =>
+          jsonResponse({ text: "Hello world", duration: 3.0, language: "en" }),
+        ),
+      );
 
       const blob = makeAudioBlob();
       const result = await groq.transcribe(blob, "en", mockEnv(), mockSignal());
@@ -37,7 +24,11 @@ describe("Groq provider", () => {
     });
 
     test("returns null on HTTP error", async () => {
-      mockFetch(async () => jsonResponse({ error: "unauthorized" }, 401));
+      server.use(
+        http.post(PROVIDER_URLS.groqTranscriptions, () =>
+          jsonResponse({ error: "unauthorized" }, 401),
+        ),
+      );
       const result = await groq.transcribe(
         makeAudioBlob(),
         "en",
@@ -48,8 +39,10 @@ describe("Groq provider", () => {
     });
 
     test("returns null on hallucination", async () => {
-      mockFetch(async () =>
-        jsonResponse({ text: "Thanks for watching", duration: 1.0 }),
+      server.use(
+        http.post(PROVIDER_URLS.groqTranscriptions, () =>
+          jsonResponse({ text: "Thanks for watching", duration: 1.0 }),
+        ),
       );
       const result = await groq.transcribe(
         makeAudioBlob(),
@@ -61,7 +54,9 @@ describe("Groq provider", () => {
     });
 
     test("returns null on empty response", async () => {
-      mockFetch(async () => jsonResponse({}));
+      server.use(
+        http.post(PROVIDER_URLS.groqTranscriptions, () => jsonResponse({})),
+      );
       const result = await groq.transcribe(
         makeAudioBlob(),
         "en",
@@ -74,14 +69,11 @@ describe("Groq provider", () => {
 
   describe("translate", () => {
     test("returns translation on success", async () => {
-      mockFetch(async (url) => {
-        if (url.includes("groq.com/openai/v1/chat/completions")) {
-          return jsonResponse({
-            choices: [{ message: { content: "Hola mundo" } }],
-          });
-        }
-        return jsonResponse({}, 404);
-      });
+      server.use(
+        http.post(PROVIDER_URLS.groqChat, () =>
+          jsonResponse({ choices: [{ message: { content: "Hola mundo" } }] }),
+        ),
+      );
 
       const result = await groq.translate(
         "Hello world",
@@ -96,7 +88,11 @@ describe("Groq provider", () => {
     });
 
     test("returns null on HTTP error", async () => {
-      mockFetch(async () => jsonResponse({ error: "unauthorized" }, 401));
+      server.use(
+        http.post(PROVIDER_URLS.groqChat, () =>
+          jsonResponse({ error: "unauthorized" }, 401),
+        ),
+      );
       const result = await groq.translate(
         "Hello",
         "Spanish",
@@ -108,7 +104,9 @@ describe("Groq provider", () => {
     });
 
     test("returns null on empty choices", async () => {
-      mockFetch(async () => jsonResponse({ choices: [] }));
+      server.use(
+        http.post(PROVIDER_URLS.groqChat, () => jsonResponse({ choices: [] })),
+      );
       const result = await groq.translate(
         "Hello",
         "Spanish",

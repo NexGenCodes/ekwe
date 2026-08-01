@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0.0",
+  "provider": "deepgram",
+  "operation": "transcribe",
+  "recordedAt": "2026-07-31T21:55:57.251Z",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/listen",
+      "query": {
+        "model": "nova-3",
+        "language": "en"
+      },
+      "headers": {
+        "authorization": "Token <REDACTED>",
+        "content-type": "audio/wav"
+      },
+      "body": "<binary>"
+    }
+  ]
+}

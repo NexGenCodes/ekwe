@@ -34,10 +34,6 @@ export function getMultiKeys(env, prefix) {
   return keys;
 }
 
-function checkUUID(key) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key.trim());
-}
-
 export async function checkKey(label, url, options) {
   try {
     const res = await fetch(url, {
@@ -64,60 +60,62 @@ export async function checkWithResult(label, url, options) {
   }
 }
 
-export async function testTranslateProviders(env) {
-  const results = [];
+export async function testTranslateProviders(env, { groq = false } = {}) {
+  const checks = [];
 
-  for (const key of getMultiKeys(env, 'GROQ_KEY_')) {
-    results.push(await checkWithResult(
-      `Groq`, 'https://api.groq.com/openai/v1/models',
-      { headers: { Authorization: `Bearer ${key}` } },
-    ));
+  if (groq) {
+    for (const key of getMultiKeys(env, 'GROQ_KEY_')) {
+      checks.push(checkWithResult(
+        `Groq`, 'https://api.groq.com/openai/v1/models',
+        { headers: { Authorization: `Bearer ${key}` } },
+      ));
+    }
   }
   for (const key of getMultiKeys(env, 'GEMINI_KEY_')) {
-    results.push(await checkWithResult(
+    checks.push(checkWithResult(
       `Gemini`,
       `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
     ));
   }
   for (const key of getMultiKeys(env, 'COHERE_KEY_')) {
-    results.push(await checkWithResult(
+    checks.push(checkWithResult(
       `Cohere`, 'https://api.cohere.ai/v1/models',
       { headers: { Authorization: `Bearer ${key}` } },
     ));
   }
   for (const key of getMultiKeys(env, 'MISTRAL_KEY_')) {
-    results.push(await checkWithResult(
+    checks.push(checkWithResult(
       `Mistral`, 'https://api.mistral.ai/v1/models',
       { headers: { Authorization: `Bearer ${key}` } },
     ));
   }
   if (env.OPENROUTER_KEY) {
-    results.push(await checkWithResult(
+    checks.push(checkWithResult(
       'OpenRouter', 'https://openrouter.ai/api/v1/auth/key',
       { headers: { Authorization: `Bearer ${env.OPENROUTER_KEY}` } },
     ));
   }
 
-  return results;
+  return Promise.all(checks);
 }
 
 export async function testTranscribeProviders(env) {
-  const results = [];
+  const checks = [];
 
   for (const key of getMultiKeys(env, 'DEEPGRAM_KEY_')) {
-    results.push(await checkWithResult(
+    checks.push(checkWithResult(
       `Deepgram`, 'https://api.deepgram.com/v1/projects',
       { headers: { Authorization: `Token ${key}` } },
     ));
   }
   for (const key of getMultiKeys(env, 'ASSEMBLYAI_KEY_')) {
-    results.push(await checkWithResult(
+    checks.push(checkWithResult(
       `AssemblyAI`, 'https://api.assemblyai.com/v2/account',
       { headers: { Authorization: key } },
     ));
   }
   for (const key of getMultiKeys(env, 'GLADIA_KEY_')) {
-    results.push(await checkWithResult(
+    checks.push(checkWithResult(
       `Gladia`, 'https://api.gladia.io/v2/live',
       { headers: { 'x-gladia-key': key } },
     ));
@@ -140,28 +138,29 @@ export async function testTranscribeProviders(env) {
   for (const lang of witLangs) {
     const key = env[`WIT_KEY_${lang}`];
     if (!key) {
-      results.push({ label: `Wit.ai ${lang}`, ok: false, error: 'no key configured' });
+      checks.push(Promise.resolve({ label: `Wit.ai ${lang}`, ok: false, error: 'no key configured' }));
       continue;
     }
-    results.push(await checkWithResult(
+    checks.push(checkWithResult(
       `Wit.ai ${lang}`,
       `https://api.wit.ai/message?v=20240304&q=hello`,
       { headers: { Authorization: `Bearer ${key}` } },
     ));
   }
 
-  return results;
+  return Promise.all(checks);
 }
 
 // ─── CLI entry point ───────────────────────────────────────────
 
 async function main() {
   const env = loadEnv();
+  const checkGroq = process.argv.includes('--groq');
   console.log(`Loaded ${Object.keys(env).length} vars from .dev.vars\n`);
 
   let allOk = true;
 
-  const translateResults = await testTranslateProviders(env);
+  const translateResults = await testTranslateProviders(env, { groq: checkGroq });
   if (translateResults.length > 0) {
     console.log('── Translate Providers ──────────────────────');
     for (const r of translateResults) {
@@ -182,6 +181,17 @@ async function main() {
       if (!r.ok && r.error !== 'no key configured') allOk = false;
     }
   }
+
+  const summarize = (results, title) => {
+    const pass = results.filter((r) => r.ok).length;
+    const skip = results.filter((r) => r.error === 'no key configured').length;
+    const fail = results.length - pass - skip;
+    console.log(
+      `  ${title}: ${pass} PASS · ${fail} FAIL · ${skip} missing-key (of ${results.length})`,
+    );
+  };
+  summarize(translateResults, 'Translate');
+  summarize(transcribeResults, 'Transcribe');
 
   console.log(`\n── Done ─────────────────────────────────────────`);
   process.exit(allOk ? 0 : 1);

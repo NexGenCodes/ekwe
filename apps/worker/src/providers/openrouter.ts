@@ -38,7 +38,7 @@ export async function translate(
         "User-Agent": getUserAgent(),
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-3.3-70b-instruct",
+        model: "openrouter/free",
         messages: [
           {
             role: "system",

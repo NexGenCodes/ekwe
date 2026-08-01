@@ -3,7 +3,10 @@ import {
   handlePricing,
   handleCheckoutInitialize,
 } from "../src/routes/checkout";
-import { mockEnv, mockFetch, jsonResponse } from "./setup";
+import { mockEnv, jsonResponse } from "./setup";
+import { http } from "msw";
+import { server } from "./msw/server";
+import { PROVIDER_URLS } from "./msw/handlers";
 
 function jsonRequest(body: unknown): Request {
   return new Request("http://test/checkout/initialize", {
@@ -15,10 +18,9 @@ function jsonRequest(body: unknown): Request {
 
 describe("handlePricing", () => {
   test("falls back to FALLBACK_RATES when FX is unavailable", async () => {
-    mockFetch(async (url) => {
-      if (url.includes("frankfurter.app")) return jsonResponse({}, 500);
-      return jsonResponse({});
-    });
+    server.use(
+      http.get(PROVIDER_URLS.frankfurterLatest, () => jsonResponse({}, 500)),
+    );
     const res = await handlePricing(mockEnv());
     const json = (await res.json()) as {
       pricing: Record<string, Record<string, { amount: number; lowestUnit: number }>>;
@@ -44,7 +46,6 @@ describe("handlePricing", () => {
   });
 
   test("uses cached FX rates from KV", async () => {
-    mockFetch(async () => jsonResponse({}));
     const env = mockEnv();
     await env.EKWE_KV.put(
       "fx:USD",
@@ -66,7 +67,6 @@ describe("handlePricing", () => {
 
 describe("handleCheckoutInitialize", () => {
   test("returns 400 for malformed JSON", async () => {
-    mockFetch(async () => jsonResponse({}));
     const res = await handleCheckoutInitialize(
       jsonRequest("{nope"),
       mockEnv(),
@@ -80,7 +80,6 @@ describe("handleCheckoutInitialize", () => {
   });
 
   test("returns 400 when plan_id or currency is missing", async () => {
-    mockFetch(async () => jsonResponse({}));
     const res = await handleCheckoutInitialize(
       jsonRequest({}),
       mockEnv(),
@@ -94,7 +93,6 @@ describe("handleCheckoutInitialize", () => {
   });
 
   test("returns 400 for unsupported currencies", async () => {
-    mockFetch(async () => jsonResponse({}));
     const res = await handleCheckoutInitialize(
       jsonRequest({ plan_id: "pro_monthly", currency: "JPY" }),
       mockEnv(),
@@ -108,7 +106,6 @@ describe("handleCheckoutInitialize", () => {
   });
 
   test("returns 400 for unknown plans", async () => {
-    mockFetch(async () => jsonResponse({}));
     const res = await handleCheckoutInitialize(
       jsonRequest({ plan_id: "pro_weekly", currency: "NGN" }),
       mockEnv(),
@@ -122,7 +119,6 @@ describe("handleCheckoutInitialize", () => {
   });
 
   test("returns 500 when Paystack is not configured", async () => {
-    mockFetch(async () => jsonResponse({}));
     const res = await handleCheckoutInitialize(
       jsonRequest({ plan_id: "pro_monthly", currency: "NGN" }),
       mockEnv(),
@@ -137,9 +133,12 @@ describe("handleCheckoutInitialize", () => {
 
   test("initializes a Paystack transaction", async () => {
     let paystackBody: string | undefined;
-    mockFetch(async (url, init) => {
-      if (url.includes("api.paystack.co")) {
-        paystackBody = typeof init?.body === "string" ? init.body : undefined;
+    server.use(
+      http.get(PROVIDER_URLS.frankfurterLatest, () =>
+        jsonResponse({ rates: { NGN: 500 } }),
+      ),
+      http.post(PROVIDER_URLS.paystackInitialize, async ({ request }) => {
+        paystackBody = await request.clone().text();
         return jsonResponse({
           status: true,
           message: "ok",
@@ -149,9 +148,8 @@ describe("handleCheckoutInitialize", () => {
             reference: "ekwe_user123_uuid",
           },
         });
-      }
-      return jsonResponse({});
-    });
+      }),
+    );
 
     const res = await handleCheckoutInitialize(
       jsonRequest({ plan_id: "pro_monthly", currency: "NGN" }),
@@ -173,10 +171,11 @@ describe("handleCheckoutInitialize", () => {
   });
 
   test("returns 502 when Paystack initialization fails", async () => {
-    mockFetch(async (url) => {
-      if (url.includes("api.paystack.co")) return jsonResponse({}, 500);
-      return jsonResponse({});
-    });
+    server.use(
+      http.post(PROVIDER_URLS.paystackInitialize, () =>
+        jsonResponse({}, 500),
+      ),
+    );
     const res = await handleCheckoutInitialize(
       jsonRequest({ plan_id: "pro_monthly", currency: "NGN" }),
       mockEnv({ PAYSTACK_SECRET_KEY: "psk" }),
@@ -190,12 +189,11 @@ describe("handleCheckoutInitialize", () => {
   });
 
   test("returns 502 when Paystack responds with status false", async () => {
-    mockFetch(async (url) => {
-      if (url.includes("api.paystack.co")) {
-        return jsonResponse({ status: false, message: "bad" });
-      }
-      return jsonResponse({});
-    });
+    server.use(
+      http.post(PROVIDER_URLS.paystackInitialize, () =>
+        jsonResponse({ status: false, message: "bad" }),
+      ),
+    );
     const res = await handleCheckoutInitialize(
       jsonRequest({ plan_id: "pro_annual", currency: "NGN" }),
       mockEnv({ PAYSTACK_SECRET_KEY: "psk" }),

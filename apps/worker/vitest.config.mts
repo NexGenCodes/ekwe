@@ -67,13 +67,15 @@ export default defineConfig({
         ],
         test: {
           name: "workers",
-          // Runs the Durable Object integration tests in the real Workers
-          // runtime (workerd via Miniflare). Coverage is only run against the
-          // unit project (`--project unit --coverage`); the v8 provider is
-          // unsupported in the workers pool.
-          // @ts-expect-error runtime option not in Vitest's ProjectConfig type
+          // Coverage is only supported on the Node "unit" project. The v8
+          // provider cannot run inside the workers pool (workerd), and
+          // project-level `coverage: { enabled: false }` is not a supported
+          // Vitest option (`--coverage` on the CLI overrides all projects).
+          // Always invoke coverage as `vitest run --project unit --coverage`.
+          // @ts-expect-error `coverage` does not exist in Vitest's ProjectConfig type
           coverage: { enabled: false },
           include: ["tests/workers/**/*.test.ts"],
+          setupFiles: ["tests/workers/setup.ts"],
         },
       },
     ],

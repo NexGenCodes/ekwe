@@ -11,6 +11,11 @@
     "test:watch": "vitest",
     "test:unit": "vitest run --project unit",
     "test:workers": "vitest run --project workers",
+    "test:coverage": "vitest run --project unit --coverage",
+    "fixtures:record": "FIXTURES_RECORD=1 vitest run --project unit tests/contract/fixture-record.test.ts",
+    "fixtures:verify": "FIXTURES_CHECK=1 vitest run --project unit tests/contract/fixture-record.test.ts",
+    "check:keys": "node tests/helpers/check-providers.mjs",
+    "check:keys:all": "node tests/helpers/check-providers.mjs --groq",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\""
@@ -27,9 +32,11 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.20.0",
     "@eslint/js": "^10.0.1",
+    "@msw/cloudflare": "^0.0.1",
     "@types/node": "^25.9.3",
     "@vitest/coverage-v8": "^4.1.8",
     "eslint": "^10.5.0",
+    "msw": "^2.15.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1",
     "vitest": "^4.1.6",

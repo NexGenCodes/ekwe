@@ -1,27 +1,17 @@
 import { describe, test, expect } from "vitest";
 import * as mistral from "../../src/providers/mistral";
-import {
-  mockEnv,
-  jsonResponse,
-  mockFetch,
-  mockFetchReset,
-  mockSignal,
-} from "../setup";
+import { mockEnv, jsonResponse, mockSignal } from "../setup";
+import { http } from "msw";
+import { server } from "../msw/server";
+import { PROVIDER_URLS } from "../msw/handlers";
 
 describe("Mistral provider", () => {
-  afterEach(() => {
-    mockFetchReset();
-  });
-
   test("returns translation on success", async () => {
-    mockFetch(async (url) => {
-      if (url.includes("api.mistral.ai")) {
-        return jsonResponse({
-          choices: [{ message: { content: "Ciao mondo" } }],
-        });
-      }
-      return jsonResponse({}, 404);
-    });
+    server.use(
+      http.post(PROVIDER_URLS.mistralChat, () =>
+        jsonResponse({ choices: [{ message: { content: "Ciao mondo" } }] }),
+      ),
+    );
 
     const result = await mistral.translate(
       "Hello world",
@@ -36,7 +26,11 @@ describe("Mistral provider", () => {
   });
 
   test("returns null on HTTP error", async () => {
-    mockFetch(async () => jsonResponse({ error: "rate limited" }, 429));
+    server.use(
+      http.post(PROVIDER_URLS.mistralChat, () =>
+        jsonResponse({ error: "rate limited" }, 429),
+      ),
+    );
     const result = await mistral.translate(
       "Hello",
       "Italian",
@@ -48,7 +42,11 @@ describe("Mistral provider", () => {
   });
 
   test("returns null on empty choices", async () => {
-    mockFetch(async () => jsonResponse({ choices: [] }));
+    server.use(
+      http.post(PROVIDER_URLS.mistralChat, () =>
+        jsonResponse({ choices: [] }),
+      ),
+    );
     const result = await mistral.translate(
       "Hello",
       "Italian",

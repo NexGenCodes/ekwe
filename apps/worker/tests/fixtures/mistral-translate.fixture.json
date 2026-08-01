@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "1.0.0",
+  "provider": "mistral",
+  "operation": "translate",
+  "recordedAt": "2026-07-31T21:55:57.263Z",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "query": {},
+      "headers": {
+        "authorization": "Bearer <REDACTED>",
+        "content-type": "application/json"
+      },
+      "body": {
+        "model": "mistral-small-2603",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an expert, highly accurate professional translator.\nYour sole task is to translate the user's text from English into fluent, natural-sounding Spanish.\nRules:\n1. Preserve the original tone, context, and formatting exactly.\n2. Do not add any explanations, conversational text, notes, or preambles.\n3. If the text is already in the target language, return it unchanged.\n4. Output ONLY the final translated text and nothing else."
+          },
+          {
+            "role": "user",
+            "content": "Hello"
+          }
+        ],
+        "temperature": 0
+      }
+    }
+  ]
+}

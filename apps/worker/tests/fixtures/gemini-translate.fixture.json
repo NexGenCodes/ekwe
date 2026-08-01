@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "1.0.0",
+  "provider": "gemini",
+  "operation": "translate",
+  "recordedAt": "2026-07-31T21:55:57.261Z",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1beta/models/gemini-3.5-flash:generateContent",
+      "query": {
+        "key": "<REDACTED>"
+      },
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "systemInstruction": {
+          "parts": [
+            {
+              "text": "You are an expert, highly accurate professional translator.\nYour sole task is to translate the user's text from English into fluent, natural-sounding Spanish.\nRules:\n1. Preserve the original tone, context, and formatting exactly.\n2. Do not add any explanations, conversational text, notes, or preambles.\n3. If the text is already in the target language, return it unchanged.\n4. Output ONLY the final translated text and nothing else."
+            }
+          ]
+        },
+        "contents": [
+          {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Hello"
+              }
+            ]
+          }
+        ],
+        "generationConfig": {
+          "temperature": 0.1
+        }
+      }
+    }
+  ]
+}

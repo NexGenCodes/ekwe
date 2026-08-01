@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "1.0.0",
+  "provider": "gladia",
+  "operation": "transcribe",
+  "recordedAt": "2026-07-31T21:55:57.256Z",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v2/upload",
+      "query": {},
+      "headers": {
+        "content-type": "multipart/form-data; boundary=<BOUNDARY>",
+        "x-gladia-key": "<REDACTED>"
+      },
+      "body": {
+        "fields": {},
+        "files": {
+          "audio": "<file:audio.wav>"
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/v2/pre-recorded",
+      "query": {},
+      "headers": {
+        "content-type": "application/json",
+        "x-gladia-key": "<REDACTED>"
+      },
+      "body": {
+        "audio_url": "https://mock.gladia/uploaded",
+        "language_config": {
+          "languages": [
+            "en"
+          ]
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/result",
+      "query": {},
+      "headers": {
+        "x-gladia-key": "<REDACTED>"
+      },
+      "body": null
+    }
+  ]
+}

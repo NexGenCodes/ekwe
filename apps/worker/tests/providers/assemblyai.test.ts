@@ -1,37 +1,28 @@
 import { describe, test, expect } from "vitest";
 import * as assemblyai from "../../src/providers/assemblyai";
-import {
-  mockEnv,
-  makeAudioBlob,
-  jsonResponse,
-  mockFetch,
-  mockFetchReset,
-  mockSignal,
-} from "../setup";
+import { mockEnv, makeAudioBlob, jsonResponse, mockSignal } from "../setup";
+import { http } from "msw";
+import { server } from "../msw/server";
+import { PROVIDER_URLS } from "../msw/handlers";
+
+const transcript = () => http.post(PROVIDER_URLS.assemblyaiTranscript, () => jsonResponse({ id: "mock-transcript-id" }));
 
 describe("AssemblyAI provider", () => {
-  afterEach(() => {
-    mockFetchReset();
-  });
-
   test("returns result on successful full flow", async () => {
-    let step = 0;
-    mockFetch(async (url) => {
-      step++;
-      if (url.includes("api.assemblyai.com/v2/upload")) {
-        return jsonResponse({ upload_url: "https://mock.audio/url" });
-      }
-      if (url.includes("api.assemblyai.com/v2/transcript")) {
-        if (step === 2) return jsonResponse({ id: "mock-transcript-id" });
-        return jsonResponse({
+    server.use(
+      http.post(PROVIDER_URLS.assemblyaiUpload, () =>
+        jsonResponse({ upload_url: "https://mock.audio/url" }),
+      ),
+      transcript(),
+      http.get(`${PROVIDER_URLS.assemblyaiTranscript}/:id`, () =>
+        jsonResponse({
           status: "completed",
           text: "Hello world",
           audio_duration: 5.0,
           language_code: "en",
-        });
-      }
-      return jsonResponse({}, 404);
-    });
+        }),
+      ),
+    );
 
     const result = await assemblyai.transcribe(
       makeAudioBlob(),
@@ -47,11 +38,11 @@ describe("AssemblyAI provider", () => {
   });
 
   test("returns null on upload error", async () => {
-    mockFetch(async (url) => {
-      if (url.includes("api.assemblyai.com/v2/upload"))
-        return jsonResponse({ error: "bad key" }, 401);
-      return jsonResponse({}, 404);
-    });
+    server.use(
+      http.post(PROVIDER_URLS.assemblyaiUpload, () =>
+        jsonResponse({ error: "bad key" }, 401),
+      ),
+    );
     const result = await assemblyai.transcribe(
       makeAudioBlob(),
       "en",
@@ -62,18 +53,15 @@ describe("AssemblyAI provider", () => {
   });
 
   test("returns null on polling timeout", async () => {
-    mockFetch(async (url) => {
-      if (url.includes("api.assemblyai.com/v2/upload"))
-        return jsonResponse({ upload_url: "https://mock.audio/url" });
-      if (
-        String(url).includes("api.assemblyai.com/v2/transcript") &&
-        !String(url).includes("/v2/transcript/")
-      )
-        return jsonResponse({ id: "mock-id" });
-      if (String(url).includes("/v2/transcript/"))
-        return jsonResponse({ status: "processing" });
-      return jsonResponse({}, 404);
-    });
+    server.use(
+      http.post(PROVIDER_URLS.assemblyaiUpload, () =>
+        jsonResponse({ upload_url: "https://mock.audio/url" }),
+      ),
+      transcript(),
+      http.get(`${PROVIDER_URLS.assemblyaiTranscript}/:id`, () =>
+        jsonResponse({ status: "processing" }),
+      ),
+    );
 
     const result = await assemblyai.transcribe(
       makeAudioBlob(),

@@ -1,27 +1,19 @@
 import { describe, test, expect } from "vitest";
 import * as cohere from "../../src/providers/cohere";
-import {
-  mockEnv,
-  jsonResponse,
-  mockFetch,
-  mockFetchReset,
-  mockSignal,
-} from "../setup";
+import { mockEnv, jsonResponse, mockSignal } from "../setup";
+import { http } from "msw";
+import { server } from "../msw/server";
+import { PROVIDER_URLS } from "../msw/handlers";
 
 describe("Cohere provider", () => {
-  afterEach(() => {
-    mockFetchReset();
-  });
-
   // ─── Transcribe ─────────────────────────────────────────────────
 
   test("transcribe returns text on success", async () => {
-    mockFetch(async (url) => {
-      if (url.includes("api.cohere.com/v2/audio/transcriptions")) {
-        return jsonResponse({ text: "hello world" });
-      }
-      return jsonResponse({}, 404);
-    });
+    server.use(
+      http.post(PROVIDER_URLS.cohereTranscriptions, () =>
+        jsonResponse({ text: "hello world" }),
+      ),
+    );
 
     const blob = new Blob(["fake audio"], { type: "audio/wav" });
     const result = await cohere.transcribe(blob, "en", mockEnv(), mockSignal());
@@ -37,7 +29,11 @@ describe("Cohere provider", () => {
   });
 
   test("transcribe returns null on HTTP error", async () => {
-    mockFetch(async () => jsonResponse({ error: "fail" }, 500));
+    server.use(
+      http.post(PROVIDER_URLS.cohereTranscriptions, () =>
+        jsonResponse({ error: "fail" }, 500),
+      ),
+    );
 
     const blob = new Blob(["fake audio"], { type: "audio/wav" });
     const result = await cohere.transcribe(blob, "en", mockEnv(), mockSignal());
@@ -45,12 +41,9 @@ describe("Cohere provider", () => {
   });
 
   test("transcribe returns null on missing text", async () => {
-    mockFetch(async (url) => {
-      if (url.includes("api.cohere.com/v2/audio/transcriptions")) {
-        return jsonResponse({});
-      }
-      return jsonResponse({}, 404);
-    });
+    server.use(
+      http.post(PROVIDER_URLS.cohereTranscriptions, () => jsonResponse({})),
+    );
 
     const blob = new Blob(["fake audio"], { type: "audio/wav" });
     const result = await cohere.transcribe(blob, "en", mockEnv(), mockSignal());
@@ -64,20 +57,17 @@ describe("Cohere provider", () => {
       mockEnv(),
       mockSignal(),
     );
-    expect(result).toBeNull(); // 404 from mock, but not rejected for language
+    expect(result).toBeNull(); // 404 from default handler, but not rejected for language
   });
 
   // ─── Translate ─────────────────────────────────────────────────
 
   test("returns translation on success", async () => {
-    mockFetch(async (url) => {
-      if (url.includes("api.cohere.ai")) {
-        return jsonResponse({
-          message: { content: [{ text: "Bonjour le monde" }] },
-        });
-      }
-      return jsonResponse({}, 404);
-    });
+    server.use(
+      http.post(PROVIDER_URLS.cohereChat, () =>
+        jsonResponse({ message: { content: [{ text: "Bonjour le monde" }] } }),
+      ),
+    );
 
     const result = await cohere.translate(
       "Hello world",
@@ -92,7 +82,11 @@ describe("Cohere provider", () => {
   });
 
   test("returns null on HTTP error", async () => {
-    mockFetch(async () => jsonResponse({ error: "unauthorized" }, 401));
+    server.use(
+      http.post(PROVIDER_URLS.cohereChat, () =>
+        jsonResponse({ error: "unauthorized" }, 401),
+      ),
+    );
     const result = await cohere.translate(
       "Hello",
       "French",
@@ -104,7 +98,11 @@ describe("Cohere provider", () => {
   });
 
   test("returns null on empty message content", async () => {
-    mockFetch(async () => jsonResponse({ message: { content: [] } }));
+    server.use(
+      http.post(PROVIDER_URLS.cohereChat, () =>
+        jsonResponse({ message: { content: [] } }),
+      ),
+    );
     const result = await cohere.translate(
       "Hello",
       "French",
@@ -116,7 +114,9 @@ describe("Cohere provider", () => {
   });
 
   test("returns null on missing message", async () => {
-    mockFetch(async () => jsonResponse({}));
+    server.use(
+      http.post(PROVIDER_URLS.cohereChat, () => jsonResponse({})),
+    );
     const result = await cohere.translate(
       "Hello",
       "French",

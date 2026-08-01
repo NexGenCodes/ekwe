@@ -2,7 +2,10 @@ import { describe, test, expect, beforeEach } from "vitest";
 import { handleWebhook } from "../src/routes/webhook";
 import type { Env } from "../src/types";
 import { hexEncode } from "../src/utils/keys";
-import { mockEnv, mockFetch, jsonResponse } from "./setup";
+import { mockEnv, jsonResponse } from "./setup";
+import { http } from "msw";
+import { server } from "./msw/server";
+import { PROVIDER_URLS } from "./msw/handlers";
 
 const ctx = { waitUntil: () => {} } as unknown as ExecutionContext;
 
@@ -47,16 +50,17 @@ describe("handleWebhook", () => {
 
   beforeEach(() => {
     setProCalls = [];
-    mockFetch(async (url, init) => {
-      if (url.includes("set_pro_status")) {
+    server.use(
+      http.post(PROVIDER_URLS.supabaseSetProStatus, async ({ request }) => {
         setProCalls.push({
-          body: typeof init?.body === "string" ? init.body : "",
+          body: await request.clone().text(),
         });
         return jsonResponse({ ok: true });
-      }
-      if (url.includes("frankfurter.app")) return jsonResponse({}, 500);
-      return jsonResponse({ ok: true });
-    });
+      }),
+      // FX is deliberately unavailable: webhook amount validation falls back
+      // to FALLBACK_RATES so the asserted lowest-unit amounts stay stable.
+      http.get(PROVIDER_URLS.frankfurterLatest, () => jsonResponse({}, 500)),
+    );
   });
 
   // ─── Guard rails ────────────────────────────────────────────────

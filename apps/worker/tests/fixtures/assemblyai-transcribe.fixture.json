@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "1.0.0",
+  "provider": "assemblyai",
+  "operation": "transcribe",
+  "recordedAt": "2026-07-31T21:55:57.257Z",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v2/upload",
+      "query": {},
+      "headers": {
+        "authorization": "<REDACTED>",
+        "content-type": "application/octet-stream"
+      },
+      "body": "<binary>"
+    },
+    {
+      "method": "POST",
+      "path": "/v2/transcript",
+      "query": {},
+      "headers": {
+        "authorization": "<REDACTED>",
+        "content-type": "application/json"
+      },
+      "body": {
+        "audio_url": "https://mock.assemblyai/uploaded",
+        "speech_models": [
+          "universal-3-5-pro",
+          "universal-2"
+        ],
+        "language_code": "en"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v2/transcript/abc123",
+      "query": {},
+      "headers": {
+        "authorization": "<REDACTED>"
+      },
+      "body": null
+    }
+  ]
+}

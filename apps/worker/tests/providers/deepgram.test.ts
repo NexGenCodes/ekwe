@@ -1,33 +1,28 @@
 import { describe, test, expect } from "vitest";
 import * as deepgram from "../../src/providers/deepgram";
-import {
-  mockEnv,
-  makeAudioBlob,
-  jsonResponse,
-  mockFetch,
-  mockFetchReset,
-  mockSignal,
-} from "../setup";
+import { mockEnv, makeAudioBlob, jsonResponse, mockSignal } from "../setup";
+import { http } from "msw";
+import { server } from "../msw/server";
+import { PROVIDER_URLS } from "../msw/handlers";
+
+const listen = () =>
+  http.post(PROVIDER_URLS.deepgram, () =>
+    jsonResponse({
+      results: {
+        channels: [
+          {
+            alternatives: [{ transcript: "Hello world", confidence: 0.99 }],
+            detected_language: "en",
+          },
+        ],
+      },
+      metadata: { duration: 3.5 },
+    }),
+  );
 
 describe("Deepgram provider", () => {
-  afterEach(() => {
-    mockFetchReset();
-  });
-
   test("returns result on success", async () => {
-    mockFetch(async () =>
-      jsonResponse({
-        results: {
-          channels: [
-            {
-              alternatives: [{ transcript: "Hello world", confidence: 0.99 }],
-              detected_language: "en",
-            },
-          ],
-        },
-        metadata: { duration: 3.5 },
-      }),
-    );
+    server.use(listen());
 
     const result = await deepgram.transcribe(
       makeAudioBlob(),
@@ -43,10 +38,12 @@ describe("Deepgram provider", () => {
   });
 
   test("returns null on empty transcript", async () => {
-    mockFetch(async () =>
-      jsonResponse({
-        results: { channels: [{ alternatives: [{ transcript: "" }] }] },
-      }),
+    server.use(
+      http.post(PROVIDER_URLS.deepgram, () =>
+        jsonResponse({
+          results: { channels: [{ alternatives: [{ transcript: "" }] }] },
+        }),
+      ),
     );
     const result = await deepgram.transcribe(
       makeAudioBlob(),
@@ -58,7 +55,9 @@ describe("Deepgram provider", () => {
   });
 
   test("returns null on missing channels", async () => {
-    mockFetch(async () => jsonResponse({ results: {} }));
+    server.use(
+      http.post(PROVIDER_URLS.deepgram, () => jsonResponse({ results: {} })),
+    );
     const result = await deepgram.transcribe(
       makeAudioBlob(),
       "en",
@@ -69,18 +68,20 @@ describe("Deepgram provider", () => {
   });
 
   test("returns null on hallucination", async () => {
-    mockFetch(async () =>
-      jsonResponse({
-        results: {
-          channels: [
-            {
-              alternatives: [{ transcript: "Thanks for watching" }],
-              detected_language: "en",
-            },
-          ],
-        },
-        metadata: { duration: 1.0 },
-      }),
+    server.use(
+      http.post(PROVIDER_URLS.deepgram, () =>
+        jsonResponse({
+          results: {
+            channels: [
+              {
+                alternatives: [{ transcript: "Thanks for watching" }],
+                detected_language: "en",
+              },
+            ],
+          },
+          metadata: { duration: 1.0 },
+        }),
+      ),
     );
     const result = await deepgram.transcribe(
       makeAudioBlob(),
@@ -92,7 +93,11 @@ describe("Deepgram provider", () => {
   });
 
   test("returns null on HTTP 403", async () => {
-    mockFetch(async () => jsonResponse({ error: "credit exhausted" }, 403));
+    server.use(
+      http.post(PROVIDER_URLS.deepgram, () =>
+        jsonResponse({ error: "credit exhausted" }, 403),
+      ),
+    );
     const result = await deepgram.transcribe(
       makeAudioBlob(),
       "en",

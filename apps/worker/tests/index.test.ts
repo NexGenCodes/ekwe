@@ -1,6 +1,9 @@
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import app from "../src/index";
-import { mockEnv, mockFetch, jsonResponse } from "./setup";
+import { mockEnv, jsonResponse } from "./setup";
+import { http } from "msw";
+import { server } from "./msw/server";
+import { PROVIDER_URLS } from "./msw/handlers";
 
 vi.mock("jose", () => ({
   jwtVerify: vi.fn(),
@@ -14,12 +17,11 @@ describe("Worker Router (index.ts)", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    mockFetch(async (url) => {
-      if (url.includes("/rpc/check_preflight")) {
-        return jsonResponse({ allowed: true, tier_active: "FREE" });
-      }
-      return new Response("not-found", { status: 404 });
-    });
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+        jsonResponse({ allowed: true, tier_active: "FREE" }),
+      ),
+    );
   });
 
   describe("CORS & Preflight", () => {

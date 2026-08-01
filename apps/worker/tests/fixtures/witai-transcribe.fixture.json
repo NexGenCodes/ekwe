@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0.0",
+  "provider": "witai",
+  "operation": "transcribe",
+  "recordedAt": "2026-07-31T21:55:57.255Z",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/dictation",
+      "query": {
+        "v": "20240304"
+      },
+      "headers": {
+        "authorization": "Bearer <REDACTED>",
+        "content-type": "audio/wav"
+      },
+      "body": "<binary>"
+    }
+  ]
+}

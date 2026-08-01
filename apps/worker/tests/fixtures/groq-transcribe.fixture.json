@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0.0",
+  "provider": "groq",
+  "operation": "transcribe",
+  "recordedAt": "2026-07-31T21:55:57.253Z",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/openai/v1/audio/transcriptions",
+      "query": {},
+      "headers": {
+        "authorization": "Bearer <REDACTED>",
+        "content-type": "multipart/form-data; boundary=<BOUNDARY>"
+      },
+      "body": {
+        "fields": {
+          "model": "whisper-large-v3",
+          "language": "en",
+          "response_format": "json",
+          "temperature": "0"
+        },
+        "files": {
+          "file": "<file:audio.wav>"
+        }
+      }
+    }
+  ]
+}

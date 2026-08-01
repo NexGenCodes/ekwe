@@ -1,6 +1,9 @@
 import { describe, test, expect, vi } from "vitest";
 import { handleTranslate } from "../src/routes/translate";
-import { mockEnv, jsonResponse, mockFetch, mockFetchReset } from "./setup";
+import { mockEnv, jsonResponse } from "./setup";
+import { http } from "msw";
+import { server } from "./msw/server";
+import { PROVIDER_URLS } from "./msw/handlers";
 
 function makeRequest(
   text = "Hello world",
@@ -17,19 +20,12 @@ function makeRequest(
 }
 
 describe("handleTranslate pipeline", () => {
-  afterEach(() => {
-    mockFetchReset();
-  });
-
   test("FREE pipeline returns result from first successful provider", async () => {
-    mockFetch(async (url) => {
-      if (url.includes("api.groq.com/openai/v1/chat/completions")) {
-        return jsonResponse({
-          choices: [{ message: { content: "Hola mundo" } }],
-        });
-      }
-      return jsonResponse({}, 404);
-    });
+    server.use(
+      http.post(PROVIDER_URLS.groqChat, () =>
+        jsonResponse({ choices: [{ message: { content: "Hola mundo" } }] }),
+      ),
+    );
 
     const res = await handleTranslate(
       makeRequest("Hello world", "es", "en"),
@@ -54,8 +50,6 @@ describe("handleTranslate pipeline", () => {
   });
 
   test("returns 503 when all providers fail", async () => {
-    mockFetch(async () => jsonResponse({ error: "fail" }, 500));
-
     const res = await handleTranslate(
       makeRequest("Hello", "es", "en"),
       mockEnv({
@@ -70,19 +64,18 @@ describe("handleTranslate pipeline", () => {
 
   test("PREMIUM pipeline uses different provider order", async () => {
     const providerOrder: string[] = [];
-    mockFetch(async (url) => {
-      if (url.includes("generativelanguage.googleapis.com")) {
+    server.use(
+      http.post(PROVIDER_URLS.geminiGenerate, () => {
         providerOrder.push("gemini");
         return jsonResponse({
           candidates: [{ content: { parts: [{ text: "Hola" }] } }],
         });
-      }
-      if (url.includes("api.cohere.ai")) {
+      }),
+      http.post(PROVIDER_URLS.cohereChat, () => {
         providerOrder.push("cohere");
         return jsonResponse({ message: { content: [{ text: "Hola" }] } });
-      }
-      return jsonResponse({}, 404);
-    });
+      }),
+    );
 
     const res = await handleTranslate(
       makeRequest("Hello"),
@@ -109,14 +102,11 @@ describe("handleTranslate pipeline", () => {
   });
 
   test("sanitizes prompt injection before sending", async () => {
-    mockFetch(async (url) => {
-      if (url.includes("api.groq.com")) {
-        return jsonResponse({
-          choices: [{ message: { content: "translated" } }],
-        });
-      }
-      return jsonResponse({}, 404);
-    });
+    server.use(
+      http.post(PROVIDER_URLS.groqChat, () =>
+        jsonResponse({ choices: [{ message: { content: "translated" } }] }),
+      ),
+    );
 
     const res = await handleTranslate(
       makeRequest(

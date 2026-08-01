@@ -24,7 +24,7 @@ export async function transcribe(
     (key) => {
       const body = new FormData();
       body.append("file", blob, `audio.${mimeToExt(blob.type)}`);
-      body.append("model", "whisper-large-v3-turbo");
+      body.append("model", "whisper-large-v3");
       if (lang && lang !== "auto") body.append("language", lang);
       body.append("response_format", "json");
       body.append("temperature", "0");

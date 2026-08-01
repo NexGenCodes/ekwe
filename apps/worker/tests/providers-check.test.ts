@@ -20,7 +20,8 @@ describe.runIf(RUN_INTEGRATION)("Provider key validation", () => {
   const env = loadEnv();
 
   it("validates translate provider keys", async () => {
-    const results = await testTranslateProviders(env);
+    const includeGroq = process.env.CHECK_GROQ === "true";
+    const results = await testTranslateProviders(env, { groq: includeGroq });
     const s = summarize(results);
     console.log(
       `\nTranslate: ${s.passed}/${s.total} passed, ${s.failedCount} failed`,

@@ -1,27 +1,19 @@
 import { describe, test, expect } from "vitest";
 import * as gemini from "../../src/providers/gemini";
-import {
-  mockEnv,
-  jsonResponse,
-  mockFetch,
-  mockFetchReset,
-  mockSignal,
-} from "../setup";
+import { mockEnv, jsonResponse, mockSignal } from "../setup";
+import { http } from "msw";
+import { server } from "../msw/server";
+import { PROVIDER_URLS } from "../msw/handlers";
 
 describe("Gemini provider", () => {
-  afterEach(() => {
-    mockFetchReset();
-  });
-
   test("returns translation on success", async () => {
-    mockFetch(async (url) => {
-      if (url.includes("generativelanguage.googleapis.com")) {
-        return jsonResponse({
+    server.use(
+      http.post(PROVIDER_URLS.geminiGenerate, () =>
+        jsonResponse({
           candidates: [{ content: { parts: [{ text: "Hola mundo" }] } }],
-        });
-      }
-      return jsonResponse({}, 404);
-    });
+        }),
+      ),
+    );
 
     const result = await gemini.translate(
       "Hello world",
@@ -36,8 +28,10 @@ describe("Gemini provider", () => {
   });
 
   test("returns null on HTTP error", async () => {
-    mockFetch(async () =>
-      jsonResponse({ error: { message: "quota exceeded" } }, 429),
+    server.use(
+      http.post(PROVIDER_URLS.geminiGenerate, () =>
+        jsonResponse({ error: { message: "quota exceeded" } }, 429),
+      ),
     );
     const result = await gemini.translate(
       "Hello",
@@ -50,7 +44,11 @@ describe("Gemini provider", () => {
   });
 
   test("returns null on empty candidates", async () => {
-    mockFetch(async () => jsonResponse({ candidates: [] }));
+    server.use(
+      http.post(PROVIDER_URLS.geminiGenerate, () =>
+        jsonResponse({ candidates: [] }),
+      ),
+    );
     const result = await gemini.translate(
       "Hello",
       "Spanish",
@@ -62,7 +60,11 @@ describe("Gemini provider", () => {
   });
 
   test("returns null on missing content parts", async () => {
-    mockFetch(async () => jsonResponse({ candidates: [{ content: {} }] }));
+    server.use(
+      http.post(PROVIDER_URLS.geminiGenerate, () =>
+        jsonResponse({ candidates: [{ content: {} }] }),
+      ),
+    );
     const result = await gemini.translate(
       "Hello",
       "Spanish",

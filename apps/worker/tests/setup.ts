@@ -1,5 +1,6 @@
-import { vi, afterEach } from "vitest";
+import { vi, beforeAll, afterEach, afterAll } from "vitest";
 import type { Env } from "../src/types";
+import { server } from "./msw/server";
 
 // ─── Mock Env Factory ──────────────────────────────────────────────
 
@@ -110,38 +111,6 @@ export function makeAudioBlob(): Blob {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-// ─── Mock Fetch Infrastructure ─────────────────────────────────────
-
-type FetchHandler = (
-  url: string,
-  init?: RequestInit,
-) => Response | Promise<Response>;
-
-let currentHandler: FetchHandler | null = null;
-
-export function mockFetch(handler: FetchHandler): void {
-  currentHandler = handler;
-}
-
-export function mockFetchURL(urlPattern: string, response: Response): void {
-  const originalFetch = globalThis.fetch;
-  mockFetch(async (url, init) => {
-    if (String(url).includes(urlPattern)) return response;
-    return originalFetch(url, init);
-  });
-}
-
-export function mockFetchReset(): void {
-  currentHandler = null;
-}
-
-// Install fetch interceptor
-const originalFetch = globalThis.fetch;
-globalThis.fetch = async (url, init) => {
-  if (currentHandler) return currentHandler(String(url), init);
-  return originalFetch(url, init);
-};
-
 // ─── JSON Response Helper ──────────────────────────────────────────
 
 export function jsonResponse(data: unknown, status = 200): Response {
@@ -157,8 +126,22 @@ export function mockSignal(): AbortSignal {
   return new AbortController().signal;
 }
 
-// ─── Auto-cleanup after each test ──────────────────────────────────
+// ─── MSW lifecycle ─────────────────────────────────────────────────
+// Replace the hand-rolled `globalThis.fetch` interceptor (which silently fell
+// through to the real network for unmocked requests and could burn real
+// provider tokens) with native MSW handlers. Unhandled requests now throw
+// loudly; only the explicit live key-validity run may bypass the network.
+
+beforeAll(() => {
+  server.listen({
+    onUnhandledRequest: "error",
+  });
+});
 
 afterEach(() => {
-  currentHandler = null;
+  server.resetHandlers();
+});
+
+afterAll(() => {
+  server.close();
 });

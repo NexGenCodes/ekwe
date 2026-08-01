@@ -1,12 +1,11 @@
 import { describe, test, expect, vi } from "vitest";
 import { handleTranscribe } from "../src/routes/transcribe";
-import {
-  mockEnv,
-  makeAudioBlob,
-  jsonResponse,
-  mockFetch,
-  mockFetchReset,
-} from "./setup";
+import { mockEnv, makeAudioBlob, jsonResponse } from "./setup";
+import { http } from "msw";
+import { server } from "./msw/server";
+import { PROVIDER_URLS } from "./msw/handlers";
+
+const MOCK_GLADIA_POLL = "https://mock.gladia/result";
 
 function makeRequest(lang?: string): Request {
   const blob = makeAudioBlob();
@@ -20,18 +19,14 @@ function makeRequest(lang?: string): Request {
 }
 
 describe("handleTranscribe pipeline", () => {
-  afterEach(() => {
-    mockFetchReset();
-  });
-
   test("FREE pipeline returns result from first successful provider", async () => {
     const calls: string[] = [];
-    mockFetch(async (url, _init) => {
-      calls.push(url);
-      if (url.includes("api.wit.ai"))
+    server.use(
+      http.post(PROVIDER_URLS.witaiDictation, ({ request }) => {
+        calls.push(request.url);
         return jsonResponse({ text: "wit result" });
-      return jsonResponse({}, 404);
-    });
+      }),
+    );
 
     const res = await handleTranscribe(
       makeRequest("en"),
@@ -46,22 +41,24 @@ describe("handleTranscribe pipeline", () => {
 
   test("skipOnAuto skips witai when lang is auto", async () => {
     let witCalled = false;
-    mockFetch(async (url) => {
-      if (url.includes("api.wit.ai")) {
+    server.use(
+      http.post(PROVIDER_URLS.witaiDictation, () => {
         witCalled = true;
         return jsonResponse({ text: "wit result" });
-      }
-      if (url.includes("api.gladia.io/v2/upload"))
-        return jsonResponse({ audio_url: "https://mock.audio/url" });
-      if (url.includes("api.gladia.io/v2/pre-recorded"))
-        return jsonResponse({ result_url: "https://mock.gladia/result" });
-      if (url.includes("mock.gladia/result"))
-        return jsonResponse({
+      }),
+      http.post(PROVIDER_URLS.gladiaUpload, () =>
+        jsonResponse({ audio_url: "https://mock.audio/url" }),
+      ),
+      http.post(PROVIDER_URLS.gladiaTranscription, () =>
+        jsonResponse({ result_url: MOCK_GLADIA_POLL }),
+      ),
+      http.get(MOCK_GLADIA_POLL, () =>
+        jsonResponse({
           status: "done",
           result: { transcription: { full_transcript: "gladia result" } },
-        });
-      return jsonResponse({}, 404);
-    });
+        }),
+      ),
+    );
 
     const res = await handleTranscribe(
       makeRequest("auto"),
@@ -99,13 +96,12 @@ describe("handleTranscribe pipeline", () => {
 
   test("supportedLanguages skips cohere for unsupported language", async () => {
     let cohereCalled = false;
-    mockFetch(async (url) => {
-      if (url.includes("api.cohere.com/v2/audio/transcriptions")) {
+    server.use(
+      http.post(PROVIDER_URLS.cohereTranscriptions, () => {
         cohereCalled = true;
         return jsonResponse({ text: "cohere result" });
-      }
-      return jsonResponse({}, 404);
-    });
+      }),
+    );
 
     const env = mockEnv({
       AI: {
@@ -128,13 +124,12 @@ describe("handleTranscribe pipeline", () => {
 
   test("supportedLanguages does not skip cohere for supported language", async () => {
     let cohereCalled = false;
-    mockFetch(async (url) => {
-      if (url.includes("api.cohere.com/v2/audio/transcriptions")) {
+    server.use(
+      http.post(PROVIDER_URLS.cohereTranscriptions, () => {
         cohereCalled = true;
         return jsonResponse({ text: "cohere result" });
-      }
-      return jsonResponse({}, 404);
-    });
+      }),
+    );
 
     const env = mockEnv({
       WIT_KEY_ES: "", // witai skipped - no key for Spanish
@@ -158,7 +153,6 @@ describe("handleTranscribe pipeline", () => {
   });
 
   test("returns 503 when all providers fail", async () => {
-    mockFetch(async () => jsonResponse({ error: "fail" }, 500));
     const env = mockEnv({
       WIT_KEY_EN: "", // witai skipped - no key
       AI: { run: vi.fn().mockRejectedValue(new Error("fail")) },
@@ -174,10 +168,139 @@ describe("handleTranscribe pipeline", () => {
     expect(res.status).toBe(503);
   });
 
+  test("returns 413 FILE_TOO_LARGE for oversized uploads (pre-guard)", async () => {
+    const oversized = new Uint8Array(6 * 1024 * 1024);
+    const req = new Request("http://test/transcribe", {
+      method: "POST",
+      body: oversized,
+      headers: { "Content-Type": "multipart/form-data; boundary=x" },
+    });
+    const res = await handleTranscribe(
+      req,
+      mockEnv(),
+      "FREE",
+      new AbortController().signal,
+      "test-user",
+    );
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("FILE_TOO_LARGE");
+  });
+
+  test("returns 500 when multipart form parsing fails", async () => {
+    const req = new Request("http://test/transcribe", {
+      method: "POST",
+      body: JSON.stringify({ text: "not a multipart body" }),
+      headers: { "Content-Type": "application/json" },
+    });
+    const res = await handleTranscribe(
+      req,
+      mockEnv(),
+      "FREE",
+      new AbortController().signal,
+      "test-user",
+    );
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("EKWE_TRANSCRIPTION_FAIL");
+  });
+
+  test("returns 503 when KV cache lookup fails", async () => {
+    const env = mockEnv({
+      EKWE_KV: {
+        get: async () => {
+          throw new Error("kv down");
+        },
+        put: async () => {},
+      },
+    } as any);
+    const res = await handleTranscribe(
+      makeRequest("en"),
+      env,
+      "FREE",
+      new AbortController().signal,
+      "test-user",
+    );
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("EKWE_ALL_PROVIDERS_FAIL");
+  });
+
+  test("auto: accepts transcript whose detected language matches", async () => {
+    server.use(
+      http.post(PROVIDER_URLS.deepgram, () =>
+        jsonResponse({
+          text: "deepgram auto result",
+          metadata: { duration: 10.0 },
+          results: {
+            channels: [
+              {
+                alternatives: [
+                  {
+                    transcript:
+                      "This is a test of the automatic transcription system that converts speech into text",
+                  },
+                ],
+                detected_language: "en",
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    const res = await handleTranscribe(
+      makeRequest("auto"),
+      mockEnv({ AI: { run: vi.fn().mockRejectedValue(new Error("fail")) } } as any),
+      "PREMIUM",
+      new AbortController().signal,
+      "test-user",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { text?: string };
+    expect(body.text).toContain("automatic transcription");
+  });
+
+  test("auto: rejects transcript whose detected language mismatches", async () => {
+    let deepgramCalled = false;
+    server.use(
+      http.post(PROVIDER_URLS.deepgram, () => {
+        deepgramCalled = true;
+        return jsonResponse({
+          text: "deepgram auto result",
+          metadata: { duration: 10.0 },
+          results: {
+            channels: [
+              {
+                alternatives: [
+                  {
+                    transcript:
+                      "Bonjour mes amis, ceci est un test du système de transcription automatique qui fonctionne très bien",
+                  },
+                ],
+                detected_language: "en",
+              },
+            ],
+          },
+        });
+      }),
+    );
+
+    const res = await handleTranscribe(
+      makeRequest("auto"),
+      mockEnv({ AI: { run: vi.fn().mockRejectedValue(new Error("fail")) } } as any),
+      "PREMIUM",
+      new AbortController().signal,
+      "test-user",
+    );
+    expect(deepgramCalled).toBe(true);
+    expect(res.status).toBe(503);
+  });
+
   test("PREMIUM pipeline uses different provider order", async () => {
     const providerOrder: string[] = [];
-    mockFetch(async (url) => {
-      if (url.includes("api.deepgram.com")) {
+    server.use(
+      http.post(PROVIDER_URLS.deepgram, () => {
         providerOrder.push("deepgram");
         return jsonResponse({
           text: "deepgram result",
@@ -191,15 +314,15 @@ describe("handleTranscribe pipeline", () => {
             ],
           },
         });
-      }
-      if (url.includes("api.gladia.io/v2/upload")) {
+      }),
+      http.post(PROVIDER_URLS.gladiaUpload, () => {
         providerOrder.push("gladia");
         return jsonResponse({ audio_url: "mock" });
-      }
-      if (url.includes("api.gladia.io/v2/pre-recorded"))
-        return jsonResponse({ result_url: "mock" });
-      return jsonResponse({}, 404);
-    });
+      }),
+      http.post(PROVIDER_URLS.gladiaTranscription, () =>
+        jsonResponse({ result_url: "mock" }),
+      ),
+    );
 
     const res = await handleTranscribe(
       makeRequest("en"),

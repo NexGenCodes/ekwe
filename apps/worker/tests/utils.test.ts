@@ -6,7 +6,9 @@ import {
   fetchWithTimeout,
   abortableDelay,
 } from "../src/utils/fetch";
-import { mockEnv, jsonResponse, mockFetch } from "./setup";
+import { mockEnv, jsonResponse } from "./setup";
+import { http } from "msw";
+import { server } from "./msw/server";
 
 // ─── sanitizeKey ───────────────────────────────────────────────────
 
@@ -121,7 +123,7 @@ describe("getClientHeaders", () => {
 
 describe("fetchWithTimeout", () => {
   test("resolves on success before timeout", async () => {
-    mockFetch(async () => jsonResponse({ ok: true }));
+    server.use(http.get("https://mock.test/200", () => jsonResponse({ ok: true })));
     const res = await fetchWithTimeout(
       "https://mock.test/200",
       { method: "GET" },
@@ -236,6 +238,117 @@ describe("rotateKeys", () => {
       "true",
       expect.objectContaining({ expirationTtl: 60 }),
     );
+  });
+
+  test("blacklists 401 keys with a 24h TTL", async () => {
+    const { rotateKeys, hashKey } = await import("../src/utils/keys");
+    const env = mockEnv({
+      GROQ_KEY_1: "unauthorized-key-abc",
+    });
+
+    await rotateKeys(
+      env,
+      "GROQ_KEY_",
+      async () => jsonResponse({}, 401),
+      new AbortController().signal,
+    );
+
+    const hash = await hashKey("unauthorized-key-abc");
+    expect(env.EKWE_KV.put).toHaveBeenCalledWith(
+      `blacklist:groq_key:${hash}`,
+      "true",
+      expect.objectContaining({ expirationTtl: 86400 }),
+    );
+  });
+
+  test("blacklists 402 keys with a 24h TTL", async () => {
+    const { rotateKeys, hashKey } = await import("../src/utils/keys");
+    const env = mockEnv({
+      GROQ_KEY_1: "payment-required-key",
+    });
+
+    await rotateKeys(
+      env,
+      "GROQ_KEY_",
+      async () => jsonResponse({}, 402),
+      new AbortController().signal,
+    );
+
+    const hash = await hashKey("payment-required-key");
+    expect(env.EKWE_KV.put).toHaveBeenCalledWith(
+      `blacklist:groq_key:${hash}`,
+      "true",
+      expect.objectContaining({ expirationTtl: 86400 }),
+    );
+  });
+
+  test("blacklists 403 keys with a 24h TTL", async () => {
+    const { rotateKeys, hashKey } = await import("../src/utils/keys");
+    const env = mockEnv({
+      GROQ_KEY_1: "forbidden-key-abc",
+    });
+
+    await rotateKeys(
+      env,
+      "GROQ_KEY_",
+      async () => jsonResponse({}, 403),
+      new AbortController().signal,
+    );
+
+    const hash = await hashKey("forbidden-key-abc");
+    expect(env.EKWE_KV.put).toHaveBeenCalledWith(
+      `blacklist:groq_key:${hash}`,
+      "true",
+      expect.objectContaining({ expirationTtl: 86400 }),
+    );
+  });
+
+  test("does not blacklist other 4xx statuses", async () => {
+    const { rotateKeys } = await import("../src/utils/keys");
+    const env = mockEnv({
+      GROQ_KEY_1: "bad-request-key",
+    });
+
+    await rotateKeys(
+      env,
+      "GROQ_KEY_",
+      async () => jsonResponse({}, 404),
+      new AbortController().signal,
+    );
+
+    expect(env.EKWE_KV.put).not.toHaveBeenCalled();
+  });
+
+  test("shuffles keys deterministically when the RNG is stubbed", async () => {
+    const { rotateKeys } = await import("../src/utils/keys");
+    const env = mockEnv({
+      GROQ_KEY_1: "healthy-key-abcde",
+      GROQ_KEY_2: "sick-key-abcde",
+    });
+
+    const getRandomValues = vi.spyOn(crypto, "getRandomValues");
+    getRandomValues.mockImplementation((arr) => {
+      if (arr instanceof Uint32Array) {
+        arr[0] = 1;
+        arr[1] = 0;
+      }
+      return arr;
+    });
+
+    const attempts: string[] = [];
+    const result = await rotateKeys(
+      env,
+      "GROQ_KEY_",
+      async (key) => {
+        attempts.push(key);
+        return jsonResponse({ ok: true });
+      },
+      new AbortController().signal,
+    );
+
+    expect(result).not.toBeNull();
+    expect(attempts).toEqual(["sick-key-abcde"]);
+    getRandomValues.mockRestore();
   });
 
   test("skips 4xx and 5xx errors", async () => {

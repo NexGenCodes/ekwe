@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0.0",
+  "provider": "cohere",
+  "operation": "transcribe",
+  "recordedAt": "2026-07-31T21:55:57.254Z",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v2/audio/transcriptions",
+      "query": {},
+      "headers": {
+        "authorization": "Bearer <REDACTED>",
+        "content-type": "multipart/form-data; boundary=<BOUNDARY>"
+      },
+      "body": {
+        "fields": {
+          "model": "cohere-transcribe-03-2026",
+          "language": "en"
+        },
+        "files": {
+          "file": "<file:audio.wav>"
+        }
+      }
+    }
+  ]
+}
