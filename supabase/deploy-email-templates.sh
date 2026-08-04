@@ -13,19 +13,19 @@
 # ──────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
-  echo "❌ Missing environment variables."
-  echo "   export SUPABASE_ACCESS_TOKEN=\"sbp_...\""
-  echo "   export SUPABASE_PROJECT_REF=\"your-project-ref\""
-  exit 1
-fi
-
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Auto-load from supabase/.env if env vars not already set
 if [ -f "$SCRIPT_DIR/.env" ]; then
   set -a; source "$SCRIPT_DIR/.env"; set +a
+fi
+
+if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+  echo "❌ Missing environment variables."
+  echo "   export SUPABASE_ACCESS_TOKEN=\"sbp_...\""
+  echo "   export SUPABASE_PROJECT_REF=\"your-project-ref\""
+  exit 1
 fi
 
 # Read the HTML templates from the file system
