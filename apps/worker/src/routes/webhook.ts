@@ -1,8 +1,9 @@
 import { Env } from "../types";
 import { logger } from "../logger";
 import { verifyWebhook, WebhookProvider } from "../signatures";
-import { getRates, getRateFor, toLowestUnit } from "../money";
-import { USD_PRICE } from "@ekwe/shared";
+import { getRates, getRateFor } from "../money";
+import { toLowestUnit } from "@ekwe/shared/money";
+import { USD_PRICE, PRO_PLAN_IDS, PRO_PRODUCT_IDS } from "@ekwe/shared";
 import { readLimitedBody } from "../security";
 
 const WEBHOOK_MAX_BYTES = 256 * 1024; // 256KB
@@ -16,8 +17,8 @@ const IDEMPOTENCY_TTL = 86400; // 24 hours
 const CHARGE_TOLERANCE_RATIO = 0.05;
 
 function toPlanPeriod(planId: string | undefined): "monthly" | "annual" | null {
-  if (planId === "pro_monthly") return "monthly";
-  if (planId === "pro_annual") return "annual";
+  if (planId === PRO_PLAN_IDS.monthly) return "monthly";
+  if (planId === PRO_PLAN_IDS.annual) return "annual";
   return null;
 }
 
@@ -30,22 +31,36 @@ function amountsMatch(charged: number, expected: number): boolean {
  * Validates that a successful charge actually paid for a Pro plan before
  * granting access. Prevents granting Pro from forged/mismatched payloads.
  * Returns the userId to activate, or null if the charge should be ignored.
+ *
+ * Provider differences (both send custom init metadata, just under different
+ * keys):
+ *  - Paystack stores the checkout payload under `data.metadata` and the
+ *    charged amount is `data.amount` (lowest unit).
+ *  - Flutterwave stores it under `data.meta` and the amount actually charged
+ *    is `data.charged_amount` (falls back to `data.amount`).
  */
 async function validateProCharge(
   env: Env,
   data: Record<string, unknown>,
+  provider: "paystack" | "flutterwave",
 ): Promise<string | null> {
-  const metadata = data.metadata as Record<string, unknown> | undefined;
+  const metadataField = provider === "flutterwave" ? "meta" : "metadata";
+  const amountField =
+    provider === "flutterwave" && data.charged_amount !== undefined
+      ? "charged_amount"
+      : "amount";
+
+  const metadata = data[metadataField] as Record<string, unknown> | undefined;
   const planId = metadata?.plan_id as string | undefined;
   const period = toPlanPeriod(planId);
   const currency = (metadata?.currency as string | undefined) ?? (data.currency as string | undefined);
-  const charged = data.amount as number | undefined;
+  const charged = data[amountField] as number | undefined;
   const expectedAmount = metadata?.amount as number | undefined;
 
   if (!period || !currency || typeof charged !== "number") {
     logger.warn(
       "[webhook] Charge missing plan/currency/amount; refusing to activate",
-      { planId, currency, charged },
+      { planId, currency, charged, provider },
     );
     return null;
   }
@@ -84,6 +99,7 @@ async function setProStatus(
   env: Env,
   identifier: { email?: string; userId?: string },
   isPro: boolean,
+  expiresAt?: string | null,
 ): Promise<void> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
     logger.error(
@@ -104,6 +120,7 @@ async function setProStatus(
         p_email: identifier.email || null,
         p_user_id: identifier.userId || null,
         p_is_pro: isPro,
+        p_expires_at: expiresAt ?? null,
       }),
     });
 
@@ -128,12 +145,14 @@ async function setSubscriptionStatus(
   env: Env,
   emailOrUserId: string,
   isPro: boolean,
+  expiresAt?: string | null,
 ): Promise<void> {
   const isEmail = emailOrUserId.includes("@");
   await setProStatus(
     env,
     isEmail ? { email: emailOrUserId } : { userId: emailOrUserId },
     isPro,
+    expiresAt,
   );
 }
 
@@ -155,7 +174,7 @@ async function processPaystackEvent(
       const email = (data?.customer as Record<string, unknown>)?.email as
         string | undefined;
 
-      const validatedUserId = await validateProCharge(env, data);
+      const validatedUserId = await validateProCharge(env, data, "paystack");
 
       if (!validatedUserId && !email) {
         logger.warn(
@@ -219,7 +238,7 @@ async function processFlutterwaveEvent(
         return Response.json({ received: true, action: "skipped" });
       }
 
-      const validatedUserId = await validateProCharge(env, data);
+      const validatedUserId = await validateProCharge(env, data, "flutterwave");
 
       const identifier =
         validatedUserId ?? userId ?? email ?? userIdFromReference(data)!;
@@ -240,7 +259,10 @@ async function processFlutterwaveEvent(
 // RevenueCat product identifiers for the Pro subscription (see
 // apps/mobile/src/constants/billing.ts). Activation events for any other
 // product must NOT grant Pro access.
-const RC_PRO_PRODUCT_IDS = new Set(["ekwe_pro_monthly", "ekwe_pro_annual"]);
+const RC_PRO_PRODUCT_IDS: Set<string> = new Set([
+  PRO_PRODUCT_IDS.monthly,
+  PRO_PRODUCT_IDS.annual,
+]);
 const RC_PRO_ENTITLEMENT = "pro";
 
 function isProPurchase(eventData: Record<string, unknown>): boolean {
@@ -286,6 +308,14 @@ async function processRevenueCatEvent(
     return Response.json({ received: true, action: "skipped" });
   }
 
+  // RevenueCat reports times in ms since epoch; convert to an ISO timestamp
+  // so the access-token hook can enforce expiry even before an EXPIRATION
+  // webhook lands (e.g. a lapsed sub mid-day).
+  const expiresAtMs = eventData?.expires_at_ms as number | undefined;
+  const expiresAt = Number.isFinite(expiresAtMs)
+    ? new Date(expiresAtMs!).toISOString()
+    : null;
+
   if (activationEvents.has(eventType)) {
     if (!isProPurchase(eventData)) {
       logger.warn(
@@ -294,13 +324,13 @@ async function processRevenueCatEvent(
       );
       return Response.json({ received: true, action: "skipped" });
     }
-    await setSubscriptionStatus(env, appUserId, true);
+    await setSubscriptionStatus(env, appUserId, true, expiresAt);
     logger.info(`[webhook:revenuecat] Subscription activated for ${appUserId}`);
     return Response.json({ received: true, action: "activated" });
   }
 
   if (deactivationEvents.has(eventType)) {
-    await setSubscriptionStatus(env, appUserId, false);
+    await setSubscriptionStatus(env, appUserId, false, expiresAt);
     logger.info(`[webhook:revenuecat] Subscription ended for ${appUserId}`);
     return Response.json({ received: true, action: "deactivated" });
   }

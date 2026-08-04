@@ -1,22 +1,20 @@
 import { logger } from "../logger";
 import { Env } from "../types";
 import { safeParseJSON } from "../security";
-import {
-  getRates,
-  getRateFor,
-  roundToCurrency,
-  toLowestUnit,
-  FALLBACK_RATES,
-} from "../money";
+import { getRates, getRateFor, getSupportedCurrencies } from "../money";
+import { roundToCurrency, toLowestUnit } from "@ekwe/shared/money";
 import type { PlanPricing } from "@ekwe/shared";
-import { USD_PRICE } from "@ekwe/shared";
+import { USD_PRICE, PRO_PLAN_IDS } from "@ekwe/shared";
 
 type PricingTable = Record<string, PlanPricing>;
 
-const VALID_PLANS = new Set(["pro_monthly", "pro_annual"]);
+const VALID_PLANS: Set<string> = new Set([
+  PRO_PLAN_IDS.monthly,
+  PRO_PLAN_IDS.annual,
+]);
 
 function buildPricing(rates: Record<string, number> | null): PricingTable {
-  const supported = Object.keys(FALLBACK_RATES);
+  const supported = getSupportedCurrencies();
   const pricing: PricingTable = { USD: USD_PRICE };
   for (const currency of supported) {
     if (currency === "USD") continue;
@@ -82,7 +80,7 @@ export async function handleCheckoutInitialize(
     }
 
     const cur = currency.toUpperCase();
-    if (!FALLBACK_RATES[cur]) {
+    if (!getSupportedCurrencies().includes(cur)) {
       return Response.json(
         { error: "INVALID_CURRENCY", message: `Currency ${cur} not supported` },
         { status: 400 },
@@ -98,7 +96,8 @@ export async function handleCheckoutInitialize(
 
     const rates = await getRates(env);
     const rate = getRateFor(cur, rates);
-    const usdPrice = USD_PRICE[plan_id === "pro_annual" ? "annual" : "monthly"];
+    const usdPrice =
+      USD_PRICE[plan_id === PRO_PLAN_IDS.annual ? "annual" : "monthly"];
     const rawAmount = usdPrice.amount * rate;
     const lowestUnit = toLowestUnit(rawAmount, cur);
 

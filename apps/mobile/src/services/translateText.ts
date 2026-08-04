@@ -59,6 +59,9 @@ export async function translateText(
       }),
       retries: 2,
       signal,
+      // The worker already tried every LLM provider before returning 5xx;
+      // retrying would double the provider spend for no extra chance of success.
+      retryOnHttpResponse: false,
     });
 
     if (!response.ok) {

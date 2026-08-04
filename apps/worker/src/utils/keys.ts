@@ -2,9 +2,16 @@ import { CLIENT_ABORTED, Env } from "../types";
 import { logger } from "../logger";
 
 export function getRandomInt(max: number): number {
-  const arr = new Uint32Array(1);
-  crypto.getRandomValues(arr);
-  return arr[0] % max;
+  // Rejection sampling: `% max` is biased whenever 2^32 % max != 0 (and even
+  // 32-bit getRandomValues has slight bias per the Web Crypto spec). A 1-in-2
+  // rejection bound keeps expected draws < 2 while removing the bias entirely.
+  const threshold = Math.floor(0x100000000 / max) * max;
+  for (;;) {
+    const arr = new Uint32Array(1);
+    crypto.getRandomValues(arr);
+    const value = arr[0];
+    if (value < threshold) return value % max;
+  }
 }
 
 export function sanitizeKey(key: unknown): string {

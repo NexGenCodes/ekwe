@@ -1,14 +1,13 @@
-import { LANGUAGES as BASE_LANGUAGES } from "@shared/languages";
-import type { Language as BaseLanguage } from "@shared/languages";
+import { LANGUAGES as BASE_LANGUAGES } from "@ekwe/shared/languages";
+import type { Language as BaseLanguage } from "@ekwe/shared/languages";
+import { languageName as sharedLanguageName } from "@ekwe/shared/languages";
 
 export interface Language extends BaseLanguage {
-  groqCode: string;
   defaultSelected: boolean;
   fillerWords: string[];
 }
 
 interface LanguageExt {
-  groqCode?: string;
   defaultSelected?: boolean;
   fillerWords?: string[];
 }
@@ -72,19 +71,17 @@ const EXTENSIONS: Record<string, LanguageExt> = {
     defaultSelected: true,
     fillerWords: ["那个", "就是", "然后", "对", "嗯", "这个"],
   },
-  nb: { groqCode: "no" },
 };
 
 export const LANGUAGES: Language[] = BASE_LANGUAGES.map((l) => ({
   ...l,
-  groqCode: EXTENSIONS[l.code]?.groqCode ?? l.code,
   defaultSelected: EXTENSIONS[l.code]?.defaultSelected ?? false,
   fillerWords: EXTENSIONS[l.code]?.fillerWords ?? [],
 }));
 
 export const getLanguageName = (code: string): string => {
   if (code === "auto") return "Auto";
-  return LANGUAGES.find((l) => l.code === code)?.englishName ?? code;
+  return sharedLanguageName(code);
 };
 
 export const getLanguageAbbreviation = (code: string): string => {
@@ -185,7 +182,53 @@ export const FLAG_MAP: Record<string, string> = {
   tg: "🇹🇯",
   ps: "🇦🇫",
   sd: "🇵🇰",
-  mni: "🇮🇳",
   as: "🇮🇳",
   or: "🇮🇳",
+  ci: "🇺🇸",
+  ck: "🇮🇹",
+  eo: "🌍",
+  fo: "🇫🇴",
+  fy: "🇳🇱",
+  haw: "🇺🇸",
+  ht: "🇭🇹",
+  iu: "🇨🇦",
+  kl: "🇬🇱",
+  la: "🏛️",
+  lb: "🇱🇺",
+  mi: "🇳🇿",
+  nn: "🇳🇴",
+  no: "🇳🇴",
+  oc: "🇫🇷",
+  rm: "🇨🇭",
+  sa: "🇮🇳",
+  sc: "🇮🇹",
+  se: "🇳🇴",
+  ti: "🇪🇷",
+  tt: "🇷🇺",
+  yi: "🇮🇱",
+  yue: "🇭🇰",
+  ak: "🇬🇭",
+  ay: "🇧🇴",
+  ba: "🇷🇺",
+  be: "🇧🇾",
+  bo: "🇨🇳",
+  br: "🇫🇷",
+  dv: "🇲🇻",
+  ff: "🇸🇳",
+  gn: "🇵🇾",
+  kn: "🇮🇳",
+  ks: "🇮🇳",
+  ku: "🇮🇶",
+  lg: "🇺🇬",
+  li: "🇳🇱",
+  ln: "🇨🇩",
+  nr: "🇿🇦",
+  om: "🇪🇹",
+  qu: "🇵🇪",
+  ss: "🇸🇿",
+  tn: "🇧🇼",
+  ts: "🇿🇦",
+  ug: "🇨🇳",
+  ve: "🇿🇦",
+  wo: "🇸🇳",
 };

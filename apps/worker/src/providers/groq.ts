@@ -4,6 +4,7 @@ import { isHallucination, buildTranslatePrompt } from "../utils/prompts";
 import { mimeToExt } from "../utils/mime";
 import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
 import { logger } from "../logger";
+import { toWhisperCode } from "../languages";
 
 const GROQ_TRANSCRIBE = "https://api.groq.com/openai/v1/audio/transcriptions";
 const GROQ_CHAT = "https://api.groq.com/openai/v1/chat/completions";
@@ -25,7 +26,7 @@ export async function transcribe(
       const body = new FormData();
       body.append("file", blob, `audio.${mimeToExt(blob.type)}`);
       body.append("model", "whisper-large-v3");
-      if (lang && lang !== "auto") body.append("language", lang);
+      if (lang && lang !== "auto") body.append("language", toWhisperCode(lang));
       body.append("response_format", "json");
       body.append("temperature", "0");
 

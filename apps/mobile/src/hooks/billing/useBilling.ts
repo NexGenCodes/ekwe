@@ -4,6 +4,8 @@ import * as WebBrowser from "expo-web-browser";
 import { useState, useMemo } from "react";
 
 import { BILLING_PLANS, DISPLAY_PRICING } from "@/constants/billing";
+import { getCurrency } from "@ekwe/shared/currencies";
+import { PRO_PLAN_IDS } from "@ekwe/shared/plans";
 import { usePricingQuery } from "@/hooks/queries/usePricingQuery";
 import { supabase } from "@/services/supabase";
 import { auth$, authActions, settings$ } from "@/store";
@@ -34,24 +36,19 @@ export function useBilling(): UseBillingReturn {
       pricingData?.pricing?.[currency] ?? pricingData?.pricing?.USD;
     if (serverPricing) {
       const cur = serverPricing.monthly.currency;
-      const symbol: Record<string, string> = {
-        USD: "$",
-        EUR: "€",
-        GBP: "£",
-        NGN: "₦",
-      };
+      const symbol = getCurrency(cur)?.symbol ?? "$";
       const monthlyAmount = serverPricing.monthly.amount;
       const annualAmount = serverPricing.annual.amount;
       return {
         monthly: {
           amount: monthlyAmount,
           currency: cur,
-          symbol: symbol[cur] ?? "$",
+          symbol,
         },
         annual: {
           amount: annualAmount,
           currency: cur,
-          symbol: symbol[cur] ?? "$",
+          symbol,
         },
         annualMonthlyCost: +(annualAmount / 12).toFixed(2),
         annualSavingPercent: Math.round(
@@ -130,7 +127,7 @@ export function useBilling(): UseBillingReturn {
 
     try {
       const data = await checkoutMutation.mutateAsync({
-        planId: isAnnual ? "pro_annual" : "pro_monthly",
+        planId: isAnnual ? PRO_PLAN_IDS.annual : PRO_PLAN_IDS.monthly,
         currency,
         accessToken: session.access_token,
       });
@@ -178,19 +175,19 @@ export function useBilling(): UseBillingReturn {
       authActions.setIsPro(restoredIsPro);
       if (restoredIsPro) {
         AppAlert.success(
-          "Purchases Restored",
-          "Your Pro subscription has been restored.",
+          "Subscription Active",
+          "Your Pro subscription is active.",
         );
       } else {
         AppAlert.info(
-          "No Purchases Found",
-          "We could not find any previous purchases to restore. If you believe this is an error, please contact support.",
+          "No Active Subscription",
+          "We could not find an active Pro subscription on this account. If you believe this is an error, please contact support.",
         );
       }
     } catch {
       AppAlert.error(
-        "Restore Failed",
-        "Could not verify purchases. Please try again or contact support.",
+        "Status Check Failed",
+        "Could not verify your subscription. Please try again or contact support.",
       );
     }
   };

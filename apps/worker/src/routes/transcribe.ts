@@ -109,6 +109,12 @@ const PREMIUM_PIPELINE = buildPipeline(
   "premium",
 );
 
+// Hard ceiling for the whole provider failover loop. Providers are tried
+// sequentially (cheapest first), but without a total budget a full failure
+// could take the sum of all per-provider timeouts (~60s+) — past the mobile
+// client's 30s timeout, so the user would have given up already.
+const PIPELINE_TOTAL_MS = 25_000;
+
 export async function handleTranscribe(
   request: Request,
   env: Env,
@@ -188,7 +194,10 @@ export async function handleTranscribe(
   let cacheKey: string;
   try {
     const audioHash = await hashBytes(audioBuffer);
-    cacheKey = `transcribe:${userId}:${audioHash}:${lang || "auto"}`;
+    // Tier is part of the key so a premium auto-detect result (which may
+    // include `language`) can never be served to a downgraded FREE user who
+    // isn't entitled to auto-detection.
+    cacheKey = `transcribe:${userId}:${tier}:${audioHash}:${lang || "auto"}`;
     const cached = await env.EKWE_KV.get(cacheKey);
     if (cached) {
       return Response.json(JSON.parse(cached) as TranscribeResult);
@@ -221,10 +230,13 @@ export async function handleTranscribe(
 
   const pipeline = tier === "FREE" ? FREE_PIPELINE : PREMIUM_PIPELINE;
 
+  const pipelineStart = Date.now();
   logger.info(
     `[transcribe] Starting provider pipeline, pipeline has ${pipeline.length} providers`,
   );
   for (const provider of pipeline) {
+    if (Date.now() - pipelineStart >= PIPELINE_TOTAL_MS) break;
+
     if (isAuto && provider.skipOnAuto) {
       logger.info(`[transcribe] Skipping ${provider.name} (skipOnAuto)`);
       continue;
@@ -245,10 +257,14 @@ export async function handleTranscribe(
         timeoutMs: provider.timeoutMs,
       });
 
+      const budgetMs = Math.max(
+        1_000,
+        PIPELINE_TOTAL_MS - (Date.now() - pipelineStart),
+      );
       const timeoutCtrl = new AbortController();
       const timeoutId = setTimeout(
         () => timeoutCtrl.abort(),
-        provider.timeoutMs,
+        Math.min(provider.timeoutMs, budgetMs),
       );
       const onClientAbort = (): void => timeoutCtrl.abort();
       signal.addEventListener("abort", onClientAbort);

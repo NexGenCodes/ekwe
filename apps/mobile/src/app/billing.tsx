@@ -200,7 +200,7 @@ export default function BillingScreen(): React.ReactElement {
             <Pressable
               onPress={handleRestore}
               style={{ marginTop: spacing.md }}
-              accessibilityLabel="Restore previous purchases"
+              accessibilityLabel="Check your subscription status"
             >
               <Text
                 variant="bodySmall"
@@ -209,7 +209,7 @@ export default function BillingScreen(): React.ReactElement {
                   textDecorationLine: "underline",
                 }}
               >
-                Restore Purchases
+                Check subscription status
               </Text>
             </Pressable>
           )}

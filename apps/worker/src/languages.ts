@@ -46,6 +46,7 @@ export const ALL_LANGUAGES = new Set([
   "hu",
   "ta",
   "no",
+  "nb",
   "th",
   "ur",
   "hr",
@@ -113,10 +114,26 @@ export const ALL_LANGUAGES = new Set([
   "ln",
   "ha",
   "ba",
-  "jw",
+  "jv",
   "su",
   "yue",
 ]);
+
+// ─── Provider code translation ───────────────────────────────────────
+// The canonical (shared) language codes match ISO 639-1. A few providers
+// use their own non-ISO codes for specific languages; translate before
+// calling their APIs so the canonical code is always sent to the pipeline.
+// Whisper's tokenizer (openai/whisper) uses "jw" for Javanese and "no"
+// for Norwegian (Bokmål), while ISO 639-1 uses "jv" and "nb".
+
+const WHISPER_CODE_MAP: Record<string, string> = {
+  jv: "jw", // Javanese
+  nb: "no", // Norwegian (Bokmål)
+};
+
+export function toWhisperCode(code: string): string {
+  return WHISPER_CODE_MAP[code] ?? code;
+}
 
 // ─── Cohere Transcribe ───────────────────────────────────────────────
 // Cohere's transcribe API (cohere-transcribe-03-2026) supports 14 languages.
@@ -139,10 +156,10 @@ export const COHERE_LANGUAGES = new Set([
 ]);
 
 // ─── Wit.ai Dictation ────────────────────────────────────────────────
-// Wit.ai supports 130+ languages via per-language API keys.
-// The app creation dropdown shows all 130+ languages from the FAQ list.
+// Wit.ai supports 132 languages via per-language API keys (wit.ai/faq).
+// 130 have ISO 639-1 codes; Cherokee ("ci") and Sicilian ("ck") use Wit's
+// own codes and are kept here so the WIT_KEY_CI / WIT_KEY_CK keys work.
 // Each WIT_KEY_{LANG} in env maps to one language model.
-// Source: wit.ai/faq (132 languages minus Cherokee/Sicilian without ISO 639-1)
 
 export const WITAI_LANGUAGES = new Set([
   "af",
@@ -162,6 +179,8 @@ export const WITAI_LANGUAGES = new Set([
   "bg",
   "my",
   "ca",
+  "ci",
+  "ck",
   "ny",
   "zh",
   "hr",

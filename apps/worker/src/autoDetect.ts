@@ -109,7 +109,6 @@ const ISO639_3_TO_1: Record<string, string> = {
   tgk: "tg",
   pus: "ps",
   snd: "sd",
-  mni: "mni",
   asm: "as",
   ori: "or",
   nds: "de",

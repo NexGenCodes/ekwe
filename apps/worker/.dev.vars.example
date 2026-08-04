@@ -50,8 +50,9 @@ MISTRAL_KEY_5=
 OPENROUTER_KEY=
 
 # ─── Wit.ai (per-language keys) ───────────────────────────────────────
-# Optional. Each WIT_KEY_<ISO-639-1> enables Wit.ai transcription for that
-# language. Only fill the languages you support. Must match src/languages.ts.
+# Optional. Each WIT_KEY_<code> enables Wit.ai transcription for that
+# language. 130 languages use ISO 639-1 codes; Cherokee (CI) and Sicilian
+# (CK) use Wit's own codes. Must match src/languages.ts.
 WIT_KEY_AF=
 WIT_KEY_AK=
 WIT_KEY_AM=
@@ -66,6 +67,8 @@ WIT_KEY_BO=
 WIT_KEY_BR=
 WIT_KEY_BS=
 WIT_KEY_CA=
+WIT_KEY_CI=
+WIT_KEY_CK=
 WIT_KEY_CS=
 WIT_KEY_CY=
 WIT_KEY_DA=

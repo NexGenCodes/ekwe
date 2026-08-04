@@ -8,6 +8,7 @@ import { Button } from "@/components/Button";
 import { Box, Text } from "@/components/ui";
 import { DISPLAY_PRICING } from "@/constants/billing";
 import type { BILLING_PLANS, PlanFeature } from "@/constants/billing";
+import { getCurrency } from "@ekwe/shared/currencies";
 import { usePricingQuery } from "@/hooks/queries/usePricingQuery";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
@@ -34,12 +35,7 @@ function usePriceBreakdown(
       pricingData?.pricing?.[currency] ?? pricingData?.pricing?.USD;
     if (serverPricing) {
       const cur = serverPricing.monthly.currency;
-      const symbol: Record<string, string> = {
-        USD: "$",
-        EUR: "€",
-        GBP: "£",
-        NGN: "₦",
-      };
+      const symbol = getCurrency(cur)?.symbol ?? "$";
       const monthlyPrice = serverPricing.monthly.amount;
       const annualTotal = serverPricing.annual.amount;
       const effectiveMonthly = +(annualTotal / 12).toFixed(2);
@@ -47,12 +43,11 @@ function usePriceBreakdown(
         (1 - annualTotal / (monthlyPrice * 12)) * 100,
       );
 
-      const sym = symbol[cur] ?? "$";
       if (!isAnnual) {
         return {
           displayPrice: monthlyPrice,
           originalPrice: monthlyPrice,
-          symbol: sym,
+          symbol,
           annualTotal: 0,
           savingPercent: 0,
         };
@@ -60,7 +55,7 @@ function usePriceBreakdown(
       return {
         displayPrice: effectiveMonthly,
         originalPrice: monthlyPrice,
-        symbol: sym,
+        symbol,
         annualTotal,
         savingPercent,
       };

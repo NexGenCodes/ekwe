@@ -2,8 +2,10 @@ import { File as ExpoFile, FileMode } from "expo-file-system";
 
 import { EkweError } from "@/constants/errors";
 import { Result, ok, err } from "@/types/Result";
+import { MAX_AUDIO_BYTES as MAX_FILE_SIZE } from "@ekwe/shared/plans";
 
-export const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB Groq limit
+export { MAX_FILE_SIZE };
+
 export const VOICE_NOTE_EXTENSIONS = [".ogg", ".m4a", ".aac", ".amr", ".3gp"];
 
 export const VOICE_NOTE_MIME_TYPES = [

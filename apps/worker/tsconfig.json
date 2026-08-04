@@ -9,8 +9,7 @@
     "isolatedModules": true,
     "types": ["vitest/globals", "@cloudflare/vitest-pool-workers/types"],
     "paths": {
-      "@/*": ["./src/*"],
-      "@ekwe/shared": ["../../packages/shared/index.ts"]
+      "@/*": ["./src/*"]
     }
   },
   "include": [

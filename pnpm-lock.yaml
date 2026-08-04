@@ -255,6 +255,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@ekwe/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       franc:
         specifier: ^6.2.0
         version: 6.2.0
@@ -299,7 +302,11 @@ importers:
         specifier: ^4.102.0
         version: 4.117.0
 
-  packages/shared: {}
+  packages/shared:
+    devDependencies:
+      vitest:
+        specifier: ^4.1.6
+        version: 4.1.10(@types/node@25.9.5)(@vitest/coverage-v8@4.1.10)(jsdom@20.0.3)(msw@2.15.0(@types/node@25.9.5)(typescript@6.0.3))(vite@8.2.0(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.0))
 
 packages:
 

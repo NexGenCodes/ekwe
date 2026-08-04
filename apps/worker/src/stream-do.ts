@@ -245,7 +245,19 @@ export class StreamDurableObject extends DurableObject<Env> {
     // Start the config-negotiation timer (client usually sends config on open).
     await this.ctx.storage.setAlarm(Date.now() + CONFIG_NEGOTIATION_TIMEOUT_MS);
 
-    return new Response(null, { status: 101, webSocket: client });
+    const headers: Record<string, string> = {};
+    // The client authenticates via the Sec-WebSocket-Protocol subprotocol
+    // (keeps the JWT out of the query string). RFC 6455 requires the server
+    // to select one of the requested protocols, so echo it back or the
+    // client will fail the handshake.
+    const subprotocol = request.headers.get("Sec-WebSocket-Protocol");
+    if (subprotocol) headers["Sec-WebSocket-Protocol"] = subprotocol;
+
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+      headers,
+    });
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {

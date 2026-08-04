@@ -48,14 +48,15 @@ class StreamTranscriberClass {
 
     const token = config.getToken?.() ?? config.token;
     const wsBase = config.serverUrl.replace(/^http/, "ws");
+    // Keep the JWT out of the query string: it rides the Sec-WebSocket-Protocol
+    // subprotocol instead (RFC 6455), so it never hits logs or proxies.
     const query = new URLSearchParams({
-      token,
       lang: config.lang,
     });
     const url = `${wsBase}/transcribe/stream?${query.toString()}`;
 
     try {
-      this.ws = new WebSocket(url);
+      this.ws = new WebSocket(url, [token]);
 
       this.ws.onopen = (): void => {
         logger.info("[StreamTranscriber] Connected");
@@ -64,7 +65,6 @@ class StreamTranscriberClass {
 
         this.sendJson({
           type: "config",
-          token: config.token,
           lang: config.lang,
           codec: "opus",
           sampleRate: 16000,
@@ -100,7 +100,6 @@ class StreamTranscriberClass {
             if (data.type === "config_request") {
               this.sendJson({
                 type: "config",
-                token: this.config?.token,
                 lang: this.config?.lang,
                 codec: "opus",
                 sampleRate: 16000,

@@ -143,13 +143,15 @@ function RootLayout(): React.ReactElement {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { SyncService } = require("@/services/SyncService");
 
-    initAuth().catch((err: unknown) => {
-      logger.error("[RootLayout] initAuth failed", err);
-    });
-    initializeMMKV().catch((err: unknown) => {
-      logger.error("[RootLayout] initializeMMKV failed", err);
-    });
-    SyncService.start();
+    // Must resolve BEFORE initAuth: until initializeMMKV finishes, the mmkv
+    // proxy falls back to the plaintext boot storage, so a concurrent initAuth
+    // would persist session tokens unencrypted.
+    initializeMMKV()
+      .then(() => initAuth())
+      .catch((err: unknown) => {
+        logger.error("[RootLayout] initializeMMKV failed", err);
+      })
+      .finally(() => SyncService.start());
 
     return (): void => {
       SyncService.stop();

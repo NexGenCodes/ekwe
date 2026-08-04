@@ -1,6 +1,7 @@
 import { CLIENT_ABORTED, Env, TranscribeResult, TranslateResult } from "../types";
 import { isHallucination, buildTranslatePrompt } from "../utils/prompts";
 import { logger } from "../logger";
+import { toWhisperCode } from "../languages";
 
 /**
  * Cloudflare Workers AI — zero-key safety net.
@@ -29,7 +30,9 @@ export async function transcribe(
     if (signal.aborted) throw new Error(CLIENT_ABORTED);
     const audio = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
     const input =
-      lang && lang !== "auto" ? { audio, language: lang } : { audio };
+      lang && lang !== "auto"
+        ? { audio, language: toWhisperCode(lang) }
+        : { audio };
     const result = await env.AI.run(
       "@cf/openai/whisper",
       // The workers-types schema types `audio` as number[]; the API also

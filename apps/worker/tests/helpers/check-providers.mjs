@@ -123,7 +123,7 @@ export async function testTranscribeProviders(env) {
 
   const witLangs = ['EN', 'FR', 'ES', 'PT', 'DE', 'IT', 'ZH', 'IG', 'YO', 'HA',
     'AF', 'AK', 'SQ', 'AM', 'AR', 'HY', 'AS', 'AY', 'AZ', 'EU',
-    'BE', 'BN', 'BS', 'BR', 'BG', 'MY', 'CA', 'NY', 'HR', 'CS',
+    'BE', 'BN', 'BS', 'BR', 'BG', 'MY', 'CA', 'CI', 'CK', 'NY', 'HR', 'CS',
     'DA', 'DV', 'NL', 'EO', 'ET', 'FO', 'FI', 'FF', 'GL', 'LG',
     'KA', 'EL', 'GN', 'GU', 'HT', 'HE', 'HI', 'HU', 'IS', 'ID',
     'IU', 'GA', 'JA', 'JV', 'KL', 'KN', 'KS', 'KK', 'KM', 'RW',

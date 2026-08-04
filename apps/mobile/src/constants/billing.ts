@@ -3,11 +3,14 @@ import {
   FREE_LIMITS,
   PREMIUM_FEATURES,
   PREMIUM_LIMITS,
-} from "@shared/plans";
+  USD_PRICE,
+  PRO_PRODUCT_IDS,
+} from "@ekwe/shared/plans";
 import type {
   PlanFeatures as SharedPlanFeatures,
   PlanLimits as SharedPlanLimits,
-} from "@shared/plans";
+} from "@ekwe/shared/plans";
+import { computeSavingPercent } from "@ekwe/shared/money";
 
 export type PlanLimits = SharedPlanLimits;
 
@@ -30,13 +33,6 @@ export interface FallbackPrice {
   symbol: string;
 }
 
-function computeSavingPercent(
-  monthlyAmount: number,
-  annualAmount: number,
-): number {
-  return Math.round((1 - annualAmount / (monthlyAmount * 12)) * 100);
-}
-
 export const DISPLAY_PRICING: Record<
   string,
   {
@@ -52,8 +48,16 @@ export const DISPLAY_PRICING: Record<
     annualMonthlyCost: number;
     annualSavingPercent: number;
   } => {
-    const monthly = { amount: 3.0, currency: "USD", symbol: "$" };
-    const annual = { amount: 28.8, currency: "USD", symbol: "$" };
+    const monthly = {
+      amount: USD_PRICE.monthly.amount,
+      currency: "USD",
+      symbol: "$",
+    };
+    const annual = {
+      amount: USD_PRICE.annual.amount,
+      currency: "USD",
+      symbol: "$",
+    };
     const annualMonthlyCost = +(annual.amount / 12).toFixed(2);
     return {
       monthly,
@@ -92,8 +96,8 @@ export const BILLING_PLANS = {
     id: "pro" as const,
     name: "Pro",
     tagline: "Zero distractions. Full power.",
-    productIdMonthly: "ekwe_pro_monthly",
-    productIdAnnual: "ekwe_pro_annual",
+    productIdMonthly: PRO_PRODUCT_IDS.monthly,
+    productIdAnnual: PRO_PRODUCT_IDS.annual,
     features: [
       { title: "Ad-free experience", included: true },
       { title: "Extended voice dictation (up to 30 min)", included: true },

@@ -4,6 +4,15 @@ export interface Language {
   nativeName: string;
 }
 
+/**
+ * Returns the English name for a language code, or the code itself when
+ * unknown. "auto" is passed through so callers can decide their own label.
+ */
+export function languageName(code: string): string {
+  const lang = LANGUAGES.find((l) => l.code === code);
+  return lang?.englishName ?? code;
+}
+
 export const LANGUAGES: Language[] = [
   { code: "en", englishName: "English", nativeName: "English" },
   { code: "es", englishName: "Spanish", nativeName: "Español" },
@@ -23,7 +32,7 @@ export const LANGUAGES: Language[] = [
   { code: "sv", englishName: "Swedish", nativeName: "Svenska" },
   { code: "da", englishName: "Danish", nativeName: "Dansk" },
   { code: "fi", englishName: "Finnish", nativeName: "Suomi" },
-  { code: "nb", englishName: "Norwegian", nativeName: "Norsk" },
+  { code: "nb", englishName: "Norwegian (Bokmål)", nativeName: "Norsk bokmål" },
   { code: "cs", englishName: "Czech", nativeName: "Čeština" },
   { code: "sk", englishName: "Slovak", nativeName: "Slovenčina" },
   { code: "ro", englishName: "Romanian", nativeName: "Română" },
@@ -95,7 +104,6 @@ export const LANGUAGES: Language[] = [
   { code: "tg", englishName: "Tajik", nativeName: "Тоҷикӣ" },
   { code: "ps", englishName: "Pashto", nativeName: "پښتو" },
   { code: "sd", englishName: "Sindhi", nativeName: "سنڌي" },
-  { code: "mni", englishName: "Manipuri", nativeName: "ꯃꯤꯇꯩꯂꯣꯟ" },
   { code: "as", englishName: "Assamese", nativeName: "অসমীয়া" },
   { code: "or", englishName: "Odia", nativeName: "ଓଡ଼ିଆ" },
   { code: "ba", englishName: "Bashkir", nativeName: "Башҡортса" },
@@ -105,7 +113,8 @@ export const LANGUAGES: Language[] = [
   { code: "fo", englishName: "Faroese", nativeName: "Føroyskt" },
   { code: "haw", englishName: "Hawaiian", nativeName: "ʻŌlelo Hawaiʻi" },
   { code: "ht", englishName: "Haitian Creole", nativeName: "Kreyòl Ayisyen" },
-  { code: "jw", englishName: "Javanese", nativeName: "Basa Jawa" },
+  { code: "ci", englishName: "Cherokee", nativeName: "ᏣᎳᎩ" },
+  { code: "ck", englishName: "Sicilian", nativeName: "Sicilianu" },
   { code: "kn", englishName: "Kannada", nativeName: "ಕನ್ನಡ" },
   { code: "la", englishName: "Latin", nativeName: "Latina" },
   { code: "lb", englishName: "Luxembourgish", nativeName: "Lëtzebuergesch" },

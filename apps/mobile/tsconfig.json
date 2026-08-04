@@ -4,8 +4,7 @@
     "strict": true,
     "types": ["jest", "react"],
     "paths": {
-      "@/*": ["./src/*"],
-      "@shared/*": ["../../packages/shared/*"]
+      "@/*": ["./src/*"]
     }
   }
 }

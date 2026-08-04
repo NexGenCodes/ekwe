@@ -8,8 +8,7 @@ import {
 } from "@/services/transcribeAudio";
 import { Result, err } from "@/types/Result";
 import logger from "@/utils/logger";
-
-const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+import { MAX_AUDIO_BYTES as MAX_FILE_SIZE } from "@ekwe/shared/plans";
 
 export interface BatchAudioInput {
   uri: string;

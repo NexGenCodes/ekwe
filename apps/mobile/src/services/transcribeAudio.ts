@@ -8,6 +8,7 @@ import { Result, ok, err } from "@/types/Result";
 import { resolveDetectedLanguage } from "@/utils/languageUtils";
 import logger from "@/utils/logger";
 import { fetchWithRetry } from "@/utils/networkUtils";
+import { MAX_AUDIO_BYTES as MAX_FILE_SIZE_BYTES } from "@ekwe/shared/plans";
 
 const transcriptionResponseSchema = z.object({
   text: z.string(),
@@ -25,7 +26,6 @@ const transcriptionResponseSchema = z.object({
 });
 
 const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? "";
-const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024; // 25MB Groq limit
 
 export interface WordTimestamp {
   word: string;
@@ -91,6 +91,9 @@ export async function transcribeAudio(
       retries: 2,
       backoff: 1000,
       timeout: 30000,
+      // A 5xx here means the worker already ran the full provider pipeline;
+      // retrying would only pay the providers a second time.
+      retryOnHttpResponse: false,
     });
 
     if (!fetchResponse.ok) {

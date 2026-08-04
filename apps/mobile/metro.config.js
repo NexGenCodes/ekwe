@@ -15,7 +15,7 @@ config.resolver.blockList = Array.isArray(config.resolver.blockList)
   ? [...config.resolver.blockList, workerExclusion]
   : [workerExclusion];
 
-// Watch the shared package so Metro resolves @ekwe/shared / @shared imports
+// Watch the shared package so Metro resolves @ekwe/shared imports
 config.watchFolders = [
   path.resolve(__dirname, '..', '..', 'packages', 'shared'),
 ];

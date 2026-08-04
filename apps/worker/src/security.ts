@@ -1,4 +1,4 @@
-import { LANGUAGES } from "@ekwe/shared";
+import { LANGUAGES, languageName } from "@ekwe/shared";
 import { logger } from "./logger";
 import { getLimits } from "./config";
 import { Tier } from "./types";
@@ -25,13 +25,9 @@ import { Tier } from "./types";
 
 const VALID_LANG_CODES = new Set(["auto", ...LANGUAGES.map((l) => l.code)]);
 
-const LANGUAGE_NAMES: Record<string, string> = Object.fromEntries(
-  LANGUAGES.map((l) => [l.code, l.englishName]),
-);
-
 export function getLanguageName(code: string | undefined | null): string {
   if (!code || code === "auto") return "auto-detected language";
-  return LANGUAGE_NAMES[code] ?? code;
+  return languageName(code);
 }
 
 // ─── Prompt Injection Patterns ───────────────────────────────────

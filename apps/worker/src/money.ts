@@ -1,3 +1,5 @@
+import { getCurrency } from "@ekwe/shared/currencies";
+import { SUPPORTED_CURRENCY_CODES } from "@ekwe/shared/currencies";
 import { logger } from "./logger";
 import { Env } from "./types";
 
@@ -5,46 +7,7 @@ const CACHE_KEY_FX = "fx:USD";
 const FX_TTL = 3600;
 const MEM_TTL = 60_000;
 
-export const FALLBACK_RATES: Record<string, number> = {
-  USD: 1,
-  NGN: 1000,
-  GBP: 0.79,
-  EUR: 0.92,
-  GHS: 14,
-  KES: 140,
-  ZAR: 18,
-  EGP: 48,
-  XOF: 600,
-  INR: 80,
-};
-
-const CURRENCY_DECIMALS: Record<string, number> = {
-  USD: 2,
-  NGN: 2,
-  GBP: 2,
-  EUR: 2,
-  GHS: 2,
-  KES: 2,
-  ZAR: 2,
-  EGP: 2,
-  XOF: 0,
-  INR: 2,
-};
-
 let memRates: { rates: Record<string, number>; ts: number } | null = null;
-
-function getDecimals(currency: string): number {
-  return CURRENCY_DECIMALS[currency.toUpperCase()] ?? 2;
-}
-
-export function roundToCurrency(amount: number, currency: string): number {
-  const d = getDecimals(currency);
-  return Math.round(amount * 10 ** d) / 10 ** d;
-}
-
-export function toLowestUnit(amount: number, currency: string): number {
-  return Math.round(amount * 10 ** getDecimals(currency));
-}
 
 export async function getRates(
   env: Env,
@@ -86,7 +49,7 @@ export async function getRates(
 }
 
 export function getSupportedCurrencies(): string[] {
-  return Object.keys(FALLBACK_RATES);
+  return [...SUPPORTED_CURRENCY_CODES];
 }
 
 export function getRateFor(
@@ -94,5 +57,6 @@ export function getRateFor(
   rates: Record<string, number> | null,
 ): number {
   const c = currency.toUpperCase();
-  return rates?.[c] ?? FALLBACK_RATES[c] ?? 1;
+  const fallback = getCurrency(c)?.fallbackRate ?? 1;
+  return rates?.[c] ?? fallback;
 }

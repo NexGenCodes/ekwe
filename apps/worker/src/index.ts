@@ -49,11 +49,17 @@ async function handleRequest(
 
   // ─── Auth: Strict JWT Only ───
   const isStream = url.pathname === "/transcribe/stream";
-  const token = isStream
-    ? url.searchParams.get("token")
-    : request.headers.get("Authorization")?.startsWith("Bearer ")
+  let token: string | null;
+  if (isStream) {
+    // WebSocket credentials ride in Sec-WebSocket-Protocol, NOT the query
+    // string, so the JWT never lands in access logs, referrers, or proxies.
+    const protocols = request.headers.get("Sec-WebSocket-Protocol");
+    token = protocols ? protocols.split(",")[0].trim() : null;
+  } else {
+    token = request.headers.get("Authorization")?.startsWith("Bearer ")
       ? request.headers.get("Authorization")!.slice(7)
       : null;
+  }
 
   let userId: string;
   let userEmail: string;
@@ -268,4 +274,55 @@ export default {
       );
     }
   },
+
+  // Daily maintenance (see wrangler.toml [triggers] crons): purge expired
+  // history rows per plan retention (free: 30d, pro: 365d).
+  scheduled(
+    _controller: ScheduledController,
+    env: Env,
+    ctx: ExecutionContext,
+  ): void {
+    ctx.waitUntil(runMaintenance(env));
+  },
 } satisfies ExportedHandler<Env>;
+
+async function runMaintenance(env: Env): Promise<void> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    logger.error("[scheduled] Missing Supabase credentials");
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/rpc/cleanup_expired_history`,
+      {
+        method: "POST",
+        headers: {
+          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      },
+    );
+
+    if (!res.ok) {
+      const body = await res.text();
+      logger.error("[scheduled] cleanup_expired_history failed", {
+        status: res.status,
+        body: body.slice(0, 500),
+      });
+      return;
+    }
+
+    const result = (await res.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    logger.info("[scheduled] cleanup_expired_history completed", result);
+  } catch (err) {
+    logger.error("[scheduled] Maintenance run failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}

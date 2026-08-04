@@ -98,3 +98,18 @@ export const USD_PRICE: PlanPricing = {
   monthly: { amount: 3.0, currency: "USD", lowestUnit: 300 },
   annual: { amount: 28.8, currency: "USD", lowestUnit: 2880 },
 };
+
+export const MAX_AUDIO_BYTES = PREMIUM_LIMITS.maxAudioBytes;
+
+// Plan identifiers shared across the mobile app, Paystack, and RevenueCat.
+// Keeping them here prevents drift between checkout (Paystack plan ids),
+// the RevenueCat webhook (product ids), and the mobile billing UI.
+export const PRO_PLAN_IDS = {
+  monthly: "pro_monthly",
+  annual: "pro_annual",
+} as const;
+
+export const PRO_PRODUCT_IDS = {
+  monthly: "ekwe_pro_monthly",
+  annual: "ekwe_pro_annual",
+} as const;

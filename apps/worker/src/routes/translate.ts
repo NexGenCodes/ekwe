@@ -46,6 +46,9 @@ function buildTranslatePipeline(
 const PREMIUM_PIPELINE = buildTranslatePipeline("PREMIUM");
 const FREE_PIPELINE = buildTranslatePipeline("FREE");
 
+// Hard ceiling for the whole provider failover loop (client timeout is 30s).
+const PIPELINE_TOTAL_MS = 20_000;
+
 export async function handleTranslate(
   request: Request,
   env: Env,
@@ -123,18 +126,27 @@ export async function handleTranslate(
       )
     : null;
 
+  const pipelineStart = Date.now();
   for (const provider of pipeline) {
+    const remainingMs = PIPELINE_TOTAL_MS - (Date.now() - pipelineStart);
+    if (remainingMs <= 0) break;
+
     try {
       if (signal.aborted) throw new Error(CLIENT_ABORTED);
       const targetName = getLanguageName(body.targetLang);
       const sourceName = getLanguageName(body.sourceLang);
+
+      const attemptSignal = AbortSignal.any([
+        signal,
+        AbortSignal.timeout(remainingMs),
+      ]);
 
       const result = await provider.fn(
         cleanText,
         targetName,
         sourceName,
         env,
-        signal,
+        attemptSignal,
       );
       if (result) {
         logger.info(`[translate] Success: ${provider.name}`, {

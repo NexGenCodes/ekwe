@@ -163,12 +163,10 @@ describe("Worker Router (index.ts)", () => {
     test("rejects request on /transcribe/stream with invalid token", async () => {
       (jwtVerify as any).mockRejectedValue(new Error("jwt malformed"));
 
-      const req = new Request(
-        "http://localhost/transcribe/stream?token=bad-token",
-        {
-          method: "GET",
-        },
-      );
+      const req = new Request("http://localhost/transcribe/stream", {
+        method: "GET",
+        headers: { "Sec-WebSocket-Protocol": "bad-token" },
+      });
       const res = await app.fetch(req, env, {
         waitUntil: () => {},
         passThroughOnException: () => {},

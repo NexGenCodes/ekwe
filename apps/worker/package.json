@@ -25,6 +25,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@ekwe/shared": "workspace:*",
     "franc": "^6.2.0",
     "jose": "^6.2.3",
     "libopus-wasm": "^0.2.0"

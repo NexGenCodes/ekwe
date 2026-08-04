@@ -6,13 +6,7 @@ const dir = import.meta.dirname;
 
 export default defineConfig({
   resolve: {
-    alias: [
-      { find: "@", replacement: resolve(dir, "./src") },
-      {
-        find: "@ekwe/shared",
-        replacement: resolve(dir, "../../packages/shared/index.ts"),
-      },
-    ],
+    alias: [{ find: "@", replacement: resolve(dir, "./src") }],
   },
   test: {
     globals: true,
