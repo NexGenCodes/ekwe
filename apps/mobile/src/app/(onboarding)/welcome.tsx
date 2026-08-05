@@ -1,6 +1,9 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { ChevronRight, Globe, Mic, ShieldCheck } from "lucide-react-native";
+import ChevronRight from "lucide-react-native/icons/chevron-right";
+import Globe from "lucide-react-native/icons/globe";
+import Mic from "lucide-react-native/icons/mic";
+import ShieldCheck from "lucide-react-native/icons/shield-check";
 import { useEffect, useCallback } from "react";
 import { View, StyleSheet } from "react-native";
 import Animated, {

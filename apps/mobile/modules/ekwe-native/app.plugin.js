@@ -1,14 +1,22 @@
+const fs = require('fs');
+const path = require('path');
+
 const {
   withAndroidManifest,
   withMainActivity,
   withAndroidStyles,
   withEntitlementsPlist,
   withXcodeProject,
-  withAppDelegate,
+  withDangerousMod,
   AndroidConfig,
 } = require('expo/config-plugins');
 
 const APP_GROUP_ID = 'group.com.anonymous.ekwe';
+
+const EXT_NAME = 'ShareExtension';
+const EXT_PROD_TYPE = 'com.apple.product-type.app-extension';
+const EXT_BUNDLE_ID = 'com.ekwe.app.EchoShare';
+const EXT_SOURCE = 'ShareViewController.swift';
 
 /**
  * Adds Intent Filters to AndroidManifest for handling shared audio and text.
@@ -180,63 +188,125 @@ const withIosAppGroup = (config) => {
 };
 
 /**
- * IOS: Placeholder and comment for manual Share Extension target setup.
+ * IOS: Copies the ShareExtension sources into ios/ShareExtension and writes the
+ * app-group entitlements file the extension needs. Runs before the build, so the
+ * file references added to the Xcode project resolve at build time.
  */
-const withIosShareExtension = (config) => {
-  return withXcodeProject(config, (config) => {
-    const project = config.modResults;
-    if (project && typeof project.addContext === 'function') {
-      const comment =
-        "Ekwe: Manual Step Required - Add 'ShareExtension' target in Xcode using files in modules/ekwe-native/ios/ShareExtension";
-      project.addContext(comment);
-    }
-    return config;
-  });
+const withShareExtensionFiles = (config) => {
+  return withDangerousMod(config, [
+    'ios',
+    (config) => {
+      const srcDir = path.join(
+        config.modRequest.projectRoot,
+        'modules/ekwe-native/ios/ShareExtension',
+      );
+      const destDir = path.join(config.modRequest.platformProjectRoot, EXT_NAME);
+      if (!fs.existsSync(srcDir)) {
+        return config;
+      }
+      fs.mkdirSync(destDir, { recursive: true });
+      for (const file of fs.readdirSync(srcDir)) {
+        fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
+      }
+      const entitlementsPath = path.join(destDir, `${EXT_NAME}.entitlements`);
+      if (!fs.existsSync(entitlementsPath)) {
+        fs.writeFileSync(
+          entitlementsPath,
+          `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>${APP_GROUP_ID}</string>
+  </array>
+</dict>
+</plist>
+`,
+        );
+      }
+      return config;
+    },
+  ]);
 };
 
 /**
- * IOS: Injects NotificationCenter broadcasts required by Nitro Share Intent into AppDelegate.
+ * IOS: Adds the ShareExtension app-extension target to the Xcode project and
+ * wires it up (source, Info.plist, entitlements, build settings, embed phase,
+ * and an app -> extension target dependency).
  */
-const withNitroIOSAppDelegate = (config) => {
-  return withAppDelegate(config, (config) => {
-    const contents = config.modResults.contents;
+const withShareExtensionXcodeTarget = (config) => {
+  return withXcodeProject(config, (config) => {
+    const project = config.modResults;
 
-    // 1. Inject broadcast into didFinishLaunchingWithOptions
-    if (!contents.includes('AppDidFinishLaunching')) {
-      const launchMethod =
-        '- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions';
-      const replacement = `
-  [[NSNotificationCenter defaultCenter] postNotificationName:@"AppDidFinishLaunching" object:nil];
-`;
-      config.modResults.contents = contents.replace(
-        launchMethod,
-        `${launchMethod} {\n${replacement}`,
-      );
+    // Idempotent: the target already exists on a second prebuild.
+    if (project.getTarget(EXT_PROD_TYPE)) {
+      return config;
     }
 
-    // 2. Inject broadcast into openURL
-    if (!contents.includes('ShareIntentReceived')) {
-      const openURLMethod =
-        '- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenURLOptionsKey,id> *)options';
-      if (contents.includes(openURLMethod)) {
-        config.modResults.contents = contents.replace(
-          openURLMethod,
-          `${openURLMethod} {\n  [[NSNotificationCenter defaultCenter] postNotificationName:@"ShareIntentReceived" object:nil userInfo:@{@"url": url}];\n`,
-        );
-      } else {
-        const endOfImpl = '@end';
-        const customOpenURL = `
-- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenURLOptionsKey,id> *)options {
-  [[NSNotificationCenter defaultCenter] postNotificationName:@"ShareIntentReceived" object:nil userInfo:@{@"url": url}];
-  return [super application:application openURL:url options:options];
-}
-`;
-        config.modResults.contents = contents.replace(
-          new RegExp(`${endOfImpl}$`),
-          `${customOpenURL}\n${endOfImpl}`,
-        );
-      }
+    // Adds the target AND the "Embed App Extensions" copy phase on the app target.
+    project.addTarget(EXT_NAME, 'app_extension', EXT_NAME, EXT_BUNDLE_ID);
+
+    const extTarget = project.getTarget(EXT_PROD_TYPE);
+    const appTarget = project.getFirstTarget();
+    if (!extTarget || !appTarget) {
+      return config;
     }
+
+    // 1. Group for the extension files, attached to the project's main group.
+    const group = project.addPbxGroup([], EXT_NAME, EXT_NAME, '"<group>"');
+    const firstProject = project.getFirstProject();
+    const mainGroupUuid =
+      project.hash.project.objects.PBXProject[firstProject.uuid].mainGroup;
+    project.hash.project.objects.PBXGroup[mainGroupUuid].children.push({
+      value: group.uuid,
+      comment: EXT_NAME,
+    });
+
+    // 2. Make sure the extension has Sources/Frameworks/Resources build phases.
+    project.addBuildPhase([], 'PBXSourcesBuildPhase', 'Sources', extTarget.uuid, null);
+    project.addBuildPhase([], 'PBXFrameworksBuildPhase', 'Frameworks', extTarget.uuid, null);
+    project.addBuildPhase([], 'PBXResourcesBuildPhase', 'Resources', extTarget.uuid, null);
+
+    // 3. Add the Swift source to the extension's Sources phase.
+    project.addSourceFile(
+      `${EXT_NAME}/${EXT_SOURCE}`,
+      { target: extTarget.uuid },
+      group.uuid,
+    );
+
+    // 4. Add Info.plist + entitlements as plain file references (no build phase).
+    project.addFile(`${EXT_NAME}/Info.plist`, group.uuid, {});
+    project.addFile(`${EXT_NAME}/${EXT_NAME}.entitlements`, group.uuid, {});
+
+    // 5. Configure the extension's Debug/Release build settings.
+    const configLists = project.pbxXCConfigurationList();
+    const extConfigList = configLists[extTarget.target.buildConfigurationList];
+    const buildConfigs = project.pbxXCBuildConfigurationSection();
+    (extConfigList.buildConfigurations || []).forEach(({ value: cfgUuid }) => {
+      const settings = buildConfigs[cfgUuid].buildSettings;
+      settings.GENERATE_INFOPLIST_FILE = 'NO';
+      settings.INFOPLIST_FILE = `"${EXT_NAME}/Info.plist"`;
+      settings.CODE_SIGN_ENTITLEMENTS = `"${EXT_NAME}/${EXT_NAME}.entitlements"`;
+      settings.PRODUCT_BUNDLE_IDENTIFIER = `"${EXT_BUNDLE_ID}"`;
+      settings.SWIFT_VERSION = '5.0';
+      settings.TARGETED_DEVICE_FAMILY = '"1,2"';
+      settings.IPHONEOS_DEPLOYMENT_TARGET = '16.4';
+      settings.MARKETING_VERSION = '1.0';
+      settings.CURRENT_PROJECT_VERSION = '1';
+      settings.SKIP_INSTALL = 'YES';
+      settings.LD_RUNPATH_SEARCH_PATHS =
+        '"$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"';
+    });
+
+    // 6. App target depends on the extension (build order). The fresh Expo
+    //    project has no PBXContainerItemProxy/PBXTargetDependency sections yet,
+    //    and xcode's addTargetDependency silently no-ops without them.
+    project.hash.project.objects['PBXContainerItemProxy'] =
+      project.hash.project.objects['PBXContainerItemProxy'] || {};
+    project.hash.project.objects['PBXTargetDependency'] =
+      project.hash.project.objects['PBXTargetDependency'] || {};
+    project.addTargetDependency(appTarget.uuid, [extTarget.uuid]);
 
     return config;
   });
@@ -336,11 +406,8 @@ const withEkweNativePermissionsAndServices = (config) => {
       config.modResults,
     );
     const permissions = [
-      'android.permission.SYSTEM_ALERT_WINDOW',
       'android.permission.FOREGROUND_SERVICE',
       'android.permission.FOREGROUND_SERVICE_MICROPHONE',
-      'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
-      'android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING',
     ];
     if (!config.modResults.manifest['uses-permission']) {
       config.modResults.manifest['uses-permission'] = [];
@@ -356,21 +423,6 @@ const withEkweNativePermissionsAndServices = (config) => {
         });
       }
     });
-    if (!mainApplication.service) mainApplication.service = [];
-    if (
-      !mainApplication.service.some(
-        (s) => s.$['android:name'] === 'expo.modules.ekwenative.BubbleService',
-      )
-    ) {
-      mainApplication.service.push({
-        $: {
-          'android:name': 'expo.modules.ekwenative.BubbleService',
-          'android:foregroundServiceType':
-            'microphone|dataSync|mediaProcessing',
-          'android:exported': 'false',
-        },
-      });
-    }
     return config;
   });
 
@@ -380,8 +432,8 @@ const withEkweNativePermissionsAndServices = (config) => {
   updatedConfig = withMainActivityOnNewIntent(updatedConfig);
   if (process.platform === 'darwin') {
     updatedConfig = withIosAppGroup(updatedConfig);
-    updatedConfig = withIosShareExtension(updatedConfig);
-    updatedConfig = withNitroIOSAppDelegate(updatedConfig);
+    updatedConfig = withShareExtensionFiles(updatedConfig);
+    updatedConfig = withShareExtensionXcodeTarget(updatedConfig);
   }
   updatedConfig = withAutofillHighlightFix(updatedConfig);
   return updatedConfig;

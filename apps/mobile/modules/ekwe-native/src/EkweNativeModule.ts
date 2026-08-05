@@ -1,9 +1,7 @@
 import { requireNativeModule, type NativeModule } from "expo";
 
 import type {
-  BubblePosition,
   AudioEffectsResult,
-  FloatingState,
   ExtractWavAndWaveformResult,
   AudioRecordingResult,
   StartRecordingResult,
@@ -19,58 +17,17 @@ declare global {
 }
 
 declare class EkweNativeModule extends NativeModule<{
-  onStateChanged: (event: {
-    state: FloatingState;
-    previousState: FloatingState;
-    reason?: string;
-  }) => void;
-  onIntentQueued: (event: { audioPath: string; sourceApp: string }) => void;
-  onAppForeground: (event: {}) => void;
-  onAppBackground: (event: {}) => void;
-  onForegroundAppChanged: (event: { packageName: string }) => void;
   onOpusPacket: (event: { packet: string; rms: number }) => void;
   onVadSilence: (event: {}) => void;
 }> {
-  // --- Bubble ---
-  hasOverlayPermission(): Promise<boolean>;
-  requestOverlayPermission(): Promise<void>;
-  showBubble(x: number, y: number): Promise<void>;
-  hideBubble(): Promise<void>;
-  dismissBubble(): Promise<void>;
-  expandBubble(): Promise<void>;
-  collapseBubble(): Promise<void>;
-  updateBubbleMode(
-    mode: "RECORD" | "MAGIC" | "IDLE",
-    data?: string,
-  ): Promise<void>;
   deleteFile(uri: string): Promise<void>;
-
-  // --- Overlay ---
-  showOverlay(audioPath: string, sourceApp: string): Promise<void>;
-  setOverlayHeight(heightPx: number, animated: boolean): Promise<void>;
-  dismissOverlay(): Promise<void>;
 
   // --- Echo / Loader ---
   dismissEcho(): Promise<void>;
   dismissNativeLoader(): Promise<void>;
 
-  // --- State ---
-  getWindowState(): Promise<FloatingState>;
-
-  // --- Position ---
-  getSavedPosition(): Promise<BubblePosition>;
-  savePosition(x: number, y: number): Promise<void>;
-
   // --- Content URI Resolution ---
   resolveContentUri(uri: string): Promise<string | null>;
-
-  // --- Accessibility ---
-  isAccessibilityEnabled(): Promise<boolean>;
-  requestAccessibilityPermission(): Promise<void>;
-
-  // --- System Audio ---
-  requestMediaProjection(): Promise<void>;
-  stopAudioCapture(): Promise<void>;
 
   // --- iOS Voice Session (voiceChat mode → built-in NS, AEC, AGC) ---
   configureVoiceSession(): Promise<void>;

@@ -19,17 +19,23 @@ class AudioConverterClass {
 
     try {
       const cacheDir = Paths.cache.uri;
-      if (!cacheDir) return err(EkweError.AUDIO_RECORD_FAIL);
+      if (!cacheDir) return err(EkweError.PROCESSOR_FAIL);
 
       const outputPath = `${cacheDir}ekwe_converted_${Date.now()}.ogg`;
 
+      // The iOS share extension hands us a file:// URL; the C++ decoder (and
+      // Android's resolvePath) expects a plain filesystem path.
+      const inputPath = inputUri.startsWith("file://")
+        ? inputUri.slice("file://".length)
+        : inputUri;
+
       const result = await EkweNative.extractWavAndWaveform(
-        inputUri,
+        inputPath,
         outputPath,
       );
 
       if (!result.success) {
-        return err(EkweError.AUDIO_RECORD_FAIL);
+        return err(EkweError.PROCESSOR_FAIL);
       }
 
       return ok({
@@ -38,7 +44,7 @@ class AudioConverterClass {
         waveform: result.waveform,
       });
     } catch {
-      return err(EkweError.AUDIO_RECORD_FAIL);
+      return err(EkweError.PROCESSOR_FAIL);
     }
   }
 }

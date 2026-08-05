@@ -6,7 +6,14 @@ import { MAX_AUDIO_BYTES as MAX_FILE_SIZE } from "@ekwe/shared/plans";
 
 export { MAX_FILE_SIZE };
 
-export const VOICE_NOTE_EXTENSIONS = [".ogg", ".m4a", ".aac", ".amr", ".3gp"];
+export const VOICE_NOTE_EXTENSIONS = [
+  ".ogg",
+  ".opus",
+  ".m4a",
+  ".aac",
+  ".amr",
+  ".3gp",
+];
 
 export const VOICE_NOTE_MIME_TYPES = [
   "audio/ogg",

@@ -1,6 +1,7 @@
 import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
-import { CreditCard, ChevronRight } from "lucide-react-native";
+import CreditCard from "lucide-react-native/icons/credit-card";
+import ChevronRight from "lucide-react-native/icons/chevron-right";
 import React from "react";
 
 import { ProfileRow } from "../ProfileRow";

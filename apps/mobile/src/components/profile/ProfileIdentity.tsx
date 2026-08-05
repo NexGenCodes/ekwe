@@ -1,6 +1,7 @@
 import { User } from "@supabase/supabase-js";
 import { Image as ExpoImage } from "expo-image";
-import { Crown, Edit3 } from "lucide-react-native";
+import Crown from "lucide-react-native/icons/crown";
+import Edit3 from "lucide-react-native/icons/pen-line";
 import React from "react";
 import { Image } from "react-native";
 

@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { StyleSheet, Dimensions } from "react-native";
+import { AppState, StyleSheet, Dimensions } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -19,25 +19,46 @@ export const BackgroundFlair = (): React.ReactElement => {
   const blob1Y = useSharedValue(0);
 
   useEffect(() => {
-    blob1X.value = withRepeat(
-      withSequence(
-        withTiming(30, { duration: 32000 }),
-        withTiming(-30, { duration: 38000 }),
-        withTiming(0, { duration: 28000 }),
-      ),
-      -1,
-      true,
-    );
+    const run = (): void => {
+      blob1X.value = withRepeat(
+        withSequence(
+          withTiming(30, { duration: 32000 }),
+          withTiming(-30, { duration: 38000 }),
+          withTiming(0, { duration: 28000 }),
+        ),
+        -1,
+        true,
+      );
 
-    blob1Y.value = withRepeat(
-      withSequence(
-        withTiming(-40, { duration: 30000 }),
-        withTiming(40, { duration: 36000 }),
-        withTiming(0, { duration: 26000 }),
-      ),
-      -1,
-      true,
-    );
+      blob1Y.value = withRepeat(
+        withSequence(
+          withTiming(-40, { duration: 30000 }),
+          withTiming(40, { duration: 36000 }),
+          withTiming(0, { duration: 26000 }),
+        ),
+        -1,
+        true,
+      );
+    };
+
+    const stop = (): void => {
+      blob1X.value = 0;
+      blob1Y.value = 0;
+    };
+
+    // Only animate while the app is actively foregrounded so the decorative
+    // blob doesn't consume UI-thread work in the background.
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") run();
+      else stop();
+    });
+
+    if (AppState.currentState === "active") run();
+
+    return (): void => {
+      sub.remove();
+      stop();
+    };
   }, [blob1X, blob1Y]);
 
   const animatedBlob1Style = useAnimatedStyle(() => {

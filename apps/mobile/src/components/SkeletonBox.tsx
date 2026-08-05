@@ -13,7 +13,7 @@ import Animated, {
 import { Box } from "@/components/ui";
 import { borderRadius as borderRadiusToken } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useTheme } from "@/hooks";
+import { useTheme } from "@/hooks/ui";
 
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 const { width: SCREEN_WIDTH } = Dimensions.get("window");

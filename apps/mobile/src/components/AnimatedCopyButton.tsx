@@ -1,6 +1,7 @@
 import * as Clipboard from "expo-clipboard";
 import { triggerHaptic } from "@/utils/haptics";
-import { Copy, CheckCircle2 } from "lucide-react-native";
+import Copy from "lucide-react-native/icons/copy";
+import CheckCircle2 from "lucide-react-native/icons/circle-check";
 import React, { useState } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 

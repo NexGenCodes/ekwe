@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { timingSafeEqual } from "https://deno.land/std@0.168.0/crypto/timing_safe_equal.ts";
 
 // Types for the Supabase Database Webhook payload
 interface WebhookPayload {
@@ -17,8 +18,37 @@ const BREVO_API_KEY = Deno.env.get("BREVO_SMTP_PASS") || "";
 const SENDER_EMAIL = "admin@ekwe.app";
 const SENDER_NAME = "Ekwe";
 
+// Shared-secret auth for the Database Webhook. Supabase auto-attaches
+// `Authorization: Bearer <service role key>` to Database Webhook calls to
+// Edge Functions with verify_jwt disabled; optionally set
+// SEND_WELCOME_EMAIL_SECRET to a dedicated webhook secret instead.
+const WEBHOOK_SECRET = Deno.env.get("SEND_WELCOME_EMAIL_SECRET") || "";
+const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+
+async function isAuthorized(req: Request): Promise<boolean> {
+  const provided = req.headers.get("authorization") || "";
+  const token = provided.startsWith("Bearer ")
+    ? provided.slice("Bearer ".length)
+    : provided;
+  if (!token) return false;
+
+  const candidates = [WEBHOOK_SECRET, SERVICE_ROLE_KEY].filter(Boolean);
+  if (candidates.length === 0) return false;
+
+  for (const candidate of candidates) {
+    if (await timingSafeEqual(token, candidate)) return true;
+  }
+  return false;
+}
+
 serve(async (req) => {
   try {
+    if (!(await isAuthorized(req))) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+      });
+    }
+
     // Parse the webhook payload
     const payload: WebhookPayload = await req.json();
 

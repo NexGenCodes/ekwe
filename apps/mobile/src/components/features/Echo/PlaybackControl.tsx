@@ -1,4 +1,5 @@
-import { Play, Pause } from "lucide-react-native";
+import Play from "lucide-react-native/icons/play";
+import Pause from "lucide-react-native/icons/pause";
 import React, { useState } from "react";
 import { SharedValue } from "react-native-reanimated";
 
@@ -7,7 +8,7 @@ import { AudioWaveform as ReanimatedWaveform } from "../../AudioWaveform";
 import { Box, Text, Pressable, Spinner } from "@/components/ui";
 import { borderRadius, opacity } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useTheme } from "@/hooks";
+import { useTheme } from "@/hooks/ui";
 import { formatDuration } from "@/utils/echo";
 
 interface PlaybackControlProps {

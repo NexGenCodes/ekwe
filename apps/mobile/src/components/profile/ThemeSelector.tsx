@@ -1,4 +1,6 @@
-import { Monitor, Moon, Sun } from "lucide-react-native";
+import Monitor from "lucide-react-native/icons/monitor";
+import Moon from "lucide-react-native/icons/moon";
+import Sun from "lucide-react-native/icons/sun";
 import React from "react";
 import Animated, {
   useAnimatedStyle,

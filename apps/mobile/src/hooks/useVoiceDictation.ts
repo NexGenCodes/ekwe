@@ -450,9 +450,10 @@ export const dictationActions = {
 
 export function useVoiceDictation(): UseVoiceDictationReturn {
   const maxDurationMs = usePermissions().dictationDurationMs;
-  const amplitude = useMetering();
-
   const status = useSelector(() => dictation$.status.get());
+  // Metering only runs while the capture is active or starting up — not idle.
+  const amplitude = useMetering(status === "recording" || status === "initializing");
+
   const error = useSelector(() => dictation$.error.get());
   const meteringData = useSelector(() => dictation$.meteringData.get());
   const nativeWaveform = useSelector(() => dictation$.nativeWaveform.get());

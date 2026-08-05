@@ -1,5 +1,5 @@
 import { Image as ExpoImage } from "expo-image";
-import { Clock } from "lucide-react-native";
+import Clock from "lucide-react-native/icons/clock";
 import React from "react";
 import Animated, { FadeIn } from "react-native-reanimated";
 

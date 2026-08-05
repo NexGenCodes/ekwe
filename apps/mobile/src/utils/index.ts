@@ -1,5 +1,4 @@
 export { removeFillerWords } from "./removeFiller";
-export { BubbleNative } from "./BubbleModule";
 export { attachAudioEffects, releaseAudioEffects } from "./AudioEffectsModule";
 export {
   validateSharedAudio,

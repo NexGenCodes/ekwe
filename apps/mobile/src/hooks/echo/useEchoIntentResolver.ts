@@ -14,10 +14,10 @@ import { AudioCapture } from "@/services/AudioCapture";
 import { AudioConverter } from "@/services/AudioConverter";
 import { IntentService } from "@/services/IntentService";
 import { settings$, auth$ } from "@/store";
-import { isIOS, AppAlert, logger } from "@/utils";
+import { AppAlert } from "@/utils/alert";
+import { isIOS } from "@/utils/platform";
+import { default as logger } from "@/utils/logger";
 import { cleanEchoCache } from "@/utils/echo";
-
-const noopResetShareIntent = (): void => {};
 
 export const useEchoIntentResolver = (props: {
   value?: { value: string; mimeType: string }[];
@@ -27,10 +27,10 @@ export const useEchoIntentResolver = (props: {
   audioUri: string | undefined;
   isResolving: boolean;
   convertedWaveform: number[];
+  convertedDurationMs: number | null;
   activeResolvedUri: MutableRefObject<string | undefined>;
   isSubsequentIntent: boolean;
   setIsSubsequentIntent: Dispatch<SetStateAction<boolean>>;
-  resetShareIntent: (clearIntent?: boolean) => void;
 } => {
   const onboardingCompleted = useSelector(() =>
     settings$.onboardingCompleted.get(),
@@ -43,6 +43,9 @@ export const useEchoIntentResolver = (props: {
   const [audioUri, setAudioUri] = useState<string | undefined>(undefined);
   const [isResolving, setIsResolving] = useState(false);
   const [convertedWaveform, setConvertedWaveform] = useState<number[]>([]);
+  const [convertedDurationMs, setConvertedDurationMs] = useState<
+    number | null
+  >(null);
 
   const activeResolvedUri = useRef<string | undefined>(undefined);
   const convertedUriRef = useRef<string | undefined>(undefined);
@@ -100,6 +103,7 @@ export const useEchoIntentResolver = (props: {
       try {
         setIsResolving(true);
         setConvertedWaveform([]);
+        setConvertedDurationMs(null);
         logger.info(
           "[IntentResolver] resolve() started. rawUri:",
           rawUri.substring(0, 60),
@@ -121,6 +125,7 @@ export const useEchoIntentResolver = (props: {
           activeResolvedUri.current = opusPath;
           setAudioUri(opusPath);
           setConvertedWaveform(combinedResult.waveform);
+          setConvertedDurationMs(combinedResult.durationMs);
           setIsResolving(false);
           setIsSubsequentIntent(isSubseq);
           logger.info("[IntentResolver] ✅ Combined resolve+convert succeeded");
@@ -166,10 +171,11 @@ export const useEchoIntentResolver = (props: {
         if (isStale) return;
 
         if (convertResult.ok) {
-          const { uri: opusUri, waveform } = convertResult.value;
+          const { uri: opusUri, waveform, durationMs } = convertResult.value;
           convertedUriRef.current = opusUri;
           setAudioUri(opusUri);
           setConvertedWaveform(waveform);
+          setConvertedDurationMs(durationMs);
           logger.info(
             "[IntentResolver] ✅ Converted to Opus + waveform extracted",
           );
@@ -208,9 +214,9 @@ export const useEchoIntentResolver = (props: {
     audioUri,
     isResolving,
     convertedWaveform,
+    convertedDurationMs,
     activeResolvedUri,
     isSubsequentIntent,
     setIsSubsequentIntent,
-    resetShareIntent: noopResetShareIntent,
   };
 };

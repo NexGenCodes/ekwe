@@ -88,13 +88,6 @@ async function validateProCharge(
   return metadataUserId ?? null;
 }
 
-function userIdFromReference(data: Record<string, unknown>): string | null {
-  const reference = data.reference as string | undefined;
-  if (typeof reference !== "string") return null;
-  const match = reference.match(/^ekwe_([A-Za-z0-9]+)_/);
-  return match ? match[1] : null;
-}
-
 async function setProStatus(
   env: Env,
   identifier: { email?: string; userId?: string },
@@ -169,25 +162,19 @@ async function processPaystackEvent(
 
   switch (eventType) {
     case "charge.success": {
-      const metadata = data?.metadata as Record<string, unknown> | undefined;
-      const userId = metadata?.user_id as string | undefined;
-      const email = (data?.customer as Record<string, unknown>)?.email as
-        string | undefined;
-
       const validatedUserId = await validateProCharge(env, data, "paystack");
 
-      if (!validatedUserId && !email) {
+      if (!validatedUserId) {
         logger.warn(
-          "[webhook:paystack] Charge validation failed or missing identity in charge.success",
+          "[webhook:paystack] Charge validation failed or missing validated user_id in charge.success",
         );
         return Response.json({ received: true, action: "skipped" });
       }
 
-      const identifier = validatedUserId ?? userId ?? email!;
-      await setSubscriptionStatus(env, identifier, true);
+      await setSubscriptionStatus(env, validatedUserId, true);
 
       logger.info(
-        `[webhook:paystack] charge.success processed for ${identifier} (via ${validatedUserId ? "validated user_id" : userId ? "user_id" : "email"})`,
+        `[webhook:paystack] charge.success processed for ${validatedUserId} (validated user_id)`,
       );
       return Response.json({ received: true, action: "activated" });
     }
@@ -228,24 +215,19 @@ async function processFlutterwaveEvent(
         return Response.json({ received: true, action: "skipped" });
       }
 
-      const meta = data?.meta as Record<string, unknown> | undefined;
-      const userId = meta?.user_id as string | undefined;
-      const email = (data?.customer as Record<string, unknown>)?.email as
-        string | undefined;
+      const validatedUserId = await validateProCharge(env, data, "flutterwave");
 
-      if (!userId && !email && !userIdFromReference(data)) {
-        logger.warn("[webhook:flutterwave] Missing both user_id and email");
+      if (!validatedUserId) {
+        logger.warn(
+          "[webhook:flutterwave] Charge validation failed or missing validated user_id",
+        );
         return Response.json({ received: true, action: "skipped" });
       }
 
-      const validatedUserId = await validateProCharge(env, data, "flutterwave");
-
-      const identifier =
-        validatedUserId ?? userId ?? email ?? userIdFromReference(data)!;
-      await setSubscriptionStatus(env, identifier, true);
+      await setSubscriptionStatus(env, validatedUserId, true);
 
       logger.info(
-        `[webhook:flutterwave] Payment successful for ${identifier} (via ${validatedUserId ? "validated user_id" : userId ? "user_id" : "email"})`,
+        `[webhook:flutterwave] Payment successful for ${validatedUserId} (validated user_id)`,
       );
       return Response.json({ received: true, action: "activated" });
     }

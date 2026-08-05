@@ -1,4 +1,5 @@
-import { Check, Globe } from "lucide-react-native";
+import Check from "lucide-react-native/icons/check";
+import Globe from "lucide-react-native/icons/globe";
 import type { JSX } from "react";
 import type { DimensionValue } from "react-native";
 

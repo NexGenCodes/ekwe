@@ -1,7 +1,8 @@
 import { useSelector } from "@legendapp/state/react";
 import { BlurView } from "expo-blur";
 import { useLocalSearchParams } from "expo-router";
-import { ChevronDown, ArrowDownUp } from "lucide-react-native";
+import ChevronDown from "lucide-react-native/icons/chevron-down";
+import ArrowDownUp from "lucide-react-native/icons/arrow-down-up";
 import React, { useState, useRef } from "react";
 
 import { LanguagePickerSheet, Button, Card } from "@/components";

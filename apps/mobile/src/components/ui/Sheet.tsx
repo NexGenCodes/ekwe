@@ -1,4 +1,4 @@
-import { X } from "lucide-react-native";
+import X from "lucide-react-native/icons/x";
 import React from "react";
 import { Modal as RNModal, type DimensionValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

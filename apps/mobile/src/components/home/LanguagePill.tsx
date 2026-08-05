@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react-native";
+import ChevronDown from "lucide-react-native/icons/chevron-down";
 import React, { useEffect } from "react";
 import { StyleProp, ViewStyle } from "react-native";
 import Animated, {

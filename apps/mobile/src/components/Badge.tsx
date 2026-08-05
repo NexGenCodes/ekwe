@@ -4,7 +4,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 import { Box, Text } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useTheme } from "@/hooks";
+import { useTheme } from "@/hooks/ui";
 
 export interface BadgeProps {
   label: string;

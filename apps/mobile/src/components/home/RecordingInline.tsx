@@ -1,4 +1,5 @@
-import { Play, Pause } from "lucide-react-native";
+import Play from "lucide-react-native/icons/play";
+import Pause from "lucide-react-native/icons/pause";
 import React, { useEffect, useState } from "react";
 import Animated, {
   FadeIn,
@@ -102,33 +103,13 @@ export function RecordingInline({
 
   const dotOp = useSharedValue(1);
   useEffect(() => {
-    let active = true;
     if (isRecording) {
       dotOp.value = withRepeat(withTiming(0.2, { duration: 600 }), -1, true);
       history.value = new Array(BARS).fill(0);
-
-      let lastUpdate = 0;
-      const loop = (timestamp: number): void => {
-        if (!active) return;
-        if (timestamp - lastUpdate >= 33) {
-          const globalObj = globalThis as unknown as {
-            ekweNativeGetAmplitude?: () => number;
-          };
-          if (typeof globalObj.ekweNativeGetAmplitude === "function") {
-            amplitude.value = globalObj.ekweNativeGetAmplitude();
-          }
-          lastUpdate = timestamp;
-        }
-        requestAnimationFrame(loop);
-      };
-      requestAnimationFrame(loop);
     } else {
       dotOp.value = 1;
     }
-    return (): void => {
-      active = false;
-    };
-  }, [isRecording, dotOp, history, amplitude]);
+  }, [isRecording, dotOp, history]);
   const dotStyle = useAnimatedStyle(() => ({ opacity: dotOp.value }));
 
   const widthSV = useSharedValue(200);

@@ -1,4 +1,8 @@
-import { Check, X, Sun, Moon, Monitor } from "lucide-react-native";
+import Check from "lucide-react-native/icons/check";
+import X from "lucide-react-native/icons/x";
+import Sun from "lucide-react-native/icons/sun";
+import Moon from "lucide-react-native/icons/moon";
+import Monitor from "lucide-react-native/icons/monitor";
 import React from "react";
 import { Modal, ScrollView } from "react-native";
 

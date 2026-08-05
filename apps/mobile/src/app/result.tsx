@@ -1,5 +1,5 @@
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { X } from "lucide-react-native";
+import X from "lucide-react-native/icons/x";
 import React, { useEffect } from "react";
 import { StyleSheet } from "react-native";
 

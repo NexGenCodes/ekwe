@@ -3,22 +3,19 @@ import Constants from "expo-constants";
 import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
 import * as StoreReview from "expo-store-review";
-import {
-  LogOut,
-  CreditCard,
-  Trash2,
-  ChevronRight,
-  Mail,
-  Shield,
-  FileText,
-  Star,
-  Palette,
-  Copy,
-  Globe,
-  Eye,
-  Smartphone,
-  Radio,
-} from "lucide-react-native";
+import LogOut from "lucide-react-native/icons/log-out";
+import CreditCard from "lucide-react-native/icons/credit-card";
+import Trash2 from "lucide-react-native/icons/trash-2";
+import ChevronRight from "lucide-react-native/icons/chevron-right";
+import Mail from "lucide-react-native/icons/mail";
+import Shield from "lucide-react-native/icons/shield";
+import FileText from "lucide-react-native/icons/file-text";
+import Star from "lucide-react-native/icons/star";
+import Palette from "lucide-react-native/icons/palette";
+import Copy from "lucide-react-native/icons/copy";
+import Globe from "lucide-react-native/icons/globe";
+import Smartphone from "lucide-react-native/icons/smartphone";
+import Radio from "lucide-react-native/icons/radio";
 import React, { useState, useCallback } from "react";
 import { Linking, Modal, Switch, TextInput } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -40,8 +37,9 @@ import {
   spacing,
   SUPPORTED_CURRENCIES,
 } from "@/constants";
-import { useLogout, useTheme, usePermissions, useForegroundApp } from "@/hooks";
+import { useLogout, useTheme, usePermissions } from "@/hooks";
 import { deleteAccount } from "@/services/auth";
+import { resetAnalytics } from "@/services/posthog";
 import { supabase } from "@/services/supabase";
 import { auth$, authActions, settings$, settingsActions } from "@/store";
 import { isIOS } from "@/utils";
@@ -61,11 +59,15 @@ export default function ProfileScreen(): React.JSX.Element {
 
   const hapticsEnabled = useSelector(() => settings$.hapticsEnabled.get());
   const currency = useSelector(() => settings$.currency.get());
+  const analyticsConsent = useSelector(() =>
+    settings$.analyticsConsent.get(),
+  );
   const {
     setHapticsEnabled,
     setAutoCopy,
     setCurrency,
     setLiveTranscriptionEnabled,
+    setAnalyticsConsent,
   } = settingsActions;
   const selectedLanguages = useSelector(() =>
     settings$.selectedLanguages.get(),
@@ -74,7 +76,6 @@ export default function ProfileScreen(): React.JSX.Element {
   const liveTranscriptionEnabled = useSelector(() =>
     settings$.liveTranscriptionEnabled.get(),
   );
-  const { hasPermission } = useForegroundApp();
 
   const [isCurrencyModalVisible, setIsCurrencyModalVisible] = useState(false);
   const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
@@ -249,6 +250,34 @@ export default function ProfileScreen(): React.JSX.Element {
               }
             />
             <ProfileRow
+              icon={Shield}
+              sfIcon="chart.bar.fill"
+              iconColor={color.foreground}
+              title="Share Usage Data"
+              subtitle="Anonymous analytics to improve Ekwe"
+              hasDivider
+              onPress={async () => {
+                await triggerHaptic();
+                const next = !analyticsConsent;
+                setAnalyticsConsent(next);
+                if (!next) resetAnalytics();
+              }}
+              trailing={
+                <Switch
+                  value={analyticsConsent}
+                  onValueChange={(val) => {
+                    setAnalyticsConsent(val);
+                    if (!val) resetAnalytics();
+                  }}
+                  trackColor={{
+                    true: color.foreground,
+                    false: color.border,
+                  }}
+                  thumbColor={color.card}
+                />
+              }
+            />
+            <ProfileRow
               icon={Globe}
               sfIcon="globe"
               iconColor={color.foreground}
@@ -381,35 +410,6 @@ export default function ProfileScreen(): React.JSX.Element {
                   }}
                   thumbColor={color.card}
                   disabled={!permissions.autoCopy}
-                />
-              }
-            />
-            <ProfileRow
-              icon={Eye}
-              sfIcon="eye.fill"
-              iconColor={color.foreground}
-              title="Floating Translation Bubble"
-              subtitle="Translate inline in external apps"
-              onPress={async () => {
-                if (permissions.contextAwareness) {
-                  await triggerHaptic();
-                  router.push("/accessibility-disclosure");
-                }
-              }}
-              trailing={
-                <Switch
-                  value={!!hasPermission}
-                  onValueChange={async (value) => {
-                    if (value) {
-                      router.push("/accessibility-disclosure");
-                    }
-                  }}
-                  trackColor={{
-                    true: color.foreground,
-                    false: color.border,
-                  }}
-                  thumbColor={color.card}
-                  disabled={!permissions.contextAwareness}
                 />
               }
             />

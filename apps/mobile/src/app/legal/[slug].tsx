@@ -1,5 +1,5 @@
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
-import { LucideChevronLeft } from "lucide-react-native";
+import LucideChevronLeft from "lucide-react-native/icons/chevron-left";
 import React from "react";
 import { StyleSheet } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";

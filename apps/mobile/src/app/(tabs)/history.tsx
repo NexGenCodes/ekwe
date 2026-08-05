@@ -1,7 +1,9 @@
 import { triggerHaptic } from "@/utils/haptics";
 import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
-import { AudioLines, Search, X } from "lucide-react-native";
+import AudioLines from "lucide-react-native/icons/audio-lines";
+import Search from "lucide-react-native/icons/search";
+import X from "lucide-react-native/icons/x";
 import React, { useCallback, useRef, useState } from "react";
 import { TextInput, ScrollView, StyleSheet } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";

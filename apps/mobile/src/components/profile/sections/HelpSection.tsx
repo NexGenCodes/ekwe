@@ -1,7 +1,10 @@
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import * as StoreReview from "expo-store-review";
-import { Mail, Star, Shield, FileText } from "lucide-react-native";
+import Mail from "lucide-react-native/icons/mail";
+import Star from "lucide-react-native/icons/star";
+import Shield from "lucide-react-native/icons/shield";
+import FileText from "lucide-react-native/icons/file-text";
 import React from "react";
 import { Linking } from "react-native";
 

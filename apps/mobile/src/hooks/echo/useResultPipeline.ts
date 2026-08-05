@@ -9,7 +9,8 @@ import { useTranslation } from "../useTranslation";
 import { batchTranscriber } from "@/services/BatchTranscriber";
 import { HistoryService } from "@/services/HistoryService";
 import { settings$, auth$, HistoryEntry, history$ } from "@/store";
-import { AppToast, logger } from "@/utils";
+import { AppToast } from "@/utils/toast";
+import { default as logger } from "@/utils/logger";
 
 export interface UseResultPipelineProps {
   uri?: string;

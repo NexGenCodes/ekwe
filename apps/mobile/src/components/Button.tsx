@@ -1,5 +1,5 @@
 import { triggerHaptic } from "@/utils/haptics";
-import { Loader } from "lucide-react-native";
+import Loader from "lucide-react-native/icons/loader";
 import React, { useMemo } from "react";
 import { StyleProp, TextStyle, ViewStyle } from "react-native";
 import Animated, {

@@ -1,5 +1,5 @@
 import { Image as ExpoImage } from "expo-image";
-import { Languages } from "lucide-react-native";
+import Languages from "lucide-react-native/icons/languages";
 import React, {
   forwardRef,
   useImperativeHandle,

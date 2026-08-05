@@ -1,5 +1,3 @@
-import { Linking } from "react-native";
-
 import EkweNative from "../../modules/ekwe-native";
 
 import { isAndroid } from "@/utils";
@@ -34,19 +32,6 @@ export const IntentService = {
     if (isAndroid) {
       EkweNative.dismissNativeLoader();
     }
-  },
-
-  updateBubbleMode: (mode: "IDLE" | "MAGIC" | "RECORD"): void => {
-    try {
-      EkweNative?.updateBubbleMode?.(mode);
-    } catch (err) {
-      logger.warn("[IntentService] updateBubbleMode failed", err);
-    }
-  },
-
-  dismissAndRedirect: (): void => {
-    EkweNative.dismissEcho();
-    Linking.openURL("ekwe://");
   },
 
   dismissEcho: (): void => {

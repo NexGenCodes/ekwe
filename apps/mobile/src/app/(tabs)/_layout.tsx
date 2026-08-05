@@ -1,6 +1,8 @@
 import { useSelector } from "@legendapp/state/react";
 import { Tabs, useRouter } from "expo-router";
-import { Home, History, User } from "lucide-react-native";
+import Home from "lucide-react-native/icons/house";
+import History from "lucide-react-native/icons/rotate-ccw-clock";
+import User from "lucide-react-native/icons/user";
 import React, { useEffect } from "react";
 
 import { CustomTabBar } from "@/components/CustomTabBar";

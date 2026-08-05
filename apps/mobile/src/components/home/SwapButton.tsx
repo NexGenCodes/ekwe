@@ -1,5 +1,5 @@
 import * as Haptics from "expo-haptics";
-import { ArrowRightLeft } from "lucide-react-native";
+import ArrowRightLeft from "lucide-react-native/icons/arrow-right-left";
 import React from "react";
 import Animated, {
   useAnimatedStyle,

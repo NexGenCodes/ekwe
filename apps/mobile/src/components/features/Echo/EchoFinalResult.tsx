@@ -1,5 +1,6 @@
 import { triggerHaptic } from "@/utils/haptics";
-import { Zap, CheckCircle2 } from "lucide-react-native";
+import Zap from "lucide-react-native/icons/zap";
+import CheckCircle2 from "lucide-react-native/icons/circle-check";
 import React from "react";
 
 import { ResultDisplay } from "./ResultDisplay";
@@ -9,7 +10,7 @@ import { Badge } from "../../Badge";
 import { Box, Text, Pressable } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useTheme } from "@/hooks";
+import { useTheme } from "@/hooks/ui";
 import { EchoStep } from "@/types/echo";
 
 interface EchoFinalResultProps {

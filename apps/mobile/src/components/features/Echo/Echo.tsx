@@ -1,5 +1,7 @@
 import { useSelector } from "@legendapp/state/react";
-import { X, AlertCircle, RefreshCw } from "lucide-react-native";
+import X from "lucide-react-native/icons/x";
+import AlertCircle from "lucide-react-native/icons/circle-alert";
+import RefreshCw from "lucide-react-native/icons/refresh-cw";
 import React, { useCallback, useEffect, useMemo } from "react";
 import type { DimensionValue } from "react-native";
 
@@ -17,11 +19,13 @@ import { STEP_METADATA } from "@/constants/echo";
 import { LANGUAGES } from "@/constants/languages";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useEchoFlow, useTheme, useSharedAudioPlayer } from "@/hooks";
+import { useEchoFlow } from "@/hooks/echo";
+import { useSharedAudioPlayer } from "@/hooks/audio";
+import { useTheme } from "@/hooks/ui";
 import { initAuth } from "@/services/auth";
 import { auth$ } from "@/store";
 import { EchoProps, EchoStep } from "@/types/echo";
-import { formatSourceApp } from "@/utils";
+import { formatSourceApp } from "@/utils/formatsource";
 
 const STEP_MAX_HEIGHTS: Record<EchoStep, DimensionValue> = {
   PickLanguage: "95%",
@@ -39,6 +43,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   }, []);
 
   const userSession = useSelector(() => auth$.session.get());
+  const { onClose } = props;
 
   const {
     step,
@@ -82,7 +87,8 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   const handleClose = useCallback((): void => {
     player.cleanup();
     onDismiss();
-  }, [onDismiss, player]);
+    onClose?.();
+  }, [onDismiss, player, onClose]);
 
   const handleLanguageSelected = useCallback(
     (code: string): void => {

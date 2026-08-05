@@ -28,39 +28,7 @@ public class EkweNativeModule: Module {
     // ------------------------------------
     // Events
     // ------------------------------------
-    Events("onStateChanged", "onIntentQueued", "onAppForeground", "onAppBackground",
-           "onForegroundAppChanged", "onOpusPacket", "onVadSilence")
-
-    // ------------------------------------
-    // Bubble Overlay — iOS stubs
-    // ------------------------------------
-
-    AsyncFunction("hasOverlayPermission") { () -> Bool in
-      return true
-    }
-
-    AsyncFunction("requestOverlayPermission") { () in
-    }
-
-    AsyncFunction("startBubbleService") { () in
-    }
-
-    AsyncFunction("stopBubbleService") { () in
-    }
-
-    AsyncFunction("getSavedPosition") { () -> [String: Double]? in
-      let x = UserDefaults.standard.double(forKey: "ekwe_bubble_x")
-      let y = UserDefaults.standard.double(forKey: "ekwe_bubble_y")
-      if x == 0 && y == 0 {
-        return nil
-      }
-      return ["x": x, "y": y]
-    }
-
-    AsyncFunction("savePosition") { (x: Double, y: Double) in
-      UserDefaults.standard.set(x, forKey: "ekwe_bubble_x")
-      UserDefaults.standard.set(y, forKey: "ekwe_bubble_y")
-    }
+    Events("onOpusPacket", "onVadSilence")
 
     // ------------------------------------
     // Audio Effects — iOS stubs
@@ -75,21 +43,6 @@ public class EkweNativeModule: Module {
     }
 
     AsyncFunction("releaseEffects") { () in
-    }
-
-    AsyncFunction("updateBubbleVisibility") { (visible: Bool) in
-    }
-
-    AsyncFunction("updateBubbleState") { (mode: String, data: String?) in
-      print("[Ekwe] Updating iOS Live Activity state: \(mode)")
-    }
-
-    AsyncFunction("showFloatingCard") { (transcription: String, translation: String) in
-      print("[Ekwe] iOS Ghost Mode: Falling back to in-app overlay")
-    }
-
-    OnAppForegrounded {
-      print("[Ekwe] App foregrounded — cleaning up iOS background tasks")
     }
 
     // ------------------------------------

@@ -1,7 +1,6 @@
 package expo.modules.ekwenative
 
 import android.content.Context
-import android.content.Intent
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -9,13 +8,10 @@ import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
 import android.provider.OpenableColumns
-import android.provider.Settings
 import android.util.Log
 import android.webkit.MimeTypeMap
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import java.io.File
-import java.io.FileOutputStream
 import kotlin.concurrent.thread
 
 class EkweNativeModule : Module() {
@@ -42,30 +38,11 @@ class EkweNativeModule : Module() {
     private fun resolvePath(path: String): String {
       return if (path.startsWith("file://")) path.substring(7) else path
     }
-    var isAppBackgrounded: Boolean = true
 
-    fun emitStateChanged(state: String, previousState: String, reason: String) {
-      instance?.let { module ->
-        try {
-          module.sendEvent("onStateChanged", mapOf(
-            "state" to state,
-            "previousState" to previousState,
-            "reason" to reason
-          ))
-        } catch (e: Exception) {
-          Log.w("EkweNative", "Failed to emit state changed event: $state", e)
-        }
-      }
-    }
-
-    fun emitIntentQueued(audioPath: String, sourceApp: String) {
-      instance?.let { module ->
-        module.sendEvent("onIntentQueued", mapOf(
-          "audioPath" to audioPath,
-          "sourceApp" to sourceApp
-        ))
-      }
-    }
+    // ── Emitters consumed by the C++ capture controller (nativeInitCapture) ──
+    // The C++ side resolves these static methods to push live opus packets and
+    // VAD-silence events to JS (AudioCapture.ts live mode). Must keep signatures
+    // in sync with EkweNativeModuleJNI.cpp.
 
     @JvmStatic fun emitOpusPacketFromNative(packetData: ByteArray, rms: Float) {
       instance?.let { module ->
@@ -100,26 +77,6 @@ class EkweNativeModule : Module() {
     @JvmStatic external fun nativeStopCapture(): Boolean
     @JvmStatic external fun nativeGetAmplitude(): Float
     @JvmStatic external fun nativeGetLastWaveform(): FloatArray
-
-    fun emitAppForeground() {
-      isAppBackgrounded = false
-      instance?.let { module ->
-        module.sendEvent("onAppForeground", emptyMap<String, Any>())
-      }
-    }
-
-    fun emitAppBackground() {
-      isAppBackgrounded = true
-      instance?.let { module ->
-        module.sendEvent("onAppBackground", emptyMap<String, Any>())
-      }
-    }
-  }
-
-  fun sendForegroundAppEvent(packageName: String) {
-    this@EkweNativeModule.sendEvent("onForegroundAppChanged", mapOf(
-      "packageName" to packageName
-    ))
   }
 
   override fun definition() = ModuleDefinition {
@@ -135,34 +92,20 @@ class EkweNativeModule : Module() {
       instance = null
     }
 
-    Events("onStateChanged", "onIntentQueued", "onAppForeground", "onAppBackground", "onForegroundAppChanged", "onOpusPacket", "onVadSilence")
+    // onOpusPacket/onVadSilence are still consumed by the live capture path in
+    // JS (AudioCapture.ts); keep them registered so addListener stays valid.
+    Events("onOpusPacket", "onVadSilence")
 
-    // --- State Methods ---
-    AsyncFunction("getWindowState") { ->
-      FloatingStateEngine.getState().name
-    }
-
-    // --- Bubble Window Methods ---
-    AsyncFunction("showBubble") { x: Double, y: Double ->
-      val intent = Intent(appContext.reactContext, BubbleService::class.java).apply {
-        action = BubbleService.ACTION_START
-      }
-      appContext.reactContext?.startForegroundService(intent)
-    }
-
-    AsyncFunction("dismissBubble") { ->
-      val intent = Intent(appContext.reactContext, BubbleService::class.java).apply {
-        action = BubbleService.ACTION_STOP
-      }
-      appContext.reactContext?.startService(intent)
-    }
-
+    // --- Echo (Share Intent) Methods ---
+    // Echo runs inside the translucent ShareActivity overlay. dismissNativeLoader
+    // only removes the native "Preparing voice note…" card once RN is interactive;
+    // dismissEcho finishes the overlay so the user returns to the source app.
     AsyncFunction("dismissEcho") { ->
       val activity = appContext.currentActivity
       if (activity is ShareActivity) {
         activity.dismissNativeLoader()
+        activity.finish()
       }
-      activity?.finish()
     }
 
     AsyncFunction("dismissNativeLoader") { ->
@@ -184,91 +127,6 @@ class EkweNativeModule : Module() {
       } catch (e: Exception) {
         Log.e("EkweNative", "Failed to delete file: $uriString", e)
         false
-      }
-    }
-
-    AsyncFunction("expandBubble") { ->
-      val intent = Intent(appContext.reactContext, BubbleService::class.java).apply {
-        action = BubbleService.ACTION_EXPAND_BUBBLE
-      }
-      appContext.reactContext?.startService(intent)
-    }
-
-    AsyncFunction("collapseBubble") { ->
-      val intent = Intent(appContext.reactContext, BubbleService::class.java).apply {
-        action = BubbleService.ACTION_COLLAPSE_BUBBLE
-      }
-      appContext.reactContext?.startService(intent)
-    }
-
-    AsyncFunction("updateBubbleMode") { mode: String, data: String? ->
-      val ctx = appContext.reactContext ?: return@AsyncFunction
-      val intent = Intent(ctx, BubbleService::class.java).apply {
-        action = BubbleService.ACTION_UPDATE_STATE
-        putExtra(BubbleService.EXTRA_MODE, mode)
-        putExtra(BubbleService.EXTRA_DATA, data)
-      }
-      ctx.startService(intent)
-    }
-
-    // --- Overlay Window Methods ---
-    AsyncFunction("showOverlay") { audioPath: String, sourceApp: String ->
-      val intent = Intent(appContext.reactContext, BubbleService::class.java).apply {
-        action = BubbleService.ACTION_SHOW_OVERLAY
-        putExtra(BubbleService.EXTRA_AUDIO_PATH, audioPath)
-        putExtra(BubbleService.EXTRA_SOURCE_APP, sourceApp)
-      }
-      appContext.reactContext?.startForegroundService(intent)
-    }
-
-    AsyncFunction("dismissOverlay") { ->
-      val intent = Intent(appContext.reactContext, BubbleService::class.java).apply {
-        action = BubbleService.ACTION_DISMISS_OVERLAY
-      }
-      appContext.reactContext?.startService(intent)
-    }
-
-    AsyncFunction("setOverlayHeight") { heightPx: Double, animated: Boolean ->
-      // NO-OP for now, implemented later if needed
-    }
-
-    // --- Overlay Permissions ---
-    AsyncFunction("hasOverlayPermission") { ->
-      val context = appContext.reactContext ?: return@AsyncFunction false
-      Settings.canDrawOverlays(context)
-    }
-
-    AsyncFunction("requestOverlayPermission") { ->
-      val intent = Intent(
-        Settings.ACTION_MANAGE_OVERLAY_PERMISSION
-      ).apply {
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-      }
-      appContext.reactContext?.startActivity(intent)
-    }
-
-    // --- Position (retained) ---
-    AsyncFunction("getSavedPosition") { ->
-      val prefs = appContext.reactContext?.getSharedPreferences(
-        "ekwe_bubble", Context.MODE_PRIVATE
-      )
-      val x = prefs?.getFloat("bubble_x", -1f) ?: -1f
-      val y = prefs?.getFloat("bubble_y", -1f) ?: -1f
-
-      if (x < 0f || y < 0f) {
-        null
-      } else {
-        mapOf("x" to x.toDouble(), "y" to y.toDouble())
-      }
-    }
-
-    AsyncFunction("savePosition") { x: Double, y: Double ->
-      appContext.reactContext?.getSharedPreferences(
-        "ekwe_bubble", Context.MODE_PRIVATE
-      )?.edit()?.apply {
-        putFloat("bubble_x", x.toFloat())
-        putFloat("bubble_y", y.toFloat())
-        apply()
       }
     }
 
@@ -400,7 +258,7 @@ class EkweNativeModule : Module() {
           val effStart = System.currentTimeMillis()
           attachEffectsInternal(sessionId)
           val effEnd = System.currentTimeMillis()
-          Log.d("EkweAudioPerf", "attachEffectsInternal JNI took \${effEnd - effStart}ms")
+          Log.d("EkweAudioPerf", "attachEffectsInternal JNI took ${effEnd - effStart}ms")
         } catch (e: Exception) {
           Log.e("EkweAudio", "Failed to attach audio effects", e)
         }
@@ -434,7 +292,7 @@ class EkweNativeModule : Module() {
 
         Log.d("EkweAudio", "startAudioRecording: returning success")
         val methodEnd = System.currentTimeMillis()
-        Log.d("EkweAudioPerf", "startAudioRecording JNI took \${methodEnd - methodStart}ms")
+        Log.d("EkweAudioPerf", "startAudioRecording JNI took ${methodEnd - methodStart}ms")
         return@AsyncFunction mapOf("success" to true, "error" to "")
       } catch (e: Exception) {
         Log.e("EkweAudio", "startAudioRecording failed: ${e.message}", e)
@@ -489,7 +347,7 @@ class EkweNativeModule : Module() {
       Log.d("EkweAudio", "stopAudioRecording: waveform bins=${waveform.size}")
 
       val methodEnd = System.currentTimeMillis()
-      Log.d("EkweAudioPerf", "stopAudioRecording JNI took \${methodEnd - methodStart}ms")
+      Log.d("EkweAudioPerf", "stopAudioRecording JNI took ${methodEnd - methodStart}ms")
 
       val durationMs = (System.currentTimeMillis() - recordingStartedAt)
         .toInt()

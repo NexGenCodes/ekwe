@@ -1,5 +1,7 @@
 import * as Haptics from "expo-haptics";
-import { Search, X, Filter } from "lucide-react-native";
+import Search from "lucide-react-native/icons/search";
+import X from "lucide-react-native/icons/x";
+import Filter from "lucide-react-native/icons/funnel";
 import React, { useCallback } from "react";
 import { TextInput, StyleSheet } from "react-native";
 

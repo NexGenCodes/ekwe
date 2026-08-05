@@ -1,4 +1,7 @@
-import { ChevronRight, Globe, Smartphone, Palette } from "lucide-react-native";
+import ChevronRight from "lucide-react-native/icons/chevron-right";
+import Globe from "lucide-react-native/icons/globe";
+import Smartphone from "lucide-react-native/icons/smartphone";
+import Palette from "lucide-react-native/icons/palette";
 import React from "react";
 
 import { ProfileRow } from "../ProfileRow";

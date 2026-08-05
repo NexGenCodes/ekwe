@@ -1,4 +1,4 @@
-import { Zap } from "lucide-react-native";
+import Zap from "lucide-react-native/icons/zap";
 import React from "react";
 
 import { PlaybackControl } from "./PlaybackControl";
@@ -6,7 +6,7 @@ import { PlaybackControl } from "./PlaybackControl";
 import { Box, Text, Pressable, Spinner } from "@/components/ui";
 import { borderRadius, opacity } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useTheme } from "@/hooks";
+import { useTheme } from "@/hooks/ui";
 import { SharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
 
 export interface EchoConfigStepProps {

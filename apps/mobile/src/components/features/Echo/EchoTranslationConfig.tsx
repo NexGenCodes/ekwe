@@ -1,10 +1,8 @@
-import {
-  Zap,
-  AlertCircle,
-  ArrowRight,
-  Ear,
-  Languages,
-} from "lucide-react-native";
+import Zap from "lucide-react-native/icons/zap";
+import AlertCircle from "lucide-react-native/icons/circle-alert";
+import ArrowRight from "lucide-react-native/icons/arrow-right";
+import Ear from "lucide-react-native/icons/ear";
+import Languages from "lucide-react-native/icons/languages";
 import React from "react";
 import { ScrollView } from "react-native";
 
@@ -15,7 +13,7 @@ import { Box, Text, Pressable } from "@/components/ui";
 import { LANGUAGES, FLAG_MAP } from "@/constants/languages";
 import { borderRadius, opacity } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useTheme } from "@/hooks";
+import { useTheme } from "@/hooks/ui";
 
 interface EchoTranslationConfigProps {
   step: "TranscribeResult";

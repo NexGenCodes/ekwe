@@ -1,7 +1,10 @@
 import * as Haptics from "expo-haptics";
 import { triggerHaptic } from "@/utils/haptics";
 import { Image as ExpoImage } from "expo-image";
-import { Mic, Trash2, Upload, Type } from "lucide-react-native";
+import Mic from "lucide-react-native/icons/mic";
+import Trash2 from "lucide-react-native/icons/trash-2";
+import Upload from "lucide-react-native/icons/upload";
+import Type from "lucide-react-native/icons/type";
 import React, { useRef, useCallback, useMemo } from "react";
 import { ViewStyle, StyleSheet } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";

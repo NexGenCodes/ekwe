@@ -7,7 +7,7 @@ import { Box, Text, Pressable } from "@/components/ui";
 import { FLAG_MAP } from "@/constants/languages";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useTheme } from "@/hooks";
+import { useTheme } from "@/hooks/ui";
 
 interface ResultDisplayProps {
   transcription: string | null;

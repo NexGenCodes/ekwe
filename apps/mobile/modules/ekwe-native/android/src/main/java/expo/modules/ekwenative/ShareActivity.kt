@@ -19,19 +19,23 @@ import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnable
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 /**
- * ShareActivity — Instant-boot translucent overlay.
- * 
- * 1. Shows a native loading card INSTANTLY in onCreate()
- * 2. Passes the raw content:// URI directly to React Native as a prop
- * 3. React Native resolves it asynchronously via EkweNative.resolveContentUri()
- * 
- * No native file I/O occurs here — the entire pipeline runs in the JS thread
- * after the UI is already interactive.
+ * ShareActivity — translucent Echo overlay.
+ *
+ * 1. Shows a native loading card INSTANTLY in onCreate().
+ * 2. Passes the raw content:// URI directly to React Native as a prop.
+ * 3. React Native renders the `share-extension` root (the Echo sheet) over the
+ *    source app — the main app is never opened and the user stays where they were.
+ *
+ * The shared audio is resolved asynchronously in the JS thread via
+ * EkweNative.resolveContentUri(), which copies the content grant into private
+ * cache before it can expire. No React Native engine boots before the UI is
+ * already interactive (the translucent theme shows the source app behind us).
  */
 class ShareActivity : ReactActivity() {
 
     companion object {
         private const val TAG = "ShareActivity"
+
         @Volatile
         var nativeLoaderView: View? = null
     }
@@ -105,7 +109,6 @@ class ShareActivity : ReactActivity() {
     override fun onDestroy() {
         wipeOrphanedCacheFiles()
         dismissNativeLoader()
-        sendBubbleCommand("com.ekwe.LENS_SHOW")
         super.onDestroy()
     }
 
@@ -201,12 +204,4 @@ class ShareActivity : ReactActivity() {
             }
         }.start()
     }
-
-    private fun sendBubbleCommand(action: String) {
-        try {
-            val intent = Intent(this, BubbleService::class.java).apply { this.action = action }
-            startService(intent)
-        } catch (e: Exception) {}
-    }
 }
-

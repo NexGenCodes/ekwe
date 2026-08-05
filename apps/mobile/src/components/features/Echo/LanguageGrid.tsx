@@ -5,9 +5,9 @@ import { LanguageGridCard } from "@/components/language";
 import { Box } from "@/components/ui";
 import { ECHO_CONSTANTS } from "@/constants/echo";
 import { LANGUAGES } from "@/constants/languages";
-import { usePermissions } from "@/hooks";
+import { usePermissions } from "@/hooks/usePermissions";
 import { settings$ } from "@/store";
-import { AppAlert } from "@/utils";
+import { AppAlert } from "@/utils/alert";
 
 interface LanguageGridProps {
   selectedLang: string;

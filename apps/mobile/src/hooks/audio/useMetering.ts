@@ -10,11 +10,19 @@ import { useSharedValue, SharedValue } from "react-native-reanimated";
  *
  * Falls back to 0 (silent bars) when the JSI function is not installed
  * (e.g., iOS where JSI hasn't been ported yet).
+ *
+ * The rAF loop only runs while `isActive` is true, so idle screens do not
+ * wake the JS thread at 60fps for no reason.
  */
-export const useMetering = (): SharedValue<number> => {
+export const useMetering = (isActive: boolean): SharedValue<number> => {
   const amplitude = useSharedValue(0);
 
   useEffect(() => {
+    if (!isActive) {
+      amplitude.value = 0;
+      return;
+    }
+
     let running = true;
     let rafId: number;
 
@@ -31,7 +39,7 @@ export const useMetering = (): SharedValue<number> => {
       running = false;
       cancelAnimationFrame(rafId);
     };
-  }, [amplitude]);
+  }, [amplitude, isActive]);
 
   return amplitude;
 };

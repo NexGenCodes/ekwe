@@ -1,4 +1,5 @@
-import { LogOut, Trash2 } from "lucide-react-native";
+import LogOut from "lucide-react-native/icons/log-out";
+import Trash2 from "lucide-react-native/icons/trash-2";
 import React from "react";
 
 import { ProfileRow } from "../ProfileRow";

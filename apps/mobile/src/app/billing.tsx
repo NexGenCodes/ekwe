@@ -1,6 +1,7 @@
 import { triggerHaptic } from "@/utils/haptics";
 import { Stack } from "expo-router";
-import { Crown, Sparkles } from "lucide-react-native";
+import Crown from "lucide-react-native/icons/crown";
+import Sparkles from "lucide-react-native/icons/sparkles";
 import React, { useMemo } from "react";
 import Animated, { FadeInDown, ZoomIn, FadeIn } from "react-native-reanimated";
 

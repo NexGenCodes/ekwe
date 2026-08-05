@@ -3,7 +3,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 
 import { Box } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
-import { useTheme } from "@/hooks";
+import { useTheme } from "@/hooks/ui";
 
 export interface IconContainerProps {
   children: React.ReactNode;

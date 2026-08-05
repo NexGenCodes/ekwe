@@ -1,4 +1,8 @@
-import { Mic, X, Square, Trash2, Send } from "lucide-react-native";
+import Mic from "lucide-react-native/icons/mic";
+import X from "lucide-react-native/icons/x";
+import Square from "lucide-react-native/icons/square";
+import Trash2 from "lucide-react-native/icons/trash-2";
+import Send from "lucide-react-native/icons/send";
 import React, { useMemo } from "react";
 import { StyleProp, ViewStyle } from "react-native";
 import Animated, {

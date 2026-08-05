@@ -7,7 +7,7 @@ import type {
 import { internal, setAtPath } from "@legendapp/state";
 import { configureObservablePersistence } from "@legendapp/state/persist";
 
-import { mmkv } from "@/services/mmkv";
+import { initializeMMKV, mmkv } from "@/services/mmkv";
 import logger from "@/utils/logger";
 
 const { safeParse, safeStringify } = internal;
@@ -17,21 +17,32 @@ const MetadataSuffix = "__m";
 export class ObservablePersistMMKV implements ObservablePersistLocal {
   private data: Record<string, unknown> = {};
 
+  // Async preload — legend-state awaits this before calling getTable. It blocks
+  // until the encrypted MMKV is ready so persisted values are loaded from the
+  // real store (never from the plaintext in-memory fallback).
+  loadTable(table: string, _config: PersistOptionsLocal): Promise<void> {
+    if (this.data[table] !== undefined) {
+      return Promise.resolve();
+    }
+    return (async (): Promise<void> => {
+      try {
+        await initializeMMKV();
+        const value = mmkv.getString(table);
+        this.data[table] = value ? safeParse(value) : undefined;
+      } catch {
+        logger.error("[legend-state] MMKV failed to load", table);
+      }
+    })();
+  }
+
   // Gets
   getTable<T = unknown>(
     table: string,
-    config: PersistOptionsLocal,
+    _config: PersistOptionsLocal,
     init: object,
   ): T {
-    if (this.data[table] === undefined) {
-      try {
-        const value = mmkv.getString(table);
-        this.data[table] = value ? safeParse(value) : init;
-      } catch {
-        logger.error("[legend-state] MMKV failed to parse", table);
-      }
-    }
-    return this.data[table] as T;
+    const value = this.data[table];
+    return (value !== undefined ? value : init) as T;
   }
 
   getMetadata(table: string, config: PersistOptionsLocal): PersistMetadata {

@@ -136,7 +136,7 @@ jobs:
 
   deploy-worker:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/master'
     needs: [typecheck, lint, test-worker, fixtures-drift, secret-scan, wrangler-types-drift]
     environment: production
     defaults:

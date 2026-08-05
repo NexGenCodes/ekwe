@@ -3,8 +3,8 @@ import React from "react";
 
 /**
  * Isolated entry point for the Main Application.
- * This ensures that index.js can register the share-extension
- * without immediately loading the full Expo Router tree and its side effects.
+ * index.js registers this as the root component; the Android/iOS share flows
+ * are handled natively and deep-link into the `/share` route.
  */
 export default function App(): React.ReactElement {
   // @ts-expect-error - require.context is an Expo/Metro special feature

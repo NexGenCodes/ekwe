@@ -9,7 +9,6 @@ export * from "./AuthHeader";
 export * from "./AuthShell";
 export * from "./SocialAuthGroup";
 export * from "./SocialButton";
-export * from "./AccessibilityDisclosure";
 export * from "./LanguagePickerSheet";
 export * from "./LanguageSelectionGrid";
 export * from "./ScrollableTextBox";
@@ -45,4 +44,3 @@ export * from "./history";
 // Feature modules
 export * from "./features";
 export * from "./onboarding";
-export * from "./LensOverlay";

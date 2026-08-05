@@ -1,6 +1,9 @@
 import { useFocusEffect } from "expo-router";
 import * as Speech from "expo-speech";
-import { Copy, Volume2, VolumeX, Check } from "lucide-react-native";
+import Copy from "lucide-react-native/icons/copy";
+import Volume2 from "lucide-react-native/icons/volume-2";
+import VolumeX from "lucide-react-native/icons/volume-x";
+import Check from "lucide-react-native/icons/check";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Share } from "react-native";
 import Animated, {

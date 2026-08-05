@@ -1,5 +1,6 @@
 import { useSelector } from "@legendapp/state/react";
-import { Check, Zap } from "lucide-react-native";
+import Check from "lucide-react-native/icons/check";
+import Zap from "lucide-react-native/icons/zap";
 import React, { useMemo } from "react";
 
 import { FeatureRow } from "./FeatureRow";

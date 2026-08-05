@@ -22,6 +22,8 @@ export interface EchoProps {
   mimeType?: string;
   fileName?: string;
   sourceApp?: string;
+  // Called when the user dismisses Echo (iOS share route pops the modal)
+  onClose?: () => void;
 }
 
 export interface UseEchoFlowResult {

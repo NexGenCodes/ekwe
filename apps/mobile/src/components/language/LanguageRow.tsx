@@ -1,4 +1,5 @@
-import { Check, Lock } from "lucide-react-native";
+import Check from "lucide-react-native/icons/check";
+import Lock from "lucide-react-native/icons/lock";
 import type { JSX } from "react";
 
 import { LanguageFlag } from "./LanguageFlag";

@@ -16,7 +16,8 @@ import { HistoryService } from "@/services/HistoryService";
 import { IntentService } from "@/services/IntentService";
 import { settings$, auth$ } from "@/store";
 import { EchoStep, EchoProps, UseEchoFlowResult } from "@/types/echo";
-import { logger, isIOS } from "@/utils";
+import { default as logger } from "@/utils/logger";
+import { isIOS } from "@/utils/platform";
 import { cleanEchoCache } from "@/utils/echo";
 import { resolveDetectedLanguage } from "@/utils/languageUtils";
 import { checkIsOnline } from "@/utils/netInfo";
@@ -160,6 +161,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     audioUri,
     isResolving,
     convertedWaveform,
+    convertedDurationMs,
     activeResolvedUri,
     isSubsequentIntent,
     setIsSubsequentIntent,
@@ -179,7 +181,11 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     durationSeconds: number,
     waveform: number[],
   ): Promise<void> => {
-    dispatch({ type: "SET_AUDIO_DURATION", payload: durationSeconds });
+    // Prefer the native duration reported during content resolution; fall back
+    // to the player-derived estimate when unavailable.
+    const durationMs =
+      convertedDurationMs ?? Math.round(durationSeconds * 1000);
+    dispatch({ type: "SET_AUDIO_DURATION", payload: durationMs / 1000 });
     logger.info("[EchoFlow] ── Initiating Transcription ──");
     logger.info("[EchoFlow] User ID:", session?.user?.id);
     logger.info(
@@ -195,7 +201,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     if (!audioUri) return;
 
     // Enforce Plan Limits for Audio Duration
-    if (durationSeconds * 1000 > permissions.dictationDurationMs) {
+    if (durationMs > permissions.dictationDurationMs) {
       const limitSec = permissions.dictationDurationMs / 1000;
       dispatch({
         type: "SET_ERROR",
@@ -207,7 +213,6 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
 
     triggerHaptic("selection");
     dispatch({ type: "SET_STEP", payload: "Transcribing" });
-    IntentService.updateBubbleMode("MAGIC");
 
     const isOnline = await checkIsOnline();
     if (!isOnline) {
@@ -216,7 +221,6 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
         payload: "Transcription requires an active internet connection.",
       });
       dispatch({ type: "SET_STEP", payload: "Error" });
-      IntentService.updateBubbleMode("IDLE");
       return;
     }
 
@@ -229,7 +233,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       const trResult = await batchTranscriber.transcribe(
         {
           uri: safeUri,
-          durationMs: durationSeconds * 1000,
+          durationMs,
           meteringData: waveform,
           waveform: [],
         },
@@ -265,7 +269,6 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       dispatch({ type: "SET_STEP", payload: "Error" });
     } finally {
       deactivateKeepAwake("echoSession").catch(() => {});
-      IntentService.updateBubbleMode("IDLE");
     }
   };
 
@@ -380,13 +383,13 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     IntentService.dismissEcho();
   }, [sourceApp, session, audioUri, activeResolvedUri]);
 
-  // Clean up and dismiss if the user minimizes the app (backgrounds it)
+  // Clean up and dismiss if the user backgrounds the app
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
-      if (nextAppState === "background" || nextAppState === "inactive") {
-        logger.info(
-          "[EchoFlow] App state changed to background/inactive, dismissing echo...",
-        );
+      // "inactive" is transient (system dialogs, app switcher) — only dismiss
+      // when the app is fully backgrounded to avoid killing the flow mid-step.
+      if (nextAppState === "background") {
+        logger.info("[EchoFlow] App state changed to background, dismissing echo...");
         onDismiss();
       }
     });

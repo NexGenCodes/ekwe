@@ -149,7 +149,7 @@ export const useSharedAudioPlayer = (uri: string | null): SharedAudioPlayer => {
     stopProgressTimer();
     if (seekLockRef.current) clearTimeout(seekLockRef.current);
     player.pause();
-    player.replace(null);
+    player.remove();
     setIsAudioActiveAsync(false).catch(() => {});
   }, [player, stopProgressTimer]);
 

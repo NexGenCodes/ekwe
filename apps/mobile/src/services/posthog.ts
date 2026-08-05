@@ -1,11 +1,16 @@
 import PostHog from "posthog-react-native";
 
+import { settings$ } from "@/store/settings";
 import logger from "@/utils/logger";
 
 const API_KEY = process.env.EXPO_PUBLIC_POSTHOG_API_KEY;
 const HOST = process.env.EXPO_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
 
 let _client: PostHog | undefined;
+
+function hasConsent(): boolean {
+  return settings$.analyticsConsent.get();
+}
 
 function createClient(): PostHog | undefined {
   if (!API_KEY) {
@@ -21,8 +26,14 @@ function createClient(): PostHog | undefined {
 }
 
 export function getPosthogClient(): PostHog | undefined {
+  if (!hasConsent()) return undefined;
   if (!_client) {
     _client = createClient();
   }
   return _client;
+}
+
+export function resetAnalytics(): void {
+  _client?.reset();
+  _client = undefined;
 }

@@ -1,4 +1,4 @@
-import { AlertCircle } from "lucide-react-native";
+import AlertCircle from "lucide-react-native/icons/circle-alert";
 import React from "react";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 

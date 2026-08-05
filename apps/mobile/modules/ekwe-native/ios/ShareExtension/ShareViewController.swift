@@ -1,6 +1,5 @@
 import UIKit
 import Social
-import MobileCoreServices
 import UniformTypeIdentifiers
 
 class ShareViewController: SLComposeServiceViewController {
@@ -10,18 +9,14 @@ class ShareViewController: SLComposeServiceViewController {
     private let APP_SCHEME = "ekwe://share"
 
     override func isContentValid() -> Bool {
-        // Validation logic - always valid for simple audio share
         return true
     }
 
     override func didSelectPost() {
-        // This is called after the user taps "Post"
-        // We handle the file processing here
         handleSharedAudio()
     }
 
     override func configurationItems() -> [Any]! {
-        // To add custom configuration items, return an array of SLComposeSheetConfigurationItem
         return []
     }
     
@@ -34,29 +29,31 @@ class ShareViewController: SLComposeServiceViewController {
         
         let audioType = UTType.audio.identifier
         
-        if attachment.hasItemConformingToTypeIdentifier(audioType) {
-            attachment.loadItem(forTypeIdentifier: audioType, options: nil) { [weak self] (data, error) in
-                guard let self = self else { return }
-                
-                var fileURL: URL?
-                
-                if let url = data as? URL {
-                    fileURL = url
-                } else if let data = data as? Data {
-                    // Handle memory-only data by writing to a temporary file
-                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
-                    try? data.write(to: tempURL)
-                    fileURL = tempURL
-                }
-                
-                if let sourceURL = fileURL {
-                    self.copyToAppGroupAndOpenApp(sourceURL: sourceURL)
-                } else {
-                    self.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
-                }
-            }
-        } else {
+        guard attachment.hasItemConformingToTypeIdentifier(audioType) else {
             self.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
+            return
+        }
+        
+        attachment.loadItem(forTypeIdentifier: audioType, options: nil) { [weak self] (data, error) in
+            guard let self = self else { return }
+            
+            var fileURL: URL?
+            
+            if let url = data as? URL {
+                fileURL = url
+            } else if let data = data as? Data {
+                // Handle memory-only data by writing to a temporary file
+                let tempURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(UUID().uuidString + ".m4a")
+                try? data.write(to: tempURL)
+                fileURL = tempURL
+            }
+            
+            if let sourceURL = fileURL {
+                self.copyToAppGroupAndOpenApp(sourceURL: sourceURL)
+            } else {
+                self.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
+            }
         }
     }
     
@@ -67,31 +64,43 @@ class ShareViewController: SLComposeServiceViewController {
             return
         }
         
-        let destinationURL = containerURL.appendingPathComponent(sourceURL.lastPathComponent)
+        // Prune stale copies from previous shares so the shared container doesn't grow unboundedly.
+        if let existing = try? fileManager.contentsOfDirectory(
+            at: containerURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) {
+            existing.forEach { try? fileManager.removeItem(at: $0) }
+        }
         
-        try? fileManager.removeItem(at: destinationURL)
+        // Some providers share files without an extension; the app validates
+        // by extension, so give the copy a known audio extension in that case.
+        let fileName = sourceURL.pathExtension.isEmpty
+            ? "\(sourceURL.lastPathComponent).m4a"
+            : sourceURL.lastPathComponent
+        let destinationURL = containerURL.appendingPathComponent(fileName)
         
         do {
             try fileManager.copyItem(at: sourceURL, to: destinationURL)
-            
-            // Open the main app via URL scheme
-            let urlString = "\(APP_SCHEME)?uri=\(destinationURL.path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
-            if let openURL = URL(string: urlString) {
-                var responder: UIResponder? = self
-                while responder != nil {
-                    if let application = responder as? UIApplication {
-                        application.open(openURL, options: [:], completionHandler: nil)
-                        break
-                    }
-                    responder = responder?.next
-                }
-                
-                // Note: Shared extensions don't have direct access to UIApplication.open
-                // Standard workaround is using NSExtensionContext if supported, 
-                // but the URL scheme approach is legacy and robust for triggered launches.
-                self.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
-            }
         } catch {
+            self.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
+            return
+        }
+        
+        // Percent-encode everything except unreserved characters and "/" so the
+        // query value can't be corrupted by "&", "?", "#" or "=" inside the path.
+        let allowed = CharacterSet(charactersIn: "/-._~").union(.alphanumerics)
+        let encodedPath = destinationURL.path
+            .addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+        
+        guard let openURL = URL(string: "\(APP_SCHEME)?uri=\(encodedPath)") else {
+            self.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
+            return
+        }
+        
+        // NSExtensionContext.open is the sanctioned way to launch the host app from
+        // a share extension (UIApplication.open is unavailable to extensions).
+        self.extensionContext?.open(openURL) { _ in
             self.extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
         }
     }

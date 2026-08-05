@@ -1,16 +1,14 @@
-import {
-  Smile,
-  Ghost,
-  Sparkles,
-  Heart,
-  Star,
-  Zap,
-  Coffee,
-  Music,
-  Rocket,
-  User,
-  X,
-} from "lucide-react-native";
+import Smile from "lucide-react-native/icons/smile";
+import Ghost from "lucide-react-native/icons/ghost";
+import Sparkles from "lucide-react-native/icons/sparkles";
+import Heart from "lucide-react-native/icons/heart";
+import Star from "lucide-react-native/icons/star";
+import Zap from "lucide-react-native/icons/zap";
+import Coffee from "lucide-react-native/icons/coffee";
+import Music from "lucide-react-native/icons/music";
+import Rocket from "lucide-react-native/icons/rocket";
+import User from "lucide-react-native/icons/user";
+import X from "lucide-react-native/icons/x";
 import React from "react";
 import { Modal } from "react-native";
 

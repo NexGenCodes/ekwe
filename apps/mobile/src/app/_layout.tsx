@@ -15,7 +15,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary, ToastContainer, AppAlertModal } from "@/components";
 import { Box } from "@/components/ui";
-import { useShareIntentHandler, useTheme, useTripleExclusivity } from "@/hooks";
+import { useTheme } from "@/hooks";
 import { queryClient } from "@/hooks/queries/queryClient";
 import { auth$ } from "@/store";
 import { logger } from "@/utils";
@@ -27,10 +27,6 @@ function InnerLayout(): React.ReactElement {
 
   const isInitialized = useSelector(() => auth$.isInitialized.get());
   const sessionLoaded = useSelector(() => auth$.sessionLoaded.get());
-
-  // Real-time Exclusivity Guard & Share Intent Listener
-  useTripleExclusivity();
-  useShareIntentHandler();
 
   const theme = useMemo(
     () => ({
@@ -81,17 +77,15 @@ function InnerLayout(): React.ReactElement {
               <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
               <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
               <Stack.Screen
-                name="accessibility-disclosure"
+                name="result"
                 options={{
-                  presentation: "formSheet",
-                  sheetGrabberVisible: true,
-                  headerShown: true,
-                  title: "Disclosure",
+                  presentation: "transparentModal",
+                  headerShown: false,
                   contentStyle: { backgroundColor: "transparent" },
                 }}
               />
               <Stack.Screen
-                name="result"
+                name="share"
                 options={{
                   presentation: "transparentModal",
                   headerShown: false,

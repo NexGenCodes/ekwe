@@ -1,4 +1,5 @@
-import { Copy, Check } from "lucide-react-native";
+import Copy from "lucide-react-native/icons/copy";
+import Check from "lucide-react-native/icons/check";
 import React from "react";
 import { StyleSheet } from "react-native";
 

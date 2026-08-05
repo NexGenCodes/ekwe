@@ -295,7 +295,7 @@ describe("handleWebhook", () => {
     expect(setProCalls).toHaveLength(0);
   });
 
-  test("flutterwave falls back to the reference user id", async () => {
+  test("flutterwave charge.completed without a validated user_id is skipped", async () => {
     const env = mockEnv({ FLUTTERWAVE_SECRET_HASH: "fw-hash" });
     const body = JSON.stringify({
       event: "charge.completed",
@@ -312,9 +312,8 @@ describe("handleWebhook", () => {
     const req = requestWith(body, { "verif-hash": "fw-hash" });
     const res = await handleWebhook(req, env, ctx);
 
-    expect(await res.json()).toEqual({ received: true, action: "activated" });
-    expect(setProCalls).toHaveLength(1);
-    expect(setProCalls[0].body).toContain("user789");
+    expect(await res.json()).toEqual({ received: true, action: "skipped" });
+    expect(setProCalls).toHaveLength(0);
   });
 
   test("flutterwave unhandled events are ignored", async () => {

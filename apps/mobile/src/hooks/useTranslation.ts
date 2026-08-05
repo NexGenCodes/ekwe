@@ -11,7 +11,9 @@ import { HistoryService } from "@/services/HistoryService";
 import { TranslationResult } from "@/services/translateText";
 import { audioActions, settings$, auth$, audio$ } from "@/store";
 import { Result, ok, err } from "@/types/Result";
-import { AppToast, logger, triggerHaptic } from "@/utils";
+import { AppToast } from "@/utils/toast";
+import { triggerHaptic } from "@/utils/haptics";
+import { default as logger } from "@/utils/logger";
 import {
   getDefaultSourceLang,
   resolveDetectedLanguage,

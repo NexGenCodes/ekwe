@@ -11,7 +11,6 @@ export enum ThemePreference {
 }
 
 export interface SettingsState {
-  bubbleEnabled: boolean;
   themePreference: ThemePreference;
   retentionDays: number;
   selectedLanguages: string[];
@@ -25,10 +24,10 @@ export interface SettingsState {
   hapticsEnabled: boolean;
   currency: string;
   liveTranscriptionEnabled: boolean;
+  analyticsConsent: boolean;
 }
 
 const initialSettings: SettingsState = {
-  bubbleEnabled: false,
   themePreference: ThemePreference.System,
   retentionDays: 7,
   selectedLanguages: [],
@@ -42,6 +41,7 @@ const initialSettings: SettingsState = {
   hapticsEnabled: true,
   currency: detectDeviceCurrency(),
   liveTranscriptionEnabled: false,
+  analyticsConsent: false,
 };
 
 export const settings$ = observable<SettingsState>(initialSettings);
@@ -53,9 +53,6 @@ persistObservable(settings$, {
 });
 // Actions
 export const settingsActions = {
-  setBubbleEnabled: (val: boolean): void => {
-    settings$.bubbleEnabled.set(val);
-  },
   setThemePreference: (val: ThemePreference): void => {
     settings$.themePreference.set(val);
   },
@@ -94,5 +91,8 @@ export const settingsActions = {
   },
   setLiveTranscriptionEnabled: (val: boolean): void => {
     settings$.liveTranscriptionEnabled.set(val);
+  },
+  setAnalyticsConsent: (val: boolean): void => {
+    settings$.analyticsConsent.set(val);
   },
 };
