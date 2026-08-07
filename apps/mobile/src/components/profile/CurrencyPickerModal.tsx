@@ -4,10 +4,11 @@ import React from "react";
 import { Modal, ScrollView } from "react-native";
 
 import { Box, Text, Pressable } from "@/components/ui";
-import { SUPPORTED_CURRENCIES } from "@/constants/currency";
+import { CURRENCIES } from "@ekwe/shared/currencies";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { withAlpha } from "@/utils/color";
 
 interface CurrencyPickerModalProps {
   visible: boolean;
@@ -85,7 +86,7 @@ export function CurrencyPickerModal({
               paddingVertical: spacing.sm,
             }}
           >
-            {SUPPORTED_CURRENCIES.map((item) => {
+            {CURRENCIES.map((item) => {
               const isSelected = currentCurrency === item.code;
               return (
                 <Pressable
@@ -99,12 +100,12 @@ export function CurrencyPickerModal({
                       borderRadius: borderRadius.lg,
                       marginVertical: 2,
                     },
-                    pressed && {
-                      backgroundColor: `${color.foreground}1A`,
-                    },
-                    isSelected && {
-                      backgroundColor: `${color.foreground}0D`,
-                    },
+pressed && {
+                        backgroundColor: withAlpha(color.foreground, 0.102),
+                      },
+                      isSelected && {
+                        backgroundColor: withAlpha(color.foreground, 0.051),
+                      },
                   ]}
                   onPress={() => onSelect(item.code)}
                   accessibilityLabel={`Select ${item.name}`}

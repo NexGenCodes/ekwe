@@ -119,7 +119,6 @@ export default function TranslateScreen(): React.JSX.Element {
 
   const handleCopy = async (copyText: string): Promise<void> => {
     await copy(copyText);
-    AppToast.success("Text copied to clipboard");
   };
 
   const handleSwap = (): void => {

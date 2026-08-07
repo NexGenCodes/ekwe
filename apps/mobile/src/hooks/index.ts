@@ -1,9 +1,8 @@
 export * from "./audio";
 export * from "./echo";
 export * from "./auth";
-export { useTranscription } from "./useTranscription";
 export { useTranslation } from "./useTranslation";
-export * from "./platform";
+export { useResultPipeline } from "./useResultPipeline";
 export * from "./ui";
 export { useHistory } from "./useHistory";
 export { useHistorySearch } from "./useHistorySearch";

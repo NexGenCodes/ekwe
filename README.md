@@ -34,15 +34,15 @@ Ekwe is a voice note translation application built specifically for Android and 
 2. **Start the Metro Bundler:**
 
    ```bash
-   npm start
+   pnpm dev
    ```
 
 3. **Run on a Device or Simulator:**
 
    ```bash
-   npm run ios
+   pnpm ios
    # - or -
-   npm run android
+   pnpm android
    ```
 
 ## Design Philosophy

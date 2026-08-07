@@ -4,10 +4,14 @@ import ArrowRight from "lucide-react-native/icons/arrow-right";
 import Ear from "lucide-react-native/icons/ear";
 import Languages from "lucide-react-native/icons/languages";
 import React from "react";
-import { ScrollView } from "react-native";
+import {
+  Pressable as GHRNPressable,
+  ScrollView,
+} from "react-native-gesture-handler";
 
-import { AnimatedCopyButton } from "../../AnimatedCopyButton";
-import { ScrollableTextBox } from "../../ScrollableTextBox";
+import { TextBox } from "./TextBox";
+
+import type { WaveformPlaybackController } from "@/hooks/audio/useAudioWaveformPlayback";
 
 import { Box, Text, Pressable } from "@/components/ui";
 import { LANGUAGES, FLAG_MAP } from "@/constants/languages";
@@ -22,9 +26,9 @@ interface EchoTranslationConfigProps {
   targetLang: string;
   transcription: string | null;
   availableTargetList: typeof LANGUAGES;
-  isDark: boolean;
   setTargetLang: (code: string) => void;
   handleTranslate: () => void;
+  audioPlayer: WaveformPlaybackController | null;
 }
 
 export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
@@ -37,6 +41,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
       availableTargetList,
       setTargetLang,
       handleTranslate,
+      audioPlayer,
     }) => {
       const { color } = useTheme();
       const brandPrimary = color.brand;
@@ -91,8 +96,8 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                   flexDirection: "row",
                   alignItems: "center",
                   paddingHorizontal: spacing.md,
-                  paddingVertical: spacing.sm,
-                  borderRadius: borderRadius.xl,
+                  paddingVertical: spacing.xs,
+                  borderRadius: borderRadius["2xl"],
                   borderWidth: 1,
                   gap: spacing.sm,
                   backgroundColor: color.surface,
@@ -104,25 +109,22 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                   color={isMismatch ? brandWarning : brandPrimary}
                 />
                 <Text variant="body">{selectedFlag}</Text>
-                <Box>
+                <Text
+                  variant="bodySmall"
+                  numberOfLines={1}
+                  style={{
+                    flex: 1,
+                    color: isMismatch ? brandWarning : color.foreground,
+                  }}
+                >
                   <Text
                     variant="caption"
-                    style={{
-                      marginBottom: spacing.xs,
-                      color: isMismatch ? brandWarning : color.muted,
-                    }}
+                    style={{ color: isMismatch ? brandWarning : color.muted }}
                   >
-                    Selected
+                    Selected ·{" "}
                   </Text>
-                  <Text
-                    variant="bodySmall"
-                    style={{
-                      color: isMismatch ? brandWarning : color.foreground,
-                    }}
-                  >
-                    {selectedName}
-                  </Text>
-                </Box>
+                  {selectedName}
+                </Text>
               </Box>
 
               <ArrowRight
@@ -138,8 +140,8 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                   flexDirection: "row",
                   alignItems: "center",
                   paddingHorizontal: spacing.md,
-                  paddingVertical: spacing.sm,
-                  borderRadius: borderRadius.xl,
+                  paddingVertical: spacing.xs,
+                  borderRadius: borderRadius["2xl"],
                   borderWidth: 1,
                   gap: spacing.sm,
                   backgroundColor: color.surface,
@@ -148,44 +150,54 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
               >
                 <Ear size={13} color={brandPrimary} />
                 <Text variant="body">{detectedFlag}</Text>
-                <Box>
+                <Text
+                  variant="bodySmall"
+                  numberOfLines={1}
+                  style={{ flex: 1, color: color.foreground }}
+                >
                   <Text
                     variant="caption"
-                    style={{ marginBottom: spacing.xs, color: color.muted }}
+                    style={{ color: color.muted }}
                   >
-                    Detected
+                    Detected ·{" "}
                   </Text>
-                  <Text variant="bodySmall" style={{ color: color.foreground }}>
-                    {detectedName}
-                  </Text>
-                </Box>
+                  {detectedName}
+                </Text>
               </Box>
             </Box>
           </Box>
 
-          <ScrollableTextBox
+          <TextBox
             text={transcription}
-            height={280}
-            variant="default"
+            height={250}
+            lead="Transcription"
+            lang={detectedLang}
+            showFlag
+            withCheck
+            audioPlayer={audioPlayer}
           />
 
           <Box>
-            <Text
-              variant="body"
-              style={{ marginBottom: spacing.md, color: color.foreground }}
-            >
-              Translate to:
+            <Text variant="body" style={{ marginBottom: spacing.md, color: color.foreground }}>
+              Translate to
             </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              disableIntervalMomentum
               style={{ marginBottom: spacing.lg }}
             >
               {availableTargetList.map((lang) => (
-                <Pressable
+                <GHRNPressable
                   key={lang.code}
-                  feedback="opacity"
                   onPress={() => setTargetLang(lang.code)}
+                  hitSlop={4}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Translate to ${lang.englishName}`}
+                  accessibilityState={{
+                    selected: targetLang === lang.code,
+                  }}
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
@@ -196,9 +208,13 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                     marginRight: spacing.sm,
                     gap: spacing.sm,
                     backgroundColor:
-                      targetLang === lang.code ? brandPrimary : color.surface,
+                      targetLang === lang.code
+                        ? brandPrimary
+                        : color.surface,
                     borderColor:
-                      targetLang === lang.code ? brandPrimary : color.border,
+                      targetLang === lang.code
+                        ? brandPrimary
+                        : color.border,
                   }}
                 >
                   <Text variant="body">{FLAG_MAP[lang.code] || "🌐"}</Text>
@@ -213,53 +229,33 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                   >
                     {lang.englishName}
                   </Text>
-                </Pressable>
+                </GHRNPressable>
               ))}
             </ScrollView>
 
-            <Box style={{ flexDirection: "row", gap: spacing.md }}>
-              <AnimatedCopyButton
-                textToCopy={transcription!}
-                size={16}
-                style={{
-                  flex: 1,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: spacing.sm,
-                  paddingVertical: spacing.md,
-                  borderWidth: 1,
-                  borderRadius: borderRadius.xl,
-                  borderColor: color.border,
-                }}
-              >
-                <Text variant="bodySmall" style={{ color: color.foreground }}>
-                  Copy
-                </Text>
-              </AnimatedCopyButton>
-              <Pressable
-                feedback="opacity"
-                onPress={handleTranslate}
-                disabled={!targetLang}
-                style={{
-                  flex: 1,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: spacing.sm,
-                  paddingVertical: spacing.md,
-                  borderWidth: 1,
-                  borderRadius: borderRadius.xl,
-                  backgroundColor: brandPrimary,
-                  opacity: targetLang ? 1 : opacity.disabled,
-                }}
-              >
-                <Zap size={16} color={color.onBrand} />
-                <Text variant="bodySmall" style={{ color: color.onBrand }}>
-                  Translate
+            <Pressable
+              feedback="opacity"
+              onPress={handleTranslate}
+              disabled={!targetLang}
+              accessibilityRole="button"
+              accessibilityLabel="Translate"
+              accessibilityState={{ disabled: !targetLang }}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: spacing.sm,
+                paddingVertical: spacing.md,
+                borderRadius: borderRadius.xl,
+                backgroundColor: brandPrimary,
+                opacity: targetLang ? 1 : opacity.disabled,
+              }}
+            >
+              <Zap size={16} color={color.onBrand} />
+              <Text variant="bodySmall" style={{ color: color.onBrand }}>
+                Translate
                 </Text>
               </Pressable>
-            </Box>
           </Box>
         </Box>
       );

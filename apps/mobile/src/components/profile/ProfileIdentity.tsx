@@ -11,6 +11,7 @@ import { shadows } from "@/constants";
 import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { withAlpha } from "@/utils/color";
 import { isIOS } from "@/utils";
 
 interface AvatarIconData {
@@ -88,7 +89,7 @@ export function ProfileIdentity({
                 height: "100%",
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: `${color.brand}1A`,
+                backgroundColor: withAlpha(color.brand, 0.102),
               }}
             >
               <Text

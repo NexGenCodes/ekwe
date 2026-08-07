@@ -6,6 +6,21 @@
 
 namespace ekwe {
 
+// Default fallback for the max input size, used only when a caller does not
+// pass the shared limit explicitly. The authoritative value lives in
+// @ekwe/shared/plans (PREMIUM_LIMITS.maxAudioBytes) and is passed down from JS
+// through the native bridges at call time.
+constexpr size_t kDefaultMaxAudioBytes = 26 * 1024 * 1024; // 26,214,400
+
+// Upper bound on decoded PCM samples (mono). Guards against decompression-bomb
+// / very long sources that a small compressed file can expand into (e.g. hours
+// of low-bitrate Opus), preventing an accidental OOM while decoding.
+constexpr size_t kMaxDecodedSamples = 16000 * 60 * 30; // 30 min @ 16 kHz
+
+// RFC 7845: Ogg Opus granule positions are always measured in 48 kHz samples,
+// independent of the encoder's input sample rate (which may be 16 kHz).
+constexpr int32_t kOpusGranuleRate = 48000;
+
 struct DecodeResult {
     bool success;
     std::string error_message;
@@ -15,21 +30,26 @@ struct DecodeResult {
 
 // File-based audio decoder.
 // Takes any audio file path and decodes it to PCM.
-// Encodes PCM to Ogg Opus and writes to output_path.
+// Produces a 16 kHz mono Ogg Opus at output_path — reusing the source
+// verbatim when it is already 16 kHz mono Ogg Opus (no transcode).
 // Extracts 60-point waveform.
 // Uses libopusfile for .opus/.ogg files, miniaudio for everything else.
-DecodeResult extract_audio_and_waveform(
+// `max_audio_bytes` caps the input file size (comes from @ekwe/shared/plans).
+DecodeResult transcode_audio_to_opus(
     const std::string& input_path,
-    const std::string& output_path);
+    const std::string& output_path,
+    size_t max_audio_bytes = kDefaultMaxAudioBytes);
 
 // Memory-based audio decoder.
 // Reads audio from in-memory buffer — no temp file needed.
-// Same decode → Ogg Opus → waveform pipeline.
+// Same decode → Ogg Opus → waveform pipeline (with source reuse fast-path).
 // `data` must remain valid for duration of call.
-DecodeResult extract_audio_and_waveform_from_memory(
+// `max_audio_bytes` caps the buffer size (comes from @ekwe/shared/plans).
+DecodeResult transcode_audio_to_opus_from_memory(
     const uint8_t* data,
     size_t data_size,
-    const std::string& output_path);
+    const std::string& output_path,
+    size_t max_audio_bytes = kDefaultMaxAudioBytes);
 
 // Takes raw PCM int16 data (already decoded by platform),
 // encodes it to Ogg Opus, computes 60-point waveform.

@@ -14,6 +14,7 @@ import { duration, spring } from "@/constants";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { withAlpha } from "@/utils/color";
 
 interface TabBarIconProps {
   color: string;
@@ -67,11 +68,12 @@ export function CustomTabBarItem({
   }));
 
   // Pill background fades in using primary color at low opacity
+  const brandPill = withAlpha(color.brand, 0.133);
   const pillStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
       progress.value,
       [0, 1],
-      ["transparent", `${color.brand}22`],
+      ["transparent", brandPill],
     ),
     paddingHorizontal: interpolate(progress.value, [0, 1], [12, 18]),
   }));

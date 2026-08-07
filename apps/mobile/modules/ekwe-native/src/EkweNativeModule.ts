@@ -2,7 +2,7 @@ import { requireNativeModule, type NativeModule } from "expo";
 
 import type {
   AudioEffectsResult,
-  ExtractWavAndWaveformResult,
+  OpusTranscodeResult,
   AudioRecordingResult,
   StartRecordingResult,
 } from "./EkweNative.types";
@@ -27,7 +27,7 @@ declare class EkweNativeModule extends NativeModule<{
   dismissNativeLoader(): Promise<void>;
 
   // --- Content URI Resolution ---
-  resolveContentUri(uri: string): Promise<string | null>;
+  resolveContentUri(uri: string, maxAudioBytes: number): Promise<string | null>;
 
   // --- iOS Voice Session (voiceChat mode → built-in NS, AEC, AGC) ---
   configureVoiceSession(): Promise<void>;
@@ -40,10 +40,11 @@ declare class EkweNativeModule extends NativeModule<{
   releaseEffects(): Promise<void>;
 
   // --- Audio Conversion ---
-  extractWavAndWaveform(
+  transcodeToOpusWithWaveform(
     inputPath: string,
     outputPath: string,
-  ): Promise<ExtractWavAndWaveformResult>;
+    maxAudioBytes: number,
+  ): Promise<OpusTranscodeResult>;
 
   // --- AudioRecord (dual-path: file or live) ---
   startAudioRecording(
@@ -55,10 +56,11 @@ declare class EkweNativeModule extends NativeModule<{
   stopAudioRecording(): Promise<AudioRecordingResult>;
 
   // --- Direct content:// → Ogg Opus (no temp file, Android only) ---
-  resolveAndConvertToOpus(
+  resolveAndTranscodeToOpus(
     contentUri: string,
     outputPath: string,
-  ): Promise<ExtractWavAndWaveformResult>;
+    maxAudioBytes: number,
+  ): Promise<OpusTranscodeResult>;
 }
 
 export default requireNativeModule<EkweNativeModule>("EkweNative");

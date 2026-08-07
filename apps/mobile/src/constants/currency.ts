@@ -1,21 +1,16 @@
 import * as Localization from "expo-localization";
 
 import {
-  CURRENCIES,
   COUNTRY_TO_CURRENCY_CODE,
   DEFAULT_CURRENCY,
 } from "@ekwe/shared/currencies";
-import { formatMoney } from "@ekwe/shared/money";
-
-export type { CurrencyInfo } from "@ekwe/shared/currencies";
-export type CurrencyConfig = (typeof CURRENCIES)[number];
-
-export const SUPPORTED_CURRENCIES: CurrencyConfig[] = [...CURRENCIES];
-
-export { DEFAULT_CURRENCY };
 
 /**
  * Auto-detects the user's currency based on device localization settings.
+ *
+ * The definitive currency data + helpers (CURRENCIES, getCurrency, money
+ * formatting) live in `@ekwe/shared/currencies`; this file only holds the
+ * device-specific detection that depends on `expo-localization`.
  */
 export function detectDeviceCurrency(): string {
   try {
@@ -31,8 +26,3 @@ export function detectDeviceCurrency(): string {
   }
   return DEFAULT_CURRENCY;
 }
-
-/**
- * Formats a given amount into the specified currency locale format.
- */
-export const formatCurrency = formatMoney;

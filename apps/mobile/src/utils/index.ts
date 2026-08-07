@@ -9,8 +9,8 @@ export {
 export { default as logger } from "./logger";
 export { AppAlert } from "./alert";
 export { AppToast } from "./toast";
-export { formatSourceApp } from "./formatsource";
+export { formatSourceApp } from "./formatSource";
 export { formatDuration } from "./formatDuration";
 export * from "./platform";
-export { alpha } from "./color";
+export { withAlpha } from "./color";
 export { triggerHaptic } from "./haptics";

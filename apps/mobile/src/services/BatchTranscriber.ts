@@ -27,6 +27,7 @@ export class BatchTranscriber {
     input: BatchAudioInput,
     lang: string,
     signal?: AbortSignal,
+    onProgress?: (fraction: number) => void,
   ): Promise<Result<TranscriptionResult, EkweError>> {
     if (!input.uri) {
       logger.error("[BatchTranscriber] No URI provided");
@@ -59,7 +60,7 @@ export class BatchTranscriber {
       waveform: input.waveform,
     };
 
-    return transcribeAudio(processed, lang, signal);
+    return transcribeAudio(processed, lang, signal, onProgress);
   }
 }
 

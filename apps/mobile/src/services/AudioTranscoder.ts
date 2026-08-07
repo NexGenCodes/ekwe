@@ -2,19 +2,20 @@ import { Paths } from "expo-file-system";
 
 import EkweNative from "../../modules/ekwe-native";
 
+import { MAX_AUDIO_BYTES } from "@ekwe/shared/plans";
 import { EkweError } from "@/constants/errors";
 import { Result, ok, err } from "@/types/Result";
 
-export interface ConvertedAudio {
+export interface TranscodedAudio {
   uri: string;
   durationMs: number;
   waveform: number[];
 }
 
-class AudioConverterClass {
-  async convertToOpus(
+class AudioTranscoderClass {
+  async transcodeToOpus(
     inputUri: string,
-  ): Promise<Result<ConvertedAudio, EkweError>> {
+  ): Promise<Result<TranscodedAudio, EkweError>> {
     if (!inputUri) return err(EkweError.AUDIO_EMPTY);
 
     try {
@@ -29,12 +30,16 @@ class AudioConverterClass {
         ? inputUri.slice("file://".length)
         : inputUri;
 
-      const result = await EkweNative.extractWavAndWaveform(
+      const result = await EkweNative.transcodeToOpusWithWaveform(
         inputPath,
         outputPath,
+        MAX_AUDIO_BYTES,
       );
 
       if (!result.success) {
+        if (result.error === "FILE_TOO_LARGE") {
+          return err(EkweError.FILE_TOO_LARGE);
+        }
         return err(EkweError.PROCESSOR_FAIL);
       }
 
@@ -49,4 +54,4 @@ class AudioConverterClass {
   }
 }
 
-export const AudioConverter = new AudioConverterClass();
+export const AudioTranscoder = new AudioTranscoderClass();

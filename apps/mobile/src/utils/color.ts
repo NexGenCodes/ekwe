@@ -1,16 +1,9 @@
-export function alpha(hex: string, opacity: number): string {
-  const clean = hex.replace("#", "");
-  let r: number, g: number, b: number;
-
-  if (clean.length >= 6) {
-    r = parseInt(clean.substring(0, 2), 16);
-    g = parseInt(clean.substring(2, 4), 16);
-    b = parseInt(clean.substring(4, 6), 16);
-  } else {
-    r = parseInt(clean[0] + clean[0], 16);
-    g = parseInt(clean[1] + clean[1], 16);
-    b = parseInt(clean[2] + clean[2], 16);
-  }
-
-  return `rgba(${r},${g},${b},${opacity})`;
-}
+/**
+ * Appends a hex alpha channel to a #RRGGBB color string (e.g. `#006FEE` +
+ * 0.15 → `#006FEE26`). Use this instead of ad-hoc `"${color}14"` string
+ * suffixes so tints stay consistent and readable.
+ */
+export const withAlpha = (hex: string, alpha: number): string => {
+  const a = Math.round(Math.max(0, Math.min(1, alpha)) * 255);
+  return `${hex}${a.toString(16).padStart(2, "0")}`;
+};

@@ -11,10 +11,6 @@ interface TranslateVariables {
   signal?: AbortSignal;
 }
 
-function getMutationKey(vars: TranslateVariables): string {
-  return `translate:${vars.text}|${vars.sourceLang}|${vars.targetLang}`;
-}
-
 export function useTranslateMutation(): ReturnType<
   typeof useMutation<
     Result<TranslationResult, EkweError>,
@@ -38,5 +34,3 @@ export function useTranslateMutation(): ReturnType<
     },
   });
 }
-
-export { getMutationKey as getTranslateMutationKey };

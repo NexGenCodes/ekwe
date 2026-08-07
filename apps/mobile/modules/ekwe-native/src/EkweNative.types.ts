@@ -4,7 +4,7 @@ export type AudioEffectsResult = {
   gainControl: boolean;
 };
 
-export type ExtractWavAndWaveformResult = {
+export type OpusTranscodeResult = {
   success: boolean;
   error: string;
   durationMs: number;

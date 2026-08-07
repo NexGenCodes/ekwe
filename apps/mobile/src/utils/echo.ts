@@ -6,12 +6,17 @@ import EkweNative from "../../modules/ekwe-native";
 import { logger } from "@/utils";
 
 /**
- * Formats seconds into MM:SS format
+ * Formats seconds into MM:SS format, rounding to the nearest second so the
+ * shown length matches how other players (WhatsApp) report durations — e.g. a
+ * 9.9s clip shows "0:10" instead of flooring to "0:09". Without this, the
+ * displayed total runs short and the last ~1s of the waveform appears to fill
+ * "before" playback actually ends.
  */
 export const formatDuration = (seconds: number): string => {
   if (!seconds || isNaN(seconds)) return "0:00";
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
+  const rounded = Math.round(seconds);
+  const mins = Math.floor(rounded / 60);
+  const secs = rounded % 60;
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 };
 

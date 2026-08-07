@@ -95,8 +95,8 @@ static void captureCallback(const ekwe::CaptureEventData& event) {
 }
 
 extern "C" JNIEXPORT jobject JNICALL
-Java_expo_modules_ekwenative_EkweNativeModule_extractWavAndWaveformJNI(
-    JNIEnv *env, jobject thiz, jstring inputPath, jstring outputPath) {
+Java_expo_modules_ekwenative_EkweNativeModule_transcodeToOpusWithWaveformJNI(
+    JNIEnv *env, jobject thiz, jstring inputPath, jstring outputPath, jlong maxAudioBytes) {
 
     const char *input_c_str = env->GetStringUTFChars(inputPath, nullptr);
     const char *output_c_str = env->GetStringUTFChars(outputPath, nullptr);
@@ -107,7 +107,8 @@ Java_expo_modules_ekwenative_EkweNativeModule_extractWavAndWaveformJNI(
     env->ReleaseStringUTFChars(inputPath, input_c_str);
     env->ReleaseStringUTFChars(outputPath, output_c_str);
 
-    ekwe::DecodeResult result = ekwe::extract_audio_and_waveform(input, output);
+    ekwe::DecodeResult result = ekwe::transcode_audio_to_opus(input, output,
+        static_cast<size_t>(maxAudioBytes));
     return buildResultArray(env, result);
 }
 
@@ -137,8 +138,8 @@ Java_expo_modules_ekwenative_EkweNativeModule_encodePcmToOpusJNI(
 }
 
 extern "C" JNIEXPORT jobject JNICALL
-Java_expo_modules_ekwenative_EkweNativeModule_extractFromMemoryJNI(
-    JNIEnv *env, jobject thiz, jbyteArray data, jstring outputPath) {
+Java_expo_modules_ekwenative_EkweNativeModule_transcodeFromMemoryJNI(
+    JNIEnv *env, jobject thiz, jbyteArray data, jstring outputPath, jlong maxAudioBytes) {
 
     const char *output_c_str = env->GetStringUTFChars(outputPath, nullptr);
     std::string output(output_c_str);
@@ -147,10 +148,11 @@ Java_expo_modules_ekwenative_EkweNativeModule_extractFromMemoryJNI(
     jsize data_size = env->GetArrayLength(data);
     jbyte* data_ptr = env->GetByteArrayElements(data, nullptr);
 
-    ekwe::DecodeResult result = ekwe::extract_audio_and_waveform_from_memory(
+    ekwe::DecodeResult result = ekwe::transcode_audio_to_opus_from_memory(
         reinterpret_cast<const uint8_t*>(data_ptr),
         static_cast<size_t>(data_size),
-        output
+        output,
+        static_cast<size_t>(maxAudioBytes)
     );
 
     env->ReleaseByteArrayElements(data, data_ptr, JNI_ABORT);

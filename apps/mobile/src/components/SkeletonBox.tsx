@@ -12,8 +12,8 @@ import Animated, {
 
 import { Box } from "@/components/ui";
 import { borderRadius as borderRadiusToken } from "@/constants/sizes";
-import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks/ui";
+import { withAlpha } from "@/utils/color";
 
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -39,8 +39,8 @@ export function SkeletonBox({
   const shimmerProgress = useSharedValue(0);
 
   // Defaults to a neutral translucent contrast based on the current theme foreground
-  const safeBaseColor = baseColor || `${color.foreground}12`;
-  const safeHighlightColor = highlightColor || `${color.foreground}25`;
+  const safeBaseColor = baseColor || withAlpha(color.foreground, 0.071);
+  const safeHighlightColor = highlightColor || withAlpha(color.foreground, 0.145);
 
   useEffect(() => {
     shimmerProgress.value = withRepeat(
@@ -91,80 +91,6 @@ export function SkeletonBox({
           animatedStyle,
         ]}
       />
-    </Box>
-  );
-}
-
-export function SkeletonHistoryRow(): React.ReactElement {
-  return (
-    <Box
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        paddingVertical: spacing.md,
-        paddingHorizontal: spacing.lg,
-        gap: spacing.md,
-      }}
-    >
-      <SkeletonBox width={24} height={24} borderRadius={borderRadiusToken.md} />
-      <Box style={{ flex: 1 }}>
-        <SkeletonBox width="75%" height={14} borderRadius={6} />
-        <Box style={{ height: spacing.sm }} />
-        <SkeletonBox width="55%" height={12} borderRadius={6} />
-      </Box>
-      <SkeletonBox width={50} height={18} borderRadius={borderRadiusToken.md} />
-    </Box>
-  );
-}
-
-export function SkeletonTranslationPreview(): React.ReactElement {
-  const { color } = useTheme();
-  return (
-    <Box
-      style={{
-        margin: spacing.md,
-        padding: spacing.lg,
-        borderRadius: borderRadiusToken.xl,
-        gap: spacing.md,
-        backgroundColor: color.card,
-      }}
-    >
-      <Box
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <SkeletonBox width={100} height={14} borderRadius={6} />
-        <SkeletonBox width={70} height={14} borderRadius={6} />
-      </Box>
-      <Box style={{ paddingVertical: spacing.xs }}>
-        <SkeletonBox width="100%" height={12} borderRadius={6} />
-        <Box style={{ height: spacing.sm }} />
-        <SkeletonBox width="85%" height={12} borderRadius={6} />
-        <Box style={{ height: spacing.sm }} />
-        <SkeletonBox width="70%" height={12} borderRadius={6} />
-      </Box>
-      <Box
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginTop: spacing.sm,
-        }}
-      >
-        <SkeletonBox
-          width={140}
-          height={36}
-          borderRadius={borderRadiusToken.xl}
-        />
-        <SkeletonBox
-          width={36}
-          height={36}
-          borderRadius={borderRadiusToken.xl}
-        />
-      </Box>
     </Box>
   );
 }

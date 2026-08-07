@@ -2,16 +2,16 @@ import { useSelector } from "@legendapp/state/react";
 import X from "lucide-react-native/icons/x";
 import AlertCircle from "lucide-react-native/icons/circle-alert";
 import RefreshCw from "lucide-react-native/icons/refresh-cw";
-import React, { useCallback, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DimensionValue } from "react-native";
 
-import { EchoConfigStep } from "./EchoConfig";
+import { EchoPreviewStep } from "./EchoPreviewStep";
 import { EchoFinalResult } from "./EchoFinalResult";
 import { EchoLanguagePicker } from "./EchoLanguagePicker";
+import { EchoProcessingStep } from "./EchoProcessingStep";
 import { EchoTranslationConfig } from "./EchoTranslationConfig";
 import { Badge } from "../../Badge";
 import { IconContainer } from "../../IconContainer";
-import { SkeletonBox } from "../../SkeletonBox";
 import { Sheet } from "../../ui/Sheet";
 
 import { Box, Text, Pressable } from "@/components/ui";
@@ -20,20 +20,22 @@ import { LANGUAGES } from "@/constants/languages";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useEchoFlow } from "@/hooks/echo";
-import { useSharedAudioPlayer } from "@/hooks/audio";
+import { useAudioWaveformPlayback } from "@/hooks/audio";
 import { useTheme } from "@/hooks/ui";
 import { initAuth } from "@/services/auth";
 import { auth$ } from "@/store";
 import { EchoProps, EchoStep } from "@/types/echo";
-import { formatSourceApp } from "@/utils/formatsource";
+import { withAlpha } from "@/utils/color";
+import { formatSourceApp } from "@/utils/formatSource";
+import { formatDuration } from "@/utils/formatDuration";
 
 const STEP_MAX_HEIGHTS: Record<EchoStep, DimensionValue> = {
-  PickLanguage: "95%",
-  Transcribing: "45%",
-  TranscribeResult: "75%",
-  Translating: "45%",
+  PickLanguage: "46%",
+  Transcribing: "52%",
+  TranscribeResult: "80%",
+  Translating: "52%",
   FullResult: "80%",
-  Config: "45%",
+  Preview: "45%",
   Error: "45%",
 };
 
@@ -44,6 +46,11 @@ export const Echo = (props: EchoProps): React.ReactElement => {
 
   const userSession = useSelector(() => auth$.session.get());
   const { onClose } = props;
+
+  // The native player is created below; `useEchoFlow` may call its release (on
+  // dismiss/background) before the player instance exists in this render, so
+  // hand it a ref-backed callback that resolves to the latest controller.
+  const playerReleaseRef = useRef<() => void>(() => {});
 
   const {
     step,
@@ -59,16 +66,41 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     sourceApp,
     isResolving,
     convertedWaveform,
+    convertedDurationMs,
     handleTranscribe,
     handleTranslate,
+    cancelProcessing,
+    retryOperation,
     audioDuration,
     error,
+    uploadProgress,
+    autoCopied,
     onDismiss,
-  } = useEchoFlow(props);
+  } = useEchoFlow(props, () => playerReleaseRef.current());
 
-  const { color, isDark } = useTheme();
+  const { color } = useTheme();
 
-  const player = useSharedAudioPlayer(audioUri || null);
+  const [resultTab, setResultTab] = useState<"Translated" | "Original">(
+    "Translated",
+  );
+
+  // The source-audio player stays "active" (i.e. won't auto-pause) across the
+  // Preview, TranscribeResult, and the FullResult Original tab, so the speaker
+  // button in the results can play the original recording. It pauses everywhere
+  // else — while transcribing/translating and on the Translated tab.
+  const playerActive =
+    step === "Preview" ||
+    step === "TranscribeResult" ||
+    (step === "FullResult" && resultTab === "Original");
+
+  const player = useAudioWaveformPlayback(
+    audioUri || null,
+    convertedWaveform,
+    { active: playerActive, durationMs: convertedDurationMs },
+  );
+
+  // Keep the flow's release hook pointed at the live player controller.
+  playerReleaseRef.current = player.release;
 
   const availableTargetList = useMemo(
     () => LANGUAGES.filter((l) => l.defaultSelected && l.code !== detectedLang),
@@ -85,15 +117,14 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   );
 
   const handleClose = useCallback((): void => {
-    player.cleanup();
     onDismiss();
     onClose?.();
-  }, [onDismiss, player, onClose]);
+  }, [onDismiss, onClose]);
 
   const handleLanguageSelected = useCallback(
     (code: string): void => {
       setSelectedLang(code);
-      setStep("Config");
+      setStep("Preview");
     },
     [setSelectedLang, setStep],
   );
@@ -142,12 +173,11 @@ export const Echo = (props: EchoProps): React.ReactElement => {
           />
         );
 
-      case "Config":
+      case "Preview":
         return (
-          <EchoConfigStep
+          <EchoPreviewStep
             player={player}
             isResolving={isResolving}
-            isDark={isDark}
             peaks={convertedWaveform}
             onTranscribe={handleTranscribe}
           >
@@ -190,44 +220,19 @@ export const Echo = (props: EchoProps): React.ReactElement => {
                 </Text>
               </Pressable>
             </Box>
-          </EchoConfigStep>
+          </EchoPreviewStep>
         );
 
       case "Transcribing":
         return (
-          <Box
-            style={{
-              alignItems: "center",
-              justifyContent: "center",
-              paddingVertical: spacing["3xl"],
-            }}
-          >
-            <Text variant="heading3" style={{ marginTop: spacing.lg }}>
-              {STEP_METADATA.Transcribing.title}
-            </Text>
-            <Text
-              variant="bodySmall"
-              style={{ marginTop: spacing.sm, color: color.muted }}
-            >
-              Processing your audio...
-            </Text>
-            <Box
-              style={{
-                width: "100%",
-                gap: spacing.md,
-                marginTop: spacing.lg,
-                paddingHorizontal: spacing.md,
-              }}
-            >
-              <SkeletonBox width="100%" height={12} borderRadius={6} />
-              <SkeletonBox width="85%" height={12} borderRadius={6} />
-              <SkeletonBox width="70%" height={12} borderRadius={6} />
-              <SkeletonBox width="90%" height={12} borderRadius={6} />
-              <Box style={{ height: 4 }} />
-              <SkeletonBox width="60%" height={12} borderRadius={6} />
-              <SkeletonBox width="45%" height={12} borderRadius={6} />
-            </Box>
-          </Box>
+          <EchoProcessingStep
+            title={STEP_METADATA.Transcribing.title}
+            uploadingLabel="Uploading your audio…"
+            processingLabel="Processing your audio…"
+            uploadProgress={uploadProgress}
+            durationLabel={formatDuration(audioDuration)}
+            onCancel={cancelProcessing}
+          />
         );
 
       case "TranscribeResult":
@@ -239,45 +244,33 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             targetLang={targetLang}
             transcription={transcription}
             availableTargetList={availableTargetList}
-            isDark={isDark}
             setTargetLang={setTargetLang}
             handleTranslate={handleTranslate}
+            audioPlayer={player}
           />
         );
 
-      case "Translating":
+      case "Translating": {
+        const charCount = transcription?.trim().length ?? 0;
+        const wordCount =
+          transcription?.trim().split(/\s+/).filter(Boolean).length ?? 0;
         return (
-          <Box
-            style={{
-              alignItems: "center",
-              justifyContent: "center",
-              paddingVertical: spacing["3xl"],
-            }}
-          >
-            <Text variant="heading3" style={{ marginTop: spacing.lg }}>
-              Echo is translating...
-            </Text>
-            <Text
-              variant="bodySmall"
-              style={{ marginTop: spacing.sm, color: color.muted }}
-            >
-              Please wait while we process the translation.
-            </Text>
-            <Box
-              style={{
-                width: "100%",
-                gap: spacing.md,
-                marginTop: spacing.lg,
-                paddingHorizontal: spacing.md,
-              }}
-            >
-              <SkeletonBox width="100%" height={12} borderRadius={6} />
-              <SkeletonBox width="75%" height={12} borderRadius={6} />
-              <SkeletonBox width="90%" height={12} borderRadius={6} />
-              <SkeletonBox width="60%" height={12} borderRadius={6} />
-            </Box>
-          </Box>
+          <EchoProcessingStep
+            title={STEP_METADATA.Translating.title}
+            uploadingLabel="Sending translation request…"
+            processingLabel="Generating translation…"
+            briefPhaseLabel="Sending translation request…"
+            uploadProgress={null}
+            reassuranceLabel="Translations can take a few seconds. Still working…"
+            durationLabel={
+              transcription
+                ? `${charCount.toLocaleString()} chars · ${wordCount.toLocaleString()} words`
+                : undefined
+            }
+            onCancel={cancelProcessing}
+          />
         );
+      }
 
       case "FullResult":
         return (
@@ -286,10 +279,12 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             translation={translation}
             sourceLang={detectedLang}
             targetLang={targetLang}
-            audioDuration={audioDuration}
-            isDark={isDark}
             setStep={setStep}
             handleClose={handleClose}
+            activeTab={resultTab}
+            onTabChange={setResultTab}
+            audioPlayer={player}
+            copied={autoCopied}
           />
         );
       case "Error":
@@ -309,7 +304,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
                 alignItems: "center",
                 justifyContent: "center",
                 marginBottom: spacing.lg,
-                backgroundColor: `${color.error}15`,
+                backgroundColor: withAlpha(color.error, 0.08),
               }}
             >
               <AlertCircle size={32} color={color.error} />
@@ -337,8 +332,8 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             </Text>
             <Pressable
               feedback="opacity"
-              onPress={() => setStep("PickLanguage")}
-              accessibilityLabel="Start over"
+              onPress={() => void retryOperation()}
+              accessibilityLabel="Try again"
               style={{
                 flexDirection: "row",
                 alignItems: "center",
@@ -351,7 +346,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             >
               <RefreshCw size={16} color={color.onBrand} />
               <Text variant="bodySmall" style={{ color: color.onBrand }}>
-                Start Over
+                Try Again
               </Text>
             </Pressable>
           </Box>
@@ -362,26 +357,33 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   };
 
   const stepMeta = STEP_METADATA[step];
+  const isProcessing = step === "Transcribing" || step === "Translating";
 
   return (
-    <Sheet visible onClose={handleClose} maxHeight={STEP_MAX_HEIGHTS[step]}>
+    <Sheet
+      visible
+      onClose={handleClose}
+      maxHeight={STEP_MAX_HEIGHTS[step]}
+    >
       <Box
         style={{
           paddingHorizontal: spacing.lg,
-          paddingBottom: spacing["2xl"],
-          paddingTop: spacing.md,
+          paddingBottom: isProcessing ? spacing.sm : spacing["2xl"],
+          paddingTop: isProcessing ? spacing.sm : spacing.md,
         }}
       >
-        {/* Header */}
-        <Box
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: spacing.lg,
-            marginTop: spacing.sm,
-          }}
-        >
+        {!isProcessing && (
+          <>
+            {/* Header */}
+            <Box
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: spacing.lg,
+                marginTop: spacing.sm,
+              }}
+            >
           <Box
             style={{
               flexDirection: "row",
@@ -429,7 +431,9 @@ export const Echo = (props: EchoProps): React.ReactElement => {
               <Badge label={formatSourceApp(sourceApp)} variant="primary" />
             </Box>
           )}
-        </Box>
+            </Box>
+          </>
+        )}
 
         {/* Step Content */}
         {renderStepContent(step)}

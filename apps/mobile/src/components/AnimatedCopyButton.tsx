@@ -15,6 +15,13 @@ interface Props {
   color?: string;
   size?: number;
   children?: React.ReactNode;
+  accessibilityLabel?: string;
+  /**
+   * External signal that forces the "copied" check state (used for auto-copy
+   * feedback). Purely additive — the internal state from a real press still
+   * applies when this is false.
+   */
+  copied?: boolean;
 }
 
 export const AnimatedCopyButton: React.FC<Props> = ({
@@ -23,32 +30,43 @@ export const AnimatedCopyButton: React.FC<Props> = ({
   color: iconColorProp,
   size = 20,
   children,
+  accessibilityLabel,
+  copied = false,
 }) => {
   const { color } = useTheme();
-  const [copied, setCopied] = useState(false);
+  const [copiedByPress, setCopiedByPress] = useState(false);
+
+  const isCopied = copied || copiedByPress;
 
   const iconColor = iconColorProp || color.muted;
   const successColor = color.success;
 
   const handleCopy = async (): Promise<void> => {
-    if (copied || !textToCopy) return;
+    if (copiedByPress || !textToCopy) return;
 
     triggerHaptic("selection");
     await Clipboard.setStringAsync(textToCopy);
-    setCopied(true);
+    setCopiedByPress(true);
 
     // Reset after 3 seconds
     setTimeout(() => {
-      setCopied(false);
+      setCopiedByPress(false);
     }, 3000);
   };
 
   return (
-    <Pressable onPress={handleCopy} hitSlop={12} style={style}>
+    <Pressable
+      onPress={handleCopy}
+      hitSlop={12}
+      style={style}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? "Copy text"}
+      accessibilityState={isCopied ? { selected: true } : undefined}
+    >
       <Box
         style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}
       >
-        {copied ? (
+        {isCopied ? (
           <CheckCircle2 color={successColor} size={size} strokeWidth={2.5} />
         ) : (
           <Copy color={iconColor} size={size} strokeWidth={2} />

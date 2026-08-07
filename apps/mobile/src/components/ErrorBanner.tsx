@@ -6,6 +6,7 @@ import { Box, Text } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { withAlpha } from "@/utils/color";
 
 interface ErrorBannerProps {
   message: string | null | undefined;
@@ -22,12 +23,12 @@ export const ErrorBanner = ({
     >
       <Box
         style={{
-          backgroundColor: `${color.error}10`,
+          backgroundColor: withAlpha(color.error, 0.063),
           padding: spacing.md,
           borderRadius: borderRadius.lg,
           marginBottom: spacing.md,
           borderWidth: 1,
-          borderColor: `${color.error}20`,
+          borderColor: withAlpha(color.error, 0.125),
           borderLeftWidth: 3,
           borderLeftColor: color.error,
           flexDirection: "row",

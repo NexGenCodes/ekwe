@@ -8,6 +8,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router/stack";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
+import { setBackgroundColorAsync } from "expo-system-ui";
 import React, { useEffect, useMemo } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
@@ -49,6 +50,13 @@ function InnerLayout(): React.ReactElement {
       }
     }
   }, [isInitialized, sessionLoaded]);
+
+  // Keep the native window / root-view background in sync with the active
+  // theme so a device appearance change is reflected instantly across the
+  // whole surface (Android window + behind transparent modals/sheets).
+  useEffect(() => {
+    setBackgroundColorAsync(color.background).catch(() => {});
+  }, [color.background]);
 
   return (
     <ThemeProvider value={theme}>

@@ -12,6 +12,7 @@ import Svg, { Defs, RadialGradient, Stop, Rect } from "react-native-svg";
 
 import { Box } from "@/components/ui";
 import { useTheme } from "@/hooks";
+import { withAlpha } from "@/utils/color";
 
 export const GradientMesh = (): React.JSX.Element => {
   const { color, isDark } = useTheme();
@@ -84,7 +85,9 @@ export const GradientMesh = (): React.JSX.Element => {
             <Stop
               offset="0%"
               stopColor={
-                isDark ? `${color.foreground}20` : `${color.foreground}10`
+                isDark
+                  ? withAlpha(color.foreground, 0.125)
+                  : withAlpha(color.foreground, 0.063)
               }
             />
             <Stop offset="100%" stopColor="transparent" />

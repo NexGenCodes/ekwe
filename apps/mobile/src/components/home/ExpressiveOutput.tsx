@@ -15,11 +15,14 @@ import Animated, {
 import { IconButton } from "../IconButton";
 import { SkeletonBox } from "../SkeletonBox";
 
+import { claimTtsFocus, releaseTtsFocus } from "@/hooks/audio/audioFocus";
+
 import { Box, Text, Spinner, ScrollArea } from "@/components/ui";
 import { shadows } from "@/constants/shadows";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { withAlpha } from "@/utils/color";
 import logger from "@/utils/logger";
 
 interface ExpressiveOutputProps {
@@ -47,6 +50,7 @@ export const ExpressiveOutput = React.memo(
     // Stop speech when translation changes (e.g. new dictation result)
     useEffect(() => {
       if (isSpeaking || isTTSLoading) {
+        releaseTtsFocus();
         Speech.stop();
         setIsSpeaking(false);
         setIsTTSLoading(false);
@@ -59,6 +63,7 @@ export const ExpressiveOutput = React.memo(
     useFocusEffect(
       useCallback((): (() => void) => {
         return (): void => {
+          releaseTtsFocus();
           Speech.stop();
           setIsSpeaking(false);
           setIsTTSLoading(false);
@@ -76,6 +81,7 @@ export const ExpressiveOutput = React.memo(
           // ignore stop errors
           logger.warn("Speech.stop failed", err);
         }
+        releaseTtsFocus();
         setIsSpeaking(false);
         setIsTTSLoading(false);
         return;
@@ -90,6 +96,9 @@ export const ExpressiveOutput = React.memo(
         }
 
         setIsTTSLoading(true);
+        claimTtsFocus(() => {
+          Speech.stop().catch(() => {});
+        });
         try {
           Speech.speak(translation, {
             language: targetLang,
@@ -98,10 +107,12 @@ export const ExpressiveOutput = React.memo(
               setIsSpeaking(true);
             },
             onDone: (): void => {
+              releaseTtsFocus();
               setIsSpeaking(false);
               setIsTTSLoading(false);
             },
             onError: (e): void => {
+              releaseTtsFocus();
               setIsSpeaking(false);
               setIsTTSLoading(false);
 
@@ -124,11 +135,13 @@ export const ExpressiveOutput = React.memo(
               });
             },
             onStopped: (): void => {
+              releaseTtsFocus();
               setIsSpeaking(false);
               setIsTTSLoading(false);
             },
           });
         } catch (err) {
+          releaseTtsFocus();
           setIsSpeaking(false);
           setIsTTSLoading(false);
           const errorMsg = err instanceof Error ? err.message : String(err);
@@ -145,20 +158,20 @@ export const ExpressiveOutput = React.memo(
     }, [isSpeaking, isTTSLoading, translation, targetLang]);
 
     const transliterationStyle = useMemo(
-      () => ({ paddingTop: spacing.sm, color: `${color.onBrand}CC` }),
+      () => ({ paddingTop: spacing.sm, color: withAlpha(color.onBrand, 0.8) }),
       [color.onBrand],
     );
 
     const listenLabelStyle = useMemo(
       () => ({
-        color: isSpeaking ? color.onBrand : `${color.onBrand}CC`,
+        color: isSpeaking ? color.onBrand : withAlpha(color.onBrand, 0.8),
       }),
       [isSpeaking, color.onBrand],
     );
 
     const copyLabelStyle = useMemo(
       () => ({
-        color: copied ? color.onBrand : `${color.onBrand}CC`,
+        color: copied ? color.onBrand : withAlpha(color.onBrand, 0.8),
       }),
       [copied, color.onBrand],
     );
@@ -234,8 +247,8 @@ export const ExpressiveOutput = React.memo(
                   }
                   onPress={handleSpeakToggle}
                   backgroundColor={
-                    isSpeaking ? color.onBrand : `${color.onBrand}33`
-                  }
+isSpeaking ? color.onBrand : withAlpha(color.onBrand, 0.2)
+                      }
                   icon={
                     isTTSLoading ? (
                       <Animated.View
@@ -288,8 +301,8 @@ export const ExpressiveOutput = React.memo(
                       }
                     }}
                     backgroundColor={
-                      copied ? color.onBrand : `${color.onBrand}33`
-                    }
+copied ? color.onBrand : withAlpha(color.onBrand, 0.2)
+                      }
                     icon={
                       copied ? (
                         <Animated.View

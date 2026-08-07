@@ -12,7 +12,7 @@ typedef void (^VadSilenceCallback)(void);
 // 1: errorMessage (NSString)
 // 2: durationMs (NSNumber NSInteger)
 // 3: waveform (NSArray<NSNumber *>)
-+ (NSArray *)extractWavAndWaveform:(NSString *)sourcePath outputPath:(NSString *)outputPath;
++ (NSArray *)transcodeToOpusWithWaveform:(NSString *)sourcePath outputPath:(NSString *)outputPath;
 
 // Capture controller bridge with live-mode callback
 + (BOOL)initCapture:(NSString *)outputPath

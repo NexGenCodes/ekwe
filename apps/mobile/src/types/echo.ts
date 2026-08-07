@@ -1,6 +1,6 @@
 export type EchoStep =
   | "PickLanguage"
-  | "Config"
+  | "Preview"
   | "Transcribing"
   | "TranscribeResult"
   | "Translating"
@@ -42,13 +42,18 @@ export interface UseEchoFlowResult {
   sourceApp: string;
   isResolving: boolean;
   convertedWaveform: number[];
-  themePreference: "light" | "dark" | "system" | null;
+  convertedDurationMs: number | null;
   handleTranscribe: (
     durationSeconds: number,
     waveform: number[],
   ) => Promise<void>;
   handleTranslate: () => Promise<void>;
+  cancelProcessing: () => void;
+  retryOperation: () => Promise<void>;
   audioDuration: number;
+  uploadProgress: number | null;
   error: string | null;
+  /** Transient "copied" signal set when the flow auto-copies the translation. */
+  autoCopied: boolean;
   onDismiss: () => void;
 }

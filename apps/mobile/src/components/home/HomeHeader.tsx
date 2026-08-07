@@ -8,6 +8,7 @@ import { Box, Text } from "@/components/ui";
 import { iconSize } from "@/constants";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { withAlpha } from "@/utils/color";
 
 export const HomeHeader = React.memo(function HomeHeader(): React.ReactElement {
   const { color } = useTheme();
@@ -36,7 +37,7 @@ export const HomeHeader = React.memo(function HomeHeader(): React.ReactElement {
         <IconContainer
           size="xl"
           variant="custom"
-          backgroundColor={`${color.brand}15`}
+          backgroundColor={withAlpha(color.brand, 0.082)}
         >
           <EkweLogo size={iconSize.xl} color={color.brand} />
         </IconContainer>

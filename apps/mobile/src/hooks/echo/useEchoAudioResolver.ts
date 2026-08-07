@@ -11,16 +11,19 @@ import {
 } from "react";
 
 import { AudioCapture } from "@/services/AudioCapture";
-import { AudioConverter } from "@/services/AudioConverter";
+import { AudioTranscoder } from "@/services/AudioTranscoder";
 import { IntentService } from "@/services/IntentService";
 import { settings$, auth$ } from "@/store";
+import { SharedFile } from "@/types/echo";
 import { AppAlert } from "@/utils/alert";
 import { isIOS } from "@/utils/platform";
 import { default as logger } from "@/utils/logger";
 import { cleanEchoCache } from "@/utils/echo";
+import { EkweError, ErrorMessages } from "@/constants/errors";
+import { createDeferredCacheCleaner } from "./deferredCacheCleaner";
 
-export const useEchoIntentResolver = (props: {
-  value?: { value: string; mimeType: string }[];
+export const useEchoAudioResolver = (props: {
+  value?: SharedFile[];
   audioUri?: string;
   mimeType?: string;
 }): {
@@ -51,6 +54,11 @@ export const useEchoIntentResolver = (props: {
   const convertedUriRef = useRef<string | undefined>(undefined);
   const previousRawUri = useRef<string | undefined>(undefined);
 
+  // Deletes the previously-resolved files ONLY after a new source has been
+  // committed, so the player never points at a removed file (it swaps sources
+  // in-place via player.replace()). See deferredCacheCleaner for the contract.
+  const deferredCleanupRef = useRef(createDeferredCacheCleaner(cleanEchoCache));
+
   const [isSubsequentIntent, setIsSubsequentIntent] = useState(false);
 
   const rawUri = useMemo(
@@ -79,6 +87,13 @@ export const useEchoIntentResolver = (props: {
       return;
     }
 
+    if (!isInitialized || !session) {
+      logger.info(
+        "[IntentResolver] ⏳ Waiting for auth init before resolving...",
+      );
+      return;
+    }
+
     if (rawUri === previousRawUri.current && activeResolvedUri.current) {
       logger.debug("[IntentResolver] Already resolved this URI — skipping");
       return;
@@ -91,13 +106,14 @@ export const useEchoIntentResolver = (props: {
     const isSubseq = previousRawUri.current !== undefined;
     previousRawUri.current = rawUri;
 
-    if (activeResolvedUri.current) {
-      cleanEchoCache(activeResolvedUri.current);
-    }
-    if (convertedUriRef.current) {
-      cleanEchoCache(convertedUriRef.current);
-      convertedUriRef.current = undefined;
-    }
+    // Capture the previous files but do NOT delete them yet: the player still
+    // references the old source and only swaps to the new one once resolution
+    // completes. Deleting now would leave the player pointing at a gone file.
+    // Tear-down is deferred until the new source is committed.
+    deferredCleanupRef.current.remember(
+      activeResolvedUri.current,
+      convertedUriRef.current,
+    );
 
     const resolve = async (): Promise<void> => {
       try {
@@ -113,7 +129,7 @@ export const useEchoIntentResolver = (props: {
 
         // Attempt combined resolve + Ogg Opus conversion (Android only, no temp file)
         const opusPath = `${cacheDir}ekwe_converted_${Date.now()}.ogg`;
-        const combinedResult = await IntentService.resolveAndConvertToOpus(
+        const combinedResult = await IntentService.resolveAndTranscodeToOpus(
           rawUri,
           opusPath,
         );
@@ -121,6 +137,7 @@ export const useEchoIntentResolver = (props: {
         if (isStale) return;
 
         if (combinedResult && combinedResult.success) {
+          deferredCleanupRef.current.cleanup();
           convertedUriRef.current = opusPath;
           activeResolvedUri.current = opusPath;
           setAudioUri(opusPath);
@@ -129,6 +146,15 @@ export const useEchoIntentResolver = (props: {
           setIsResolving(false);
           setIsSubsequentIntent(isSubseq);
           logger.info("[IntentResolver] ✅ Combined resolve+convert succeeded");
+          return;
+        }
+
+        // A file over the hard size cap was rejected natively — stop before the
+        // fallback (which validates but can't shrink it) and tell the user.
+        if (combinedResult && combinedResult.error === "FILE_TOO_LARGE") {
+          setIsResolving(false);
+          logger.warn("[IntentResolver] ❌ FILE_TOO_LARGE rejected by native");
+          AppAlert.error(ErrorMessages[EkweError.FILE_TOO_LARGE]);
           return;
         }
 
@@ -166,10 +192,11 @@ export const useEchoIntentResolver = (props: {
         activeResolvedUri.current = validatedUri;
 
         // Convert to Opus + extract waveform via native C++
-        const convertResult = await AudioConverter.convertToOpus(validatedUri);
+        const convertResult = await AudioTranscoder.transcodeToOpus(validatedUri);
 
         if (isStale) return;
 
+        deferredCleanupRef.current.cleanup();
         if (convertResult.ok) {
           const { uri: opusUri, waveform, durationMs } = convertResult.value;
           convertedUriRef.current = opusUri;

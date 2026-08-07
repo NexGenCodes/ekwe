@@ -12,11 +12,11 @@ static std::vector<float> g_last_waveform;
 
 @implementation EkweAudioBridge
 
-+ (NSArray *)extractWavAndWaveform:(NSString *)sourcePath outputPath:(NSString *)outputPath {
++ (NSArray *)transcodeToOpusWithWaveform:(NSString *)sourcePath outputPath:(NSString *)outputPath {
     std::string input([sourcePath UTF8String]);
     std::string output([outputPath UTF8String]);
 
-    ekwe::DecodeResult result = ekwe::extract_audio_and_waveform(input, output);
+    ekwe::DecodeResult result = ekwe::transcode_audio_to_opus(input, output);
 
     NSNumber *success = @(result.success);
     NSString *errorStr = [NSString stringWithUTF8String:result.error_message.c_str()];

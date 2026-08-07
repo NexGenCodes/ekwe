@@ -1,4 +1,4 @@
-import { File as ExpoFile } from "expo-file-system";
+import { File as ExpoFile, UploadType } from "expo-file-system";
 import { z } from "zod";
 
 import { EkweError } from "@/constants/errors";
@@ -7,7 +7,6 @@ import { supabase } from "@/services/supabase";
 import { Result, ok, err } from "@/types/Result";
 import { resolveDetectedLanguage } from "@/utils/languageUtils";
 import logger from "@/utils/logger";
-import { fetchWithRetry } from "@/utils/networkUtils";
 import { MAX_AUDIO_BYTES as MAX_FILE_SIZE_BYTES } from "@ekwe/shared/plans";
 
 const transcriptionResponseSchema = z.object({
@@ -47,6 +46,7 @@ export async function transcribeAudio(
   audio: ProcessedAudio,
   sourceLang: string,
   signal?: AbortSignal,
+  onProgress?: (fraction: number) => void,
 ): Promise<Result<TranscriptionResult, EkweError>> {
   try {
     const file = new ExpoFile(audio.uri);
@@ -65,41 +65,24 @@ export async function transcribeAudio(
     }
 
     const extension = audio.uri.split(".").pop()?.toLowerCase() || "m4a";
-    const mimeType = getMimeType(extension);
 
     const {
       data: { session },
     } = await supabase.auth.getSession();
     const token = session?.access_token;
 
-    const formData = new FormData();
-    formData.append("file", {
-      uri: audio.uri,
-      name: `audio.${extension}`,
-      type: mimeType,
-    } as unknown as Blob);
-    formData.append("lang", sourceLang || "auto");
-    formData.append("timestamp_granularities", "word");
-
-    const fetchResponse = await fetchWithRetry(`${workerUrl}/transcribe`, {
-      method: "POST",
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: formData,
+    const uploadResult = await uploadAudioFile(file, `${workerUrl}/transcribe`, {
+      lang: sourceLang || "auto",
+      extension,
+      token: token ?? null,
       signal,
-      retries: 2,
-      backoff: 1000,
-      timeout: 30000,
-      // A 5xx here means the worker already ran the full provider pipeline;
-      // retrying would only pay the providers a second time.
-      retryOnHttpResponse: false,
+      onProgress,
     });
 
-    if (!fetchResponse.ok) {
+    if (uploadResult.status >= 400) {
       let errorCode = "EKWE_TRANSCRIPTION_FAIL";
       try {
-        const errorBody = await fetchResponse.text();
+        const errorBody = uploadResult.body;
         const parsed = JSON.parse(errorBody) as { error?: string };
         errorCode = parsed.error ?? errorCode;
       } catch {
@@ -107,20 +90,20 @@ export async function transcribeAudio(
       }
       logger.error(
         "[transcribeAudio] FAIL: non-ok response",
-        fetchResponse.status,
+        uploadResult.status,
         errorCode,
       );
 
-      if (fetchResponse.status === 429) {
+      if (uploadResult.status === 429) {
         return err(EkweError.RATE_LIMITED);
       }
-      if (fetchResponse.status === 401) {
+      if (uploadResult.status === 401) {
         return err(EkweError.TRANSCRIPTION_FAIL);
       }
       return mapErrorCode(errorCode);
     }
 
-    const json = await fetchResponse.json();
+    const json = JSON.parse(uploadResult.body) as unknown;
     const parsed = transcriptionResponseSchema.safeParse(json);
     if (!parsed.success) {
       logger.error(
@@ -155,6 +138,85 @@ export async function transcribeAudio(
     }
     return err(EkweError.NETWORK_LOST);
   }
+}
+
+interface UploadAudioFileOptions {
+  lang: string;
+  extension: string;
+  token: string | null;
+  signal?: AbortSignal;
+  onProgress?: (fraction: number) => void;
+  timeoutMs?: number;
+}
+
+/**
+ * Uploads the audio as multipart/form-data using the native upload task
+ * (expo-file-system), which reports real byte-level progress and streams the
+ * file from disk instead of buffering it in JS. Retries only on network-level
+ * failures; an HTTP response (including 5xx, where the worker has already run
+ * the provider pipeline) is returned as-is.
+ */
+async function uploadAudioFile(
+  file: ExpoFile,
+  url: string,
+  opts: UploadAudioFileOptions,
+): Promise<{ status: number; body: string }> {
+  const retries = 2;
+  const timeoutMs = opts.timeoutMs ?? 30_000;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const onAbort = (): void => controller.abort();
+    opts.signal?.addEventListener("abort", onAbort);
+
+    try {
+      const task = file.createUploadTask(url, {
+        httpMethod: "POST",
+        uploadType: UploadType.MULTIPART,
+        fieldName: "file",
+        mimeType: getMimeType(opts.extension),
+        parameters: {
+          lang: opts.lang,
+          timestamp_granularities: "word",
+        },
+        headers: opts.token ? { Authorization: `Bearer ${opts.token}` } : {},
+        signal: controller.signal,
+        onProgress: opts.onProgress
+          ? ({
+              bytesSent,
+              totalBytes,
+            }: {
+              bytesSent: number;
+              totalBytes: number;
+            }): void => {
+              const fraction = totalBytes > 0 ? bytesSent / totalBytes : 1;
+              opts.onProgress!(Math.min(1, Math.max(0, fraction)));
+            }
+          : undefined,
+      });
+      const result = await task.uploadAsync();
+      return { status: result.status, body: result.body };
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      lastError = error;
+
+      // Don't retry if the user explicitly cancelled the request.
+      if (error.name === "AbortError" && opts.signal?.aborted) {
+        throw error;
+      }
+
+      // Exponential backoff: 1s, 2s
+      const wait = 1000 * Math.pow(2, attempt);
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    } finally {
+      clearTimeout(timeoutId);
+      opts.signal?.removeEventListener("abort", onAbort);
+    }
+  }
+
+  throw lastError ?? new Error("Network request failed");
 }
 
 function getMimeType(extension: string): string {

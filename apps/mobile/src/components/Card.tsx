@@ -5,6 +5,7 @@ import { Box } from "@/components/ui";
 import { shadows } from "@/constants/shadows";
 import { borderRadius } from "@/constants/sizes";
 import { useTheme } from "@/hooks";
+import { withAlpha } from "@/utils/color";
 
 export interface CardProps {
   children: React.ReactNode;
@@ -41,8 +42,8 @@ export const Card = ({
     switch (variant) {
       case "accent":
         return {
-          backgroundColor: `${color.foreground}08`,
-          borderColor: `${color.foreground}30`,
+          backgroundColor: withAlpha(color.foreground, 0.031),
+          borderColor: withAlpha(color.foreground, 0.188),
           borderWidth: 1,
         };
       case "outlined":

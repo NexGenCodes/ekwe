@@ -26,6 +26,47 @@ static bool is_ogg_opus(const std::string& path) {
     return false;
 }
 
+static bool file_size(const std::string& path, uint64_t& out_size) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) return false;
+    std::streampos end = file.tellg();
+    if (end < 0) return false;
+    out_size = static_cast<uint64_t>(end);
+    return true;
+}
+
+// Appends decoded mono samples to `out`, refusing to exceed the hard cap so a
+// pathological source cannot exhaust memory. Returns false when the cap is hit.
+static bool append_samples(std::vector<int16_t>& out,
+                           const int16_t* data, size_t count) {
+    if (out.size() + count > kMaxDecodedSamples) return false;
+    out.insert(out.end(), data, data + count);
+    return true;
+}
+
+static bool append_samples(std::vector<int16_t>& out,
+                           const std::vector<int16_t>& chunk) {
+    return append_samples(out, chunk.data(), chunk.size());
+}
+
+static bool copy_file(const std::string& src, const std::string& dst) {
+    std::ifstream in(src, std::ios::binary);
+    if (!in) return false;
+    std::ofstream out(dst, std::ios::binary | std::ios::trunc);
+    if (!out) return false;
+    out << in.rdbuf();
+    out.flush();
+    return out.good();
+}
+
+static bool write_bytes(const uint8_t* data, size_t size, const std::string& dst) {
+    std::ofstream out(dst, std::ios::binary | std::ios::trunc);
+    if (!out) return false;
+    out.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(size));
+    out.flush();
+    return out.good();
+}
+
 static std::vector<float> compute_waveform(const std::vector<int16_t>& pcm_data) {
     std::vector<float> waveform;
     if (pcm_data.empty()) return waveform;
@@ -78,6 +119,13 @@ static bool encode_opus(const std::vector<int16_t>& pcm_data, uint32_t sample_ra
 
     size_t frame_size = sample_rate / 50;
     size_t total_samples = pcm_data.size();
+    // RFC 7845 requires Ogg granule positions to always be expressed in units
+    // of 48 kHz samples, regardless of the Opus encoder's input sample rate.
+    // Advances by (this_frame * kOpusGranuleRate / sample_rate) so the
+    // player-reported duration matches the true decoded length — without this,
+    // a 16 kHz re-encode under-reports duration and playback appears to run
+    // "past the end" of the waveform. (Pre-skip/lookahead is handled by the
+    // muxer header, so granule advancement just tracks elapsed output.)
     int64_t granule_position = 0;
 
     for (size_t offset = 0; offset < total_samples; offset += frame_size * channels) {
@@ -89,7 +137,7 @@ static bool encode_opus(const std::vector<int16_t>& pcm_data, uint32_t sample_ra
             return false;
         }
 
-        granule_position += static_cast<int64_t>(this_frame);
+        granule_position += static_cast<int64_t>(this_frame) * kOpusGranuleRate / static_cast<int64_t>(sample_rate);
         if (!muxer.write_packet(packet.data(), packet.size(), granule_position)) {
             return false;
         }
@@ -99,13 +147,33 @@ static bool encode_opus(const std::vector<int16_t>& pcm_data, uint32_t sample_ra
     return true;
 }
 
-DecodeResult extract_audio_and_waveform(const std::string& input_path, const std::string& output_path) {
+DecodeResult transcode_audio_to_opus(const std::string& input_path, const std::string& output_path,
+                                     size_t max_audio_bytes) {
     DecodeResult result;
     result.success = false;
+
+    // Reject oversized inputs before any decoding work. This is the single
+    // chokepoint guarding the file-based path on both Android and iOS.
+    // A non-positive limit (e.g. a caller bug) would otherwise reject everything
+    // below the true cap, so fall back to the shared default in that case.
+    if (max_audio_bytes == 0) {
+        max_audio_bytes = kDefaultMaxAudioBytes;
+    }
+
+    uint64_t input_size = 0;
+    if (!file_size(input_path, input_size)) {
+        result.error_message = "Cannot stat input file.";
+        return result;
+    }
+    if (input_size > max_audio_bytes) {
+        result.error_message = "FILE_TOO_LARGE";
+        return result;
+    }
 
     std::vector<int16_t> pcm_data;
     uint32_t out_sample_rate = 16000;
     uint16_t out_channels = 1;
+    bool reuse_source = false;
 
     if (is_ogg_opus(input_path)) {
         int err = 0;
@@ -118,6 +186,13 @@ DecodeResult extract_audio_and_waveform(const std::string& input_path, const std
         out_sample_rate = 48000;
         out_channels = 1;
 
+        // The source is already the exact target we would encode (16 kHz mono),
+        // so we can reuse it verbatim instead of decoding → re-encoding.
+        const OpusHead* head = op_head(of, -1);
+        reuse_source = (head != nullptr) &&
+                       (head->input_sample_rate == 16000) &&
+                       (head->channel_count == 1);
+
         const int MAX_FRAME_SIZE = 9600;
         std::vector<int16_t> buffer(MAX_FRAME_SIZE);
 
@@ -125,7 +200,11 @@ DecodeResult extract_audio_and_waveform(const std::string& input_path, const std
             int samples_read = op_read(of, (opus_int16*)buffer.data(), buffer.size(), nullptr);
             if (samples_read < 0) break;
             if (samples_read == 0) break;
-            pcm_data.insert(pcm_data.end(), buffer.begin(), buffer.begin() + samples_read);
+            if (!append_samples(pcm_data, buffer.data(), static_cast<size_t>(samples_read))) {
+                op_free(of);
+                result.error_message = "AUDIO_TOO_LONG";
+                return result;
+            }
         }
 
         op_free(of);
@@ -145,7 +224,7 @@ DecodeResult extract_audio_and_waveform(const std::string& input_path, const std
         ma_uint64 total_frames = 0;
         ma_decoder_get_length_in_pcm_frames(&decoder, &total_frames);
         if (total_frames > 0) {
-            pcm_data.reserve(total_frames * out_channels);
+            pcm_data.reserve(std::min<ma_uint64>(total_frames * out_channels, kMaxDecodedSamples));
         }
 
         const int CHUNK_SIZE = 4096;
@@ -155,7 +234,11 @@ DecodeResult extract_audio_and_waveform(const std::string& input_path, const std
         while (true) {
             ma_res = ma_decoder_read_pcm_frames(&decoder, buffer.data(), CHUNK_SIZE, &frames_read);
             if (frames_read > 0) {
-                pcm_data.insert(pcm_data.end(), buffer.begin(), buffer.begin() + frames_read * out_channels);
+                if (!append_samples(pcm_data, buffer.data(), static_cast<size_t>(frames_read * out_channels))) {
+                    ma_decoder_uninit(&decoder);
+                    result.error_message = "AUDIO_TOO_LONG";
+                    return result;
+                }
             }
             if (frames_read < CHUNK_SIZE || ma_res != MA_SUCCESS) break;
         }
@@ -168,9 +251,18 @@ DecodeResult extract_audio_and_waveform(const std::string& input_path, const std
         return result;
     }
 
-    if (!encode_opus(pcm_data, out_sample_rate, out_channels, output_path)) {
-        result.error_message = "Failed to encode Ogg Opus output.";
-        return result;
+    if (reuse_source) {
+        // No transcode: the input is already 16 kHz mono Ogg Opus. Copy it as-is
+        // (cheap) while still extracting duration + waveform from the decoded PCM.
+        if (!copy_file(input_path, output_path)) {
+            result.error_message = "Failed to reuse existing Ogg Opus source.";
+            return result;
+        }
+    } else {
+        if (!encode_opus(pcm_data, out_sample_rate, out_channels, output_path)) {
+            result.error_message = "Failed to encode Ogg Opus output.";
+            return result;
+        }
     }
 
     result.duration_ms = (pcm_data.size() / out_channels) * 1000 / out_sample_rate;
@@ -224,8 +316,8 @@ static int mem_close(void* stream) {
     return 0;
 }
 
-DecodeResult extract_audio_and_waveform_from_memory(
-    const uint8_t* data, size_t data_size, const std::string& output_path) {
+DecodeResult transcode_audio_to_opus_from_memory(
+    const uint8_t* data, size_t data_size, const std::string& output_path, size_t max_audio_bytes) {
     DecodeResult result;
     result.success = false;
 
@@ -234,9 +326,20 @@ DecodeResult extract_audio_and_waveform_from_memory(
         return result;
     }
 
+    // Enforce the size cap here as well so callers that skip the Kotlin/Swift
+    // guard (e.g. direct JNI/ObjC usage) cannot hand us an oversized buffer.
+    if (max_audio_bytes == 0) {
+        max_audio_bytes = kDefaultMaxAudioBytes;
+    }
+    if (data_size > max_audio_bytes) {
+        result.error_message = "FILE_TOO_LARGE";
+        return result;
+    }
+
     std::vector<int16_t> pcm_data;
     uint32_t out_sample_rate = 16000;
     uint16_t out_channels = 1;
+    bool reuse_source = false;
 
     bool is_opus = (data_size >= 4 &&
                     data[0] == 'O' && data[1] == 'g' &&
@@ -256,13 +359,23 @@ DecodeResult extract_audio_and_waveform_from_memory(
         out_sample_rate = 48000;
         out_channels = 1;
 
+        // Source is already the exact target (16 kHz mono): reuse bytes verbatim.
+        const OpusHead* head = op_head(of, -1);
+        reuse_source = (head != nullptr) &&
+                       (head->input_sample_rate == 16000) &&
+                       (head->channel_count == 1);
+
         const int MAX_FRAME_SIZE = 9600;
         std::vector<int16_t> buffer(MAX_FRAME_SIZE);
 
         while (true) {
             int samples_read = op_read(of, (opus_int16*)buffer.data(), buffer.size(), nullptr);
             if (samples_read <= 0) break;
-            pcm_data.insert(pcm_data.end(), buffer.begin(), buffer.begin() + samples_read);
+            if (!append_samples(pcm_data, buffer.data(), static_cast<size_t>(samples_read))) {
+                op_free(of);
+                result.error_message = "AUDIO_TOO_LONG";
+                return result;
+            }
         }
 
         op_free(of);
@@ -286,7 +399,11 @@ DecodeResult extract_audio_and_waveform_from_memory(
         while (true) {
             ma_res = ma_decoder_read_pcm_frames(&decoder, buffer.data(), CHUNK_SIZE, &frames_read);
             if (frames_read > 0) {
-                pcm_data.insert(pcm_data.end(), buffer.begin(), buffer.begin() + frames_read * out_channels);
+                if (!append_samples(pcm_data, buffer.data(), static_cast<size_t>(frames_read * out_channels))) {
+                    ma_decoder_uninit(&decoder);
+                    result.error_message = "AUDIO_TOO_LONG";
+                    return result;
+                }
             }
             if (frames_read < CHUNK_SIZE || ma_res != MA_SUCCESS) break;
         }
@@ -299,9 +416,17 @@ DecodeResult extract_audio_and_waveform_from_memory(
         return result;
     }
 
-    if (!encode_opus(pcm_data, out_sample_rate, out_channels, output_path)) {
-        result.error_message = "Failed to encode Ogg Opus from memory-decoded audio.";
-        return result;
+    if (reuse_source) {
+        // No transcode: source bytes are already 16 kHz mono Ogg Opus.
+        if (!write_bytes(data, data_size, output_path)) {
+            result.error_message = "Failed to reuse existing Ogg Opus source.";
+            return result;
+        }
+    } else {
+        if (!encode_opus(pcm_data, out_sample_rate, out_channels, output_path)) {
+            result.error_message = "Failed to encode Ogg Opus from memory-decoded audio.";
+            return result;
+        }
     }
 
     result.duration_ms = (pcm_data.size() / out_channels) * 1000 / out_sample_rate;

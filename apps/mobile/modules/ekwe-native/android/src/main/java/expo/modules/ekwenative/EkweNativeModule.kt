@@ -30,13 +30,45 @@ class EkweNativeModule : Module() {
   companion object {
     var instance: EkweNativeModule? = null
 
+    // Authoritative limit lives in @ekwe/shared/plans (PREMIUM_LIMITS.
+    // maxAudioBytes); JS passes it in at call time so native never hardcodes it.
+    // This is only a defensive default if a caller omits the argument.
+    private const val DEFAULT_MAX_AUDIO_BYTES = 26_214_400L
+
     init {
       System.loadLibrary("ekwe_native_jni")
+    }
+
+    // Query the provider-declared size for a content:// uri (best-effort).
+    private fun queryContentSize(context: Context, uri: android.net.Uri): Long? {
+      return try {
+        context.contentResolver.query(
+          uri,
+          arrayOf(android.provider.OpenableColumns.SIZE),
+          null, null, null,
+        )?.use { cursor ->
+          val index = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+          if (index >= 0 && cursor.moveToFirst() && !cursor.isNull(index)) {
+            cursor.getLong(index)
+          } else {
+            null
+          }
+        }
+      } catch (e: Exception) {
+        Log.w("EkweNative", "queryContentSize failed", e)
+        null
+      }
     }
 
     // Strip file:// prefix from JS paths — C/C++ fopen() doesn't understand URIs
     private fun resolvePath(path: String): String {
       return if (path.startsWith("file://")) path.substring(7) else path
+    }
+
+    // Sanitize the JS-supplied limit so a 0/negative value (caller bug) falls
+    // back to the authoritative shared default instead of rejecting everything.
+    private fun sanitizeMaxAudioBytes(maxAudioBytes: Long): Long {
+      return if (maxAudioBytes > 0) maxAudioBytes else DEFAULT_MAX_AUDIO_BYTES
     }
 
     // ── Emitters consumed by the C++ capture controller (nativeInitCapture) ──
@@ -65,11 +97,11 @@ class EkweNativeModule : Module() {
     @JvmStatic external fun nativeInstallJsi(jsContextPointer: Long)
 
     // --- Native Audio Processing (JNI) ---
-    @JvmStatic external fun extractWavAndWaveformJNI(inputPath: String, outputPath: String): Array<Any?>
+    @JvmStatic external fun transcodeToOpusWithWaveformJNI(inputPath: String, outputPath: String, maxAudioBytes: Long): Array<Any?>
     @JvmStatic external fun encodePcmToOpusJNI(pcmData: ShortArray, sampleRate: Int, channels: Int, outputPath: String): Array<Any?>
 
     // New: memory-based decode (no temp file for content:// → FLAC)
-    @JvmStatic external fun extractFromMemoryJNI(data: ByteArray, outputPath: String): Array<Any?>
+    @JvmStatic external fun transcodeFromMemoryJNI(data: ByteArray, outputPath: String, maxAudioBytes: Long): Array<Any?>
 
     // Capture controller JNI (dual-path: file or live)
     @JvmStatic external fun nativeInitCapture(outputPath: String, sampleRate: Int, channels: Int, isLive: Boolean): Boolean
@@ -131,9 +163,10 @@ class EkweNativeModule : Module() {
     }
 
     // --- Accessibility & Content Resolution ---
-    AsyncFunction("resolveContentUri") { uriString: String ->
+    AsyncFunction("resolveContentUri") { uriString: String, maxAudioBytes: Long ->
       val context = appContext.reactContext ?: return@AsyncFunction null
       val uri = android.net.Uri.parse(uriString)
+      val limit = sanitizeMaxAudioBytes(maxAudioBytes)
 
       if (uri.scheme != "content") return@AsyncFunction uriString
 
@@ -144,13 +177,36 @@ class EkweNativeModule : Module() {
             ?: getExtensionFromContentUri(context, uri)
             ?: "ogg"
 
+        // Reject oversized content:// sources BEFORE copying to cache.
+        val declaredSize = queryContentSize(context, uri)
+        if (declaredSize != null && declaredSize > limit) {
+          Log.w("EkweNative", "resolveContentUri rejected: size=$declaredSize over limit")
+          return@AsyncFunction null
+        }
+
         val fileName = "shared_voice_${System.currentTimeMillis()}.$extension"
         val cacheFile = java.io.File(context.cacheDir, fileName)
 
-        context.contentResolver.openInputStream(uri)?.use { input ->
+        val copied = context.contentResolver.openInputStream(uri)?.use { input ->
           java.io.FileOutputStream(cacheFile).use { output ->
-            input.copyTo(output)
+            // Bounded copy so an oversized provider stream cannot fill the cache.
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var total = 0L
+            while (true) {
+              val read = input.read(buffer)
+              if (read <= 0) break
+              total += read
+              if (total > limit) break
+              output.write(buffer, 0, read)
+            }
+            total <= limit
           }
+        } ?: false
+
+        if (!copied) {
+          cacheFile.delete()
+          Log.w("EkweNative", "resolveContentUri rejected: source over limit")
+          return@AsyncFunction null
         }
 
         Log.d("EkweNative", "Resolved content URI: mime=$mimeType, ext=$extension, path=${cacheFile.absolutePath}")
@@ -162,22 +218,59 @@ class EkweNativeModule : Module() {
     }
 
     // ─── Resolve content:// URI → Ogg Opus directly (no temp file) ─────
-    AsyncFunction("resolveAndConvertToOpus") { uriString: String, outputPath: String ->
+    AsyncFunction("resolveAndTranscodeToOpus") { uriString: String, outputPath: String, maxAudioBytes: Long ->
       val context = appContext.reactContext ?: return@AsyncFunction mapOf(
         "success" to false, "error" to "No context", "durationMs" to 0, "waveform" to emptyList<Float>()
       )
+      val limit = sanitizeMaxAudioBytes(maxAudioBytes)
 
       try {
         val uri = android.net.Uri.parse(uriString)
+
+        // Guard: reject oversized content:// sources BEFORE buffering into
+        // memory. Prevents a large shared file from being fully loaded + decoded.
+        val declaredSize = queryContentSize(context, uri)
+        if (declaredSize != null && declaredSize > limit) {
+          Log.w("EkweNative", "resolveAndTranscodeToOpus rejected: size=$declaredSize over limit")
+          return@AsyncFunction mapOf(
+            "success" to false, "error" to "FILE_TOO_LARGE",
+            "durationMs" to 0, "waveform" to emptyList<Float>()
+          )
+        }
+
         val inputStream = context.contentResolver.openInputStream(uri)
             ?: return@AsyncFunction mapOf(
               "success" to false, "error" to "Cannot open content URI",
               "durationMs" to 0, "waveform" to emptyList<Float>()
             )
 
-        val bytes = inputStream.use { it.readBytes() }
+        // Bounded read: copy at most limit + 1 bytes so a
+        // provider that lies about its declared size (or omits SIZE entirely)
+        // cannot make us buffer an unbounded stream into memory.
+        val bytes = inputStream.use { stream ->
+          val buffer = java.io.ByteArrayOutputStream()
+          val chunk = ByteArray(DEFAULT_BUFFER_SIZE)
+          var total = 0L
+          while (true) {
+            val read = stream.read(chunk)
+            if (read <= 0) break
+            total += read
+            if (total > limit) break
+            buffer.write(chunk, 0, read)
+          }
+          buffer.toByteArray()
+        }
 
-        val result = extractFromMemoryJNI(bytes, resolvePath(outputPath))
+        // Hard cap in bytes read even if the provider misreported size.
+        if (bytes.size > limit) {
+          Log.w("EkweNative", "resolveAndTranscodeToOpus rejected: bytes=${bytes.size} over limit")
+          return@AsyncFunction mapOf(
+            "success" to false, "error" to "FILE_TOO_LARGE",
+            "durationMs" to 0, "waveform" to emptyList<Float>()
+          )
+        }
+
+        val result = transcodeFromMemoryJNI(bytes, resolvePath(outputPath), limit)
         val success = result[0] as Boolean
         val error = result[1] as String
         val durationMs = result[2] as Int
@@ -364,8 +457,8 @@ class EkweNativeModule : Module() {
 
 
     // --- Audio Conversion Methods ---
-    AsyncFunction("extractWavAndWaveform") { inputPath: String, outputPath: String ->
-      val result = extractWavAndWaveformJNI(resolvePath(inputPath), resolvePath(outputPath))
+    AsyncFunction("transcodeToOpusWithWaveform") { inputPath: String, outputPath: String, maxAudioBytes: Long ->
+      val result = transcodeToOpusWithWaveformJNI(resolvePath(inputPath), resolvePath(outputPath), sanitizeMaxAudioBytes(maxAudioBytes))
       val success = result[0] as Boolean
       val error = result[1] as String
       val durationMs = result[2] as Int

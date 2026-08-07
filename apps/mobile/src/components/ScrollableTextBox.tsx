@@ -22,6 +22,8 @@ interface ScrollableTextBoxProps {
   containerStyle?: StyleProp<ViewStyle>;
   /** Optional extra style for the text. */
   textStyle?: StyleProp<TextStyle>;
+  /** Optional toolbar rendered inside the card above the scroll area. */
+  header?: React.ReactNode;
 }
 
 export const ScrollableTextBox: React.FC<ScrollableTextBoxProps> = ({
@@ -32,6 +34,7 @@ export const ScrollableTextBox: React.FC<ScrollableTextBoxProps> = ({
   isLoading = false,
   containerStyle,
   textStyle,
+  header,
 }) => {
   const { color } = useTheme();
   const activeBrandPrimary = brandPrimary || color.foreground;
@@ -43,6 +46,7 @@ export const ScrollableTextBox: React.FC<ScrollableTextBoxProps> = ({
       style={[{ marginBottom: spacing.lg }, containerStyle]}
       overflow
     >
+      {header}
       <ScrollArea
         style={{ height }}
         contentContainerStyle={{ padding: spacing.md }}

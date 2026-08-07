@@ -26,6 +26,7 @@ import type { ListItem } from "@/hooks/useHistoryListData";
 import { HistoryFilterOption } from "@/hooks/useHistorySearch";
 import { SyncService } from "@/services/SyncService";
 import { HistoryEntry, auth$ } from "@/store";
+import { withAlpha } from "@/utils/color";
 import { isIOS, logger } from "@/utils";
 
 const FILTER_OPTIONS: HistoryFilterOption[] = [
@@ -166,7 +167,7 @@ export default function HistoryScreen(): React.JSX.Element {
                   styles.chip,
                   filter === option
                     ? {
-                        backgroundColor: `${color.brand}15`,
+                        backgroundColor: withAlpha(color.brand, 0.082),
                         borderColor: color.brand,
                       }
                     : {
@@ -208,7 +209,7 @@ export default function HistoryScreen(): React.JSX.Element {
               icon={
                 <IconContainer
                   size="lg"
-                  backgroundColor={`${color.foreground}15`}
+                  backgroundColor={withAlpha(color.foreground, 0.082)}
                 >
                   {isIOS ? (
                     <ExpoImage

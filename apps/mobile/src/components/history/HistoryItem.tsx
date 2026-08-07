@@ -20,6 +20,7 @@ import { useTheme } from "@/hooks";
 import { getEntryType } from "@/hooks/useHistorySearch";
 import { HistoryEntry } from "@/store";
 import { isIOS } from "@/utils";
+import { withAlpha } from "@/utils/color";
 import { getRelativeTime } from "@/utils/relativeTime";
 
 export interface HistoryItemProps {
@@ -51,7 +52,7 @@ export const HistoryItem = React.memo(
       swipeableRef.current?.close();
     }, [entry.id, onDelete]);
 
-    const rightActionBg = useMemo(() => `${color.error}20`, [color.error]);
+    const rightActionBg = useMemo(() => withAlpha(color.error, 0.125), [color.error]);
 
     const deleteAccessibilityLabel = useMemo(
       () => `Delete ${entry.transcript?.split("\n")[0] || "entry"}`,

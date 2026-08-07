@@ -210,10 +210,9 @@ export function RecordingInline({
                 activeColor={color.brand}
                 inactiveColor={color.muted}
                 interactive
-                onSeek={(p) => player.seek(p * player.duration)}
+                onSeek={(p) => void player.endScrub(p * player.duration)}
                 onScrubStateChange={(isScrubbing) => {
-                  if (isScrubbing) player.pauseTimer();
-                  else player.resumeTimer();
+                  if (isScrubbing) player.beginScrub();
                 }}
               />
               <Animated.View

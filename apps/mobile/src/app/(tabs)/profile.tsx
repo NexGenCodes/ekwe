@@ -35,8 +35,8 @@ import {
   borderRadius,
   opacity,
   spacing,
-  SUPPORTED_CURRENCIES,
 } from "@/constants";
+import { CURRENCIES } from "@ekwe/shared/currencies";
 import { useLogout, useTheme, usePermissions } from "@/hooks";
 import { deleteAccount } from "@/services/auth";
 import { resetAnalytics } from "@/services/posthog";
@@ -294,7 +294,7 @@ export default function ProfileScreen(): React.JSX.Element {
                     variant="body"
                     style={{ color: color.muted, marginRight: spacing.sm }}
                   >
-                    {SUPPORTED_CURRENCIES.find((c) => c.code === currency)
+                    {CURRENCIES.find((c) => c.code === currency)
                       ?.code || currency}
                   </Text>
                   <ChevronRight size={16} color={color.muted} />

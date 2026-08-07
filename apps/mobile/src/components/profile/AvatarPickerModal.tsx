@@ -17,6 +17,7 @@ import { palette } from "@/constants/colors";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { withAlpha } from "@/utils/color";
 
 export const AVATAR_ICONS = [
   { name: "Smile", icon: Smile, color: palette.amber500 },
@@ -150,9 +151,9 @@ export function AvatarPickerModal({
                   borderColor: !currentIcon ? color.foreground : color.border,
                 },
                 pressed && {
-                  backgroundColor: `${color.foreground}1A`,
-                  transform: [{ scale: 0.95 }],
-                },
+                    backgroundColor: withAlpha(color.foreground, 0.102),
+                    transform: [{ scale: 0.95 }],
+                  },
               ]}
               onPress={() => onSelect("")}
               accessibilityLabel="Use default avatar"

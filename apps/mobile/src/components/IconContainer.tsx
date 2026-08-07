@@ -4,6 +4,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 import { Box } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { useTheme } from "@/hooks/ui";
+import { withAlpha } from "@/utils/color";
 
 export interface IconContainerProps {
   children: React.ReactNode;
@@ -43,8 +44,8 @@ export const IconContainer = ({
 
   const bg = ((): string => {
     if (variant === "custom" && backgroundColor) return backgroundColor;
-    if (variant === "muted") return `${color.muted}20`;
-    return `${color.foreground}15`;
+    if (variant === "muted") return withAlpha(color.muted, 0.125);
+    return withAlpha(color.foreground, 0.082);
   })();
 
   const dimension = typeof size === "number" ? size : SIZE_MAP[size];

@@ -9,6 +9,26 @@ public class EkweNativeModule: Module {
   private var captureMode: String = "file"
   private var outputPath: String = ""
 
+  // Authoritative limit lives in @ekwe/shared/plans (PREMIUM_LIMITS.
+  // maxAudioBytes); JS passes it in at call time so native never hardcodes it.
+  // This is only a defensive default if a caller omits the argument.
+
+  /// Resolves a share file:// path (stripping scheme) and rejects inputs over
+  /// the size cap before any decode work begins.
+  private func guardedSourcePath(_ path: String, maxAudioBytes: Int) -> String? {
+    let plainPath = path.hasPrefix("file://") ? String(path.dropFirst("file://".count)) : path
+    let url = URL(fileURLWithPath: plainPath)
+    let limit = maxAudioBytes > 0 ? maxAudioBytes : 26_214_400
+    guard
+      let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+      let size = values.fileSize,
+      size <= limit
+    else {
+      return nil
+    }
+    return plainPath
+  }
+
   public func definition() -> ModuleDefinition {
     Name("EkweNative")
 
@@ -48,8 +68,16 @@ public class EkweNativeModule: Module {
     // ------------------------------------
     // Audio Conversion
     // ------------------------------------
-    AsyncFunction("extractWavAndWaveform") { (inputPath: String, outputPath: String) -> [String: Any] in
-      let result = EkweAudioBridge.extractWavAndWaveform(inputPath, outputPath: outputPath)
+    AsyncFunction("transcodeToOpusWithWaveform") { (inputPath: String, outputPath: String, maxAudioBytes: Int) -> [String: Any] in
+      guard let sourcePath = self.guardedSourcePath(inputPath, maxAudioBytes: maxAudioBytes) else {
+        return [
+          "success": false,
+          "error": "FILE_TOO_LARGE",
+          "durationMs": 0,
+          "waveform": [] as [Float],
+        ]
+      }
+      let result = EkweAudioBridge.transcodeToOpusWithWaveform(sourcePath, outputPath: outputPath)
       return [
         "success": result[0] as! Bool,
         "error": result[1] as! String,
@@ -177,8 +205,10 @@ public class EkweNativeModule: Module {
               "durationMs": durationMs, "waveform": waveform]
     }
 
-    AsyncFunction("resolveAndConvertToOpus") { (_: String, _: String) -> [String: Any] in
-      return ["success": false, "error": "Use extractWavAndWaveform on iOS",
+    AsyncFunction("resolveAndTranscodeToOpus") { (_: String, _: String, _: Int) -> [String: Any] in
+      // iOS doesn't receive Android-style content:// URIs; shared files arrive
+      // as file:// paths consumable by transcodeToOpusWithWaveform directly.
+      return ["success": false, "error": "Use transcodeToOpusWithWaveform on iOS",
               "durationMs": 0, "waveform": [] as [Float]]
     }
 

@@ -10,6 +10,7 @@ import { Box, Text, Pressable } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { withAlpha } from "@/utils/color";
 
 interface ThemePickerModalProps {
   visible: boolean;
@@ -107,12 +108,12 @@ export function ThemePickerModal({
                       borderRadius: borderRadius.lg,
                       marginVertical: spacing.hairline,
                     },
-                    pressed && {
-                      backgroundColor: `${color.foreground}1A`,
-                    },
-                    isSelected && {
-                      backgroundColor: `${color.foreground}0D`,
-                    },
+pressed && {
+                        backgroundColor: withAlpha(color.foreground, 0.102),
+                      },
+                      isSelected && {
+                        backgroundColor: withAlpha(color.foreground, 0.051),
+                      },
                   ]}
                   onPress={() => onSelect(item.value)}
                   accessibilityLabel={`Select ${item.label}`}

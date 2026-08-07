@@ -40,14 +40,12 @@ export interface AudioWaveformProps {
 
 interface BarItemProps {
   index: number;
-  x: number;
   barHeights: SharedValue<number[]>;
+  measuredWidth: SharedValue<number>;
   progressSV?: SharedValue<number>;
   duration: number;
   barCount: number;
   canvasHeight: number;
-  barWidth: number;
-  barRadius: number;
   minBarHeight: number;
   activeColor: string;
   inactiveColor: string;
@@ -55,14 +53,12 @@ interface BarItemProps {
 
 const BarItem = React.memo(function BarItem({
   index,
-  x,
   barHeights,
+  measuredWidth,
   progressSV,
   duration,
   barCount,
   canvasHeight,
-  barWidth,
-  barRadius,
   minBarHeight,
   activeColor,
   inactiveColor,
@@ -71,9 +67,19 @@ const BarItem = React.memo(function BarItem({
     return Math.max(minBarHeight, barHeights.value[index] ?? minBarHeight);
   });
 
+  // Bars span the full measured width so they are never clipped. Step and
+  // width adapt to the real container width instead of a fixed 6px grid —
+  // this also keeps the seek hit-target aligned with the drawn bars.
+  const step = useDerivedValue(() => measuredWidth.value / barCount);
+  const x = useDerivedValue(() => index * step.value);
+  const barWidth = useDerivedValue(() =>
+    Math.max(minBarHeight, Math.min(DEFAULT_BAR_W, step.value - DEFAULT_BAR_GAP)),
+  );
+  const barRadius = useDerivedValue(() => barWidth.value / 2);
+
   // Centered vertically for WhatsApp style
   const y = useDerivedValue(() => {
-    return (canvasHeight - h.value) / 2;
+    return Math.max(0, (canvasHeight - h.value) / 2);
   });
 
   const color = useDerivedValue(() => {
@@ -101,8 +107,6 @@ export function AudioWaveform({
   duration,
   barCount = DEFAULT_BAR_COUNT,
   height = 40,
-  barWidth = DEFAULT_BAR_W,
-  barGap = DEFAULT_BAR_GAP,
   minBarHeight = DEFAULT_MIN_H,
   activeColor,
   inactiveColor,
@@ -143,21 +147,23 @@ export function AudioWaveform({
       if (!amps || amps.length === 0) return;
 
       const arr = new Array(barCount);
-      const isPlayback = amps.length > barCount;
+      const sourceCount = amps.length;
 
+      // Map every source bin evenly onto the visible bars. Using
+      // floor(i*n/m)..floor((i+1)*n/m) guarantees all bins are represented,
+      // unlike a fixed `chunk` stride which drops trailing bins when the
+      // source count isn't a multiple of barCount.
       for (let i = 0; i < barCount; i++) {
+        const start = Math.floor((i * sourceCount) / barCount);
+        const end = Math.max(
+          start + 1,
+          Math.floor(((i + 1) * sourceCount) / barCount),
+        );
+
         let raw = 0;
-        if (isPlayback) {
-          const chunk = Math.floor(amps.length / barCount);
-          const start = i * chunk;
-          const end = start + chunk;
-          let sum = 0;
-          for (let j = start; j < end; j++) {
-            sum += amps[j] ?? 0;
-          }
-          raw = chunk > 0 ? sum / chunk : 0;
-        } else {
-          raw = amps[i] ?? 0;
+        for (let j = start; j < end && j < sourceCount; j++) {
+          const v = amps[j] ?? 0;
+          if (v > raw) raw = v;
         }
 
         const n = Math.min(1, Math.max(0, raw));
@@ -222,13 +228,12 @@ export function AudioWaveform({
   const composed = Gesture.Exclusive(gesture, tap);
 
   const bars = useMemo(() => {
-    const step = barWidth + barGap;
-    const result: { i: number; x: number }[] = [];
+    const result: number[] = [];
     for (let i = 0; i < barCount; i++) {
-      result.push({ i, x: i * step });
+      result.push(i);
     }
     return result;
-  }, [barCount, barWidth, barGap]);
+  }, [barCount]);
 
   if (
     !isSharedValue &&
@@ -256,18 +261,16 @@ export function AudioWaveform({
       >
         <Canvas style={{ flex: 1, height }}>
           <Group>
-            {bars.map(({ i, x }) => (
+            {bars.map((i) => (
               <BarItem
                 key={i}
                 index={i}
-                x={x}
                 barHeights={barHeights}
+                measuredWidth={measuredWidth}
                 progressSV={progressSV}
                 duration={duration ?? 1}
                 barCount={barCount}
                 canvasHeight={height}
-                barWidth={barWidth}
-                barRadius={barWidth / 2} // Pill shape
                 minBarHeight={minBarHeight}
                 activeColor={finalActiveColor}
                 inactiveColor={finalInactiveColor}

@@ -3,28 +3,25 @@ export const ECHO_CONSTANTS = {
     COLUMNS: 3,
     MAX_TOP_LANGS: 5,
     GAP: 12,
-    CARD_RADIUS: 20,
-  },
-  ANIMATION: {
-    FADE_DURATION: 300,
-  },
-  LAYOUT: {
-    HANDLE_WIDTH: 40,
-    SHEET_PADDING: 20,
+    CARD_ASPECT_RATIO: 0.85,
   },
 };
+
+// Brand signature appended to text copied or shared from an Echo result, so a
+// pasted translation always carries the Ekwe call-to-action back to the app.
+export const ECHO_SHARE_SIGNATURE = "\n\n— Shared with Ekwe · Speak, we'll handle the rest";
 
 export const STEP_METADATA = {
   PickLanguage: {
     title: "Pick Original Language",
     showBadge: true,
   },
-  Config: {
-    title: "Confirm & Transcribe",
+  Preview: {
+    title: "Preview & Transcribe",
     showBadge: true,
   },
   Transcribing: {
-    title: "Transcribing...",
+    title: "Transcribing…",
     showBadge: false,
   },
   TranscribeResult: {
@@ -32,7 +29,7 @@ export const STEP_METADATA = {
     showBadge: true,
   },
   Translating: {
-    title: "Translating...",
+    title: "Translating…",
     showBadge: false,
   },
   FullResult: {

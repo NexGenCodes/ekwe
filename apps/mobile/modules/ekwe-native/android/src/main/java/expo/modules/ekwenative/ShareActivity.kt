@@ -38,6 +38,12 @@ class ShareActivity : ReactActivity() {
 
         @Volatile
         var nativeLoaderView: View? = null
+
+        // Suffix segments typically appended to source-app packages inside
+        // content provider authorities, e.g. "com.whatsapp.provider.media".
+        private val PROVIDER_AUTHORITY_NOISE = setOf(
+            "provider", "fileprovider", "media", "files", "cache", "content", "share", "cp"
+        )
     }
 
     override fun getMainComponentName(): String = "share-extension"
@@ -67,22 +73,81 @@ class ShareActivity : ReactActivity() {
 
     private fun extractInitialMetadata(intent: Intent, bundle: Bundle) {
         if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) {
-            val sourceApp = referrer?.host
-                ?: intent.getStringExtra(Intent.EXTRA_REFERRER_NAME)
-                ?: "Unknown App"
-            bundle.putString("sourceApp", sourceApp)
-
             val streamUri = if (intent.action == Intent.ACTION_SEND) {
                 intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
             } else if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
                 intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.firstOrNull()
             } else null
 
+            bundle.putString("sourceApp", extractSourceApp(intent, streamUri))
+
             if (streamUri != null) {
                 bundle.putString("audioUri", streamUri.toString())
                 val mimeType = contentResolver.getType(streamUri) ?: "audio/mpeg"
                 bundle.putString("mimeType", mimeType)
             }
+        }
+    }
+
+    /**
+     * Best-effort detection of the app that shared the audio:
+     * 1. Referrer (android-app://com.whatsapp/...)
+     * 2. EXTRA_REFERRER_NAME
+     * 3. The content provider authority, which usually embeds the source
+     *    package, e.g. "com.whatsapp.provider.media" → "com.whatsapp".
+     *
+     * Prefers the installed app's real display label (via PackageManager),
+     * which is complete and never truncates — the raw package is only
+     * returned when no label can be resolved.
+     */
+    private fun extractSourceApp(intent: Intent, streamUri: Uri?): String {
+        val packageCandidates = arrayListOf<String>()
+        // getReferrer() can throw SecurityException on some devices/OEMs.
+        runCatching { referrer }
+            .getOrNull()
+            ?.host
+            ?.takeIf { it.isNotBlank() }
+            ?.let { packageCandidates.add(stripUidPrefix(it)) }
+
+        intent.getStringExtra(Intent.EXTRA_REFERRER_NAME)?.let { name ->
+            if (name.isNotBlank()) {
+                runCatching { Uri.parse(name).host }
+                    .getOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { packageCandidates.add(stripUidPrefix(it)) }
+            }
+        }
+
+        streamUri?.authority?.let { authority ->
+            val cleaned = authority
+                .split(".")
+                .filterNot { it in PROVIDER_AUTHORITY_NOISE }
+                .joinToString(".")
+            if (cleaned.isNotBlank()) packageCandidates.add(stripUidPrefix(cleaned))
+        }
+
+        packageCandidates.forEach { candidate ->
+            resolveAppLabel(candidate)?.let { return it }
+        }
+
+        return packageCandidates.firstOrNull() ?: ""
+    }
+
+    /**
+     * Cross-user content URIs prefix the authority with a UID, e.g.
+     * "999@com.whatsapp.w4b". Strip everything up to and including "@"
+     * so we get a usable package name.
+     */
+    private fun stripUidPrefix(raw: String): String =
+        if ('@' in raw) raw.substringAfter('@') else raw
+
+    /** Returns the installed app's display name for [packageName], or null. */
+    private fun resolveAppLabel(packageName: String): String? {
+        return try {
+            val info = packageManager.getApplicationInfo(packageName, 0)
+            packageManager.getApplicationLabel(info)?.toString()?.takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            null
         }
     }
 

@@ -5,6 +5,7 @@ packages:
 allowBuilds:
   '@sentry/cli': true
   '@shopify/react-native-skia': true
+  dtrace-provider: false
   esbuild: true
   msw: false
   workerd: true

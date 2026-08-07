@@ -87,7 +87,7 @@ function clearTimers(): void {
   }
 }
 
-export const dictationActions = {
+const dictationActions = {
   reset(): void {
     dictation$.set({ ...INITIAL_STATE });
   },

@@ -4,7 +4,7 @@ import * as Haptics from "expo-haptics";
 import { triggerHaptic } from "@/utils/haptics";
 import { useState, useCallback, useEffect, useRef } from "react";
 
-import { useTranslation } from "../useTranslation";
+import { useTranslation } from "./useTranslation";
 
 import { batchTranscriber } from "@/services/BatchTranscriber";
 import { HistoryService } from "@/services/HistoryService";

@@ -3,11 +3,12 @@ import Zap from "lucide-react-native/icons/zap";
 import CheckCircle2 from "lucide-react-native/icons/circle-check";
 import React from "react";
 
-import { ResultDisplay } from "./ResultDisplay";
-import { AnimatedCopyButton } from "../../AnimatedCopyButton";
-import { Badge } from "../../Badge";
+import { TextBox } from "./TextBox";
+
+import type { WaveformPlaybackController } from "@/hooks/audio/useAudioWaveformPlayback";
 
 import { Box, Text, Pressable } from "@/components/ui";
+import { FLAG_MAP } from "@/constants/languages";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks/ui";
@@ -18,11 +19,99 @@ interface EchoFinalResultProps {
   translation: string | null;
   sourceLang: string | null;
   targetLang: string;
-  audioDuration?: number;
-  isDark: boolean;
   setStep: (step: EchoStep) => void;
   handleClose: () => void;
+  activeTab: ResultTab;
+  onTabChange: (tab: ResultTab) => void;
+  audioPlayer: WaveformPlaybackController | null;
+  /** External "copied" signal from auto-copy; shows the check on the Translated box. */
+  copied?: boolean;
 }
+
+type ResultTab = "Translated" | "Original";
+
+interface ResultTabsProps {
+  sourceLang?: string | null;
+  targetLang?: string | null;
+  activeTab: ResultTab;
+  onTabChange: (tab: ResultTab) => void;
+}
+
+const langLabel = (
+  code: string | null | undefined,
+): { flag: string; name: string } => {
+  const upper = code?.toUpperCase() ?? "";
+  return { flag: (code && FLAG_MAP[code]) || "🌐", name: upper || "—" };
+};
+
+/**
+ * Compact segmented control for the two result views. Controlled — the parent
+ * owns the active tab (single source of truth) so the Listen/Copy/Share actions
+ * always target the visible tab. Original sits first, Translated is the default.
+ */
+const ResultTabs: React.FC<ResultTabsProps> = React.memo(
+  ({ sourceLang, targetLang, activeTab, onTabChange }) => {
+    const { color } = useTheme();
+
+    const src = langLabel(sourceLang);
+    const tgt = langLabel(targetLang);
+
+    const tabs: { key: ResultTab; label: string }[] = [
+      { key: "Original", label: `${src.flag} Original · ${src.name}` },
+      { key: "Translated", label: `${tgt.flag} Translated · ${tgt.name}` },
+    ];
+
+    return (
+      <Box
+        style={{
+          flexDirection: "row",
+          borderRadius: borderRadius["2xl"],
+          padding: 3,
+          marginBottom: spacing.md,
+          borderWidth: 1,
+          borderColor: color.border,
+          backgroundColor: color.surface,
+        }}
+      >
+        {tabs.map((tab) => {
+          const active = activeTab === tab.key;
+          return (
+            <Pressable
+              key={tab.key}
+              feedback="opacity"
+              onPress={() => onTabChange(tab.key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              style={{
+                flex: 1,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 4,
+                paddingVertical: spacing.sm,
+                paddingHorizontal: spacing.xs,
+                borderRadius: borderRadius["2xl"] - 4,
+                backgroundColor: active ? color.brand : "transparent",
+              }}
+            >
+              <Text variant="body">{tab.label.split(" ")[0]}</Text>
+              <Text
+                variant="caption"
+                numberOfLines={1}
+                style={{
+                  fontWeight: "600",
+                  color: active ? color.onBrand : color.muted,
+                }}
+              >
+                {tab.label.split(" ").slice(1).join(" ")}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </Box>
+    );
+  },
+);
 
 export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
   ({
@@ -30,56 +119,40 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
     translation,
     sourceLang,
     targetLang,
-    isDark,
     setStep,
     handleClose,
+    activeTab,
+    onTabChange,
+    audioPlayer,
+    copied = false,
   }) => {
     const { color } = useTheme();
-    const brandPrimary = color.brand;
 
-    const [activeTab, setActiveTab] = React.useState<
-      "Translation" | "Transcription"
-    >("Translation");
-
-    const handleTabChange = React.useCallback(
-      (tab: "Translation" | "Transcription") => {
-        setActiveTab(tab);
-      },
-      [],
-    );
+    const isTranslated = activeTab === "Translated";
+    const activeText = isTranslated ? translation : transcription;
+    const activeLang = isTranslated ? targetLang : sourceLang;
 
     return (
       <>
-        <ResultDisplay
-          transcription={transcription}
-          translation={translation}
-          defaultTab="Translation"
-          onTabChange={handleTabChange}
-          isDark={isDark}
+        <ResultTabs
+          activeTab={activeTab}
+          onTabChange={onTabChange}
           sourceLang={sourceLang}
           targetLang={targetLang}
         />
 
-        <Box
-          style={{
-            flexDirection: "row",
-            flexWrap: "wrap",
-            gap: spacing.sm,
-            marginBottom: spacing.md,
-          }}
-        >
-          <Badge
-            label="Echo Processed"
-            variant="primary"
-            icon={<CheckCircle2 size={12} color={brandPrimary} />}
-          />
-          {sourceLang && targetLang && (
-            <Badge
-              label={`${sourceLang.toUpperCase()} → ${targetLang.toUpperCase()}`}
-              variant="primary"
-            />
-          )}
-        </Box>
+        <TextBox
+          key={activeTab}
+          text={activeText}
+          height={330}
+          variant={isTranslated ? "accent" : "default"}
+          lead={isTranslated ? "Translation" : "Transcription"}
+          lang={activeLang}
+          withCheck
+          showShare={isTranslated}
+          copied={isTranslated ? copied : false}
+          audioPlayer={isTranslated ? null : audioPlayer}
+        />
 
         <Box style={{ flexDirection: "row", gap: spacing.md }}>
           <Pressable
@@ -90,43 +163,21 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
             }}
             style={{
               flex: 1,
+              minHeight: 54,
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "center",
               gap: spacing.sm,
-              paddingVertical: spacing.md,
               borderWidth: 1,
-              borderRadius: borderRadius.xl,
+              borderRadius: borderRadius["2xl"],
               borderColor: color.border,
             }}
           >
-            <Zap size={16} color={brandPrimary} />
-            <Text variant="bodySmall" style={{ color: brandPrimary }}>
+            <Zap size={16} color={color.brand} />
+            <Text variant="body" style={{ color: color.brand }}>
               Re-translate
             </Text>
           </Pressable>
-
-          <AnimatedCopyButton
-            textToCopy={
-              activeTab === "Translation" ? translation! : transcription!
-            }
-            size={16}
-            style={{
-              flex: 1,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: spacing.sm,
-              paddingVertical: spacing.md,
-              borderWidth: 1,
-              borderRadius: borderRadius.xl,
-              borderColor: color.border,
-            }}
-          >
-            <Text variant="bodySmall" style={{ color: color.foreground }}>
-              Copy
-            </Text>
-          </AnimatedCopyButton>
 
           <Pressable
             feedback="opacity"
@@ -138,13 +189,12 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
               justifyContent: "center",
               gap: spacing.sm,
               paddingVertical: spacing.md,
-              borderWidth: 1,
-              borderRadius: borderRadius.xl,
-              backgroundColor: brandPrimary,
+              borderRadius: borderRadius["2xl"],
+              backgroundColor: color.brand,
             }}
           >
             <CheckCircle2 size={16} color={color.onBrand} />
-            <Text variant="bodySmall" style={{ color: color.onBrand }}>
+            <Text variant="body" style={{ color: color.onBrand }}>
               Done
             </Text>
           </Pressable>

@@ -3,10 +3,10 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { triggerHaptic } from "@/utils/haptics";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
-import { useEffect, useCallback, useReducer, useRef } from "react";
+import { useEffect, useCallback, useReducer, useRef, useState } from "react";
 import { AppState } from "react-native";
 
-import { useEchoIntentResolver } from "./useEchoIntentResolver";
+import { useEchoAudioResolver } from "./useEchoAudioResolver";
 
 import { useTranslation } from "../useTranslation";
 
@@ -19,7 +19,7 @@ import { EchoStep, EchoProps, UseEchoFlowResult } from "@/types/echo";
 import { default as logger } from "@/utils/logger";
 import { isIOS } from "@/utils/platform";
 import { cleanEchoCache } from "@/utils/echo";
-import { resolveDetectedLanguage } from "@/utils/languageUtils";
+import { resolveDetectedLanguage, getDefaultSourceLang } from "@/utils/languageUtils";
 import { checkIsOnline } from "@/utils/netInfo";
 
 interface EchoState {
@@ -33,6 +33,7 @@ interface EchoState {
   llmProvider?: string;
   audioDuration: number;
   error: string | null;
+  uploadProgress: number | null;
 }
 
 type EchoAction =
@@ -46,6 +47,7 @@ type EchoAction =
       payload: { text: string | null; provider?: string };
     }
   | { type: "SET_AUDIO_DURATION"; payload: number }
+  | { type: "SET_UPLOAD_PROGRESS"; payload: number | null }
   | { type: "SET_ERROR"; payload: string | null }
   | { type: "RESET" };
 
@@ -73,6 +75,8 @@ const echoReducer = (state: EchoState, action: EchoAction): EchoState => {
       };
     case "SET_AUDIO_DURATION":
       return { ...state, audioDuration: action.payload };
+    case "SET_UPLOAD_PROGRESS":
+      return { ...state, uploadProgress: action.payload };
     case "SET_ERROR":
       return { ...state, error: action.payload };
     case "RESET":
@@ -82,29 +86,40 @@ const echoReducer = (state: EchoState, action: EchoAction): EchoState => {
         transcription: null,
         translation: null,
         detectedLang: null,
+        uploadProgress: null,
       };
     default:
       return state;
   }
 };
 
-export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
-  useEffect(() => {
-    // Audio engine is now handled natively
-  }, []);
-
-  const themePreference = useSelector(() => settings$.themePreference.get());
+export const useEchoFlow = (
+  props: EchoProps,
+  onPlayerRelease?: () => void,
+): UseEchoFlowResult => {
   const permissions = usePermissions();
   const autoCopySetting = useSelector(() => settings$.autoCopy.get());
   const autoCopy = permissions.autoCopy ? autoCopySetting : false;
   const session = useSelector(() => auth$.session.get());
+  const sourceApp = props.sourceApp || (isIOS ? "ios" : "");
 
-  const sourceApp = isIOS ? "iOS" : props.sourceApp || "Unknown App";
+  // Log the raw native sourceApp exactly once per mount, NOT on every render.
+  // `useEchoFlow` re-renders at the native status cadence (~2 Hz during
+  // playback) because `useAudioPlayerStatus` emits a fresh status object per
+  // event; a body-level log would otherwise spam the console per re-render.
+  const sourceAppLoggedRef = useRef(false);
+  if (!sourceAppLoggedRef.current) {
+    sourceAppLoggedRef.current = true;
+    logger.info(
+      "[EchoFlow] Raw sourceApp from native:",
+      JSON.stringify(props.sourceApp),
+    );
+  }
 
   // State Machine via Reducer
   const [state, dispatch] = useReducer(echoReducer, {
     step: "PickLanguage",
-    selectedLang: "auto",
+    selectedLang: getDefaultSourceLang(permissions.autoLanguageDetect),
     detectedLang: null,
     targetLang: "",
     transcription: null,
@@ -113,12 +128,24 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     llmProvider: undefined,
     audioDuration: 0,
     error: null,
+    uploadProgress: null,
   });
 
   const setStep = useCallback(
     (step: EchoStep) => dispatch({ type: "SET_STEP", payload: step }),
     [],
   );
+
+  // Auto-copy "copied" feedback flag: set true right after the automatic
+  // clipboard write, then reset shortly after so the copy button's check
+  // animation plays exactly once per auto-copy.
+  const [autoCopied, setAutoCopied] = useState(false);
+  const autoCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return (): void => {
+      if (autoCopyTimerRef.current) clearTimeout(autoCopyTimerRef.current);
+    };
+  }, []);
 
   // Transaction refs
   const savedRef = useRef(false);
@@ -127,6 +154,22 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
   const targetLangRef = useRef(state.targetLang);
   const sttRef = useRef(state.sttProvider);
   const durationRef = useRef(state.audioDuration);
+
+  // Abort controller for the in-flight transcribe/translate request, so the
+  // user can cancel mid-processing. Only one operation runs at a time.
+  const processingAbortRef = useRef<AbortController | null>(null);
+
+  // Remembers the last failed operation + its inputs so the Error step can
+  // retry with a single tap (without resetting the chosen language).
+  const lastOpRef = useRef<"transcribe" | "translate" | null>(null);
+  const lastTranscribeArgsRef = useRef<{
+    durationSeconds: number;
+    waveform: number[];
+  } | null>(null);
+
+  // Throttles upload-progress dispatches to whole-percent changes so the
+  // sheet doesn't re-render on every native progress event.
+  const lastUploadPctRef = useRef(-1);
 
   useEffect(() => {
     transcriptRef.current = state.transcription;
@@ -165,7 +208,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     activeResolvedUri,
     isSubsequentIntent,
     setIsSubsequentIntent,
-  } = useEchoIntentResolver(props);
+  } = useEchoAudioResolver(props);
 
   // Reset state on subsequent share intents
   useEffect(() => {
@@ -213,6 +256,13 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
 
     triggerHaptic("selection");
     dispatch({ type: "SET_STEP", payload: "Transcribing" });
+    dispatch({ type: "SET_UPLOAD_PROGRESS", payload: 0 });
+    lastUploadPctRef.current = -1;
+    lastTranscribeArgsRef.current = { durationSeconds, waveform };
+    lastOpRef.current = "transcribe";
+
+    const controller = new AbortController();
+    processingAbortRef.current = controller;
 
     const isOnline = await checkIsOnline();
     if (!isOnline) {
@@ -221,6 +271,7 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
         payload: "Transcription requires an active internet connection.",
       });
       dispatch({ type: "SET_STEP", payload: "Error" });
+      dispatch({ type: "SET_UPLOAD_PROGRESS", payload: null });
       return;
     }
 
@@ -238,7 +289,30 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
           waveform: [],
         },
         state.selectedLang,
+        controller.signal,
+        (fraction) => {
+          // Upload done → the worker pipeline is running server-side; switch
+          // to the indeterminate phase so the bar doesn't sit at 100%.
+          if (fraction >= 1) {
+            lastUploadPctRef.current = -1;
+            dispatch({ type: "SET_UPLOAD_PROGRESS", payload: null });
+            return;
+          }
+          // Throttle to whole-percent changes to limit re-renders.
+          const pct = Math.round(fraction * 100);
+          if (pct !== lastUploadPctRef.current) {
+            lastUploadPctRef.current = pct;
+            dispatch({ type: "SET_UPLOAD_PROGRESS", payload: fraction });
+          }
+        },
       );
+
+      if (controller.signal.aborted) {
+        // User cancelled → back to the config step, no error.
+        dispatch({ type: "SET_ERROR", payload: null });
+        dispatch({ type: "SET_STEP", payload: "Preview" });
+        return;
+      }
 
       if (!trResult.ok) {
         throw new Error(trResult.error);
@@ -260,14 +334,22 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
         },
       });
 
+      lastOpRef.current = null;
       triggerHaptic(Haptics.NotificationFeedbackType.Success);
       dispatch({ type: "SET_STEP", payload: "TranscribeResult" });
     } catch (err: unknown) {
+      if (controller.signal.aborted) {
+        dispatch({ type: "SET_ERROR", payload: null });
+        dispatch({ type: "SET_STEP", payload: "Preview" });
+        return;
+      }
       const message = err instanceof Error ? err.message : "Unknown error";
       logger.error("[EchoFlow] Transcription Error:", message);
       dispatch({ type: "SET_ERROR", payload: message });
       dispatch({ type: "SET_STEP", payload: "Error" });
     } finally {
+      processingAbortRef.current = null;
+      dispatch({ type: "SET_UPLOAD_PROGRESS", payload: null });
       deactivateKeepAwake("echoSession").catch(() => {});
     }
   };
@@ -288,6 +370,10 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     // Clear old translation immediately to prevent "brief text flash"
     dispatch({ type: "SET_TRANSLATION", payload: { text: null } });
     dispatch({ type: "SET_STEP", payload: "Translating" });
+    lastOpRef.current = "translate";
+
+    const controller = new AbortController();
+    processingAbortRef.current = controller;
 
     const isOnline = await checkIsOnline();
     if (!isOnline) {
@@ -303,7 +389,19 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
 
     try {
       activateKeepAwakeAsync("echoSession").catch(() => {});
-      const trResult = await translate(textToTranslate, source, target);
+      const trResult = await translate(
+        textToTranslate,
+        source,
+        target,
+        controller.signal,
+      );
+
+      if (controller.signal.aborted) {
+        // User cancelled → back to the transcript, no error.
+        dispatch({ type: "SET_ERROR", payload: null });
+        dispatch({ type: "SET_STEP", payload: "TranscribeResult" });
+        return;
+      }
 
       if (!trResult.ok) {
         throw new Error(trResult.error);
@@ -320,18 +418,28 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
 
       if (autoCopy && translationResultText) {
         await Clipboard.setStringAsync(translationResultText);
+        setAutoCopied(true);
+        if (autoCopyTimerRef.current) clearTimeout(autoCopyTimerRef.current);
+        autoCopyTimerRef.current = setTimeout(() => setAutoCopied(false), 2000);
       }
     } catch (e: unknown) {
+      if (controller.signal.aborted) {
+        dispatch({ type: "SET_ERROR", payload: null });
+        dispatch({ type: "SET_STEP", payload: "TranscribeResult" });
+        return;
+      }
       const message = e instanceof Error ? e.message : "Unknown error";
       logger.error("Translate Error:", message);
       dispatch({ type: "SET_ERROR", payload: message });
       dispatch({ type: "SET_STEP", payload: "Error" });
       return; // Stop flow on translation error
     } finally {
+      processingAbortRef.current = null;
       deactivateKeepAwake("echoSession").catch(() => {});
     }
 
     // Record to history safely: single "both" write (Full Transaction)
+    lastOpRef.current = null;
     savedRef.current = true;
     await HistoryService.recordTranslation(
       {
@@ -350,6 +458,25 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
 
     triggerHaptic(Haptics.NotificationFeedbackType.Success);
     dispatch({ type: "SET_STEP", payload: "FullResult" });
+  };
+
+  // Cancels the in-flight transcribe/translate request. The operation handlers
+  // observe `controller.signal.aborted` and return to their originating step.
+  const cancelProcessing = useCallback((): void => {
+    processingAbortRef.current?.abort();
+  }, []);
+
+  // Re-runs the operation that failed, keeping the user's language choices.
+  // The Error step calls this instead of resetting to the language picker.
+  const retryOperation = async (): Promise<void> => {
+    if (lastOpRef.current === "translate") {
+      await handleTranslate();
+    } else if (lastTranscribeArgsRef.current) {
+      await handleTranscribe(
+        lastTranscribeArgsRef.current.durationSeconds,
+        lastTranscribeArgsRef.current.waveform,
+      );
+    }
   };
 
   const onDismiss = useCallback((): void => {
@@ -375,13 +502,16 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
       );
     }
 
+    // Release the native player BEFORE the cache files it may still reference
+    // are deleted, so a backgrounded app never tries to play a removed file.
+    onPlayerRelease?.();
     if (activeResolvedUri.current) cleanEchoCache(activeResolvedUri.current);
     if (audioUri && audioUri !== activeResolvedUri.current) {
       cleanEchoCache(audioUri);
     }
     deactivateKeepAwake("echoSession").catch(() => {});
     IntentService.dismissEcho();
-  }, [sourceApp, session, audioUri, activeResolvedUri]);
+  }, [sourceApp, session, audioUri, activeResolvedUri, onPlayerRelease]);
 
   // Clean up and dismiss if the user backgrounds the app
   useEffect(() => {
@@ -415,11 +545,15 @@ export const useEchoFlow = (props: EchoProps): UseEchoFlowResult => {
     sourceApp,
     isResolving,
     convertedWaveform,
-    themePreference,
+    convertedDurationMs,
     handleTranscribe,
     handleTranslate,
+    cancelProcessing,
+    retryOperation,
     audioDuration: state.audioDuration,
     error: state.error,
+    uploadProgress: state.uploadProgress,
+    autoCopied,
     onDismiss,
   };
 };
