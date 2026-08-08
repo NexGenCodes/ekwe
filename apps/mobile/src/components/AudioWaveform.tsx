@@ -73,7 +73,10 @@ const BarItem = React.memo(function BarItem({
   const step = useDerivedValue(() => measuredWidth.value / barCount);
   const x = useDerivedValue(() => index * step.value);
   const barWidth = useDerivedValue(() =>
-    Math.max(minBarHeight, Math.min(DEFAULT_BAR_W, step.value - DEFAULT_BAR_GAP)),
+    Math.max(
+      minBarHeight,
+      Math.min(DEFAULT_BAR_W, step.value - DEFAULT_BAR_GAP),
+    ),
   );
   const barRadius = useDerivedValue(() => barWidth.value / 2);
 
@@ -178,54 +181,84 @@ export function AudioWaveform({
     measuredWidth.value = event.nativeEvent.layout.width;
   };
 
-  const gesture = Gesture.Pan()
-    .enabled(interactive)
-    .onBegin(() => {
-      if (onScrubStateChange) runOnJS(onScrubStateChange)(true);
-    })
-    .onUpdate((event) => {
-      const progress = Math.max(0, Math.min(1, event.x / measuredWidth.value));
-      if (progressSV && duration) {
-        progressSV.value = progress * duration;
-      }
-      if (onSeeking) {
-        runOnJS(onSeeking)(progress);
-      }
-    })
-    .onEnd((event) => {
-      if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
-      if (onSeek) {
-        const progress = Math.max(
-          0,
-          Math.min(1, event.x / measuredWidth.value),
-        );
-        runOnJS(onSeek)(progress);
-      }
-    })
-    .onFinalize(() => {
-      if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
-    });
+  // The gesture objects must keep a stable identity: GestureDetector re-attaches
+  // when its `gesture` prop identity changes, so rebuilding these each render
+  // (as would happen from a fast parent like PlaybackControl) churns the native
+  // gesture handler. Anchoring the composition on the values the handlers
+  // capture keeps it stable across renders.
+  const gesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(interactive)
+        .onBegin(() => {
+          if (onScrubStateChange) runOnJS(onScrubStateChange)(true);
+        })
+        .onUpdate((event) => {
+          const progress = Math.max(
+            0,
+            Math.min(1, event.x / measuredWidth.value),
+          );
+          if (progressSV && duration) {
+            progressSV.value = progress * duration;
+          }
+          if (onSeeking) {
+            runOnJS(onSeeking)(progress);
+          }
+        })
+        .onEnd((event) => {
+          if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
+          if (onSeek) {
+            const progress = Math.max(
+              0,
+              Math.min(1, event.x / measuredWidth.value),
+            );
+            runOnJS(onSeek)(progress);
+          }
+        })
+        .onFinalize(() => {
+          if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
+        }),
+    [
+      interactive,
+      onScrubStateChange,
+      measuredWidth,
+      progressSV,
+      duration,
+      onSeeking,
+      onSeek,
+    ],
+  );
 
-  const tap = Gesture.Tap()
-    .enabled(interactive)
-    .onBegin(() => {
-      if (onScrubStateChange) runOnJS(onScrubStateChange)(true);
-    })
-    .onEnd((event) => {
-      if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
-      if (onSeek) {
-        const progress = Math.max(
-          0,
-          Math.min(1, event.x / measuredWidth.value),
-        );
-        runOnJS(onSeek)(progress);
-      }
-    })
-    .onFinalize(() => {
-      if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
-    });
+  const tap = useMemo(
+    () =>
+      Gesture.Tap()
+        .enabled(interactive)
+        .onBegin(() => {
+          if (onScrubStateChange) runOnJS(onScrubStateChange)(true);
+        })
+        .onEnd((event) => {
+          if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
+          if (onSeek) {
+            const progress = Math.max(
+              0,
+              Math.min(1, event.x / measuredWidth.value),
+            );
+            runOnJS(onSeek)(progress);
+          }
+        })
+        .onFinalize(() => {
+          if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
+        }),
+    // `measuredWidth` is a useSharedValue: the object is stable across renders
+    // and `.value` is read inside the gesture callback, not during render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [interactive, onScrubStateChange, onSeek],
+  );
 
-  const composed = Gesture.Exclusive(gesture, tap);
+  const composed = useMemo(
+    () => Gesture.Exclusive(gesture, tap),
+    [gesture, tap],
+  );
 
   const bars = useMemo(() => {
     const result: number[] = [];

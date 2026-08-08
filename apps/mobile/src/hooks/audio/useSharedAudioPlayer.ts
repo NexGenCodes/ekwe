@@ -5,7 +5,7 @@ import {
   setIsAudioActiveAsync,
 } from "expo-audio";
 import { triggerHaptic } from "@/utils/haptics";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useSharedValue,
   SharedValue,
@@ -115,6 +115,12 @@ export const useSharedAudioPlayer = (
   // events from the native player and triggers a re-render on each change.
   // Reading `player.playing`/`player.currentTime` directly does NOT re-render,
   // which is why the progress loop never started before.
+  //
+  // NOTE: status events tick every ~500ms while playing, so this hook re-renders
+  // at ~2Hz. Consumers must MEMO on the stable controller (see the return below)
+  // so a tick only invalidates the UI that actually displays the clock (the
+  // elapsed-time caption), not the whole sheet. The waveform + seek bar read the
+  // 60fps `progressSV` on the UI thread and are unaffected by JS ticks.
   const status = useAudioPlayerStatus(player);
 
   // WhatsApp-style progress clock. Native status events only arrive every
@@ -293,12 +299,18 @@ export const useSharedAudioPlayer = (
   const beginScrub = useCallback((): void => {
     if (releasedRef.current) return;
     // Resume is allowed ONLY when the audio was actively playing mid-track. A
-    // paused or finished track never resumes after a scrub.
+    // paused or finished track never resumes after a scrub. Additionally, guard
+    // on the playhead position: the JS clock can clamp to the track end before
+    // the native `didJustFinish` event lands, so during that brief window
+    // `isPlaying` is still true while the audio has actually finished — dragging
+    // a completed track must not re-run it.
+    const atEnd =
+      duration > 0 && progressSV.value >= duration - 0.05;
     resumeAfterScrubRef.current =
-      isPlayingRef.current && !isEndedRef.current;
+      isPlayingRef.current && !isEndedRef.current && !atEnd;
     if (isPlayingRef.current) player.pause();
     setScrubbing(true);
-  }, [player, setScrubbing]);
+  }, [player, setScrubbing, duration, progressSV]);
 
   const endScrub = useCallback(
     async (seconds: number): Promise<void> => {
@@ -365,21 +377,51 @@ export const useSharedAudioPlayer = (
     };
   }, [release]);
 
-  return {
-    play,
-    playFromStart,
-    pause,
-    release,
-    setPlaybackRate,
-    beginScrub,
-    endScrub,
-    isPlaying,
-    progress,
-    progressSV,
-    duration,
-    isDecoding: status.isBuffering,
-    isLoaded: status.isLoaded,
-    playbackRate,
-    isEnded,
-  };
+  // Every public method must remain a stable reference so memoized consumers
+  // hold their boundaries; only the live scalar fields churn. The elapsed-time
+  // caption is whole-second precision (formatDuration rounds), so keying the
+  // controller identity on the displayed second collapses the ~2Hz native
+  // status ticks into ~1Hz identity changes — the sheet's memoized steps only
+  // re-render at the tick that actually moves the visible clock. The 60fps
+  // seek bar reads progressSV (UI thread) and is unaffected by this coarse
+  // React cadence.
+  const progressDisplay = Math.round(progress);
+  const controller = useMemo(
+    () => ({
+      play,
+      playFromStart,
+      pause,
+      release,
+      setPlaybackRate,
+      beginScrub,
+      endScrub,
+      isPlaying,
+      progress: progressDisplay,
+      progressSV,
+      duration,
+      isDecoding: status.isBuffering,
+      isLoaded: status.isLoaded,
+      playbackRate,
+      isEnded,
+    }),
+    [
+      play,
+      playFromStart,
+      pause,
+      release,
+      setPlaybackRate,
+      beginScrub,
+      endScrub,
+      isPlaying,
+      progressDisplay,
+      progressSV,
+      duration,
+      status.isBuffering,
+      status.isLoaded,
+      playbackRate,
+      isEnded,
+    ],
+  );
+
+  return controller;
 };

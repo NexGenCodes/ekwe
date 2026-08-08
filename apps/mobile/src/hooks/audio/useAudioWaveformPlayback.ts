@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { SharedAudioPlayer, useSharedAudioPlayer } from "./useSharedAudioPlayer";
 
@@ -62,5 +62,14 @@ export const useAudioWaveformPlayback = (
     };
   }, []);
 
-  return { ...player, peaks };
+  // Memoize the merged controller so identity only churns when the underlying
+  // player controller or `peaks` actually change. Without this the per-render
+  // `{ ...player, peaks }` spread below would hand memoized step components a
+  // brand-new prop object on EVERY parent render (~2Hz status ticks), silently
+  // undoing their React.memo boundary.
+  return useMemo(
+    () => ({ ...playerRef.current, peaks }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [player, peaks],
+  );
 };

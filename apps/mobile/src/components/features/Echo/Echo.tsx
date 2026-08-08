@@ -1,4 +1,3 @@
-import { useSelector } from "@legendapp/state/react";
 import X from "lucide-react-native/icons/x";
 import AlertCircle from "lucide-react-native/icons/circle-alert";
 import RefreshCw from "lucide-react-native/icons/refresh-cw";
@@ -23,7 +22,6 @@ import { useEchoFlow } from "@/hooks/echo";
 import { useAudioWaveformPlayback } from "@/hooks/audio";
 import { useTheme } from "@/hooks/ui";
 import { initAuth } from "@/services/auth";
-import { auth$ } from "@/store";
 import { EchoProps, EchoStep } from "@/types/echo";
 import { withAlpha } from "@/utils/color";
 import { formatSourceApp } from "@/utils/formatSource";
@@ -44,7 +42,6 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     initAuth();
   }, []);
 
-  const userSession = useSelector(() => auth$.session.get());
   const { onClose } = props;
 
   // The native player is created below; `useEchoFlow` may call its release (on
@@ -71,6 +68,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     handleTranslate,
     cancelProcessing,
     retryOperation,
+    resolveRetryable,
     audioDuration,
     error,
     uploadProgress,
@@ -100,7 +98,9 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   );
 
   // Keep the flow's release hook pointed at the live player controller.
-  playerReleaseRef.current = player.release;
+  useEffect(() => {
+    playerReleaseRef.current = player.release;
+  }, [player.release]);
 
   const availableTargetList = useMemo(
     () => LANGUAGES.filter((l) => l.defaultSelected && l.code !== detectedLang),
@@ -117,9 +117,10 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   );
 
   const handleClose = useCallback((): void => {
+    if (step === "Transcribing" || step === "Translating") return;
     onDismiss();
     onClose?.();
-  }, [onDismiss, onClose]);
+  }, [onDismiss, onClose, step]);
 
   const handleLanguageSelected = useCallback(
     (code: string): void => {
@@ -129,41 +130,65 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     [setSelectedLang, setStep],
   );
 
-  const renderStepContent = (currentStep: EchoStep): React.ReactElement => {
-    if (!userSession) {
-      return (
-        <Box
+  // Stable footer for the Preview step. It's rendered as `children` of the
+  // memoized EchoPreviewStep, so it must NOT be rebuilt each parent render
+  // (Echo re-renders ~2Hz on audio status ticks) — a fresh element identity
+  // would silently defeat that memo. Memoizing on language + theme keeps it
+  // identical across status ticks.
+  const previewFooter = useMemo(
+    () => (
+      <Box
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          paddingVertical: spacing.md,
+          borderTopWidth: 1,
+          marginTop: spacing.sm,
+          borderTopColor: color.border,
+        }}
+      >
+        <Text variant="bodySmall" style={{ color: color.muted }}>
+          {selectedLang === "auto" ? "Language: " : "Source Language: "}
+        </Text>
+        <Text
+          variant="bodySmall"
           style={{
-            alignItems: "center",
-            justifyContent: "center",
-            paddingVertical: spacing["3xl"],
+            flex: 1,
+            marginLeft: spacing.sm,
+            color: color.brand,
           }}
         >
-          <AlertCircle
-            size={48}
-            color={color.error}
-            style={{ marginBottom: spacing.md }}
-          />
-          <Text
-            variant="heading3"
-            style={{ marginTop: spacing.lg, textAlign: "center" }}
-          >
-            Login Required
+          {selectedLangName}
+        </Text>
+        <Pressable
+          feedback="opacity"
+          onPress={() => setStep("PickLanguage")}
+          accessibilityLabel="Change language"
+          style={{
+            paddingVertical: spacing.sm,
+            paddingHorizontal: spacing.md,
+            borderRadius: borderRadius["2xl"],
+            backgroundColor: color.brand,
+          }}
+        >
+          <Text variant="bodySmall" style={{ color: color.onBrand }}>
+            Change
           </Text>
-          <Text
-            variant="bodySmall"
-            style={{
-              color: color.muted,
-              textAlign: "center",
-              marginTop: spacing.sm,
-            }}
-          >
-            Please open the Ekwe app and log in to translate shared files.
-          </Text>
-        </Box>
-      );
-    }
+        </Pressable>
+      </Box>
+    ),
+    [
+      selectedLang,
+      selectedLangName,
+      color.border,
+      color.muted,
+      color.brand,
+      color.onBrand,
+      setStep,
+    ],
+  );
 
+  const renderStepContent = (currentStep: EchoStep): React.ReactElement => {
     switch (currentStep) {
       case "PickLanguage":
         return (
@@ -181,45 +206,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             peaks={convertedWaveform}
             onTranscribe={handleTranscribe}
           >
-            <Box
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                paddingVertical: spacing.md,
-                borderTopWidth: 1,
-                marginTop: spacing.sm,
-                borderTopColor: color.border,
-              }}
-            >
-              <Text variant="bodySmall" style={{ color: color.muted }}>
-                {selectedLang === "auto" ? "Language: " : "Source Language: "}
-              </Text>
-              <Text
-                variant="bodySmall"
-                style={{
-                  flex: 1,
-                  marginLeft: spacing.sm,
-                  color: color.brand,
-                }}
-              >
-                {selectedLangName}
-              </Text>
-              <Pressable
-                feedback="opacity"
-                onPress={() => setStep("PickLanguage")}
-                accessibilityLabel="Change language"
-                style={{
-                  paddingVertical: spacing.sm,
-                  paddingHorizontal: spacing.md,
-                  borderRadius: borderRadius["2xl"],
-                  backgroundColor: color.brand,
-                }}
-              >
-                <Text variant="bodySmall" style={{ color: color.onBrand }}>
-                  Change
-                </Text>
-              </Pressable>
-            </Box>
+            {previewFooter}
           </EchoPreviewStep>
         );
 
@@ -330,25 +317,27 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             >
               Please check your connection and try again.
             </Text>
-            <Pressable
-              feedback="opacity"
-              onPress={() => void retryOperation()}
-              accessibilityLabel="Try again"
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                paddingVertical: spacing.md,
-                paddingHorizontal: spacing.lg,
-                borderRadius: borderRadius["2xl"],
-                gap: spacing.sm,
-                backgroundColor: color.brand,
-              }}
-            >
-              <RefreshCw size={16} color={color.onBrand} />
-              <Text variant="bodySmall" style={{ color: color.onBrand }}>
-                Try Again
-              </Text>
-            </Pressable>
+            {resolveRetryable && (
+              <Pressable
+                feedback="opacity"
+                onPress={() => void retryOperation()}
+                accessibilityLabel="Try again"
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingVertical: spacing.md,
+                  paddingHorizontal: spacing.lg,
+                  borderRadius: borderRadius["2xl"],
+                  gap: spacing.sm,
+                  backgroundColor: color.brand,
+                }}
+              >
+                <RefreshCw size={16} color={color.onBrand} />
+                <Text variant="bodySmall" style={{ color: color.onBrand }}>
+                  Try Again
+                </Text>
+              </Pressable>
+            )}
           </Box>
         );
       default:

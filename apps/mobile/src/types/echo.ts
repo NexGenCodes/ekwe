@@ -50,6 +50,9 @@ export interface UseEchoFlowResult {
   handleTranslate: () => Promise<void>;
   cancelProcessing: () => void;
   retryOperation: () => Promise<void>;
+  /** False when the last resolution error is terminal (e.g. FILE_TOO_LARGE),
+   *  so the Error step must not offer "Try Again". */
+  resolveRetryable: boolean;
   audioDuration: number;
   uploadProgress: number | null;
   error: string | null;

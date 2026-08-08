@@ -1,4 +1,4 @@
-import { File } from "expo-file-system";
+import { File, Paths } from "expo-file-system";
 
 import { isAndroid } from "./platform";
 import EkweNative from "../../modules/ekwe-native";
@@ -6,18 +6,19 @@ import EkweNative from "../../modules/ekwe-native";
 import { logger } from "@/utils";
 
 /**
- * Formats seconds into MM:SS format, rounding to the nearest second so the
- * shown length matches how other players (WhatsApp) report durations — e.g. a
- * 9.9s clip shows "0:10" instead of flooring to "0:09". Without this, the
- * displayed total runs short and the last ~1s of the waveform appears to fill
- * "before" playback actually ends.
+ * Whether a URI lives in the app's own writable cache directory. This is the
+ * only place Echo writes temporary converted files, so cleanup is scoped to it
+ * instead of a fragile "contains Cache" substring check.
  */
-export const formatDuration = (seconds: number): string => {
-  if (!seconds || isNaN(seconds)) return "0:00";
-  const rounded = Math.round(seconds);
-  const mins = Math.floor(rounded / 60);
-  const secs = rounded % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
+const isCacheUri = (uri: string): boolean => {
+  try {
+    const cache = Paths.cache.uri;
+    return uri.startsWith(cache);
+  } catch {
+    // Paths.cache unavailable (tests/server env) — fall back to a defensive
+    // substring match rather than risking a false-negative delete.
+    return uri.includes("/Cache/") || uri.includes("/cache/");
+  }
 };
 
 /**
@@ -29,8 +30,8 @@ export const cleanEchoCache = async (
   if (!uri) return;
 
   try {
-    // 1. Filesystem cleanup
-    if (uri.includes("Cache") || uri.includes("cache")) {
+    // 1. Filesystem cleanup — only touch files we created in the cache dir.
+    if (isCacheUri(uri)) {
       const f = new File(uri);
       if (f.exists) f.delete();
     }
