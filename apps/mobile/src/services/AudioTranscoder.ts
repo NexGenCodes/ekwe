@@ -22,7 +22,9 @@ class AudioTranscoderClass {
       const cacheDir = Paths.cache.uri;
       if (!cacheDir) return err(EkweError.PROCESSOR_FAIL);
 
-      const outputPath = `${cacheDir}ekwe_converted_${Date.now()}.ogg`;
+      const outputPath = `${cacheDir}ekwe_converted_${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}.ogg`;
 
       // The iOS share extension hands us a file:// URL; the C++ decoder (and
       // Android's resolvePath) expects a plain filesystem path.

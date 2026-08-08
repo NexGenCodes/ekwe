@@ -10,7 +10,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\" --ignore-path .gitignore",
     "android": "turbo run android",
     "ios": "turbo run ios",
-    "prebuild": "cd apps/mobile && npx expo prebuild"
+    "gen:tokens": "node scripts/tokens/gen-tokens.mjs",
+    "gen:icons": "node scripts/icons/generate-icons.mjs"
   },
   "dependencies": {
     "libopus-wasm": "^0.2.0"

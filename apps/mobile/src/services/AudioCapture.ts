@@ -261,7 +261,7 @@ class AudioCaptureClass {
         this.currentSessionId = null;
         this.currentMeteringData = [];
         this.notifyStatusListeners("stopped");
-        return ok({ uri: "", durationMs: 0, sessionId, meteringData: [] });
+        return err(EkweError.AUDIO_RECORD_FAIL);
       }
       const uri = this.currentRecordingPath ?? "";
       const durationMs = result.durationMs;
@@ -292,7 +292,7 @@ class AudioCaptureClass {
       this.currentSessionId = null;
       this.currentMeteringData = [];
       this.notifyStatusListeners("stopped");
-      return ok({ uri: "", durationMs: 0, sessionId, meteringData: [] });
+      return err(EkweError.AUDIO_RECORD_FAIL);
     }
   }
 

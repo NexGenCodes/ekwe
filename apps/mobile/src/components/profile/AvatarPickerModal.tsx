@@ -13,22 +13,35 @@ import React from "react";
 import { Modal } from "react-native";
 
 import { Box, Text, Pressable } from "@/components/ui";
-import { palette } from "@/constants/colors";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 import { withAlpha } from "@/utils/color";
 
+// Cosmetic swatch colors for the avatar picker. Purely decorative — not part
+// of the design-token system, so they live with the component.
+const AVATAR_COLORS = {
+  smile: "#F5A524",
+  ghost: "#006FEE",
+  sparkles: "#17C964",
+  heart: "#F31260",
+  star: "#FBBF24",
+  zap: "#3B82F6",
+  coffee: "#A1A1AA",
+  music: "#F87171",
+  rocket: "#4ADE80",
+} as const;
+
 export const AVATAR_ICONS = [
-  { name: "Smile", icon: Smile, color: palette.amber500 },
-  { name: "Ghost", icon: Ghost, color: palette.blue600 },
-  { name: "Sparkles", icon: Sparkles, color: palette.green500 },
-  { name: "Heart", icon: Heart, color: palette.rose500 },
-  { name: "Star", icon: Star, color: palette.amber400 },
-  { name: "Zap", icon: Zap, color: palette.blue500 },
-  { name: "Coffee", icon: Coffee, color: palette.neutral400 },
-  { name: "Music", icon: Music, color: palette.rose400 },
-  { name: "Rocket", icon: Rocket, color: palette.green400 },
+  { name: "Smile", icon: Smile, color: AVATAR_COLORS.smile },
+  { name: "Ghost", icon: Ghost, color: AVATAR_COLORS.ghost },
+  { name: "Sparkles", icon: Sparkles, color: AVATAR_COLORS.sparkles },
+  { name: "Heart", icon: Heart, color: AVATAR_COLORS.heart },
+  { name: "Star", icon: Star, color: AVATAR_COLORS.star },
+  { name: "Zap", icon: Zap, color: AVATAR_COLORS.zap },
+  { name: "Coffee", icon: Coffee, color: AVATAR_COLORS.coffee },
+  { name: "Music", icon: Music, color: AVATAR_COLORS.music },
+  { name: "Rocket", icon: Rocket, color: AVATAR_COLORS.rocket },
 ];
 
 interface AvatarPickerModalProps {

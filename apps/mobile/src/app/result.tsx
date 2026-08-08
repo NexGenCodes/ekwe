@@ -52,7 +52,7 @@ export default function ResultScreen(): React.JSX.Element {
   }, [transcript, isHistoryReplay]);
 
   return (
-    <Box style={styles.overlay}>
+    <Box style={[styles.overlay, { backgroundColor: color.overlay }]}>
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={() => router.back()}
@@ -110,7 +110,6 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
   },
   sheetContainer: {
     borderTopLeftRadius: borderRadius["2xl"],

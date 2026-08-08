@@ -362,6 +362,7 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
                   accessibilityRole="button"
                   accessibilityLabel="Share result"
                   onPress={handleShare}
+                  hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                   style={{
                     width: 36,
                     height: 36,

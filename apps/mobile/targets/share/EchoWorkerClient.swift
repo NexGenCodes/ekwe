@@ -1,0 +1,455 @@
+import Foundation
+
+/// Build-time constants for the native echo sheet.
+///
+/// These are non-secret `EXPO_PUBLIC_*` values (the anon key is a publishable
+/// key that ships in the app binary; the URLs are public). They must stay in
+/// sync with `apps/mobile/.env`.
+@available(iOS 16.4, *)
+enum EchoEnvironment {
+    static let workerURL = URL(string: "https://ekwe-proxy.ekwe.workers.dev")!
+    static let supabaseURL = URL(string: "https://zsjcgebczzbmaarfcdny.supabase.co")!
+    static let supabaseAnonKey = "sb_publishable_CJoH2-aFPqmP1sGB4iZv1Q_wSl_fiyg"
+    static let appGroupID = "group.com.ekwe.app"
+}
+
+// MARK: - Session
+
+@available(iOS 16.4, *)
+struct EchoSession {
+    let accessToken: String
+    let refreshToken: String
+    let expiresAt: TimeInterval?
+    let userID: String?
+
+    var isExpired: Bool {
+        guard let expiresAt else { return true }
+        return Date().timeIntervalSince1970 >= expiresAt - 30
+    }
+}
+
+// MARK: - Session store
+
+/// Restores the authenticated Supabase session that the app mirrored into the
+/// shared App Group container (`shared-session.json`), refreshing the access
+/// token via the Supabase token endpoint when it has expired.
+@available(iOS 16.4, *)
+final class EchoSessionStore {
+
+    private var sessionFileURL: URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: EchoEnvironment.appGroupID)?
+            .appendingPathComponent("shared-session.json")
+    }
+
+    /// Returns the current access token (refreshed if needed) or nil when the
+    /// user isn't signed in.
+    func accessToken() async -> String? {
+        await restore()?.accessToken
+    }
+
+    func restore(refreshIfExpired: Bool = true) async -> EchoSession? {
+        guard let fileURL = sessionFileURL,
+              let data = try? Data(contentsOf: fileURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return nil
+        }
+
+        let access = json["access_token"] as? String
+        let refresh = json["refresh_token"] as? String
+        let expiresAt = (json["expires_at"] as? NSNumber)?.doubleValue
+        var userID: String? = nil
+        if let user = json["user"] as? [String: Any] {
+            userID = user["id"] as? String
+        } else if let id = json["user_id"] as? String {
+            userID = id
+        }
+
+        guard let access, let refresh else { return nil }
+        var session = EchoSession(accessToken: access, refreshToken: refresh, expiresAt: expiresAt, userID: userID)
+
+        if refreshIfExpired, session.isExpired {
+            if let fresh = await refresh(session) {
+                session = fresh
+            }
+        }
+        return session
+    }
+
+    private func refresh(_ session: EchoSession) async -> EchoSession? {
+        guard let url = URL(string: "\(EchoEnvironment.supabaseURL.absoluteString)/auth/v1/token?grant_type=refresh_token")
+        else { return nil }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(EchoEnvironment.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(EchoEnvironment.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 20
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["refresh_token": session.refreshToken],
+            options: []
+        )
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            guard let access = json["access_token"] as? String,
+                  let refresh = json["refresh_token"] as? String
+            else { return nil }
+
+            let expiresAt = (json["expires_at"] as? NSNumber)?.doubleValue
+            var userID: String? = nil
+            if let user = json["user"] as? [String: Any] { userID = user["id"] as? String }
+            let fresh = EchoSession(accessToken: access, refreshToken: refresh, expiresAt: expiresAt, userID: userID)
+
+            persist(fresh)
+            return fresh
+        } catch {
+            return nil
+        }
+    }
+
+    /// Rewrites the mirrored file with the refreshed tokens so the app and
+    /// extension never diverge.
+    private func persist(_ session: EchoSession) {
+        guard let fileURL = sessionFileURL else { return }
+        var payload: [String: Any] = [
+            "access_token": session.accessToken,
+            "refresh_token": session.refreshToken,
+        ]
+        if let expiresAt = session.expiresAt { payload["expires_at"] = expiresAt }
+        if let userID = session.userID { payload["user_id"] = userID }
+        if let data = try? JSONSerialization.data(withJSONObject: payload) {
+            try? data.write(to: fileURL, options: [.atomic, .completeUntilFirstUserAuthentication])
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? fileURL.setResourceValues(values)
+        }
+    }
+}
+
+// MARK: - Shared preferences
+
+/// Preferences the app mirrored into `shared-settings.json`.
+@available(iOS 16.4, *)
+final class EchoUserPreferences {
+    private struct Prefs: Decodable {
+        let selectedLanguages: [String]?
+        let autoCopy: Bool?
+        let autoDetectAllowed: Bool?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            selectedLanguages = try c.decodeIfPresent([String].self, forKey: .selectedLanguages)
+            autoCopy = try c.decodeIfPresent(Bool.self, forKey: .autoCopy)
+            autoDetectAllowed = try c.decodeIfPresent(Bool.self, forKey: .autoDetectAllowed)
+        }
+        enum CodingKeys: String, CodingKey {
+            case selectedLanguages, autoCopy, autoDetectAllowed
+        }
+    }
+
+    private let url: URL?
+
+    init(fileName: String = "shared-settings.json") {
+        url = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: EchoEnvironment.appGroupID)?
+            .appendingPathComponent(fileName)
+    }
+
+    private func decode() -> Prefs? {
+        guard let url,
+              let data = try? Data(contentsOf: url)
+        else { return nil }
+        return try? JSONDecoder().decode(Prefs.self, from: data)
+    }
+
+    lazy var languages: [String] = {
+        decode()?.selectedLanguages ?? []
+    }()
+
+    lazy var autoCopy: Bool = {
+        // Opt-in copy is the safe default when the file is missing.
+        decode()?.autoCopy ?? true
+    }()
+
+    /// Whether the signed-in user may pick "Auto-Detect" (gated by the app's
+    /// is_pro tier and mirrored from the shared settings). Falls back to false
+    /// so a stale/missing flag never unlocks a Pro-gated feature.
+    lazy var autoDetectAllowed: Bool = {
+        decode()?.autoDetectAllowed ?? false
+    }()
+}
+
+// MARK: - Worker client
+
+/// Client for the Ekwe Cloudflare Worker `/transcribe` and `/translate`.
+@available(iOS 16.4, *)
+@MainActor
+final class EchoWorkerClient {
+
+    struct Transcript: Decodable {
+        let text: String
+        let language: String?
+        let provider: String?
+        let words: [Word]?
+
+        struct Word: Decodable {
+            let word: String
+            let start: Double?
+            let end: Double?
+        }
+    }
+
+    struct Translation: Decodable {
+        let translatedText: String?
+        let text: String?
+        let provider: String?
+
+        var resultText: String {
+            translatedText ?? text ?? ""
+        }
+    }
+
+    enum WorkerError: Error {
+        case fileTooLarge
+        case network
+        case http(Int)
+        case invalidRequest
+        case decodeFailed
+    }
+
+    private let maxAudioBytes = 15 * 1024 * 1024
+
+    /// The in-flight upload so cancellation aborts the socket instead of just
+    /// hiding the UI (a share extension must not keep uploading after cancel).
+    private var activeTask: URLSessionTask?
+
+    /// Aborts any in-flight request. Safe to call from any thread; a cancelled
+    /// task surfaces as `URLError.cancelled` to the awaiting caller.
+    func cancel() {
+        activeTask?.cancel()
+        activeTask = nil
+    }
+
+    func transcribe(
+        fileURL: URL,
+        lang: String,
+        accessToken: String,
+        onProgress: @escaping (Float) -> Void
+    ) async throws -> Transcript {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+              let size = (attributes[.size] as? NSNumber)?.intValue,
+              size <= maxAudioBytes
+        else {
+            throw WorkerError.invalidRequest
+        }
+
+        let boundary = "Boundary-\(UUID().uuidString)"
+        let filename = fileURL.lastPathComponent
+
+        // Stream the multipart body to a temp file in bounded chunks so the
+        // audio is never buffered whole in RAM (Jetsam kills extensions at a
+        // small memory footprint).
+        let bodyURL = try Self.writeMultipartBody(
+            fileURL: fileURL,
+            boundary: boundary,
+            filename: filename,
+            lang: lang,
+            mimeType: mimeType(for: filename)
+        )
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+        onProgress(0.1)
+
+        var request = URLRequest(url: EchoEnvironment.workerURL.appendingPathComponent("transcribe"))
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 90
+
+        let (data, response) = try await perform(request, fromFile: bodyURL, onProgress: onProgress)
+        guard let http = response as? HTTPURLResponse else {
+            throw WorkerError.network
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw WorkerError.http(http.statusCode)
+        }
+        guard let transcript = try? JSONDecoder().decode(Transcript.self, from: data) else {
+            throw WorkerError.decodeFailed
+        }
+        onProgress(1)
+        return transcript
+    }
+
+    func translate(
+        text: String,
+        sourceLang: String?,
+        targetLang: String,
+        accessToken: String
+    ) async throws -> Translation {
+        var body: [String: String] = ["text": text, "targetLang": targetLang]
+        if let sourceLang, sourceLang != "auto" { body["sourceLang"] = sourceLang }
+
+        var request = URLRequest(url: EchoEnvironment.workerURL.appendingPathComponent("translate"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 90
+
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else {
+            throw WorkerError.network
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw WorkerError.http(http.statusCode)
+        }
+        guard let translation = try? JSONDecoder().decode(Translation.self, from: data) else {
+            throw WorkerError.network
+        }
+        return translation
+    }
+
+    /// Runs the request through a delegate session so uploads stream with real
+    /// byte-level progress, and the task can be aborted via `cancel()`.
+    private func perform(
+        _ request: URLRequest,
+        fromFile bodyURL: URL? = nil,
+        onProgress: ((Float) -> Void)? = nil
+    ) async throws -> (Data, URLResponse) {
+        let delegate = EchoUploadDelegate(onProgress: onProgress ?? { _ in })
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let task: URLSessionTask
+            if let bodyURL {
+                task = session.uploadTask(with: request, fromFile: bodyURL) { data, response, error in
+                    continuation.resume(with: Self.taskResult(data: data, response: response, error: error))
+                }
+            } else {
+                task = session.dataTask(with: request) { data, response, error in
+                    continuation.resume(with: Self.taskResult(data: data, response: response, error: error))
+                }
+            }
+            activeTask = task
+            task.resume()
+        }
+    }
+
+    nonisolated private static func taskResult(
+        data: Data?,
+        response: URLResponse?,
+        error: Error?
+    ) -> Result<(Data, URLResponse), Error> {
+        if let error { return .failure(error) }
+        guard let data, let response else { return .failure(WorkerError.network) }
+        return .success((data, response))
+    }
+
+    /// Writes a multipart/form-data body to a temp file, copying the audio in
+    /// 1 MiB chunks from disk so peak memory stays flat regardless of file size.
+    private static func writeMultipartBody(
+        fileURL: URL,
+        boundary: String,
+        filename: String,
+        lang: String,
+        mimeType: String
+    ) throws -> URL {
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("multipart-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: tempURL.path, contents: nil)
+
+        let handle = try FileHandle(forWritingTo: tempURL)
+        defer { try? handle.close() }
+
+        try handle.write(string: "--\(boundary)\r\n")
+        try handle.write(string: "Content-Disposition: form-data; name=\"lang\"\r\n\r\n")
+        try handle.write(string: "\(lang)\r\n")
+        try handle.write(string: "--\(boundary)\r\n")
+        try handle.write(string: "Content-Disposition: form-data; name=\"timestamp_granularities\"\r\n\r\n")
+        try handle.write(string: "word\r\n")
+        try handle.write(string: "--\(boundary)\r\n")
+        try handle.write(string: "Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n")
+        try handle.write(string: "Content-Type: \(mimeType)\r\n\r\n")
+
+        let input = try FileHandle(forReadingFrom: fileURL)
+        defer { try? input.close() }
+        while true {
+            let chunk = input.readData(ofLength: 1 << 20)
+            if chunk.isEmpty { break }
+            try handle.write(contentsOf: chunk)
+        }
+
+        try handle.write(string: "\r\n--\(boundary)--\r\n")
+        return tempURL
+    }
+
+    private func mimeType(for filename: String) -> String {
+        switch (filename as NSString).pathExtension.lowercased() {
+        case "m4a", "mp4": return "audio/mp4"
+        case "mp3": return "audio/mpeg"
+        case "wav": return "audio/wav"
+        case "aac": return "audio/aac"
+        case "amr": return "audio/amr"
+        case "3gp": return "audio/3gpp"
+        case "caf": return "audio/x-caf"
+        case "ogg", "opus": return "audio/ogg"
+        default: return "audio/mpeg"
+        }
+    }
+}
+
+// MARK: - Upload delegate
+
+/// Reports real byte-level send progress for streaming multipart uploads so the
+/// iOS ring matches the byte progress the RN app shows.
+@available(iOS 16.4, *)
+private final class EchoUploadDelegate: NSObject, URLSessionTaskDelegate {
+    private let onProgress: (Float) -> Void
+
+    init(onProgress: @escaping (Float) -> Void) {
+        self.onProgress = onProgress
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didSendBodyData bytesSent: Int64,
+        totalBytesSent: Int64,
+        totalBytesExpectedToSend: Int64
+    ) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        onProgress(Float(totalBytesSent) / Float(totalBytesExpectedToSend))
+    }
+}
+
+// MARK: FileHandle helpers
+
+private extension FileHandle {
+    func write(string: String) throws {
+        if let data = string.data(using: .utf8) {
+            try write(contentsOf: data)
+        }
+    }
+}
+
+// MARK: Worker error convenience
+
+@available(iOS 16.4, *)
+extension EchoWorkerClient.WorkerError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .fileTooLarge: return "That file is too large to transcribe."
+        case .network: return "Couldn't reach the transcription service."
+        case .http(let code):
+            if code == 401 { return "Your session has expired. Open Ekwe to sign in again." }
+            return "Transcription failed. Please try again."
+        case .invalidRequest: return "The audio file could not be read."
+        case .decodeFailed: return "This audio format can't be decoded."
+        }
+    }
+}

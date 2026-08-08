@@ -38,6 +38,12 @@
       "dependsOn": ["build"],
       "cache": false
     },
+    "//#gen:tokens": {
+      "cache": false
+    },
+    "//#gen:icons": {
+      "cache": false
+    },
     "//#format": {
       "cache": false
     }

@@ -11,8 +11,9 @@ import { queryClient } from "@/hooks/queries/queryClient";
 import { getPosthogClient } from "@/services/posthog";
 import { SyncService } from "@/services/SyncService";
 import { mmkv } from "@/services/mmkv";
+import { mirrorSessionToSharedContainer } from "@/services/sharedContainer";
 import { supabase, setupAppStateListener } from "@/services/supabase";
-import { auth$, authActions } from "@/store";
+import { auth$, authActions, buildSettingsSharedPrefs } from "@/store";
 import { isIOS } from "@/utils";
 import { track, identify, AnalyticsEvents } from "@/utils/analytics";
 import logger from "@/utils/logger";
@@ -53,12 +54,23 @@ export const initAuth = async (): Promise<void> => {
     authActions.setSession(session);
     mmkv.set(SESSION_CACHE_KEY, session !== null);
 
+    // Mirror the session into the shared App Group container so the native iOS
+    // share extension can authenticate without a deep-link handoff.
+    mirrorSessionToSharedContainer(session, buildSettingsSharedPrefs());
+
     if (event === "SIGNED_IN" && session?.user) {
       identify(session.user.id, {
         email: session.user.email ?? "",
         is_pro: session.user.app_metadata?.is_pro === true,
       });
       SyncService.onUserSignedIn(session.user.id);
+      // Drain any share-extension work the native share sheet completed while
+      // the user was signed out (the file stays in the App Group until then).
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { HistoryService } = require("@/services/HistoryService");
+      HistoryService.importSharedEchoHistory(session).catch((err: unknown) =>
+        logger.error("[Auth] importSharedEchoHistory on sign-in failed", err),
+      );
     }
 
     if (event === "SIGNED_OUT") {
@@ -98,8 +110,10 @@ export const initAuth = async (): Promise<void> => {
         .then(({ data: { session } }) => {
           if (session) {
             authActions.setSession(session);
+            mirrorSessionToSharedContainer(session, buildSettingsSharedPrefs());
           } else {
             mmkv.set(SESSION_CACHE_KEY, false);
+            mirrorSessionToSharedContainer(null, buildSettingsSharedPrefs());
           }
         })
         .catch((err) => {
@@ -305,6 +319,7 @@ export const signOut = async (): Promise<AuthResult> => {
 
     authActions.setSession(null);
     mmkv.set(SESSION_CACHE_KEY, false);
+    mirrorSessionToSharedContainer(null, buildSettingsSharedPrefs());
     queryClient.removeQueries({ queryKey: ["plan"] });
     getPosthogClient()?.reset();
     track(AnalyticsEvents.SIGN_OUT);
@@ -345,6 +360,7 @@ export const deleteAccount = async (): Promise<AuthResult> => {
     queryClient.clear();
     authActions.setSession(null);
     mmkv.set(SESSION_CACHE_KEY, false);
+    mirrorSessionToSharedContainer(null, buildSettingsSharedPrefs());
     getPosthogClient()?.reset();
     track(AnalyticsEvents.DELETE_ACCOUNT);
 

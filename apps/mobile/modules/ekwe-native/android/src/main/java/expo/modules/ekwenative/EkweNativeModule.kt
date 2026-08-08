@@ -140,6 +140,21 @@ class EkweNativeModule : Module() {
       }
     }
 
+    // Authoritative device theme, read straight from the OS. React Native's
+    // Appearance cache can go stale in the ShareActivity's JS context (it only
+    // refreshes once the main activity foregrounds and delivers a config change),
+    // so the share overlay must not trust `useColorScheme()` alone — this bypasses
+    // the cache entirely and always reflects the *resolved* night mode (including
+    // auto / scheduled themes).
+    Function("getSystemTheme") {
+      val context = appContext.reactContext ?: return@Function "light"
+      val uiMode = context.resources.configuration.uiMode
+      val nightActive =
+        uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
+          android.content.res.Configuration.UI_MODE_NIGHT_YES
+      if (nightActive) "dark" else "light"
+    }
+
     AsyncFunction("dismissNativeLoader") { ->
       val activity = appContext.currentActivity
       if (activity is ShareActivity) {
@@ -160,6 +175,10 @@ class EkweNativeModule : Module() {
         Log.e("EkweNative", "Failed to delete file: $uriString", e)
         false
       }
+    }
+
+    AsyncFunction("writeSharedFile") { fileName: String, content: String ->
+      true
     }
 
     // --- Accessibility & Content Resolution ---

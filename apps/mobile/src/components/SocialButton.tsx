@@ -7,7 +7,6 @@ import React from "react";
 import Svg, { Path, G, ClipPath, Defs } from "react-native-svg";
 
 import { Pressable, Text, Box } from "@/components/ui";
-import { palette } from "@/constants/colors";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
@@ -52,21 +51,13 @@ export const SocialButton = ({
   onPress,
   disabled = false,
 }: SocialButtonProps): React.ReactElement | null => {
-  const { color, isDark } = useTheme();
+  const { color } = useTheme();
 
   const label = provider === "google" ? "Google" : "Apple";
 
   const isApple = provider === "apple";
-  const bgColor = isApple
-    ? isDark
-      ? color.foreground
-      : palette.neutral950
-    : color.card;
-  const textColor = isApple
-    ? isDark
-      ? color.background
-      : palette.white
-    : color.foreground;
+  const bgColor = isApple ? color.foreground : color.card;
+  const textColor = isApple ? color.background : color.foreground;
   const borderColor = isApple ? bgColor : color.border;
 
   return (

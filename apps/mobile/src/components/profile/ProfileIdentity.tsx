@@ -69,7 +69,7 @@ export function ProfileIdentity({
                 height: "100%",
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: `${currentIconData.color}1A`,
+                backgroundColor: withAlpha(currentIconData.color, 0.102),
               }}
             >
               {React.createElement(currentIconData.icon, {

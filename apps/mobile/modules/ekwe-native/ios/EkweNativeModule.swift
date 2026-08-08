@@ -212,6 +212,23 @@ public class EkweNativeModule: Module {
               "durationMs": 0, "waveform": [] as [Float]]
     }
 
+    AsyncFunction("writeSharedFile") { (fileName: String, content: String) -> Bool in
+      guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.ekwe.app") else {
+        return false
+      }
+      let fileURL = dir.appendingPathComponent(fileName)
+      guard let data = content.data(using: .utf8) else { return false }
+      do {
+        try data.write(to: fileURL, options: [.atomic, .completeUntilFirstUserAuthentication])
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try fileURL.setResourceValues(values)
+        return true
+      } catch {
+        return false
+      }
+    }
+
     AsyncFunction("getRecordingAmplitude") { () -> Double in
       return Double(self.currentAmplitude)
     }

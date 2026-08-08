@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "scheme": "ekwe",
     "orientation": "portrait",
-    "icon": "./assets/icon-light.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
@@ -20,9 +20,9 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon-light.png",
-        "backgroundColor": "#FAFAFA",
-        "monochromeImage": "./assets/adaptive-icon.png"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF",
+        "monochromeImage": "./assets/monochrome.png"
       },
       "package": "com.ekwe.app",
       "permissions": [
@@ -33,15 +33,13 @@
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
     "plugins": [
       [
         "expo-splash-screen",
         {
           "backgroundColor": "#FFFFFF",
-          "image": "./assets/splash-icon-light.png",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 280,
           "dark": {
             "backgroundColor": "#09090B",
             "image": "./assets/splash-icon.png"
@@ -81,7 +79,8 @@
       "expo-image",
       "@sentry/react-native",
       "expo-apple-authentication",
-      "expo-secure-store"
+      "expo-secure-store",
+      "@bacons/apple-targets"
     ],
     "assetBundlePatterns": ["assets/fonts/*"]
   }

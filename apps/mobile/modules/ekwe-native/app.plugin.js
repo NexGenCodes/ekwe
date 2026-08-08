@@ -1,22 +1,12 @@
-const fs = require('fs');
-const path = require('path');
-
 const {
   withAndroidManifest,
   withMainActivity,
   withAndroidStyles,
   withEntitlementsPlist,
-  withXcodeProject,
-  withDangerousMod,
   AndroidConfig,
 } = require('expo/config-plugins');
 
-const APP_GROUP_ID = 'group.com.anonymous.ekwe';
-
-const EXT_NAME = 'ShareExtension';
-const EXT_PROD_TYPE = 'com.apple.product-type.app-extension';
-const EXT_BUNDLE_ID = 'com.ekwe.app.EchoShare';
-const EXT_SOURCE = 'ShareViewController.swift';
+const APP_GROUP_ID = 'group.com.ekwe.app';
 
 /**
  * Adds Intent Filters to AndroidManifest for handling shared audio and text.
@@ -114,6 +104,10 @@ const withAndroidIntentFilters = (config) => {
           'android:launchMode': 'singleTask',
           'android:taskAffinity': '',
           'android:label': 'EKWE',
+          // Handle uiMode (device dark/light theme) in-process so the loading
+          // card can be re-themed in onConfigurationChanged instead of the
+          // activity being recreated with a stale overlay.
+          'android:configChanges': 'uiMode',
         },
         'intent-filter': [],
       };
@@ -167,7 +161,8 @@ const withMainActivityOnNewIntent = (config) => {
 };
 
 /**
- * IOS: Configures App Groups for sharing persistence.
+ * IOS: Configures App Groups + shared keychain access group for the main app.
+ * The share extension mirrors both in targets/share/expo-target.config.js.
  */
 const withIosAppGroup = (config) => {
   return withEntitlementsPlist(config, (config) => {
@@ -183,134 +178,22 @@ const withIosAppGroup = (config) => {
         APP_GROUP_ID,
       );
     }
+    // Shared keychain access group so the extension can restore the session.
+    if (!config.modResults['keychain-access-groups']) {
+      config.modResults['keychain-access-groups'] = [];
+    }
+    const sharedKeychainGroup = '$(AppIdentifierPrefix)com.ekwe.app';
+    if (!config.modResults['keychain-access-groups'].includes(sharedKeychainGroup)) {
+      config.modResults['keychain-access-groups'].push(sharedKeychainGroup);
+    }
     return config;
   });
 };
 
 /**
- * IOS: Copies the ShareExtension sources into ios/ShareExtension and writes the
- * app-group entitlements file the extension needs. Runs before the build, so the
- * file references added to the Xcode project resolve at build time.
+ * IOS: Adds the ShareExtension target. Handled by @bacons/apple-targets via
+ * the targets/share/ expo-target.config.js — nothing to do here.
  */
-const withShareExtensionFiles = (config) => {
-  return withDangerousMod(config, [
-    'ios',
-    (config) => {
-      const srcDir = path.join(
-        config.modRequest.projectRoot,
-        'modules/ekwe-native/ios/ShareExtension',
-      );
-      const destDir = path.join(config.modRequest.platformProjectRoot, EXT_NAME);
-      if (!fs.existsSync(srcDir)) {
-        return config;
-      }
-      fs.mkdirSync(destDir, { recursive: true });
-      for (const file of fs.readdirSync(srcDir)) {
-        fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
-      }
-      const entitlementsPath = path.join(destDir, `${EXT_NAME}.entitlements`);
-      if (!fs.existsSync(entitlementsPath)) {
-        fs.writeFileSync(
-          entitlementsPath,
-          `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>com.apple.security.application-groups</key>
-  <array>
-    <string>${APP_GROUP_ID}</string>
-  </array>
-</dict>
-</plist>
-`,
-        );
-      }
-      return config;
-    },
-  ]);
-};
-
-/**
- * IOS: Adds the ShareExtension app-extension target to the Xcode project and
- * wires it up (source, Info.plist, entitlements, build settings, embed phase,
- * and an app -> extension target dependency).
- */
-const withShareExtensionXcodeTarget = (config) => {
-  return withXcodeProject(config, (config) => {
-    const project = config.modResults;
-
-    // Idempotent: the target already exists on a second prebuild.
-    if (project.getTarget(EXT_PROD_TYPE)) {
-      return config;
-    }
-
-    // Adds the target AND the "Embed App Extensions" copy phase on the app target.
-    project.addTarget(EXT_NAME, 'app_extension', EXT_NAME, EXT_BUNDLE_ID);
-
-    const extTarget = project.getTarget(EXT_PROD_TYPE);
-    const appTarget = project.getFirstTarget();
-    if (!extTarget || !appTarget) {
-      return config;
-    }
-
-    // 1. Group for the extension files, attached to the project's main group.
-    const group = project.addPbxGroup([], EXT_NAME, EXT_NAME, '"<group>"');
-    const firstProject = project.getFirstProject();
-    const mainGroupUuid =
-      project.hash.project.objects.PBXProject[firstProject.uuid].mainGroup;
-    project.hash.project.objects.PBXGroup[mainGroupUuid].children.push({
-      value: group.uuid,
-      comment: EXT_NAME,
-    });
-
-    // 2. Make sure the extension has Sources/Frameworks/Resources build phases.
-    project.addBuildPhase([], 'PBXSourcesBuildPhase', 'Sources', extTarget.uuid, null);
-    project.addBuildPhase([], 'PBXFrameworksBuildPhase', 'Frameworks', extTarget.uuid, null);
-    project.addBuildPhase([], 'PBXResourcesBuildPhase', 'Resources', extTarget.uuid, null);
-
-    // 3. Add the Swift source to the extension's Sources phase.
-    project.addSourceFile(
-      `${EXT_NAME}/${EXT_SOURCE}`,
-      { target: extTarget.uuid },
-      group.uuid,
-    );
-
-    // 4. Add Info.plist + entitlements as plain file references (no build phase).
-    project.addFile(`${EXT_NAME}/Info.plist`, group.uuid, {});
-    project.addFile(`${EXT_NAME}/${EXT_NAME}.entitlements`, group.uuid, {});
-
-    // 5. Configure the extension's Debug/Release build settings.
-    const configLists = project.pbxXCConfigurationList();
-    const extConfigList = configLists[extTarget.target.buildConfigurationList];
-    const buildConfigs = project.pbxXCBuildConfigurationSection();
-    (extConfigList.buildConfigurations || []).forEach(({ value: cfgUuid }) => {
-      const settings = buildConfigs[cfgUuid].buildSettings;
-      settings.GENERATE_INFOPLIST_FILE = 'NO';
-      settings.INFOPLIST_FILE = `"${EXT_NAME}/Info.plist"`;
-      settings.CODE_SIGN_ENTITLEMENTS = `"${EXT_NAME}/${EXT_NAME}.entitlements"`;
-      settings.PRODUCT_BUNDLE_IDENTIFIER = `"${EXT_BUNDLE_ID}"`;
-      settings.SWIFT_VERSION = '5.0';
-      settings.TARGETED_DEVICE_FAMILY = '"1,2"';
-      settings.IPHONEOS_DEPLOYMENT_TARGET = '16.4';
-      settings.MARKETING_VERSION = '1.0';
-      settings.CURRENT_PROJECT_VERSION = '1';
-      settings.SKIP_INSTALL = 'YES';
-      settings.LD_RUNPATH_SEARCH_PATHS =
-        '"$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"';
-    });
-
-    // 6. App target depends on the extension (build order). The fresh Expo
-    //    project has no PBXContainerItemProxy/PBXTargetDependency sections yet,
-    //    and xcode's addTargetDependency silently no-ops without them.
-    project.hash.project.objects['PBXContainerItemProxy'] =
-      project.hash.project.objects['PBXContainerItemProxy'] || {};
-    project.hash.project.objects['PBXTargetDependency'] =
-      project.hash.project.objects['PBXTargetDependency'] || {};
-    project.addTargetDependency(appTarget.uuid, [extTarget.uuid]);
-
-    return config;
-  });
-};
 
 /**
  * Creates the ShareActivity.kt source file.
@@ -432,8 +315,6 @@ const withEkweNativePermissionsAndServices = (config) => {
   updatedConfig = withMainActivityOnNewIntent(updatedConfig);
   if (process.platform === 'darwin') {
     updatedConfig = withIosAppGroup(updatedConfig);
-    updatedConfig = withShareExtensionFiles(updatedConfig);
-    updatedConfig = withShareExtensionXcodeTarget(updatedConfig);
   }
   updatedConfig = withAutofillHighlightFix(updatedConfig);
   return updatedConfig;

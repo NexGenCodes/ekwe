@@ -1,7 +1,7 @@
 package expo.modules.ekwenative
 
 import android.content.Intent
-import android.graphics.Color
+import android.content.res.Configuration
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
@@ -169,6 +169,20 @@ class ShareActivity : ReactActivity() {
                 Log.w(TAG, "Failed to update ReactRootView props", e)
             }
         }
+        // This is a singleTask activity, so a second share after a device theme
+        // change reuses this instance and SKIPS onCreate(). Re-show a freshly
+        // themed native card (idempotent) so the overlay follows the current
+        // appearance instead of the color it was created with.
+        showNativeLoadingCard()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Device theme toggled while the card is visible (needs uiMode in
+        // android:configChanges for this to fire instead of a recreate).
+        if (nativeLoaderView != null) {
+            showNativeLoadingCard()
+        }
     }
 
     override fun onDestroy() {
@@ -180,23 +194,31 @@ class ShareActivity : ReactActivity() {
     // ── Native Loader UI ──────────────────────────────────────────────────
 
     private fun showNativeLoadingCard() {
+        // Idempotent: a singleTask reuse or uiMode config change may re-invoke
+        // this, so tear down any previously shown card before adding a fresh one.
+        dismissNativeLoader()
+
         val dp = { value: Int ->
             TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
         }
 
+        val isDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val scrimColor = EchoDesignTokens.Semantic.overlay.color(isDark)
+        val cardColor = EchoDesignTokens.Semantic.card.color(isDark)
+        val handleColor = EchoDesignTokens.Semantic.handle.color(isDark)
+        val labelColor = EchoDesignTokens.Semantic.muted.color(isDark)
+        val pulseColor = EchoDesignTokens.Semantic.brand.color(isDark)
+        val textColor = EchoDesignTokens.Semantic.foreground.color(isDark)
+
         val scrim = FrameLayout(this).apply {
-            setBackgroundColor(Color.argb(120, 0, 0, 0))
+            setBackgroundColor(scrimColor)
             isClickable = true
         }
-
-        val isDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-        val bgHex = if (isDark) "#18181B" else "#FFFFFF"
-        val handleHex = if (isDark) "#3F3F46" else "#E4E4E7"
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
-                setColor(Color.parseColor(bgHex))
+                setColor(cardColor)
                 cornerRadii = floatArrayOf(dp(24).toFloat(), dp(24).toFloat(), dp(24).toFloat(), dp(24).toFloat(), 0f, 0f, 0f, 0f)
             }
             setPadding(dp(24), dp(20), dp(24), dp(40))
@@ -205,13 +227,13 @@ class ShareActivity : ReactActivity() {
 
         // Drag handle
         card.addView(View(this).apply {
-            background = GradientDrawable().apply { setColor(Color.parseColor(handleHex)); cornerRadius = dp(2).toFloat() }
+            background = GradientDrawable().apply { setColor(handleColor); cornerRadius = dp(2).toFloat() }
         }, LinearLayout.LayoutParams(dp(40), dp(4)).apply { bottomMargin = dp(20); gravity = Gravity.CENTER_HORIZONTAL })
 
         // Label
         card.addView(TextView(this).apply {
             text = "Ekwe Echo"
-            setTextColor(Color.parseColor("#A1A1AA"))
+            setTextColor(labelColor)
             textSize = 10f
             letterSpacing = 0.15f
             isAllCaps = true
@@ -222,12 +244,12 @@ class ShareActivity : ReactActivity() {
             layoutParams = LinearLayout.LayoutParams(dp(80), dp(80)).apply { bottomMargin = dp(24); gravity = Gravity.CENTER_HORIZONTAL }
         }
         val pulseRing = View(this).apply {
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setStroke(dp(2), Color.parseColor("#3B82F6")) }
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setStroke(dp(2), pulseColor) }
             layoutParams = FrameLayout.LayoutParams(dp(60), dp(60)).apply { gravity = Gravity.CENTER }
         }
         pulseContainer.addView(pulseRing)
         pulseContainer.addView(View(this).apply {
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#3B82F6")) }
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(pulseColor) }
             layoutParams = FrameLayout.LayoutParams(dp(16), dp(16)).apply { gravity = Gravity.CENTER }
         })
         card.addView(pulseContainer)
@@ -239,7 +261,7 @@ class ShareActivity : ReactActivity() {
 
         card.addView(TextView(this).apply {
             text = "Preparing voice note..."
-            setTextColor(if (isDark) Color.parseColor("#FAFAFA") else Color.parseColor("#18181B"))
+            setTextColor(textColor)
             textSize = 14f
             gravity = Gravity.CENTER
         })

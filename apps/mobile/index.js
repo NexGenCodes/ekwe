@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { Echo } from './src/components/features/Echo';
+import { AppAlertModal } from './src/components/AppAlertModal';
 import { queryClient } from './src/hooks/queries/queryClient';
 
 if (typeof globalThis !== 'undefined') {
@@ -32,6 +33,7 @@ const ShareExtensionRoot = (props) => (
       <QueryClientProvider client={queryClient}>
         <ErrorBoundary>
           <Echo {...props} />
+          <AppAlertModal />
         </ErrorBoundary>
       </QueryClientProvider>
     </SafeAreaProvider>

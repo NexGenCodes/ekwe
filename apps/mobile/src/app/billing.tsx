@@ -10,7 +10,6 @@ import { BillingToggle } from "@/components/billing/BillingToggle";
 import { FreePlanCard } from "@/components/billing/FreePlanCard";
 import { ProPlanCard } from "@/components/billing/ProPlanCard";
 import { Box, Text, Pressable, ScrollArea } from "@/components/ui";
-import { palette } from "@/constants/colors";
 import { useTheme, useTokens } from "@/hooks";
 import { useBilling } from "@/hooks/billing/useBilling";
 
@@ -152,7 +151,7 @@ export default function BillingScreen(): React.ReactElement {
                     { backgroundColor: color.success },
                   ]}
                 >
-                  <Text variant="caption" style={{ color: palette.neutral950 }}>
+                  <Text variant="caption" style={{ color: color.onBrand }}>
                     Save {proPlan.annualSavingPercent}%
                   </Text>
                 </Box>

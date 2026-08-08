@@ -21,6 +21,7 @@ declare class EkweNativeModule extends NativeModule<{
   onVadSilence: (event: {}) => void;
 }> {
   deleteFile(uri: string): Promise<void>;
+  writeSharedFile(fileName: string, content: string): Promise<boolean>;
 
   // --- Echo / Loader ---
   dismissEcho(): Promise<void>;
@@ -34,6 +35,11 @@ declare class EkweNativeModule extends NativeModule<{
 
   // --- AudioRecord metering (Android) ---
   getRecordingAmplitude(): Promise<number>;
+
+  // --- Authoritative device theme (Android only) ---
+  // Reads the *resolved* system night mode from the OS (handles auto/scheduled),
+  // so the share overlay never shows a stale Appearance cache. Returns "light" | "dark".
+  getSystemTheme(): string;
 
   // --- Audio Effects ---
   attachEffects(audioSessionId: number): Promise<AudioEffectsResult>;

@@ -47,6 +47,13 @@ function InnerLayout(): React.ReactElement {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { HistoryService } = require("@/services/HistoryService");
         HistoryService.cleanupLocalHistory();
+        // Import any transcription/translation the native iOS share extension
+        // completed while the app was backgrounded (writes into the shared
+        // App Group container and is drained here).
+        HistoryService.importSharedEchoHistory(auth$.session.peek()).catch(
+          (err: unknown) =>
+            logger.error("[RootLayout] importSharedEchoHistory failed", err),
+        );
       }
     }
   }, [isInitialized, sessionLoaded]);

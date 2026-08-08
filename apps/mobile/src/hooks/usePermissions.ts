@@ -14,6 +14,7 @@ interface PlanLimits {
   customAvatarIcons: boolean;
   autoCopy: boolean;
   contextAwareness: boolean;
+  cooldownSeconds: number;
 }
 
 const HARDCODED_LIMITS = {
@@ -39,6 +40,7 @@ export function usePermissions(): PlanLimits {
         ? PLAN_FEATURES.pro.autoCopy
         : PLAN_FEATURES.free.autoCopy,
       contextAwareness: limits.contextAwareness,
+      cooldownSeconds: limits.cooldownSeconds,
     }),
     [isPro, limits],
   );
