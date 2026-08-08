@@ -50,10 +50,22 @@ export function mirrorSessionToSharedContainer(
     if (session) {
       const content = JSON.stringify(session);
       // Hardened write: applies NSDataWritingFileProtectionCompleteUntilFirstUserAuthentication
-      // and sets isExcludedFromBackup = true via the native module on iOS.
-      EkweNative.writeSharedFile(SESSION_FILE, content).catch(() => {
-        new File(dir, SESSION_FILE).write(content, { encoding: "utf8" });
-      });
+      // and sets isExcludedFromBackup = true via the native module on iOS. This
+      // is the ONLY write path for the refresh token — no plaintext fallback, so
+      // a failed hardened write surfaces as signed-out state in the extension
+      // rather than writing the token unprotected to disk.
+      void EkweNative.writeSharedFile(SESSION_FILE, content).then(
+        (ok) => {
+          if (!ok) {
+            logger.error(
+              "[SharedContainer] hardened write of session file failed (returned false)",
+            );
+          }
+        },
+        (err: unknown) => {
+          logger.error("[SharedContainer] hardened write of session file failed", err);
+        },
+      );
     } else {
       const file = new File(dir, SESSION_FILE);
       if (file.exists) file.delete();
@@ -80,9 +92,18 @@ export function mirrorSettingsToShared(prefs: SharedPreferences): void {
   if (!dir) return;
   try {
     const content = JSON.stringify(prefs);
-    EkweNative.writeSharedFile(SETTINGS_FILE, content).catch(() => {
-      new File(dir, SETTINGS_FILE).write(content, { encoding: "utf8" });
-    });
+    void EkweNative.writeSharedFile(SETTINGS_FILE, content).then(
+      (ok) => {
+        if (!ok) {
+          logger.error(
+            "[SharedContainer] hardened write of settings file failed (returned false)",
+          );
+        }
+      },
+      (err: unknown) => {
+        logger.error("[SharedContainer] hardened write of settings file failed", err);
+      },
+    );
   } catch (err) {
     logger.error("[SharedContainer] failed to mirror settings", err);
   }

@@ -306,7 +306,7 @@ export async function handleTranscribe(
 
         try {
           await env.EKWE_KV.put(cacheKey, JSON.stringify(result), {
-            expirationTtl: 30 * 24 * 60 * 60,
+            expirationTtl: 4 * 60 * 60,
           });
         } catch (err) {
           logger.error(`[transcribe] KV cache write error`, {

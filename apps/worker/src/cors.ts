@@ -47,6 +47,8 @@ export function getCorsHeaders(
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     Vary: "Origin",
     "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store",
+    Pragma: "no-cache",
   };
 }
 
