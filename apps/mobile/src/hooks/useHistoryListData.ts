@@ -10,6 +10,7 @@ interface UseHistoryListDataProps {
   isGrouped: boolean;
   todayEntries: HistoryEntry[];
   yesterdayEntries: HistoryEntry[];
+  thisWeekEntries: HistoryEntry[];
   earlierEntries: HistoryEntry[];
   filteredEntries: HistoryEntry[];
 }
@@ -22,6 +23,7 @@ export function useHistoryListData({
   isGrouped,
   todayEntries,
   yesterdayEntries,
+  thisWeekEntries,
   earlierEntries,
   filteredEntries,
 }: UseHistoryListDataProps): ListItem[] {
@@ -35,6 +37,11 @@ export function useHistoryListData({
             title: "Yesterday",
             count: yesterdayEntries.length,
             data: yesterdayEntries,
+          },
+          {
+            title: "This Week",
+            count: thisWeekEntries.length,
+            data: thisWeekEntries,
           },
           {
             title: "Earlier",
@@ -60,6 +67,7 @@ export function useHistoryListData({
     isGrouped,
     todayEntries,
     yesterdayEntries,
+    thisWeekEntries,
     earlierEntries,
     filteredEntries,
   ]);

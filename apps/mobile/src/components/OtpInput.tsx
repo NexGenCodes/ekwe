@@ -1,9 +1,10 @@
-import React, { memo, useCallback, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, TextInput } from "react-native";
 import Animated, {
   FadeIn,
   useAnimatedStyle,
   useSharedValue,
+  withSequence,
   withTiming,
   interpolateColor,
 } from "react-native-reanimated";
@@ -21,6 +22,7 @@ interface OtpInputProps {
   disabled?: boolean;
   error?: string;
   autoFocus?: boolean;
+  shakeSignal?: number;
 }
 
 const DIGIT_COUNT = 6;
@@ -99,10 +101,31 @@ export const OtpInput = memo(function OtpInput({
   disabled = false,
   error,
   autoFocus = false,
+  shakeSignal = 0,
 }: OtpInputProps): React.ReactElement {
   const { color } = useTheme();
   const inputRef = useRef<TextInput>(null);
   const [isFocused, setIsFocused] = useState(autoFocus);
+  const shakeX = useSharedValue(0);
+  const lastShake = useRef(0);
+
+  // Any increment in `shakeSignal` fires a horizontal shake on the digit row —
+  // used to signal an invalid code without adding layout noise.
+  useEffect(() => {
+    if (shakeSignal === 0 || shakeSignal === lastShake.current) return;
+    lastShake.current = shakeSignal;
+    shakeX.value = withSequence(
+      withTiming(-10, { duration: 45 }),
+      withTiming(10, { duration: 60 }),
+      withTiming(-7, { duration: 60 }),
+      withTiming(7, { duration: 60 }),
+      withTiming(0, { duration: 50 }),
+    );
+  }, [shakeSignal, shakeX]);
+
+  const shakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shakeX.value }],
+  }));
 
   const digits = value
     .split("")
@@ -131,37 +154,39 @@ export const OtpInput = memo(function OtpInput({
     <Box>
       <Pressable
         onPress={handlePress}
-        accessibilityLabel="Enter verification code"
-        accessibilityRole="keyboardkey"
+        disabled={disabled}
+        accessibilityRole="none"
       >
-        <Box
-          style={{
-            flexDirection: "row",
-            gap: spacing.sm,
-            justifyContent: "center",
-          }}
-        >
-          {digits.map((digit, index) => {
-            const isCurrentFocused =
-              isFocused &&
-              (index === value.length ||
-                (index === DIGIT_COUNT - 1 && value.length === DIGIT_COUNT));
+        <Animated.View style={shakeStyle}>
+          <Box
+            style={{
+              flexDirection: "row",
+              gap: spacing.sm,
+              justifyContent: "center",
+            }}
+          >
+            {digits.map((digit, index) => {
+              const isCurrentFocused =
+                isFocused &&
+                (index === value.length ||
+                  (index === DIGIT_COUNT - 1 && value.length === DIGIT_COUNT));
 
-            return (
-              <OtpDigitBox
-                key={index}
-                digit={digit}
-                isFocused={isCurrentFocused}
-                hasError={!!error}
-                borderColor={color.border}
-                secondaryColor={color.brand}
-                errorColor={color.error}
-                cardColor={color.card}
-                foregroundColor={color.foreground}
-              />
-            );
-          })}
-        </Box>
+              return (
+                <OtpDigitBox
+                  key={index}
+                  digit={digit}
+                  isFocused={isCurrentFocused}
+                  hasError={!!error}
+                  borderColor={color.border}
+                  secondaryColor={color.brand}
+                  errorColor={color.error}
+                  cardColor={color.card}
+                  foregroundColor={color.foreground}
+                />
+              );
+            })}
+          </Box>
+        </Animated.View>
       </Pressable>
 
       {/* Hidden input — native autofill + paste */}

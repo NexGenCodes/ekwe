@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import React, { useCallback } from "react";
 import { View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button, LanguageSelectionGrid } from "@/components";
 import { Box, ScreenContainer, Text } from "@/components/ui";
@@ -8,7 +9,6 @@ import { useTokens } from "@/hooks/ui";
 import { useLanguageSelection } from "@/hooks/useLanguageSelection";
 import { settingsActions, auth$ } from "@/store";
 import { track, AnalyticsEvents } from "@/utils/analytics";
-import { triggerHaptic } from "@/utils/haptics";
 
 const HEADING = "Pick your languages";
 const SUBTITLE =
@@ -16,14 +16,13 @@ const SUBTITLE =
 
 export default function OnboardingLanguagesScreen(): React.ReactElement {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { color, spacing, borderRadius } = useTokens();
-  const { selected, toggleLanguage, isComplete, remaining, isMaxed } =
+  const { selected, toggleLanguage, isComplete, isMaxed } =
     useLanguageSelection();
 
   const handleContinue = useCallback(async (): Promise<void> => {
     if (!isComplete) return;
-
-    await triggerHaptic();
 
     settingsActions.setSelectedLanguages(selected);
     settingsActions.setTargetLanguage(selected[0]);
@@ -37,28 +36,28 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
     router.replace(session ? "/(tabs)" : "/(auth)/login");
   }, [isComplete, selected, router]);
 
-  const countColor = remaining === 0 ? color.success : color.muted;
+  const countColor = isComplete ? color.success : color.muted;
 
   return (
     <View style={{ flex: 1, backgroundColor: color.background }}>
       <ScreenContainer
         scroll
         contentContainerStyle={{
-          paddingHorizontal: spacing.md,
-          paddingBottom: spacing["7xl"] + spacing["2xl"],
+          paddingHorizontal: spacing.xl,
+          paddingBottom: spacing["7xl"] + spacing.lg,
         }}
         style={{ backgroundColor: color.background }}
       >
         <Box
           style={{
-            paddingTop: spacing["2xl"],
-            paddingBottom: spacing.md,
+            paddingTop: spacing["3xl"],
+            paddingBottom: spacing.lg,
           }}
         >
           <Text
             variant="display"
             style={{
-              marginBottom: spacing.sm,
+              marginBottom: spacing.md,
               color: color.foreground,
               letterSpacing: -0.5,
             }}
@@ -69,11 +68,31 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
             variant="body"
             style={{
               color: color.muted,
-              lineHeight: 24,
+              lineHeight: 26,
             }}
           >
             {SUBTITLE}
           </Text>
+          <Box
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: spacing.sm,
+              marginTop: spacing.md,
+            }}
+          >
+            <View
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: borderRadius.full,
+                backgroundColor: countColor,
+              }}
+            />
+            <Text variant="caption" style={{ color: countColor }}>
+              {selected.length} of 5 selected
+            </Text>
+          </Box>
         </Box>
 
         <LanguageSelectionGrid
@@ -93,57 +112,17 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
           borderTopWidth: 1,
           borderTopColor: color.border,
           paddingTop: spacing.md,
-          paddingBottom: spacing["3xl"],
-          paddingHorizontal: spacing.md,
-          gap: spacing.sm,
+          paddingBottom: insets.bottom + spacing.md,
+          paddingHorizontal: spacing.xl,
         }}
       >
-        <Box
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: spacing.xs,
-          }}
-        >
-          <View
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: borderRadius.full,
-              backgroundColor: countColor,
-            }}
-          />
-          <Text variant="caption" style={{ color: countColor }}>
-            {isMaxed
-              ? `${selected.length}/${5} selected`
-              : `${selected.length}/${5} selected — ${remaining} more needed`}
-          </Text>
-        </Box>
-
-        {isMaxed && (
-          <Text
-            variant="caption"
-            style={{
-              color: color.muted,
-              textAlign: "center",
-            }}
-          >
-            Unselect a language to pick a different one
-          </Text>
-        )}
-
         <Button
           variant="primary"
           size="large"
-          label={
-            isComplete
-              ? "Create Account to Continue"
-              : `Select ${remaining} more`
-          }
+          label="Continue"
           disabled={!isComplete}
           onPress={handleContinue}
-          style={{ minWidth: 250 }}
+          style={{ width: "100%" }}
         />
       </Box>
     </View>

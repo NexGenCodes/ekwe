@@ -1,13 +1,4 @@
-import React, { useEffect, useState } from "react";
-import { AccessibilityInfo } from "react-native";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withRepeat,
-  withSequence,
-  withTiming,
-  Easing,
-} from "react-native-reanimated";
+import React from "react";
 
 import { Box, Text } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
@@ -22,8 +13,6 @@ export interface EmptyStateProps {
   subtitle?: string;
   /** Optional action element (button, link, etc.) below subtitle */
   action?: React.ReactNode;
-  /** Enable subtle pulse animation on icon */
-  animate?: boolean;
 }
 
 /**
@@ -35,41 +24,8 @@ export const EmptyState = ({
   title,
   subtitle,
   action,
-  animate = false,
 }: EmptyStateProps): React.ReactElement => {
   const { color } = useTheme();
-  const scale = useSharedValue(1);
-  const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
-
-  useEffect(() => {
-    // Respect OS reduced motion preference
-    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      setReduceMotionEnabled(enabled);
-    });
-
-    if (animate) {
-      if (!reduceMotionEnabled) {
-        scale.value = withRepeat(
-          withSequence(
-            withTiming(1.05, {
-              duration: 1500,
-              easing: Easing.inOut(Easing.ease),
-            }),
-            withTiming(1, {
-              duration: 1500,
-              easing: Easing.inOut(Easing.ease),
-            }),
-          ),
-          -1,
-          true,
-        );
-      }
-    }
-  }, [animate, scale, reduceMotionEnabled]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
 
   // Combine title and subtitle into a concise label for screen readers
   const accessibilityLabel = subtitle ? `${title}. ${subtitle}` : title;
@@ -86,15 +42,7 @@ export const EmptyState = ({
         paddingHorizontal: spacing.lg,
       }}
     >
-      <Animated.View
-        // If reduced motion is enabled, don't apply animatedStyle
-        style={[
-          !reduceMotionEnabled && animate ? animatedStyle : undefined,
-          { marginBottom: spacing.md },
-        ]}
-      >
-        {icon}
-      </Animated.View>
+      <Box style={{ marginBottom: spacing.md }}>{icon}</Box>
       <Text
         variant="heading3"
         style={{

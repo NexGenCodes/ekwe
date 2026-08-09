@@ -14,7 +14,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { AudioWaveform } from "@/components/AudioWaveform";
-import { Box, Text, Pressable } from "@/components/ui";
+import { Box, Text, Pressable, Spinner } from "@/components/ui";
 import { shadows } from "@/constants";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
@@ -163,6 +163,13 @@ export function RecordingInline({
         >
           <Pressable
             onPress={() => (player.isPlaying ? player.pause() : player.play())}
+            disabled={!player.isLoaded || player.isDecoding}
+            accessibilityLabel={
+              player.isPlaying ? "Pause preview" : "Play preview"
+            }
+            accessibilityState={{
+              disabled: !player.isLoaded || player.isDecoding,
+            }}
             style={{
               width: 44,
               height: 44,
@@ -171,9 +178,12 @@ export function RecordingInline({
               justifyContent: "center",
               boxShadow: shadows.soft,
               backgroundColor: color.brand,
+              opacity: player.isLoaded && !player.isDecoding ? 1 : 0.5,
             }}
           >
-            {player.isPlaying ? (
+            {!player.isLoaded || player.isDecoding ? (
+              <Spinner size="sm" color={color.onBrand} />
+            ) : player.isPlaying ? (
               <Pause size={20} color={color.onBrand} fill={color.onBrand} />
             ) : (
               <Play

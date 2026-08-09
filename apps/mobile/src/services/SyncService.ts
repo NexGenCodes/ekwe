@@ -188,6 +188,43 @@ class SyncServiceClass {
     }
   }
 
+  async restoreHistory(entry: HistoryEntry, userId: string): Promise<void> {
+    const created_at = new Date(entry.timestamp).toISOString();
+    const payload = {
+      source_lang: entry.sourceLang,
+      target_lang: entry.targetLang,
+      transcript: entry.transcript,
+      translation_text: entry.translation ?? null,
+      transliteration_text: entry.transliteration ?? null,
+      duration: entry.duration,
+      source_app: entry.sourceApp ?? "",
+      provider: entry.provider ?? "",
+      created_at,
+    };
+
+    Db.transaction(() => {
+      Db.deleteOutboxForHistory(entry.id);
+      Db.insertHistory({
+        id: entry.id,
+        user_id: userId,
+        ...payload,
+      });
+      Db.insertOutbox({
+        id: entry.id,
+        payload: JSON.stringify({ action: "upsert", ...payload }),
+        user_id: userId,
+        created_at,
+      });
+    });
+
+    history$[entry.id].set(entry);
+    this.refreshPendingCount();
+
+    this.pushToCloud(entry.id).catch((err) =>
+      logger.error("[Sync] pushToCloud for restore failed", entry.id, err),
+    );
+  }
+
   private async pushToCloud(id: string): Promise<void> {
     try {
       const rows = Db.getPendingOutbox();
@@ -271,7 +308,7 @@ class SyncServiceClass {
       let query = supabase
         .from("history")
         .select(
-          "id, user_id, source_lang, target_lang, transcript, translation_text, transliteration_text, duration, source_app, provider, created_at, deleted",
+          "id, user_id, source_lang, target_lang, transcript, translation_text, transliteration_text, duration, source_app, provider, created_at",
         )
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
@@ -286,10 +323,6 @@ class SyncServiceClass {
       if (!data || data.length === 0) return;
 
       for (const row of data) {
-        if (row.deleted) {
-          continue; // Skip soft-deleted historical items on Cloud schema if present
-        }
-
         Db.insertHistory({
           id: row.id,
           user_id: row.user_id,

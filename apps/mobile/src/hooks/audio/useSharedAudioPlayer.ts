@@ -245,7 +245,17 @@ export const useSharedAudioPlayer = (
 
   const pause = useCallback((): void => {
     if (releasedRef.current) return;
-    player.pause();
+    try {
+      player.pause();
+    } catch (error) {
+      // expo-audio may have already released the native player (teardown
+      // ordering or a source swap). The audio is effectively paused then —
+      // swallow instead of crashing the app.
+      logger.debug(
+        "[SharedAudioPlayer] pause skipped (player already released)",
+        error,
+      );
+    }
     // Relax exclusive focus, release the audio-active flag, and yield the
     // app-level focus so another player / later text-to-speech isn't hindered
     // by a session that is (silently) still marked "active".
@@ -263,9 +273,9 @@ export const useSharedAudioPlayer = (
   const setPlaybackRate = useCallback(
     (rate: number) => {
       if (releasedRef.current) return;
-      const next = (PLAYBACK_RATES.includes(rate as PlaybackRate)
-        ? rate
-        : 1) as PlaybackRate;
+      const next = (
+        PLAYBACK_RATES.includes(rate as PlaybackRate) ? rate : 1
+      ) as PlaybackRate;
       setPlaybackRateState(next);
       rateSV.value = next;
       player.setPlaybackRate(next);
@@ -304,8 +314,7 @@ export const useSharedAudioPlayer = (
     // the native `didJustFinish` event lands, so during that brief window
     // `isPlaying` is still true while the audio has actually finished — dragging
     // a completed track must not re-run it.
-    const atEnd =
-      duration > 0 && progressSV.value >= duration - 0.05;
+    const atEnd = duration > 0 && progressSV.value >= duration - 0.05;
     resumeAfterScrubRef.current =
       isPlayingRef.current && !isEndedRef.current && !atEnd;
     if (isPlayingRef.current) player.pause();
@@ -327,30 +336,31 @@ export const useSharedAudioPlayer = (
       progressSV.value = clampedPos;
       setProgress(clampedPos);
 
+      // A drop ON the end is a "finish here" gesture, not a "continue from
+      // here" one. Resuming at (or past) the end would let `play()`'s
+      // currentTime>=dur branch restart the track from 0:00 — dropping the
+      // playhead at the end of a freshly-played file must just stop it.
+      const resumeProgressing = resumeAfterScrubRef.current && clampedPos < dur;
+      resumeAfterScrubRef.current = false;
+
       // Keep the clock frozen while the native seek lands, then resume only a
       // previously-active track from the new position.
       await waitForSeekSettle(clampedPos);
-      if (resumeAfterScrubRef.current) {
-        resumeAfterScrubRef.current = false;
+      if (resumeProgressing) {
         await play();
       }
       setScrubbing(false);
     },
-    [
-      player,
-      progressSV,
-      setScrubbing,
-      knownDuration,
-      waitForSeekSettle,
-      play,
-    ],
+    [player, progressSV, setScrubbing, knownDuration, waitForSeekSettle, play],
   );
 
   const release = useCallback((): void => {
     if (releasedRef.current) {
       // The unmount safety-net in useAudioWaveformPlayback + onDismiss both call
       // release; a second call is expected teardown, not a bug — log at debug.
-      logger.debug("[SharedAudioPlayer] release() called twice — already released");
+      logger.debug(
+        "[SharedAudioPlayer] release() called twice — already released",
+      );
       return;
     }
     releasedRef.current = true;
@@ -361,8 +371,26 @@ export const useSharedAudioPlayer = (
     }
     frameCallback.setActive(false);
     resumeAfterScrubRef.current = false;
-    player.pause();
-    player.remove();
+    // expo-audio's own cleanup (source swap, or its unmount effect, which runs
+    // before this hook's) may already have released the native player. Calling
+    // into a released shared object throws "Cannot use shared object that was
+    // already released", so guard both calls instead of crashing the app.
+    try {
+      player.pause();
+    } catch (error) {
+      logger.debug(
+        "[SharedAudioPlayer] pause during release skipped (already released)",
+        error,
+      );
+    }
+    try {
+      player.remove();
+    } catch (error) {
+      logger.debug(
+        "[SharedAudioPlayer] remove during release skipped (already released)",
+        error,
+      );
+    }
     setIsAudioActiveAsync(false).catch(() => {});
     setAudioModeAsync({ interruptionMode: "mixWithOthers" }).catch(() => {});
   }, [player, frameCallback]);
@@ -371,11 +399,20 @@ export const useSharedAudioPlayer = (
   // always released when the consumer unmounts, even if it never calls
   // `release()` explicitly. `release` is idempotent, so this composes with
   // explicit callers in the echo flow.
+  //
+  // Track the latest `release` in a ref so the cleanup closure never captures
+  // a stale player instance, and run teardown ONLY on actual unmount — not on
+  // `release` identity churn (which would otherwise fire during a source swap
+  // and kill the freshly-created player).
+  const releaseRef = useRef(release);
+  useEffect(() => {
+    releaseRef.current = release;
+  });
   useEffect(() => {
     return (): void => {
-      release();
+      releaseRef.current();
     };
-  }, [release]);
+  }, []);
 
   // Every public method must remain a stable reference so memoized consumers
   // hold their boundaries; only the live scalar fields churn. The elapsed-time

@@ -18,7 +18,7 @@ import { shadows, duration } from "@/constants";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
-import { appAlert$, appAlertActions } from "@/store";
+import { appAlert$, appAlertActions } from "@/store/appAlert";
 
 const ICON_MAP = {
   info: Info,

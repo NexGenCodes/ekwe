@@ -30,14 +30,9 @@ import {
   ThemePickerModal,
 } from "@/components";
 import { Box, Text, Pressable, ScrollArea } from "@/components/ui";
-import {
-  duration,
-  borderRadius,
-  opacity,
-  spacing,
-} from "@/constants";
+import { duration, borderRadius, opacity, spacing } from "@/constants";
 import { CURRENCIES } from "@ekwe/shared/currencies";
-import { useLogout, useTheme, usePermissions } from "@/hooks";
+import { useLogout, useTheme, usePermissions, useReduceMotion } from "@/hooks";
 import { deleteAccount } from "@/services/auth";
 import { resetAnalytics } from "@/services/posthog";
 import { supabase } from "@/services/supabase";
@@ -56,12 +51,17 @@ export default function ProfileScreen(): React.JSX.Element {
   const { color, colorScheme, setColorScheme } = useTheme();
   const permissions = usePermissions();
   const { confirmLogout } = useLogout();
+  const reduceMotion = useReduceMotion();
+  const sectionEnter = (
+    delay: number,
+  ): ReturnType<typeof FadeInDown.duration> | undefined =>
+    reduceMotion
+      ? undefined
+      : FadeInDown.duration(duration.normal).delay(delay);
 
   const hapticsEnabled = useSelector(() => settings$.hapticsEnabled.get());
   const currency = useSelector(() => settings$.currency.get());
-  const analyticsConsent = useSelector(() =>
-    settings$.analyticsConsent.get(),
-  );
+  const analyticsConsent = useSelector(() => settings$.analyticsConsent.get());
   const {
     setHapticsEnabled,
     setAutoCopy,
@@ -141,7 +141,7 @@ export default function ProfileScreen(): React.JSX.Element {
           paddingBottom: spacing.xl,
         }}
       >
-        <Animated.View entering={FadeInDown.duration(duration.normal)}>
+        <Animated.View entering={sectionEnter(0)}>
           <ProfileIdentity
             user={user}
             isPro={isPro}
@@ -149,6 +149,7 @@ export default function ProfileScreen(): React.JSX.Element {
             userName={userName}
             userEmail={userEmail}
             rawName={rawName}
+            avatarLocked={!permissions.customAvatarIcons}
             onEditAvatar={() => {
               if (permissions.customAvatarIcons) {
                 setIsIconModalVisible(true);
@@ -163,9 +164,7 @@ export default function ProfileScreen(): React.JSX.Element {
         </Animated.View>
 
         {/* Account & Subscription */}
-        <Animated.View
-          entering={FadeInDown.duration(duration.normal).delay(100)}
-        >
+        <Animated.View entering={sectionEnter(100)}>
           <ProfileSection title="Account & Subscription">
             <ProfileRow
               icon={CreditCard}
@@ -176,7 +175,7 @@ export default function ProfileScreen(): React.JSX.Element {
                 isPro ? "Unlimited translations" : "Free Tier · Standard limits"
               }
               onPress={async () => {
-                triggerHaptic();
+                await triggerHaptic();
                 router.push("/billing");
               }}
               trailing={
@@ -208,9 +207,7 @@ export default function ProfileScreen(): React.JSX.Element {
         </Animated.View>
 
         {/* App Preferences */}
-        <Animated.View
-          entering={FadeInDown.duration(duration.normal).delay(150)}
-        >
+        <Animated.View entering={sectionEnter(150)}>
           <ProfileSection title="App Preferences">
             <ProfileRow
               icon={Globe}
@@ -220,7 +217,7 @@ export default function ProfileScreen(): React.JSX.Element {
               subtitle={`${selectedLanguages.length}/5 active languages`}
               hasDivider
               onPress={async () => {
-                triggerHaptic();
+                await triggerHaptic();
                 router.push("/edit-languages");
               }}
             />
@@ -294,8 +291,8 @@ export default function ProfileScreen(): React.JSX.Element {
                     variant="body"
                     style={{ color: color.muted, marginRight: spacing.sm }}
                   >
-                    {CURRENCIES.find((c) => c.code === currency)
-                      ?.code || currency}
+                    {CURRENCIES.find((c) => c.code === currency)?.code ||
+                      currency}
                   </Text>
                   <ChevronRight size={16} color={color.muted} />
                 </Box>
@@ -331,9 +328,7 @@ export default function ProfileScreen(): React.JSX.Element {
         </Animated.View>
 
         {/* Smart Features */}
-        <Animated.View
-          entering={FadeInDown.duration(duration.normal).delay(200)}
-        >
+        <Animated.View entering={sectionEnter(200)}>
           <ProfileSection title="Smart Features">
             <ProfileRow
               icon={Radio}
@@ -341,8 +336,10 @@ export default function ProfileScreen(): React.JSX.Element {
               iconColor={color.foreground}
               title="Live Transcription"
               subtitle="See transcription appear in real time during recording"
+              locked={!isPro}
               onPress={async () => {
                 if (!isPro) {
+                  await triggerHaptic();
                   AppAlert.info(
                     "Ekwe Pro Required",
                     "Live Transcription is a premium feature. Please upgrade to use this.",
@@ -355,26 +352,19 @@ export default function ProfileScreen(): React.JSX.Element {
               }}
               hasDivider
               trailing={
-                <Switch
-                  value={isPro ? liveTranscriptionEnabled : false}
-                  onValueChange={(val) => {
-                    if (!isPro) {
-                      AppAlert.info(
-                        "Ekwe Pro Required",
-                        "Live Transcription is a premium feature. Please upgrade to use this.",
-                      );
-                      router.push("/billing");
-                      return;
-                    }
-                    setLiveTranscriptionEnabled(val);
-                  }}
-                  trackColor={{
-                    true: color.foreground,
-                    false: color.border,
-                  }}
-                  thumbColor={color.card}
-                  disabled={!isPro}
-                />
+                isPro ? (
+                  <Switch
+                    value={liveTranscriptionEnabled}
+                    onValueChange={(val) => {
+                      setLiveTranscriptionEnabled(val);
+                    }}
+                    trackColor={{
+                      true: color.foreground,
+                      false: color.border,
+                    }}
+                    thumbColor={color.card}
+                  />
+                ) : undefined
               }
             />
             <ProfileRow
@@ -384,23 +374,13 @@ export default function ProfileScreen(): React.JSX.Element {
               title="Auto-copy to Clipboard"
               subtitle="Copy translation automatically"
               onPress={async () => {
-                if (!isPro) {
-                  AppAlert.info(
-                    "Ekwe Pro Required",
-                    "Auto-copy is a premium feature. Please upgrade to use this.",
-                  );
-                  router.push("/billing");
-                  return;
-                }
-                if (permissions.autoCopy) {
-                  await triggerHaptic();
-                  setAutoCopy(!autoCopy);
-                }
+                await triggerHaptic();
+                setAutoCopy(!autoCopy);
               }}
               hasDivider
               trailing={
                 <Switch
-                  value={permissions.autoCopy ? autoCopy : false}
+                  value={autoCopy}
                   onValueChange={(val) => {
                     setAutoCopy(val);
                   }}
@@ -409,7 +389,6 @@ export default function ProfileScreen(): React.JSX.Element {
                     false: color.border,
                   }}
                   thumbColor={color.card}
-                  disabled={!permissions.autoCopy}
                 />
               }
             />
@@ -417,9 +396,7 @@ export default function ProfileScreen(): React.JSX.Element {
         </Animated.View>
 
         {/* Help & Legal */}
-        <Animated.View
-          entering={FadeInDown.duration(duration.normal).delay(250)}
-        >
+        <Animated.View entering={sectionEnter(250)}>
           <ProfileSection title="Help & Legal">
             <ProfileRow
               icon={Mail}
@@ -496,7 +473,7 @@ export default function ProfileScreen(): React.JSX.Element {
               title="Privacy Policy"
               hasDivider
               onPress={async () => {
-                triggerHaptic();
+                await triggerHaptic();
                 router.push("/legal/privacy");
               }}
             />
@@ -506,7 +483,7 @@ export default function ProfileScreen(): React.JSX.Element {
               iconColor={color.foreground}
               title="Terms of Service"
               onPress={async () => {
-                triggerHaptic();
+                await triggerHaptic();
                 router.push("/legal/terms");
               }}
             />
@@ -514,9 +491,7 @@ export default function ProfileScreen(): React.JSX.Element {
         </Animated.View>
 
         {/* Account */}
-        <Animated.View
-          entering={FadeInDown.duration(duration.normal).delay(300)}
-        >
+        <Animated.View entering={sectionEnter(300)}>
           <ProfileSection title="Account" titleColor={color.error}>
             <ProfileRow
               icon={LogOut}
@@ -544,9 +519,7 @@ export default function ProfileScreen(): React.JSX.Element {
         </Animated.View>
 
         {/* Footer */}
-        <Animated.View
-          entering={FadeInDown.duration(duration.normal).delay(350)}
-        >
+        <Animated.View entering={sectionEnter(350)}>
           <Box style={styles.footer}>
             <Text
               variant="caption"
@@ -713,6 +686,7 @@ const styles = {
   flex1: { flex: 1 },
   scrollView: { flex: 1 },
   upgradeBadge: {
+    marginLeft: spacing.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,

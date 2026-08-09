@@ -5,6 +5,7 @@
  * This keeps screens thin and auth logic testable + swappable.
  */
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import { AuthApiError } from "@supabase/supabase-js";
 import * as AppleAuthentication from "expo-apple-authentication";
 
 import { queryClient } from "@/hooks/queries/queryClient";
@@ -26,6 +27,34 @@ export interface AuthResult {
   ok: boolean;
   error?: string;
   needsOtp?: boolean;
+  /** Sign-in hit an existing account under a different provider — the user
+   * must verify their email (OTP) so the new identity can be linked. */
+  needsLink?: {
+    provider: "apple" | "google";
+    email: string;
+  };
+}
+
+type LinkProvider = "apple" | "google";
+
+interface PendingLink {
+  provider: LinkProvider;
+  idToken: string;
+}
+
+// Identity tokens are short-lived (5-10 min) — keep them in memory only,
+// never persisted, and clear them after a successful link.
+let pendingLink: PendingLink | null = null;
+
+export const getPendingLinkProvider = (): LinkProvider | null =>
+  pendingLink?.provider ?? null;
+
+function isIdentityLinkError(error: unknown): boolean {
+  if (!(error instanceof AuthApiError)) return false;
+  if (error.code === "user_already_exists") return true;
+  return /already exists|already registered|another (provider|account)|not been linked/i.test(
+    error.message,
+  );
 }
 
 // ── Initialization ─────────────────────────────────────────────────
@@ -146,7 +175,82 @@ export const cleanupAuth = (): void => {
 
 // ── OTP (Passwordless) ──────────────────────────────────────────
 
-export const sendOtp = async (email: string): Promise<AuthResult> => {
+/**
+ * Send a one-time code to the given email.
+ *
+ * When Turnstile is configured (EXPO_PUBLIC_TURNSTILE_SITEKEY + a worker URL),
+ * the request is routed through the Worker, which siteverifies the token and
+ * throttles per IP + email before dispatching the code. Without those env
+ * vars (local dev), it falls back to calling Supabase directly.
+ */
+export const sendOtp = async (
+  email: string,
+  turnstileToken?: string,
+): Promise<AuthResult> => {
+  const workerUrl = process.env.EXPO_PUBLIC_WORKER_URL;
+  const sitekey = process.env.EXPO_PUBLIC_TURNSTILE_SITEKEY;
+
+  if (workerUrl && sitekey) {
+    try {
+      if (!turnstileToken) {
+        track(AnalyticsEvents.AUTH_OTP_FAILED, {
+          method: "otp",
+          error: "missing_turnstile_token",
+        });
+        return {
+          ok: false,
+          error: "One more second — verifying. Try again.",
+        };
+      }
+
+      const res = await fetch(`${workerUrl}/auth/otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), turnstileToken }),
+      });
+
+      if (!res.ok) {
+        track(AnalyticsEvents.AUTH_OTP_FAILED, {
+          method: "otp",
+          error: `worker_${res.status}`,
+        });
+        if (res.status === 403) {
+          return {
+            ok: false,
+            error: "We couldn't verify you're human. Please try again.",
+          };
+        }
+        if (res.status === 429) {
+          return {
+            ok: false,
+            error: "Too many requests. Please wait a moment and try again.",
+          };
+        }
+        return {
+          ok: false,
+          error: "We couldn't send the code. Please try again in a moment.",
+        };
+      }
+
+      track(AnalyticsEvents.AUTH_OTP_SENT, { method: "otp" });
+      return { ok: true, needsOtp: true };
+    } catch (err) {
+      logger.error("[Auth] sendOtp (worker) error:", err);
+      track(AnalyticsEvents.AUTH_OTP_FAILED, {
+        method: "otp",
+        error: "unexpected_error",
+      });
+      return {
+        ok: false,
+        error: "We couldn't send the code. Please try again in a moment.",
+      };
+    }
+  }
+
+  return sendOtpDirect(email);
+};
+
+const sendOtpDirect = async (email: string): Promise<AuthResult> => {
   try {
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
@@ -243,7 +347,17 @@ export const signInWithApple = async (): Promise<AuthResult> => {
       token: idToken,
     });
 
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      // Apple only returns the email on the first authorization, so if it's
+      // missing we can't run the link flow — surface the raw error instead.
+      const email = credential.email ?? undefined;
+      if (isIdentityLinkError(error) && email) {
+        pendingLink = { provider: "apple", idToken };
+        track(AnalyticsEvents.AUTH_NEEDS_LINK, { method: "apple" });
+        return { ok: false, needsLink: { provider: "apple", email } };
+      }
+      return { ok: false, error: error.message };
+    }
 
     if (credential.fullName) {
       const name = [
@@ -295,7 +409,18 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
       token: idToken,
     });
 
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      const email =
+        signInResult.type === "success"
+          ? signInResult.data.user.email
+          : undefined;
+      if (isIdentityLinkError(error) && email) {
+        pendingLink = { provider: "google", idToken };
+        track(AnalyticsEvents.AUTH_NEEDS_LINK, { method: "google" });
+        return { ok: false, needsLink: { provider: "google", email } };
+      }
+      return { ok: false, error: error.message };
+    }
 
     track(AnalyticsEvents.SIGN_IN, { method: "google" });
 
@@ -307,6 +432,53 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
 };
 
 // ── Account Management ──────────────────────────────────────────
+
+/**
+ * Link the pending social identity (Apple/Google) to the currently signed-in
+ * user. Called after email-OTP verification in the "link" flow: the user
+ * first proved ownership of the email, and is now signed in as the existing
+ * account, so we can attach the new identity.
+ *
+ * Requires "multiple identities" to be enabled for the Supabase project.
+ */
+export const linkSocialIdentity = async (): Promise<AuthResult> => {
+  const link = pendingLink;
+  pendingLink = null;
+
+  if (!link) {
+    return {
+      ok: false,
+      error: "That link expired. Please sign in again.",
+    };
+  }
+
+  try {
+    const { error } = await supabase.auth.linkIdentity({
+      provider: link.provider,
+      token: link.idToken,
+    });
+    if (error) {
+      track(AnalyticsEvents.AUTH_LINK_FAILED, {
+        provider: link.provider,
+        error: error.message,
+      });
+      return { ok: false, error: error.message };
+    }
+
+    track(AnalyticsEvents.AUTH_LINKED, { provider: link.provider });
+    return { ok: true };
+  } catch (err) {
+    logger.error("[Auth] linkSocialIdentity error:", err);
+    track(AnalyticsEvents.AUTH_LINK_FAILED, {
+      provider: link.provider,
+      error: "unexpected_error",
+    });
+    return {
+      ok: false,
+      error: "We couldn't link your account. Please try again.",
+    };
+  }
+};
 
 export const signOut = async (): Promise<AuthResult> => {
   try {
@@ -342,8 +514,7 @@ export const deleteAccount = async (): Promise<AuthResult> => {
       logger.error("[Auth] delete_user RPC error:", error);
       return {
         ok: false,
-        error:
-          "Please contact support at support@ekwe.app to complete account deletion.",
+        error: "Please contact support to complete account deletion.",
       };
     }
 

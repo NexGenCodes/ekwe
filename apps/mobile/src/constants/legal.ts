@@ -14,6 +14,9 @@ export interface LegalDocument {
   sections: LegalSection[];
 }
 
+export const LEGAL_CONTACT_EMAIL =
+  process.env.EXPO_PUBLIC_CONTACT_EMAIL ?? "support@ekwe.app";
+
 export const LEGAL_DOCUMENTS: Record<string, LegalDocument> = {
   privacy: {
     title: "Privacy Policy",

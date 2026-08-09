@@ -12,7 +12,7 @@ interface OtpVerifyHook {
     token: string,
     type?: "signup" | "email",
   ) => Promise<AuthResult>;
-  resend: (email: string) => Promise<void>;
+  resend: (email: string, turnstileToken?: string) => Promise<boolean>;
 }
 
 export function useOtpVerify(): OtpVerifyHook {
@@ -35,26 +35,33 @@ export function useOtpVerify(): OtpVerifyHook {
     ): Promise<AuthResult> => {
       setIsLoading(true);
       setError("");
-      const result = await verifyOtp(email, token, type);
-      setIsLoading(false);
-      if (!result.ok) setError(result.error || "Verification failed");
-      return result;
+      try {
+        const result = await verifyOtp(email, token, type);
+        if (!result.ok) setError(result.error || "Verification failed");
+        return result;
+      } finally {
+        setIsLoading(false);
+      }
     },
     [],
   );
 
   const resend = useCallback(
-    async (email: string): Promise<void> => {
-      if (cooldown > 0) return;
+    async (email: string, turnstileToken?: string): Promise<boolean> => {
+      if (cooldown > 0) return false;
       setIsLoading(true);
       setError("");
-      const result = await sendOtp(email);
-      setIsLoading(false);
-      if (result.ok) {
-        track(AnalyticsEvents.AUTH_OTP_RESENT, { method: "otp" });
-        setCooldown(60);
-      } else {
+      try {
+        const result = await sendOtp(email, turnstileToken);
+        if (result.ok) {
+          track(AnalyticsEvents.AUTH_OTP_RESENT, { method: "otp" });
+          setCooldown(60);
+          return true;
+        }
         setError(result.error || "Failed to resend code");
+        return false;
+      } finally {
+        setIsLoading(false);
       }
     },
     [cooldown],

@@ -38,7 +38,6 @@ function rowToEntry(row: {
   source_app: string;
   provider: string;
   created_at: string;
-  deleted: number;
 }): HistoryEntry {
   return {
     id: row.id,

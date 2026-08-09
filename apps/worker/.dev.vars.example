@@ -6,6 +6,16 @@
 SUPABASE_URL=your-supabase-project-url
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
+# ─── Cloudflare Turnstile ─────────────────────────────────────────────
+# Required for /auth/otp (OTP send). Create a widget in the Cloudflare
+# dashboard (invisible mode) and paste its SECRET key here. The mobile app
+# uses EXPO_PUBLIC_TURNSTILE_SITEKEY from its own .env.
+TURNSTILE_SECRET=
+# Comma-separated allowed hostnames the widget can render on (siteverify).
+# The widget renders inside the mobile app's WebView with baseUrl https://ekwe.app
+# Override per-environment here or in wrangler.toml [vars].
+TURNSTILE_HOSTNAMES=ekwe.app
+
 # ─── STT / TTS Providers (multiply-keys = failover rotation) ──────────
 # Required: at least one working key per provider you intend to use.
 DEEPGRAM_KEY_1=

@@ -5,6 +5,7 @@ import { SyncService } from "@/services/SyncService";
 import { Db } from "@/services/db";
 import { HistoryEntry, history$, auth$ } from "@/store";
 import logger from "@/utils/logger";
+import { AppToast } from "@/utils/toast";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const PAGE_SIZE = 20;
@@ -13,6 +14,7 @@ export interface UseHistoryReturn {
   entries: HistoryEntry[];
   todayEntries: HistoryEntry[];
   yesterdayEntries: HistoryEntry[];
+  thisWeekEntries: HistoryEntry[];
   earlierEntries: HistoryEntry[];
   deleteEntry: (id: string) => Promise<void>;
   clearAll: () => Promise<void>;
@@ -24,6 +26,7 @@ interface HistorySnapshot {
   entries: HistoryEntry[];
   todayEntries: HistoryEntry[];
   yesterdayEntries: HistoryEntry[];
+  thisWeekEntries: HistoryEntry[];
   earlierEntries: HistoryEntry[];
 }
 
@@ -36,18 +39,27 @@ function computeSnapshot(
 
   const todayStart = new Date().setHours(0, 0, 0, 0);
   const yesterdayStart = todayStart - MS_PER_DAY;
+  const thisWeekStart = todayStart - 7 * MS_PER_DAY;
 
   const todayEntries: HistoryEntry[] = [];
   const yesterdayEntries: HistoryEntry[] = [];
+  const thisWeekEntries: HistoryEntry[] = [];
   const earlierEntries: HistoryEntry[] = [];
 
   for (const e of sorted) {
     if (e.timestamp >= todayStart) todayEntries.push(e);
     else if (e.timestamp >= yesterdayStart) yesterdayEntries.push(e);
+    else if (e.timestamp >= thisWeekStart) thisWeekEntries.push(e);
     else earlierEntries.push(e);
   }
 
-  return { entries: sorted, todayEntries, yesterdayEntries, earlierEntries };
+  return {
+    entries: sorted,
+    todayEntries,
+    yesterdayEntries,
+    thisWeekEntries,
+    earlierEntries,
+  };
 }
 
 export const useHistory = (): UseHistoryReturn => {
@@ -91,7 +103,23 @@ export const useHistory = (): UseHistoryReturn => {
       logger.warn("[useHistory] Cannot delete entry: no authenticated user");
       return;
     }
+    const entry = history$[id].get();
+    if (!entry) return;
+
     await SyncService.deleteHistory(id, userId);
+
+    AppToast.success("Entry deleted", {
+      haptics: false,
+      duration: 5000,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          SyncService.restoreHistory(entry, userId).catch((err) =>
+            logger.error("[useHistory] Undo restore failed", err),
+          );
+        },
+      },
+    });
   }, []);
 
   const clearAll = useCallback(async (): Promise<void> => {

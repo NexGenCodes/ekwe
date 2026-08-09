@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 
-import { settings$ } from "@/store";
+import { settings$ } from "@/store/settings";
 
 type HapticType =
   Haptics.ImpactFeedbackStyle | Haptics.NotificationFeedbackType | "selection";

@@ -1,4 +1,4 @@
-import { Link } from "expo-router";
+import { useRouter } from "expo-router";
 import React from "react";
 
 import { Text } from "@/components/ui";
@@ -6,6 +6,7 @@ import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 
 export const Disclaimer = (): React.ReactElement => {
+  const router = useRouter();
   const { color } = useTheme();
 
   return (
@@ -21,29 +22,35 @@ export const Disclaimer = (): React.ReactElement => {
       }}
     >
       By continuing, you agree to our{" "}
-      <Link
-        href="/legal/terms"
+      <Text
+        accessibilityRole="link"
         style={{
           color: color.brand,
           textDecorationLine: "underline",
-          padding: spacing.xs,
+          paddingVertical: 6,
+          paddingHorizontal: 4,
+          marginVertical: -6,
+          marginHorizontal: -4,
         }}
-        suppressHighlighting
+        onPress={() => router.push("/legal/terms")}
       >
         Terms
-      </Link>{" "}
+      </Text>{" "}
       and{" "}
-      <Link
-        href="/legal/privacy"
+      <Text
+        accessibilityRole="link"
         style={{
           color: color.brand,
           textDecorationLine: "underline",
-          padding: spacing.xs,
+          paddingVertical: 6,
+          paddingHorizontal: 4,
+          marginVertical: -6,
+          marginHorizontal: -4,
         }}
-        suppressHighlighting
+        onPress={() => router.push("/legal/privacy")}
       >
         Privacy Policy
-      </Link>
+      </Text>
       .
     </Text>
   );

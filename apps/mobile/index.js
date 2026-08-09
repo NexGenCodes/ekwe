@@ -1,52 +1,90 @@
-import { registerRootComponent } from 'expo';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { AppRegistry } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { registerRootComponent } from "expo";
+import { AppRegistry } from "react-native";
+import { useEffect, useState } from "react";
 
-import { ErrorBoundary } from './src/components/ErrorBoundary';
-import { Echo } from './src/components/features/Echo';
-import { AppAlertModal } from './src/components/AppAlertModal';
-import { queryClient } from './src/hooks/queries/queryClient';
+import { preventAutoHideAsync } from "expo-splash-screen";
 
-if (typeof globalThis !== 'undefined') {
+if (typeof globalThis !== "undefined") {
   globalThis.appStartTime = Date.now();
 }
 
+// Hold the native splash from the very first line of JS evaluation. On a cold
+// start the window behind the splash is unpainted (styles.xml sets the native
+// windowBackground to the splash color), so if the splash auto-hides the
+// instant the bundle starts evaluating, you see a black/native void until the
+// app's first frame paints. Hooking here guarantees the splash stays up while
+// the module graph evaluates; the layout decides exactly when to hideAsync.
+preventAutoHideAsync();
+
 // Global unhandled promise rejection handler — logs full stack to Metro
-if (typeof ErrorUtils !== 'undefined') {
+if (typeof ErrorUtils !== "undefined") {
   const origHandler = ErrorUtils.getGlobalHandler();
   ErrorUtils.setGlobalHandler((error, isFatal) => {
-    console.error('[GlobalErrorHandler] isFatal:', isFatal, 'message:', error?.message);
-    console.error('[GlobalErrorHandler] stack:', error?.stack);
+    console.error(
+      "[GlobalErrorHandler] isFatal:",
+      isFatal,
+      "message:",
+      error?.message,
+    );
+    console.error("[GlobalErrorHandler] stack:", error?.stack);
     if (origHandler) origHandler(error, isFatal);
   });
 }
 
-// The share-extension root is hosted by the native ShareActivity — a translucent
-// ReactActivity that renders Echo OVER the source app (no main app opens, no
-// deep link). audioUri/mimeType/sourceApp arrive as launch props. Provider
-// wrappers mirror src/app/_layout.tsx so QueryClient/SafeArea contexts exist.
-const ShareExtensionRoot = (props) => (
-  <GestureHandlerRootView style={{ flex: 1, backgroundColor: 'transparent' }}>
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <ErrorBoundary>
-          <Echo {...props} />
-          <AppAlertModal />
-        </ErrorBoundary>
-      </QueryClientProvider>
-    </SafeAreaProvider>
-  </GestureHandlerRootView>
-);
+// ⚠️ Keep the share/Echo module graph OFF the top of this entry. index.js is
+// the bundle root for BOTH the main app and the Android share-extension;
+// static top-level imports evaluate the instant the bundle loads, so importing
+// ShareGate (→ Echo → useEchoFlow → auth → audio pipeline) here would force
+// EVERY launcher cold start to parse the whole share graph before the main
+// app's first frame. Everything share-related is required lazily below, so a
+// plain app cold start never evaluates it.
+const loadShareGate = () => require("./src/components/features/Echo").ShareGate;
+const loadQueryClient = () =>
+  require("./src/hooks/queries/queryClient").queryClient;
 
-AppRegistry.registerComponent('share-extension', () => ShareExtensionRoot);
+// The share-extension root is hosted by the native ShareActivity — a
+// translucent ReactActivity that renders the share gate OVER the source app (no
+// main app opens, no deep link). audioUri/mimeType/sourceApp arrive as launch
+// props. ShareGate resolves the signed-in state before mounting the Echo UI:
+// signed-in users get the full flow, signed-out users get a "Sign in to use
+// Echo" card. Provider wrappers mirror src/app/_layout.tsx so QueryClient /
+// SafeArea contexts exist — all required lazily on first mount.
+const ShareExtensionRoot = (props) => {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    setReady(true);
+  }, []);
+  if (!ready) return null;
+
+  const { QueryClientProvider } = require("@tanstack/react-query");
+  const { GestureHandlerRootView } = require("react-native-gesture-handler");
+  const { SafeAreaProvider } = require("react-native-safe-area-context");
+  const { ErrorBoundary } = require("./src/components/ErrorBoundary");
+  const { AppAlertModal } = require("./src/components/AppAlertModal");
+  const ShareGate = loadShareGate();
+  const { queryClient } = loadQueryClient();
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "transparent" }}>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <ErrorBoundary>
+            <ShareGate {...props} />
+            <AppAlertModal />
+          </ErrorBoundary>
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
+  );
+};
+
+AppRegistry.registerComponent("share-extension", () => ShareExtensionRoot);
 
 // Main app entry. Android and iOS share paths are handled natively
 // (ShareActivity / ShareViewController) and deep-link into the app's `/share`
 // route, which hosts the Echo sheet.
 const MainAppWrapper = (props) => {
-  const App = require('./src/app/AppEntry').default;
+  const App = require("./src/app/AppEntry").default;
   return <App {...props} />;
 };
 

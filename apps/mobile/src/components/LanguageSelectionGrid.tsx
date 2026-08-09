@@ -25,7 +25,7 @@ const LanguageGridItem = memo(function LanguageGridItem({
   onToggle: (code: string) => void;
 }) {
   return (
-    <View style={{ width: "50%", padding: spacing.xs }}>
+    <View style={{ width: "50%", padding: spacing.sm }}>
       <LanguageGridCard
         code={code}
         label={label}
@@ -69,9 +69,9 @@ export function LanguageSelectionGrid({
       style={{
         flexDirection: "row",
         flexWrap: "wrap",
-        paddingTop: spacing.md,
-        paddingBottom: spacing["2xl"],
-        marginHorizontal: -spacing.xs,
+        paddingTop: spacing.lg,
+        paddingBottom: spacing["3xl"],
+        marginHorizontal: -spacing.sm,
       }}
     >
       {items}

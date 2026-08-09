@@ -1,4 +1,3 @@
-import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Globe from "lucide-react-native/icons/globe";
@@ -17,9 +16,8 @@ import Animated, {
 import { Button, EkweLogo, FeatureCard } from "@/components";
 import { Box, ScreenContainer, Text } from "@/components/ui";
 import { duration, spacing, iconSize, spinnerSize } from "@/constants";
-import { useTokens } from "@/hooks/ui";
+import { useReduceMotion, useTokens } from "@/hooks/ui";
 import { withAlpha } from "@/utils";
-import { triggerHaptic } from "@/utils/haptics";
 
 const FEATURES = [
   {
@@ -43,17 +41,26 @@ const FEATURES = [
 export default function WelcomeScreen(): React.ReactElement {
   const router = useRouter();
   const { color } = useTokens();
+  const reduceMotion = useReduceMotion();
 
   const progress = useSharedValue(0);
 
+  const handleGetStarted = useCallback(async (): Promise<void> => {
+    router.replace("/language");
+  }, [router]);
+
   useEffect(() => {
-    progress.value = withTiming(1, {
-      duration: duration.slow,
-      easing: Easing.out(Easing.cubic),
-    });
+    if (reduceMotion) {
+      progress.value = 1;
+    } else {
+      progress.value = withTiming(1, {
+        duration: duration.slow,
+        easing: Easing.out(Easing.cubic),
+      });
+    }
 
     router.prefetch("/language");
-  }, [progress, router]);
+  }, [progress, router, reduceMotion]);
 
   const containerStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
@@ -62,42 +69,66 @@ export default function WelcomeScreen(): React.ReactElement {
 
   return (
     <View style={{ flex: 1, backgroundColor: color.background }}>
-      <LinearGradient
-        colors={[color.background, withAlpha(color.brand, 0.1), color.background]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-
       <ScreenContainer
         scroll
-        contentContainerStyle={{
-          flexGrow: 1,
-          paddingTop: spacing["2xl"],
-          paddingBottom: spacing["2xl"],
-          paddingHorizontal: spacing.lg,
-        }}
+        bounces={false}
+        contentContainerStyle={{ flexGrow: 1 }}
         style={{ backgroundColor: "transparent" }}
       >
         <Animated.View
           style={[
             {
               flex: 1,
-              justifyContent: "space-between",
+              paddingHorizontal: spacing.xl,
+              paddingVertical: spacing.lg,
             },
             containerStyle,
           ]}
         >
-          <Box>
-            <Box style={{ alignItems: "center", marginBottom: spacing.xl }}>
-              <Box style={{ marginBottom: spacing.md }}>
+          <Box style={{ flex: 1, justifyContent: "center" }}>
+            <Box style={{ alignItems: "center", marginBottom: spacing.lg }}>
+              <View
+                style={{
+                  width: 200,
+                  height: 200,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: spacing.md,
+                }}
+              >
+                <View
+                  style={[
+                    StyleSheet.absoluteFill,
+                    {
+                      borderRadius: 100,
+                      backgroundColor: withAlpha(color.brand, 0.05),
+                    },
+                  ]}
+                />
+                <View
+                  style={{
+                    position: "absolute",
+                    width: 150,
+                    height: 150,
+                    borderRadius: 75,
+                    backgroundColor: withAlpha(color.brand, 0.08),
+                  }}
+                />
+                <View
+                  style={{
+                    position: "absolute",
+                    width: 100,
+                    height: 100,
+                    borderRadius: 50,
+                    backgroundColor: withAlpha(color.brand, 0.12),
+                  }}
+                />
                 <EkweLogo size={spacing["6xl"]} color={color.brand} />
-              </Box>
+              </View>
               <Text
                 variant="display"
                 style={{
                   textAlign: "center",
-                  paddingHorizontal: spacing.md,
                   color: color.foreground,
                   letterSpacing: -0.5,
                 }}
@@ -110,20 +141,23 @@ export default function WelcomeScreen(): React.ReactElement {
                   textAlign: "center",
                   color: color.muted,
                   marginTop: spacing.sm,
-                  paddingHorizontal: spacing.md,
                 }}
               >
                 Real-time translation that stays on your device.
               </Text>
             </Box>
 
-            <Box style={{ gap: spacing.md }}>
+            <Box style={{ gap: spacing.md, marginBottom: spacing.lg }}>
               {FEATURES.map((item, index) => (
                 <Animated.View
                   key={item.title}
-                  entering={FadeInDown.delay(
-                    duration.fast * 2 + index * duration.fast,
-                  ).springify()}
+                  entering={
+                    reduceMotion
+                      ? undefined
+                      : FadeInDown.delay(
+                          duration.fast * 2 + index * duration.fast,
+                        ).springify()
+                  }
                 >
                   <FeatureCard
                     icon={item.icon}
@@ -133,17 +167,12 @@ export default function WelcomeScreen(): React.ReactElement {
                 </Animated.View>
               ))}
             </Box>
-          </Box>
 
-          <Box>
             <Button
               variant="primary"
               size="large"
               label="Get Started"
-              onPress={useCallback(async () => {
-                await triggerHaptic();
-                router.replace("/language");
-              }, [router])}
+              onPress={handleGetStarted}
               rightIcon={
                 <ChevronRight
                   size={iconSize.md}

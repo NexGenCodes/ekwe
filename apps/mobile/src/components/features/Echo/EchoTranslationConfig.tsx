@@ -29,6 +29,7 @@ interface EchoTranslationConfigProps {
   setTargetLang: (code: string) => void;
   handleTranslate: () => void;
   audioPlayer: WaveformPlaybackController | null;
+  autoLanguageDetect: boolean;
 }
 
 export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
@@ -36,6 +37,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
     ({
       selectedLang,
       detectedLang,
+      autoLanguageDetect,
       targetLang,
       transcription,
       availableTargetList,
@@ -48,7 +50,9 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
       const brandWarning = color.warning;
 
       const isMismatch =
-        selectedLang !== "auto" && selectedLang !== detectedLang;
+        autoLanguageDetect &&
+        selectedLang !== "auto" &&
+        selectedLang !== detectedLang;
 
       const selectedName =
         selectedLang === "auto"
@@ -121,49 +125,50 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                     variant="caption"
                     style={{ color: isMismatch ? brandWarning : color.muted }}
                   >
-                    Selected ·{" "}
+                    {autoLanguageDetect ? "Selected · " : "Transcribed in · "}
                   </Text>
                   {selectedName}
                 </Text>
               </Box>
 
-              <ArrowRight
-                size={14}
-                color={color.muted}
-                style={{ marginHorizontal: spacing.xs }}
-              />
+              {autoLanguageDetect && (
+                <>
+                  <ArrowRight
+                    size={14}
+                    color={color.muted}
+                    style={{ marginHorizontal: spacing.xs }}
+                  />
 
-              {/* Detected pill */}
-              <Box
-                style={{
-                  flex: 1,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  paddingHorizontal: spacing.md,
-                  paddingVertical: spacing.xs,
-                  borderRadius: borderRadius["2xl"],
-                  borderWidth: 1,
-                  gap: spacing.sm,
-                  backgroundColor: color.surface,
-                  borderColor: color.border,
-                }}
-              >
-                <Ear size={13} color={brandPrimary} />
-                <Text variant="body">{detectedFlag}</Text>
-                <Text
-                  variant="bodySmall"
-                  numberOfLines={1}
-                  style={{ flex: 1, color: color.foreground }}
-                >
-                  <Text
-                    variant="caption"
-                    style={{ color: color.muted }}
+                  {/* Detected pill */}
+                  <Box
+                    style={{
+                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: spacing.md,
+                      paddingVertical: spacing.xs,
+                      borderRadius: borderRadius["2xl"],
+                      borderWidth: 1,
+                      gap: spacing.sm,
+                      backgroundColor: color.surface,
+                      borderColor: color.border,
+                    }}
                   >
-                    Detected ·{" "}
-                  </Text>
-                  {detectedName}
-                </Text>
-              </Box>
+                    <Ear size={13} color={brandPrimary} />
+                    <Text variant="body">{detectedFlag}</Text>
+                    <Text
+                      variant="bodySmall"
+                      numberOfLines={1}
+                      style={{ flex: 1, color: color.foreground }}
+                    >
+                      <Text variant="caption" style={{ color: color.muted }}>
+                        Detected ·{" "}
+                      </Text>
+                      {detectedName}
+                    </Text>
+                  </Box>
+                </>
+              )}
             </Box>
           </Box>
 

@@ -74,6 +74,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     uploadProgress,
     autoCopied,
     onDismiss,
+    autoLanguageDetect,
   } = useEchoFlow(props, () => playerReleaseRef.current());
 
   const { color } = useTheme();
@@ -234,6 +235,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             setTargetLang={setTargetLang}
             handleTranslate={handleTranslate}
             audioPlayer={player}
+            autoLanguageDetect={autoLanguageDetect}
           />
         );
 

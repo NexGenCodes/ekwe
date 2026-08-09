@@ -17,7 +17,6 @@ export interface HistoryRow {
   source_app: string;
   provider: string;
   created_at: string;
-  deleted: number;
 }
 
 export interface OutboxRow {
@@ -57,8 +56,7 @@ function migrate(): void {
         duration REAL NOT NULL DEFAULT 0,
         source_app TEXT NOT NULL DEFAULT '',
         provider TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL,
-        deleted INTEGER NOT NULL DEFAULT 0
+        created_at TEXT NOT NULL
       )
     `);
     db.executeSync(
@@ -66,9 +64,6 @@ function migrate(): void {
     );
     db.executeSync(
       "CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id)",
-    );
-    db.executeSync(
-      "CREATE INDEX IF NOT EXISTS idx_history_deleted ON history(deleted)",
     );
 
     try {
@@ -128,6 +123,16 @@ function migrate(): void {
     db.executeSync("DROP TABLE IF EXISTS store");
     db.executeSync("PRAGMA user_version = 2");
   }
+
+  if (currentVersion < 3) {
+    const cols = db.executeSync("PRAGMA table_info(history)") as QueryResult;
+    const hasDeleted = (cols.rows ?? []).some((c) => c.name === "deleted");
+    if (hasDeleted) {
+      db.executeSync("DROP INDEX IF EXISTS idx_history_deleted");
+      db.executeSync("ALTER TABLE history DROP COLUMN deleted");
+    }
+    db.executeSync("PRAGMA user_version = 3");
+  }
 }
 
 export function getDb(): DB {
@@ -150,11 +155,11 @@ export const Db = {
     }
   },
 
-  insertHistory: (row: Omit<HistoryRow, "deleted">): void => {
+  insertHistory: (row: HistoryRow): void => {
     getDb().executeSync(
       `INSERT OR REPLACE INTO history (id, user_id, source_lang, target_lang, transcript, translation_text,
-        transliteration_text, duration, source_app, provider, created_at, deleted)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+        transliteration_text, duration, source_app, provider, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
         row.user_id,
@@ -268,6 +273,14 @@ export const Db = {
 
   deleteOutbox: (id: string): void => {
     getDb().executeSync("DELETE FROM outbox WHERE id = ?", [id]);
+  },
+
+  /** Removes all outbox rows that reference a history entry (by outbox id or payload id). */
+  deleteOutboxForHistory: (id: string): void => {
+    getDb().executeSync(
+      `DELETE FROM outbox WHERE id = ? OR payload LIKE '%"id":"' || ? || '"%'`,
+      [id, id],
+    );
   },
 
   getPendingOutbox: (): OutboxRow[] => {

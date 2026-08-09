@@ -12,7 +12,7 @@ import { File, Paths, type Directory } from "expo-file-system";
 
 import type { Session } from "@supabase/supabase-js";
 
-import { isIOS } from "@/utils";
+import { isIOS } from "@/utils/platform";
 import logger from "@/utils/logger";
 import EkweNative from "../../modules/ekwe-native";
 

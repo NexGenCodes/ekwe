@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import {
@@ -12,6 +12,7 @@ import {
   ErrorBanner,
   Button,
   Disclaimer,
+  TurnstileWidget,
 } from "@/components";
 import { Box } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
@@ -25,15 +26,19 @@ export default function WelcomeScreen(): React.JSX.Element {
   const { isLoading, error, run, handleApple, handleGoogle } = useAuthFlow();
   const { isOffline } = useNetwork();
 
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const sitekey = process.env.EXPO_PUBLIC_TURNSTILE_SITEKEY;
+  const hasTurnstile = !!sitekey;
+
   const { control, handleSubmit } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "" },
   });
 
-  const disabled = isLoading || isOffline;
+  const disabled = isLoading || isOffline || (hasTurnstile && !turnstileToken);
 
   const onSubmit = async (data: LoginForm): Promise<void> => {
-    const result = await run(() => sendOtp(data.email));
+    const result = await run(() => sendOtp(data.email, turnstileToken));
     if (result.ok && result.needsOtp) {
       router.push({
         pathname: "/(auth)/verify",
@@ -44,7 +49,14 @@ export default function WelcomeScreen(): React.JSX.Element {
 
   return (
     <AuthShell>
-      <AuthHeader subtitle="Enter your email to sign in or create a new account." />
+      {hasTurnstile && sitekey ? (
+        <TurnstileWidget sitekey={sitekey} onToken={setTurnstileToken} />
+      ) : null}
+
+      <AuthHeader
+        title="Welcome to Ekwe"
+        subtitle="Sign in or create an account to start translating."
+      />
 
       <Box>
         <ErrorBanner
@@ -64,7 +76,8 @@ export default function WelcomeScreen(): React.JSX.Element {
                 value={value}
                 onChangeText={onChange}
                 onBlur={onBlur}
-                placeholder="Email address"
+                label="Email address"
+                placeholder="you@example.com"
                 keyboardType="email-address"
                 returnKeyType="go"
                 textContentType="emailAddress"
@@ -79,12 +92,13 @@ export default function WelcomeScreen(): React.JSX.Element {
 
         <Button
           label="Continue with Email"
+          size="large"
           onPress={handleSubmit(onSubmit)}
           loading={isLoading}
           disabled={disabled}
         />
 
-        <Divider />
+        <Divider label="or continue with" />
 
         <SocialAuthGroup
           onApple={handleApple}

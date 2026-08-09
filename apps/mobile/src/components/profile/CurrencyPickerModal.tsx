@@ -98,14 +98,14 @@ export function CurrencyPickerModal({
                       paddingVertical: spacing.md,
                       paddingHorizontal: spacing.sm,
                       borderRadius: borderRadius.lg,
-                      marginVertical: 2,
+                      marginVertical: spacing.hairline,
                     },
-pressed && {
-                        backgroundColor: withAlpha(color.foreground, 0.102),
-                      },
-                      isSelected && {
-                        backgroundColor: withAlpha(color.foreground, 0.051),
-                      },
+                    pressed && {
+                      backgroundColor: withAlpha(color.foreground, 0.102),
+                    },
+                    isSelected && {
+                      backgroundColor: withAlpha(color.foreground, 0.051),
+                    },
                   ]}
                   onPress={() => onSelect(item.code)}
                   accessibilityLabel={`Select ${item.name}`}
@@ -125,7 +125,7 @@ pressed && {
                     <Text
                       variant="body"
                       style={{
-                        color: isSelected ? color.foreground : color.foreground,
+                        color: color.foreground,
                         fontWeight: isSelected ? "600" : "400",
                       }}
                     >
@@ -135,7 +135,7 @@ pressed && {
                       variant="caption"
                       style={{
                         color: color.muted,
-                        marginTop: 2,
+                        marginTop: spacing.hairline,
                       }}
                     >
                       {item.region}

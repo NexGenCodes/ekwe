@@ -1,8 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as Haptics from "expo-haptics";
-import { triggerHaptic } from "@/utils/haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
@@ -12,52 +11,107 @@ import {
   ErrorBanner,
   Button,
   OtpInput,
+  TurnstileWidget,
 } from "@/components";
 import { Box, Text, Pressable } from "@/components/ui";
 import { duration } from "@/constants/motion";
 import { spacing } from "@/constants/spacing";
+import { typography } from "@/constants/typography";
 import { useTheme, useOtpVerify } from "@/hooks";
 import { otpSchema, OtpForm } from "@/schemas/auth";
+import { getPendingLinkProvider, linkSocialIdentity } from "@/services/auth";
+import { triggerHaptic } from "@/utils/haptics";
+
+const OTP_EXPIRY_HINT = "Codes expire in 10 minutes.";
+
+const formatCooldown = (seconds: number): string => {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+};
 
 export default function VerifyScreen(): React.JSX.Element {
   const router = useRouter();
 
   const params = useLocalSearchParams<{ email: string; source?: string }>();
   const email = params.email || "";
+  const isLinkMode = params.source === "link";
+  const linkProvider = getPendingLinkProvider();
 
   const { color } = useTheme();
   const { isLoading, error, cooldown, verify, resend } = useOtpVerify();
+  const [linkError, setLinkError] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [shakeSignal, setShakeSignal] = useState(0);
+  const [resent, setResent] = useState(false);
+  const sitekey = process.env.EXPO_PUBLIC_TURNSTILE_SITEKEY;
+  const hasTurnstile = !!sitekey;
 
-  const { control, handleSubmit } = useForm<OtpForm>({
+  const { control, handleSubmit, reset } = useForm<OtpForm>({
     resolver: zodResolver(otpSchema),
     defaultValues: { token: "" },
   });
+
+  // Auto-dismiss the "new code sent" confirmation.
+  useEffect(() => {
+    if (!resent) return;
+    const timer = setTimeout(() => setResent(false), 4000);
+    return (): void => clearTimeout(timer);
+  }, [resent]);
 
   const onSubmit = async (data: OtpForm): Promise<void> => {
     const type: "signup" | "email" =
       params.source === "signup" ? "signup" : "email";
     const result = await verify(email, data.token, type);
-    if (result.ok) {
-      triggerHaptic(Haptics.NotificationFeedbackType.Success);
-      router.replace("/(tabs)");
+    if (!result.ok) {
+      triggerHaptic(Haptics.NotificationFeedbackType.Error);
+      setShakeSignal((s) => s + 1);
+      reset({ token: "" });
+      return;
     }
+
+    // Link flow: the user proved ownership of the email, so attach the social
+    // identity that hit the "already registered" wall.
+    if (isLinkMode) {
+      const linkResult = await linkSocialIdentity();
+      if (!linkResult.ok) {
+        setLinkError(linkResult.error || "We couldn't link your account.");
+        return;
+      }
+    }
+
+    triggerHaptic(Haptics.NotificationFeedbackType.Success);
+    router.replace("/(tabs)");
   };
 
   const handleResend = async (): Promise<void> => {
-    if (cooldown > 0) return;
-    await resend(email);
+    if (cooldown > 0 || isLoading) return;
+    setResent(false);
+    const ok = await resend(email, turnstileToken);
+    if (ok) setResent(true);
   };
 
   return (
     <AuthShell showBackButton>
       <Animated.View entering={FadeInDown.duration(duration.slow).springify()}>
+        {hasTurnstile && sitekey ? (
+          <TurnstileWidget sitekey={sitekey} onToken={setTurnstileToken} />
+        ) : null}
+
         <AuthHeader
-          subtitle="Check your inbox"
-          caption={`We sent a code to ${email}`}
+          title={isLinkMode ? "Link your account" : "Check your inbox"}
+          subtitle={
+            isLinkMode
+              ? `This email is already registered with another sign-in method. Enter the code to link your ${
+                  linkProvider === "google" ? "Google" : "Apple"
+                } account.`
+              : `We sent a 6-digit code to ${email}`
+          }
+          caption={isLinkMode ? undefined : OTP_EXPIRY_HINT}
         />
 
         <Box style={{ gap: spacing.md }}>
-          <ErrorBanner message={error} />
+          <ErrorBanner message={linkError || error} />
 
           <Box style={{ alignItems: "center" }}>
             <Controller
@@ -74,40 +128,83 @@ export default function VerifyScreen(): React.JSX.Element {
                   }}
                   onSubmitEditing={handleSubmit(onSubmit)}
                   error={fieldState.error?.message}
+                  autoFocus
+                  disabled={isLoading}
+                  shakeSignal={shakeSignal}
                 />
               )}
             />
           </Box>
 
           <Button
-            label="Verify Code"
+            label={isLinkMode ? "Verify & Link" : "Verify Code"}
+            size="large"
             onPress={handleSubmit(onSubmit)}
             loading={isLoading}
           />
 
-          <Pressable
-            onPress={handleResend}
-            disabled={cooldown > 0 || isLoading}
-            style={{ alignItems: "center" }}
-            accessibilityLabel={
-              cooldown > 0
-                ? `Resend code in ${cooldown} seconds`
-                : "Resend code"
-            }
-          >
-            <Text variant="bodySmall" style={{ color: color.muted }}>
-              Didn't receive it?
-            </Text>
+          <Box style={{ alignItems: "center", marginTop: spacing.xs }}>
+            {resent ? (
+              <Animated.Text
+                entering={FadeInDown.duration(duration.fast)}
+                style={{
+                  color: color.success,
+                  fontFamily: typography.bodySmall.fontFamily,
+                  fontSize: typography.bodySmall.fontSize,
+                  marginBottom: spacing.sm,
+                }}
+              >
+                New code sent. Check your inbox.
+              </Animated.Text>
+            ) : null}
+
+            <Pressable
+              onPress={handleResend}
+              disabled={cooldown > 0 || isLoading}
+              style={{ alignItems: "center" }}
+              accessibilityRole="button"
+              accessibilityLabel={
+                cooldown > 0
+                  ? `Resend code in ${formatCooldown(cooldown)}`
+                  : "Resend code"
+              }
+              accessibilityState={{ disabled: cooldown > 0 || isLoading }}
+            >
+              <Text
+                variant="bodySmall"
+                style={{
+                  color: color.muted,
+                  fontWeight: "500",
+                }}
+              >
+                Didn't receive it?
+              </Text>
+              <Text
+                variant="bodySmall"
+                style={{
+                  color: cooldown > 0 ? color.muted : color.brand,
+                  fontWeight: "600",
+                  marginTop: spacing.xs,
+                  fontVariant: ["tabular-nums"],
+                }}
+              >
+                {cooldown > 0
+                  ? `Resend code in ${formatCooldown(cooldown)}`
+                  : "Resend code"}
+              </Text>
+            </Pressable>
+
             <Text
-              variant="bodySmall"
+              variant="caption"
               style={{
-                color: cooldown > 0 ? color.muted : color.foreground,
-                marginTop: spacing.xs,
+                color: color.disabled,
+                marginTop: spacing.sm,
+                textAlign: "center",
               }}
             >
-              {cooldown > 0 ? `Resend code (${cooldown}s)` : "Resend code"}
+              Still stuck? Check your spam folder or try a different email.
             </Text>
-          </Pressable>
+          </Box>
         </Box>
       </Animated.View>
     </AuthShell>

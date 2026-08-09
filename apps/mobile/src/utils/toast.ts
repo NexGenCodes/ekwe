@@ -11,6 +11,8 @@ export interface AppToastOptions {
   duration?: number;
   /** Play haptics? Defaults to true */
   haptics?: boolean | Haptics.NotificationFeedbackType;
+  /** Optional action button rendered on the toast */
+  action?: { label: string; onClick: () => void };
 }
 
 /**
@@ -26,6 +28,7 @@ export const AppToast = {
       description: options?.description,
       duration: options?.duration || 3000,
       richColors: true,
+      action: options?.action,
     });
   },
 
@@ -37,6 +40,7 @@ export const AppToast = {
       description: options?.description,
       duration: options?.duration || 3500,
       richColors: true,
+      action: options?.action,
     });
   },
 
@@ -48,6 +52,7 @@ export const AppToast = {
       description: options?.description,
       duration: options?.duration || 3000,
       richColors: true,
+      action: options?.action,
     });
   },
 
@@ -82,6 +87,7 @@ export const AppToast = {
       description,
       duration: options?.duration || 4000,
       richColors: true,
+      action: options?.action,
     });
   },
 };

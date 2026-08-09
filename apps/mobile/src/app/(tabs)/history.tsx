@@ -5,10 +5,12 @@ import AudioLines from "lucide-react-native/icons/audio-lines";
 import Search from "lucide-react-native/icons/search";
 import X from "lucide-react-native/icons/x";
 import React, { useCallback, useRef, useState } from "react";
-import { TextInput, ScrollView, StyleSheet } from "react-native";
+import { TextInput, StyleSheet } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn } from "react-native-reanimated";
 
 import { type FlashListRef } from "@shopify/flash-list";
+import { EkweLogo } from "@/components/EkweLogo";
 import { EmptyState, IconContainer } from "@/components";
 import { HistoryListSection } from "@/components/history/HistoryListSection";
 import { Box, Text, Pressable } from "@/components/ui";
@@ -41,10 +43,11 @@ export default function HistoryScreen(): React.JSX.Element {
     entries,
     todayEntries,
     yesterdayEntries,
+    thisWeekEntries,
     earlierEntries,
-    deleteEntry,
     loadMore,
     hasMore,
+    deleteEntry,
   } = useHistory();
   const { query, setQuery, filter, setFilter, filteredEntries, isSearching } =
     useHistorySearch(entries);
@@ -54,6 +57,7 @@ export default function HistoryScreen(): React.JSX.Element {
   const { color } = useTheme();
 
   const listRef = useRef<FlashListRef<ListItem>>(null!);
+  const insets = useSafeAreaInsets();
 
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -82,6 +86,7 @@ export default function HistoryScreen(): React.JSX.Element {
     isGrouped,
     todayEntries,
     yesterdayEntries,
+    thisWeekEntries,
     earlierEntries,
     filteredEntries,
   });
@@ -105,7 +110,31 @@ export default function HistoryScreen(): React.JSX.Element {
 
   return (
     <Box style={[styles.flex1, { backgroundColor: color.background }]}>
-      <Box style={{ paddingHorizontal: spacing.md }}>
+      <Box
+        style={{
+          paddingTop: insets.top + spacing.sm,
+          paddingHorizontal: spacing.md,
+        }}
+      >
+        {/* Header — title + count */}
+        <Box style={styles.headerRow}>
+          <Box style={styles.headerTitle}>
+            <IconContainer
+              size="xl"
+              variant="custom"
+              backgroundColor={withAlpha(color.brand, 0.082)}
+            >
+              <EkweLogo size={iconSize.xl} color={color.brand} />
+            </IconContainer>
+            <Box>
+              <Text variant="display">History</Text>
+              <Text variant="body" style={{ color: color.muted }}>
+                {entries.length} {entries.length === 1 ? "entry" : "entries"}
+              </Text>
+            </Box>
+          </Box>
+        </Box>
+
         {/* Search row */}
         <Box style={styles.searchRow}>
           <Box
@@ -149,13 +178,9 @@ export default function HistoryScreen(): React.JSX.Element {
           </Box>
         </Box>
 
-        {/* Horizontal scrollable filter chips */}
+        {/* Filter chips */}
         <Box style={styles.chipsContainer}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipsContent}
-          >
+          <Box style={styles.chipsContent}>
             {FILTER_OPTIONS.map((option) => (
               <Pressable
                 key={option}
@@ -189,7 +214,7 @@ export default function HistoryScreen(): React.JSX.Element {
                 </Text>
               </Pressable>
             ))}
-          </ScrollView>
+          </Box>
         </Box>
       </Box>
 
@@ -205,7 +230,6 @@ export default function HistoryScreen(): React.JSX.Element {
             ]}
           >
             <EmptyState
-              animate
               icon={
                 <IconContainer
                   size="lg"
@@ -241,7 +265,7 @@ export default function HistoryScreen(): React.JSX.Element {
           hasMore={hasMore}
           onLoadMore={loadMore}
           handleEntryPress={handleEntryPress}
-          deleteEntry={deleteEntry}
+          onDeleteEntry={deleteEntry}
         />
       )}
     </Box>
@@ -250,11 +274,22 @@ export default function HistoryScreen(): React.JSX.Element {
 
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: spacing.xs,
+  },
+  headerTitle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    marginTop: spacing.xs,
+    marginTop: spacing.md,
   },
   searchContainer: {
     flex: 1,
@@ -279,6 +314,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   chipsContent: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
     paddingVertical: spacing.xs,
   },

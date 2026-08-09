@@ -1,21 +1,27 @@
+import * as Haptics from "expo-haptics";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import X from "lucide-react-native/icons/x";
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect } from "react";
 import { StyleSheet } from "react-native";
 
-import {
-  ResultProcessingIndicator,
-  ResultTextBlock,
-} from "@/components/result";
-import { Box, Pressable, ScrollArea, Spinner } from "@/components/ui";
-import { getLanguageName } from "@/constants/languages";
+import { HistoryEntryDetail } from "@/components/history/HistoryEntryDetail";
+import { ResultProcessingIndicator } from "@/components/result";
+import { Box, Pressable } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useResultPipeline, useTheme } from "@/hooks";
+import { SyncService } from "@/services/SyncService";
+import { auth$, history$, HistoryEntry } from "@/store";
+import { triggerHaptic } from "@/utils/haptics";
+import logger from "@/utils/logger";
+import { AppToast } from "@/utils/toast";
+import { useSelector } from "@legendapp/state/react";
 
 export default function ResultScreen(): React.JSX.Element {
   const router = useRouter();
   const params = useLocalSearchParams();
+
+  const entryId = params.entryId as string | undefined;
 
   const {
     transcript,
@@ -28,7 +34,7 @@ export default function ResultScreen(): React.JSX.Element {
     handleTranslate,
   } = useResultPipeline({
     uri: params.uri as string | undefined,
-    entryId: params.entryId as string | undefined,
+    entryId,
     initialTranscript: params.transcript as string | undefined,
     initialSourceLang: params.sourceLang as string | undefined,
     initialTargetLang: params.targetLang as string | undefined,
@@ -36,7 +42,37 @@ export default function ResultScreen(): React.JSX.Element {
     sourceApp: params.sourceApp as string | undefined,
   });
 
+  const entry = useSelector(() =>
+    entryId ? (history$[entryId].get() as HistoryEntry | null) : null,
+  );
+
   const { color } = useTheme();
+
+  const handleDeleteEntry = useCallback(async (): Promise<void> => {
+    if (!entryId) return;
+    const userId = auth$.user.get()?.id;
+    if (!userId) return;
+    const entryToDelete = history$[entryId].get();
+    if (!entryToDelete) return;
+
+    triggerHaptic(Haptics.NotificationFeedbackType.Warning);
+    await SyncService.deleteHistory(entryId, userId);
+
+    AppToast.success("Entry deleted", {
+      haptics: false,
+      duration: 5000,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          SyncService.restoreHistory(entryToDelete, userId).catch((err) =>
+            logger.error("[result] Undo restore failed", err),
+          );
+        },
+      },
+    });
+
+    router.back();
+  }, [entryId, router]);
 
   useEffect(() => {
     if (
@@ -50,6 +86,23 @@ export default function ResultScreen(): React.JSX.Element {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript, isHistoryReplay]);
+
+  // Fall back to the routed params if the store entry is unavailable (e.g.
+  // the entry was deleted while the sheet was open).
+  const detailEntry: HistoryEntry | null = entry ?? {
+    id: entryId ?? "",
+    sourceLang,
+    targetLang,
+    transcript,
+    translation,
+    transliteration: null,
+    timestamp: 0,
+    duration: Number(params.duration ?? 0),
+    sourceApp: null,
+  };
+
+  const showDetail =
+    detailEntry.transcript.length > 0 || detailEntry.translation;
 
   return (
     <Box style={[styles.overlay, { backgroundColor: color.overlay }]}>
@@ -73,34 +126,16 @@ export default function ResultScreen(): React.JSX.Element {
           </Pressable>
         </Box>
 
-        <ScrollArea
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          contentInsetAdjustmentBehavior="automatic"
-        >
-          {isProcessing && !transcript && <ResultProcessingIndicator />}
-
-          {transcript.length > 0 && (
-            <Box style={styles.blocksContainer}>
-              <ResultTextBlock
-                title={`ORIGINAL · ${getLanguageName(sourceLang)} ${isProcessing ? "✨ POLISHING" : ""}`}
-                text={transcript}
-              />
-
-              {isTranslating ? (
-                <Box style={styles.translateActionContainer}>
-                  <Spinner />
-                </Box>
-              ) : translation ? (
-                <ResultTextBlock
-                  title={`TRANSLATED · ${getLanguageName(targetLang)}`}
-                  text={translation}
-                  variant="accent"
-                />
-              ) : null}
-            </Box>
-          )}
-        </ScrollArea>
+        {isProcessing && !transcript ? (
+          <ResultProcessingIndicator />
+        ) : showDetail ? (
+          <HistoryEntryDetail
+            entry={detailEntry}
+            onDelete={handleDeleteEntry}
+          />
+        ) : (
+          <Box style={styles.emptyBody} />
+        )}
       </Box>
     </Box>
   );
@@ -114,8 +149,7 @@ const styles = StyleSheet.create({
   sheetContainer: {
     borderTopLeftRadius: borderRadius["2xl"],
     borderTopRightRadius: borderRadius["2xl"],
-    paddingBottom: spacing["4xl"],
-    maxHeight: "85%",
+    height: "90%",
   },
   header: {
     position: "relative",
@@ -136,11 +170,7 @@ const styles = StyleSheet.create({
     top: spacing.sm,
     padding: spacing.xs,
   },
-  scrollView: { paddingHorizontal: spacing.lg },
-  scrollContent: { paddingBottom: spacing.xl },
-  blocksContainer: { marginTop: spacing.xs },
-  translateActionContainer: {
-    alignItems: "center",
-    paddingVertical: spacing.lg,
+  emptyBody: {
+    flex: 1,
   },
 });

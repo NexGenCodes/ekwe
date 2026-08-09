@@ -1,11 +1,11 @@
 import React from "react";
 import type { ViewStyle } from "react-native";
 
-import { Card } from "@/components/Card";
 import { IconContainer } from "@/components/IconContainer";
 import { Box, Text } from "@/components/ui";
 import { iconSize } from "@/constants/sizes";
 import { useTokens } from "@/hooks/ui";
+import { withAlpha } from "@/utils";
 
 interface Feature {
   icon: React.ComponentType<{
@@ -30,24 +30,29 @@ export const FeatureCard = React.memo(function FeatureCard({
   const { color, spacing } = useTokens();
 
   return (
-    <Card
-      variant="default"
-      padding="lg"
-      style={[{ flexDirection: "row", alignItems: "center" }, style]}
+    <Box
+      style={[
+        {
+          flexDirection: "row",
+          alignItems: "center",
+          gap: spacing.md,
+        },
+        style,
+      ]}
     >
       <IconContainer
-        size="lg"
-        variant="primary"
+        size="md"
+        variant="custom"
+        backgroundColor={withAlpha(color.brand, 0.12)}
         rounded="lg"
-        style={{ marginRight: spacing.md }}
       >
-        <Icon size={iconSize.md} color={color.foreground} strokeWidth={2.5} />
+        <Icon size={iconSize.md} color={color.brand} strokeWidth={2.5} />
       </IconContainer>
       <Box style={{ flex: 1 }}>
         <Text
           variant="body"
           style={{
-            marginBottom: spacing.xs - 2,
+            marginBottom: spacing.hairline,
             color: color.foreground,
           }}
         >
@@ -57,6 +62,6 @@ export const FeatureCard = React.memo(function FeatureCard({
           {description}
         </Text>
       </Box>
-    </Card>
+    </Box>
   );
 });

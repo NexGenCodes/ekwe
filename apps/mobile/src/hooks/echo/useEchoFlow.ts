@@ -737,5 +737,6 @@ export const useEchoFlow = (
     uploadProgress: state.uploadProgress,
     autoCopied,
     onDismiss,
+    autoLanguageDetect: permissions.autoLanguageDetect,
   };
 };

@@ -13,6 +13,7 @@ import { handleTranslate } from "./routes/translate";
 import { handleCheckoutInitialize, handlePricing } from "./routes/checkout";
 
 import { handleWebhook } from "./routes/webhook";
+import { handleSendOtp } from "./routes/otp";
 import { CLIENT_ABORTED, Env, Tier } from "./types";
 import { checkPreflight } from "./utils/preflight";
 
@@ -44,6 +45,15 @@ async function handleRequest(
   // ─── Webhook Route (no JWT auth — uses signature verification) ───
   if (request.method === "POST" && url.pathname === "/webhook") {
     response = await handleWebhook(request, env, ctx);
+    return addCorsHeaders(response, corsHeaders);
+  }
+
+  // ─── OTP Route (pre-auth — Turnstile-gated code dispatch) ───
+  if (request.method === "POST" && url.pathname === "/auth/otp") {
+    const ctGuard = guardContentType(request, "json");
+    if (!ctGuard.allowed)
+      return addCorsHeaders(ctGuard.response, corsHeaders);
+    response = await handleSendOtp(request, env);
     return addCorsHeaders(response, corsHeaders);
   }
 

@@ -2,12 +2,14 @@ import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import React, { useCallback } from "react";
 import { StyleSheet } from "react-native";
 
-import { HistoryItem } from "@/components";
+import { HistoryEntryRow } from "@/components";
 import { Box, Text } from "@/components/ui";
+import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks/ui";
 import type { ListItem } from "@/hooks/useHistoryListData";
 import type { HistoryEntry } from "@/store";
+import { withAlpha } from "@/utils/color";
 
 export interface HistoryListSectionProps {
   listRef: React.RefObject<FlashListRef<ListItem>>;
@@ -18,7 +20,7 @@ export interface HistoryListSectionProps {
   hasMore: boolean;
   onLoadMore?: () => void;
   handleEntryPress: (entry: HistoryEntry) => void;
-  deleteEntry: (id: string) => void;
+  onDeleteEntry: (entryId: string) => void;
 }
 
 /**
@@ -34,7 +36,7 @@ export const HistoryListSection = React.memo(function HistoryListSection({
   hasMore,
   onLoadMore,
   handleEntryPress,
-  deleteEntry,
+  onDeleteEntry,
 }: HistoryListSectionProps): React.ReactElement {
   const { color } = useTheme();
 
@@ -43,29 +45,26 @@ export const HistoryListSection = React.memo(function HistoryListSection({
       if (item.type === "header") {
         return (
           <Box style={styles.sectionHeader}>
-            <Box
-              style={[styles.headerLine, { backgroundColor: color.border }]}
-            />
             <Text
               variant="label"
               style={{
                 color: color.muted,
                 textTransform: "uppercase",
                 letterSpacing: 1.2,
-                paddingHorizontal: spacing.sm,
               }}
             >
               {item.title}
-              <Text
-                variant="caption"
-                style={{
-                  color: color.muted,
-                }}
-              >
-                {" "}
-                ({item.count})
-              </Text>
             </Text>
+            <Box
+              style={[
+                styles.countPill,
+                { backgroundColor: withAlpha(color.foreground, 0.08) },
+              ]}
+            >
+              <Text variant="caption" style={{ color: color.muted }}>
+                {item.count}
+              </Text>
+            </Box>
             <Box
               style={[styles.headerLine, { backgroundColor: color.border }]}
             />
@@ -74,15 +73,21 @@ export const HistoryListSection = React.memo(function HistoryListSection({
       }
       return (
         <Box style={styles.entryContainer}>
-          <HistoryItem
+          <HistoryEntryRow
             entry={item.entry}
             onPress={handleEntryPress}
-            onDelete={deleteEntry}
+            onDelete={onDeleteEntry}
           />
         </Box>
       );
     },
-    [handleEntryPress, deleteEntry, color.border, color.muted],
+    [
+      handleEntryPress,
+      onDeleteEntry,
+      color.border,
+      color.muted,
+      color.foreground,
+    ],
   );
 
   const listFooter = useCallback(
@@ -90,7 +95,7 @@ export const HistoryListSection = React.memo(function HistoryListSection({
       <Box style={styles.listFooter}>
         {!isSearching && !hasMore && listData.length > 0 ? (
           <Text variant="caption" style={{ color: color.muted }}>
-            That's everything, chief.
+            You&apos;re all caught up
           </Text>
         ) : null}
       </Box>
@@ -127,17 +132,27 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
+    gap: spacing.sm,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  countPill: {
+    minWidth: 22,
+    height: 18,
+    borderRadius: borderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.xs,
   },
   headerLine: {
     flex: 1,
-    height: 1,
-    opacity: 0.3,
+    height: StyleSheet.hairlineWidth,
+    opacity: 0.5,
   },
   entryContainer: {
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
+    paddingBottom: 12,
   },
   listContainer: {
     flex: 1,

@@ -1,13 +1,14 @@
 import { User } from "@supabase/supabase-js";
 import { Image as ExpoImage } from "expo-image";
 import Crown from "lucide-react-native/icons/crown";
+import Lock from "lucide-react-native/icons/lock";
 import Edit3 from "lucide-react-native/icons/pen-line";
 import React from "react";
 import { Image } from "react-native";
 
 import { Badge } from "@/components/Badge";
 import { Box, Text, Pressable } from "@/components/ui";
-import { shadows } from "@/constants";
+import { shadows, opacity } from "@/constants";
 import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
@@ -26,6 +27,7 @@ interface ProfileIdentityProps {
   userName: string;
   userEmail: string;
   rawName: string;
+  avatarLocked?: boolean;
   onEditAvatar: () => void;
 }
 
@@ -36,6 +38,7 @@ export function ProfileIdentity({
   userName,
   userEmail,
   rawName,
+  avatarLocked = false,
   onEditAvatar,
 }: ProfileIdentityProps): React.JSX.Element {
   const { color } = useTheme();
@@ -104,22 +107,44 @@ export function ProfileIdentity({
           )}
         </Box>
         <Pressable
-          style={{
-            position: "absolute",
-            bottom: -4,
-            right: -4,
-            width: iconSize.lg,
-            height: iconSize.lg,
-            borderRadius: borderRadius.xl,
-            alignItems: "center",
-            justifyContent: "center",
-            borderWidth: 3,
-            backgroundColor: color.brand,
-            borderColor: color.background,
-          }}
+          style={({ pressed }) => [
+            {
+              position: "absolute",
+              bottom: -4,
+              right: -4,
+              width: iconSize.lg,
+              height: iconSize.lg,
+              borderRadius: borderRadius.xl,
+              alignItems: "center",
+              justifyContent: "center",
+              borderWidth: 3,
+              backgroundColor: color.brand,
+              borderColor: color.background,
+            },
+            pressed && {
+              opacity: opacity.inactive,
+              transform: [{ scale: 0.92 }],
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={
+            avatarLocked
+              ? "Avatar customization is a Pro feature"
+              : "Edit avatar"
+          }
           onPress={onEditAvatar}
         >
-          {isIOS ? (
+          {avatarLocked ? (
+            isIOS ? (
+              <ExpoImage
+                source="sf:lock.fill"
+                style={{ width: 14, height: 14 }}
+                tintColor={color.onBrand}
+              />
+            ) : (
+              <Lock size={14} color={color.onBrand} />
+            )
+          ) : isIOS ? (
             <ExpoImage
               source="sf:pencil"
               style={{ width: 14, height: 14 }}

@@ -54,7 +54,7 @@ export default function TabLayout(): React.ReactElement | null {
         name="history"
         options={{
           title: "History",
-          headerShown: true,
+          headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <History size={size} color={color} />
           ),

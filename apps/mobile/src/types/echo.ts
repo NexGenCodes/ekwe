@@ -59,4 +59,6 @@ export interface UseEchoFlowResult {
   /** Transient "copied" signal set when the flow auto-copies the translation. */
   autoCopied: boolean;
   onDismiss: () => void;
+  /** Whether the user's plan allows language auto-detection. */
+  autoLanguageDetect: boolean;
 }

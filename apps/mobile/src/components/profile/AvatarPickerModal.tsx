@@ -164,18 +164,15 @@ export function AvatarPickerModal({
                   borderColor: !currentIcon ? color.foreground : color.border,
                 },
                 pressed && {
-                    backgroundColor: withAlpha(color.foreground, 0.102),
-                    transform: [{ scale: 0.95 }],
-                  },
+                  backgroundColor: withAlpha(color.foreground, 0.102),
+                  transform: [{ scale: 0.95 }],
+                },
               ]}
               onPress={() => onSelect("")}
               accessibilityLabel="Use default avatar"
               accessibilityState={!currentIcon ? { selected: true } : undefined}
             >
-              <User
-                size={32}
-                color={!currentIcon ? color.foreground : color.foreground}
-              />
+              <User size={32} color={color.foreground} />
               <Text
                 variant="caption"
                 style={{

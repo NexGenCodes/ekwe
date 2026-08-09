@@ -7,6 +7,7 @@ import { LanguageFlag } from "./LanguageFlag";
 
 import { Box, Pressable, Text } from "@/components/ui";
 import { useTokens } from "@/hooks/ui";
+import { withAlpha } from "@/utils";
 import { triggerHaptic } from "@/utils/haptics";
 
 export interface LanguageGridCardProps {
@@ -54,13 +55,13 @@ export function LanguageGridCard({
         paddingHorizontal: spacing.md,
         flexDirection: isLandscape ? "row" : "column",
         borderStyle: dashed ? "dashed" : "solid",
-        backgroundColor: isSelected ? color.brand : color.background,
+        backgroundColor: isSelected ? withAlpha(color.brand, 0.12) : color.card,
         borderColor: isSelected ? color.brand : color.border,
         opacity: disabled ? opacity.disabled : 1,
       }}
     >
       {code === "auto" ? (
-        <Globe size={20} color={isSelected ? color.onBrand : color.brand} />
+        <Globe size={20} color={color.brand} />
       ) : (
         <LanguageFlag code={code} size="md" />
       )}
@@ -69,7 +70,7 @@ export function LanguageGridCard({
         style={{
           textAlign: "center",
           flex: isLandscape ? 1 : undefined,
-          color: isSelected ? color.onBrand : color.foreground,
+          color: isSelected ? color.brand : color.foreground,
           marginLeft: isLandscape ? spacing.sm : 0,
           marginTop: isLandscape ? 0 : spacing.xs,
         }}
@@ -77,9 +78,20 @@ export function LanguageGridCard({
       >
         {label}
       </Text>
-      {isSelected && isLandscape && (
-        <Box style={{ marginLeft: spacing.xs }}>
-          <Check size={18} color={color.onBrand} strokeWidth={3} />
+      {isSelected && (
+        <Box
+          style={{
+            marginLeft: isLandscape ? spacing.xs : 0,
+            position: isLandscape ? undefined : "absolute",
+            top: isLandscape ? undefined : spacing.sm,
+            right: isLandscape ? undefined : spacing.sm,
+          }}
+        >
+          <Check
+            size={isLandscape ? 18 : 16}
+            color={color.brand}
+            strokeWidth={3}
+          />
         </Box>
       )}
     </Pressable>

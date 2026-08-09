@@ -1,5 +1,5 @@
 -- Use pg_net (available on all hosted Supabase projects) to call the Edge Function
-CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pg_net;
 
 CREATE OR REPLACE FUNCTION public.send_welcome_email()
 RETURNS trigger
@@ -8,7 +8,7 @@ SECURITY DEFINER
 SET search_path = 'public'
 AS $$
 BEGIN
-  PERFORM extensions.http_post(
+  PERFORM net.http_post(
     url := 'https://zsjcgebczzbmaarfcdny.supabase.co/functions/v1/send-welcome-email',
     headers := '{"Content-Type": "application/json"}'::jsonb,
     body := jsonb_build_object(

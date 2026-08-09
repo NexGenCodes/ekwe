@@ -1,5 +1,6 @@
 import { Image as ExpoImage } from "expo-image";
 import ChevronRight from "lucide-react-native/icons/chevron-right";
+import Lock from "lucide-react-native/icons/lock";
 import type { LucideIcon } from "lucide-react-native";
 import React from "react";
 
@@ -19,6 +20,7 @@ export interface ProfileRowProps {
   hasDivider?: boolean;
   trailing?: React.ReactNode;
   accentColor?: string;
+  locked?: boolean;
 }
 
 export function ProfileRow({
@@ -31,6 +33,7 @@ export function ProfileRow({
   hasDivider = false,
   trailing,
   accentColor,
+  locked = false,
 }: ProfileRowProps): React.JSX.Element {
   const { color } = useTheme();
   const bgTint = `${accentColor ?? iconColor}1A`;
@@ -52,6 +55,9 @@ export function ProfileRow({
         pressed && { backgroundColor: bgTint, transform: [{ scale: 0.98 }] },
       ]}
       accessibilityLabel={subtitle ? `${title}, ${subtitle}` : title}
+      accessibilityValue={
+        locked ? { text: "Locked, Ekwe Pro feature" } : undefined
+      }
     >
       <Box style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
         <Box
@@ -97,16 +103,27 @@ export function ProfileRow({
           )}
         </Box>
       </Box>
-      {trailing ??
-        (isIOS ? (
+      {locked ? (
+        isIOS ? (
           <ExpoImage
-            source="sf:chevron.right"
+            source="sf:lock.fill"
             style={{ width: 14, height: 14, marginRight: spacing.xs }}
             tintColor={color.muted}
           />
         ) : (
-          <ChevronRight size={20} color={color.muted} />
-        ))}
+          <Lock size={16} color={color.muted} />
+        )
+      ) : trailing ? (
+        trailing
+      ) : isIOS ? (
+        <ExpoImage
+          source="sf:chevron.right"
+          style={{ width: 14, height: 14, marginRight: spacing.xs }}
+          tintColor={color.muted}
+        />
+      ) : (
+        <ChevronRight size={20} color={color.muted} />
+      )}
     </Pressable>
   );
 }

@@ -35,28 +35,46 @@ export const useAuthFlow = (): UseAuthFlowReturn => {
     async (fn: () => Promise<AuthResult>): Promise<AuthResult> => {
       setIsLoading(true);
       setError("");
-      const result = await fn();
-      setIsLoading(false);
+      try {
+        const result = await fn();
 
-      if (result.ok && !result.needsOtp) {
-        onSuccess();
-      } else if (result.error) {
-        setError(result.error);
+        if (result.ok && !result.needsOtp) {
+          onSuccess();
+        } else if (result.error) {
+          setError(result.error);
+        }
+
+        return result;
+      } finally {
+        setIsLoading(false);
       }
-
-      return result;
     },
     [onSuccess],
   );
 
+  const handleSocial = useCallback(
+    (signIn: () => Promise<AuthResult>): Promise<AuthResult> =>
+      run(async () => {
+        const result = await signIn();
+        if (result.needsLink) {
+          router.push({
+            pathname: "/(auth)/verify",
+            params: { email: result.needsLink.email, source: "link" },
+          });
+        }
+        return result;
+      }),
+    [run, router],
+  );
+
   const handleApple = useCallback(
-    (): Promise<AuthResult> => run(signInWithApple),
-    [run],
+    (): Promise<AuthResult> => handleSocial(signInWithApple),
+    [handleSocial],
   );
 
   const handleGoogle = useCallback(
-    (): Promise<AuthResult> => run(signInWithGoogle),
-    [run],
+    (): Promise<AuthResult> => handleSocial(signInWithGoogle),
+    [handleSocial],
   );
 
   return {

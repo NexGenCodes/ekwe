@@ -1,7 +1,8 @@
 /**
  * SocialButton — Apple / Google sign-in button.
  *
- * Apple button auto-hides on Android.
+ * Apple is disabled (not hidden) on Android — it stays visible but
+ * non-interactive so the layout reads the same across platforms.
  */
 import React from "react";
 import Svg, { Path, G, ClipPath, Defs } from "react-native-svg";
@@ -10,6 +11,7 @@ import { Pressable, Text, Box } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { isIOS } from "@/utils";
 
 interface SocialButtonProps {
   provider: "apple" | "google";
@@ -56,15 +58,18 @@ export const SocialButton = ({
   const label = provider === "google" ? "Google" : "Apple";
 
   const isApple = provider === "apple";
+  const unavailable = isApple && !isIOS;
+  const isDisabled = disabled || unavailable;
+
   const bgColor = isApple ? color.foreground : color.card;
   const textColor = isApple ? color.background : color.foreground;
   const borderColor = isApple ? bgColor : color.border;
 
   return (
     <Pressable
-      onPress={disabled ? undefined : onPress}
+      onPress={isDisabled ? undefined : onPress}
       feedback="scale"
-      disabled={disabled}
+      disabled={isDisabled}
       style={{
         flex: 1,
         flexDirection: "row",
@@ -77,9 +82,15 @@ export const SocialButton = ({
         paddingHorizontal: spacing.lg,
         borderWidth: 1,
         borderColor,
-        opacity: disabled ? 0.5 : 1,
+        opacity: isDisabled ? 0.45 : 1,
       }}
       accessibilityLabel={`${action === "sign-in" ? "Sign in" : "Sign up"} with ${label}`}
+      accessibilityState={{ disabled: isDisabled }}
+      accessibilityHint={
+        unavailable
+          ? "Sign in with Apple is only available on iPhone"
+          : undefined
+      }
     >
       {provider === "google" ? <GoogleLogo /> : <AppleLogo color={textColor} />}
       <Box

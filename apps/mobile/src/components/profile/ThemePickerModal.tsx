@@ -108,12 +108,12 @@ export function ThemePickerModal({
                       borderRadius: borderRadius.lg,
                       marginVertical: spacing.hairline,
                     },
-pressed && {
-                        backgroundColor: withAlpha(color.foreground, 0.102),
-                      },
-                      isSelected && {
-                        backgroundColor: withAlpha(color.foreground, 0.051),
-                      },
+                    pressed && {
+                      backgroundColor: withAlpha(color.foreground, 0.102),
+                    },
+                    isSelected && {
+                      backgroundColor: withAlpha(color.foreground, 0.051),
+                    },
                   ]}
                   onPress={() => onSelect(item.value)}
                   accessibilityLabel={`Select ${item.label}`}
@@ -124,7 +124,7 @@ pressed && {
                   <Box style={{ marginRight: spacing.md }}>
                     <item.icon
                       size={20}
-                      color={isSelected ? color.foreground : color.foreground}
+                      color={color.foreground}
                       strokeWidth={2}
                     />
                   </Box>
@@ -132,7 +132,7 @@ pressed && {
                     <Text
                       variant="body"
                       style={{
-                        color: isSelected ? color.foreground : color.foreground,
+                        color: color.foreground,
                         fontWeight: isSelected ? "600" : "400",
                       }}
                     >

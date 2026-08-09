@@ -11,6 +11,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.ekwe.app",
       "userInterfaceStyle": "automatic",
+      // Apple Team ID required by @bacons/apple-targets for the ShareExtension
+      // target. Replace with your team ID (Xcode → Signing & Capabilities).
+      "appleTeamId": "REPLACE_WITH_YOUR_APPLE_TEAM_ID",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Ekwe uses your microphone to capture your voice for real-time translation.",
         "NSSpeechRecognitionUsageDescription": "Ekwe uses speech recognition to convert your spoken words into text for translation.",
@@ -25,6 +28,7 @@
         "monochromeImage": "./assets/monochrome.png"
       },
       "package": "com.ekwe.app",
+      "backgroundColor": "#FFFFFF",
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
@@ -44,6 +48,12 @@
             "backgroundColor": "#09090B",
             "image": "./assets/splash-icon.png"
           }
+        }
+      ],
+      [
+        "expo-system-ui",
+        {
+          "backgroundColor": "#FFFFFF"
         }
       ],
       [
