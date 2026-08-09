@@ -14,7 +14,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { batchTranscriber } from "@/services/BatchTranscriber";
 import { HistoryService } from "@/services/HistoryService";
 import { IntentService } from "@/services/IntentService";
-import { settings$, auth$ } from "@/store";
+import { settings$, auth$, network$ } from "@/store";
 import { EchoStep, EchoProps, UseEchoFlowResult } from "@/types/echo";
 import { default as logger } from "@/utils/logger";
 import { isIOS } from "@/utils/platform";
@@ -108,6 +108,12 @@ export const useEchoFlow = (
   const session = useSelector(() => auth$.session.get());
   const sourceApp = props.sourceApp || (isIOS ? "ios" : "");
 
+  // Reactive connectivity (single source of truth from the network store).
+  // Only a *definitive* disconnect counts as offline — `null` probes never do.
+  const netConnected = useSelector(() => network$.isConnected.get());
+  const netReachable = useSelector(() => network$.isInternetReachable.get());
+  const isOnline = netConnected !== false && netReachable !== false;
+
   // Log the raw native sourceApp exactly once per mount, NOT on every render.
   // `useEchoFlow` re-renders at the native status cadence (~2 Hz during
   // playback) because `useAudioPlayerStatus` emits a fresh status object per
@@ -165,7 +171,7 @@ export const useEchoFlow = (
     [],
   );
 
-  // Transaction refs
+  // Entry state refs
   const savedRef = useRef(false);
   const transcriptRef = useRef(state.transcription);
   const detectedLangRef = useRef(state.detectedLang);
@@ -246,11 +252,10 @@ export const useEchoFlow = (
   // Reset state on subsequent share intents
   useEffect(() => {
     if (!isSubsequentIntent) return;
-    // A subsequent intent must not silently discard an unpersisted result. If a
-    // transcription exists but was never saved (dismiss/background would have
-    // persisted it via onDismiss), save it here before the flow resets — the
-    // same half-transaction semantics as onDismiss. When savedRef is already
-    // true, everything was persisted and the reset is safe.
+    // An unpersisted transcription would be lost on reset; save it here before
+    // the flow resets — the same transcription-only semantics as onDismiss.
+    // When savedRef is already true, everything was persisted and the reset is
+    // safe.
     if (!savedRef.current && transcriptRef.current?.trim()) {
       savedRef.current = true;
       HistoryService.recordTranslation(
@@ -265,6 +270,7 @@ export const useEchoFlow = (
           sourceApp,
           provider: sttRef.current || "unknown",
           sessionKey: audioUri || undefined,
+          type: "transcription",
         },
         session,
       ).catch((e) =>
@@ -303,6 +309,7 @@ export const useEchoFlow = (
           sourceApp,
           provider: sttRef.current || "unknown",
           sessionKey: audioUri || undefined,
+          type: "transcription",
         },
         session,
       ).catch((e) =>
@@ -621,8 +628,10 @@ export const useEchoFlow = (
     // transcription-only row, and an error row would be misleading.
     if (isGone() || !succeeded) return;
 
-    // Record to history safely: single "both" write (Full Transaction). A
-    // history-sync rejection must never prevent reaching FullResult.
+    // Record to history safely: the transcription and its translation become
+    // TWO separate entries — the transcription keeps the audio metadata, the
+    // translation is a plain text → text row. A history-sync rejection must
+    // never prevent reaching FullResult.
     lastOpRef.current = null;
     savedRef.current = true;
     try {
@@ -631,17 +640,32 @@ export const useEchoFlow = (
           sourceLang: source,
           targetLang: target,
           transcript: textToTranslate,
-          translation: translationResultText,
+          translation: null,
           transliteration: null,
           duration: state.audioDuration,
           sourceApp,
           provider: stt || "unknown",
           sessionKey: audioUri || undefined,
+          type: "transcription",
+        },
+        session,
+      );
+      await HistoryService.recordTranslation(
+        {
+          sourceLang: source,
+          targetLang: target,
+          transcript: textToTranslate,
+          translation: translationResultText,
+          transliteration: null,
+          duration: 0,
+          sourceApp,
+          provider: stt || "unknown",
+          type: "translation",
         },
         session,
       );
     } catch (e) {
-      logger.warn("[EchoFlow] Failed to record translation history:", e);
+      logger.warn("[EchoFlow] Failed to record history:", e);
     }
 
     if (isGone()) return;
@@ -738,5 +762,6 @@ export const useEchoFlow = (
     autoCopied,
     onDismiss,
     autoLanguageDetect: permissions.autoLanguageDetect,
+    isOnline,
   };
 };

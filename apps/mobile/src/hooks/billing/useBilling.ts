@@ -1,14 +1,13 @@
 import { useSelector } from "@legendapp/state/react";
 import { useMutation } from "@tanstack/react-query";
 import * as WebBrowser from "expo-web-browser";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 
-import { BILLING_PLANS, DISPLAY_PRICING } from "@/constants/billing";
-import { getCurrency } from "@ekwe/shared/currencies";
+import { useActivePricing } from "@/hooks/billing/useActivePricing";
+import { BILLING_PLANS } from "@/constants/billing";
 import { PRO_PLAN_IDS } from "@ekwe/shared/plans";
-import { usePricingQuery } from "@/hooks/queries/usePricingQuery";
 import { supabase } from "@/services/supabase";
-import { auth$, authActions, settings$ } from "@/store";
+import { auth$, authActions } from "@/store";
 import { AppAlert } from "@/utils/alert";
 import { fetchWithRetry } from "@/utils/networkUtils";
 
@@ -20,44 +19,43 @@ export interface UseBillingReturn {
   handleManage: () => Promise<void>;
   handleRestore: () => Promise<void>;
   freePlan: typeof BILLING_PLANS.free;
-  proPlan: typeof BILLING_PLANS.pro & { annualSavingPercent: number };
-  currentPrice: number;
+  proPlan: typeof BILLING_PLANS.pro;
+  annualSavingPercent: number;
   loading: boolean;
+}
+
+const PRO_POLL_ATTEMPTS = 8;
+const PRO_POLL_INTERVAL_MS = 2000;
+
+/**
+ * After the in-app browser closes, the payment webhook usually hasn't landed
+ * yet. Instead of trusting a single refresh, re-mint the session a few times
+ * (each refresh re-runs the access-token hook, which embeds the new is_pro)
+ * until Pro shows up or we give up.
+ */
+async function reconcileProStatus(): Promise<boolean> {
+  for (let attempt = 0; attempt < PRO_POLL_ATTEMPTS; attempt++) {
+    const { data: sessionData, error } = await supabase.auth.refreshSession();
+    if (error) throw error;
+
+    if (sessionData.session) {
+      authActions.setSession(sessionData.session);
+      if (sessionData.session.user?.app_metadata?.is_pro === true) {
+        return true;
+      }
+    }
+
+    if (attempt < PRO_POLL_ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, PRO_POLL_INTERVAL_MS));
+    }
+  }
+  return false;
 }
 
 export function useBilling(): UseBillingReturn {
   const isPro = useSelector(() => auth$.isPro.get());
-  const currency = useSelector(() => settings$.currency.get());
   const [isAnnual, setIsAnnual] = useState(true);
-  const { data: pricingData } = usePricingQuery();
-
-  const activePricing = useMemo(() => {
-    const serverPricing =
-      pricingData?.pricing?.[currency] ?? pricingData?.pricing?.USD;
-    if (serverPricing) {
-      const cur = serverPricing.monthly.currency;
-      const symbol = getCurrency(cur)?.symbol ?? "$";
-      const monthlyAmount = serverPricing.monthly.amount;
-      const annualAmount = serverPricing.annual.amount;
-      return {
-        monthly: {
-          amount: monthlyAmount,
-          currency: cur,
-          symbol,
-        },
-        annual: {
-          amount: annualAmount,
-          currency: cur,
-          symbol,
-        },
-        annualMonthlyCost: +(annualAmount / 12).toFixed(2),
-        annualSavingPercent: Math.round(
-          (1 - annualAmount / (monthlyAmount * 12)) * 100,
-        ),
-      };
-    }
-    return DISPLAY_PRICING[currency] || DISPLAY_PRICING.USD;
-  }, [currency, pricingData]);
+  const { pricing } = useActivePricing();
 
   const checkoutMutation = useMutation({
     mutationFn: async ({
@@ -86,7 +84,12 @@ export function useBilling(): UseBillingReturn {
             plan_id: planId,
             currency,
           }),
+          // Initialization is a stateful POST that should NOT be retried on a
+          // 5xx (the payment provider may have already created the link).
+          // Retry only on transport-level failures (the request never hit the
+          // worker): one extra attempt keeps flaky mobile connections happy.
           retries: 2,
+          retryOnHttpResponse: false,
         },
       );
 
@@ -128,7 +131,7 @@ export function useBilling(): UseBillingReturn {
     try {
       const data = await checkoutMutation.mutateAsync({
         planId: isAnnual ? PRO_PLAN_IDS.annual : PRO_PLAN_IDS.monthly,
-        currency,
+        currency: pricing.currency,
         accessToken: session.access_token,
       });
 
@@ -137,14 +140,9 @@ export function useBilling(): UseBillingReturn {
         enableBarCollapsing: true,
       });
 
-      const { data: sessionData, error } = await supabase.auth.refreshSession();
-      if (error) {
-        throw error;
-      }
+      const upgraded = await reconcileProStatus();
 
-      const updatedIsPro =
-        sessionData.session?.user?.app_metadata?.is_pro === true;
-      if (updatedIsPro) {
+      if (upgraded) {
         AppAlert.success(
           "Welcome to Pro!",
           "Your payment was processed successfully. Thank you for supporting Ekwe!",
@@ -192,19 +190,6 @@ export function useBilling(): UseBillingReturn {
     }
   };
 
-  const freePlan = BILLING_PLANS.free;
-
-  const proPlan = useMemo(() => {
-    return {
-      ...BILLING_PLANS.pro,
-      annualSavingPercent: activePricing.annualSavingPercent,
-    };
-  }, [activePricing]);
-
-  const currentPrice = isAnnual
-    ? activePricing.annualMonthlyCost
-    : activePricing.monthly.amount;
-
   return {
     isPro,
     isAnnual,
@@ -212,9 +197,9 @@ export function useBilling(): UseBillingReturn {
     handleUpgrade,
     handleManage,
     handleRestore,
-    freePlan,
-    proPlan,
-    currentPrice,
+    freePlan: BILLING_PLANS.free,
+    proPlan: BILLING_PLANS.pro,
+    annualSavingPercent: pricing.annualSavingPercent,
     loading: checkoutMutation.isPending,
   };
 }

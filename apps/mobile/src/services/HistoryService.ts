@@ -4,6 +4,7 @@ import { mmkv as storage } from "./mmkv";
 
 import { File, Paths } from "expo-file-system";
 
+import { EntryType } from "@/store";
 import { isIOS } from "@/utils";
 import { logger } from "@/utils";
 
@@ -17,6 +18,7 @@ export interface HistoryEntryPayload {
   sourceApp: string;
   provider: string;
   sessionKey?: string;
+  type: EntryType;
 }
 
 // App Group container the native iOS share extension writes into (mirrors
@@ -37,8 +39,6 @@ interface SharedHistoryRecord {
   createdAt: string;
 }
 
-const sessionMap = new Map<string, string>(); // sessionKey -> historyEntryId
-
 export const HistoryService = {
   recordTranslation: async (
     payload: HistoryEntryPayload,
@@ -46,36 +46,10 @@ export const HistoryService = {
   ): Promise<string | undefined> => {
     if (!session?.user) return undefined;
 
-    if (payload.sessionKey) {
-      const existingId = sessionMap.get(payload.sessionKey);
-      if (existingId) {
-        // The record already exists (a transcription-only write). Upgrade it in
-        // place if this call carries the full translation, then forget the key —
-        // a finalized entry no longer needs updating, so keeping it would only
-        // leak the map entry.
-        if (payload.translation !== null) {
-          await SyncService.updateHistoryTranslation(
-            existingId,
-            payload.translation,
-            payload.transliteration,
-            payload.targetLang,
-            session.user.id,
-          );
-          sessionMap.delete(payload.sessionKey);
-        }
-        return existingId;
-      }
-    }
-
+    // Every call writes its own entry. Transcribing an audio and later
+    // translating it produces TWO separate history rows — a transcription
+    // (text + audio metadata) and a translation — never a combined row.
     const id = await SyncService.writeHistory(payload, session.user.id);
-    if (payload.sessionKey) {
-      // Only retain keys that still need a later upgrade (i.e. a pending
-      // transcription-only entry). A fully-written entry is immediately fully
-      // persisted and needs no future update, so drop it to bound memory.
-      if (payload.translation === null) {
-        sessionMap.set(payload.sessionKey, id);
-      }
-    }
     return id;
   },
 
@@ -107,10 +81,10 @@ export const HistoryService = {
    * cloud history via the same path as in-app shares. The extension runs
    * without a JS runtime, so it can't call `recordTranslation` directly.
    *
-   * Records keep their `sessionKey`: a later translation record with the same
-   * key upgrades the earlier transcription-only entry in place (matching the
-   * in-app "Half Transaction" semantics). The file is removed only after every
-   * record is processed.
+   * The extension writes one record after transcribing (translation nil) and a
+   * second record after translating the same audio (same sessionKey). Each
+   * record becomes its OWN history entry: a transcription, or a translation —
+   * never combined in place.
    */
   importSharedEchoHistory: async (
     session: { user?: { id: string } } | null,
@@ -130,6 +104,9 @@ export const HistoryService = {
 
       for (const record of records) {
         try {
+          const hasTranslation =
+            !!record.translation?.trim() &&
+            record.translation.trim() !== record.transcript?.trim();
           await HistoryService.recordTranslation(
             {
               sourceLang: record.sourceLang,
@@ -141,6 +118,7 @@ export const HistoryService = {
               sourceApp: record.sourceApp || "ios",
               provider: record.provider || "unknown",
               sessionKey: record.sessionKey,
+              type: hasTranslation ? "translation" : "transcription",
             },
             session,
           );

@@ -13,6 +13,8 @@ import { Badge } from "../../Badge";
 import { IconContainer } from "../../IconContainer";
 import { Sheet } from "../../ui/Sheet";
 
+import { useSelector } from "@legendapp/state/react";
+
 import { Box, Text, Pressable } from "@/components/ui";
 import { STEP_METADATA } from "@/constants/echo";
 import { LANGUAGES } from "@/constants/languages";
@@ -22,10 +24,12 @@ import { useEchoFlow } from "@/hooks/echo";
 import { useAudioWaveformPlayback } from "@/hooks/audio";
 import { useTheme } from "@/hooks/ui";
 import { initAuth } from "@/services/auth";
+import { settings$ } from "@/store";
 import { EchoProps, EchoStep } from "@/types/echo";
 import { withAlpha } from "@/utils/color";
 import { formatSourceApp } from "@/utils/formatSource";
 import { formatDuration } from "@/utils/formatDuration";
+import { DEFAULT_LANGUAGES } from "@/utils/languageUtils";
 
 const STEP_MAX_HEIGHTS: Record<EchoStep, DimensionValue> = {
   PickLanguage: "46%",
@@ -75,6 +79,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     autoCopied,
     onDismiss,
     autoLanguageDetect,
+    isOnline,
   } = useEchoFlow(props, () => playerReleaseRef.current());
 
   const { color } = useTheme();
@@ -103,9 +108,25 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     playerReleaseRef.current = player.release;
   }, [player.release]);
 
+  // The "Translate to" list comes from the user's selected languages (mirroring
+  // the standard translate screen). Stored selections take priority; when the
+  // user hasn't picked any yet, fall back to the default set. The detected
+  // source language is always excluded so the user never translates to the
+  // language the audio was already in.
+  const storedSelectedLanguages =
+    useSelector(() => settings$.selectedLanguages.get()) || [];
+  const targetLanguageCodes =
+    storedSelectedLanguages.length > 0
+      ? storedSelectedLanguages
+      : DEFAULT_LANGUAGES;
+
   const availableTargetList = useMemo(
-    () => LANGUAGES.filter((l) => l.defaultSelected && l.code !== detectedLang),
-    [detectedLang],
+    () =>
+      targetLanguageCodes.flatMap((code) => {
+        const lang = LANGUAGES.find((l) => l.code === code);
+        return lang && lang.code !== detectedLang ? [lang] : [];
+      }),
+    [targetLanguageCodes, detectedLang],
   );
 
   const selectedLangName = useMemo(
@@ -307,7 +328,9 @@ export const Echo = (props: EchoProps): React.ReactElement => {
                 color: color.foreground,
               }}
             >
-              {error || "An unexpected error occurred"}
+              {!isOnline
+                ? "You appear to be offline"
+                : error || "An unexpected error occurred"}
             </Text>
             <Text
               variant="bodySmall"
@@ -317,9 +340,11 @@ export const Echo = (props: EchoProps): React.ReactElement => {
                 color: color.muted,
               }}
             >
-              Please check your connection and try again.
+              {!isOnline
+                ? "Reconnect to the internet, then come back to finish."
+                : "Please check your connection and try again."}
             </Text>
-            {resolveRetryable && (
+            {resolveRetryable && isOnline && (
               <Pressable
                 feedback="opacity"
                 onPress={() => void retryOperation()}

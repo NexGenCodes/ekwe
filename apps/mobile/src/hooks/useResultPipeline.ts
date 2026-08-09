@@ -73,7 +73,7 @@ export const useResultPipeline = ({
   const [hasPolished, setHasPolished] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
 
-  // Defer transaction refs
+  // Saved-once refs (transcription-only semantics on unmount/dismiss)
   const savedRef = useRef(false);
   const transcriptRef = useRef(transcript);
   const sourceLangRef = useRef(sourceLang);
@@ -149,6 +149,7 @@ export const useResultPipeline = ({
             sourceApp: sourceApp || "shared",
             provider: "gemini",
             sessionKey: uri,
+            type: "transcription",
           },
           userSessionRef.current as Parameters<
             typeof HistoryService.recordTranslation
@@ -194,6 +195,7 @@ export const useResultPipeline = ({
             sourceApp: sourceApp || "shared",
             provider: "gemini",
             sessionKey: uri,
+            type: "transcription",
           },
           userSession as Parameters<typeof HistoryService.recordTranslation>[1],
         );

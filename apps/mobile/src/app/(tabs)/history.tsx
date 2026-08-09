@@ -1,9 +1,11 @@
 import { triggerHaptic } from "@/utils/haptics";
 import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
+import { useSelector } from "@legendapp/state/react";
 import AudioLines from "lucide-react-native/icons/audio-lines";
 import Search from "lucide-react-native/icons/search";
 import X from "lucide-react-native/icons/x";
+import Trash2 from "lucide-react-native/icons/trash-2";
 import React, { useCallback, useRef, useState } from "react";
 import { TextInput, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,6 +32,7 @@ import { SyncService } from "@/services/SyncService";
 import { HistoryEntry, auth$ } from "@/store";
 import { withAlpha } from "@/utils/color";
 import { isIOS, logger } from "@/utils";
+import { AppAlert } from "@/utils/alert";
 
 const FILTER_OPTIONS: HistoryFilterOption[] = [
   "all",
@@ -48,6 +51,7 @@ export default function HistoryScreen(): React.JSX.Element {
     loadMore,
     hasMore,
     deleteEntry,
+    clearAll,
   } = useHistory();
   const { query, setQuery, filter, setFilter, filteredEntries, isSearching } =
     useHistorySearch(entries);
@@ -58,6 +62,28 @@ export default function HistoryScreen(): React.JSX.Element {
 
   const listRef = useRef<FlashListRef<ListItem>>(null!);
   const insets = useSafeAreaInsets();
+
+  // Visible cloud-sync failures (set by SyncService.pullFromCloud on error).
+  const pullError = useSelector(() => SyncService.pullError.get());
+
+  const onClearAll = useCallback(async () => {
+    const userId = auth$.user.get()?.id;
+    if (!userId) return;
+    AppAlert.confirm(
+      "Clear All History",
+      "This will permanently delete all your transcripts and translations from this device and the cloud. This action cannot be undone.",
+      async () => {
+        await triggerHaptic();
+        try {
+          await clearAll();
+          AppAlert.success("All history cleared");
+        } catch {
+          AppAlert.error("Error", "Could not clear history.");
+        }
+      },
+      { isDestructive: true, confirmText: "Clear All", cancelText: "Cancel" },
+    );
+  }, [clearAll]);
 
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -127,13 +153,75 @@ export default function HistoryScreen(): React.JSX.Element {
               <EkweLogo size={iconSize.xl} color={color.brand} />
             </IconContainer>
             <Box>
-              <Text variant="display">History</Text>
-              <Text variant="body" style={{ color: color.muted }}>
-                {entries.length} {entries.length === 1 ? "entry" : "entries"}
-              </Text>
+              <Box style={styles.titleRow}>
+                <Text variant="display">History</Text>
+                <Box
+                  style={[
+                    styles.countPill,
+                    {
+                      backgroundColor: withAlpha(color.foreground, 0.06),
+                    },
+                  ]}
+                >
+                  <Text
+                    variant="caption"
+                    style={{
+                      color: color.muted,
+                      fontVariant: ["tabular-nums"],
+                    }}
+                  >
+                    {entries.length}
+                  </Text>
+                </Box>
+              </Box>
             </Box>
+            {entries.length > 0 ? (
+              <Pressable
+                onPress={onClearAll}
+                hitSlop={spacing.sm}
+                style={({ pressed }) => [
+                  styles.clearAllButton,
+                  pressed && { opacity: 0.6 },
+                ]}
+              >
+                <Trash2 size={iconSize.md} color={color.muted} />
+              </Pressable>
+            ) : null}
           </Box>
         </Box>
+
+        {/* Cloud-sync failure banner */}
+        {pullError ? (
+          <Box
+            style={[
+              styles.syncErrorBanner,
+              {
+                backgroundColor: withAlpha(color.error, 0.08),
+                borderColor: withAlpha(color.error, 0.25),
+              },
+            ]}
+          >
+            <Text
+              variant="caption"
+              numberOfLines={2}
+              style={[styles.syncErrorText, { color: color.error }]}
+            >
+              Couldn't sync with cloud. {pullError}
+            </Text>
+            <Pressable
+              onPress={onRefresh}
+              hitSlop={spacing.sm}
+              style={({ pressed }) => pressed && { opacity: 0.6 }}
+            >
+              <Text
+                variant="caption"
+                style={{ color: color.brand, fontWeight: "600" }}
+              >
+                Retry
+              </Text>
+            </Pressable>
+          </Box>
+        ) : null}
 
         {/* Search row */}
         <Box style={styles.searchRow}>
@@ -284,6 +372,36 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  countPill: {
+    minWidth: 26,
+    height: 20,
+    borderRadius: borderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.xs,
+  },
+  clearAllButton: {
+    padding: spacing.xs,
+  },
+  syncErrorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    borderCurve: "continuous",
+    borderWidth: 1,
+  },
+  syncErrorText: {
+    flex: 1,
   },
   searchRow: {
     flexDirection: "row",

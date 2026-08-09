@@ -4,7 +4,11 @@ import { EkweError } from "@/constants/errors";
 import { supabase } from "@/services/supabase";
 import { Result, ok, err } from "@/types/Result";
 import logger from "@/utils/logger";
-import { fetchWithRetry } from "@/utils/networkUtils";
+import {
+  fetchWithRetry,
+  mapWorkerError,
+  isOfflineNetworkError,
+} from "@/utils/networkUtils";
 
 const translationResponseSchema = z.object({
   translation: z.string(),
@@ -76,7 +80,7 @@ export async function translateText(
       if (response.status === 429) {
         return err(EkweError.RATE_LIMITED);
       }
-      return mapErrorCode(errorCode);
+      return err(mapWorkerError(errorCode, EkweError.TRANSLATION_FAIL));
     }
 
     const json = await response.json();
@@ -104,6 +108,11 @@ export async function translateText(
       provider: data.provider,
     });
   } catch (e: unknown) {
+    // A definitive offline signal short-circuits the request before any fetch
+    // (fail-fast in fetchWithRetry) — map it quietly, no error log needed.
+    if (isOfflineNetworkError(e)) {
+      return err(EkweError.NETWORK_LOST);
+    }
     if (e instanceof Error) {
       if (e.name === "AbortError") {
         throw e;
@@ -112,14 +121,4 @@ export async function translateText(
     }
     return err(EkweError.NETWORK_LOST);
   }
-}
-
-function mapErrorCode(code: string): Result<never, EkweError> {
-  const map: Record<string, EkweError> = {
-    EKWE_NETWORK_LOST: EkweError.NETWORK_LOST,
-    EKWE_ALL_PROVIDERS_FAIL: EkweError.ALL_PROVIDERS_FAIL,
-    EKWE_EMPTY_TRANSCRIPT: EkweError.EMPTY_TRANSCRIPT,
-    EKWE_TRANSLATION_FAIL: EkweError.TRANSLATION_FAIL,
-  };
-  return err(map[code] ?? EkweError.TRANSLATION_FAIL);
 }

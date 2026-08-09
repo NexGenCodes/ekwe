@@ -17,6 +17,8 @@ export interface HistoryRow {
   source_app: string;
   provider: string;
   created_at: string;
+  /** Producing operation: "transcription" | "translation". */
+  entry_type: "transcription" | "translation";
 }
 
 export interface OutboxRow {
@@ -133,6 +135,26 @@ function migrate(): void {
     }
     db.executeSync("PRAGMA user_version = 3");
   }
+
+  if (currentVersion < 4) {
+    const cols = db.executeSync("PRAGMA table_info(history)") as QueryResult;
+    if (!(cols.rows ?? []).some((c) => c.name === "entry_type")) {
+      db.executeSync(
+        "ALTER TABLE history ADD COLUMN entry_type TEXT NOT NULL DEFAULT 'transcription'",
+      );
+      // Backfill: existing rows with a distinct translation and no audio were
+      // pure text translations; everything else originated from audio.
+      db.executeSync(
+        `UPDATE history
+         SET entry_type = 'translation'
+         WHERE translation_text IS NOT NULL
+           AND translation_text != ''
+           AND translation_text != transcript
+           AND duration = 0`,
+      );
+    }
+    db.executeSync("PRAGMA user_version = 4");
+  }
 }
 
 export function getDb(): DB {
@@ -158,8 +180,8 @@ export const Db = {
   insertHistory: (row: HistoryRow): void => {
     getDb().executeSync(
       `INSERT OR REPLACE INTO history (id, user_id, source_lang, target_lang, transcript, translation_text,
-        transliteration_text, duration, source_app, provider, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        transliteration_text, duration, source_app, provider, created_at, entry_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.id,
         row.user_id,
@@ -172,19 +194,8 @@ export const Db = {
         row.source_app,
         row.provider,
         row.created_at,
+        row.entry_type ?? "transcription",
       ],
-    );
-  },
-
-  updateHistoryTranslation: (
-    id: string,
-    translation: string,
-    transliteration: string | null,
-    targetLang: string,
-  ): void => {
-    getDb().executeSync(
-      "UPDATE history SET translation_text = ?, transliteration_text = ?, target_lang = ? WHERE id = ?",
-      [translation, transliteration, targetLang, id],
     );
   },
 
@@ -192,39 +203,35 @@ export const Db = {
     getDb().executeSync("DELETE FROM history WHERE id = ?", [id]);
   },
 
-  deleteHistoryBatch: (ids: string[]): void => {
-    if (ids.length === 0) return;
-    const placeholders = ids.map(() => "?").join(",");
-    getDb().executeSync(
-      `DELETE FROM history WHERE id IN (${placeholders})`,
-      ids,
-    );
-  },
-
-  getRecentHistory: (limit: number = 200): HistoryRow[] => {
+  getRecentHistory: (userId: string, limit: number = 200): HistoryRow[] => {
+    if (!userId) return [];
     const res = getDb().executeSync(
-      "SELECT * FROM history ORDER BY created_at DESC LIMIT ?",
-      [limit],
+      "SELECT * FROM history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+      [userId, limit],
     ) as QueryResult;
     return (res.rows ?? []) as unknown as HistoryRow[];
   },
 
-  getHistoryCount: (): number => {
+  getHistoryCount: (userId: string): number => {
+    if (!userId) return 0;
     const res = getDb().executeSync(
-      "SELECT COUNT(*) as count FROM history",
+      "SELECT COUNT(*) as count FROM history WHERE user_id = ?",
+      [userId],
     ) as QueryResult;
     return (res.rows?.[0]?.count as number) ?? 0;
   },
 
-  getHistoryPage: (limit: number, offset: number): HistoryRow[] => {
+  getHistoryPage: (userId: string, limit: number, offset: number): HistoryRow[] => {
+    if (!userId) return [];
     const res = getDb().executeSync(
-      "SELECT * FROM history ORDER BY created_at DESC LIMIT ? OFFSET ?",
-      [limit, offset],
+      "SELECT * FROM history WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+      [userId, limit, offset],
     ) as QueryResult;
     return (res.rows ?? []) as unknown as HistoryRow[];
   },
 
-  searchHistory: (query: string, limit: number = 100): HistoryRow[] => {
+  searchHistory: (userId: string, query: string, limit: number = 100): HistoryRow[] => {
+    if (!userId) return [];
     const ftsQuery = query
       .replace(/['"]/g, "")
       .split(/\s+/)
@@ -236,18 +243,18 @@ export const Db = {
       const res = getDb().executeSync(
         `SELECT h.* FROM history h
          INNER JOIN history_fts fts ON h.rowid = fts.rowid
-         WHERE history_fts MATCH ?
+         WHERE h.user_id = ? AND history_fts MATCH ?
          ORDER BY h.created_at DESC
          LIMIT ?`,
-        [ftsQuery, limit],
+        [userId, ftsQuery, limit],
       ) as QueryResult;
       return (res.rows ?? []) as unknown as HistoryRow[];
     } catch {
       const likeQuery = `%${query.replace(/['"]/g, "")}%`;
       const res = getDb().executeSync(
-        `SELECT * FROM history WHERE (transcript LIKE ? OR translation_text LIKE ?)
+        `SELECT * FROM history WHERE user_id = ? AND (transcript LIKE ? OR translation_text LIKE ?)
          ORDER BY created_at DESC LIMIT ?`,
-        [likeQuery, likeQuery, limit],
+        [userId, likeQuery, likeQuery, limit],
       ) as QueryResult;
       return (res.rows ?? []) as unknown as HistoryRow[];
     }
@@ -310,11 +317,14 @@ export const Db = {
     return res.rowsAffected ?? 0;
   },
 
-  cleanupStalePendingOutbox: (): number => {
-    const res = getDb().executeSync(
-      "DELETE FROM outbox WHERE status = 'pending' AND created_at < datetime('now', '-24 hours')",
-    ) as QueryResult;
-    return res.rowsAffected ?? 0;
+  /** Removes every history row (used when the account is deleted or cleared). */
+  purgeAllHistory: (): void => {
+    getDb().executeSync("DELETE FROM history");
+  },
+
+  /** Removes every outbox row (used when the account is deleted or cleared). */
+  purgeAllOutbox: (): void => {
+    getDb().executeSync("DELETE FROM outbox");
   },
 
   vacuum: (): void => {

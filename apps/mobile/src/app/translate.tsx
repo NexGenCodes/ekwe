@@ -21,6 +21,7 @@ export default function TranslateScreen(): React.JSX.Element {
 
   // Store & Settings
   const userSession = useSelector(() => auth$.session.get());
+  const isPro = useSelector(() => auth$.isPro.get());
   const defaultTargetLang = useSelector(() => settings$.targetLanguage.get());
 
   const { color, isDark } = useTheme();
@@ -31,10 +32,14 @@ export default function TranslateScreen(): React.JSX.Element {
 
   const translateAbortRef = useRef<AbortController | null>(null);
 
+  const paramDetected = (detectedLang as string) !== "und";
+
   // Local State
   const [sourceLang, setSourceLang] = useState<string>(
-    (detectedLang as string) !== "und" ? (detectedLang as string) : "en",
+    paramDetected ? (detectedLang as string) : "en",
   );
+  const shownDetected =
+    paramDetected && isPro && sourceLang === (detectedLang as string);
   const [targetLang, setTargetLang] = useState<string>(
     defaultTargetLang || "es",
   );
@@ -105,6 +110,7 @@ export default function TranslateScreen(): React.JSX.Element {
           duration: 0,
           sourceApp: "shared-text",
           provider: "gemini",
+          type: "translation",
         },
         userSession,
       );
@@ -164,10 +170,7 @@ export default function TranslateScreen(): React.JSX.Element {
                     color: color.muted,
                   }}
                 >
-                  {(detectedLang as string) !== "und" &&
-                  sourceLang === (detectedLang as string)
-                    ? "DETECTED · "
-                    : "SOURCE · "}
+                  {shownDetected ? "DETECTED · " : "SOURCE · "}
                   {getLanguageName(sourceLang)} {FLAG_MAP[sourceLang] || ""}
                 </Text>
                 <ChevronDown size={14} color={mutedColor} />

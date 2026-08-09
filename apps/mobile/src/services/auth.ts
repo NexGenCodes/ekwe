@@ -14,12 +14,14 @@ import { SyncService } from "@/services/SyncService";
 import { mmkv } from "@/services/mmkv";
 import { mirrorSessionToSharedContainer } from "@/services/sharedContainer";
 import { supabase, setupAppStateListener } from "@/services/supabase";
-import { auth$, authActions, buildSettingsSharedPrefs } from "@/store";
+import { auth$, authActions, buildSettingsSharedPrefs, isDefinitelyOffline } from "@/store";
 import { isIOS } from "@/utils";
 import { track, identify, AnalyticsEvents } from "@/utils/analytics";
 import logger from "@/utils/logger";
 
 const SESSION_CACHE_KEY = "hasSession";
+const OTP_REQUEST_TIMEOUT_MS = 15_000;
+const OFFLINE_MESSAGE = "No internet connection. Please connect and try again.";
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -105,6 +107,7 @@ export const initAuth = async (): Promise<void> => {
     if (event === "SIGNED_OUT") {
       queryClient.invalidateQueries({ queryKey: ["translate"] });
       queryClient.invalidateQueries({ queryKey: ["transcribe"] });
+      SyncService.loadInitialHistory();
     }
   });
   _authSubscription = subscription;
@@ -192,6 +195,14 @@ export const sendOtp = async (
 
   if (workerUrl && sitekey) {
     try {
+      if (isDefinitelyOffline()) {
+        track(AnalyticsEvents.AUTH_OTP_FAILED, {
+          method: "otp",
+          error: "network_lost",
+        });
+        return { ok: false, error: OFFLINE_MESSAGE };
+      }
+
       if (!turnstileToken) {
         track(AnalyticsEvents.AUTH_OTP_FAILED, {
           method: "otp",
@@ -203,11 +214,22 @@ export const sendOtp = async (
         };
       }
 
-      const res = await fetch(`${workerUrl}/auth/otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), turnstileToken }),
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        OTP_REQUEST_TIMEOUT_MS,
+      );
+      let res: Response;
+      try {
+        res = await fetch(`${workerUrl}/auth/otp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim(), turnstileToken }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!res.ok) {
         track(AnalyticsEvents.AUTH_OTP_FAILED, {
@@ -235,6 +257,16 @@ export const sendOtp = async (
       track(AnalyticsEvents.AUTH_OTP_SENT, { method: "otp" });
       return { ok: true, needsOtp: true };
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        track(AnalyticsEvents.AUTH_OTP_FAILED, {
+          method: "otp",
+          error: "timeout",
+        });
+        return {
+          ok: false,
+          error: "The request timed out. Please try again.",
+        };
+      }
       logger.error("[Auth] sendOtp (worker) error:", err);
       track(AnalyticsEvents.AUTH_OTP_FAILED, {
         method: "otp",
@@ -252,6 +284,9 @@ export const sendOtp = async (
 
 const sendOtpDirect = async (email: string): Promise<AuthResult> => {
   try {
+    if (isDefinitelyOffline()) {
+      return { ok: false, error: OFFLINE_MESSAGE };
+    }
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
     });
@@ -283,6 +318,9 @@ export const verifyOtp = async (
   type: "signup" | "email" = "email",
 ): Promise<AuthResult> => {
   try {
+    if (isDefinitelyOffline()) {
+      return { ok: false, error: OFFLINE_MESSAGE };
+    }
     const { data, error } = await supabase.auth.verifyOtp({
       email: email.trim(),
       token: token.trim(),
@@ -534,6 +572,10 @@ export const deleteAccount = async (): Promise<AuthResult> => {
     mirrorSessionToSharedContainer(null, buildSettingsSharedPrefs());
     getPosthogClient()?.reset();
     track(AnalyticsEvents.DELETE_ACCOUNT);
+
+    // The cloud rows are gone via delete_user cascade — purge the local
+    // device cache so nothing of the account survives on this device.
+    SyncService.purgeLocalHistory();
 
     return { ok: true };
   } catch (err) {

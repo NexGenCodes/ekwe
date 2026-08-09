@@ -19,8 +19,8 @@ const PLAN_CONFIG = {
       "witai",
       "cohere",
       "gladia",
-      "cloudflare",
       "groq",
+      "cloudflare",
     ] as readonly TranscribeProvider[],
     PREMIUM: [
       "deepgram",

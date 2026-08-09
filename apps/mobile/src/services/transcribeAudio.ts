@@ -7,6 +7,8 @@ import { supabase } from "@/services/supabase";
 import { Result, ok, err } from "@/types/Result";
 import { resolveDetectedLanguage } from "@/utils/languageUtils";
 import logger from "@/utils/logger";
+import { isDefinitelyOffline } from "@/utils/netInfo";
+import { mapWorkerError } from "@/utils/networkUtils";
 import { MAX_AUDIO_BYTES as MAX_FILE_SIZE_BYTES } from "@ekwe/shared/plans";
 
 const transcriptionResponseSchema = z.object({
@@ -34,7 +36,7 @@ export interface WordTimestamp {
 
 export interface TranscriptionResult {
   transcript: string;
-  detectedLang: string;
+  detectedLang: string | null;
   sourceLang: string;
   wordTimestamps: WordTimestamp[];
   durationSeconds: number;
@@ -56,6 +58,10 @@ export async function transcribeAudio(
 
     if (file.size && file.size > MAX_FILE_SIZE_BYTES) {
       return err(EkweError.FILE_TOO_LARGE);
+    }
+
+    if (isDefinitelyOffline()) {
+      return err(EkweError.NETWORK_LOST);
     }
 
     const workerUrl = getWorkerUrl();
@@ -100,7 +106,7 @@ export async function transcribeAudio(
       if (uploadResult.status === 401) {
         return err(EkweError.TRANSCRIPTION_FAIL);
       }
-      return mapErrorCode(errorCode);
+      return err(mapWorkerError(errorCode, EkweError.TRANSCRIPTION_FAIL));
     }
 
     const json = JSON.parse(uploadResult.body) as unknown;
@@ -118,7 +124,7 @@ export async function transcribeAudio(
     return processTranscript(
       data.text,
       data.words ?? [],
-      data.language ?? sourceLang,
+      data.language,
       sourceLang,
       audio,
       data.provider,
@@ -233,7 +239,7 @@ function getMimeType(extension: string): string {
 function processTranscript(
   rawText: string,
   words: { word: string; start: number; end: number }[],
-  returnedLang: string,
+  returnedLang: string | undefined,
   sourceLang: string,
   audio: ProcessedAudio,
   provider?: string,
@@ -264,18 +270,4 @@ function processTranscript(
     isLowQuality: audio.averageDb < -60,
     provider,
   });
-}
-
-function mapErrorCode(code: string): Result<never, EkweError> {
-  const map: Record<string, EkweError> = {
-    EKWE_NETWORK_LOST: EkweError.NETWORK_LOST,
-    EKWE_ALL_PROVIDERS_FAIL: EkweError.ALL_PROVIDERS_FAIL,
-    EKWE_SHARE_COPY_FAIL: EkweError.SHARE_COPY_FAIL,
-    EKWE_EMPTY_TRANSCRIPT: EkweError.EMPTY_TRANSCRIPT,
-    EKWE_TRANSCRIPTION_FAIL: EkweError.TRANSCRIPTION_FAIL,
-    EKWE_TRANSCRIBE_TIMEOUT: EkweError.TRANSCRIBE_TIMEOUT,
-    EKWE_FILE_TOO_LARGE: EkweError.FILE_TOO_LARGE,
-    EKWE_RATE_LIMITED: EkweError.RATE_LIMITED,
-  };
-  return err(map[code] ?? EkweError.TRANSCRIPTION_FAIL);
 }

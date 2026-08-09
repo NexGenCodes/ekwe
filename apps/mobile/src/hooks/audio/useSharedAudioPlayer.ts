@@ -250,10 +250,10 @@ export const useSharedAudioPlayer = (
     } catch (error) {
       // expo-audio may have already released the native player (teardown
       // ordering or a source swap). The audio is effectively paused then —
-      // swallow instead of crashing the app.
+      // swallow instead of crashing the app. One-line note, no stack dump.
       logger.debug(
         "[SharedAudioPlayer] pause skipped (player already released)",
-        error,
+        error instanceof Error ? error.name : String(error),
       );
     }
     // Relax exclusive focus, release the audio-active flag, and yield the
@@ -371,24 +371,18 @@ export const useSharedAudioPlayer = (
     }
     frameCallback.setActive(false);
     resumeAfterScrubRef.current = false;
-    // expo-audio's own cleanup (source swap, or its unmount effect, which runs
-    // before this hook's) may already have released the native player. Calling
-    // into a released shared object throws "Cannot use shared object that was
-    // already released", so guard both calls instead of crashing the app.
-    try {
-      player.pause();
-    } catch (error) {
-      logger.debug(
-        "[SharedAudioPlayer] pause during release skipped (already released)",
-        error,
-      );
-    }
+    // `remove()` stops playback and frees the native player, so pause() first is
+    // unnecessary. expo-audio's own cleanup (source swap, or its unmount effect,
+    // which runs before this hook's) may already have released it — calling into
+    // a released shared object throws "Cannot use shared object that was already
+    // released". That is expected teardown, not a bug: catch it, log a one-line
+    // note (no stack dump), and move on.
     try {
       player.remove();
     } catch (error) {
       logger.debug(
         "[SharedAudioPlayer] remove during release skipped (already released)",
-        error,
+        error instanceof Error ? error.name : String(error),
       );
     }
     setIsAudioActiveAsync(false).catch(() => {});

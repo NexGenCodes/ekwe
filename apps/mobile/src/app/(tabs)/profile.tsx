@@ -34,7 +34,7 @@ import { duration, borderRadius, opacity, spacing } from "@/constants";
 import { CURRENCIES } from "@ekwe/shared/currencies";
 import { useLogout, useTheme, usePermissions, useReduceMotion } from "@/hooks";
 import { deleteAccount } from "@/services/auth";
-import { resetAnalytics } from "@/services/posthog";
+import { SyncService } from "@/services/SyncService";
 import { supabase } from "@/services/supabase";
 import { auth$, authActions, settings$, settingsActions } from "@/store";
 import { isIOS } from "@/utils";
@@ -61,13 +61,11 @@ export default function ProfileScreen(): React.JSX.Element {
 
   const hapticsEnabled = useSelector(() => settings$.hapticsEnabled.get());
   const currency = useSelector(() => settings$.currency.get());
-  const analyticsConsent = useSelector(() => settings$.analyticsConsent.get());
   const {
     setHapticsEnabled,
     setAutoCopy,
     setCurrency,
     setLiveTranscriptionEnabled,
-    setAnalyticsConsent,
   } = settingsActions;
   const selectedLanguages = useSelector(() =>
     settings$.selectedLanguages.get(),
@@ -237,34 +235,6 @@ export default function ProfileScreen(): React.JSX.Element {
                   value={hapticsEnabled}
                   onValueChange={(val) => {
                     setHapticsEnabled(val);
-                  }}
-                  trackColor={{
-                    true: color.foreground,
-                    false: color.border,
-                  }}
-                  thumbColor={color.card}
-                />
-              }
-            />
-            <ProfileRow
-              icon={Shield}
-              sfIcon="chart.bar.fill"
-              iconColor={color.foreground}
-              title="Share Usage Data"
-              subtitle="Anonymous analytics to improve Ekwe"
-              hasDivider
-              onPress={async () => {
-                await triggerHaptic();
-                const next = !analyticsConsent;
-                setAnalyticsConsent(next);
-                if (!next) resetAnalytics();
-              }}
-              trailing={
-                <Switch
-                  value={analyticsConsent}
-                  onValueChange={(val) => {
-                    setAnalyticsConsent(val);
-                    if (!val) resetAnalytics();
                   }}
                   trackColor={{
                     true: color.foreground,
@@ -506,21 +476,55 @@ export default function ProfileScreen(): React.JSX.Element {
               }}
               trailing={null}
             />
-            <ProfileRow
-              icon={Trash2}
-              sfIcon="trash.fill"
-              iconColor={color.error}
-              title="Delete Account"
-              subtitle="Permanently delete your data"
-              onPress={handleDeleteAccount}
-              trailing={null}
-            />
-          </ProfileSection>
-        </Animated.View>
+              <ProfileRow
+                icon={Trash2}
+                sfIcon="trash.fill"
+                iconColor={color.error}
+                title="Delete Account"
+                subtitle="Permanently delete your data"
+                onPress={handleDeleteAccount}
+                trailing={null}
+              />
+            </ProfileSection>
+          </Animated.View>
 
-        {/* Footer */}
-        <Animated.View entering={sectionEnter(350)}>
-          <Box style={styles.footer}>
+          {/* Data */}
+          <Animated.View entering={sectionEnter(350)}>
+            <ProfileSection title="Data">
+              <ProfileRow
+                icon={Trash2}
+                sfIcon="trash.fill"
+                iconColor={color.error}
+                title="Clear History"
+                subtitle="Delete all transcripts and translations"
+                hasDivider
+                onPress={async () => {
+                  await triggerHaptic();
+                  const userId = user?.id;
+                  if (!userId) return;
+                  AppAlert.confirm(
+                    "Clear All History",
+                    "This will permanently delete all your transcripts and translations from this device and the cloud. This action cannot be undone.",
+                    async () => {
+                      await triggerHaptic();
+                      await SyncService.clearAllHistory(userId);
+                      AppAlert.success("All history cleared");
+                    },
+                    {
+                      isDestructive: true,
+                      confirmText: "Clear All",
+                      cancelText: "Cancel",
+                    },
+                  );
+                }}
+                trailing={null}
+              />
+            </ProfileSection>
+          </Animated.View>
+
+          {/* Footer */}
+          <Animated.View entering={sectionEnter(400)}>
+            <Box style={styles.footer}>
             <Text
               variant="caption"
               style={{ opacity: opacity.inactive, color: color.muted }}
@@ -638,7 +642,8 @@ export default function ProfileScreen(): React.JSX.Element {
                 onPress={() => setShowDeleteModal(false)}
                 style={{
                   flex: 1,
-                  height: 48,
+                  minHeight: 48,
+                  paddingVertical: spacing.xs,
                   borderRadius: borderRadius.xl,
                   alignItems: "center",
                   justifyContent: "center",
@@ -647,7 +652,10 @@ export default function ProfileScreen(): React.JSX.Element {
                 }}
                 feedback="none"
               >
-                <Text variant="body" style={{ color: color.foreground }}>
+                <Text
+                  variant="body"
+                  style={{ color: color.foreground, textAlign: "center" }}
+                >
                   Cancel
                 </Text>
               </Pressable>
@@ -656,7 +664,8 @@ export default function ProfileScreen(): React.JSX.Element {
                 disabled={deleteConfirmText !== "DELETE"}
                 style={{
                   flex: 1,
-                  height: 48,
+                  minHeight: 48,
+                  paddingVertical: spacing.xs,
                   borderRadius: borderRadius.xl,
                   alignItems: "center",
                   justifyContent: "center",
@@ -667,7 +676,11 @@ export default function ProfileScreen(): React.JSX.Element {
               >
                 <Text
                   variant="body"
-                  style={{ color: color.onBrand, fontWeight: "600" }}
+                  style={{
+                    color: color.onBrand,
+                    fontWeight: "600",
+                    textAlign: "center",
+                  }}
                 >
                   Delete Permanently
                 </Text>

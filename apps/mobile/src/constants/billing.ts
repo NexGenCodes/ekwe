@@ -85,7 +85,7 @@ export const BILLING_PLANS = {
       { title: "Voice dictation (up to 2 min per session)", included: true },
       { title: "Auto-copy translations", included: true },
       { title: "30-day cloud history", included: true },
-      { title: "Auto-detect spoken language", included: true },
+      { title: "Auto-detect spoken language", included: false },
       { title: "Custom avatar icons", included: false },
       { title: "Ad-free experience", included: false },
       { title: "Extended dictation (up to 30 min)", included: false },
@@ -101,6 +101,7 @@ export const BILLING_PLANS = {
     features: [
       { title: "Ad-free experience", included: true },
       { title: "Extended voice dictation (up to 30 min)", included: true },
+      { title: "Auto-detect spoken language", included: true },
       { title: "Live dictation with real-time results", included: true },
       { title: "1-year cloud history", included: true },
       { title: "Priority AI context processing", included: true },

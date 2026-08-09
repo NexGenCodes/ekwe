@@ -1,98 +1,24 @@
-import { useSelector } from "@legendapp/state/react";
 import Check from "lucide-react-native/icons/check";
 import Zap from "lucide-react-native/icons/zap";
-import React, { useMemo } from "react";
+import React from "react";
+import Animated, { FadeIn } from "react-native-reanimated";
 
 import { FeatureRow } from "./FeatureRow";
 
 import { Button } from "@/components/Button";
 import { Box, Text } from "@/components/ui";
-import { DISPLAY_PRICING } from "@/constants/billing";
 import type { BILLING_PLANS, PlanFeature } from "@/constants/billing";
-import { getCurrency } from "@ekwe/shared/currencies";
-import { usePricingQuery } from "@/hooks/queries/usePricingQuery";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
+import { duration } from "@/constants";
+import { useActivePricing } from "@/hooks/billing/useActivePricing";
+import { getDecimals } from "@ekwe/shared/money";
 import type { ThemeTokens } from "@/hooks/ui/useTheme";
-import { settings$ } from "@/store";
-
-interface PriceBreakdown {
-  displayPrice: number;
-  originalPrice: number;
-  symbol: string;
-  annualTotal: number;
-  savingPercent: number;
-}
-
-function usePriceBreakdown(
-  plan: (typeof BILLING_PLANS)["pro"],
-  isAnnual: boolean,
-): PriceBreakdown {
-  const currency = useSelector(() => settings$.currency.get());
-  const { data: pricingData } = usePricingQuery();
-
-  return useMemo(() => {
-    const serverPricing =
-      pricingData?.pricing?.[currency] ?? pricingData?.pricing?.USD;
-    if (serverPricing) {
-      const cur = serverPricing.monthly.currency;
-      const symbol = getCurrency(cur)?.symbol ?? "$";
-      const monthlyPrice = serverPricing.monthly.amount;
-      const annualTotal = serverPricing.annual.amount;
-      const effectiveMonthly = +(annualTotal / 12).toFixed(2);
-      const savingPercent = Math.round(
-        (1 - annualTotal / (monthlyPrice * 12)) * 100,
-      );
-
-      if (!isAnnual) {
-        return {
-          displayPrice: monthlyPrice,
-          originalPrice: monthlyPrice,
-          symbol,
-          annualTotal: 0,
-          savingPercent: 0,
-        };
-      }
-      return {
-        displayPrice: effectiveMonthly,
-        originalPrice: monthlyPrice,
-        symbol,
-        annualTotal,
-        savingPercent,
-      };
-    }
-
-    const activePricing = DISPLAY_PRICING[currency] || DISPLAY_PRICING.USD;
-    const monthlyPrice = activePricing.monthly.amount;
-    const symbol = activePricing.monthly.symbol;
-
-    if (!isAnnual) {
-      return {
-        displayPrice: monthlyPrice,
-        originalPrice: monthlyPrice,
-        symbol,
-        annualTotal: 0,
-        savingPercent: 0,
-      };
-    }
-
-    const annualTotal = activePricing.annual.amount;
-    const effectiveMonthly = activePricing.annualMonthlyCost;
-    const savingPercent = activePricing.annualSavingPercent;
-
-    return {
-      displayPrice: effectiveMonthly,
-      originalPrice: monthlyPrice,
-      symbol,
-      annualTotal,
-      savingPercent,
-    };
-  }, [currency, isAnnual, pricingData]);
-}
 
 export interface ProPlanCardProps {
   isPro: boolean;
   isAnnual: boolean;
+  loading: boolean;
   color: ThemeTokens["color"];
   isDark: boolean;
   proPlan: (typeof BILLING_PLANS)["pro"];
@@ -100,9 +26,23 @@ export interface ProPlanCardProps {
   handleManage: () => Promise<void>;
 }
 
+/**
+ * Formats a currency amount with the per-currency decimal places (e.g. XOF
+ * has 0) and thousands grouping. Keeps precision consistent with the money
+ * helpers in @ekwe/shared/{money,currencies}.
+ */
+function formatAmount(amount: number, code: string): string {
+  const decimals = getDecimals(code);
+  return amount.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
 export function ProPlanCard({
   isPro,
   isAnnual,
+  loading,
   color,
   isDark,
   proPlan,
@@ -111,7 +51,12 @@ export function ProPlanCard({
 }: ProPlanCardProps): React.JSX.Element {
   const glassBg = isDark ? color.card : color.background;
   const dividerBg = color.border;
-  const price = usePriceBreakdown(proPlan, isAnnual);
+  const { pricing, isPending } = useActivePricing();
+
+  const displayAmount = isAnnual
+    ? pricing.annualMonthlyCost
+    : pricing.monthlyAmount;
+  const priceKey = `${pricing.currency}-${isAnnual}-${displayAmount}`;
 
   return (
     <Box
@@ -163,7 +108,7 @@ export function ProPlanCard({
       </Box>
 
       <Box style={styles.priceRow}>
-        {isAnnual && (
+        {isAnnual && !isPending && (
           <Text
             variant="body"
             style={[
@@ -171,16 +116,21 @@ export function ProPlanCard({
               { color: color.muted, textDecorationLine: "line-through" },
             ]}
           >
-            {price.symbol}
-            {price.originalPrice.toFixed(2)}
+            {pricing.symbol}
+            {formatAmount(pricing.monthlyAmount, pricing.currency)}
           </Text>
         )}
         <Text variant="body" style={{ color: color.brand }}>
-          {price.symbol}
+          {isPending ? "" : pricing.symbol}
         </Text>
-        <Text variant="heading1" style={{ color: color.foreground }}>
-          {price.displayPrice.toFixed(2)}
-        </Text>
+        <Animated.View
+          key={priceKey}
+          entering={FadeIn.duration(duration.normal)}
+        >
+          <Text variant="heading1" style={{ color: color.foreground }}>
+            {isPending ? "…" : formatAmount(displayAmount, pricing.currency)}
+          </Text>
+        </Animated.View>
         <Text variant="body" style={{ color: color.muted }}>
           / month
         </Text>
@@ -193,12 +143,13 @@ export function ProPlanCard({
               variant="caption"
               style={{ color: color.background, fontWeight: "800" }}
             >
-              Save {price.savingPercent}%
+              Save {pricing.annualSavingPercent}%
             </Text>
           </Box>
           <Text variant="body" style={{ color: color.brand }}>
-            Billed {price.symbol}
-            {price.annualTotal.toFixed(2)} annually
+            {isPending
+              ? "Billed annually"
+              : `Billed ${pricing.symbol}${formatAmount(pricing.annualAmount, pricing.currency)} annually`}
           </Text>
         </Box>
       )}
@@ -235,6 +186,8 @@ export function ProPlanCard({
           variant="outline"
           onPress={isPro ? handleManage : handleUpgrade}
           size="large"
+          loading={loading}
+          disabled={loading}
         />
       </Box>
     </Box>

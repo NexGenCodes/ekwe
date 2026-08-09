@@ -1,30 +1,27 @@
 import { useState, useEffect, useMemo } from "react";
 
 import { Db } from "@/services/db";
-import { HistoryEntry } from "@/store";
+import { auth$, EntryType, HistoryEntry } from "@/store";
 
 const DEBOUNCE_DELAY_MS = 300;
 export type HistoryFilterOption = "all" | "transcription" | "translation";
-export type EntryType = "transcription" | "translation" | "both";
 
 /**
- * Derives the semantic type of a history entry:
- * - transcription: no distinct translation (translation is null, empty, or identical to transcript)
- * - translation:   has a distinct translation but no separate original transcript
- * - both:          has both a transcript and a distinct translation
+ * Returns the producing operation of a history entry: the persisted `type`
+ * when set, falling back to a content-derived estimate for legacy rows.
+ *
+ * A user either transcribes or translates — never both at once. An entry that
+ * was transcribed and then translated keeps type "transcription"; the presence
+ * of a distinct translation is a derived "translated" state, not a third type.
  */
 export function getEntryType(entry: HistoryEntry): EntryType {
+  if (entry.type === "transcription" || entry.type === "translation") {
+    return entry.type;
+  }
   const hasDistinctTranslation =
     !!entry.translation?.trim() &&
     entry.translation.trim() !== entry.transcript?.trim();
-
-  if (!hasDistinctTranslation) return "transcription";
-
-  const hasTranscript = !!entry.transcript?.trim();
-  const hasAudio = !!entry.duration && entry.duration > 0;
-
-  if (hasTranscript && hasAudio) return "both";
-  return "translation";
+  return hasDistinctTranslation ? "translation" : "transcription";
 }
 
 function rowToEntry(row: {
@@ -38,6 +35,7 @@ function rowToEntry(row: {
   source_app: string;
   provider: string;
   created_at: string;
+  entry_type?: EntryType;
 }): HistoryEntry {
   return {
     id: row.id,
@@ -50,6 +48,7 @@ function rowToEntry(row: {
     sourceApp: row.source_app,
     provider: row.provider,
     timestamp: new Date(row.created_at).getTime(),
+    type: row.entry_type,
   };
 }
 
@@ -76,21 +75,19 @@ export function useHistorySearch(entries: HistoryEntry[]): HistorySearchState {
   }, [query]);
 
   const filteredEntries = useMemo(() => {
+    const userId = auth$.user.get()?.id;
     let list = entries;
-    if (debouncedQuery.trim().length > 0) {
-      const rows = Db.searchHistory(debouncedQuery, 200);
+    if (debouncedQuery.trim().length > 0 && userId) {
+      const rows = Db.searchHistory(userId, debouncedQuery, 200);
       list = rows.map(rowToEntry);
     }
 
     if (filter === "transcription") {
-      // Transcription: no distinct translation exists
+      // Producing operation was transcription (audio → text)
       list = list.filter((e) => getEntryType(e) === "transcription");
     } else if (filter === "translation") {
-      // Translation: has a distinct translation (includes 'both' entries)
-      list = list.filter((e) => {
-        const t = getEntryType(e);
-        return t === "translation" || t === "both";
-      });
+      // Producing operation was translation (text → text)
+      list = list.filter((e) => getEntryType(e) === "translation");
     }
 
     return list;

@@ -54,6 +54,13 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
         selectedLang !== "auto" &&
         selectedLang !== detectedLang;
 
+      // The "Detected ·" pill is only meaningful when the provider actually
+      // reported a language that differs from the user's selection (or the
+      // user asked for auto-detect). A mere echo of the selection is not a
+      // detection and must not be labelled as one.
+      const showsDetection =
+        autoLanguageDetect && !!detectedLang && selectedLang !== detectedLang;
+
       const selectedName =
         selectedLang === "auto"
           ? "Auto"
@@ -131,7 +138,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                 </Text>
               </Box>
 
-              {autoLanguageDetect && (
+              {showsDetection && (
                 <>
                   <ArrowRight
                     size={14}

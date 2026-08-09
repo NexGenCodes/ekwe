@@ -96,8 +96,9 @@ final class EchoShareModel: NSObject, ObservableObject {
     private let bucketCount = 40
     private var isCancelled = false
 
-    /// Stable identity for a single share session, used as the `sessionKey` in
-    /// history records so a translation upgrades the transcription-only entry.
+    /// Stable identity for a single share session, used as the `sessionKey` so
+    /// the transcription and any later translation import as two separate
+    /// history entries rather than one combined row.
     private let sessionKey = UUID().uuidString
 
     /// What `retryOperation()` should re-run after a failure.
@@ -316,12 +317,12 @@ final class EchoShareModel: NSObject, ObservableObject {
             transcriptText = transcript.text
             transcriptionProvider = transcript.provider
             transcriptWords = transcript.words ?? []
-            detectedLang = transcript.language ?? selectedLang
+            detectedLang = transcript.language ?? ""
             transcribePhase = .none
             step = .transcriptionReady
 
-            // Persist a transcription-only record now; translate() upgrades it
-            // in place via the shared sessionKey.
+            // Persist a transcription-only record now; a later translate() writes
+            // a separate translation record under the same sessionKey.
             writeHistoryRecord(translation: nil, transliteration: nil)
         } catch {
             if isCancelled { step = .preview; return }

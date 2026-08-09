@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -22,6 +22,10 @@ export function BillingToggle({
   onToggle,
   color,
 }: BillingToggleProps): React.JSX.Element {
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  const indent = spacing.xs;
+  const optionWidth = Math.max(0, (containerWidth - indent * 2) / 2);
   const slideAnim = useSharedValue(isAnnual ? 1 : 0);
 
   useEffect(() => {
@@ -30,18 +34,29 @@ export function BillingToggle({
     });
   }, [isAnnual, slideAnim]);
 
-  const indicatorStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ translateX: slideAnim.value * 150 }], // 150 is half of 300
-    };
-  });
+  const indicatorStyle = useAnimatedStyle(
+    () => ({
+      transform: [{ translateX: slideAnim.value * optionWidth }],
+    }),
+    [optionWidth],
+  );
 
   return (
-    <Box style={[styles.toggleContainer, { backgroundColor: color.surface }]}>
+    <Box
+      style={[styles.toggleContainer, { backgroundColor: color.surface }]}
+      onLayout={(event) => setContainerWidth(event.nativeEvent.layout.width)}
+      accessibilityRole="tablist"
+      accessibilityLabel="Billing period"
+    >
       <Animated.View
         style={[
           styles.toggleIndicator,
-          { backgroundColor: color.brand },
+          {
+            backgroundColor: color.brand,
+            left: indent,
+            bottom: indent,
+            width: optionWidth,
+          },
           indicatorStyle,
         ]}
       />
@@ -49,6 +64,9 @@ export function BillingToggle({
         onPress={() => onToggle(false)}
         style={styles.toggleOption}
         hitSlop={10}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: !isAnnual }}
+        accessibilityLabel="Monthly billing"
       >
         <Text
           variant="body"
@@ -61,6 +79,9 @@ export function BillingToggle({
         onPress={() => onToggle(true)}
         style={styles.toggleOption}
         hitSlop={10}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: isAnnual }}
+        accessibilityLabel="Annual billing"
       >
         <Text
           variant="body"
@@ -78,20 +99,17 @@ const styles = {
     flexDirection: "row",
     borderRadius: borderRadius.full,
     padding: spacing.xs,
-    width: 308,
+    alignSelf: "stretch",
     position: "relative",
   } as const,
   toggleIndicator: {
     position: "absolute",
     top: spacing.xs,
-    left: spacing.xs,
-    width: 150,
-    height: "100%",
     borderRadius: borderRadius.full,
     boxShadow: shadows.soft,
   } as const,
   toggleOption: {
-    width: 150,
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: spacing.md,

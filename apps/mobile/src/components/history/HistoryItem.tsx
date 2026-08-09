@@ -1,10 +1,6 @@
 import { triggerHaptic } from "@/utils/haptics";
-import ArrowDown from "lucide-react-native/icons/arrow-down";
-import AudioLines from "lucide-react-native/icons/audio-lines";
 import Captions from "lucide-react-native/icons/captions";
 import Languages from "lucide-react-native/icons/languages";
-import Type from "lucide-react-native/icons/type";
-import Upload from "lucide-react-native/icons/upload";
 import React, { useCallback, useMemo } from "react";
 import { AccessibilityActionEvent, ViewStyle, StyleSheet } from "react-native";
 
@@ -12,6 +8,7 @@ import { Card } from "../Card";
 
 import { Box, Text, Pressable } from "@/components/ui";
 import { getLanguageName } from "@/constants/languages";
+import { scale } from "@/constants/motion";
 import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
@@ -60,28 +57,11 @@ export const HistoryItem = React.memo(
       [entry, onDelete],
     );
 
-    // Format duration nicely
-    const formattedDuration = useMemo(() => {
-      if (!entry.duration) return null;
-      const seconds = Math.round(entry.duration);
-      if (seconds < 60) return `${seconds}s`;
-      const minutes = Math.floor(seconds / 60);
-      const remainingSeconds = seconds % 60;
-      if (minutes < 60) {
-        return remainingSeconds > 0
-          ? `${minutes}m ${remainingSeconds}s`
-          : `${minutes}m`;
-      }
-      const hours = Math.floor(minutes / 60);
-      const remainingMinutes = minutes % 60;
-      return remainingMinutes > 0
-        ? `${hours}h ${remainingMinutes}m`
-        : `${hours}h`;
-    }, [entry.duration]);
-
-    // Semantic type: transcription | translation | both
+    // Semantic type from the persisted producing operation (audio or text).
+    // A transcribed entry may carry a derived translation, but its type stays
+    // "transcription" — a user either transcribes or translates, never both.
     const entryType = useMemo(() => getEntryType(entry), [entry]);
-    const isTranslation = entryType !== "transcription";
+    const isTranslation = entryType === "translation";
 
     // Hero content: transcript (foreground) with distinct translation (brand) below.
     const snippetBody = useMemo((): React.ReactNode => {
@@ -98,14 +78,10 @@ export const HistoryItem = React.memo(
         );
       }
 
-      // Entries with both a transcript AND a distinct translation:
-      // transcript is the hero, translation is the accented secondary.
-      if (
-        hasTranslation &&
-        hasTranscript &&
-        areDifferent &&
-        (entryType === "both" || entryType === "translation")
-      ) {
+      // Entries with both a transcript AND a distinct translation (whether the
+      // entry was transcribed or is a pure translation): transcript is the hero,
+      // translation is the accented secondary.
+      if (hasTranslation && hasTranscript && areDifferent) {
         return (
           <Box style={{ gap: spacing.xs }}>
             <Text
@@ -147,109 +123,80 @@ export const HistoryItem = React.memo(
           {textToShow}
         </Text>
       );
-    }, [entry.transcript, entry.translation, entryType, color]);
+    }, [entry.transcript, entry.translation, color]);
 
-    // Quiet metadata line — media type + duration (language pair lives in the tile).
+    // Format duration nicely — audio metadata belongs to transcriptions only
+    // (translations are text → text and carry no recording).
+    const formattedDuration = useMemo(() => {
+      if (!entry.duration) return null;
+      const seconds = Math.round(entry.duration);
+      if (seconds < 60) return `${seconds}s`;
+      const minutes = Math.floor(seconds / 60);
+      const remainingSeconds = seconds % 60;
+      if (minutes < 60) {
+        return remainingSeconds > 0
+          ? `${minutes}m ${remainingSeconds}s`
+          : `${minutes}m`;
+      }
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = minutes % 60;
+      return remainingMinutes > 0
+        ? `${hours}h ${remainingMinutes}m`
+        : `${hours}h`;
+    }, [entry.duration]);
+
+    // Quiet metadata line — the producing operation ("type"), the audio
+    // metadata for transcriptions (duration · source language), and the compact
+    // language pair for translations. The circular type-icon badge on the left
+    // already signals the kind of entry, so the origin stays off-screen.
     const metadataLabel = useMemo(() => {
-      const isShared =
-        entry.sourceApp &&
-        entry.sourceApp !== "ekwe" &&
-        entry.sourceApp !== "ekwe-home";
+      const langStr = isTranslation
+        ? `${entry.sourceLang.toUpperCase()} → ${entry.targetLang.toUpperCase()}`
+        : entry.sourceLang.toUpperCase();
+      const mediaType =
+        entryType === "translation" ? "Translation" : "Transcription";
+      const durationStr = isTranslation
+        ? ""
+        : formattedDuration
+          ? ` · ${formattedDuration}`
+          : "";
+      return `${mediaType}${durationStr} · ${langStr}`;
+    }, [
+      entryType,
+      entry.sourceLang,
+      entry.targetLang,
+      isTranslation,
+      formattedDuration,
+    ]);
 
-      const durationStr = formattedDuration ? ` · ${formattedDuration}` : "";
-      let mediaType: string;
-      if (entryType === "both") {
-        mediaType = "Both";
-      } else if (entryType === "transcription") {
-        mediaType = "Transcription";
-      } else if (isShared && (!entry.duration || entry.duration === 0)) {
-        mediaType = "Shared Text";
-      } else {
-        mediaType = "Translation";
-      }
-
-      return `${mediaType}${durationStr}`;
-    }, [entry.sourceApp, entry.duration, entryType, formattedDuration]);
-
-    // Metadata icon — signals how the entry was produced.
-    // transcription → captions (spoken audio shown as text); translation →
-    // languages; both → mic-audio-lines (voice transcribed and translated);
-    // shared/typed → upload/keyboard.
-    const metadataIcon = useMemo(() => {
-      const isShared =
-        entry.sourceApp &&
-        entry.sourceApp !== "ekwe" &&
-        entry.sourceApp !== "ekwe-home";
-      if (isShared) {
-        return <Upload size={iconSize.xs} color={color.muted} />;
-      }
-      if (entryType === "translation") {
-        return <Languages size={iconSize.xs} color={color.muted} />;
-      }
-      if (entryType === "both") {
-        return (
-          <Box style={styles.bothGlyph}>
-            <AudioLines size={iconSize.xs} color={color.muted} />
-            <Box style={[styles.bothBadge, { backgroundColor: color.muted }]}>
-              <Languages size={6} color={color.card} strokeWidth={2.5} />
-            </Box>
-          </Box>
-        );
-      }
-      if (!entry.duration || entry.duration === 0) {
-        return <Type size={iconSize.xs} color={color.muted} />;
-      }
-      return <Captions size={iconSize.xs} color={color.muted} />;
-    }, [entry.sourceApp, entry.duration, entryType, color.muted, color.card]);
-
-    // Signature element — the language pair as a compact badge.
-    // Translations read as a brand-tinted source→target stack; plain
-    // transcriptions as a single quiet code. Auto-sizes to hug its content.
-    const langTile = useMemo((): React.ReactElement => {
-      const srcCode = entry.sourceLang.toUpperCase();
-      const tgtCode = entry.targetLang.toUpperCase();
-      const tileBg = isTranslation
-        ? withAlpha(color.brand, 0.1)
-        : withAlpha(color.foreground, 0.06);
-      const tileBorder = isTranslation
-        ? withAlpha(color.brand, 0.2)
-        : withAlpha(color.foreground, 0.1);
-      const codeColor = isTranslation ? color.brand : color.foreground;
-
-      return (
+    // Signature element — the entry-type icon in a circular badge.
+    // Either you transcribe or you translate: the left circle is the type icon
+    // (captions for transcription, languages for translation), and the compact
+    // language pair moves into the metadata line.
+    const typeIconTile = useMemo(
+      (): React.ReactElement => (
         <Box
           style={[
-            styles.langTile,
-            { backgroundColor: tileBg, borderColor: tileBorder },
+            styles.typeIconTile,
+            {
+              backgroundColor: isTranslation
+                ? withAlpha(color.brand, 0.12)
+                : withAlpha(color.foreground, 0.06),
+              borderColor: isTranslation
+                ? withAlpha(color.brand, 0.2)
+                : withAlpha(color.foreground, 0.1),
+            },
           ]}
         >
           {isTranslation ? (
-            <Box style={styles.langTilePair}>
-              <Text
-                variant="caption"
-                style={[styles.langCode, { color: codeColor }]}
-              >
-                {srcCode}
-              </Text>
-              <ArrowDown size={10} color={withAlpha(codeColor, 0.5)} />
-              <Text
-                variant="caption"
-                style={[styles.langCode, { color: codeColor }]}
-              >
-                {tgtCode}
-              </Text>
-            </Box>
+            <Languages size={iconSize.sm} color={color.brand} />
           ) : (
-            <Text
-              variant="caption"
-              style={[styles.langCode, { color: codeColor }]}
-            >
-              {srcCode}
-            </Text>
+            <Captions size={iconSize.sm} color={color.foreground} />
           )}
         </Box>
-      );
-    }, [entry.sourceLang, entry.targetLang, isTranslation, color]);
+      ),
+      [isTranslation, color],
+    );
 
     const cardStyle = useMemo(
       () => [
@@ -277,18 +224,24 @@ export const HistoryItem = React.memo(
           accessibilityActions={[{ name: "delete", label: "Delete entry" }]}
           accessibilityLabel={pressableLabel}
           accessibilityHint="Swipe left or long press for more actions"
-          style={styles.contentContainer}
+          feedback="none"
+          style={({ pressed }) => [
+            styles.contentContainer,
+            pressed && {
+              transform: [{ scale: scale.pressIn }],
+              backgroundColor: withAlpha(color.foreground, 0.04),
+            },
+          ]}
         >
-          {langTile}
+          {typeIconTile}
 
           <Box style={styles.contentBody}>
             {/* Hero content */}
             <Box style={styles.snippetBody}>{snippetBody}</Box>
 
-            {/* Metadata — media type + relative time */}
+            {/* Metadata — producing origin + language pair + relative time */}
             <Box style={styles.metaRow}>
               <Box style={styles.metaLeft}>
-                {metadataIcon}
                 <Text
                   variant="caption"
                   numberOfLines={1}
@@ -313,6 +266,7 @@ export const HistoryItem = React.memo(
     prev.entry.transcript === next.entry.transcript &&
     prev.entry.translation === next.entry.translation &&
     prev.entry.duration === next.entry.duration &&
+    prev.entry.type === next.entry.type &&
     prev.entry.sourceLang === next.entry.sourceLang &&
     prev.entry.targetLang === next.entry.targetLang &&
     prev.entry.sourceApp === next.entry.sourceApp &&
@@ -325,6 +279,7 @@ export const HistoryItem = React.memo(
 const styles = StyleSheet.create({
   itemCard: {
     borderRadius: borderRadius.xl,
+    borderCurve: "continuous",
     borderWidth: 1,
     overflow: "hidden",
   },
@@ -339,24 +294,14 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.sm,
   },
-  langTile: {
-    minWidth: 40,
-    minHeight: 40,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.full,
+  // Circular entry-type icon badge (replaces the old language chip).
+  typeIconTile: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-  },
-  langTilePair: {
-    alignItems: "center",
-    gap: 1,
-  },
-  langCode: {
-    fontWeight: "600",
-    letterSpacing: 0.3,
-    lineHeight: 13,
   },
   snippetBody: {
     gap: spacing.xs,
@@ -377,20 +322,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.xs,
     flexShrink: 1,
-  },
-  bothGlyph: {
-    position: "relative",
-    width: 16,
-    height: 12,
-  },
-  bothBadge: {
-    position: "absolute",
-    right: -2,
-    bottom: -2,
-    width: 9,
-    height: 9,
-    borderRadius: 4,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });

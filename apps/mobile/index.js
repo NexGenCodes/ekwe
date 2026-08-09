@@ -2,6 +2,8 @@ import { registerRootComponent } from "expo";
 import { AppRegistry } from "react-native";
 import { useEffect, useState } from "react";
 
+import { QueryClientProvider } from "@tanstack/react-query";
+
 import { preventAutoHideAsync } from "expo-splash-screen";
 
 if (typeof globalThis !== "undefined") {
@@ -56,13 +58,12 @@ const ShareExtensionRoot = (props) => {
   }, []);
   if (!ready) return null;
 
-  const { QueryClientProvider } = require("@tanstack/react-query");
   const { GestureHandlerRootView } = require("react-native-gesture-handler");
   const { SafeAreaProvider } = require("react-native-safe-area-context");
   const { ErrorBoundary } = require("./src/components/ErrorBoundary");
   const { AppAlertModal } = require("./src/components/AppAlertModal");
   const ShareGate = loadShareGate();
-  const { queryClient } = loadQueryClient();
+  const queryClient = loadQueryClient();
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: "transparent" }}>

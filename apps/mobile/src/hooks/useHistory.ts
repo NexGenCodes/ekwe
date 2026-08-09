@@ -68,13 +68,19 @@ export const useHistory = (): UseHistoryReturn => {
   const loadedCountRef = useRef(0);
 
   useEffect(() => {
+    const userId = auth$.user.get()?.id;
     const currentCount = Object.values(history$.get() || {}).length;
-    loadedCountRef.current = currentCount;
-    setHasMore(currentCount < Db.getHistoryCount());
+    if (userId) {
+      setHasMore(currentCount < Db.getHistoryCount(userId));
+    } else {
+      setHasMore(false);
+    }
   }, [snapshot.entries.length]);
 
   const loadMore = useCallback(async () => {
-    const rows = Db.getHistoryPage(PAGE_SIZE, loadedCountRef.current);
+    const userId = auth$.user.get()?.id;
+    if (!userId) return;
+    const rows = Db.getHistoryPage(userId, PAGE_SIZE, loadedCountRef.current);
     if (rows.length < PAGE_SIZE) {
       setHasMore(false);
     }
@@ -91,6 +97,7 @@ export const useHistory = (): UseHistoryReturn => {
           sourceApp: row.source_app,
           provider: row.provider,
           timestamp: new Date(row.created_at).getTime(),
+          type: row.entry_type ?? "transcription",
         });
       }
     }
@@ -128,8 +135,7 @@ export const useHistory = (): UseHistoryReturn => {
       logger.warn("[useHistory] Cannot clear entries: no authenticated user");
       return;
     }
-    const ids = Object.keys(history$.get() || {});
-    await SyncService.deleteHistoryBatch(ids, userId);
+    await SyncService.clearAllHistory(userId);
   }, []);
 
   return { ...snapshot, deleteEntry, clearAll, loadMore, hasMore };

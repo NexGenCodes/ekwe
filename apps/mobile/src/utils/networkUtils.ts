@@ -1,7 +1,15 @@
 /**
  * Pro-Level Network Utilities
- * Handles retries, backoff, and timeouts for robust service connections.
+ * Handles retries, backoff, timeouts, and offline fail-fast for robust
+ * service connections.
+ *
+ * Offline semantics are centralized here: the moment the network store reports
+ * a *definitive* disconnect, requests fail fast instead of burning a 30s
+ * timeout chain on a device that obviously can't reach the server. "Unknown"
+ * network state never blocks a request.
  */
+import { EkweError } from "@/constants/errors";
+import { isDefinitelyOffline } from "@/store/network";
 
 export interface RetryOptions {
   retries?: number;
@@ -25,13 +33,30 @@ const DEFAULT_OPTIONS: RetryOptions = {
   retryOnHttpResponse: true,
 };
 
+/** Marker error thrown when the device is definitively offline. */
+export class OfflineNetworkError extends Error {
+  constructor() {
+    super("Device is offline");
+    this.name = "OfflineNetworkError";
+  }
+}
+
+export const isOfflineNetworkError = (err: unknown): boolean =>
+  err instanceof OfflineNetworkError;
+
 /**
- * Generic fetch wrapper with exponential backoff and timeout.
+ * Generic fetch wrapper with exponential backoff (+ jitter) and timeout.
+ * Rejects immediately with `OfflineNetworkError` when the device is
+ * definitively offline, so callers can surface the right UX without waiting.
  */
 export async function fetchWithRetry(
   url: string,
   options: RequestInit & RetryOptions = {},
 ): Promise<Response> {
+  if (isDefinitelyOffline()) {
+    throw new OfflineNetworkError();
+  }
+
   const {
     retries = DEFAULT_OPTIONS.retries!,
     backoff = DEFAULT_OPTIONS.backoff!,
@@ -82,8 +107,9 @@ export async function fetchWithRetry(
         throw error;
       }
 
-      // Exponential backoff: 1s, 2s, 4s...
-      const wait = backoff * Math.pow(2, i);
+      // Exponential backoff with jitter: 0.5–1.5x of 1s, 2s, 4s...
+      const jitter = 0.5 + Math.random() * 0.5;
+      const wait = backoff * Math.pow(2, i) * jitter;
       await new Promise((resolve) => setTimeout(resolve, wait));
     } finally {
       clearTimeout(timeoutId);
@@ -92,4 +118,42 @@ export async function fetchWithRetry(
   }
 
   throw lastError || new Error("Network request failed");
+}
+
+/**
+ * Single source of truth for mapping worker error codes to app errors.
+ * Also accepts the two spellings the worker uses for "all providers failed"
+ * (`EKWE_ALL_PROVIDERS_FAIL` on /translate, `ALL_PROVIDERS_FAILED` on
+ * /transcribe) so the two routes can't drift.
+ */
+export function mapWorkerError(
+  code: string,
+  fallback: EkweError = EkweError.SERVER_ERROR,
+): EkweError {
+  switch (code) {
+    case "EKWE_NETWORK_LOST":
+      return EkweError.NETWORK_LOST;
+    case "EKWE_ALL_PROVIDERS_FAIL":
+    case "ALL_PROVIDERS_FAILED":
+      return EkweError.ALL_PROVIDERS_FAIL;
+    case "EKWE_SHARE_COPY_FAIL":
+      return EkweError.SHARE_COPY_FAIL;
+    case "EKWE_EMPTY_TRANSCRIPT":
+      return EkweError.EMPTY_TRANSCRIPT;
+    case "EKWE_TRANSCRIPTION_FAIL":
+      return EkweError.TRANSCRIPTION_FAIL;
+    case "EKWE_TRANSCRIBE_TIMEOUT":
+      return EkweError.TRANSCRIBE_TIMEOUT;
+    case "EKWE_FILE_TOO_LARGE":
+      return EkweError.FILE_TOO_LARGE;
+    case "EKWE_RATE_LIMITED":
+    case "EKWE_RATE_LIMIT":
+      return EkweError.RATE_LIMITED;
+    case "EKWE_TRANSLATION_FAIL":
+      return EkweError.TRANSLATION_FAIL;
+    case "EKWE_SERVER_ERROR":
+      return EkweError.SERVER_ERROR;
+    default:
+      return fallback;
+  }
 }

@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
   sheetContainer: {
     borderTopLeftRadius: borderRadius["2xl"],
     borderTopRightRadius: borderRadius["2xl"],
-    height: "90%",
+    height: "60%",
   },
   header: {
     position: "relative",

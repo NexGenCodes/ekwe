@@ -29,6 +29,10 @@ import { useTheme } from "@/hooks/ui/useTheme";
 import { queryClient } from "@/hooks/queries/queryClient";
 import { auth$ } from "@/store/auth";
 import logger from "@/utils/logger";
+import {
+  initNetworkMonitoring,
+  stopNetworkMonitoring,
+} from "@/services/networkMonitor";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -184,6 +188,10 @@ function RootLayout(): React.ReactElement {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { SyncService } = require("@/services/SyncService");
 
+    // Seed the network store + TanStack onlineManager as early as possible so
+    // "am I offline?" is answered the same way everywhere from the first frame.
+    initNetworkMonitoring();
+
     // Must resolve BEFORE initAuth: until initializeMMKV finishes, the mmkv
     // proxy falls back to the plaintext boot storage, so a concurrent initAuth
     // would persist session tokens unencrypted.
@@ -196,6 +204,7 @@ function RootLayout(): React.ReactElement {
 
     return (): void => {
       SyncService.stop();
+      stopNetworkMonitoring();
       cleanupAuth();
     };
   }, []);

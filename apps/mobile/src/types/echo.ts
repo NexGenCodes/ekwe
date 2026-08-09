@@ -61,4 +61,6 @@ export interface UseEchoFlowResult {
   onDismiss: () => void;
   /** Whether the user's plan allows language auto-detection. */
   autoLanguageDetect: boolean;
+  /** Live connectivity from the shared network store (true on any `null` probe). */
+  isOnline: boolean;
 }

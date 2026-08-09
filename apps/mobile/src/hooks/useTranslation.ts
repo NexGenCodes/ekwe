@@ -79,7 +79,7 @@ export const useTranslation = (): UseTranslationReturn => {
   const translationAbortRef = useRef<AbortController | null>(null);
   const lastRequestRef = useRef<string | null>(null);
 
-  // Transaction state refs
+  // History-entry state refs
   const sourceLangRef = useRef(sourceLang);
   const targetLangRef = useRef(targetLang);
   const userSessionRef = useRef(userSession);
@@ -105,11 +105,9 @@ export const useTranslation = (): UseTranslationReturn => {
     ) {
       audioActions.setSaved(true);
       const detectedSource = audio$.sourceLang.get() || "en";
-      const resolvedSource = resolveDetectedLanguage(
-        detectedSource,
-        sourceLangRef.current,
-        "en",
-      );
+      const resolvedSource =
+        resolveDetectedLanguage(detectedSource, sourceLangRef.current, "en") ??
+        (targetLangRef.current || "en");
 
       HistoryService.recordTranslation(
         {
@@ -122,6 +120,7 @@ export const useTranslation = (): UseTranslationReturn => {
           sourceApp: "ekwe",
           provider: "gemini",
           sessionKey: currentSessionId,
+          type: "transcription",
         },
         userSessionRef.current,
       ).catch((e) => logger.error("Failed to save transcription-only", e));
@@ -273,28 +272,53 @@ export const useTranslation = (): UseTranslationReturn => {
         const currentSessionId = audio$.sessionId.get();
 
         if (currentSessionId !== null && duration > 0) {
-          // Voice note translation (Full Transaction)
-          audioActions.setSaved(true);
+          // Voice note transcribed then translated → TWO separate history
+          // entries: a transcription (text + audio metadata) and a separate
+          // translation. The audio is only ever saved once — skip the
+          // transcription if an earlier save already persisted it.
+          const resolvedSource =
+            resolveDetectedLanguage(
+              audio$.sourceLang.get(),
+              sourceLang,
+              "en",
+            ) ?? sourceLang;
+
+          if (!audio$.isSaved.get()) {
+            audioActions.setSaved(true);
+            await HistoryService.recordTranslation(
+              {
+                sourceLang: resolvedSource,
+                targetLang,
+                transcript: textToTranslate,
+                translation: null,
+                transliteration: null,
+                duration,
+                sourceApp: "ekwe",
+                provider: "gemini",
+                sessionKey: currentSessionId,
+                type: "transcription",
+              },
+              userSession,
+            );
+          }
+
+          // Translation entry — text → text, no audio metadata.
           await HistoryService.recordTranslation(
             {
-              sourceLang: resolveDetectedLanguage(
-                audio$.sourceLang.get(),
-                sourceLang,
-                "en",
-              ),
+              sourceLang: resolvedSource,
               targetLang,
               transcript: textToTranslate,
               translation: result.value.translation,
               transliteration: result.value.transliteration || null,
-              duration,
+              duration: 0,
               sourceApp: "ekwe",
               provider: "gemini",
-              sessionKey: currentSessionId,
+              type: "translation",
             },
             userSession,
           );
         } else {
-          // Pure text translation (Half Transaction)
+          // Pure text translation (no audio)
           await HistoryService.recordTranslation(
             {
               sourceLang,
@@ -305,6 +329,7 @@ export const useTranslation = (): UseTranslationReturn => {
               duration: 0,
               sourceApp: "ekwe-home",
               provider: "gemini",
+              type: "translation",
             },
             userSession,
           );

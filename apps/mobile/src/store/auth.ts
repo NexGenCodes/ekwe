@@ -1,8 +1,5 @@
 import { observable } from "@legendapp/state";
-import { persistObservable } from "@legendapp/state/persist";
 import { Session, User } from "@supabase/supabase-js";
-
-import { ObservablePersistMMKV } from "@/store/mmkvPlugin";
 
 interface AuthState {
   session: Session | null;
@@ -21,11 +18,6 @@ const initialAuth: AuthState = {
 };
 
 export const auth$ = observable<AuthState>(initialAuth);
-
-persistObservable(auth$.isPro, {
-  local: "ekwe-auth-isPro",
-  pluginLocal: ObservablePersistMMKV,
-});
 
 export function getToken(): string | null {
   const session = auth$.session.peek();
