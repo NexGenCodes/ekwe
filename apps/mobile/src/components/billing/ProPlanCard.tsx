@@ -51,7 +51,7 @@ export function ProPlanCard({
 }: ProPlanCardProps): React.JSX.Element {
   const glassBg = isDark ? color.card : color.background;
   const dividerBg = color.border;
-  const { pricing, isPending } = useActivePricing();
+  const { pricing } = useActivePricing();
 
   const displayAmount = isAnnual
     ? pricing.annualMonthlyCost
@@ -108,7 +108,7 @@ export function ProPlanCard({
       </Box>
 
       <Box style={styles.priceRow}>
-        {isAnnual && !isPending && (
+        {isAnnual && (
           <Text
             variant="body"
             style={[
@@ -121,14 +121,14 @@ export function ProPlanCard({
           </Text>
         )}
         <Text variant="body" style={{ color: color.brand }}>
-          {isPending ? "" : pricing.symbol}
+          {pricing.symbol}
         </Text>
         <Animated.View
           key={priceKey}
           entering={FadeIn.duration(duration.normal)}
         >
           <Text variant="heading1" style={{ color: color.foreground }}>
-            {isPending ? "…" : formatAmount(displayAmount, pricing.currency)}
+            {formatAmount(displayAmount, pricing.currency)}
           </Text>
         </Animated.View>
         <Text variant="body" style={{ color: color.muted }}>
@@ -147,9 +147,7 @@ export function ProPlanCard({
             </Text>
           </Box>
           <Text variant="body" style={{ color: color.brand }}>
-            {isPending
-              ? "Billed annually"
-              : `Billed ${pricing.symbol}${formatAmount(pricing.annualAmount, pricing.currency)} annually`}
+            {`Billed ${pricing.symbol}${formatAmount(pricing.annualAmount, pricing.currency)} annually`}
           </Text>
         </Box>
       )}
