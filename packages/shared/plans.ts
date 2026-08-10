@@ -13,6 +13,10 @@ export interface PlanLimits {
   exportFormats: readonly string[];
   ttsQuality: "standard" | "premium";
   cooldownSeconds: number;
+  /** Daily billing cap for /translate, per user (0 = unlimited). */
+  dailyTranslateLimit: number;
+  /** Daily billing cap for /transcribe, per user (0 = unlimited). */
+  dailyTranscribeLimit: number;
 }
 
 export interface PlanFeatures {
@@ -56,6 +60,8 @@ export const FREE_LIMITS: PlanLimits = {
   exportFormats: ["text"],
   ttsQuality: "standard",
   cooldownSeconds: 3,
+  dailyTranslateLimit: 25,
+  dailyTranscribeLimit: 25,
 };
 
 export const PREMIUM_LIMITS: PlanLimits = {
@@ -73,6 +79,8 @@ export const PREMIUM_LIMITS: PlanLimits = {
   exportFormats: ["text", "pdf", "srt"],
   ttsQuality: "premium",
   cooldownSeconds: 1,
+  dailyTranslateLimit: 400,
+  dailyTranscribeLimit: 400,
 };
 
 export const FREE_FEATURES: PlanFeatures = {

@@ -16,7 +16,7 @@ describe("Billing & Preflight", () => {
         ),
       );
 
-      const res = await checkPreflight(env, "user-123", "FREE");
+      const res = await checkPreflight(env, "user-123", "FREE", "translate");
       expect(res.allowed).toBe(true);
     });
 
@@ -31,7 +31,7 @@ describe("Billing & Preflight", () => {
         ),
       );
 
-      const res = await checkPreflight(env, "user-123", "FREE");
+      const res = await checkPreflight(env, "user-123", "FREE", "translate");
       expect(res.allowed).toBe(false);
       expect(res.reason).toBe("RATE_LIMIT");
     });
@@ -43,7 +43,7 @@ describe("Billing & Preflight", () => {
         }),
       );
 
-      const res = await checkPreflight(env, "user-123", "FREE");
+      const res = await checkPreflight(env, "user-123", "FREE", "translate");
       expect(res.allowed).toBe(false);
     });
   });

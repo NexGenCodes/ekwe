@@ -73,6 +73,11 @@ export const useResultPipeline = ({
   const [hasPolished, setHasPolished] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
 
+  // Guards the shared-audio effect below so a given URI is attempted exactly
+  // once. Without it, a failed attempt flips isProcessing back to false and the
+  // effect re-fires, producing an infinite retry loop with a toast per attempt.
+  const attemptedUriRef = useRef<string | null>(null);
+
   // Saved-once refs (transcription-only semantics on unmount/dismiss)
   const savedRef = useRef(false);
   const transcriptRef = useRef(transcript);
@@ -128,10 +133,16 @@ export const useResultPipeline = ({
   );
 
   useEffect(() => {
-    if (uri && !hasPolished && !isProcessing && !isReplay) {
-      processSharedAudio(uri as string);
+    if (
+      uri &&
+      !isReplay &&
+      !isProcessing &&
+      attemptedUriRef.current !== uri
+    ) {
+      attemptedUriRef.current = uri;
+      processSharedAudio(uri);
     }
-  }, [uri, hasPolished, isProcessing, isReplay, processSharedAudio]);
+  }, [uri, isProcessing, isReplay, processSharedAudio]);
 
   // Save transcription on unmount if it wasn't saved yet
   useEffect(() => {
@@ -195,7 +206,7 @@ export const useResultPipeline = ({
             sourceApp: sourceApp || "shared",
             provider: "gemini",
             sessionKey: uri,
-            type: "transcription",
+            type: "translation",
           },
           userSession as Parameters<typeof HistoryService.recordTranslation>[1],
         );

@@ -74,7 +74,8 @@ export async function testTranslateProviders(env, { groq = false } = {}) {
   for (const key of getMultiKeys(env, 'GEMINI_KEY_')) {
     checks.push(checkWithResult(
       `Gemini`,
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
+      `https://generativelanguage.googleapis.com/v1beta/models`,
+      { headers: { 'x-goog-api-key': key } },
     ));
   }
   for (const key of getMultiKeys(env, 'COHERE_KEY_')) {

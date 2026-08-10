@@ -129,6 +129,8 @@ export const LanguagePickerSheet = ({
         renderItem={renderItem}
         renderSectionHeader={renderSectionHeader}
         contentContainerStyle={{ paddingBottom: 100 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       />
 
       {!singleSelect && (

@@ -1,7 +1,7 @@
 import { useRouter } from "expo-router";
 import ChevronLeft from "lucide-react-native/icons/chevron-left";
 import React from "react";
-import { KeyboardAvoidingView } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 import { AuthBackground } from "@/components/AuthBackground";
 import { Text, Pressable, SafeArea, ScrollArea } from "@/components/ui";

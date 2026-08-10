@@ -259,6 +259,41 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     });
   }
 
+  it("replaces the config-negotiation alarm with the idle timeout once config arrives", async () => {
+    const mock = deepgramLink(() => {});
+    withDeepgramKey();
+    const { stub, ws: clientWs, messages, closes } = await openSession(
+      "idle-alarm-config",
+      "?tier=PREMIUM&lang=en",
+    );
+
+    // Before config, the alarm is the 5s config-negotiation deadline.
+    const alarmBefore = await runInDurableObject(stub, async (_i, state) =>
+      state.storage.getAlarm(),
+    );
+    expect(alarmBefore).toBeDefined();
+    expect(alarmBefore! - Date.now()).toBeLessThan(10_000);
+
+    clientWs.send(
+      JSON.stringify({ type: "config", codec: "opus", lang: "en" }),
+    );
+    await waitFor(messages, (m) => m.includes("config_ack"));
+    await waitForFlag(mock.connected);
+
+    // After config, the idle alarm must be armed ~60s out — NOT the stale
+    // +5s config deadline — so an active session survives well past 5s.
+    const alarmAfter = await runInDurableObject(stub, async (_i, state) =>
+      state.storage.getAlarm(),
+    );
+    expect(alarmAfter).toBeDefined();
+    expect(alarmAfter! - Date.now()).toBeGreaterThan(45_000);
+    expect(alarmAfter! - Date.now()).toBeLessThan(70_000);
+
+    clientWs.send(JSON.stringify({ type: "stop" }));
+    await waitForClose(closes, 1000);
+    await settle();
+  });
+
   it("connects to the first streaming provider and relays a final transcript", async () => {
     const mock = deepgramLink((count, client) => {
       if (count !== 1) return;

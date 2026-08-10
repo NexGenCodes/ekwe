@@ -5,6 +5,9 @@ export type { _EnvForExport as Env };
 
 export type Tier = "PREMIUM" | "FREE";
 
+/** Request types that draw down the user's daily usage quota. */
+export type UsageType = "translate" | "transcribe";
+
 // ─── Provider Contracts ───────────────────────────────────────────
 
 export interface TranscribeResult {

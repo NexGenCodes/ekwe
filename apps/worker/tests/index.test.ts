@@ -21,6 +21,9 @@ describe("Worker Router (index.ts)", () => {
       http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
         jsonResponse({ allowed: true, tier_active: "FREE" }),
       ),
+      http.post(PROVIDER_URLS.supabaseConsumeUsage, () =>
+        jsonResponse({ count: 1 }),
+      ),
     );
   });
 
@@ -175,6 +178,101 @@ describe("Worker Router (index.ts)", () => {
       expect(res.status).toBe(401);
       const text = await res.text();
       expect(text).toBe("Invalid token");
+    });
+  });
+
+  describe("Daily usage quota", () => {
+    test("returns 429 EKWE_QUOTA_EXCEEDED when the daily quota is exhausted", async () => {
+      (jwtVerify as any).mockResolvedValue({
+        payload: {
+          sub: "quota-user",
+          email: "quota@example.com",
+          app_metadata: { is_pro: false },
+        },
+      });
+      server.use(
+        http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+          jsonResponse({
+            allowed: false,
+            reason: "QUOTA_EXCEEDED",
+            quota_total: 25,
+            quota_remaining: 0,
+          }),
+        ),
+      );
+
+      const req = new Request("http://localhost/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer valid-jwt-token",
+        },
+        body: JSON.stringify({ text: "hello", targetLang: "fr" }),
+      });
+      const res = await app.fetch(req, env, {
+        waitUntil: vi.fn(),
+        passThroughOnException: () => {},
+      } as any);
+
+      expect(res.status).toBe(429);
+      expect(res.headers.get("Retry-After")).toBeTruthy();
+      const json = await res.json();
+      expect(json).toHaveProperty("error", "EKWE_QUOTA_EXCEEDED");
+    });
+
+    test("consumes quota on billable success but not on KV cache replays", async () => {
+      (jwtVerify as any).mockResolvedValue({
+        payload: {
+          sub: "replay-user",
+          email: "replay@example.com",
+          app_metadata: { is_pro: false },
+        },
+      });
+      server.use(
+        http.post(PROVIDER_URLS.groqChat, () =>
+          jsonResponse({ choices: [{ message: { content: "Hola" } }] }),
+        ),
+      );
+
+      const consumeCalls: string[] = [];
+      server.use(
+        http.post(PROVIDER_URLS.supabaseConsumeUsage, ({ request }) => {
+          consumeCalls.push(request.url);
+          return jsonResponse({ count: consumeCalls.length });
+        }),
+      );
+
+      const mkReq = () =>
+        new Request("http://localhost/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer replay-jwt",
+          },
+          body: JSON.stringify({
+            text: "unique text cb9x",
+            sourceLang: "en",
+            targetLang: "es",
+          }),
+        });
+
+      const waitUntil = vi.fn();
+
+      const first = await app.fetch(mkReq(), env, {
+        waitUntil,
+        passThroughOnException: () => {},
+      } as any);
+      expect(first.status).toBe(200);
+      await vi.waitFor(() => expect(consumeCalls.length).toBe(1));
+
+      const second = await app.fetch(mkReq(), env, {
+        waitUntil,
+        passThroughOnException: () => {},
+      } as any);
+      expect(second.status).toBe(200);
+
+      // Replay served from the result cache must not draw down quota again.
+      expect(consumeCalls.length).toBe(1);
     });
   });
 });

@@ -11,6 +11,7 @@ import { StatusBar } from "expo-status-bar";
 import { setBackgroundColorAsync } from "expo-system-ui";
 import React, { useEffect, useMemo } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import "react-native-reanimated";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -110,69 +111,71 @@ function InnerLayout(): React.ReactElement {
         }}
       >
         <ErrorBoundary>
-          <Box style={{ flex: 1 }}>
-            <StatusBar style={isDark ? "light" : "dark"} />
+          <KeyboardProvider>
+            <Box style={{ flex: 1 }}>
+              <StatusBar style={isDark ? "light" : "dark"} />
 
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: color.background },
-                animation: "slide_from_bottom",
-              }}
-            >
-              <Stack.Screen name="index" options={{ animation: "fade" }} />
-              <Stack.Screen
-                name="(onboarding)"
-                options={{ animation: "fade" }}
-              />
-              <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
-              <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
-              <Stack.Screen
-                name="result"
-                options={{
-                  presentation: "transparentModal",
+              <Stack
+                screenOptions={{
                   headerShown: false,
-                  contentStyle: { backgroundColor: "transparent" },
+                  contentStyle: { backgroundColor: color.background },
+                  animation: "slide_from_bottom",
                 }}
-              />
-              <Stack.Screen
-                name="share"
-                options={{
-                  presentation: "transparentModal",
-                  headerShown: false,
-                  contentStyle: { backgroundColor: "transparent" },
-                }}
-              />
-              <Stack.Screen
-                name="translate"
-                options={{
-                  presentation: "formSheet",
-                  sheetGrabberVisible: true,
-                  headerShown: true,
-                  title: "Translate",
-                  contentStyle: { backgroundColor: "transparent" },
-                }}
-              />
-              <Stack.Screen
-                name="legal"
-                options={{
-                  headerShown: false,
-                  animation: "slide_from_right",
-                }}
-              />
-              <Stack.Screen
-                name="billing"
-                options={{
-                  headerShown: true,
-                  title: "Ekwe Pro",
-                  headerBackTitle: "Back",
-                  animation: "slide_from_right",
-                }}
-              />
-            </Stack>
-            <ToastContainer />
-            <AppAlertModal />
-          </Box>
+              >
+                <Stack.Screen name="index" options={{ animation: "fade" }} />
+                <Stack.Screen
+                  name="(onboarding)"
+                  options={{ animation: "fade" }}
+                />
+                <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
+                <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
+                <Stack.Screen
+                  name="result"
+                  options={{
+                    presentation: "transparentModal",
+                    headerShown: false,
+                    contentStyle: { backgroundColor: "transparent" },
+                  }}
+                />
+                <Stack.Screen
+                  name="share"
+                  options={{
+                    presentation: "transparentModal",
+                    headerShown: false,
+                    contentStyle: { backgroundColor: "transparent" },
+                  }}
+                />
+                <Stack.Screen
+                  name="translate"
+                  options={{
+                    presentation: "formSheet",
+                    sheetGrabberVisible: true,
+                    headerShown: true,
+                    title: "Translate",
+                    contentStyle: { backgroundColor: "transparent" },
+                  }}
+                />
+                <Stack.Screen
+                  name="legal"
+                  options={{
+                    headerShown: false,
+                    animation: "slide_from_right",
+                  }}
+                />
+                <Stack.Screen
+                  name="billing"
+                  options={{
+                    headerShown: true,
+                    title: "Ekwe Pro",
+                    headerBackTitle: "Back",
+                    animation: "slide_from_right",
+                  }}
+                />
+              </Stack>
+              <ToastContainer />
+              <AppAlertModal />
+            </Box>
+          </KeyboardProvider>
         </ErrorBoundary>
       </GestureHandlerRootView>
     </ThemeProvider>

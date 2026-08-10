@@ -22,7 +22,9 @@ export const PROVIDER_URLS = {
   openrouterChat: "https://openrouter.ai/api/v1/chat/completions",
   paystackInitialize: "https://api.paystack.co/transaction/initialize",
   frankfurterLatest: "https://api.frankfurter.app/latest",
-  supabaseCheckPreflight: "https://mock.supabase.co/rest/v1/rpc/check_preflight",
+  supabaseCheckPreflight:
+    "https://mock.supabase.co/rest/v1/rpc/check_preflight",
+  supabaseConsumeUsage: "https://mock.supabase.co/rest/v1/rpc/consume_usage",
   supabaseSetProStatus: "https://mock.supabase.co/rest/v1/rpc/set_pro_status",
 } as const;
 
@@ -55,5 +57,6 @@ export const defaultHandlers = [
   http.get(PROVIDER_URLS.frankfurterLatest, notFound),
   http.post(PROVIDER_URLS.paystackInitialize, notFound),
   http.post(PROVIDER_URLS.supabaseCheckPreflight, notFound),
+  http.post(PROVIDER_URLS.supabaseConsumeUsage, notFound),
   http.post(PROVIDER_URLS.supabaseSetProStatus, notFound),
 ];

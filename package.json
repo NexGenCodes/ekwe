@@ -11,7 +11,13 @@
     "android": "turbo run android",
     "ios": "turbo run ios",
     "gen:tokens": "node scripts/tokens/gen-tokens.mjs",
-    "gen:icons": "node scripts/icons/generate-icons.mjs"
+    "gen:icons": "node scripts/icons/generate-icons.mjs",
+    "migrate:push": "supabase db push --linked",
+    "migrate:stage": "supabase migration new",
+    "migrate:status": "supabase migration list",
+    "seed": "supabase db seed --linked",
+    "email:deploy": "bash supabase/deploy-email-templates.sh",
+    "db:link": "bash -c 'set -a; source supabase/.env; set +a; supabase link --project-ref $SUPABASE_PROJECT_REF'"
   },
   "dependencies": {
     "libopus-wasm": "^0.2.0"

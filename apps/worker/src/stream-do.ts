@@ -123,10 +123,7 @@ class ClientWsAdapter {
     this.realWs = realWs;
   }
 
-  addEventListener(
-    type: string,
-    callback: (...args: unknown[]) => void,
-  ): void {
+  addEventListener(type: string, callback: (...args: unknown[]) => void): void {
     if (!this.handlers.has(type)) this.handlers.set(type, new Set());
     this.handlers.get(type)!.add(callback);
     if (type === "message" && this.buffered.length > 0) {
@@ -260,7 +257,10 @@ export class StreamDurableObject extends DurableObject<Env> {
     });
   }
 
-  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+  async webSocketMessage(
+    ws: WebSocket,
+    message: string | ArrayBuffer,
+  ): Promise<void> {
     const state = (ws.deserializeAttachment() as SessionState | null) ?? null;
     if (!state) return;
 
@@ -276,7 +276,6 @@ export class StreamDurableObject extends DurableObject<Env> {
 
       if (msg && msg.type === "config" && msg.codec === "opus") {
         state.configReceived = true;
-        state.lastIdleResetAt = now;
         if (
           typeof msg.lang === "string" &&
           msg.lang.trim() !== "" &&
@@ -285,7 +284,9 @@ export class StreamDurableObject extends DurableObject<Env> {
           const langGuard = guardLanguageCode(msg.lang.trim(), "lang");
           if (langGuard.allowed) {
             state.lang = msg.lang.trim();
-            logger.info("[stream-do] Config negotiated language", { lang: state.lang });
+            logger.info("[stream-do] Config negotiated language", {
+              lang: state.lang,
+            });
           }
         }
         ws.serializeAttachment(state);
@@ -293,7 +294,10 @@ export class StreamDurableObject extends DurableObject<Env> {
           ws,
           JSON.stringify({ type: "config_ack", status: "ready" }),
         );
-        await this.resetIdleAlarm(ws, state, now);
+        // The session is now active. `force` replaces the config-negotiation
+        // alarm armed in fetch() (now + 5s) with the idle timeout, otherwise a
+        // healthy session would be torn down at +5s while audio is streaming.
+        await this.resetIdleAlarm(ws, state, now, true);
         this.startProviderPipeline(ws, state);
         return;
       }
@@ -444,8 +448,13 @@ export class StreamDurableObject extends DurableObject<Env> {
     ws: WebSocket,
     state: SessionState,
     now: number,
+    force = false,
   ): Promise<void> {
-    if (now - state.lastIdleResetAt < IDLE_RESET_INTERVAL_MS) return;
+    // Rate-limit alarm re-arms: setAlarm persists to DO storage, so avoid a
+    // write per audio frame. `force` skips the throttle for the one-time
+    // config→active transition where the idle alarm must replace the
+    // config-negotiation alarm regardless of the elapsed window.
+    if (!force && now - state.lastIdleResetAt < IDLE_RESET_INTERVAL_MS) return;
     state.lastIdleResetAt = now;
     ws.serializeAttachment(state);
     await this.ctx.storage.setAlarm(now + IDLE_TIMEOUT_MS);
@@ -456,10 +465,7 @@ export class StreamDurableObject extends DurableObject<Env> {
     if (conn) conn.adapter.emit("message", data);
   }
 
-  private startProviderPipeline(
-    ws: WebSocket,
-    state: SessionState,
-  ): void {
+  private startProviderPipeline(ws: WebSocket, state: SessionState): void {
     const conn = this.connections.get(ws);
     if (!conn || conn.pipelinePromise || state.providerStarted) return;
 

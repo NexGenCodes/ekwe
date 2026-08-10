@@ -7,11 +7,10 @@
     {
       "method": "POST",
       "path": "/v1beta/models/gemini-3.5-flash:generateContent",
-      "query": {
-        "key": "<REDACTED>"
-      },
+      "query": {},
       "headers": {
-        "content-type": "application/json"
+        "content-type": "application/json",
+        "x-goog-api-key": "<REDACTED>"
       },
       "body": {
         "systemInstruction": {

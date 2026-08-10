@@ -1,11 +1,12 @@
 import React, { useCallback, useState, useEffect } from "react";
-import { Keyboard, Dimensions } from "react-native";
+import { Dimensions } from "react-native";
 import Animated, {
   SharedValue,
   useAnimatedStyle,
   withSpring,
   withTiming,
 } from "react-native-reanimated";
+import { useKeyboardState } from "react-native-keyboard-controller";
 
 import { InputFooterActions } from "./InputFooterActions";
 import { LanguageSwitcher } from "./LanguageSwitcher";
@@ -18,7 +19,7 @@ import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme, usePermissions } from "@/hooks";
 import type { DictationStatus } from "@/hooks/useVoiceDictation";
-import { isIOS, AppToast, triggerHaptic } from "@/utils";
+import { AppToast, triggerHaptic } from "@/utils";
 
 interface ExpressiveInputProps {
   value: string;
@@ -101,22 +102,14 @@ export const ExpressiveInput = React.memo(
     const [isFocused, setIsFocused] = useState(false);
     const languagesConflict = sourceLang === targetLang;
 
+    // Reactive keyboard visibility from react-native-keyboard-controller,
+    // replacing the manual keyboardWillShow/kit event listeners (which
+    // behave differently on iOS vs Android). Drives the footer discard
+    // caption that is hidden while the keyboard is up.
+    const keyboardVisible = useKeyboardState((state) => state.isVisible);
     useEffect(() => {
-      const showEvent = isIOS ? "keyboardWillShow" : "keyboardDidShow";
-      const hideEvent = isIOS ? "keyboardWillHide" : "keyboardDidHide";
-
-      const showSub = Keyboard.addListener(showEvent, (): void =>
-        setIsKeyboardVisible(true),
-      );
-      const hideSub = Keyboard.addListener(hideEvent, (): void =>
-        setIsKeyboardVisible(false),
-      );
-
-      return (): void => {
-        showSub.remove();
-        hideSub.remove();
-      };
-    }, []);
+      setIsKeyboardVisible(keyboardVisible);
+    }, [keyboardVisible]);
 
     useEffect(() => {
       if (languagesConflict && value.length > 0) {

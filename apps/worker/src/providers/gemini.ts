@@ -30,11 +30,14 @@ export async function translate(
       "GEMINI_KEY_",
       (key) =>
         fetchWithTimeout(
-          `${GEMINI_URL}?key=${key}`,
+          GEMINI_URL,
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
+              // Key in the header, never the URL: query-string keys leak into
+              // access logs, referrers, and middlebox telemetry.
+              "x-goog-api-key": key,
               ...getClientHeaders(),
             },
             body: JSON.stringify({

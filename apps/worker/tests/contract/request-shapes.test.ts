@@ -215,7 +215,7 @@ describe("provider request contracts", () => {
       expect(body.messages[0].role).toBe("system");
     });
 
-    test("gemini: generateContent with API key in the query string", async () => {
+    test("gemini: generateContent with API key in the x-goog-api-key header", async () => {
       const get = capture(
         PROVIDER_URLS.geminiGenerate,
         () =>
@@ -232,7 +232,10 @@ describe("provider request contracts", () => {
       const url = new URL(req.url);
       expect(url.pathname.endsWith(":generateContent")).toBe(true);
       expect(url.pathname).toContain("gemini-3.5-flash");
-      expect(url.searchParams.get("key")).toBe("mock-gemini-key-1-abcde");
+      // The key must never ride in the URL — only the auth header, so it can't
+      // leak into access logs, referrers, or proxy telemetry.
+      expect(url.searchParams.get("key")).toBeNull();
+      expect(req.headers["x-goog-api-key"]).toBe("mock-gemini-key-1-abcde");
       const body = JSON.parse(req.body) as {
         systemInstruction: { parts: Array<{ text: string }> };
         contents: Array<{ role: string; parts: Array<{ text: string }> }>;

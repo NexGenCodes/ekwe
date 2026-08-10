@@ -37,6 +37,7 @@ const CONTRACT_HEADERS = [
   "authorization",
   "content-type",
   "x-gladia-key",
+  "x-goog-api-key",
   "http-referer",
   "x-title",
 ];
@@ -76,7 +77,7 @@ async function toRecorded(
     const value = request.headers.get(name);
     if (value === null) continue;
     let headerValue =
-      name === "authorization" || name === "x-gladia-key"
+      name === "authorization" || name === "x-gladia-key" || name === "x-goog-api-key"
         ? redact(value)
         : value;
     if (name === "content-type" && headerValue.includes("boundary=")) {

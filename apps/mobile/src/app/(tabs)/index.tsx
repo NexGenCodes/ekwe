@@ -1,7 +1,7 @@
 import { useSelector } from "@legendapp/state/react";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
-import { KeyboardAvoidingView } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 import {
   HomeHeader,

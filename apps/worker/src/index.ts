@@ -14,7 +14,7 @@ import { handleCheckoutInitialize, handlePricing } from "./routes/checkout";
 
 import { handleWebhook } from "./routes/webhook";
 import { handleSendOtp } from "./routes/otp";
-import { CLIENT_ABORTED, Env, Tier } from "./types";
+import { CLIENT_ABORTED, Env, Tier, UsageType } from "./types";
 import { checkPreflight } from "./utils/preflight";
 
 export { StreamDurableObject } from "./stream-do";
@@ -51,8 +51,7 @@ async function handleRequest(
   // ─── OTP Route (pre-auth — Turnstile-gated code dispatch) ───
   if (request.method === "POST" && url.pathname === "/auth/otp") {
     const ctGuard = guardContentType(request, "json");
-    if (!ctGuard.allowed)
-      return addCorsHeaders(ctGuard.response, corsHeaders);
+    if (!ctGuard.allowed) return addCorsHeaders(ctGuard.response, corsHeaders);
     response = await handleSendOtp(request, env);
     return addCorsHeaders(response, corsHeaders);
   }
@@ -153,24 +152,52 @@ async function handleRequest(
     return stub.fetch(new Request(doUrl.toString(), request));
   }
 
-  // ─── PRE-FLIGHT CHECK (ATOMIC COOLDOWN + CACHED) ───
+  // ─── PRE-FLIGHT CHECK (ATOMIC COOLDOWN + QUOTA + CACHED) ───
+  // Each request type draws down a separate daily quota pool, so the cached
+  // gate carries the type it was minted for and a mismatched type misses the
+  // cache and re-runs the RPC.
+  const usageType: UsageType =
+    url.pathname === "/transcribe" ? "transcribe" : "translate";
+  type CachedPreflight = Awaited<ReturnType<typeof checkPreflight>> & {
+    usage_type?: UsageType;
+  };
+
   let preflight: Awaited<ReturnType<typeof checkPreflight>>;
   const cacheKey = `preflight:${userId}`;
   const cached = await env.EKWE_KV.get(cacheKey);
   if (cached) {
     try {
-      preflight = JSON.parse(cached) as Awaited<
-        ReturnType<typeof checkPreflight>
-      >;
+      const parsed = JSON.parse(cached) as CachedPreflight;
+      preflight =
+        parsed.usage_type === usageType
+          ? parsed
+          : await checkPreflight(env, userId, tier, usageType);
     } catch {
       logger.debug("[index] Cache parse failed, fetching fresh preflight");
-      preflight = await checkPreflight(env, userId, tier);
+      preflight = await checkPreflight(env, userId, tier, usageType);
     }
   } else {
-    preflight = await checkPreflight(env, userId, tier);
+    preflight = await checkPreflight(env, userId, tier, usageType);
   }
 
   if (!preflight.allowed) {
+    if (preflight.reason === "QUOTA_EXCEEDED") {
+      return addCorsHeaders(
+        Response.json(
+          {
+            error: "EKWE_QUOTA_EXCEEDED",
+            message: "You've reached your daily limit. Try again tomorrow.",
+            quota_total: preflight.quota_total,
+            quota_remaining: 0,
+          },
+          {
+            status: 429,
+            headers: { "Retry-After": String(secondsUntilUtcMidnight()) },
+          },
+        ),
+        corsHeaders,
+      );
+    }
     const retryAfter = Math.ceil(preflight.cooldown_remaining || 0);
     return addCorsHeaders(
       Response.json(
@@ -186,9 +213,11 @@ async function handleRequest(
 
   if (!cached) {
     ctx.waitUntil(
-      env.EKWE_KV.put(cacheKey, JSON.stringify(preflight), {
-        expirationTtl: 2,
-      }).catch(() => {}),
+      env.EKWE_KV.put(
+        cacheKey,
+        JSON.stringify({ ...preflight, usage_type: usageType }),
+        { expirationTtl: 2 },
+      ).catch(() => {}),
     );
   }
 
@@ -204,6 +233,7 @@ async function handleRequest(
         preflight.tier_active,
         request.signal,
         userId,
+        ctx,
       );
     } else if (
       request.method === "GET" &&
@@ -224,6 +254,7 @@ async function handleRequest(
         preflight.tier_active,
         request.signal,
         userId,
+        ctx,
       );
     } else if (
       request.method === "POST" &&
@@ -295,6 +326,17 @@ export default {
     ctx.waitUntil(runMaintenance(env));
   },
 } satisfies ExportedHandler<Env>;
+
+/**
+ * Seconds until the next UTC midnight — the daily quota reset boundary.
+ * Used for the Retry-After header on 429 quota responses.
+ */
+function secondsUntilUtcMidnight(): number {
+  const now = Date.now();
+  const msPerDay = 86_400_000;
+  const nextMidnight = Math.ceil(now / msPerDay) * msPerDay;
+  return Math.max(1, Math.ceil((nextMidnight - now) / 1000));
+}
 
 async function runMaintenance(env: Env): Promise<void> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {

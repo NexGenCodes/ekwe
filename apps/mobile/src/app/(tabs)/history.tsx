@@ -5,7 +5,6 @@ import { useSelector } from "@legendapp/state/react";
 import AudioLines from "lucide-react-native/icons/audio-lines";
 import Search from "lucide-react-native/icons/search";
 import X from "lucide-react-native/icons/x";
-import Trash2 from "lucide-react-native/icons/trash-2";
 import React, { useCallback, useRef, useState } from "react";
 import { TextInput, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,7 +31,6 @@ import { SyncService } from "@/services/SyncService";
 import { HistoryEntry, auth$ } from "@/store";
 import { withAlpha } from "@/utils/color";
 import { isIOS, logger } from "@/utils";
-import { AppAlert } from "@/utils/alert";
 
 const FILTER_OPTIONS: HistoryFilterOption[] = [
   "all",
@@ -51,7 +49,6 @@ export default function HistoryScreen(): React.JSX.Element {
     loadMore,
     hasMore,
     deleteEntry,
-    clearAll,
   } = useHistory();
   const { query, setQuery, filter, setFilter, filteredEntries, isSearching } =
     useHistorySearch(entries);
@@ -65,25 +62,6 @@ export default function HistoryScreen(): React.JSX.Element {
 
   // Visible cloud-sync failures (set by SyncService.pullFromCloud on error).
   const pullError = useSelector(() => SyncService.pullError.get());
-
-  const onClearAll = useCallback(async () => {
-    const userId = auth$.user.get()?.id;
-    if (!userId) return;
-    AppAlert.confirm(
-      "Clear All History",
-      "This will permanently delete all your transcripts and translations from this device and the cloud. This action cannot be undone.",
-      async () => {
-        await triggerHaptic();
-        try {
-          await clearAll();
-          AppAlert.success("All history cleared");
-        } catch {
-          AppAlert.error("Error", "Could not clear history.");
-        }
-      },
-      { isDestructive: true, confirmText: "Clear All", cancelText: "Cancel" },
-    );
-  }, [clearAll]);
 
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -175,18 +153,6 @@ export default function HistoryScreen(): React.JSX.Element {
                 </Box>
               </Box>
             </Box>
-            {entries.length > 0 ? (
-              <Pressable
-                onPress={onClearAll}
-                hitSlop={spacing.sm}
-                style={({ pressed }) => [
-                  styles.clearAllButton,
-                  pressed && { opacity: 0.6 },
-                ]}
-              >
-                <Trash2 size={iconSize.md} color={color.muted} />
-              </Pressable>
-            ) : null}
           </Box>
         </Box>
 
@@ -385,9 +351,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: spacing.xs,
-  },
-  clearAllButton: {
-    padding: spacing.xs,
   },
   syncErrorBanner: {
     flexDirection: "row",

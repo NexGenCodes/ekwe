@@ -16,6 +16,7 @@ import {
   getLanguageName,
 } from "../security";
 import { hashKey } from "../utils/keys";
+import { trackBillableSuccess } from "../utils/usage";
 import { CLIENT_ABORTED, Env, Tier, TranslateResult } from "../types";
 
 type TranslateFn = (
@@ -55,6 +56,7 @@ export async function handleTranslate(
   tier: Tier,
   signal: AbortSignal,
   userId: string,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   const parsed = await safeParseJSON<{
     text: string;
@@ -177,6 +179,11 @@ export async function handleTranslate(
             error: String(err),
           });
         }
+
+        // Billable success: counts against the user's daily translate quota.
+        // The preflight gate is invalidated so the next request sees the fresh
+        // count; KV cache replays never reach this point and stay free.
+        trackBillableSuccess(env, userId, "translate", ctx);
 
         return Response.json(result);
       }

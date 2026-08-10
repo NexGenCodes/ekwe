@@ -16,6 +16,7 @@ import {
 } from "../security";
 import { hashBytes } from "../utils/keys";
 import { sniffAudioMime } from "../utils/mime";
+import { trackBillableSuccess } from "../utils/usage";
 import { validateTranscriptLanguage } from "../autoDetect";
 import { CLIENT_ABORTED, Env, Tier, TranscribeResult } from "../types";
 
@@ -121,6 +122,7 @@ export async function handleTranscribe(
   tier: Tier,
   signal: AbortSignal,
   userId: string,
+  ctx?: ExecutionContext,
 ): Promise<Response> {
   logger.info(`[transcribe] handleTranscribe started`, { tier });
 
@@ -313,6 +315,12 @@ export async function handleTranscribe(
             error: String(err),
           });
         }
+
+        // Billable success: counts against the user's daily transcribe quota.
+        // Also invalidates the preflight gate so the next request sees the
+        // freshly consumed count. Replays served from the KV cache above never
+        // reach this point, so they stay free.
+        trackBillableSuccess(env, userId, "transcribe", ctx);
 
         return Response.json(result);
       }
