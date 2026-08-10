@@ -3,14 +3,16 @@ main = "src/index.ts"
 compatibility_date = "2026-06-01"
 compatibility_flags = ["nodejs_compat"]
 
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+fallthrough = true
+
 # Daily history retention cleanup (free: 30d, pro: 365d) — calls
 # cleanup_expired_history via the service role in the `scheduled` handler.
 [triggers]
 crons = ["0 3 * * *"]
 
-rules = [
-  { type = "CompiledWasm", globs = ["**/*.wasm"], fallthrough = true }
-]
 [dev]
 ip = "0.0.0.0"
 port = 8787
