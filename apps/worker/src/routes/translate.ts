@@ -99,7 +99,12 @@ export async function handleTranslate(
     const textHash = await hashKey(
       `${cleanText}_${body.sourceLang || "auto"}_${body.targetLang}`,
     );
-    cacheKey = `trans:${userId}:${textHash}`;
+    // Tier is part of the key so a premium result (which may carry auto-detected
+    // `language` / `transliteration` fields the FREE tier isn't entitled to) can
+    // never be served to a downgraded FREE user — and a FREE-cached stripped
+    // result can never be served to a PREMIUM user who should get the richer
+    // response.
+    cacheKey = `trans:${userId}:${tier}:${textHash}`;
     const cached = await env.EKWE_KV.get(cacheKey);
     if (cached) {
       logger.info(`[translate] KV Cache Hit for hash ${textHash}`);

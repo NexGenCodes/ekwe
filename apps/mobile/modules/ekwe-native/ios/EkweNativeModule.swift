@@ -5,9 +5,12 @@ public class EkweNativeModule: Module {
   private var audioEngine: AVAudioEngine?
   private var isAudioRecording = false
   private var recordingStartTime: Date?
-  private var currentAmplitude: Float = 0
-  private var captureMode: String = "file"
   private var outputPath: String = ""
+
+  /// Serial, non-real-time queue for feeding PCM into the C++ capture controller.
+  /// Keeps Opus encoding + Ogg writes off the audio render thread, and preserves
+  /// feed order so the staging buffer sees samples monotonically.
+  private let audioQueue = DispatchQueue(label: "com.ekwe.app.audio.capture")
 
   // Authoritative limit lives in @ekwe/shared/plans (PREMIUM_LIMITS.
   // maxAudioBytes); JS passes it in at call time so native never hardcodes it.
@@ -109,101 +112,127 @@ public class EkweNativeModule: Module {
       self.outputPath = path
       self.captureMode = isLive ? "live" : "file"
 
-      do {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord,
-                                mode: .voiceChat,
-                                options: [.allowBluetooth, .defaultToSpeaker])
-        try session.setPreferredIOBufferDuration(0.005)
-        try session.setActive(true)
+       do {
+         let session = AVAudioSession.sharedInstance()
+         try session.setCategory(.playAndRecord,
+                                 mode: .voiceChat,
+                                 options: [.allowBluetooth, .defaultToSpeaker])
+         try session.setPreferredIOBufferDuration(0.005)
+         try session.setActive(true)
 
-        let engine = AVAudioEngine()
-        let inputNode = engine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
+         let engine = AVAudioEngine()
+         let inputNode = engine.inputNode
 
-        let desiredFormat = AVAudioFormat(commonFormat: .pcmFormatInt16,
-                                          sampleRate: 16000,
-                                          channels: 1,
-                                          interleaved: false)!
+         // Tap in 16 kHz mono Float32. Installing the tap with this format makes
+         // AVAudioEngine perform the sample-rate conversion + channel downmix from
+         // the microphone's native format (~48 kHz). The C++ capture pipeline is
+         // hard-wired for 16 kHz mono, so feeding it the unconverted hardware
+         // format would record 3× too-fast audio and corrupt durations.
+         let desiredFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                           sampleRate: 16_000,
+                                           channels: 1,
+                                           interleaved: false)!
 
-        // Initialize C++ capture controller through bridge with callbacks
-        let captureOk = EkweAudioBridge.initCapture(path,
-                                                     sampleRate: Int32(sampleRate),
-                                                     channels: 1,
-                                                     isLive: isLive,
-                                                     opusPacketBlock: { [weak self] packet, rms in
-          guard let self = self else { return }
-          self.sendEvent("onOpusPacket", [
-            "packet": packet.base64EncodedString(),
-            "rms": rms
-          ])
-        }, vadSilenceBlock: { [weak self] in
-          guard let self = self else { return }
-          self.sendEvent("onVadSilence", [:])
-        })
-        if !captureOk {
-          return ["success": false, "error": "Failed to init capture"]
-        }
+         // Initialize C++ capture controller through bridge with callbacks
+         let captureOk = EkweAudioBridge.initCapture(path,
+                                                      sampleRate: Int32(sampleRate),
+                                                      channels: 1,
+                                                      isLive: isLive,
+                                                      opusPacketBlock: { [weak self] packet, rms in
+           guard let self = self else { return }
+           self.sendEvent("onOpusPacket", [
+             "packet": packet.base64EncodedString(),
+             "rms": rms
+           ])
+         }, vadSilenceBlock: { [weak self] in
+           guard let self = self else { return }
+           self.sendEvent("onVadSilence", [:])
+         })
+         if !captureOk {
+           return ["success": false, "error": "Failed to init capture"]
+         }
 
-        inputNode.installTap(onBus: 0,
-                             bufferSize: 960,
-                             format: inputFormat) { (buffer, time) in
-          guard let channelData = buffer.floatChannelData else { return }
+         inputNode.installTap(onBus: 0,
+                              bufferSize: 320,
+                              format: desiredFormat) { [weak self] buffer, _ in
+           guard let channelData = buffer.floatChannelData else { return }
 
-          let frameLength = Int(buffer.frameLength)
-          var pcmBuffer = [Int16](repeating: 0, count: frameLength)
+           let frameLength = Int(buffer.frameLength)
+           // Copy samples into a stable Int16 buffer (16 kHz mono) before handing
+           // them to the capture queue. The C++ side owns no reference to the
+           // AVAudioPCMBuffer, so a defensive copy is cheap and race-free.
+           var pcmBuffer = [Int16](repeating: 0, count: frameLength)
 
-          for i in 0..<frameLength {
-            let sample = channelData[0][i]
-            let clamped = max(-1.0, min(1.0, Double(sample)))
-            pcmBuffer[i] = clamped >= 0
-              ? Int16(clamped * 32767.0)
-              : Int16(clamped * 32768.0)
-          }
+           for i in 0..<frameLength {
+             let sample = channelData[0][i]
+             let clamped = max(-1.0, min(1.0, Double(sample)))
+             pcmBuffer[i] = clamped >= 0
+               ? Int16(clamped * 32767.0)
+               : Int16(clamped * 32768.0)
+           }
 
-          EkweAudioBridge.feedPcm(&pcmBuffer, numSamples: Int32(frameLength))
+           // Encode off the render thread; feed order is preserved by the serial queue.
+           self?.audioQueue.async {
+             pcmBuffer.withUnsafeBufferPointer { ptr in
+               if let base = ptr.baseAddress {
+                 EkweAudioBridge.feedPcm(UnsafeMutablePointer(mutating: base),
+                                         numSamples: Int32(frameLength))
+               }
+             }
+           }
+         }
 
-          self.currentAmplitude = EkweAudioBridge.getAmplitude()
-        }
+         engine.prepare()
+         try engine.start()
+         self.audioEngine = engine
+         self.isAudioRecording = true
+         self.recordingStartTime = Date()
 
-        engine.prepare()
-        try engine.start()
-        self.audioEngine = engine
-        self.isAudioRecording = true
-        self.recordingStartTime = Date()
+         return ["success": true, "error": ""]
+       } catch {
+         // Roll back capture + session so a failed start leaves no dangling
+         // tap/engine/capture-controller (previously this leaked the C++ capture).
+         if let engine = self.audioEngine {
+           engine.inputNode.removeTap(onBus: 0)
+           engine.stop()
+           self.audioEngine = nil
+         }
+         EkweAudioBridge.stopCapture()
+         self.isAudioRecording = false
+         return ["success": false, "error": error.localizedDescription]
+       }
+    }
 
-        return ["success": true, "error": ""]
-      } catch {
+     AsyncFunction("stopAudioRecording") { () -> [String: Any] in
+       if !self.isAudioRecording {
+         return ["success": false, "error": "Not recording",
+                 "durationMs": 0, "waveform": [] as [Float]]
+       }
+
         self.isAudioRecording = false
-        self.audioEngine = nil
-        return ["success": false, "error": error.localizedDescription]
+        // Capture duration before nilling the start time (JS consumes durationMs).
+        let durationMs = self.recordingStartTime.map {
+          Int(Date().timeIntervalSince($0) * 1000)
+        } ?? 0
+        self.recordingStartTime = nil
+
+       if let engine = self.audioEngine {
+         engine.inputNode.removeTap(onBus: 0)
+         engine.stop()
+         self.audioEngine = nil
+       }
+
+       // Drain the audio queue before tearing down the C++ capture controller,
+       // so no queued feedPcm call races with stopCapture() deleting the object.
+       self.audioQueue.sync(flags: .barrier, {})
+
+       EkweAudioBridge.stopCapture()
+
+        let waveformNs = EkweAudioBridge.lastWaveform()
+        let waveform = (waveformNs as? [NSNumber])?.map { $0.floatValue } ?? []
+        return ["success": true, "error": "",
+                "durationMs": durationMs, "waveform": waveform]
       }
-    }
-
-    AsyncFunction("stopAudioRecording") { () -> [String: Any] in
-      if !self.isAudioRecording {
-        return ["success": false, "error": "Not recording",
-                "durationMs": 0, "waveform": [] as [Float]]
-      }
-
-      self.isAudioRecording = false
-
-      if let engine = self.audioEngine {
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
-        self.audioEngine = nil
-      }
-
-      EkweAudioBridge.stopCapture()
-
-      let waveformNs = EkweAudioBridge.lastWaveform()
-      let waveform = (waveformNs as? [NSNumber])?.map { $0.floatValue } ?? []
-      let durationMs = self.recordingStartTime.map {
-        Int(Date().timeIntervalSince($0) * 1000)
-      } ?? 0
-      return ["success": true, "error": "",
-              "durationMs": durationMs, "waveform": waveform]
-    }
 
     AsyncFunction("resolveAndTranscodeToOpus") { (_: String, _: String, _: Int) -> [String: Any] in
       // iOS doesn't receive Android-style content:// URIs; shared files arrive
@@ -212,25 +241,21 @@ public class EkweNativeModule: Module {
               "durationMs": 0, "waveform": [] as [Float]]
     }
 
-    AsyncFunction("writeSharedFile") { (fileName: String, content: String) -> Bool in
-      guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.ekwe.app") else {
-        return false
-      }
-      let fileURL = dir.appendingPathComponent(fileName)
-      guard let data = content.data(using: .utf8) else { return false }
-      do {
-        try data.write(to: fileURL, options: [.atomic, .completeUntilFirstUserAuthentication])
-        var values = URLResourceValues()
-        values.isExcludedFromBackup = true
-        try fileURL.setResourceValues(values)
-        return true
-      } catch {
-        return false
-      }
-    }
-
-    AsyncFunction("getRecordingAmplitude") { () -> Double in
-      return Double(self.currentAmplitude)
-    }
-  }
+     AsyncFunction("writeSharedFile") { (fileName: String, content: String) -> Bool in
+       guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.ekwe.app") else {
+         return false
+       }
+       let fileURL = dir.appendingPathComponent(fileName)
+       guard let data = content.data(using: .utf8) else { return false }
+       do {
+         try data.write(to: fileURL, options: [.atomic, .completeUntilFirstUserAuthentication])
+         var values = URLResourceValues()
+         values.isExcludedFromBackup = true
+         try fileURL.setResourceValues(values)
+         return true
+       } catch {
+         return false
+       }
+     }
+   }
 }

@@ -79,8 +79,8 @@ export const PREMIUM_LIMITS: PlanLimits = {
   exportFormats: ["text", "pdf", "srt"],
   ttsQuality: "premium",
   cooldownSeconds: 1,
-  dailyTranslateLimit: 400,
-  dailyTranscribeLimit: 400,
+  dailyTranslateLimit: 200,
+  dailyTranscribeLimit: 200,
 };
 
 export const FREE_FEATURES: PlanFeatures = {

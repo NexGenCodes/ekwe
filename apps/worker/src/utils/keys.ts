@@ -2,6 +2,9 @@ import { CLIENT_ABORTED, Env } from "../types";
 import { logger } from "../logger";
 
 export function getRandomInt(max: number): number {
+  // Guard: max <= 0 would make `threshold` NaN and `value < NaN` false forever,
+  // turning the rejection loop below into an infinite loop.
+  if (!Number.isInteger(max) || max <= 0) return NaN;
   // Rejection sampling: `% max` is biased whenever 2^32 % max != 0 (and even
   // 32-bit getRandomValues has slight bias per the Web Crypto spec). A 1-in-2
   // rejection bound keeps expected draws < 2 while removing the bias entirely.
@@ -108,6 +111,17 @@ export async function rotateKeys(
         // ignore parse errors
       }
       continue;
+    }
+
+    if (res.status >= 500) {
+      // Provider-side failure: every remaining key will 5xx too, and each
+      // attempt costs the full timeout latency. Fail fast instead of cycling
+      // through the whole pool.
+      logger.warn("[keys] Provider returned 5xx, stopping rotation early", {
+        status: res.status,
+        namespace,
+      });
+      return null;
     }
 
     continue;

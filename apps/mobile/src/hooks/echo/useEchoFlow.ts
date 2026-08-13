@@ -9,6 +9,7 @@ import { AppState, Linking } from "react-native";
 import { useEchoAudioResolver } from "./useEchoAudioResolver";
 
 import { useTranslation } from "../useTranslation";
+import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 
 import { usePermissions } from "@/hooks/usePermissions";
 import { batchTranscriber } from "@/services/BatchTranscriber";
@@ -281,6 +282,12 @@ export const useEchoFlow = (
       );
     }
     savedRef.current = false;
+    // Clear the transcript refs synchronously — the ref-sync effect at the top
+    // of the hook runs post-render. A dismiss landing in the gap between this
+    // reset and the next render would otherwise see savedRef=false with a stale
+    // transcriptRef and re-save the OLD transcript under the new intent.
+    transcriptRef.current = null;
+    detectedLangRef.current = null;
     dispatch({ type: "RESET" });
     setIsSubsequentIntent(false);
   }, [
@@ -497,6 +504,7 @@ export const useEchoFlow = (
 
         lastOpRef.current = null;
         triggerHaptic(Haptics.NotificationFeedbackType.Success);
+        invalidateUsage();
         dispatch({ type: "SET_STEP", payload: "TranscribeResult" });
       } catch (err: unknown) {
         if (controller.signal.aborted) {

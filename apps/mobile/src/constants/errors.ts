@@ -17,6 +17,7 @@ export enum EkweError {
   TRANSCRIBE_TIMEOUT = "EKWE_TRANSCRIBE_TIMEOUT",
   TRANSLATION_FAIL = "EKWE_TRANSLATION_FAIL",
   RATE_LIMITED = "EKWE_RATE_LIMITED",
+  QUOTA_EXCEEDED = "EKWE_QUOTA_EXCEEDED",
   ALL_PROVIDERS_FAIL = "EKWE_ALL_PROVIDERS_FAIL",
   AUDIO_RECORD_FAIL = "EKWE_AUDIO_RECORD_FAIL",
   AUDIO_EMPTY = "EKWE_AUDIO_EMPTY",
@@ -54,6 +55,8 @@ export const ErrorMessages: Record<EkweError, string> = {
     "Request timed out. The audio might be too complex or long.",
   [EkweError.TRANSLATION_FAIL]: "Translation failed. Please try again.",
   [EkweError.RATE_LIMITED]: "Service is busy. Trying another provider.",
+  [EkweError.QUOTA_EXCEEDED]:
+    "You've reached today's limit. It resets at midnight.",
   [EkweError.ALL_PROVIDERS_FAIL]:
     "Transcription is busy right now. Try again in a moment.",
   [EkweError.AUDIO_RECORD_FAIL]: "Could not start recording. Please try again.",

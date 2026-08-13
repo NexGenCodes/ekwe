@@ -11,6 +11,7 @@ import {
 import { handleTranscribe } from "./routes/transcribe";
 import { handleTranslate } from "./routes/translate";
 import { handleCheckoutInitialize, handlePricing } from "./routes/checkout";
+import { handleUsage } from "./routes/usage";
 
 import { handleWebhook } from "./routes/webhook";
 import { handleSendOtp } from "./routes/otp";
@@ -150,6 +151,14 @@ async function handleRequest(
     doUrl.searchParams.set("tier", tier);
     const stub = env.STREAM_DO.getByName(userId);
     return stub.fetch(new Request(doUrl.toString(), request));
+  }
+
+  // ─── Read-only usage snapshot (auth-gated, but NO cooldown/quota gate) ───
+  // Reading your own quota must never consume a cooldown or extend a lock, so
+  // this short-circuits before the preflight gate below.
+  if (request.method === "GET" && url.pathname === "/usage") {
+    response = await handleUsage(env, userId, tier);
+    return addCorsHeaders(response, corsHeaders);
   }
 
   // ─── PRE-FLIGHT CHECK (ATOMIC COOLDOWN + QUOTA + CACHED) ───

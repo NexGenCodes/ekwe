@@ -12,6 +12,7 @@
  */
 import { logger } from "../logger";
 import { Env } from "../types";
+import { safeParseJSON } from "../security";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMAIL_MAX_LEN = 254;
@@ -93,12 +94,15 @@ export async function handleSendOtp(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  let body: { email?: unknown; turnstileToken?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "INVALID_BODY" }, { status: 400 });
-  }
+  // Parse the JSON body with a streaming byte cap. The body is consumed before
+  // Turnstile and rate limiting, so an unbounded read here would let a
+  // malicious client hold an execution slot open with a huge payload.
+  const parsed = await safeParseJSON<{
+    email?: unknown;
+    turnstileToken?: unknown;
+  }>(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   const email =
     typeof body.email === "string" ? body.email.trim().toLowerCase() : "";

@@ -58,7 +58,7 @@ describe("checkPreflight (cooldown + quota gate)", () => {
 
     expect(body).toMatchObject({
       p_type: "transcribe",
-      p_daily_limit: 400,
+      p_daily_limit: 200,
     });
   });
 

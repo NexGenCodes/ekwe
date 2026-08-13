@@ -2,6 +2,7 @@ import { useSelector } from "@legendapp/state/react";
 import { File as ExpoFile } from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import { triggerHaptic } from "@/utils/haptics";
+import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 import { useState, useCallback, useEffect, useRef } from "react";
 
 import { useTranslation } from "./useTranslation";
@@ -62,12 +63,28 @@ export const useResultPipeline = ({
   const [translation, setTranslation] = useState<string | null>(
     foundEntry?.translation || null,
   );
-  const [sourceLang] = useState(
+  const [sourceLang, setSourceLang] = useState(
     foundEntry?.sourceLang || initialSourceLang || defaultSourceLang || "en",
   );
-  const [targetLang] = useState(
+  const [targetLang, setTargetLang] = useState(
     foundEntry?.targetLang || initialTargetLang || defaultTargetLang || "es",
   );
+
+  // history$[entryId] may hydrate asynchronously (e.g. during a background
+  // sync) AFTER the initial useState values above were captured. Once the
+  // entry arrives, sync the state so a replay doesn't show a stale transcript.
+  // Applied once per entryId so it never clobbers live transcription/translation
+  // state for the same entry.
+  const appliedEntryIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!foundEntry) return;
+    if (appliedEntryIdRef.current === entryId) return;
+    appliedEntryIdRef.current = entryId;
+    setTranscript(foundEntry.transcript);
+    setTranslation(foundEntry.translation);
+    setSourceLang(foundEntry.sourceLang || "en");
+    setTargetLang(foundEntry.targetLang || "es");
+  }, [foundEntry, entryId]);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasPolished, setHasPolished] = useState(false);
@@ -121,6 +138,7 @@ export const useResultPipeline = ({
 
         triggerHaptic(Haptics.NotificationFeedbackType.Success);
         setHasPolished(true);
+        invalidateUsage();
       } catch (err) {
         AppToast.error("Translation failed", {
           description: err instanceof Error ? err.message : "Unknown error",

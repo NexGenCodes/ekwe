@@ -38,6 +38,7 @@ yarn-error.*
 .claude/
 .fallow/
 .opencode/
+docs/
 
 # OS
 Thumbs.db
@@ -78,6 +79,10 @@ expo-env.d.ts
 .env.production
 .env*.local
 *.hprof
+# Generated at expo prebuild (app.plugin.js), not committed.
+apps/mobile/targets/share/EchoEnvironment.swift
+apps/mobile/targets/share/DesignTokens.swift
+apps/mobile/modules/ekwe-native/android/src/main/java/expo/modules/ekwenative/EchoDesignTokens.kt
 apps/mobile/modules/**/android/build/
 modules/**/android/build/
 modules/**/ios/build/

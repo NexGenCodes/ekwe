@@ -16,6 +16,7 @@ import { StreamTranscriber } from "@/services/StreamTranscriber";
 import { batchTranscriber } from "@/services/BatchTranscriber";
 import { audioActions, RecordingState } from "@/store";
 import { getToken } from "@/store/auth";
+import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 import { logger } from "@/utils";
 
@@ -554,6 +555,7 @@ const dictationActions = {
       logger.info("[VoiceDictation] Transcription success");
       audioActions.appendTranscript(transcript);
       audioActions.setRecordingState(RecordingState.Done);
+      invalidateUsage();
 
       dictation$.set({ ...INITIAL_STATE });
       return transcript;

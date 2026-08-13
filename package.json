@@ -11,6 +11,7 @@
     "android": "turbo run android",
     "ios": "turbo run ios",
     "gen:tokens": "node scripts/tokens/gen-tokens.mjs",
+    "gen:env": "node scripts/tokens/gen-env.mjs",
     "gen:icons": "node scripts/icons/generate-icons.mjs",
     "migrate:push": "supabase db push --linked",
     "migrate:stage": "supabase migration new",

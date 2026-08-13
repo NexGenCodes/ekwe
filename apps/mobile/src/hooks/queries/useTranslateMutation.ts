@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { EkweError } from "@/constants/errors";
 import { translateText, TranslationResult } from "@/services/translateText";
 import { Result } from "@/types/Result";
+import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 
 interface TranslateVariables {
   text: string;
@@ -31,6 +32,13 @@ export function useTranslateMutation(): ReturnType<
     retry: (failureCount, error) => {
       if (error.message === "AbortError") return false;
       return failureCount < 2;
+    },
+    onSuccess: (result) => {
+      // A billable translate (or a quota-429) changes the user's daily count —
+      // refresh the meter so it never shows a stale pool on the next view.
+      if (result.ok || result.error === EkweError.QUOTA_EXCEEDED) {
+        invalidateUsage();
+      }
     },
   });
 }

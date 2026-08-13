@@ -146,6 +146,43 @@ describe("handleWebhook", () => {
     });
   });
 
+  test("does not dedupe when the Pro status update fails", async () => {
+    // Supabase is down: set_pro_status returns 500. The grant failed, so the
+    // idempotency key must NOT be stored — a re-delivery has to retry.
+    server.use(
+      http.post(PROVIDER_URLS.supabaseSetProStatus, async ({ request }) => {
+        setProCalls.push({ body: await request.clone().text() });
+        return jsonResponse({}, 500);
+      }),
+    );
+    const env = mockEnv({ PAYSTACK_SECRET_KEY: "psk" });
+    const body = JSON.stringify({
+      event: "charge.success",
+      data: {
+        amount: 300000,
+        currency: "NGN",
+        reference: "ekwe_user123_abc",
+        customer: { email: "buyer@ekwe.app" },
+        metadata: {
+          user_id: "user-123",
+          plan_id: "pro_monthly",
+          currency: "NGN",
+          amount: 300000,
+        },
+      },
+    });
+    const req1 = await paystackRequest(body, env);
+    const req2 = await paystackRequest(body, env);
+
+    const first = await handleWebhook(req1, env, ctx);
+    expect(await first.json()).toEqual({ received: true, action: "activated" });
+
+    const second = await handleWebhook(req2, env, ctx);
+    // Same response shape, but NOT "duplicate" — the grant is retried.
+    expect(await second.json()).toEqual({ received: true, action: "activated" });
+    expect(setProCalls).toHaveLength(2);
+  });
+
   // ─── Paystack ───────────────────────────────────────────────────
 
   test("paystack charge.success activates a validated user", async () => {
@@ -391,6 +428,64 @@ describe("handleWebhook", () => {
     expect(await res.json()).toEqual({ received: true, action: "deactivated" });
     expect(setProCalls).toHaveLength(1);
     expect(setProCalls[0].body).toContain("rc-user-1");
+  });
+
+  test("revenuecat CANCELLATION retains Pro through the paid-through period", async () => {
+    const env = mockEnv({ REVENUECAT_WEBHOOK_SECRET: "rc-secret" });
+    const body = JSON.stringify({
+      event: {
+        type: "CANCELLATION",
+        app_user_id: "rc-user-1",
+        product_id: "ekwe_pro_monthly",
+        expires_at_ms: Date.parse("2030-01-01T00:00:00.000Z"),
+      },
+    });
+    const sig = await hmac(body, "rc-secret", "SHA-256");
+    const req = requestWith(body, { "x-revenuecat-signature": sig });
+    const res = await handleWebhook(req, env, ctx);
+
+    expect(await res.json()).toEqual({ received: true, action: "retained" });
+    expect(setProCalls).toHaveLength(1);
+    // Kept Pro (p_is_pro true) with the paid-through expiry refreshed.
+    expect(setProCalls[0].body).toContain("p_is_pro");
+    expect(setProCalls[0].body).toContain("rc-user-1");
+    expect(JSON.parse(setProCalls[0].body).p_is_pro).toBe(true);
+  });
+
+  test("revenuecat BILLING_ISSUE retains Pro during the grace period", async () => {
+    const env = mockEnv({ REVENUECAT_WEBHOOK_SECRET: "rc-secret" });
+    const body = JSON.stringify({
+      event: {
+        type: "BILLING_ISSUE",
+        app_user_id: "rc-user-1",
+        entitlement_ids: ["pro"],
+        expires_at_ms: Date.parse("2030-01-01T00:00:00.000Z"),
+      },
+    });
+    const sig = await hmac(body, "rc-secret", "SHA-256");
+    const req = requestWith(body, { "x-revenuecat-signature": sig });
+    const res = await handleWebhook(req, env, ctx);
+
+    expect(await res.json()).toEqual({ received: true, action: "retained" });
+    expect(setProCalls).toHaveLength(1);
+    expect(JSON.parse(setProCalls[0].body).p_is_pro).toBe(true);
+  });
+
+  test("revenuecat CANCELLATION for a non-Pro product is skipped", async () => {
+    const env = mockEnv({ REVENUECAT_WEBHOOK_SECRET: "rc-secret" });
+    const body = JSON.stringify({
+      event: {
+        type: "CANCELLATION",
+        app_user_id: "rc-user-1",
+        product_id: "com.other.app.coffee",
+      },
+    });
+    const sig = await hmac(body, "rc-secret", "SHA-256");
+    const req = requestWith(body, { "x-revenuecat-signature": sig });
+    const res = await handleWebhook(req, env, ctx);
+
+    expect(await res.json()).toEqual({ received: true, action: "skipped" });
+    expect(setProCalls).toHaveLength(0);
   });
 
   test("revenuecat events without app_user_id are skipped", async () => {

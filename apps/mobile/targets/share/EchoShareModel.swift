@@ -158,7 +158,12 @@ final class EchoShareModel: NSObject, ObservableObject {
         }
 
         do {
-            let (fileDuration, waveform) = try EchoShareModel.analyze(from: url, buckets: bucketCount)
+            // Decode off the main actor so a large voice note can't stall the
+            // extension UI or trip a Jetsam kill. `analyze` is pure/ nonisolated.
+            let buckets = bucketCount
+            let (fileDuration, waveform) = try await Task.detached(priority: .userInitiated) {
+                try EchoShareModel.analyze(from: url, buckets: buckets)
+            }.value
 
             // AVPlayer streams from disk instead of buffering the decoded PCM
             // in memory the way AVAudioPlayer does — important inside a share
@@ -443,7 +448,7 @@ final class EchoShareModel: NSObject, ObservableObject {
 
     // MARK: - Static analysis
 
-    private static func analyze(from url: URL, buckets: Int) throws -> (duration: Double, peaks: [Double]) {
+    nonisolated private static func analyze(from url: URL, buckets: Int) throws -> (duration: Double, peaks: [Double]) {
         let file = try AVAudioFile(forReading: url)
         let format = file.processingFormat
         let totalFrames = AVAudioFrameCount(file.length)

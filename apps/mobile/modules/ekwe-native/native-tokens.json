@@ -1,0 +1,160 @@
+{
+  "colors": {
+    "lightColors": {
+      "foreground": "#09090B",
+      "background": "#FFFFFF",
+      "card": "#FAFAFA",
+      "surface": "#F4F4F5",
+      "border": "#C8C8CE",
+      "handle": "#E4E4E7",
+      "muted": "#5C5C66",
+      "disabled": "#6E6E78",
+      "brand": "#006FEE",
+      "onBrand": "#FFFFFF",
+      "success": "#15803D",
+      "warning": "#92400E",
+      "error": "#D01358",
+      "info": "#2979FF",
+      "shadow": "#09090B",
+      "overlay": "rgba(0, 0, 0, 0.4)"
+    },
+    "darkColors": {
+      "foreground": "#FAFAFA",
+      "background": "#09090B",
+      "card": "#18181B",
+      "surface": "#27272A",
+      "border": "#3A3A40",
+      "handle": "#3F3F46",
+      "muted": "#A1A1AA",
+      "disabled": "#8A8A94",
+      "brand": "#006FEE",
+      "onBrand": "#FFFFFF",
+      "success": "#4ADE80",
+      "warning": "#FBBF24",
+      "error": "#F87171",
+      "info": "#2979FF",
+      "shadow": "#09090B",
+      "overlay": "rgba(0, 0, 0, 0.6)"
+    }
+  },
+  "spacing": {
+    "hairline": 2,
+    "xs": 4,
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "xl": 32,
+    "2xl": 40,
+    "3xl": 48,
+    "4xl": 56,
+    "5xl": 64,
+    "6xl": 80,
+    "7xl": 96
+  },
+  "borderRadius": {
+    "none": 0,
+    "sm": 4,
+    "md": 8,
+    "lg": 12,
+    "xl": 16,
+    "2xl": 24,
+    "full": 9999
+  },
+  "iconSize": {
+    "xs": 12,
+    "sm": 16,
+    "md": 24,
+    "lg": 32,
+    "xl": 48
+  },
+  "touchTarget": {
+    "minimum": 44,
+    "comfortable": 48
+  },
+  "opacity": {
+    "disabled": 0.5,
+    "inactive": 0.6,
+    "scrim": 0.4,
+    "scrimDark": 0.6
+  },
+  "zIndex": {
+    "base": 0,
+    "sticky": 10,
+    "dropdown": 100,
+    "modal": 1000,
+    "toast": 2000
+  },
+  "typography": {
+    "display": {
+      "fontFamily": "Outfit-Bold",
+      "fontSize": 32,
+      "lineHeight": 38,
+      "fontWeight": "700",
+      "letterSpacing": -0.5
+    },
+    "heading1": {
+      "fontFamily": "Outfit-Bold",
+      "fontSize": 28,
+      "lineHeight": 34,
+      "fontWeight": "700",
+      "letterSpacing": -0.3
+    },
+    "heading2": {
+      "fontFamily": "Outfit-Bold",
+      "fontSize": 24,
+      "lineHeight": 30,
+      "fontWeight": "700",
+      "letterSpacing": -0.2
+    },
+    "heading3": {
+      "fontFamily": "Outfit-Bold",
+      "fontSize": 20,
+      "lineHeight": 26,
+      "fontWeight": "700"
+    },
+    "bodyLarge": {
+      "fontFamily": "Outfit-Regular",
+      "fontSize": 18,
+      "lineHeight": 27,
+      "fontWeight": "400"
+    },
+    "body": {
+      "fontFamily": "Outfit-Regular",
+      "fontSize": 16,
+      "lineHeight": 24,
+      "fontWeight": "400"
+    },
+    "bodySmall": {
+      "fontFamily": "Outfit-Regular",
+      "fontSize": 14,
+      "lineHeight": 20,
+      "fontWeight": "400"
+    },
+    "caption": {
+      "fontFamily": "Outfit-Regular",
+      "fontSize": 12,
+      "lineHeight": 16,
+      "fontWeight": "400"
+    },
+    "label": {
+      "fontFamily": "Outfit-Medium",
+      "fontSize": 14,
+      "lineHeight": 20,
+      "fontWeight": "500",
+      "letterSpacing": 0.5
+    },
+    "mono": {
+      "fontFamily": "SpaceMono-Regular",
+      "fontSize": 16,
+      "lineHeight": 24,
+      "fontWeight": "400"
+    }
+  },
+  "duration": {
+    "instant": 50,
+    "fast": 150,
+    "normal": 250,
+    "slow": 400,
+    "slower": 600
+  }
+}

@@ -394,4 +394,45 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     await waitForClose(closes, 4004);
     await settle();
   });
+
+  it("restarts the provider pipeline after DO hibernation", async () => {
+    let connections = 0;
+    const link = ws.link(DEEPGRAM_LINK);
+    network.use(
+      link.addEventListener("connection", ({ client }: any) => {
+        connections++;
+        client.addEventListener("message", () => {
+          client.send(deepgramResult("post-hibernation", true));
+        });
+      }),
+    );
+
+    withDeepgramKey();
+    const { ws: clientWs, messages, closes } = await openSession(
+      "hibernation-restart",
+      "?tier=PREMIUM&lang=en",
+    );
+    clientWs.send(JSON.stringify({ type: "config", codec: "opus", lang: "en" }));
+    await waitFor(messages, (m) => m.includes("config_ack"));
+    await waitForFlag(() => connections === 1);
+
+    // Simulate DO hibernation: the in-memory connection entry (and the provider
+    // pipeline it owned) is dropped, but the accepted client socket survives.
+    await runInDurableObject(getStub("hibernation-restart"), async (instance) => {
+      (
+        instance as unknown as { connections: Map<unknown, unknown> }
+      ).connections.clear();
+    });
+
+    // A fresh audio frame must rehydrate the connection and reconnect to the
+    // provider — not silently no-op like the pre-fix behavior.
+    clientWs.send(new ArrayBuffer(8));
+    await waitForFlag(() => connections === 2);
+    const msg = await waitFor(messages, (m) => m.includes("post-hibernation"));
+    expect(JSON.parse(msg).provider).toBe("deepgram");
+
+    clientWs.send(JSON.stringify({ type: "stop" }));
+    await waitForClose(closes, 1000);
+    await settle();
+  });
 });

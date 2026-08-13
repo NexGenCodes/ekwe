@@ -28,6 +28,7 @@ import {
   ProfileIdentity,
   CurrencyPickerModal,
   ThemePickerModal,
+  QuotaUsageCard,
 } from "@/components";
 import { Box, Text, Pressable, ScrollArea } from "@/components/ui";
 import { duration, borderRadius, opacity, spacing } from "@/constants";
@@ -202,6 +203,14 @@ export default function ProfileScreen(): React.JSX.Element {
               }
             />
           </ProfileSection>
+        </Animated.View>
+
+        {/* Daily usage quota */}
+        <Animated.View
+          entering={reduceMotion ? undefined : FadeInDown.duration(duration.normal).delay(120)}
+          style={{ marginBottom: spacing.xl }}
+        >
+          <QuotaUsageCard />
         </Animated.View>
 
         {/* App Preferences */}

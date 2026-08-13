@@ -2,6 +2,7 @@ import { useSelector } from "@legendapp/state/react";
 import { useMemo } from "react";
 
 import { PLAN_FEATURES, PLAN_LIMITS } from "@/constants/billing";
+import { HISTORY_LOCAL_TTL_DAYS } from "@/constants/retention";
 import { auth$ } from "@/store";
 
 interface PlanLimits {
@@ -17,11 +18,6 @@ interface PlanLimits {
   cooldownSeconds: number;
 }
 
-const HARDCODED_LIMITS = {
-  maxSelectedLanguages: 10,
-  historyLocalTtlDays: 90,
-};
-
 export function usePermissions(): PlanLimits {
   const isPro = useSelector(() => auth$.isPro.get());
 
@@ -29,9 +25,9 @@ export function usePermissions(): PlanLimits {
 
   return useMemo(
     () => ({
-      maxSelectedLanguages: HARDCODED_LIMITS.maxSelectedLanguages,
+      maxSelectedLanguages: limits.maxLanguages,
       dictationDurationMs: limits.dictationDurationMs,
-      historyLocalTtlDays: HARDCODED_LIMITS.historyLocalTtlDays,
+      historyLocalTtlDays: HISTORY_LOCAL_TTL_DAYS,
       historyRemoteTtlDays: limits.historyRemoteTtlDays,
       textTranslationMaxChars: limits.maxTextChars,
       autoLanguageDetect: limits.autoDetectAllowed,

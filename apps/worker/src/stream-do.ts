@@ -101,6 +101,8 @@ interface StreamConnection {
   adapter: ClientWsAdapter;
   abortController: AbortController;
   pipelinePromise: Promise<void> | undefined;
+  /** True when this entry was rehydrated after DO hibernation (in-memory state was lost). */
+  resumed: boolean;
 }
 
 /**
@@ -230,6 +232,7 @@ export class StreamDurableObject extends DurableObject<Env> {
       adapter,
       abortController: new AbortController(),
       pipelinePromise: undefined,
+      resumed: false,
     });
 
     this.ctx.acceptWebSocket(server);
@@ -460,14 +463,43 @@ export class StreamDurableObject extends DurableObject<Env> {
     await this.ctx.storage.setAlarm(now + IDLE_TIMEOUT_MS);
   }
 
+  /**
+   * Returns the in-memory connection entry for a socket, rehydrating it lazily
+   * after DO hibernation. When a DO is evicted, the `connections` Map is lost
+   * but the accepted client socket (and its persisted attachment) survives, so
+   * a new adapter/abort controller must be rebuilt on the next message.
+   */
+  private getOrCreateConnection(ws: WebSocket): StreamConnection {
+    let conn = this.connections.get(ws);
+    if (!conn) {
+      conn = {
+        adapter: new ClientWsAdapter(ws),
+        abortController: new AbortController(),
+        pipelinePromise: undefined,
+        resumed: true,
+      };
+      this.connections.set(ws, conn);
+    }
+    return conn;
+  }
+
   private forwardToAdapter(ws: WebSocket, data: string | ArrayBuffer): void {
-    const conn = this.connections.get(ws);
-    if (conn) conn.adapter.emit("message", data);
+    this.getOrCreateConnection(ws).adapter.emit("message", data);
   }
 
   private startProviderPipeline(ws: WebSocket, state: SessionState): void {
-    const conn = this.connections.get(ws);
-    if (!conn || conn.pipelinePromise || state.providerStarted) return;
+    const conn = this.getOrCreateConnection(ws);
+    if (conn.pipelinePromise) return;
+
+    // After hibernation the in-memory provider pipeline — and the provider
+    // WebSocket it owned — is gone, even though `providerStarted` was persisted
+    // in the attachment. Restart the pipeline from the rehydrated connection;
+    // skipping this would leave the session silently muted.
+    if (conn.resumed && state.providerStarted) {
+      state.providerStarted = false;
+      ws.serializeAttachment(state);
+    }
+    conn.resumed = false;
 
     conn.pipelinePromise = this.runProviderPipeline(ws, state, conn).finally(
       () => {

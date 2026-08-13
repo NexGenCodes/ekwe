@@ -43,7 +43,7 @@ export function getCorsHeaders(
   return {
     ...(isAllowed && { "Access-Control-Allow-Origin": origin }),
     ...(isAllowed && { "Access-Control-Allow-Credentials": "true" }),
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     Vary: "Origin",
     "X-Content-Type-Options": "nosniff",

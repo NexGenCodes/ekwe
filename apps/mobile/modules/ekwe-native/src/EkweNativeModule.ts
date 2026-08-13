@@ -33,9 +33,6 @@ declare class EkweNativeModule extends NativeModule<{
   // --- iOS Voice Session (voiceChat mode → built-in NS, AEC, AGC) ---
   configureVoiceSession(): Promise<void>;
 
-  // --- AudioRecord metering (Android) ---
-  getRecordingAmplitude(): Promise<number>;
-
   // --- Authoritative device theme (Android only) ---
   // Reads the *resolved* system night mode from the OS (handles auto/scheduled),
   // so the share overlay never shows a stale Appearance cache. Returns "light" | "dark".

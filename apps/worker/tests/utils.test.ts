@@ -38,6 +38,27 @@ describe("sanitizeKey", () => {
   });
 });
 
+// ─── getRandomInt ─────────────────────────────────────────────────
+
+describe("getRandomInt", () => {
+  test("returns a value in [0, max)", async () => {
+    const { getRandomInt } = await import("../src/utils/keys");
+    for (let i = 0; i < 100; i++) {
+      const value = getRandomInt(100);
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThan(100);
+    }
+  });
+
+  test("does not loop forever for max <= 0", async () => {
+    const { getRandomInt } = await import("../src/utils/keys");
+    expect(getRandomInt(0)).toBeNaN();
+    expect(getRandomInt(-5)).toBeNaN();
+    expect(getRandomInt(1.5)).toBeNaN();
+    expect(getRandomInt(NaN)).toBeNaN();
+  });
+});
+
 // ─── isHallucination ───────────────────────────────────────────────
 
 describe("isHallucination", () => {
@@ -69,6 +90,26 @@ describe("isHallucination", () => {
 
   test("repeated phrase", () => {
     expect(isHallucination("abcdeabcdeabcde")).toBe(true);
+  });
+
+  test("repeated longer block", () => {
+    expect(
+      isHallucination(
+        "thankyouforwatchingthankyouforwatchingthankyouforwatching",
+      ),
+    ).toBe(true);
+  });
+
+  test("repeated block shorter than 5 chars is not flagged", () => {
+    expect(isHallucination("abcdabcdabcd")).toBe(false);
+  });
+
+  test("large near-miss transcript is not flagged (no quadratic blowup)", () => {
+    const nearMiss = Array.from(
+      { length: 6000 },
+      (_, i) => `word${i}`,
+    ).join(" ");
+    expect(isHallucination(nearMiss)).toBe(false);
   });
 
   test("WPS too high", () => {
@@ -105,17 +146,28 @@ describe("getClientHeaders", () => {
     expect(h["X-Forwarded-For"]).toBeFalsy();
   });
 
-  test("forwards headers from request when provided", () => {
+  test("prefers CF-Connecting-IP over client-supplied headers", () => {
     const req = new Request("http://test", {
       headers: {
-        "X-Forwarded-For": "1.2.3.4",
-        "X-Real-IP": "5.6.7.8",
+        "CF-Connecting-IP": "9.9.9.9",
+        "X-Forwarded-For": "1.2.3.4, 5.6.7.8",
+        "X-Real-IP": "6.6.6.6",
       },
     });
     const h = getClientHeaders(req);
-    expect(h["X-Forwarded-For"]).toBe("1.2.3.4");
-    expect(h["X-Real-IP"]).toBe("5.6.7.8");
+    expect(h["X-Forwarded-For"]).toBe("9.9.9.9");
+    // Client-spoofable headers are not echoed.
+    expect(h["X-Real-IP"]).toBeFalsy();
     expect(h["Accept-Language"]).toBe("en-US,en;q=0.9");
+  });
+
+  test("does not echo client-supplied X-Forwarded-For without CF-Connecting-IP", () => {
+    const req = new Request("http://test", {
+      headers: { "X-Forwarded-For": "1.2.3.4", "X-Real-IP": "5.6.7.8" },
+    });
+    const h = getClientHeaders(req);
+    expect(h["X-Forwarded-For"]).toBeFalsy();
+    expect(h["X-Real-IP"]).toBeFalsy();
   });
 });
 
@@ -390,6 +442,29 @@ describe("rotateKeys", () => {
       new AbortController().signal,
     );
     expect(result).toBeNull();
+  });
+
+  test("fails fast on 5xx without trying remaining keys", async () => {
+    const { rotateKeys } = await import("../src/utils/keys");
+    const env = mockEnv({
+      GROQ_KEY_1: "fail-key-1-abcde",
+      GROQ_KEY_2: "fail-key-2-abcde",
+      GROQ_KEY_3: "fail-key-3-abcde",
+    });
+
+    let callCount = 0;
+    const result = await rotateKeys(
+      env,
+      "GROQ_KEY_",
+      async () => {
+        callCount++;
+        return jsonResponse({}, 502);
+      },
+      new AbortController().signal,
+    );
+
+    expect(result).toBeNull();
+    expect(callCount).toBe(1);
   });
 
   test("throws on abort", async () => {

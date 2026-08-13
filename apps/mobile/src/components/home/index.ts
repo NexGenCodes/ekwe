@@ -11,3 +11,4 @@ export * from "./SwapButton";
 export * from "./MainTextInput";
 export * from "./InputFooterActions";
 export * from "./BackgroundFlair";
+export * from "./QuotaUsageCard";

@@ -171,7 +171,18 @@ class AudioCaptureClass {
         this.currentRecordingPath = outputPath;
       }
 
-      // Subscribe to native Opus packets (live mode) and VAD silence (both modes)
+      // Subscribe to native Opus packets (live mode) and VAD silence (both modes).
+      // Check the native listener API BEFORE starting to subscribe: calling a
+      // missing addListener throws, which would otherwise leave the recording
+      // already started (line 158/130) running forever.
+      if (typeof EkweNative.addListener !== "function") {
+        logger.error(
+          "[AudioCapture] EkweNative.addListener is not a function — native module broken?",
+        );
+        this.isStartingParams = false;
+        return err(EkweError.AUDIO_RECORD_FAIL);
+      }
+
       if (mode === "live") {
         this.opusPacketSub = EkweNative.addListener(
           "onOpusPacket",
@@ -185,13 +196,6 @@ class AudioCaptureClass {
             this.opusPacketListeners.forEach((l) => l(opusPacket));
           },
         );
-      }
-      if (typeof EkweNative.addListener !== "function") {
-        logger.error(
-          "[AudioCapture] EkweNative.addListener is not a function — native module broken?",
-        );
-        this.isStartingParams = false;
-        return err(EkweError.AUDIO_RECORD_FAIL);
       }
       this.vadSilenceSub = EkweNative.addListener("onVadSilence", () => {
         try {
@@ -229,6 +233,16 @@ class AudioCaptureClass {
       this.opusPacketSub = null;
       this.vadSilenceSub?.remove();
       this.vadSilenceSub = null;
+      if (this.currentRecordingPath) {
+        // Native recording already started — stop it so the mic isn't held and
+        // the state isn't stuck "recording" after a mid-setup failure.
+        try {
+          await EkweNative.stopAudioRecording();
+        } catch {
+          // best-effort cleanup
+        }
+        this.currentRecordingPath = null;
+      }
       this.currentSessionId = null;
       this.isStartingParams = false;
       triggerHaptic(Haptics.NotificationFeedbackType.Error);

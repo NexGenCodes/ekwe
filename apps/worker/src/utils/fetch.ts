@@ -145,10 +145,13 @@ export function getClientHeaders(request?: Request): Record<string, string> {
   };
 
   if (request) {
-    const forwardedFor = request.headers.get("X-Forwarded-For");
-    const realIp = request.headers.get("X-Real-IP");
-    if (forwardedFor) headers["X-Forwarded-For"] = forwardedFor;
-    if (realIp) headers["X-Real-IP"] = realIp;
+    // Trust only Cloudflare's CF-Connecting-IP (set by the edge). A client can
+    // freely spoof X-Forwarded-For / X-Real-IP, and blindly echoing them lets a
+    // caller chain arbitrary IPs through to the provider. Rebuilding XFF from
+    // the edge-set header also keeps provider-side rate limiting keyed on the
+    // real client IP instead of a client-controlled value.
+    const clientIp = request.headers.get("CF-Connecting-IP");
+    if (clientIp) headers["X-Forwarded-For"] = clientIp;
   }
 
   return headers;

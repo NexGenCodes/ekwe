@@ -1,10 +1,18 @@
+const fs = require('fs');
+const path = require('path');
 const {
   withAndroidManifest,
   withMainActivity,
   withAndroidStyles,
+  withDangerousMod,
   withEntitlementsPlist,
   AndroidConfig,
 } = require('expo/config-plugins');
+const { generateEchoEnvironment } = require('../../../../scripts/tokens/native-env.cjs');
+const {
+  renderDesignTokensSwift,
+  renderEchoDesignTokensKotlin,
+} = require('../../../../scripts/tokens/native-tokens.cjs');
 
 const APP_GROUP_ID = 'group.com.ekwe.app';
 
@@ -281,6 +289,88 @@ const withAutofillHighlightFix = (config) => {
 };
 
 /**
+ * IOS: Regenerates `targets/share/EchoEnvironment.swift` during `expo prebuild`.
+ *
+ * `expo prebuild` is the one step every consumer runs (local `expo run:*`,
+ * EAS cloud builds, CI), which is how EAS/CI get the file even though it isn't
+ * committed. Expo injects `.env` into `process.env` before plugins evaluate, so
+ * `EXPO_PUBLIC_*` reads straight off the environment; MAX_AUDIO_BYTES comes from
+ * the committed `native-cap.json` snapshot written by scripts/tokens/gen-tokens.mjs
+ * (its source of truth is packages/shared/plans.ts). No JS runtime needs to exist.
+ */
+const withEchoEnvironment = (config) => {
+  return withDangerousMod(config, [
+    'ios',
+    async (config) => {
+      const projectRoot = config.modRequest.projectRoot;
+      const capPath = path.join(
+        __dirname,
+        'native-cap.json',
+      );
+      let maxAudioBytes = 26 * 1024 * 1024;
+      try {
+        maxAudioBytes = JSON.parse(fs.readFileSync(capPath, 'utf8')).maxAudioBytes;
+      } catch {
+        // Fall back to the hard cap if the snapshot is missing.
+      }
+
+      const envVars = {};
+      for (const key of Object.keys(process.env)) {
+        if (key.startsWith('EXPO_PUBLIC_')) envVars[key] = process.env[key];
+      }
+
+      const outFile = path.join(projectRoot, 'targets', 'share', 'EchoEnvironment.swift');
+      fs.mkdirSync(path.dirname(outFile), { recursive: true });
+      fs.writeFileSync(outFile, generateEchoEnvironment(envVars, maxAudioBytes), 'utf8');
+      console.log(`[EkwePlugin] Wrote ${outFile}`);
+      return config;
+    },
+  ]);
+};
+
+/**
+ * IOS + Android: Regenerates the native design-token files during prebuild —
+ * `targets/share/DesignTokens.swift` (iOS share ext) and the Android
+ * `EchoDesignTokens.kt` — from the committed `native-tokens.json` snapshot
+ * (written by scripts/tokens/gen-tokens.mjs from packages/shared/token/*.ts).
+ * Rendering is shared with the CLI via scripts/tokens/native-tokens.cjs, so
+ * prebuild and `pnpm gen:tokens` stay byte-identical and EAS/CI never see
+ * stale committed Swift/Kotlin.
+ */
+const withEchoDesignTokens = (config) => {
+  const render = (modName, outFile, renderer) => {
+    return withDangerousMod(config, [
+      modName,
+      async (pluginConfig) => {
+        const projectRoot = pluginConfig.modRequest.projectRoot;
+        const snapshotPath = path.join(__dirname, 'native-tokens.json');
+        let snapshot;
+        try {
+          snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+        } catch {
+          throw new Error(
+            `[EkwePlugin] Missing ${snapshotPath} — run \`pnpm gen:tokens\` first.`,
+          );
+        }
+        const target = path.join(projectRoot, outFile);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, renderer(snapshot), 'utf8');
+        console.log(`[EkwePlugin] Wrote ${target}`);
+        return pluginConfig;
+      },
+    ]);
+  };
+
+  config = render('ios', 'targets/share/DesignTokens.swift', renderDesignTokensSwift);
+  config = render(
+    'android',
+    'modules/ekwe-native/android/src/main/java/expo/modules/ekwenative/EchoDesignTokens.kt',
+    renderEchoDesignTokensKotlin,
+  );
+  return config;
+};
+
+/**
  * Combined plugin for managing all custom native Ekwe logic.
  */
 const withEkweNativePermissionsAndServices = (config) => {
@@ -313,6 +403,8 @@ const withEkweNativePermissionsAndServices = (config) => {
   updatedConfig = withTranslucentStyle(updatedConfig);
   updatedConfig = withShareActivity(updatedConfig);
   updatedConfig = withMainActivityOnNewIntent(updatedConfig);
+  updatedConfig = withEchoEnvironment(updatedConfig);
+  updatedConfig = withEchoDesignTokens(updatedConfig);
   if (process.platform === 'darwin') {
     updatedConfig = withIosAppGroup(updatedConfig);
   }

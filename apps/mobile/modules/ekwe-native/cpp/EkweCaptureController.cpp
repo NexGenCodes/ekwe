@@ -3,9 +3,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <android/log.h>
 
+#if defined(__ANDROID__)
+#include <android/log.h>
 #define ALOG(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, "EkveCtrl", fmt, ##__VA_ARGS__)
+#else
+#include <cstdio>
+#define ALOG(fmt, ...) std::printf("[EkveCtrl] " fmt "\n", ##__VA_ARGS__)
+#endif
 
 namespace ekwe {
 

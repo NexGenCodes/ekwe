@@ -1,23 +1,33 @@
 #!/usr/bin/env node
 /**
- * Design-token codegen: reads packages/shared/token/*.ts and emits
- * apps/mobile/targets/share/DesignTokens.swift for the native iOS Echo share
- * extension (compiled into the @bacons/apple-targets share target).
+ * Design-token codegen: reads packages/shared/token/*.ts, writes the committed
+ * JSON snapshot `apps/mobile/modules/ekwe-native/native-tokens.json`, and
+ * renders the native asset files from it:
+ *   - apps/mobile/targets/share/DesignTokens.swift            (iOS share ext)
+ *   - .../echonative/EchoDesignTokens.kt                      (Android overlay)
  *
- * Run with `pnpm gen:tokens` (Node >= 23.6 strips TS types natively).
- *
- * The generated Swift file is committed so the iOS targets compile without a
- * build-time node step. Hand-edit tokens in packages/shared/token, NOT
- * the generated file.
+ * Rendering lives in scripts/tokens/native-tokens.cjs, which the config plugin
+ * (app.plugin.js) also uses, so `expo prebuild` and `pnpm gen:tokens` produce
+ * byte-identical output and native files never drift from the TS source of
+ * truth. Run with `pnpm gen:tokens` (Node >= 23.6 strips TS types natively).
  */
 import { mkdir, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
+
+const require = createRequire(import.meta.url);
+const { renderDesignTokensSwift, renderEchoDesignTokensKotlin } =
+  require("./native-tokens.cjs");
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TOKENS_DIR = resolve(__dirname, "../../packages/shared/token");
 const OUT_DIR = resolve(__dirname, "../../apps/mobile/targets/share");
 const OUT_FILE = resolve(OUT_DIR, "DesignTokens.swift");
+const SNAPSHOT_FILE = resolve(
+  __dirname,
+  "../../apps/mobile/modules/ekwe-native/native-tokens.json",
+);
 const KOTLIN_PACKAGE_DIR =
   "apps/mobile/modules/ekwe-native/android/src/main/java/expo/modules/ekwenative";
 const KOTLIN_OUT_FILE = resolve(__dirname, `../../${KOTLIN_PACKAGE_DIR}/EchoDesignTokens.kt`);
@@ -34,284 +44,29 @@ const { borderRadius, iconSize, touchTarget, opacity, zIndex } =
 const { typography } = await importTs("typography");
 const { duration } = await importTs("motion");
 
-/** Turns a TS object key into a valid Swift enum-case identifier. */
-const swiftKey = (k) => {
-  const spaced = k
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2") // split camelCase boundaries
-    .replace(/[^a-zA-Z0-9]/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w, i) =>
-      i === 0 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1).toLowerCase(),
-    )
-    .join("");
-  return /^[0-9]/.test(spaced) ? "_" + spaced : spaced;
+// Snapshot consumed by the app.plugin.js config plugin at `expo prebuild`.
+// Committed so EAS/CI builds have the source without a TS-importing Node step.
+const snapshot = {
+  colors: { lightColors, darkColors },
+  spacing,
+  borderRadius,
+  iconSize,
+  touchTarget,
+  opacity,
+  zIndex,
+  typography,
+  duration,
 };
 
-/** Splits "#RRGGBB" and "rgba(r, g, b, a)" into { hex, alpha }. */
-const toColorParts = (value) => {
-  const v = String(value).trim();
-  const rgba = v.match(
-    /rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)/,
-  );
-  if (rgba) {
-    const [, r, g, b, a] = rgba;
-    const hex =
-      "#" +
-      [r, g, b].map((n) => Number(n).toString(16).padStart(2, "0")).join("");
-    return { hex, alpha: Number(a) };
-  }
-  return { hex: v, alpha: 1 };
-};
-
-const tokenInit = (value) => {
-  const { hex, alpha } = toColorParts(value);
-  return `DesignToken(hex: "${hex}"${alpha < 1 ? `, opacity: ${alpha}` : ""})`;
-};
-
-const colorCase = (key, lightValue, darkValue = lightValue) => [
-  `        public static let ${swiftKey(key)} = DesignTokenColor(`,
-  `            light: ${tokenInit(lightValue)},`,
-  `            dark: ${tokenInit(darkValue)}`,
-  `        )`,
-];
-
-const numberEnum = (cases, type) =>
-  Object.entries(cases)
-    .map(
-      ([key, value]) =>
-        `        case ${swiftKey(key)} = ${typeof value === "number" ? value : JSON.stringify(value)}`,
-    )
-    .join("\n");
-
-const semanticLines = Object.keys(lightColors)
-  .flatMap((key) => colorCase(key, lightColors[key], darkColors[key]))
-  .join("\n");
-
-const weightFor = (raw) => {
-  const map = {
-    700: ".bold",
-    600: ".semibold",
-    500: ".medium",
-    400: ".regular",
-    300: ".light",
-  };
-  return map[String(raw)] ?? ".regular";
-};
-
-const typographyLines = Object.entries(typography)
-  .map(([key, t]) => {
-    const tracking = t.letterSpacing ?? 0;
-    return `        public static let ${swiftKey(key)} = TypeStyle(size: ${t.fontSize}, lineHeight: ${t.lineHeight}, weight: ${weightFor(t.fontWeight)}, family: "${t.fontFamily}", tracking: ${tracking})`;
-  })
-  .join("\n");
-
-const motionLines = Object.entries(duration)
-  .map(
-    ([key, value]) =>
-      `        public static let ${swiftKey(key)}: Double = ${value}`,
-  )
-  .join("\n");
-
-const swift = `// GENERATED by scripts/tokens/gen-tokens.mjs — DO NOT EDIT.
-// Source of truth: packages/shared/token/*.ts. Re-run \`pnpm gen:tokens\`.
-
-import Foundation
-import SwiftUI
-
-/// A single color value (hex + opacity) for one appearance.
-public struct DesignToken: Sendable {
-    public let hex: String
-    public let opacity: Double
-
-    public init(hex: String, opacity: Double = 1) {
-        self.hex = hex
-        self.opacity = opacity
-    }
-}
-
-/// A light + dark pair, resolved against the current ColorScheme.
-public struct DesignTokenColor: Sendable {
-    public let light: DesignToken
-    public let dark: DesignToken
-
-    public func color(_ scheme: ColorScheme) -> Color {
-        let token = scheme == .dark ? dark : light
-        return Color(hex: token.hex, opacity: token.opacity)
-    }
-}
-
-public extension Color {
-    init(hex: String, opacity: Double = 1) {
-        let cleaned = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-        var value: UInt64 = 0
-        Scanner(string: cleaned).scanHexInt64(&value)
-        let r = Double((value >> 16) & 0xFF) / 255
-        let g = Double((value >> 8) & 0xFF) / 255
-        let b = Double(value & 0xFF) / 255
-        self.init(.sRGB, red: r, green: g, blue: b, opacity: opacity)
-    }
-}
-
-@available(iOS 16.4, *)
-public enum EchoDesignTokens {
-    public enum Semantic {
-${semanticLines}
-    }
-
-    public enum Space: CGFloat {
-${numberEnum(spacing)}
-    }
-
-    public enum Radius: CGFloat {
-${numberEnum(borderRadius)}
-    }
-
-    public enum IconSize: CGFloat {
-${numberEnum(iconSize)}
-    }
-
-    public enum TouchTarget: CGFloat {
-${numberEnum(touchTarget)}
-    }
-
-    public enum Opacity: Double {
-${numberEnum(opacity)}
-    }
-
-    public enum ZIndex: Int {
-${numberEnum(zIndex)}
-    }
-
-    public struct TypeStyle {
-        public let size: CGFloat
-        public let lineHeight: CGFloat
-        public let weight: Font.Weight
-        public let family: String
-        public let tracking: CGFloat
-
-        public init(
-            size: CGFloat,
-            lineHeight: CGFloat,
-            weight: Font.Weight,
-            family: String,
-            tracking: CGFloat
-        ) {
-            self.size = size
-            self.lineHeight = lineHeight
-            self.weight = weight
-            self.family = family
-            self.tracking = tracking
-        }
-    }
-
-    public enum Typography {
-${typographyLines}
-    }
-
-    public enum Motion {
-${motionLines}
-    }
-}
-`;
+const swift = renderDesignTokensSwift(snapshot);
+const kotlin = renderEchoDesignTokensKotlin(snapshot);
 
 await mkdir(OUT_DIR, { recursive: true });
 await writeFile(OUT_FILE, swift, "utf8");
 console.log(`Wrote ${OUT_FILE} (${swift.length} bytes)`);
 
-// ── Kotlin (Android native Echo overlay) ────────────────────────────────────
-
-/** Wraps the raw hex in `argbColor(...)`, applying alpha when < 1. */
-const kotlinColor = (value) => {
-  const { hex, alpha } = toColorParts(value);
-  const alphaF = alpha < 1 ? `, alpha = ${alpha}f` : "";
-  return `argbColor(hex = "${hex}"${alphaF})`;
-};
-
-/** Turns a TS key into a valid Kotlin identifier (camelCase property). */
-const kotlinKey = (k) => {
-  const camel = k
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[^a-zA-Z0-9]+/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w, i) =>
-      i === 0 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1),
-    )
-    .join("");
-  return /^[0-9]/.test(camel) ? "_" + camel : camel;
-};
-
-const kotlinColorCase = (key, lightValue, darkValue = lightValue) =>
-  `        val ${kotlinKey(key)} = EchoColorPair(\n` +
-  `            light = ${kotlinColor(lightValue)},\n` +
-  `            dark = ${kotlinColor(darkValue)},\n` +
-  `        )`;
-
-const kotlinSemantic = Object.keys(lightColors)
-  .map((key) => kotlinColorCase(key, lightColors[key], darkColors[key]))
-  .join("\n");
-
-const kotlinFloatEnum = (name, cases) =>
-  `    object ${name} {\n` +
-  Object.entries(cases)
-    .map(([key, value]) => {
-      const isFloat = typeof value === "number" && value % 1 !== 0;
-      return `        const val ${kotlinKey(key)} = ${isFloat ? `${value}f` : value}\n`;
-    })
-    .join("") +
-  `    }\n`;
-
-const kotlinMotion = Object.entries(duration)
-  .map(([key, value]) => `        const val ${kotlinKey(key)} = ${value}L`)
-  .join("\n");
-
-const kotlin = `// GENERATED by scripts/tokens/gen-tokens.mjs — DO NOT EDIT.
-// Source of truth: packages/shared/token/*.ts. Re-run \`pnpm gen:tokens\`.
-package expo.modules.ekwenative
-
-import android.graphics.Color
-
-/** Parses a "#RRGGBB" hex plus alpha and returns an ARGB int. */
-internal fun argbColor(hex: String, alpha: Float = 1f): Int {
-    val rgb = Color.parseColor(hex)
-    val a = ((alpha * 255).toInt())
-    return (a shl 24) or (rgb and 0x00FFFFFF)
-}
-
-/** A light + dark color pair, resolved against the current night mode. */
-internal data class EchoColorPair(
-    val light: Int,
-    val dark: Int,
-) {
-    fun color(isDark: Boolean): Int = if (isDark) dark else light
-}
-
-/**
- * Shared design tokens for the native Echo share overlays. Mirrors the iOS
- * DesignTokens.swift generated from the same TS source.
- */
-internal object EchoDesignTokens {
-
-    object Semantic {
-${kotlinSemantic}
-    }
-
-${kotlinFloatEnum("Space", spacing)}
-
-${kotlinFloatEnum("Radius", borderRadius)}
-
-${kotlinFloatEnum("IconSize", iconSize)}
-
-${kotlinFloatEnum("TouchTarget", touchTarget)}
-
-    object Motion {
-${kotlinMotion}
-    }
-}
-`;
+await writeFile(SNAPSHOT_FILE, JSON.stringify(snapshot, null, 2) + "\n", "utf8");
+console.log(`Wrote ${SNAPSHOT_FILE} (design tokens snapshot)`);
 
 await mkdir(resolve(__dirname, `../../${KOTLIN_PACKAGE_DIR}`), { recursive: true });
 await writeFile(KOTLIN_OUT_FILE, kotlin, "utf8");

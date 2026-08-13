@@ -101,6 +101,9 @@ export async function transcribeAudio(
       );
 
       if (uploadResult.status === 429) {
+        if (errorCode === "EKWE_QUOTA_EXCEEDED") {
+          return err(EkweError.QUOTA_EXCEEDED);
+        }
         return err(EkweError.RATE_LIMITED);
       }
       if (uploadResult.status === 401) {

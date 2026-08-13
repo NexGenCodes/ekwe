@@ -8,6 +8,7 @@ import { supabase } from "@/services/supabase";
 import { EntryType, HistoryEntry, history$, auth$ } from "@/store";
 import { logger } from "@/utils";
 import { checkIsOnline, subscribeToNetwork } from "@/utils/netInfo";
+import { HISTORY_LOCAL_TTL_DAYS } from "@/constants/retention";
 
 const INITIAL_HISTORY_SIZE = 20;
 const MAX_HISTORY_CACHE = 1000;
@@ -281,26 +282,80 @@ class SyncServiceClass {
     try {
       this.pullError.set(null);
       const lastSyncKey = `last-sync-${userId}`;
-      const lastSync = storage.getString(lastSyncKey);
+      const stored = storage.getString(lastSyncKey);
 
-      let query = supabase
-        .from("history")
-        .select(
-          "id, user_id, source_lang, target_lang, transcript, translation_text, transliteration_text, duration, source_app, provider, created_at, type",
-        )
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false })
-        .limit(200);
-
-      if (lastSync) {
-        query = query.gt("created_at", lastSync);
+      // Composite (created_at, id) cursor. created_at is ISO-8601 and ids are
+      // UUIDs, so lexicographic ordering is consistent. A composite cursor
+      // means rows that share a created_at value are never skipped at a page
+      // boundary (a bare created_at cursor could drop a same-millisecond row).
+      let cursor: { created_at: string; id: string } | null = null;
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as {
+            created_at: string;
+            id: string;
+          };
+          if (parsed?.created_at && parsed?.id) cursor = parsed;
+        } catch {
+          // Legacy value was a bare ISO string (or corrupt): force a full pull.
+          cursor = null;
+        }
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      if (!data || data.length === 0) return;
+      const COLUMNS =
+        "id, user_id, source_lang, target_lang, transcript, translation_text, transliteration_text, duration, source_app, provider, created_at, type";
 
-      for (const row of data) {
+      type CloudRow = {
+        id: string;
+        user_id: string;
+        created_at: string;
+        source_lang: string;
+        target_lang: string;
+        transcript: string;
+        translation_text: string | null;
+        transliteration_text: string | null;
+        duration: number;
+        source_app: string | null;
+        provider: string | null;
+        type: EntryType | null;
+      };
+
+      // Pull in ascending (created_at, id) order, bounded by the cursor, one
+      // page at a time. Without pagination a user with >200 cloud rows would
+      // only ever sync the 200 newest: the old code set the cursor to the
+      // newest row and later pulls asked for rows newer than that, so older
+      // rows were silently never fetched on a fresh device.
+      const rows: CloudRow[] = [];
+
+      for (;;) {
+        let query = supabase
+          .from("history")
+          .select(COLUMNS)
+          .eq("user_id", userId)
+          .order("created_at", { ascending: true })
+          .limit(200);
+
+        if (cursor) {
+          query = query.or(
+            `created_at.gt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.gt.${cursor.id})`,
+          );
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+
+        rows.push(...(data as CloudRow[]));
+
+        const newest = data[data.length - 1];
+        cursor = { created_at: newest.created_at, id: newest.id };
+
+        if (data.length < 200) break;
+      }
+
+      if (rows.length === 0) return;
+
+      for (const row of rows) {
         Db.insertHistory({
           id: row.id,
           user_id: row.user_id,
@@ -333,12 +388,15 @@ class SyncServiceClass {
         }
       }
 
-      if (data.length > 0) {
-        storage.set(lastSyncKey, data[0].created_at);
-      }
+      // Persist the newest synced row as the incremental cursor for next time.
+      const newest = rows[rows.length - 1];
+      storage.set(
+        lastSyncKey,
+        JSON.stringify({ created_at: newest.created_at, id: newest.id }),
+      );
 
       this.trimHistoryWindow();
-      logger.info("[Sync] Pulled", data.length, "entries from cloud");
+      logger.info("[Sync] Pulled", rows.length, "entries from cloud");
     } catch (err) {
       // Surface the failure so the history screen can show a sync banner
       // instead of silently degrading (e.g. a missing remote column).
@@ -404,10 +462,10 @@ class SyncServiceClass {
 
     // Clean up BEFORE seeding the observable so the UI never shows rows that
     // no longer exist on disk.
-    const expired = Db.cleanupExpiredHistory(7);
+    const expired = Db.cleanupExpiredHistory(HISTORY_LOCAL_TTL_DAYS);
     if (expired > 0) {
       logger.info("[Sync] Cleaned up", expired, "expired local history rows");
-      this.pruneObservableExpired(7);
+      this.pruneObservableExpired(HISTORY_LOCAL_TTL_DAYS);
     }
     const currentUserId = auth$.user.get()?.id;
     this.loadInitialHistory(currentUserId);

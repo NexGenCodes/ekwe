@@ -149,6 +149,8 @@ export function mapWorkerError(
     case "EKWE_RATE_LIMITED":
     case "EKWE_RATE_LIMIT":
       return EkweError.RATE_LIMITED;
+    case "EKWE_QUOTA_EXCEEDED":
+      return EkweError.QUOTA_EXCEEDED;
     case "EKWE_TRANSLATION_FAIL":
       return EkweError.TRANSLATION_FAIL;
     case "EKWE_SERVER_ERROR":

@@ -78,6 +78,12 @@ export async function translateText(
       }
 
       if (response.status === 429) {
+        // The worker returns 429 for BOTH the cooldown gate (EKWE_RATE_LIMIT)
+        // and the daily quota (EKWE_QUOTA_EXCEEDED) — surface them distinctly
+        // so the UI can explain "limit reached" instead of "busy, retry".
+        if (errorCode === "EKWE_QUOTA_EXCEEDED") {
+          return err(EkweError.QUOTA_EXCEEDED);
+        }
         return err(EkweError.RATE_LIMITED);
       }
       return err(mapWorkerError(errorCode, EkweError.TRANSLATION_FAIL));

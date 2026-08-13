@@ -93,12 +93,12 @@ async function setProStatus(
   identifier: { email?: string; userId?: string },
   isPro: boolean,
   expiresAt?: string | null,
-): Promise<void> {
+): Promise<boolean> {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
     logger.error(
       "[webhook] Missing Supabase credentials to update subscription",
     );
-    return;
+    return false;
   }
 
   try {
@@ -122,15 +122,18 @@ async function setProStatus(
       logger.error(
         `[webhook] Failed to update pro status. Response: ${errorText}`,
       );
-    } else {
-      logger.info(
-        `[webhook] Successfully set pro status to ${isPro} for ${identifier.email || identifier.userId}`,
-      );
+      return false;
     }
+
+    logger.info(
+      `[webhook] Successfully set pro status to ${isPro} for ${identifier.email || identifier.userId}`,
+    );
+    return true;
   } catch (err) {
     logger.error(
       `[webhook] Error updating pro status: ${err instanceof Error ? err.message : String(err)}`,
     );
+    return false;
   }
 }
 
@@ -139,9 +142,9 @@ async function setSubscriptionStatus(
   emailOrUserId: string,
   isPro: boolean,
   expiresAt?: string | null,
-): Promise<void> {
+): Promise<boolean> {
   const isEmail = emailOrUserId.includes("@");
-  await setProStatus(
+  return setProStatus(
     env,
     isEmail ? { email: emailOrUserId } : { userId: emailOrUserId },
     isPro,
@@ -149,10 +152,21 @@ async function setSubscriptionStatus(
   );
 }
 
+/**
+ * Result of a webhook event processor. `fullyApplied` is true when every
+ * state change the event requires was applied (including any Supabase
+ * set_pro_status call). The idempotency key is only stored when true, so a
+ * failed Pro grant (e.g. Supabase down) can be retried on re-delivery.
+ */
+interface ProcessorResult {
+  response: Response;
+  fullyApplied: boolean;
+}
+
 async function processPaystackEvent(
   event: Record<string, unknown>,
   env: Env,
-): Promise<Response> {
+): Promise<ProcessorResult> {
   const eventType = event.event as string;
   const data = event.data as Record<string, unknown>;
 
@@ -168,15 +182,21 @@ async function processPaystackEvent(
         logger.warn(
           "[webhook:paystack] Charge validation failed or missing validated user_id in charge.success",
         );
-        return Response.json({ received: true, action: "skipped" });
+        return {
+          response: Response.json({ received: true, action: "skipped" }),
+          fullyApplied: true,
+        };
       }
 
-      await setSubscriptionStatus(env, validatedUserId, true);
+      const applied = await setSubscriptionStatus(env, validatedUserId, true);
 
       logger.info(
         `[webhook:paystack] charge.success processed for ${validatedUserId} (validated user_id)`,
       );
-      return Response.json({ received: true, action: "activated" });
+      return {
+        response: Response.json({ received: true, action: "activated" }),
+        fullyApplied: applied,
+      };
     }
 
     case "subscription.disable":
@@ -184,22 +204,32 @@ async function processPaystackEvent(
       const email = (data?.customer as Record<string, unknown>)
         ?.email as string;
       if (email) {
-        await setSubscriptionStatus(env, email, false);
+        const applied = await setSubscriptionStatus(env, email, false);
         logger.info(`[webhook:paystack] Subscription ended for ${email}`);
+        return {
+          response: Response.json({ received: true, action: "deactivated" }),
+          fullyApplied: applied,
+        };
       }
-      return Response.json({ received: true, action: "deactivated" });
+      return {
+        response: Response.json({ received: true, action: "deactivated" }),
+        fullyApplied: true,
+      };
     }
 
     default:
       logger.info(`[webhook:paystack] Unhandled event: ${eventType}`);
-      return Response.json({ received: true, action: "ignored" });
+      return {
+        response: Response.json({ received: true, action: "ignored" }),
+        fullyApplied: true,
+      };
   }
 }
 
 async function processFlutterwaveEvent(
   event: Record<string, unknown>,
   env: Env,
-): Promise<Response> {
+): Promise<ProcessorResult> {
   const eventType = event.event as string;
   const data = event.data as Record<string, unknown>;
 
@@ -212,7 +242,10 @@ async function processFlutterwaveEvent(
       const status = data?.status as string;
       if (status !== "successful") {
         logger.warn(`[webhook:flutterwave] Non-successful charge: ${status}`);
-        return Response.json({ received: true, action: "skipped" });
+        return {
+          response: Response.json({ received: true, action: "skipped" }),
+          fullyApplied: true,
+        };
       }
 
       const validatedUserId = await validateProCharge(env, data, "flutterwave");
@@ -221,20 +254,29 @@ async function processFlutterwaveEvent(
         logger.warn(
           "[webhook:flutterwave] Charge validation failed or missing validated user_id",
         );
-        return Response.json({ received: true, action: "skipped" });
+        return {
+          response: Response.json({ received: true, action: "skipped" }),
+          fullyApplied: true,
+        };
       }
 
-      await setSubscriptionStatus(env, validatedUserId, true);
+      const applied = await setSubscriptionStatus(env, validatedUserId, true);
 
       logger.info(
         `[webhook:flutterwave] Payment successful for ${validatedUserId} (validated user_id)`,
       );
-      return Response.json({ received: true, action: "activated" });
+      return {
+        response: Response.json({ received: true, action: "activated" }),
+        fullyApplied: applied,
+      };
     }
 
     default:
       logger.info(`[webhook:flutterwave] Unhandled event: ${eventType}`);
-      return Response.json({ received: true, action: "ignored" });
+      return {
+        response: Response.json({ received: true, action: "ignored" }),
+        fullyApplied: true,
+      };
   }
 }
 
@@ -265,7 +307,7 @@ function isProPurchase(eventData: Record<string, unknown>): boolean {
 async function processRevenueCatEvent(
   event: Record<string, unknown>,
   env: Env,
-): Promise<Response> {
+): Promise<ProcessorResult> {
   const eventData = event.event as Record<string, unknown> | undefined;
   const eventType = eventData?.type as string;
 
@@ -278,16 +320,23 @@ async function processRevenueCatEvent(
     "NON_RENEWING_PURCHASE",
   ]);
 
-  const deactivationEvents = new Set([
-    "EXPIRATION",
-    "CANCELLATION",
-    "BILLING_ISSUE",
-  ]);
+  // Only EXPIRATION revokes access. RevenueCat grants paid-through access on
+  // CANCELLATION and a grace period on BILLING_ISSUE, so deactivating on those
+  // would strip Pro while the user is still entitled to it. The stored
+  // expires_at already enforces the true end date in the access-token hook.
+  const deactivationEvents = new Set(["EXPIRATION"]);
+
+  // Paid-through / grace events: access continues, but the stored expiry is
+  // refreshed so the hook still cuts access at the true (post-grace) end date.
+  const accessEvents = new Set(["CANCELLATION", "BILLING_ISSUE"]);
 
   const appUserId = eventData?.app_user_id as string;
   if (!eventData || !appUserId) {
     logger.warn("[webhook:revenuecat] Missing event data or app_user_id");
-    return Response.json({ received: true, action: "skipped" });
+    return {
+      response: Response.json({ received: true, action: "skipped" }),
+      fullyApplied: true,
+    };
   }
 
   // RevenueCat reports times in ms since epoch; convert to an ISO timestamp
@@ -304,32 +353,78 @@ async function processRevenueCatEvent(
         "[webhook:revenuecat] Activation event for non-Pro product; refusing to grant",
         { productId: eventData.product_id, eventType },
       );
-      return Response.json({ received: true, action: "skipped" });
+      return {
+        response: Response.json({ received: true, action: "skipped" }),
+        fullyApplied: true,
+      };
     }
-    await setSubscriptionStatus(env, appUserId, true, expiresAt);
+    const applied = await setSubscriptionStatus(env, appUserId, true, expiresAt);
     logger.info(`[webhook:revenuecat] Subscription activated for ${appUserId}`);
-    return Response.json({ received: true, action: "activated" });
+    return {
+      response: Response.json({ received: true, action: "activated" }),
+      fullyApplied: applied,
+    };
+  }
+
+  if (accessEvents.has(eventType)) {
+    if (!isProPurchase(eventData)) {
+      logger.warn(
+        "[webhook:revenuecat] Access event for non-Pro product; ignoring",
+        { productId: eventData.product_id, eventType },
+      );
+      return {
+        response: Response.json({ received: true, action: "skipped" }),
+        fullyApplied: true,
+      };
+    }
+    // Keep the entitlement active through the paid-through/grace period; only
+    // refresh the stored expiry so the access-token hook still enforces the
+    // real end date.
+    const applied = expiresAt
+      ? await setSubscriptionStatus(env, appUserId, true, expiresAt)
+      : true;
+    logger.info(
+      `[webhook:revenuecat] Subscription retained (${eventType}) for ${appUserId}`,
+    );
+    return {
+      response: Response.json({ received: true, action: "retained" }),
+      fullyApplied: applied,
+    };
   }
 
   if (deactivationEvents.has(eventType)) {
-    await setSubscriptionStatus(env, appUserId, false, expiresAt);
+    const applied = await setSubscriptionStatus(
+      env,
+      appUserId,
+      false,
+      expiresAt,
+    );
     logger.info(`[webhook:revenuecat] Subscription ended for ${appUserId}`);
-    return Response.json({ received: true, action: "deactivated" });
+    return {
+      response: Response.json({ received: true, action: "deactivated" }),
+      fullyApplied: applied,
+    };
   }
 
   logger.info(`[webhook:revenuecat] Unhandled event: ${eventType}`);
-  return Response.json({ received: true, action: "ignored" });
+  return {
+    response: Response.json({ received: true, action: "ignored" }),
+    fullyApplied: true,
+  };
 }
 
 const PROCESSORS: Record<
   WebhookProvider,
-  (event: Record<string, unknown>, env: Env) => Promise<Response>
+  (event: Record<string, unknown>, env: Env) => Promise<ProcessorResult>
 > = {
   paystack: processPaystackEvent,
   flutterwave: processFlutterwaveEvent,
   revenuecat: processRevenueCatEvent,
   unknown: () =>
-    Promise.resolve(Response.json({ error: "UNKNOWN_PROVIDER" }, { status: 400 })),
+    Promise.resolve({
+      response: Response.json({ error: "UNKNOWN_PROVIDER" }, { status: 400 }),
+      fullyApplied: true,
+    }),
 };
 
 export async function handleWebhook(
@@ -399,10 +494,12 @@ export async function handleWebhook(
   }
 
   const processor = PROCESSORS[verification.provider];
-  const response = await processor(event, env);
+  const { response, fullyApplied } = await processor(event, env);
 
-  // Store idempotency key after successful processing
-  if (env.EKWE_KV && response.ok) {
+  // Store the idempotency key only after the event was fully applied. If a Pro
+  // status update failed (e.g. Supabase down), skip the store so a re-delivery
+  // of the same event is not deduped and can retry the grant.
+  if (env.EKWE_KV && response.ok && fullyApplied) {
     ctx.waitUntil(
       env.EKWE_KV.put(idempotencyKey, "1", {
         expirationTtl: IDEMPOTENCY_TTL,

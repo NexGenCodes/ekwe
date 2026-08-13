@@ -100,10 +100,14 @@ static std::vector<float> g_last_waveform;
         g_capture = nullptr;
         g_opusPacketBlock = nil;
         g_vadSilenceBlock = nil;
+        // Tear down the controller while holding the mutex: stop(), the final
+        // waveform read, and the delete all touch the object no other thread can
+        // reach now that g_capture was nulled above. This keeps g_last_waveform
+        // writes fully synchronized with the lastWaveform() reader.
+        capture->stop();
+        g_last_waveform = capture->get_waveform(60);
+        delete capture;
     }
-    capture->stop();
-    g_last_waveform = capture->get_waveform(60);
-    delete capture;
     return YES;
 }
 

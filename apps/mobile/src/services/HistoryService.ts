@@ -7,6 +7,7 @@ import { File, Paths } from "expo-file-system";
 import { EntryType } from "@/store";
 import { isIOS } from "@/utils";
 import { logger } from "@/utils";
+import { HISTORY_LOCAL_TTL_DAYS } from "@/constants/retention";
 
 export interface HistoryEntryPayload {
   sourceLang: string;
@@ -62,7 +63,7 @@ export const HistoryService = {
       if (now - lastCleanup < 86_400_000) return;
       storage.set(CLEANUP_KEY, String(now));
 
-      const ttlDays = 7;
+      const ttlDays = HISTORY_LOCAL_TTL_DAYS;
       const deletedCount = Db.cleanupExpiredHistory(ttlDays);
 
       if (deletedCount > 0) {
