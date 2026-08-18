@@ -157,13 +157,13 @@ class InMemoryD1 {
 // ─── Mock Env Factory ──────────────────────────────────────────────
 
 export function mockEnv(overrides: Partial<Env> = {}): Env {
-  const store = new Map<string, string>();
+  const store = new Map<string, string | Uint8Array>();
   const kv = {
     get: vi.fn(
       async (key: string, opts?: { type?: string }) => {
         const raw = store.get(key);
         if (raw == null) return null;
-        if (opts?.type === "arrayBuffer" && raw instanceof Uint8Array) {
+        if (opts?.type === "arrayBuffer" && typeof raw !== "string") {
           return raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
         }
         return raw;
@@ -173,6 +173,8 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
       async (key: string, value: string | ArrayBuffer | Uint8Array, opts?: { expirationTtl?: number }) => {
         if (value instanceof ArrayBuffer) {
           store.set(key, new Uint8Array(value));
+        } else if (value instanceof Uint8Array) {
+          store.set(key, value);
         } else {
           store.set(key, value);
         }

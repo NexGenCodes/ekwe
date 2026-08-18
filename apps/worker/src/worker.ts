@@ -29,7 +29,6 @@ import { handleWebhook } from "./routes/webhook";
 import { handleFlutterwaveWebhook } from "./routes/flutterwave";
 import { handleCheckout, handleBillingFlags } from "./routes/billing";
 import { handleSendOtp } from "./routes/otp";
-import { handleVoices } from "./routes/voices";
 import { handleRegisterPushToken } from "./routes/push-tokens";
 import { handlePushNotify } from "./routes/push-notify";
 import {
@@ -130,8 +129,6 @@ const ttsHandler: AuthedRouteHandler = (rctx) => {
   return handleTts(rctx.request, rctx.env, rctx.auth.tier, rctx.request.signal);
 };
 
-const voicesHandler: RouteHandler = (rctx) => handleVoices(rctx.request, rctx.ctx);
-
 const registerPushTokenHandler: RouteHandler = (rctx) =>
   handleRegisterPushToken(rctx.request, rctx.env);
 
@@ -193,12 +190,6 @@ const routes: AppRoute[] = [
     path: "/tts",
     auth: "jwt",
     handler: ttsHandler,
-  },
-  {
-    method: "GET",
-    path: "/voices",
-    auth: "none",
-    handler: voicesHandler,
   },
   {
     method: "POST",
