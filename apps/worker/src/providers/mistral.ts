@@ -1,12 +1,13 @@
-import { Env, TranslateResult } from "../types";
+import { CLIENT_ABORTED, Env, TranslateResult } from "../core/types";
 import { rotateKeys } from "../utils/keys";
-import { buildTranslatePrompt } from "../utils/prompts";
+import { buildTranslatePrompt, parseTranslateOutput } from "../utils/prompts";
 import {
   fetchWithTimeout,
   getClientHeaders,
+  logProviderError,
   TIMEOUT_FAST,
 } from "../utils/fetch";
-import { logger } from "../logger";
+import { logger } from "../core/logger";
 
 const MISTRAL_CHAT = "https://api.mistral.ai/v1/chat/completions";
 
@@ -20,54 +21,73 @@ export async function translate(
   sourceLang: string | undefined,
   env: Env,
   signal: AbortSignal,
+  transliteration: boolean = false,
 ): Promise<TranslateResult | null> {
-  const res = await rotateKeys(
-    env,
-    "MISTRAL_KEY_",
-    (key) =>
-      fetchWithTimeout(
-        MISTRAL_CHAT,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${key}`,
-            "Content-Type": "application/json",
-            ...getClientHeaders(),
-          },
-          body: JSON.stringify({
-            model: "mistral-small-2603",
-            messages: [
-              {
-                role: "system",
-                content: buildTranslatePrompt(targetLang, sourceLang),
-              },
-              { role: "user", content: text },
-            ],
-            temperature: 0,
-          }),
-        },
-        TIMEOUT_FAST,
-        signal,
-      ),
-    signal,
-  );
+  logger.info("[mistral] Requesting translation", { targetLang, sourceLang });
 
-  if (!res?.ok) {
-    const errText = await res?.text().catch(() => "Unreadable error body");
-    logger.error("[mistral] Translate HTTP error", {
-      status: res?.status,
-      body: errText,
+  try {
+    const res = await rotateKeys(
+      env,
+      "MISTRAL_KEY_",
+      (key) =>
+        fetchWithTimeout(
+          MISTRAL_CHAT,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${key}`,
+              "Content-Type": "application/json",
+              ...getClientHeaders(),
+            },
+            body: JSON.stringify({
+              model: "mistral-small-2603",
+              messages: [
+                {
+                  role: "system",
+                  content: buildTranslatePrompt(
+                    targetLang,
+                    sourceLang,
+                    transliteration,
+                  ),
+                },
+                { role: "user", content: text },
+              ],
+              temperature: 0,
+            }),
+          },
+          TIMEOUT_FAST,
+          signal,
+        ),
+      signal,
+    );
+
+    if (!res?.ok) {
+      await logProviderError("mistral translate", res);
+      return null;
+    }
+
+    const data = await res.json<{
+      choices?: Array<{ message?: { content?: string } }>;
+    }>();
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) return null;
+
+    const { translation, transliteration: romanized } = parseTranslateOutput(
+      content,
+      transliteration,
+    );
+    return {
+      translation,
+      ...(romanized ? { transliteration: romanized } : {}),
+      provider: "mistral",
+    };
+  } catch (e) {
+    if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
+    logger.error("[mistral] Translate exception", {
+      error: e instanceof Error ? e.message : String(e),
     });
     return null;
   }
-
-  const data = await res.json<{
-    choices?: Array<{ message?: { content?: string } }>;
-  }>();
-  const content = data.choices?.[0]?.message?.content?.trim();
-  if (!content) return null;
-
-  return { translation: content, provider: "mistral" };
 }
 
-export { ALL_LANGUAGES as supportedLanguages } from "../languages";
+export { ALL_LANGUAGES as supportedLanguages } from "../services/languages";

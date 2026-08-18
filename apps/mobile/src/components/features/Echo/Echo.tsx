@@ -1,7 +1,13 @@
 import X from "lucide-react-native/icons/x";
 import AlertCircle from "lucide-react-native/icons/circle-alert";
 import RefreshCw from "lucide-react-native/icons/refresh-cw";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { DimensionValue } from "react-native";
 
 import { EchoPreviewStep } from "./EchoPreviewStep";
@@ -97,11 +103,10 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     step === "TranscribeResult" ||
     (step === "FullResult" && resultTab === "Original");
 
-  const player = useAudioWaveformPlayback(
-    audioUri || null,
-    convertedWaveform,
-    { active: playerActive, durationMs: convertedDurationMs },
-  );
+  const player = useAudioWaveformPlayback(audioUri || null, convertedWaveform, {
+    active: playerActive,
+    durationMs: convertedDurationMs,
+  });
 
   // Keep the flow's release hook pointed at the live player controller.
   useEffect(() => {
@@ -376,11 +381,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   const isProcessing = step === "Transcribing" || step === "Translating";
 
   return (
-    <Sheet
-      visible
-      onClose={handleClose}
-      maxHeight={STEP_MAX_HEIGHTS[step]}
-    >
+    <Sheet visible onClose={handleClose} maxHeight={STEP_MAX_HEIGHTS[step]}>
       <Box
         style={{
           paddingHorizontal: spacing.lg,
@@ -400,53 +401,53 @@ export const Echo = (props: EchoProps): React.ReactElement => {
                 marginTop: spacing.sm,
               }}
             >
-          <Box
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: spacing.sm,
-            }}
-          >
-            <Box
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: borderRadius.sm,
-                backgroundColor: color.brand,
-              }}
-            />
-            <Text variant="bodySmall" style={{ color: color.muted }}>
-              ECHO
-            </Text>
-          </Box>
+              <Box
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: spacing.sm,
+                }}
+              >
+                <Box
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: borderRadius.sm,
+                    backgroundColor: color.brand,
+                  }}
+                />
+                <Text variant="bodySmall" style={{ color: color.muted }}>
+                  ECHO
+                </Text>
+              </Box>
 
-          <Pressable
-            feedback="opacity"
-            onPress={handleClose}
-            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-            accessibilityLabel="Close Echo"
-          >
-            <IconContainer size="sm" variant="muted">
-              <X size={16} color={color.foreground} />
-            </IconContainer>
-          </Pressable>
+              <Pressable
+                feedback="opacity"
+                onPress={handleClose}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                accessibilityLabel="Close Echo"
+              >
+                <IconContainer size="sm" variant="muted">
+                  <X size={16} color={color.foreground} />
+                </IconContainer>
+              </Pressable>
 
-          {stepMeta.showBadge && (
-            <Box
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                alignItems: "center",
-                justifyContent: "center",
-                pointerEvents: "none",
-              }}
-            >
-              <Badge label={formatSourceApp(sourceApp)} variant="primary" />
-            </Box>
-          )}
+              {stepMeta.showBadge && (
+                <Box
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    pointerEvents: "none",
+                  }}
+                >
+                  <Badge label={formatSourceApp(sourceApp)} variant="primary" />
+                </Box>
+              )}
             </Box>
           </>
         )}

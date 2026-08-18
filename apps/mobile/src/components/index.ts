@@ -31,6 +31,7 @@ export * from "./EmptyState";
 export * from "./GradientMesh";
 export * from "./SkeletonBox";
 export * from "./IconButton";
+export * from "./Transliteration";
 export * from "./ToastContainer";
 export * from "./Disclaimer";
 export * from "./OtpInput";

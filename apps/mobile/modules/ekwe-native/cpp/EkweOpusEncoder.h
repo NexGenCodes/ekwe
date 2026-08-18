@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <vector>
 
 struct OpusEncoder;
@@ -9,7 +10,15 @@ namespace ekwe {
 
 class OpusStreamEncoder {
 public:
-    OpusStreamEncoder(uint32_t sample_rate, uint16_t channels, int complexity = 3);
+    // enable_fec/packet_loss_perc: optional in-band FEC for lossy transports
+    // (e.g. RTP/UDP). Off by default — the live path here streams over TCP
+    // WebSocket with a decoder that never passes the FEC flag, so enabling it
+    // would only cost bitrate with nothing to recover.
+    OpusStreamEncoder(uint32_t sample_rate,
+                      uint16_t channels,
+                      int complexity = 10,
+                      bool enable_fec = false,
+                      int packet_loss_perc = 0);
     ~OpusStreamEncoder();
 
     bool is_ok() const { return ok_; }

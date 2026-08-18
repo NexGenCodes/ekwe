@@ -1,4 +1,5 @@
-import { CLIENT_ABORTED } from "../types";
+import { CLIENT_ABORTED } from "../core/types";
+import { logger } from "../core/logger";
 
 export const TIMEOUT_FAST = 15_000;
 export const TIMEOUT_SLOW = 25_000;
@@ -68,7 +69,10 @@ export async function fetchWithIdleTimeout(
 
   try {
     armIdle();
-    const res = await fetch(url.toString(), { ...init, signal: controller.signal });
+    const res = await fetch(url.toString(), {
+      ...init,
+      signal: controller.signal,
+    });
     disarmIdle();
 
     if (!res.body) {
@@ -139,20 +143,31 @@ export function getUserAgent(): string {
   return USER_AGENT;
 }
 
-export function getClientHeaders(request?: Request): Record<string, string> {
-  const headers: Record<string, string> = {
+export function getClientHeaders(): Record<string, string> {
+  return {
     "Accept-Language": "en-US,en;q=0.9",
   };
+}
 
-  if (request) {
-    // Trust only Cloudflare's CF-Connecting-IP (set by the edge). A client can
-    // freely spoof X-Forwarded-For / X-Real-IP, and blindly echoing them lets a
-    // caller chain arbitrary IPs through to the provider. Rebuilding XFF from
-    // the edge-set header also keeps provider-side rate limiting keyed on the
-    // real client IP instead of a client-controlled value.
-    const clientIp = request.headers.get("CF-Connecting-IP");
-    if (clientIp) headers["X-Forwarded-For"] = clientIp;
-  }
+/** Reads a failed response's body as a short string, never throwing. */
+export async function readErrorBody(
+  res: Response | null | undefined,
+): Promise<string> {
+  if (!res) return "No response";
+  const text = await res.text().catch(() => "No body");
+  return text || "No body";
+}
 
-  return headers;
+/**
+ * Logs a provider's failed HTTP response (status + body) and returns the
+ * body text. Standardizes the read-and-log block each provider used to
+ * inline. `res` is optional because some callers hit non-response failures.
+ */
+export async function logProviderError(
+  label: string,
+  res: Response | null | undefined,
+): Promise<string> {
+  const body = await readErrorBody(res);
+  logger.error(`[${label}] HTTP error`, { status: res?.status, body });
+  return body;
 }

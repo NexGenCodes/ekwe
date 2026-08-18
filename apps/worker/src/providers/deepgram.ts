@@ -1,9 +1,10 @@
-import { Env, TranscribeResult } from "../types";
+import { Env, TranscribeResult, TtsAttempt } from "../core/types";
 import { rotateKeys } from "../utils/keys";
 import { isHallucination } from "../utils/prompts";
-import { fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
+import { fetchWithTimeout, logProviderError, TIMEOUT_FAST } from "../utils/fetch";
+import { runAiTtsRaw } from "../utils/ai";
 import { rotateWsKeys, createStreamInterceptor } from "../utils/websocket";
-import { logger } from "../logger";
+import { logger } from "../core/logger";
 
 const DEEPGRAM_URL = "https://api.deepgram.com/v1/listen";
 
@@ -49,12 +50,7 @@ export async function transcribe(
     if (res?.status === 402 || res?.status === 403) {
       logger.error("[CREDIT_EXHAUSTED] Deepgram key requires manual rotation!");
     }
-    const errText =
-      (await res?.text().catch(() => "No body")) || "Unknown fetch error";
-    logger.error("[deepgram] HTTP error", {
-      status: res?.status,
-      body: errText,
-    });
+    await logProviderError("deepgram transcribe", res);
     return null;
   }
 
@@ -86,7 +82,58 @@ interface DeepgramResponse {
   metadata?: { duration?: number };
 }
 
-export { DEEPGRAM_LANGUAGES as supportedLanguages } from "../languages";
+export { DEEPGRAM_LANGUAGES as supportedLanguages } from "../services/languages";
+
+// ─── Text-to-Speech (Aura models) ─────────────────────────────────
+// Aura 1/2 are Deepgram voices. They're served through the zero-key Workers
+// AI binding (as MP3), so `/tts` uses `env.AI.run` rather than the Deepgram
+// REST API and needs no DEEPGRAM_KEY_*.
+
+const AURA_MODELS = {
+  "aura-2-en": "@cf/deepgram/aura-2-en",
+  "aura-2-es": "@cf/deepgram/aura-2-es",
+  "aura-1": "@cf/deepgram/aura-1",
+} as const;
+
+async function runSpeechModel(
+  model: (typeof AURA_MODELS)[keyof typeof AURA_MODELS],
+  input: Record<string, unknown>,
+  provider: string,
+  env: Env,
+): Promise<TtsAttempt> {
+  return runAiTtsRaw(env, model, input, provider);
+}
+
+/** Aura 2 (en/es) — higher-fidelity MP3 voices. */
+export function aura2(
+  text: string,
+  lang: "en" | "es",
+  env: Env,
+  speaker?: string,
+): Promise<TtsAttempt> {
+  const model =
+    lang === "es" ? AURA_MODELS["aura-2-es"] : AURA_MODELS["aura-2-en"];
+  return runSpeechModel(
+    model,
+    { text, speaker: speaker ?? env.TTS_AURA2_SPEAKER ?? "luna" },
+    "aura2",
+    env,
+  );
+}
+
+/** Aura 1 (en) — fallback MP3 voice. */
+export function aura1(
+  text: string,
+  env: Env,
+  speaker?: string,
+): Promise<TtsAttempt> {
+  return runSpeechModel(
+    AURA_MODELS["aura-1"],
+    { text, speaker: speaker ?? "angus" },
+    "aura1",
+    env,
+  );
+}
 
 /**
  * Handles a real-time streaming session via Deepgram WebSocket.

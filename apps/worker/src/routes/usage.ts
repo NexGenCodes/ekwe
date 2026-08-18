@@ -1,5 +1,6 @@
-import { Env, Tier } from "../types";
-import { fetchUsageSnapshot } from "../utils/usage";
+import { WORKER_ERROR_CODES } from "@ekwe/shared";
+import { Env, Tier } from "../core/types";
+import { fetchUsageSnapshot } from "../services/usage";
 
 /**
  * GET /usage — read-only snapshot of the caller's daily usage.
@@ -16,7 +17,10 @@ export async function handleUsage(
   const snapshot = await fetchUsageSnapshot(env, userId, tier);
   if (!snapshot) {
     return Response.json(
-      { error: "USAGE_UNAVAILABLE", message: "Usage data is unavailable." },
+      {
+        error: WORKER_ERROR_CODES.USAGE_UNAVAILABLE,
+        message: "Usage data is unavailable.",
+      },
       { status: 503 },
     );
   }

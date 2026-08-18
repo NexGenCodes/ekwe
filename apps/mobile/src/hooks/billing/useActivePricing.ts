@@ -1,11 +1,11 @@
-import { useSelector } from "@legendapp/state/react";
 import { useMemo } from "react";
 
+import { useQuery } from "@tanstack/react-query";
+
 import { DISPLAY_PRICING } from "@/constants/billing";
-import { getCurrency } from "@ekwe/shared/currencies";
-import { computeSavingPercent } from "@ekwe/shared/money";
-import { usePricingQuery } from "@/hooks/queries/usePricingQuery";
-import { settings$ } from "@/store";
+import { detectDeviceCurrency } from "@/constants/currency";
+import { getCurrencySymbol } from "@ekwe/shared/money";
+import { fetchWorkerPricing } from "@/services/pricing";
 
 export interface ActivePricing {
   currency: string;
@@ -18,41 +18,42 @@ export interface ActivePricing {
 
 export interface ActivePricingResult {
   pricing: ActivePricing;
-  /** True while the server pricing query is in flight and no data is cached. */
+  /** True while the pricing query is in flight and no data is cached. */
   isPending: boolean;
 }
 
 /**
- * Single source of truth for the price the billing screen shows.
+ * Single source of truth for the price the billing screen shows, matching the
+ * amount Flutterwave will actually charge.
  *
- * Prefers server pricing for the active currency and falls back to the
- * DISPLAY_PRICING table when the query has no data yet (cold start or
- * offline). React Query dedupes the fetch, so calling this hook from
- * several components is free and keeps the price math in one place.
+ * Fetches the worker's public /pricing?currency=<detected> endpoint. The
+ * worker prices from subscription_config (USD base + discounts × FX), which
+ * is exactly what /billing/checkout charges.
+ *
+ * Falls back to DISPLAY_PRICING.USD when the source is unavailable.
  */
 export function useActivePricing(): ActivePricingResult {
-  const currency = useSelector(() => settings$.currency.get());
-  const { data: pricingData, isPending } = usePricingQuery();
+  const { data: workerPricing, isPending } = useQuery({
+    queryKey: ["workerPricing", detectDeviceCurrency()],
+    queryFn: () => fetchWorkerPricing(detectDeviceCurrency()),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
 
   const pricing = useMemo<ActivePricing>(() => {
-    const serverPricing =
-      pricingData?.pricing?.[currency] ?? pricingData?.pricing?.USD;
-    if (serverPricing) {
-      const cur = serverPricing.monthly.currency;
-      const symbol = getCurrency(cur)?.symbol ?? "$";
-      const monthlyAmount = serverPricing.monthly.amount;
-      const annualAmount = serverPricing.annual.amount;
+    if (workerPricing) {
+      const symbol = getCurrencySymbol(workerPricing.currency);
       return {
-        currency: cur,
+        currency: workerPricing.currency,
         symbol,
-        monthlyAmount,
-        annualAmount,
-        annualMonthlyCost: +(annualAmount / 12).toFixed(2),
-        annualSavingPercent: computeSavingPercent(monthlyAmount, annualAmount),
+        monthlyAmount: workerPricing.price,
+        annualAmount: workerPricing.annualPrice,
+        annualMonthlyCost: +(workerPricing.annualPrice / 12).toFixed(2),
+        annualSavingPercent: workerPricing.annualDiscountPercent,
       };
     }
 
-    const fallback = DISPLAY_PRICING[currency] || DISPLAY_PRICING.USD;
+    const fallback = DISPLAY_PRICING.USD;
     return {
       currency: fallback.monthly.currency,
       symbol: fallback.monthly.symbol,
@@ -61,7 +62,7 @@ export function useActivePricing(): ActivePricingResult {
       annualMonthlyCost: fallback.annualMonthlyCost,
       annualSavingPercent: fallback.annualSavingPercent,
     };
-  }, [currency, pricingData]);
+  }, [workerPricing]);
 
   return { pricing, isPending };
 }

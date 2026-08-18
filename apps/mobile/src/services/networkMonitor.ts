@@ -56,9 +56,12 @@ export function initNetworkMonitoring(): void {
   if (!focusWired && Platform.OS !== "web") {
     focusWired = true;
     focusManager.setEventListener((handleFocus) => {
-      const subscription = AppState.addEventListener("change", (state): void => {
-        handleFocus(state === "active");
-      });
+      const subscription = AppState.addEventListener(
+        "change",
+        (state): void => {
+          handleFocus(state === "active");
+        },
+      );
       return (): void => subscription.remove();
     });
   }

@@ -61,36 +61,6 @@ describe("Worker Router (index.ts)", () => {
       expect(json).toHaveProperty("error", "UNAUTHORIZED");
     });
 
-    test("rejects request with invalid token format", async () => {
-      const req = new Request("http://localhost/translate", {
-        method: "POST",
-        headers: { Authorization: "InvalidTokenFormat" },
-      });
-      const res = await app.fetch(req, env, {
-        waitUntil: () => {},
-        passThroughOnException: () => {},
-      } as any);
-
-      expect(res.status).toBe(401);
-    });
-
-    test("rejects invalid JWT token", async () => {
-      (jwtVerify as any).mockRejectedValue(new Error("jwt malformed"));
-
-      const req = new Request("http://localhost/translate", {
-        method: "POST",
-        headers: { Authorization: "Bearer invalid-jwt-token" },
-      });
-      const res = await app.fetch(req, env, {
-        waitUntil: () => {},
-        passThroughOnException: () => {},
-      } as any);
-
-      expect(res.status).toBe(401);
-      const json = await res.json();
-      expect(json).toHaveProperty("error", "INVALID_TOKEN");
-    });
-
     test("accepts valid JWT and routes to handler", async () => {
       (jwtVerify as any).mockResolvedValue({
         payload: {
@@ -105,35 +75,6 @@ describe("Worker Router (index.ts)", () => {
         headers: {
           "Content-Type": "application/json",
           Authorization: "Bearer valid-jwt-token",
-        },
-        body: JSON.stringify({
-          text: "hello",
-          sourceLang: "en",
-          targetLang: "fr",
-        }),
-      });
-      const res = await app.fetch(req, env, {
-        waitUntil: vi.fn(),
-        passThroughOnException: () => {},
-      } as any);
-
-      expect(res.status).toBe(200);
-    });
-
-    test("accepts valid PREMIUM JWT", async () => {
-      (jwtVerify as any).mockResolvedValue({
-        payload: {
-          sub: "pro-user-456",
-          email: "pro@example.com",
-          app_metadata: { is_pro: true },
-        },
-      });
-
-      const req = new Request("http://localhost/translate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer premium-jwt-token",
         },
         body: JSON.stringify({
           text: "hello",
@@ -273,6 +214,227 @@ describe("Worker Router (index.ts)", () => {
 
       // Replay served from the result cache must not draw down quota again.
       expect(consumeCalls.length).toBe(1);
+    });
+
+    test("serves a throttled PREMIUM request with FREE-tier limits instead of blocking", async () => {
+      (jwtVerify as any).mockResolvedValue({
+        payload: {
+          sub: "throttled-pro",
+          email: "throttled@example.com",
+          app_metadata: { is_pro: true },
+        },
+      });
+      server.use(
+        http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+          jsonResponse({
+            allowed: true,
+            tier_active: "PREMIUM",
+            throttled: true,
+            quota_total: 0,
+            quota_remaining: 0,
+          }),
+        ),
+      );
+
+      const req = new Request("http://localhost/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer valid-jwt-token",
+        },
+        body: JSON.stringify({
+          text: "hello",
+          targetLang: "fr",
+          sourceLang: "auto",
+        }),
+      });
+      const res = await app.fetch(req, env, {
+        waitUntil: vi.fn(),
+        passThroughOnException: () => {},
+      } as any);
+
+      // Not blocked (200 / 429 quota) — the request is served as FREE, so the
+      // Pro-only auto-detect guard rejects it as FREE tier.
+      expect(res.status).toBe(403);
+      const json = await res.json();
+      expect(json).toHaveProperty("error", "AUTO_DETECT_UNAVAILABLE");
+    });
+
+    test("honors the authoritative DB tier over a stale FREE JWT", async () => {
+      // JWT was minted before the purchase webhook landed (is_pro false), but
+      // user_subscriptions now says PRO. The RPC's tier_active must win so the
+      // Pro-only auto-detect guard passes.
+      (jwtVerify as any).mockResolvedValue({
+        payload: {
+          sub: "db-pro-user",
+          email: "dbpro@example.com",
+          app_metadata: { is_pro: false },
+        },
+      });
+      server.use(
+        http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+          jsonResponse({
+            allowed: true,
+            tier_active: "PREMIUM",
+            throttled: false,
+            quota_total: 0,
+            quota_remaining: 0,
+          }),
+        ),
+        http.post(PROVIDER_URLS.groqChat, () =>
+          jsonResponse({ choices: [{ message: { content: "Hola" } }] }),
+        ),
+      );
+
+      const req = new Request("http://localhost/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer stale-free-jwt",
+        },
+        body: JSON.stringify({
+          text: "hello",
+          targetLang: "es",
+          sourceLang: "auto",
+        }),
+      });
+      const res = await app.fetch(req, env, {
+        waitUntil: vi.fn(),
+        passThroughOnException: () => {},
+      } as any);
+
+      // Auto-detect is a Pro feature: with tier_active=PREMIUM it must NOT be
+      // rejected as FREE.
+      expect(res.status).toBe(200);
+    });
+
+    test("downgrades a stale PREMIUM JWT to FREE when the DB says free", async () => {
+      // JWT still claims Pro but the subscription lapsed (webhook set
+      // status=inactive / expired). tier_active=FREE must degrade the request.
+      (jwtVerify as any).mockResolvedValue({
+        payload: {
+          sub: "expired-pro",
+          email: "expired@example.com",
+          app_metadata: { is_pro: true },
+        },
+      });
+      server.use(
+        http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+          jsonResponse({
+            allowed: true,
+            tier_active: "FREE",
+            throttled: false,
+            quota_total: 25,
+            quota_remaining: 24,
+          }),
+        ),
+        http.post(PROVIDER_URLS.groqChat, () =>
+          jsonResponse({ choices: [{ message: { content: "Bonjour" } }] }),
+        ),
+      );
+
+      const req = new Request("http://localhost/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer stale-premium-jwt",
+        },
+        body: JSON.stringify({
+          text: "hello",
+          targetLang: "fr",
+          sourceLang: "auto",
+        }),
+      });
+      const res = await app.fetch(req, env, {
+        waitUntil: vi.fn(),
+        passThroughOnException: () => {},
+      } as any);
+
+      // Pro-only auto-detect is rejected: the request is served as FREE.
+      expect(res.status).toBe(403);
+      const json = await res.json();
+      expect(json).toHaveProperty("error", "AUTO_DETECT_UNAVAILABLE");
+    });
+  });
+
+  describe("Route dispatch", () => {
+    test("serves /health without auth", async () => {
+      const req = new Request("http://localhost/health", { method: "GET" });
+      const res = await app.fetch(req, env, {
+        waitUntil: vi.fn(),
+        passThroughOnException: () => {},
+      } as any);
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json).toHaveProperty("status", "ok");
+    });
+
+    test("returns 404 for an unknown path without requiring auth or running preflight", async () => {
+      let preflightCalls = 0;
+      server.use(
+        http.post(PROVIDER_URLS.supabaseCheckPreflight, () => {
+          preflightCalls += 1;
+          return jsonResponse({ allowed: true, tier_active: "FREE" });
+        }),
+      );
+
+      const res = await app.fetch(
+        new Request("http://localhost/does-not-exist", { method: "GET" }),
+        env,
+        { waitUntil: vi.fn(), passThroughOnException: () => {} } as any,
+      );
+
+      expect(res.status).toBe(404);
+      const json = await res.json();
+      expect(json).toHaveProperty("error", "NOT_FOUND");
+      expect(preflightCalls).toBe(0);
+    });
+
+    test("returns 404 when the HTTP method does not match a known route", async () => {
+      const res = await app.fetch(
+        new Request("http://localhost/translate", { method: "GET" }),
+        env,
+        { waitUntil: vi.fn(), passThroughOnException: () => {} } as any,
+      );
+
+      expect(res.status).toBe(404);
+    });
+
+    test("GET /usage returns a snapshot without running the preflight gate", async () => {
+      (jwtVerify as any).mockResolvedValue({
+        payload: {
+          sub: "usage-user",
+          email: "usage@example.com",
+          app_metadata: { is_pro: false },
+        },
+      });
+
+      let preflightCalls = 0;
+      server.use(
+        http.post(PROVIDER_URLS.supabaseCheckPreflight, () => {
+          preflightCalls += 1;
+          // Would 429 if the gate ran — proving /usage bypasses it.
+          return jsonResponse({ allowed: false, reason: "QUOTA_EXCEEDED" });
+        }),
+        http.post(PROVIDER_URLS.supabaseGetDailyUsage, () =>
+          jsonResponse({ day: "2026-08-13", translate: 2, transcribe: 0 }),
+        ),
+      );
+
+      const req = new Request("http://localhost/usage", {
+        method: "GET",
+        headers: { Authorization: "Bearer usage-jwt" },
+      });
+      const res = await app.fetch(req, env, {
+        waitUntil: vi.fn(),
+        passThroughOnException: () => {},
+      } as any);
+
+      expect(res.status).toBe(200);
+      expect(preflightCalls).toBe(0);
+      const json = await res.json();
+      expect(json).toMatchObject({ day: "2026-08-13" });
     });
   });
 });

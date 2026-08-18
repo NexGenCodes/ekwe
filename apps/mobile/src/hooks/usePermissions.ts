@@ -14,7 +14,6 @@ interface PlanLimits {
   autoLanguageDetect: boolean;
   customAvatarIcons: boolean;
   autoCopy: boolean;
-  contextAwareness: boolean;
   cooldownSeconds: number;
 }
 
@@ -35,7 +34,6 @@ export function usePermissions(): PlanLimits {
       autoCopy: isPro
         ? PLAN_FEATURES.pro.autoCopy
         : PLAN_FEATURES.free.autoCopy,
-      contextAwareness: limits.contextAwareness,
       cooldownSeconds: limits.cooldownSeconds,
     }),
     [isPro, limits],

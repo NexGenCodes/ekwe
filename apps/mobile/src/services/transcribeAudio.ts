@@ -1,6 +1,7 @@
 import { File as ExpoFile, UploadType } from "expo-file-system";
-import { z } from "zod";
 
+import { transcribeResponseSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
+import { MAX_AUDIO_BYTES as MAX_FILE_SIZE_BYTES, PREMIUM_LIMITS } from "@ekwe/shared/plans";
 import { EkweError } from "@/constants/errors";
 import { ProcessedAudio } from "@/services/AudioProcessor";
 import { supabase } from "@/services/supabase";
@@ -8,37 +9,17 @@ import { Result, ok, err } from "@/types/Result";
 import { resolveDetectedLanguage } from "@/utils/languageUtils";
 import logger from "@/utils/logger";
 import { isDefinitelyOffline } from "@/utils/netInfo";
-import { mapWorkerError } from "@/utils/networkUtils";
-import { MAX_AUDIO_BYTES as MAX_FILE_SIZE_BYTES } from "@ekwe/shared/plans";
-
-const transcriptionResponseSchema = z.object({
-  text: z.string(),
-  words: z
-    .array(
-      z.object({
-        word: z.string(),
-        start: z.number(),
-        end: z.number(),
-      }),
-    )
-    .optional(),
-  language: z.string().optional(),
-  provider: z.string().optional(),
-});
-
-const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? "";
-
-export interface WordTimestamp {
-  word: string;
-  start: number; // seconds
-  end: number;
-}
+import {
+  getWorkerUrl,
+  mapWorkerError,
+  TimeoutError,
+  isTimeoutError,
+} from "@/utils/networkUtils";
 
 export interface TranscriptionResult {
   transcript: string;
   detectedLang: string | null;
   sourceLang: string;
-  wordTimestamps: WordTimestamp[];
   durationSeconds: number;
   isLowQuality: boolean;
   provider?: string;
@@ -56,8 +37,19 @@ export async function transcribeAudio(
       return err(EkweError.SHARE_COPY_FAIL);
     }
 
+    if (file.size === 0) {
+      return err(EkweError.AUDIO_EMPTY);
+    }
+
     if (file.size && file.size > MAX_FILE_SIZE_BYTES) {
       return err(EkweError.FILE_TOO_LARGE);
+    }
+
+    if (
+      audio.durationMs > 0 &&
+      audio.durationMs > PREMIUM_LIMITS.dictationDurationMs
+    ) {
+      return err(EkweError.AUDIO_TOO_LONG);
     }
 
     if (isDefinitelyOffline()) {
@@ -77,13 +69,18 @@ export async function transcribeAudio(
     } = await supabase.auth.getSession();
     const token = session?.access_token;
 
-    const uploadResult = await uploadAudioFile(file, `${workerUrl}/transcribe`, {
-      lang: sourceLang || "auto",
-      extension,
-      token: token ?? null,
-      signal,
-      onProgress,
-    });
+    const uploadResult = await uploadAudioFile(
+      file,
+      `${workerUrl}/transcribe`,
+      {
+        lang: sourceLang || "auto",
+        extension,
+        durationMs: audio.durationMs,
+        token: token ?? null,
+        signal,
+        onProgress,
+      },
+    );
 
     if (uploadResult.status >= 400) {
       let errorCode = "EKWE_TRANSCRIPTION_FAIL";
@@ -101,7 +98,7 @@ export async function transcribeAudio(
       );
 
       if (uploadResult.status === 429) {
-        if (errorCode === "EKWE_QUOTA_EXCEEDED") {
+        if (errorCode === WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED) {
           return err(EkweError.QUOTA_EXCEEDED);
         }
         return err(EkweError.RATE_LIMITED);
@@ -113,7 +110,7 @@ export async function transcribeAudio(
     }
 
     const json = JSON.parse(uploadResult.body) as unknown;
-    const parsed = transcriptionResponseSchema.safeParse(json);
+    const parsed = transcribeResponseSchema.safeParse(json);
     if (!parsed.success) {
       logger.error(
         "[transcribeAudio] Response validation failed:",
@@ -126,13 +123,16 @@ export async function transcribeAudio(
 
     return processTranscript(
       data.text,
-      data.words ?? [],
       data.language,
       sourceLang,
       audio,
       data.provider,
     );
   } catch (e: unknown) {
+    if (isTimeoutError(e)) {
+      logger.info("[transcribeAudio] Request timed out");
+      return err(EkweError.TRANSCRIBE_TIMEOUT);
+    }
     if (e instanceof Error) {
       if (e.name === "AbortError") {
         logger.info("[transcribeAudio] Request was aborted");
@@ -152,6 +152,7 @@ export async function transcribeAudio(
 interface UploadAudioFileOptions {
   lang: string;
   extension: string;
+  durationMs?: number;
   token: string | null;
   signal?: AbortSignal;
   onProgress?: (fraction: number) => void;
@@ -171,7 +172,9 @@ async function uploadAudioFile(
   opts: UploadAudioFileOptions,
 ): Promise<{ status: number; body: string }> {
   const retries = 2;
-  const timeoutMs = opts.timeoutMs ?? 30_000;
+  const timeoutMs =
+    opts.timeoutMs ??
+    30_000 + Math.ceil((file.size ?? 0) / (1024 * 1024)) * 2000;
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -188,7 +191,7 @@ async function uploadAudioFile(
         mimeType: getMimeType(opts.extension),
         parameters: {
           lang: opts.lang,
-          timestamp_granularities: "word",
+          duration: opts.durationMs ? String(Math.round(opts.durationMs)) : "0",
         },
         headers: opts.token ? { Authorization: `Bearer ${opts.token}` } : {},
         signal: controller.signal,
@@ -216,6 +219,13 @@ async function uploadAudioFile(
         throw error;
       }
 
+      // An abort that wasn't the user's is the internal timeout. Never retry:
+      // a request that blew its deadline almost never succeeds on retry, and
+      // retrying re-runs the whole provider pipeline. Fail fast and quietly.
+      if (!opts.signal?.aborted && controller.signal.aborted) {
+        throw new TimeoutError();
+      }
+
       // Exponential backoff: 1s, 2s
       const wait = 1000 * Math.pow(2, attempt);
       await new Promise((resolve) => setTimeout(resolve, wait));
@@ -241,7 +251,6 @@ function getMimeType(extension: string): string {
 
 function processTranscript(
   rawText: string,
-  words: { word: string; start: number; end: number }[],
   returnedLang: string | undefined,
   sourceLang: string,
   audio: ProcessedAudio,
@@ -253,23 +262,11 @@ function processTranscript(
 
   const detectedLang = resolveDetectedLanguage(returnedLang, sourceLang, "en");
 
-  const adjustedWords: WordTimestamp[] = words.map((w) => ({
-    word: w.word,
-    start: w.start,
-    end: w.end,
-  }));
-
   return ok({
     transcript: rawText.trim(),
     detectedLang,
     sourceLang,
-    wordTimestamps: adjustedWords,
-    durationSeconds:
-      audio.durationMs > 0
-        ? audio.durationMs / 1000
-        : adjustedWords.length > 0
-          ? adjustedWords[adjustedWords.length - 1].end
-          : 0,
+    durationSeconds: audio.durationMs > 0 ? audio.durationMs / 1000 : 0,
     isLowQuality: audio.averageDb < -60,
     provider,
   });

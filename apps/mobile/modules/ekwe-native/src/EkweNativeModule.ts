@@ -3,6 +3,8 @@ import { requireNativeModule, type NativeModule } from "expo";
 import type {
   AudioEffectsResult,
   OpusTranscodeResult,
+  DecodeToWavResult,
+  DecodeToCafResult,
   AudioRecordingResult,
   StartRecordingResult,
 } from "./EkweNative.types";
@@ -18,7 +20,7 @@ declare global {
 
 declare class EkweNativeModule extends NativeModule<{
   onOpusPacket: (event: { packet: string; rms: number }) => void;
-  onVadSilence: (event: {}) => void;
+  onVadSilence: (event: Record<string, never>) => void;
 }> {
   deleteFile(uri: string): Promise<void>;
   writeSharedFile(fileName: string, content: string): Promise<boolean>;
@@ -48,6 +50,20 @@ declare class EkweNativeModule extends NativeModule<{
     outputPath: string,
     maxAudioBytes: number,
   ): Promise<OpusTranscodeResult>;
+
+  // --- Decode-to-WAV (iOS: AVPlayer can't play Ogg Opus) ---
+  decodeAudioToWav(
+    inputPath: string,
+    outputPath: string,
+    maxAudioBytes: number,
+  ): Promise<DecodeToWavResult>;
+
+  // --- Decode-to-CAF (iOS: Opus-in-CAF avoids the WAV round-trip) ---
+  decodeAudioToCaf(
+    inputPath: string,
+    outputPath: string,
+    maxAudioBytes: number,
+  ): Promise<DecodeToCafResult>;
 
   // --- AudioRecord (dual-path: file or live) ---
   startAudioRecording(

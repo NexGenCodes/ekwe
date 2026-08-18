@@ -4,6 +4,7 @@ import {
   setAudioModeAsync,
   setIsAudioActiveAsync,
 } from "expo-audio";
+import { File } from "expo-file-system";
 import { triggerHaptic } from "@/utils/haptics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -12,6 +13,9 @@ import {
   useFrameCallback,
 } from "react-native-reanimated";
 
+import { AudioTranscoder } from "@/services/AudioTranscoder";
+import { cleanEchoCache } from "@/utils/echo";
+import { isIOS } from "@/utils/platform";
 import logger from "@/utils/logger";
 import { createAudioFocus } from "./audioFocus";
 
@@ -67,6 +71,123 @@ export const useSharedAudioPlayer = (
 
   const [duration, setDuration] = useState(0);
 
+  // ── iOS Ogg Opus → CAF decode-before-play ───────────────────────────────
+  // AVPlayer (expo-audio's iOS backend) cannot play Ogg Opus, but can play
+  // Opus inside a CAF container. Recordings we made on iOS already have a
+  // sibling `.caf` (the native recorder dual-muxes every packet into both
+  // containers), so those play directly with zero remux. Any other `.ogg`
+  // source is remuxed to CAF (lossless, no decode/re-encode) before it reaches
+  // the native player; on CAF failure we fall back to the legacy decode-to-WAV
+  // path so playback never goes silent. The decode is async; while it runs the
+  // player is handed `null` so consumers see `isLoaded=false` and show their
+  // loading state instead of failing to play an unplayable source. Android
+  // plays Ogg Opus natively (ExoPlayer) and skips decoding entirely.
+  const isOggSource = isIOS && !!uri && /\.ogg$/i.test(uri);
+  const cafSiblingUri =
+    isOggSource && uri ? uri.replace(/\.ogg$/i, ".caf") : null;
+  const hasCafSibling =
+    cafSiblingUri != null && new File(cafSiblingUri).exists;
+  const [playableSource, setPlayableSource] = useState<string | null>(
+    hasCafSibling ? cafSiblingUri : isOggSource ? null : uri,
+  );
+  // The currently-committed decoded/remuxed temp file (owned by this player).
+  const decodedTempRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!uri) {
+      setPlayableSource(null);
+      return;
+    }
+
+    if (!isOggSource) {
+      setPlayableSource(uri);
+      return;
+    }
+
+    if (hasCafSibling && cafSiblingUri) {
+      // Recorded audio already has a sibling CAF (native dual-mux) — play it
+      // in place. Free any temp from a previous source so a stale remuxed file
+      // isn't swept later (the sibling CAF is the recording's own cache file,
+      // owned by the recording lifecycle, not this player).
+      const previous = decodedTempRef.current;
+      if (previous) {
+        decodedTempRef.current = null;
+        setTimeout(() => cleanEchoCache(previous), 1000);
+      }
+      setPlayableSource(cafSiblingUri);
+      return;
+    }
+
+    // Ogg Opus on iOS: show "loading" while decoding, then hand the CAF to
+    // the native player. On failure the original source is passed through so
+    // playback degrades to the pre-decode behavior instead of going silent.
+    setPlayableSource(null);
+
+    const commitTemp = (temp: string): void => {
+      const previous = decodedTempRef.current;
+      if (previous && previous !== temp) {
+        setTimeout(() => cleanEchoCache(previous), 1000);
+      }
+      decodedTempRef.current = temp;
+      setPlayableSource(temp);
+    };
+
+    const fallbackToWav = (reason: string): void => {
+      logger.error("[SharedAudioPlayer] iOS Ogg remux-to-CAF failed:", reason);
+      AudioTranscoder.decodeToWav(uri).then((wavResult) => {
+        if (cancelled) {
+          if (wavResult.ok) cleanEchoCache(wavResult.value.uri);
+          return;
+        }
+        if (wavResult.ok) {
+          commitTemp(wavResult.value.uri);
+        } else {
+          logger.error(
+            "[SharedAudioPlayer] iOS Ogg decode fallback failed:",
+            wavResult.error,
+          );
+          setPlayableSource(uri);
+        }
+      });
+    };
+
+    AudioTranscoder.decodeToCaf(uri)
+      .then((result) => {
+        if (cancelled) {
+          if (result.ok) cleanEchoCache(result.value.uri);
+          return;
+        }
+        if (result.ok) {
+          commitTemp(result.value.uri);
+        } else {
+          fallbackToWav(result.error);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        fallbackToWav(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+
+    return (): void => {
+      cancelled = true;
+    };
+  }, [uri, isOggSource, cafSiblingUri, hasCafSibling]);
+
+  // Free any decoded/remuxed temp on unmount (best-effort; cache sweeps are a
+  // backstop). `release()` may already have run — the file cleanup is
+  // independent of the native player lifecycle.
+  useEffect(() => {
+    return (): void => {
+      const temp = decodedTempRef.current;
+      decodedTempRef.current = null;
+      if (temp) cleanEchoCache(temp);
+    };
+  }, []);
+
   // True once the player has reached the end of the track. Unlike `isPlaying`,
   // this is authoritative even on paths where the native `didJustFinish` event
   // doesn't force `playing` to `false` immediately. It lets scrub-resume logic
@@ -104,7 +225,7 @@ export const useSharedAudioPlayer = (
   const pauseRef = useRef<() => void>(() => {});
   const focusClaimedRef = useRef(false);
 
-  const player = useAudioPlayer(uri, { downloadFirst: true });
+  const player = useAudioPlayer(playableSource, { downloadFirst: true });
 
   // Playback speed. Kept in a shared value so the UI-thread clock advances at
   // the correct rate, and passed to the native player on change/play.

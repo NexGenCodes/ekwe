@@ -163,12 +163,18 @@ OggPage OggMuxer::make_page(const uint8_t* data, size_t size, int64_t granule_po
     page.granule_position = granule_position;
     page.serial_number = serial_number_;
     page.page_number = page_number_++;
-    page.segment_count = static_cast<uint8_t>((size + 254) / 255);
 
-    if (page.segment_count > MAX_SEGMENTS) {
-        page.segment_count = MAX_SEGMENTS;
+    // Compute the segment count in size_t BEFORE narrowing: for a page with
+    // exactly 255*256 bytes of data, (size + 254) / 255 is 256 which wraps to
+    // 0 when cast to uint8_t — silently producing a 0-segment page with a
+    // bogus table. Clamp data to the page capacity first so the count is
+    // always a valid 1..255 value.
+    size_t segment_count = (size + 254) / 255;
+    if (segment_count > MAX_SEGMENTS) {
+        segment_count = MAX_SEGMENTS;
         size = MAX_PAGE_DATA;
     }
+    page.segment_count = static_cast<uint8_t>(segment_count);
 
     size_t total_size = OGG_PAGE_HEADER_SIZE + page.segment_count + size;
     page.data.resize(total_size);

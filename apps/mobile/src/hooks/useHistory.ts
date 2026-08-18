@@ -65,43 +65,103 @@ function computeSnapshot(
 export const useHistory = (): UseHistoryReturn => {
   const snapshot = useSelector(() => computeSnapshot(history$.get()));
   const [hasMore, setHasMore] = useState(true);
-  const loadedCountRef = useRef(0);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
+    // Signed out → nothing more to load. Signed in with a fresh, empty list →
+    // optimistically allow loading; `loadMore` resolves the real answer (more
+    // local rows, older cloud rows, or none).
     const userId = auth$.user.get()?.id;
-    const currentCount = Object.values(history$.get() || {}).length;
-    if (userId) {
-      setHasMore(currentCount < Db.getHistoryCount(userId));
-    } else {
+    if (!userId) {
       setHasMore(false);
+    } else if (snapshot.entries.length === 0) {
+      setHasMore(true);
     }
   }, [snapshot.entries.length]);
 
   const loadMore = useCallback(async () => {
     const userId = auth$.user.get()?.id;
-    if (!userId) return;
-    const rows = Db.getHistoryPage(userId, PAGE_SIZE, loadedCountRef.current);
-    if (rows.length < PAGE_SIZE) {
+    if (!userId) {
       setHasMore(false);
+      return;
     }
-    for (const row of rows) {
-      if (!history$[row.id].get()) {
-        history$[row.id].set({
-          id: row.id,
-          sourceLang: row.source_lang,
-          targetLang: row.target_lang,
-          transcript: row.transcript,
-          translation: row.translation_text,
-          transliteration: row.transliteration_text,
-          duration: row.duration,
-          sourceApp: row.source_app,
-          provider: row.provider,
-          timestamp: new Date(row.created_at).getTime(),
-          type: row.entry_type ?? "transcription",
-        });
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+
+    try {
+      // Oldest entry currently shown — the (created_at, id) cursor for the
+      // next page. Cloud pulls insert rows into SQLite, so paging must be
+      // cursor-based, not OFFSET-based, or sync would shift the offset and
+      // skip/duplicate rows.
+      const record = history$.get() || {};
+      let oldest: HistoryEntry | null = null;
+      for (const key of Object.keys(record)) {
+        const e = record[key];
+        if (
+          !oldest ||
+          e.timestamp < oldest.timestamp ||
+          (e.timestamp === oldest.timestamp && e.id < oldest.id)
+        ) {
+          oldest = e;
+        }
       }
+      const before = oldest
+        ? {
+            created_at: new Date(oldest.timestamp).toISOString(),
+            id: oldest.id,
+          }
+        : null;
+
+      // 1) Continue paging the local SQLite window (7-day TTL) first.
+      const rows = Db.getHistoryPage(userId, PAGE_SIZE, before);
+      if (rows.length > 0) {
+        for (const row of rows) {
+          if (!history$[row.id].get()) {
+            history$[row.id].set({
+              id: row.id,
+              sourceLang: row.source_lang,
+              targetLang: row.target_lang,
+              transcript: row.transcript,
+              translation: row.translation_text,
+              transliteration: row.transliteration_text,
+              duration: row.duration,
+              sourceApp: row.source_app,
+              provider: row.provider,
+              timestamp: new Date(row.created_at).getTime(),
+              type: row.entry_type ?? "transcription",
+            });
+          }
+        }
+        setHasMore(rows.length === PAGE_SIZE);
+        return;
+      }
+
+      // 2) Local window exhausted → page OLDER rows from the cloud for
+      //    display only (they're beyond the local TTL; never cached to SQLite).
+      if (!oldest) {
+        setHasMore(false);
+        return;
+      }
+
+      const page = await SyncService.fetchOlderHistory(
+        userId,
+        {
+          created_at: new Date(oldest.timestamp).toISOString(),
+          id: oldest.id,
+        },
+        PAGE_SIZE,
+      );
+      if (page.length === 0) {
+        setHasMore(false);
+        return;
+      }
+      for (const e of page) {
+        if (!history$[e.id].get()) history$[e.id].set(e);
+      }
+      setHasMore(page.length === PAGE_SIZE);
+    } finally {
+      loadingRef.current = false;
     }
-    loadedCountRef.current += rows.length;
   }, []);
 
   const deleteEntry = useCallback(async (id: string): Promise<void> => {

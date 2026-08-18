@@ -26,13 +26,12 @@ import {
   ProfileRow,
   ProfileSection,
   ProfileIdentity,
-  CurrencyPickerModal,
   ThemePickerModal,
   QuotaUsageCard,
 } from "@/components";
 import { Box, Text, Pressable, ScrollArea } from "@/components/ui";
 import { duration, borderRadius, opacity, spacing } from "@/constants";
-import { CURRENCIES } from "@ekwe/shared/currencies";
+import { PLAN_LIMITS } from "@/constants/billing";
 import { useLogout, useTheme, usePermissions, useReduceMotion } from "@/hooks";
 import { deleteAccount } from "@/services/auth";
 import { SyncService } from "@/services/SyncService";
@@ -42,6 +41,7 @@ import { isIOS } from "@/utils";
 import { AppAlert } from "@/utils/alert";
 import { triggerHaptic } from "@/utils/haptics";
 import logger from "@/utils/logger";
+import { pushOnce } from "@/utils/navigation";
 
 // ─── ProfileScreen ────────────────────────────────────────────────────────────
 
@@ -61,11 +61,9 @@ export default function ProfileScreen(): React.JSX.Element {
       : FadeInDown.duration(duration.normal).delay(delay);
 
   const hapticsEnabled = useSelector(() => settings$.hapticsEnabled.get());
-  const currency = useSelector(() => settings$.currency.get());
   const {
     setHapticsEnabled,
     setAutoCopy,
-    setCurrency,
     setLiveTranscriptionEnabled,
   } = settingsActions;
   const selectedLanguages = useSelector(() =>
@@ -76,7 +74,6 @@ export default function ProfileScreen(): React.JSX.Element {
     settings$.liveTranscriptionEnabled.get(),
   );
 
-  const [isCurrencyModalVisible, setIsCurrencyModalVisible] = useState(false);
   const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -171,11 +168,17 @@ export default function ProfileScreen(): React.JSX.Element {
               iconColor={color.foreground}
               title={isPro ? "Ekwe Pro" : "Plan & Billing"}
               subtitle={
-                isPro ? "Unlimited translations" : "Free Tier · Standard limits"
+                isPro
+                  ? PLAN_LIMITS.pro.dailyTranslateLimit === 0
+                    ? "Unlimited translations"
+                    : `${PLAN_LIMITS.pro.dailyTranslateLimit.toLocaleString(
+                        "en-US",
+                      )} translations per day`
+                  : "Free Tier · Standard limits"
               }
               onPress={async () => {
                 await triggerHaptic();
-                router.push("/billing");
+                pushOnce(router, "/billing");
               }}
               trailing={
                 isPro ? (
@@ -206,12 +209,18 @@ export default function ProfileScreen(): React.JSX.Element {
         </Animated.View>
 
         {/* Daily usage quota */}
-        <Animated.View
-          entering={reduceMotion ? undefined : FadeInDown.duration(duration.normal).delay(120)}
-          style={{ marginBottom: spacing.xl }}
-        >
-          <QuotaUsageCard />
-        </Animated.View>
+        {!isPro && (
+          <Animated.View
+            entering={
+              reduceMotion
+                ? undefined
+                : FadeInDown.duration(duration.normal).delay(120)
+            }
+            style={{ marginBottom: spacing.xl }}
+          >
+            <QuotaUsageCard />
+          </Animated.View>
+        )}
 
         {/* App Preferences */}
         <Animated.View entering={sectionEnter(150)}>
@@ -225,7 +234,7 @@ export default function ProfileScreen(): React.JSX.Element {
               hasDivider
               onPress={async () => {
                 await triggerHaptic();
-                router.push("/edit-languages");
+                pushOnce(router, "/edit-languages");
               }}
             />
             <ProfileRow
@@ -251,30 +260,6 @@ export default function ProfileScreen(): React.JSX.Element {
                   }}
                   thumbColor={color.card}
                 />
-              }
-            />
-            <ProfileRow
-              icon={Globe}
-              sfIcon="globe"
-              iconColor={color.foreground}
-              title="Display Currency"
-              subtitle="Choose your preferred currency"
-              hasDivider
-              onPress={async () => {
-                await triggerHaptic();
-                setIsCurrencyModalVisible(true);
-              }}
-              trailing={
-                <Box style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text
-                    variant="body"
-                    style={{ color: color.muted, marginRight: spacing.sm }}
-                  >
-                    {CURRENCIES.find((c) => c.code === currency)?.code ||
-                      currency}
-                  </Text>
-                  <ChevronRight size={16} color={color.muted} />
-                </Box>
               }
             />
             <ProfileRow
@@ -323,7 +308,7 @@ export default function ProfileScreen(): React.JSX.Element {
                     "Ekwe Pro Required",
                     "Live Transcription is a premium feature. Please upgrade to use this.",
                   );
-                  router.push("/billing");
+                  pushOnce(router, "/billing");
                   return;
                 }
                 await triggerHaptic();
@@ -453,7 +438,7 @@ export default function ProfileScreen(): React.JSX.Element {
               hasDivider
               onPress={async () => {
                 await triggerHaptic();
-                router.push("/legal/privacy");
+                pushOnce(router, "/legal/privacy");
               }}
             />
             <ProfileRow
@@ -463,7 +448,7 @@ export default function ProfileScreen(): React.JSX.Element {
               title="Terms of Service"
               onPress={async () => {
                 await triggerHaptic();
-                router.push("/legal/terms");
+                pushOnce(router, "/legal/terms");
               }}
             />
           </ProfileSection>
@@ -485,55 +470,55 @@ export default function ProfileScreen(): React.JSX.Element {
               }}
               trailing={null}
             />
-              <ProfileRow
-                icon={Trash2}
-                sfIcon="trash.fill"
-                iconColor={color.error}
-                title="Delete Account"
-                subtitle="Permanently delete your data"
-                onPress={handleDeleteAccount}
-                trailing={null}
-              />
-            </ProfileSection>
-          </Animated.View>
+            <ProfileRow
+              icon={Trash2}
+              sfIcon="trash.fill"
+              iconColor={color.error}
+              title="Delete Account"
+              subtitle="Permanently delete your data"
+              onPress={handleDeleteAccount}
+              trailing={null}
+            />
+          </ProfileSection>
+        </Animated.View>
 
-          {/* Data */}
-          <Animated.View entering={sectionEnter(350)}>
-            <ProfileSection title="Data">
-              <ProfileRow
-                icon={Trash2}
-                sfIcon="trash.fill"
-                iconColor={color.error}
-                title="Clear History"
-                subtitle="Delete all transcripts and translations"
-                hasDivider
-                onPress={async () => {
-                  await triggerHaptic();
-                  const userId = user?.id;
-                  if (!userId) return;
-                  AppAlert.confirm(
-                    "Clear All History",
-                    "This will permanently delete all your transcripts and translations from this device and the cloud. This action cannot be undone.",
-                    async () => {
-                      await triggerHaptic();
-                      await SyncService.clearAllHistory(userId);
-                      AppAlert.success("All history cleared");
-                    },
-                    {
-                      isDestructive: true,
-                      confirmText: "Clear All",
-                      cancelText: "Cancel",
-                    },
-                  );
-                }}
-                trailing={null}
-              />
-            </ProfileSection>
-          </Animated.View>
+        {/* Data */}
+        <Animated.View entering={sectionEnter(350)}>
+          <ProfileSection title="Data">
+            <ProfileRow
+              icon={Trash2}
+              sfIcon="trash.fill"
+              iconColor={color.error}
+              title="Clear History"
+              subtitle="Delete all transcripts and translations"
+              hasDivider
+              onPress={async () => {
+                await triggerHaptic();
+                const userId = user?.id;
+                if (!userId) return;
+                AppAlert.confirm(
+                  "Clear All History",
+                  "This will permanently delete all your transcripts and translations from this device and the cloud. This action cannot be undone.",
+                  async () => {
+                    await triggerHaptic();
+                    await SyncService.clearAllHistory(userId);
+                    AppAlert.success("All history cleared");
+                  },
+                  {
+                    isDestructive: true,
+                    confirmText: "Clear All",
+                    cancelText: "Cancel",
+                  },
+                );
+              }}
+              trailing={null}
+            />
+          </ProfileSection>
+        </Animated.View>
 
-          {/* Footer */}
-          <Animated.View entering={sectionEnter(400)}>
-            <Box style={styles.footer}>
+        {/* Footer */}
+        <Animated.View entering={sectionEnter(400)}>
+          <Box style={styles.footer}>
             <Text
               variant="caption"
               style={{ opacity: opacity.inactive, color: color.muted }}
@@ -559,17 +544,6 @@ export default function ProfileScreen(): React.JSX.Element {
         onClose={() => setIsIconModalVisible(false)}
         onSelect={handleUpdateIcon}
         currentIcon={user?.user_metadata?.avatar_icon}
-      />
-
-      <CurrencyPickerModal
-        visible={isCurrencyModalVisible}
-        onClose={() => setIsCurrencyModalVisible(false)}
-        onSelect={async (code) => {
-          await triggerHaptic();
-          setCurrency(code);
-          setIsCurrencyModalVisible(false);
-        }}
-        currentCurrency={currency}
       />
 
       <ThemePickerModal

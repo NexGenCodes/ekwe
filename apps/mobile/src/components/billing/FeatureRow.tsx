@@ -13,6 +13,7 @@ export interface FeatureRowProps {
   mutedColor: string;
   textColor: string;
   isPro: boolean;
+  compact?: boolean;
 }
 
 export function FeatureRow({
@@ -21,25 +22,33 @@ export function FeatureRow({
   mutedColor,
   textColor,
   isPro,
+  compact = false,
 }: FeatureRowProps): React.JSX.Element {
   return (
-    <Box style={styles.featureRow}>
+    <Box style={compact ? styles.featureRowCompact : styles.featureRow}>
       {feature.included ? (
         <Box
           style={[
-            styles.featureIcon,
+            compact ? styles.featureIconCompact : styles.featureIcon,
             {
               backgroundColor: isPro ? `${accentColor}25` : `${accentColor}15`,
             },
           ]}
         >
-          <Check size={14} color={accentColor} strokeWidth={3.5} />
+          <Check
+            size={compact ? 12 : 14}
+            color={accentColor}
+            strokeWidth={3.5}
+          />
         </Box>
       ) : (
         <Box
-          style={[styles.featureIcon, { backgroundColor: `${mutedColor}15` }]}
+          style={[
+            compact ? styles.featureIconCompact : styles.featureIcon,
+            { backgroundColor: `${mutedColor}15` },
+          ]}
         >
-          <X size={14} color={mutedColor} strokeWidth={2.5} />
+          <X size={compact ? 12 : 14} color={mutedColor} strokeWidth={2.5} />
         </Box>
       )}
       <Text
@@ -58,6 +67,11 @@ const styles = {
     alignItems: "center",
     paddingVertical: spacing.md,
   } as const,
+  featureRowCompact: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.xs,
+  } as const,
   featureIcon: {
     width: 28,
     height: 28,
@@ -65,5 +79,13 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     marginRight: spacing.md,
+  } as const,
+  featureIconCompact: {
+    width: 22,
+    height: 22,
+    borderRadius: borderRadius.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.sm,
   } as const,
 };

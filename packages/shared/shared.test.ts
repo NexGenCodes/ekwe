@@ -1,62 +1,55 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  CURRENCIES,
-  CURRENCY_BY_CODE,
-  COUNTRY_TO_CURRENCY_CODE,
-  DEFAULT_CURRENCY,
-  SUPPORTED_CURRENCY_CODES,
-  getCurrency,
-} from "./currencies";
-import {
+  getCurrencySymbol,
   computeSavingPercent,
   formatMoney,
   getDecimals,
   roundToCurrency,
   toLowestUnit,
+  countryToCurrency,
 } from "./money";
+import { LANGUAGES, getLanguageFlag, languageName } from "./languages";
 
-describe("currencies registry", () => {
-  test("USD is the default currency", () => {
-    expect(DEFAULT_CURRENCY).toBe("USD");
-    expect(getCurrency("usd")?.code).toBe("USD");
-  });
-
-  test("registry is the single source for supported codes", () => {
-    expect(SUPPORTED_CURRENCY_CODES).toEqual(
-      CURRENCIES.map((c) => c.code),
+describe("languages registry", () => {
+  test("LANGUAGES is the provider allowlist with derived names", () => {
+    expect(LANGUAGES.length).toBe(139);
+    expect(LANGUAGES[0]).toEqual({
+      code: "en",
+      englishName: "English",
+      nativeName: "English",
+    });
+    expect(LANGUAGES.find((l) => l.code === "zh")?.englishName).toBe(
+      "Chinese (Simplified)",
     );
-    expect(CURRENCY_BY_CODE.size).toBe(CURRENCIES.length);
   });
 
-  test("lookup is case-insensitive and unknown codes return undefined", () => {
-    expect(getCurrency("ngn")?.symbol).toBe("₦");
-    expect(getCurrency("EUR")?.decimals).toBe(2);
-    expect(getCurrency("JPY")).toBeUndefined();
-  });
-
-  test("every currency has symbol, decimals, flag, region, and fallback rate", () => {
-    for (const c of CURRENCIES) {
-      expect(c.symbol.length).toBeGreaterThan(0);
-      expect(c.decimals).toBeGreaterThanOrEqual(0);
-      expect(c.flag.length).toBeGreaterThan(0);
-      expect(c.region.length).toBeGreaterThan(0);
-      expect(c.fallbackRate).toBeGreaterThan(0);
+  test("non-ISO codes fall back to overrides, not a missing name", () => {
+    for (const code of ["ci", "ck", "yue", "haw"]) {
+      expect(languageName(code)).not.toBe(code);
     }
+    expect(languageName("zz")).toBe("zz");
   });
 
-  test("country-to-currency map keys resolve to supported currencies", () => {
-    for (const code of Object.values(COUNTRY_TO_CURRENCY_CODE)) {
-      expect(getCurrency(code)).toBeDefined();
-    }
+  test("getLanguageFlag returns representative country flags", () => {
+    expect(getLanguageFlag("en")).toBe("🇬🇧");
+    expect(getLanguageFlag("yo")).toBe("🇳🇬");
+    expect(getLanguageFlag("yue")).toBe("🇭🇰");
+    expect(getLanguageFlag("auto")).toBe("🌐");
+    expect(getLanguageFlag("zz")).toBe("🏳️");
   });
 });
 
 describe("money helpers", () => {
-  test("getDecimals falls back to 2 for unknown codes", () => {
+  test("getDecimals comes from CLDR and falls back to 2", () => {
     expect(getDecimals("USD")).toBe(2);
     expect(getDecimals("XOF")).toBe(0);
     expect(getDecimals("ZZZ")).toBe(2);
+  });
+
+  test("getCurrencySymbol comes from CLDR", () => {
+    expect(getCurrencySymbol("USD")).toBe("$");
+    expect(getCurrencySymbol("EUR")).toBe("€");
   });
 
   test("roundToCurrency respects per-currency decimals", () => {
@@ -79,5 +72,25 @@ describe("money helpers", () => {
     expect(formatMoney(3, "USD")).toBe("$3");
     expect(formatMoney(1234.56, "USD")).toBe("$1,234.56");
     expect(formatMoney(28.8, "USD")).toBe("$28.80");
+  });
+
+  test("countryToCurrency maps target-market countries to their currency", () => {
+    expect(countryToCurrency("NG")).toBe("NGN");
+    expect(countryToCurrency("GH")).toBe("GHS");
+    expect(countryToCurrency("US")).toBe("USD");
+    expect(countryToCurrency("gb")).toBe("GBP");
+    expect(countryToCurrency("SN")).toBe("XOF");
+  });
+
+  test("countryToCurrency covers countries beyond the old hand-maintained map", () => {
+    expect(countryToCurrency("PL")).toBe("PLN");
+    expect(countryToCurrency("BR")).toBe("BRL");
+    expect(countryToCurrency("JP")).toBe("JPY");
+    expect(countryToCurrency("ZAR")).toBeUndefined();
+  });
+
+  test("countryToCurrency returns undefined for unknown countries", () => {
+    expect(countryToCurrency("XA")).toBeUndefined();
+    expect(countryToCurrency("")).toBeUndefined();
   });
 });

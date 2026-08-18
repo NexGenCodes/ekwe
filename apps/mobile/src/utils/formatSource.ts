@@ -7,7 +7,7 @@ import logger from "@/utils/logger";
 const KNOWN_APPS: Record<string, string> = {
   "com.whatsapp": "WhatsApp",
   "com.whatsapp.w4b": "WhatsApp Business",
-  "w4b": "WhatsApp Business",
+  w4b: "WhatsApp Business",
   "org.telegram.messenger": "Telegram",
   "ph.telegra.Telegraph": "Telegram",
   "com.zhiliaoapp.musically": "TikTok",
@@ -48,9 +48,7 @@ const IGNORE_SEGMENTS = new Set([
   "inc",
 ]);
 
-export const formatSourceApp = (
-  source: string | null | undefined,
-): string => {
+export const formatSourceApp = (source: string | null | undefined): string => {
   if (!source) return "Audio";
 
   const value = source.trim();
@@ -69,7 +67,10 @@ export const formatSourceApp = (
   // title-cases the most specific part (e.g. org.telegram.messenger → Telegram).
   const parts = value.split(".");
   if (parts.length === 1) {
-    logger.info("[formatSource] Unmapped source, formatting:", JSON.stringify(source));
+    logger.info(
+      "[formatSource] Unmapped source, formatting:",
+      JSON.stringify(source),
+    );
     return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
   }
 
@@ -79,7 +80,10 @@ export const formatSourceApp = (
       ? validParts[validParts.length - 1]
       : parts[parts.length - 1];
 
-  logger.info("[formatSource] Unmapped source, formatting:", JSON.stringify(source));
+  logger.info(
+    "[formatSource] Unmapped source, formatting:",
+    JSON.stringify(source),
+  );
 
   return (
     nameToFormat.charAt(0).toUpperCase() + nameToFormat.slice(1).toLowerCase()

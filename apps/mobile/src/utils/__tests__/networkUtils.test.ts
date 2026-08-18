@@ -1,14 +1,26 @@
+import { WORKER_ERROR_CODES } from "@ekwe/shared";
+
 import { EkweError } from "@/constants/errors";
 import {
   fetchWithRetry,
   mapWorkerError,
   OfflineNetworkError,
+  TimeoutError,
+  isTimeoutError,
 } from "../networkUtils";
 import {
   getNetworkStatus,
   isDefinitelyOffline,
   networkActions,
 } from "@/store/network";
+
+jest.mock("@/services/mmkv", () => ({
+  mmkv: { getString: jest.fn(), set: jest.fn(), getBoolean: jest.fn() },
+}));
+
+jest.mock("@/services/supabase", () => ({
+  supabase: { auth: { refreshSession: jest.fn() } },
+}));
 
 afterEach(() => {
   networkActions.set({ isConnected: null, isInternetReachable: null });
@@ -29,23 +41,30 @@ describe("mapWorkerError", () => {
     expect(mapWorkerError("EKWE_TRANSCRIBE_TIMEOUT")).toBe(
       EkweError.TRANSCRIBE_TIMEOUT,
     );
-    expect(mapWorkerError("EKWE_FILE_TOO_LARGE")).toBe(
+    expect(mapWorkerError(WORKER_ERROR_CODES.FILE_TOO_LARGE)).toBe(
       EkweError.FILE_TOO_LARGE,
     );
-  });
-
-  it("accepts both spellings of all-providers-fail", () => {
-    expect(mapWorkerError("EKWE_ALL_PROVIDERS_FAIL")).toBe(
-      EkweError.ALL_PROVIDERS_FAIL,
-    );
-    expect(mapWorkerError("ALL_PROVIDERS_FAILED")).toBe(
-      EkweError.ALL_PROVIDERS_FAIL,
+    expect(mapWorkerError(WORKER_ERROR_CODES.AUDIO_TOO_LONG)).toBe(
+      EkweError.AUDIO_TOO_LONG,
     );
   });
 
-  it("accepts both spellings of rate-limit", () => {
-    expect(mapWorkerError("EKWE_RATE_LIMITED")).toBe(EkweError.RATE_LIMITED);
-    expect(mapWorkerError("EKWE_RATE_LIMIT")).toBe(EkweError.RATE_LIMITED);
+  it("maps all-providers-fail", () => {
+    expect(mapWorkerError(WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL)).toBe(
+      EkweError.ALL_PROVIDERS_FAIL,
+    );
+  });
+
+  it("maps the canonical rate-limit spelling only", () => {
+    expect(mapWorkerError(WORKER_ERROR_CODES.EKWE_RATE_LIMIT)).toBe(
+      EkweError.RATE_LIMITED,
+    );
+    // The legacy EKWE_RATE_LIMITED spelling was never emitted by the worker
+    // and is no longer matched — it falls through to the default.
+    expect(mapWorkerError("EKWE_RATE_LIMITED" as string)).toBe(
+      EkweError.SERVER_ERROR,
+    );
+    expect(EkweError.RATE_LIMITED).toBe(WORKER_ERROR_CODES.EKWE_RATE_LIMIT);
   });
 
   it("maps translation codes", () => {
@@ -98,5 +117,70 @@ describe("fetchWithRetry offline fail-fast", () => {
 
   it("isOfflineNetworkError recognizes the marker error", () => {
     expect(new OfflineNetworkError().name).toBe("OfflineNetworkError");
+  });
+});
+
+describe("fetchWithRetry timeout", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("throws TimeoutError when a request exceeds the timeout", async () => {
+    jest.useFakeTimers();
+
+    const fetchSpy = jest.spyOn(globalThis, "fetch").mockImplementation(
+      (_url, opts) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = opts?.signal as AbortSignal;
+          if (signal.aborted) {
+            reject(new Error("Aborted"));
+            return;
+          }
+          signal.addEventListener("abort", () => reject(new Error("Aborted")));
+        }),
+    );
+
+    const promise = fetchWithRetry("https://example.com", {
+      timeout: 1000,
+      retries: 3,
+      backoff: 1,
+    });
+
+    jest.advanceTimersByTime(1000);
+
+    const error = await promise.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(TimeoutError);
+    expect(isTimeoutError(error)).toBe(true);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("does not retry a timed-out request", async () => {
+    jest.useFakeTimers();
+
+    const fetchSpy = jest.spyOn(globalThis, "fetch").mockImplementation(
+      (_url, opts) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = opts?.signal as AbortSignal;
+          if (signal.aborted) {
+            reject(new Error("Aborted"));
+            return;
+          }
+          signal.addEventListener("abort", () => reject(new Error("Aborted")));
+        }),
+    );
+
+    const promise = fetchWithRetry("https://example.com", {
+      timeout: 1000,
+      retries: 3,
+      backoff: 1,
+    });
+
+    jest.advanceTimersByTime(5000);
+
+    await promise.catch(() => undefined);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    fetchSpy.mockRestore();
   });
 });

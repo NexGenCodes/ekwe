@@ -7,17 +7,23 @@
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { AuthApiError } from "@supabase/supabase-js";
 import * as AppleAuthentication from "expo-apple-authentication";
-
 import { queryClient } from "@/hooks/queries/queryClient";
 import { getPosthogClient } from "@/services/posthog";
 import { SyncService } from "@/services/SyncService";
+import { Db } from "@/services/db";
 import { mmkv } from "@/services/mmkv";
 import { mirrorSessionToSharedContainer } from "@/services/sharedContainer";
 import { supabase, setupAppStateListener } from "@/services/supabase";
-import { auth$, authActions, buildSettingsSharedPrefs, isDefinitelyOffline } from "@/store";
+import {
+  auth$,
+  authActions,
+  buildSettingsSharedPrefs,
+  isDefinitelyOffline,
+} from "@/store";
 import { isIOS } from "@/utils";
 import { track, identify, AnalyticsEvents } from "@/utils/analytics";
 import logger from "@/utils/logger";
+import { getWorkerUrl } from "@/utils/networkUtils";
 
 const SESSION_CACHE_KEY = "hasSession";
 const OTP_REQUEST_TIMEOUT_MS = 15_000;
@@ -89,11 +95,16 @@ export const initAuth = async (): Promise<void> => {
     // share extension can authenticate without a deep-link handoff.
     mirrorSessionToSharedContainer(session, buildSettingsSharedPrefs());
 
-    if (event === "SIGNED_IN" && session?.user) {
-      identify(session.user.id, {
-        email: session.user.email ?? "",
-        is_pro: session.user.app_metadata?.is_pro === true,
-      });
+    if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session?.user) {
+      // Cold start with a persisted session emits INITIAL_SESSION (not
+      // SIGNED_IN); without handling it, cloud history is never pulled until
+      // a fresh sign-in. Both paths are idempotent (cursor-based pull).
+      if (event === "SIGNED_IN") {
+        identify(session.user.id, {
+          email: session.user.email ?? "",
+          is_pro: session.user.app_metadata?.is_pro === true,
+        });
+      }
       SyncService.onUserSignedIn(session.user.id);
       // Drain any share-extension work the native share sheet completed while
       // the user was signed out (the file stays in the App Group until then).
@@ -190,7 +201,7 @@ export const sendOtp = async (
   email: string,
   turnstileToken?: string,
 ): Promise<AuthResult> => {
-  const workerUrl = process.env.EXPO_PUBLIC_WORKER_URL;
+  const workerUrl = getWorkerUrl();
   const sitekey = process.env.EXPO_PUBLIC_TURNSTILE_SITEKEY;
 
   if (workerUrl && sitekey) {
@@ -520,6 +531,27 @@ export const linkSocialIdentity = async (): Promise<AuthResult> => {
 
 export const signOut = async (): Promise<AuthResult> => {
   try {
+    const userId = auth$.user.get()?.id;
+
+    // Best-effort: push every unsynced row to the cloud BEFORE leaving, so a
+    // re-login (same or new device) restores it. Only when the outbox is fully
+    // drained do we purge local data and clear the pull cursor; if we're
+    // offline or a row can't be pushed we KEEP local data so nothing is lost.
+    if (userId) {
+      await SyncService.drain();
+      const remaining = Db.getPendingOutbox(userId).length;
+      if (remaining === 0) {
+        SyncService.purgeLocalHistory();
+        SyncService.clearSyncCursor(userId);
+      } else {
+        logger.warn(
+          "[Auth] signOut: keeping local history;",
+          remaining,
+          "unsynced rows could not be pushed",
+        );
+      }
+    }
+
     const { error } = await supabase.auth.signOut();
     try {
       await GoogleSignin.signOut();

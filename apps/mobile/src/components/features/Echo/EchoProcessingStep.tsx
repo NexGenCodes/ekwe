@@ -150,9 +150,7 @@ export const EchoProcessingStep = React.memo(
             variant="bodySmall"
             accessibilityElementsHidden={elapsedMs < ELAPSED_REASSURE_MS}
             importantForAccessibility={
-              elapsedMs < ELAPSED_REASSURE_MS
-                ? "no-hide-descendants"
-                : "auto"
+              elapsedMs < ELAPSED_REASSURE_MS ? "no-hide-descendants" : "auto"
             }
             style={{
               marginTop: spacing.sm,
@@ -161,8 +159,7 @@ export const EchoProcessingStep = React.memo(
               opacity: elapsedMs >= ELAPSED_REASSURE_MS ? 1 : 0,
             }}
           >
-            {reassuranceLabel ??
-              "Taking longer than expected… still working."}
+            {reassuranceLabel ?? "Taking longer than expected… still working."}
           </Text>
         </Box>
 
@@ -227,10 +224,7 @@ function DeterminateBar({
   );
 }
 
-function IndeterminateBar({
-  color,
-  trackColor,
-}: BarProps): React.ReactElement {
+function IndeterminateBar({ color, trackColor }: BarProps): React.ReactElement {
   const reduceMotion = useReduceMotion();
   const progress = useSharedValue(0);
   const trackWidth = useSharedValue(0);
@@ -249,7 +243,11 @@ function IndeterminateBar({
     return {
       transform: [
         {
-          translateX: interpolate(progress.value, [0, 1], [-0.3 * width, width]),
+          translateX: interpolate(
+            progress.value,
+            [0, 1],
+            [-0.3 * width, width],
+          ),
         },
       ],
     };

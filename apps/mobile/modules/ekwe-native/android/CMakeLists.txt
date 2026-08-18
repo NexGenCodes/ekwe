@@ -40,6 +40,7 @@ target_link_libraries(opusfile PUBLIC ogg opus)
 add_library(ekwe_opus_util STATIC
     ../cpp/EkweOpusEncoder.cpp
     ../cpp/EkweOggMuxer.cpp
+    ../cpp/EkweCafMuxer.cpp
 )
 target_include_directories(ekwe_opus_util PUBLIC
     ../cpp

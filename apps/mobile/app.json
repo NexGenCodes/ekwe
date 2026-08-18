@@ -22,6 +22,8 @@
       "privacyManifests": {}
     },
     "android": {
+      "versionCode": 1,
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF",
@@ -82,7 +84,6 @@
 
       "expo-localization",
       "expo-status-bar",
-      "expo-web-browser",
       "./modules/ekwe-native/app.plugin.js",
       "expo-router",
       "expo-audio",
@@ -90,8 +91,29 @@
       "@sentry/react-native",
       "expo-apple-authentication",
       "expo-secure-store",
-      "@bacons/apple-targets"
+      "@bacons/apple-targets",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#FFFFFF",
+          "defaultChannel": "updates"
+        }
+      ]
     ],
-    "assetBundlePatterns": ["assets/fonts/*"]
+    "assetBundlePatterns": ["assets/fonts/*"],
+    "updates": {
+      "url": "https://u.expo.dev/YOUR_PROJECT_ID",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "YOUR_PROJECT_ID"
+      }
+    }
   }
 }

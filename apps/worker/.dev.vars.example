@@ -13,7 +13,7 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 TURNSTILE_SECRET=
 # Comma-separated allowed hostnames the widget can render on (siteverify).
 # The widget renders inside the mobile app's WebView with baseUrl https://ekwe.app
-# Override per-environment here or in wrangler.toml [vars].
+# Override per-environment here or in wrangler.jsonc vars.
 TURNSTILE_HOSTNAMES=ekwe.app
 
 # ─── STT / TTS Providers (multiply-keys = failover rotation) ──────────
@@ -198,6 +198,4 @@ WIT_KEY_ZU=
 
 # ─── Payments ──────────────────────────────────────────────────────────
 # Required for /checkout/initialize and /webhook to work.
-PAYSTACK_SECRET_KEY=
-FLUTTERWAVE_SECRET_HASH=
-REVENUECAT_WEBHOOK_SECRET=
+FLUTTERWAVE_SECRET=

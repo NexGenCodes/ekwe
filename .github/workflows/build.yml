@@ -1,0 +1,147 @@
+name: Build & Release Android APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag to build (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # push → the tag ref; manual dispatch → the requested tag. Builds always
+          # run from the tagged source, never from a live branch.
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Accept Android SDK licenses
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK + CMake
+        # The ekwe-native module has a C++/CMake build pinned to this NDK. It is
+        # NOT preinstalled on ubuntu-latest, so without this step assembleRelease
+        # fails with "NDK not configured".
+        run: |
+          sdkmanager --install "ndk;27.1.12297006" "cmake;3.22.1" > /dev/null 2>&1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run prebuild (generate native Android project)
+        working-directory: apps/mobile
+        run: pnpm run prebuild:android
+
+      - name: Build Release APK
+        working-directory: apps/mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease
+
+      - name: Stage release assets
+        id: assets
+        run: |
+          APK=$(find apps/mobile/android/app/build/outputs/apk -name "*.apk" ! -name "*androidTest*" | head -1)
+          mkdir -p dist
+          cp "$APK" dist/app-release.apk
+          sha256sum dist/app-release.apk | awk '{print $1}' > dist/app-release.apk.sha256
+          echo "size=$(stat -c%s dist/app-release.apk)" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(cat dist/app-release.apk.sha256)" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve release tag + version
+        id: version
+        run: |
+          RELEASE_TAG="${{ github.event_name == 'push' && github.ref_name || inputs.tag }}"
+          VERSION_CODE=$(grep -oP '"versionCode":\s*\K\d+' apps/mobile/app.json || echo "1")
+          echo "ref=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Switch to default branch for manifest commit
+        # The tag checkout is detached, so committing docs/version.json requires
+        # moving to the default branch first.
+        run: |
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
+          git fetch origin "$DEFAULT_BRANCH" --depth=1
+          git checkout "$DEFAULT_BRANCH"
+
+      - name: Write version manifest
+        run: |
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/latest/download/app-release.apk"
+          DATE=$(date -u +%Y-%m-%d)
+
+          jq -n \
+            --arg v "${{ steps.version.outputs.version }}" \
+            --argjson vc "${{ steps.version.outputs.version_code }}" \
+            --arg url "$DOWNLOAD_URL" \
+            --arg sha "${{ steps.assets.outputs.sha256 }}" \
+            --argjson size "${{ steps.assets.outputs.size }}" \
+            --arg date "$DATE" \
+            '{latest_version: $v, latest_version_code: $vc, min_supported_version_code: 1, download_url: $url, checksum_sha256: $sha, file_size: $size, release_notes: "", release_date: $date, force_update: false}' \
+            > docs/version.json
+
+          cp docs/version.json dist/version.json
+
+      - name: Commit updated manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/version.json
+          git diff --cached --quiet || git commit -m "chore: update version manifest to ${{ steps.version.outputs.version }}"
+          git push origin "${{ github.event.repository.default_branch }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.ref }}
+          name: "v${{ steps.version.outputs.version }}"
+          files: |
+            dist/app-release.apk
+            dist/app-release.apk.sha256
+            dist/version.json
+          generate_release_notes: true
+
+      - name: Publish manifest + notify devices
+        # Store the manifest in Worker KV (GET /update/manifest serves it) and
+        # push the APK update notification to every registered Android device.
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          PUSH_NOTIFY_SECRET: ${{ secrets.PUSH_NOTIFY_SECRET }}
+        run: |
+          curl -fsS -X POST "$WORKER_URL/update/manifest" \
+            -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
+            -H "Content-Type: application/json" \
+            --data @dist/version.json
+          curl -fsS -X POST "$WORKER_URL/push-notify" \
+            -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
+            -H "Content-Type: application/json" \
+            -d '{"version": "${{ steps.version.outputs.version }}", "versionCode": ${{ steps.version.outputs.version_code }}, "checksumSha256": "${{ steps.assets.outputs.sha256 }}", "downloadUrl": "https://github.com/${{ github.repository }}/releases/latest/download/app-release.apk"}'

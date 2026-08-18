@@ -1,0 +1,19 @@
+// Augment the generated Env with secrets and provider-key index signatures.
+// Secrets (Worker secrets set via `wrangler secret put`) are NOT in the
+// auto-generated worker-configuration.d.ts, so they need manual declaration.
+// Bindings like EKWE_D1, TURNSTILE_SECRET, and TURNSTILE_HOSTNAMES are
+// already non-optional in worker-configuration.d.ts — do NOT re-declare them
+// here as optional, because interface merging will widen the type to
+// `T | undefined` and break non-null usage downstream.
+interface Env {
+  FLUTTERWAVE_SECRET?: string;
+  [key: `COHERE_KEY_${number}`]: string | undefined;
+  [key: `DEEPGRAM_KEY_${number}`]: string | undefined;
+  [key: `GEMINI_KEY_${number}`]: string | undefined;
+  [key: `GLADIA_KEY_${number}`]: string | undefined;
+  [key: `GROQ_KEY_${number}`]: string | undefined;
+  [key: `MISTRAL_KEY_${number}`]: string | undefined;
+  [key: `WIT_KEY_${number}`]: string | undefined;
+  [key: `WIT_KEY_${string}`]: string | undefined;
+  [key: string]: unknown;
+}

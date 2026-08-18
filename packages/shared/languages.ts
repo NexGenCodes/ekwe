@@ -1,3 +1,5 @@
+import { languages as countryLanguages, type TCountryCode } from "countries-list";
+
 export interface Language {
   code: string;
   englishName: string;
@@ -13,144 +15,92 @@ export function languageName(code: string): string {
   return lang?.englishName ?? code;
 }
 
-export const LANGUAGES: Language[] = [
-  { code: "en", englishName: "English", nativeName: "English" },
-  { code: "es", englishName: "Spanish", nativeName: "Español" },
-  { code: "it", englishName: "Italian", nativeName: "Italiano" },
-  { code: "de", englishName: "German", nativeName: "Deutsch" },
-  { code: "zh", englishName: "Chinese (Simplified)", nativeName: "中文" },
-  { code: "fr", englishName: "French", nativeName: "Français" },
-  { code: "pt", englishName: "Portuguese", nativeName: "Português" },
-  { code: "ru", englishName: "Russian", nativeName: "Русский" },
-  { code: "ja", englishName: "Japanese", nativeName: "日本語" },
-  { code: "ko", englishName: "Korean", nativeName: "한국어" },
-  { code: "ar", englishName: "Arabic", nativeName: "العربية" },
-  { code: "hi", englishName: "Hindi", nativeName: "हिन्दी" },
-  { code: "nl", englishName: "Dutch", nativeName: "Nederlands" },
-  { code: "pl", englishName: "Polish", nativeName: "Polski" },
-  { code: "tr", englishName: "Turkish", nativeName: "Türkçe" },
-  { code: "sv", englishName: "Swedish", nativeName: "Svenska" },
-  { code: "da", englishName: "Danish", nativeName: "Dansk" },
-  { code: "fi", englishName: "Finnish", nativeName: "Suomi" },
-  { code: "nb", englishName: "Norwegian (Bokmål)", nativeName: "Norsk bokmål" },
-  { code: "cs", englishName: "Czech", nativeName: "Čeština" },
-  { code: "sk", englishName: "Slovak", nativeName: "Slovenčina" },
-  { code: "ro", englishName: "Romanian", nativeName: "Română" },
-  { code: "hu", englishName: "Hungarian", nativeName: "Magyar" },
-  { code: "uk", englishName: "Ukrainian", nativeName: "Українська" },
-  { code: "el", englishName: "Greek", nativeName: "Ελληνικά" },
-  { code: "he", englishName: "Hebrew", nativeName: "עברית" },
-  { code: "th", englishName: "Thai", nativeName: "ภาษาไทย" },
-  { code: "vi", englishName: "Vietnamese", nativeName: "Tiếng Việt" },
-  { code: "id", englishName: "Indonesian", nativeName: "Bahasa Indonesia" },
-  { code: "ms", englishName: "Malay", nativeName: "Bahasa Melayu" },
-  { code: "bg", englishName: "Bulgarian", nativeName: "Български" },
-  { code: "hr", englishName: "Croatian", nativeName: "Hrvatski" },
-  { code: "sr", englishName: "Serbian", nativeName: "Српски" },
-  { code: "ca", englishName: "Catalan", nativeName: "Català" },
-  { code: "lt", englishName: "Lithuanian", nativeName: "Lietuvių" },
-  { code: "lv", englishName: "Latvian", nativeName: "Latviešu" },
-  { code: "et", englishName: "Estonian", nativeName: "Eesti" },
-  { code: "sl", englishName: "Slovenian", nativeName: "Slovenščina" },
-  { code: "sq", englishName: "Albanian", nativeName: "Shqip" },
-  { code: "mk", englishName: "Macedonian", nativeName: "Македонски" },
-  { code: "af", englishName: "Afrikaans", nativeName: "Afrikaans" },
-  { code: "bn", englishName: "Bengali", nativeName: "বাংলা" },
-  { code: "fa", englishName: "Persian", nativeName: "فارسی" },
-  { code: "ur", englishName: "Urdu", nativeName: "اردو" },
-  { code: "sw", englishName: "Swahili", nativeName: "Kiswahili" },
-  { code: "tl", englishName: "Filipino", nativeName: "Filipino" },
-  { code: "ta", englishName: "Tamil", nativeName: "தமிழ்" },
-  { code: "te", englishName: "Telugu", nativeName: "తెలుగు" },
-  { code: "ml", englishName: "Malayalam", nativeName: "മലയാളം" },
-  { code: "mr", englishName: "Marathi", nativeName: "मराठी" },
-  { code: "gu", englishName: "Gujarati", nativeName: "ગુજરાતી" },
-  { code: "pa", englishName: "Punjabi", nativeName: "ਪੰਜਾਬੀ" },
-  { code: "ne", englishName: "Nepali", nativeName: "नेपाली" },
-  { code: "si", englishName: "Sinhala", nativeName: "සිංහල" },
-  { code: "km", englishName: "Khmer", nativeName: "ខ្មែរ" },
-  { code: "lo", englishName: "Lao", nativeName: "ລາວ" },
-  { code: "my", englishName: "Burmese", nativeName: "မြန်မာ" },
-  { code: "ka", englishName: "Georgian", nativeName: "ქართული" },
-  { code: "yo", englishName: "Yoruba", nativeName: "Yorùbá" },
-  { code: "ig", englishName: "Igbo", nativeName: "Igbo" },
-  { code: "ha", englishName: "Hausa", nativeName: "Hausa" },
-  { code: "zu", englishName: "Zulu", nativeName: "isiZulu" },
-  { code: "so", englishName: "Somali", nativeName: "Soomaaliga" },
-  { code: "am", englishName: "Amharic", nativeName: "አማርኛ" },
-  { code: "az", englishName: "Azerbaijani", nativeName: "Azərbaycan dili" },
-  { code: "uz", englishName: "Uzbek", nativeName: "Oʻzbekcha" },
-  { code: "kk", englishName: "Kazakh", nativeName: "Қазақша" },
-  { code: "mn", englishName: "Mongolian", nativeName: "Монгол хэл" },
-  { code: "hy", englishName: "Armenian", nativeName: "Հայերեն" },
-  { code: "jv", englishName: "Javanese", nativeName: "Basa Jawa" },
-  { code: "su", englishName: "Sundanese", nativeName: "Basa Sunda" },
-  { code: "bs", englishName: "Bosnian", nativeName: "Bosanski" },
-  { code: "is", englishName: "Icelandic", nativeName: "Íslenska" },
-  { code: "ga", englishName: "Irish", nativeName: "Gaeilge" },
-  { code: "cy", englishName: "Welsh", nativeName: "Cymraeg" },
-  { code: "gd", englishName: "Scottish Gaelic", nativeName: "Gàidhlig" },
-  { code: "gl", englishName: "Galician", nativeName: "Galego" },
-  { code: "eu", englishName: "Basque", nativeName: "Euskara" },
-  { code: "mt", englishName: "Maltese", nativeName: "Malti" },
-  { code: "xh", englishName: "Xhosa", nativeName: "isiXhosa" },
-  { code: "sn", englishName: "Shona", nativeName: "chiShona" },
-  { code: "st", englishName: "Sesotho", nativeName: "Sesotho" },
-  { code: "ny", englishName: "Chichewa", nativeName: "Chichewa" },
-  { code: "rw", englishName: "Kinyarwanda", nativeName: "Kinyarwanda" },
-  { code: "mg", englishName: "Malagasy", nativeName: "Malagasy" },
-  { code: "tk", englishName: "Turkmen", nativeName: "Türkmençe" },
-  { code: "ky", englishName: "Kyrgyz", nativeName: "Кыргызча" },
-  { code: "tg", englishName: "Tajik", nativeName: "Тоҷикӣ" },
-  { code: "ps", englishName: "Pashto", nativeName: "پښتو" },
-  { code: "sd", englishName: "Sindhi", nativeName: "سنڌي" },
-  { code: "as", englishName: "Assamese", nativeName: "অসমীয়া" },
-  { code: "or", englishName: "Odia", nativeName: "ଓଡ଼ିଆ" },
-  { code: "ba", englishName: "Bashkir", nativeName: "Башҡортса" },
-  { code: "be", englishName: "Belarusian", nativeName: "Беларуская" },
-  { code: "bo", englishName: "Tibetan", nativeName: "བོད་སྐད" },
-  { code: "br", englishName: "Breton", nativeName: "Brezhoneg" },
-  { code: "fo", englishName: "Faroese", nativeName: "Føroyskt" },
-  { code: "haw", englishName: "Hawaiian", nativeName: "ʻŌlelo Hawaiʻi" },
-  { code: "ht", englishName: "Haitian Creole", nativeName: "Kreyòl Ayisyen" },
-  { code: "ci", englishName: "Cherokee", nativeName: "ᏣᎳᎩ" },
-  { code: "ck", englishName: "Sicilian", nativeName: "Sicilianu" },
-  { code: "kn", englishName: "Kannada", nativeName: "ಕನ್ನಡ" },
-  { code: "la", englishName: "Latin", nativeName: "Latina" },
-  { code: "lb", englishName: "Luxembourgish", nativeName: "Lëtzebuergesch" },
-  { code: "ln", englishName: "Lingala", nativeName: "Lingála" },
-  { code: "mi", englishName: "Maori", nativeName: "Te Reo Māori" },
-  { code: "nn", englishName: "Norwegian Nynorsk", nativeName: "Norsk Nynorsk" },
-  { code: "oc", englishName: "Occitan", nativeName: "Occitan" },
-  { code: "sa", englishName: "Sanskrit", nativeName: "संस्कृतम्" },
-  { code: "tt", englishName: "Tatar", nativeName: "Татарча" },
-  { code: "yi", englishName: "Yiddish", nativeName: "ייִדיש" },
-  { code: "yue", englishName: "Cantonese", nativeName: "粵語" },
-  { code: "ak", englishName: "Akan", nativeName: "Akan" },
-  { code: "ay", englishName: "Aymara", nativeName: "Aymar" },
-  { code: "dv", englishName: "Divehi", nativeName: "ދިވެހިބަސް" },
-  { code: "eo", englishName: "Esperanto", nativeName: "Esperanto" },
-  { code: "ff", englishName: "Fulah", nativeName: "Fulfulde" },
-  { code: "fy", englishName: "Western Frisian", nativeName: "Frysk" },
-  { code: "gn", englishName: "Guarani", nativeName: "Avañe'ẽ" },
-  { code: "iu", englishName: "Inuktitut", nativeName: "ᐃᓄᒃᑎᑐᑦ" },
-  { code: "kl", englishName: "Greenlandic", nativeName: "Kalaallisut" },
-  { code: "ks", englishName: "Kashmiri", nativeName: "कॉशुर" },
-  { code: "ku", englishName: "Kurdish", nativeName: "Kurdî" },
-  { code: "lg", englishName: "Ganda", nativeName: "Luganda" },
-  { code: "li", englishName: "Limburgish", nativeName: "Limburgs" },
-  { code: "no", englishName: "Norwegian", nativeName: "Norsk" },
-  { code: "nr", englishName: "Southern Ndebele", nativeName: "isiNdebele" },
-  { code: "om", englishName: "Oromo", nativeName: "Afaan Oromoo" },
-  { code: "qu", englishName: "Quechua", nativeName: "Runa Simi" },
-  { code: "rm", englishName: "Romansh", nativeName: "Rumantsch" },
-  { code: "sc", englishName: "Sardinian", nativeName: "Sardu" },
-  { code: "se", englishName: "Northern Sami", nativeName: "Davvisámegiella" },
-  { code: "ss", englishName: "Swati", nativeName: "SiSwati" },
-  { code: "ti", englishName: "Tigrinya", nativeName: "ትግርኛ" },
-  { code: "tn", englishName: "Tswana", nativeName: "Setswana" },
-  { code: "ts", englishName: "Tsonga", nativeName: "Xitsonga" },
-  { code: "ug", englishName: "Uyghur", nativeName: "ئۇيغۇرچە" },
-  { code: "ve", englishName: "Venda", nativeName: "Tshivenḓa" },
-  { code: "wo", englishName: "Wolof", nativeName: "Wolof" },
-];
+// Codes whose ISO 639-1 name is misleading for the variant we ship, or that
+// countries-list doesn't cover (haw/ci/ck/yue are not ISO 639-1).
+const NAME_OVERRIDES: Record<string, { englishName: string; nativeName: string }> = {
+  zh: { englishName: "Chinese (Simplified)", nativeName: "中文" },
+  haw: { englishName: "Hawaiian", nativeName: "ʻŌlelo Hawaiʻi" },
+  ci: { englishName: "Cherokee", nativeName: "ᏣᎳᎩ" },
+  ck: { englishName: "Sicilian", nativeName: "Sicilianu" },
+  yue: { englishName: "Cantonese", nativeName: "粵語" },
+};
+
+// Provider-supported subset (curated — providers gate which codes they accept).
+const LANGUAGE_CODES = [
+  "en", "es", "it", "de", "zh", "fr", "pt", "ru", "ja", "ko", "ar", "hi",
+  "nl", "pl", "tr", "sv", "da", "fi", "nb", "cs", "sk", "ro", "hu", "uk",
+  "el", "he", "th", "vi", "id", "ms", "bg", "hr", "sr", "ca", "lt", "lv",
+  "et", "sl", "sq", "mk", "af", "bn", "fa", "ur", "sw", "tl", "ta", "te",
+  "ml", "mr", "gu", "pa", "ne", "si", "km", "lo", "my", "ka", "yo", "ig",
+  "ha", "zu", "so", "am", "az", "uz", "kk", "mn", "hy", "jv", "su", "bs",
+  "is", "ga", "cy", "gd", "gl", "eu", "mt", "xh", "sn", "st", "ny", "rw",
+  "mg", "tk", "ky", "tg", "ps", "sd", "as", "or", "ba", "be", "bo", "br",
+  "fo", "haw", "ht", "ci", "ck", "kn", "la", "lb", "ln", "mi", "nn", "oc",
+  "sa", "tt", "yi", "yue", "ak", "ay", "dv", "eo", "ff", "fy", "gn", "iu",
+  "kl", "ks", "ku", "lg", "li", "no", "nr", "om", "qu", "rm", "sc", "se",
+  "ss", "ti", "tn", "ts", "ug", "ve", "wo",
+] as const;
+
+// Names come from the ISO 639-1 dataset (maintained by countries-list), not
+// hand-typed. englishName/nativeName fall back to the code itself if a code
+// is ever removed upstream.
+export const LANGUAGES: Language[] = LANGUAGE_CODES.map((code) => {
+  const lib = countryLanguages[code as keyof typeof countryLanguages];
+  const override = NAME_OVERRIDES[code];
+  return {
+    code,
+    englishName: override?.englishName ?? lib?.name ?? code,
+    nativeName: override?.nativeName ?? lib?.native ?? code,
+  };
+});
+
+// Representative country (ISO 3166-1 alpha-2) per language, for flag display.
+// Curated: the country most users associate with each language. Languages
+// with no meaningful country (constructed/historical) or a sub-national flag
+// live in FLAG_OVERRIDES instead.
+const LANG_TO_COUNTRY: Record<string, TCountryCode> = {
+  en: "GB", es: "ES", it: "IT", de: "DE", zh: "CN", fr: "FR", pt: "PT",
+  ru: "RU", ja: "JP", ko: "KR", ar: "SA", hi: "IN", nl: "NL", pl: "PL",
+  tr: "TR", sv: "SE", da: "DK", fi: "FI", nb: "NO", cs: "CZ", sk: "SK",
+  ro: "RO", hu: "HU", uk: "UA", el: "GR", he: "IL", th: "TH", vi: "VN",
+  id: "ID", ms: "MY", bg: "BG", hr: "HR", sr: "RS", ca: "ES", lt: "LT",
+  lv: "LV", et: "EE", sl: "SI", sq: "AL", mk: "MK", af: "ZA", bn: "BD",
+  fa: "IR", ur: "PK", sw: "KE", tl: "PH", ta: "IN", te: "IN", ml: "IN",
+  mr: "IN", gu: "IN", pa: "IN", ne: "NP", si: "LK", km: "KH", lo: "LA",
+  my: "MM", ka: "GE", yo: "NG", ig: "NG", ha: "NG", zu: "ZA", so: "SO",
+  am: "ET", az: "AZ", uz: "UZ", kk: "KZ", mn: "MN", hy: "AM", jv: "ID",
+  su: "ID", bs: "BA", is: "IS", ga: "IE", gl: "ES", eu: "ES", mt: "MT",
+  xh: "ZA", sn: "ZW", st: "LS", ny: "MW", rw: "RW", mg: "MG", tk: "TM",
+  ky: "KG", tg: "TJ", ps: "AF", sd: "PK", as: "IN", or: "IN", ci: "US",
+  ck: "IT", fo: "FO", fy: "NL", haw: "US", ht: "HT", iu: "CA", kl: "GL",
+  lb: "LU", mi: "NZ", nn: "NO", no: "NO", oc: "FR", rm: "CH", sa: "IN",
+  sc: "IT", se: "NO", ti: "ER", tt: "RU", yi: "IL", yue: "HK", ak: "GH",
+  ay: "BO", ba: "RU", be: "BY", bo: "CN", br: "FR", dv: "MV", ff: "SN",
+  gn: "PY", kn: "IN", ks: "IN", ku: "IQ", lg: "UG", li: "NL", ln: "CD",
+  nr: "ZA", om: "ET", qu: "PE", ss: "SZ", tn: "BW", ts: "ZA", ug: "CN",
+  ve: "ZA", wo: "SN",
+};
+
+const FLAG_OVERRIDES: Record<string, string> = {
+  auto: "🌐",
+  eo: "🌍",
+  la: "🏛️",
+  cy: "🏴󠁧󠁢󠁷󠁬󠁳󠁿",
+  gd: "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+};
+
+/** Returns a flag emoji for a language code, or a neutral flag when unknown. */
+export function getLanguageFlag(code: string): string {
+  if (FLAG_OVERRIDES[code]) return FLAG_OVERRIDES[code];
+  const country = LANG_TO_COUNTRY[code];
+  return country ? flagEmoji(country) : "🏳️";
+}
+
+/** Builds a regional-indicator flag from an ISO 3166-1 alpha-2 code. */
+function flagEmoji(country: string): string {
+  return String.fromCodePoint(
+    ...Array.from(country).map(
+      (ch) => 0x1f1e6 + ch.charCodeAt(0) - 0x41,
+    ),
+  );
+}

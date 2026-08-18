@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 
 import { triggerHaptic } from "@/utils/haptics";
+import { pushOnce } from "@/utils/navigation";
 import { Box, Text, Pressable } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
@@ -49,7 +50,7 @@ export function AccountStatusPill(): React.ReactElement {
     <Pressable
       onPress={() => {
         triggerHaptic();
-        router.push("/billing");
+        pushOnce(router, "/billing");
       }}
       accessible
       accessibilityRole="button"

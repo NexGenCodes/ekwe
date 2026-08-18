@@ -129,7 +129,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - name: Regenerate worker types from wrangler.toml
+      - name: Regenerate worker types from wrangler.jsonc
         run: pnpm exec wrangler types
       - name: Fail if worker-configuration.d.ts is out of date
         run: git diff --exit-code -- worker-configuration.d.ts

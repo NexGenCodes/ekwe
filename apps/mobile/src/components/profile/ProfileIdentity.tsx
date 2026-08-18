@@ -174,7 +174,7 @@ export function ProfileIdentity({
       )}
       <Box style={{ marginTop: spacing.md }}>
         <Badge
-          label={isPro ? "Pro Member" : "Basic Plan"}
+          label={isPro ? "Pro Member" : "Free Plan"}
           variant={isPro ? "warning" : "primary"}
           icon={
             isIOS ? (

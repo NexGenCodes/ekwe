@@ -2,7 +2,6 @@ import { observable } from "@legendapp/state";
 import { persistObservable } from "@legendapp/state/persist";
 
 import { PLAN_LIMITS } from "@/constants/billing";
-import { detectDeviceCurrency } from "@/constants/currency";
 import {
   mirrorSettingsToShared,
   SharedPreferences,
@@ -18,7 +17,6 @@ export enum ThemePreference {
 
 export interface SettingsState {
   themePreference: ThemePreference;
-  retentionDays: number;
   selectedLanguages: string[];
   targetLanguage: string;
   autoRaiseVolume: boolean;
@@ -28,14 +26,12 @@ export interface SettingsState {
   onboardingCompleted: boolean;
   autoCopy: boolean;
   hapticsEnabled: boolean;
-  currency: string;
   liveTranscriptionEnabled: boolean;
   analyticsConsent: boolean;
 }
 
 const initialSettings: SettingsState = {
   themePreference: ThemePreference.System,
-  retentionDays: 7,
   selectedLanguages: [],
   targetLanguage: "en",
   autoRaiseVolume: true,
@@ -45,7 +41,6 @@ const initialSettings: SettingsState = {
   onboardingCompleted: false,
   autoCopy: true,
   hapticsEnabled: true,
-  currency: detectDeviceCurrency(),
   liveTranscriptionEnabled: false,
   analyticsConsent: false,
 };
@@ -55,14 +50,16 @@ export const settings$ = observable<SettingsState>(initialSettings);
 // Build the prefs object for the native share extension's shared container.
 // Read here rather than in sharedContainer to avoid `store -> services` cycle.
 export function buildSettingsSharedPrefs(
-  overrides?: Partial<Pick<SharedPreferences, "selectedLanguages" | "autoCopy">>,
+  overrides?: Partial<
+    Pick<SharedPreferences, "selectedLanguages" | "autoCopy">
+  >,
 ): SharedPreferences {
   return {
     selectedLanguages:
       overrides?.selectedLanguages ?? settings$.selectedLanguages.peek(),
     autoCopy: overrides?.autoCopy ?? settings$.autoCopy.peek(),
-    autoDetectAllowed: PLAN_LIMITS[auth$.isPro.peek() ? "pro" : "free"]
-      .autoDetectAllowed,
+    autoDetectAllowed:
+      PLAN_LIMITS[auth$.isPro.peek() ? "pro" : "free"].autoDetectAllowed,
   };
 }
 
@@ -76,12 +73,11 @@ export const settingsActions = {
   setThemePreference: (val: ThemePreference): void => {
     settings$.themePreference.set(val);
   },
-  setRetentionDays: (val: number): void => {
-    settings$.retentionDays.set(val);
-  },
   setSelectedLanguages: (codes: string[]): void => {
     settings$.selectedLanguages.set(codes);
-    mirrorSettingsToShared(buildSettingsSharedPrefs({ selectedLanguages: codes }));
+    mirrorSettingsToShared(
+      buildSettingsSharedPrefs({ selectedLanguages: codes }),
+    );
   },
   setTargetLanguage: (code: string): void => {
     settings$.targetLanguage.set(code);
@@ -107,9 +103,6 @@ export const settingsActions = {
   },
   setHapticsEnabled: (val: boolean): void => {
     settings$.hapticsEnabled.set(val);
-  },
-  setCurrency: (val: string): void => {
-    settings$.currency.set(val);
   },
   setLiveTranscriptionEnabled: (val: boolean): void => {
     settings$.liveTranscriptionEnabled.set(val);

@@ -19,6 +19,7 @@ import { getToken } from "@/store/auth";
 import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 import { logger } from "@/utils";
+import { getWorkerUrl } from "@/utils/networkUtils";
 
 const TIMER_TICK_MS = 100;
 const KEEP_AWAKE_TAG = "ekwe-dictation-recording";
@@ -238,7 +239,7 @@ const dictationActions = {
       // Connect streaming WebSocket for live mode
       if (isLive) {
         const token = getToken();
-        const serverUrl = process.env.EXPO_PUBLIC_WORKER_URL ?? "";
+        const serverUrl = getWorkerUrl();
         if (!token || !serverUrl) {
           logger.error(
             "[VoiceDictation] Missing token or server URL for live mode",

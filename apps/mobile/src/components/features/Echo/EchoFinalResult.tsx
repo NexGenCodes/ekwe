@@ -8,7 +8,7 @@ import { TextBox } from "./TextBox";
 import type { WaveformPlaybackController } from "@/hooks/audio/useAudioWaveformPlayback";
 
 import { Box, Text, Pressable } from "@/components/ui";
-import { FLAG_MAP } from "@/constants/languages";
+import { getLanguageFlag } from "@/constants/languages";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks/ui";
@@ -41,7 +41,7 @@ const langLabel = (
   code: string | null | undefined,
 ): { flag: string; name: string } => {
   const upper = code?.toUpperCase() ?? "";
-  return { flag: (code && FLAG_MAP[code]) || "🌐", name: upper || "—" };
+  return { flag: code ? getLanguageFlag(code) : "🌐", name: upper || "—" };
 };
 
 /**

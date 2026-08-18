@@ -14,20 +14,23 @@ export function getDefaultSourceLang(autoDetectAllowed: boolean): string {
  * A provider-reported language is only a *genuine detection* when it differs
  * from the language the user asked for (or the user asked for auto-detect).
  * When the provider merely echoes the requested language back, nothing was
- * detected — the user's selection is the source. Returns `null` when auto was
- * requested but nothing was detected (unknown).
+ * detected — the user's selection is the source. Auto-detect (a Pro feature)
+ * never returns `null`: the worker backfills detection on auto, so this falls
+ * back to the default source rather than hiding the "Detected" pill.
  */
 export function resolveDetectedLanguage(
   detectedLang: string | undefined | null,
   sourceLang: string,
   fallback: string = "en",
 ): string | null {
-  const reported = detectedLang && detectedLang !== "auto" && detectedLang !== "und"
-    ? detectedLang
-    : null;
+  const reported =
+    detectedLang && detectedLang !== "auto" && detectedLang !== "und"
+      ? detectedLang
+      : null;
 
-  // Auto-detect request: the provider's report is the answer.
-  if (sourceLang === "auto") return reported;
+  // Auto-detect request: the provider's report is the answer, falling back to
+  // the default source so the detected pill is always visible for Pro users.
+  if (sourceLang === "auto") return reported ?? fallback;
 
   // Explicit source: only accept a DIFFERENT language as a detection signal.
   if (reported && reported !== sourceLang) return reported;

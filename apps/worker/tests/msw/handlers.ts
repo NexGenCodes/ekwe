@@ -19,13 +19,21 @@ export const PROVIDER_URLS = {
   mistralChat: "https://api.mistral.ai/v1/chat/completions",
   geminiGenerate:
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
+  geminiTtsGenerate:
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent",
   openrouterChat: "https://openrouter.ai/api/v1/chat/completions",
-  paystackInitialize: "https://api.paystack.co/transaction/initialize",
-  frankfurterLatest: "https://api.frankfurter.app/latest",
+  openErApiLatest: "https://open.er-api.com/v6/latest/USD",
   supabaseCheckPreflight:
     "https://mock.supabase.co/rest/v1/rpc/check_preflight",
+  supabaseCheckSessionActive:
+    "https://mock.supabase.co/rest/v1/rpc/check_session_active",
   supabaseConsumeUsage: "https://mock.supabase.co/rest/v1/rpc/consume_usage",
+  supabaseGetDailyUsage: "https://mock.supabase.co/rest/v1/rpc/get_daily_usage",
   supabaseSetProStatus: "https://mock.supabase.co/rest/v1/rpc/set_pro_status",
+  supabaseSubscriptionConfig:
+    "https://mock.supabase.co/rest/v1/subscription_config",
+  supabasePaymentConfig:
+    "https://mock.supabase.co/rest/v1/payment_config",
 } as const;
 
 const notFound = () =>
@@ -52,11 +60,18 @@ export const defaultHandlers = [
   http.post(PROVIDER_URLS.cohereChat, notFound),
   http.post(PROVIDER_URLS.mistralChat, notFound),
   http.post(PROVIDER_URLS.geminiGenerate, notFound),
+  http.post(PROVIDER_URLS.geminiTtsGenerate, notFound),
   http.post(PROVIDER_URLS.openrouterChat, notFound),
   // Backend services
-  http.get(PROVIDER_URLS.frankfurterLatest, notFound),
-  http.post(PROVIDER_URLS.paystackInitialize, notFound),
+  http.get(PROVIDER_URLS.openErApiLatest, notFound),
   http.post(PROVIDER_URLS.supabaseCheckPreflight, notFound),
+  http.post(PROVIDER_URLS.supabaseCheckSessionActive, () =>
+    // Sessions are active by default; individual tests override with `false`.
+    HttpResponse.json(true),
+  ),
   http.post(PROVIDER_URLS.supabaseConsumeUsage, notFound),
+  http.post(PROVIDER_URLS.supabaseGetDailyUsage, notFound),
   http.post(PROVIDER_URLS.supabaseSetProStatus, notFound),
+  http.get(PROVIDER_URLS.supabaseSubscriptionConfig, notFound),
+  http.get(PROVIDER_URLS.supabasePaymentConfig, notFound),
 ];

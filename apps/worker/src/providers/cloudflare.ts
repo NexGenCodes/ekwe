@@ -1,7 +1,15 @@
-import { CLIENT_ABORTED, Env, TranscribeResult, TranslateResult } from "../types";
-import { isHallucination, buildTranslatePrompt } from "../utils/prompts";
-import { logger } from "../logger";
-import { toWhisperCode } from "../languages";
+import {
+  CLIENT_ABORTED,
+  Env,
+  TranscribeResult,
+  TranslateResult,
+  TtsAttempt,
+} from "../core/types";
+import { isHallucination, buildTranslatePrompt, parseTranslateOutput } from "../utils/prompts";
+import { logger } from "../core/logger";
+import { toWhisperCode } from "../services/languages";
+import { bytesToBase64 } from "../utils/base64";
+import { runAiTtsRaw } from "../utils/ai";
 
 /**
  * Cloudflare Workers AI — zero-key safety net.
@@ -9,16 +17,6 @@ import { toWhisperCode } from "../languages";
  */
 
 // ─── Transcription (@cf/openai/whisper) ───────────────────────────
-
-const B64_CHUNK = 0x8000;
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += B64_CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + B64_CHUNK));
-  }
-  return btoa(binary);
-}
 
 export async function transcribe(
   blob: Blob,
@@ -63,6 +61,7 @@ export async function translate(
   sourceLang: string | undefined,
   env: Env,
   signal: AbortSignal,
+  transliteration: boolean = false,
 ): Promise<TranslateResult | null> {
   try {
     if (signal.aborted) throw new Error(CLIENT_ABORTED);
@@ -70,7 +69,7 @@ export async function translate(
       messages: [
         {
           role: "system",
-          content: buildTranslatePrompt(targetLang, sourceLang),
+          content: buildTranslatePrompt(targetLang, sourceLang, transliteration),
         },
         { role: "user", content: text },
       ],
@@ -80,7 +79,15 @@ export async function translate(
     const response =
       typeof result?.response === "string" ? result.response : "";
     if (response) {
-      return { translation: response, provider: "cloudflare" };
+      const { translation, transliteration: romanized } = parseTranslateOutput(
+        response,
+        transliteration,
+      );
+      return {
+        translation,
+        ...(romanized ? { transliteration: romanized } : {}),
+        provider: "cloudflare",
+      };
     }
   } catch (e) {
     if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
@@ -92,4 +99,16 @@ export async function translate(
   return null;
 }
 
-export { ALL_LANGUAGES as supportedLanguages } from "../languages";
+export { ALL_LANGUAGES as supportedLanguages } from "../services/languages";
+
+// ─── Text-to-Speech (@cf/myshell-ai/melotts) ──────────────────────
+// MeloTTS is a Cloudflare-hosted voice; the model's `lang` field is a base
+// language code (en/fr/es/zh/ja/ko) matching the worker's own codes.
+
+export async function melotts(
+  text: string,
+  lang: string,
+  env: Env,
+): Promise<TtsAttempt> {
+  return runAiTtsRaw(env, "@cf/myshell-ai/melotts", { prompt: text, lang }, "melotts");
+}

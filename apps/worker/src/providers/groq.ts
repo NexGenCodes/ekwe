@@ -1,10 +1,19 @@
-import { Env, TranscribeResult, TranslateResult } from "../types";
+import { CLIENT_ABORTED, Env, TranscribeResult, TranslateResult } from "../core/types";
 import { rotateKeys } from "../utils/keys";
-import { isHallucination, buildTranslatePrompt } from "../utils/prompts";
+import {
+  isHallucination,
+  buildTranslatePrompt,
+  parseTranslateOutput,
+} from "../utils/prompts";
 import { mimeToExt } from "../utils/mime";
-import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
-import { logger } from "../logger";
-import { toWhisperCode } from "../languages";
+import {
+  getUserAgent,
+  fetchWithTimeout,
+  logProviderError,
+  TIMEOUT_FAST,
+} from "../utils/fetch";
+import { logger } from "../core/logger";
+import { toWhisperCode } from "../services/languages";
 
 const GROQ_TRANSCRIBE = "https://api.groq.com/openai/v1/audio/transcriptions";
 const GROQ_CHAT = "https://api.groq.com/openai/v1/chat/completions";
@@ -45,12 +54,7 @@ export async function transcribe(
   );
 
   if (!res?.ok) {
-    const errText =
-      (await res?.text().catch(() => "No body")) || "Unknown fetch error";
-    logger.error("[groq] Transcribe HTTP error", {
-      status: res?.status,
-      body: errText,
-    });
+    await logProviderError("groq transcribe", res);
     return null;
   }
 
@@ -88,57 +92,73 @@ export async function translate(
   sourceLang: string | undefined,
   env: Env,
   signal: AbortSignal,
+  transliteration: boolean = false,
 ): Promise<TranslateResult | null> {
   logger.info("[groq] Requesting translation", { targetLang, sourceLang });
 
-  const res = await rotateKeys(
-    env,
-    "GROQ_KEY_",
-    (key) =>
-      fetchWithTimeout(
-        GROQ_CHAT,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${key}`,
-            "Content-Type": "application/json",
-            "User-Agent": getUserAgent(),
+  try {
+    const res = await rotateKeys(
+      env,
+      "GROQ_KEY_",
+      (key) =>
+        fetchWithTimeout(
+          GROQ_CHAT,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${key}`,
+              "Content-Type": "application/json",
+              "User-Agent": getUserAgent(),
+            },
+            body: JSON.stringify({
+              model: "llama-3.3-70b-versatile",
+              messages: [
+                {
+                  role: "system",
+                  content: buildTranslatePrompt(
+                    targetLang,
+                    sourceLang,
+                    transliteration,
+                  ),
+                },
+                { role: "user", content: text },
+              ],
+              temperature: 0,
+            }),
           },
-          body: JSON.stringify({
-            model: "llama-3.3-70b-versatile",
-            messages: [
-              {
-                role: "system",
-                content: buildTranslatePrompt(targetLang, sourceLang),
-              },
-              { role: "user", content: text },
-            ],
-            temperature: 0,
-          }),
-        },
-        TIMEOUT_FAST,
-        signal,
-      ),
-    signal,
-  );
+          TIMEOUT_FAST,
+          signal,
+        ),
+      signal,
+    );
 
-  if (!res?.ok) {
-    const errText =
-      (await res?.text().catch(() => "No body")) || "Unknown fetch error";
-    logger.error("[groq] Translate HTTP error", {
-      status: res?.status,
-      body: errText,
+    if (!res?.ok) {
+      await logProviderError("groq translate", res);
+      return null;
+    }
+
+    const data = await res.json<{
+      choices?: Array<{ message?: { content?: string } }>;
+    }>();
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) return null;
+
+    const { translation, transliteration: romanized } = parseTranslateOutput(
+      content,
+      transliteration,
+    );
+    return {
+      translation,
+      ...(romanized ? { transliteration: romanized } : {}),
+      provider: "groq",
+    };
+  } catch (e) {
+    if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
+    logger.error("[groq] Translate exception", {
+      error: e instanceof Error ? e.message : String(e),
     });
     return null;
   }
-
-  const data = await res.json<{
-    choices?: Array<{ message?: { content?: string } }>;
-  }>();
-  const content = data.choices?.[0]?.message?.content?.trim();
-  if (!content) return null;
-
-  return { translation: content, provider: "groq" };
 }
 
-export { ALL_LANGUAGES as supportedLanguages } from "../languages";
+export { ALL_LANGUAGES as supportedLanguages } from "../services/languages";

@@ -83,10 +83,10 @@ function InnerLayout(): React.ReactElement {
       if (sessionLoaded) {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { HistoryService } = require("@/services/HistoryService");
-        HistoryService.cleanupLocalHistory();
         // Import any transcription/translation the native iOS share extension
         // completed while the app was backgrounded (writes into the shared
-        // App Group container and is drained here).
+        // App Group container and is drained here). Expired local rows are
+        // pruned on every SyncService.start, so no separate cleanup is needed.
         HistoryService.importSharedEchoHistory(auth$.session.peek()).catch(
           (err: unknown) =>
             logger.error("[RootLayout] importSharedEchoHistory failed", err),
@@ -190,10 +190,22 @@ function RootLayout(): React.ReactElement {
     const { initializeMMKV } = require("@/services/mmkv");
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { SyncService } = require("@/services/SyncService");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { silentUpdateCheck } = require("@/services/otaUpdates");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { registerForPushNotifications } = require("@/services/notifications");
 
     // Seed the network store + TanStack onlineManager as early as possible so
     // "am I offline?" is answered the same way everywhere from the first frame.
     initNetworkMonitoring();
+
+    // Silent OTA update — downloads in background, applies on next cold start.
+    // Never blocks the app, never shows a modal, never shows a prompt.
+    silentUpdateCheck();
+
+    // Register for push notifications — used for APK update alerts.
+    // APK updates themselves are handled natively, so the app never opens.
+    registerForPushNotifications();
 
     // Must resolve BEFORE initAuth: until initializeMMKV finishes, the mmkv
     // proxy falls back to the plaintext boot storage, so a concurrent initAuth

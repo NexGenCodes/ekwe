@@ -114,6 +114,7 @@ class AudioCaptureClass {
         const rawCacheDir = Paths?.cache?.uri;
         if (!rawCacheDir) {
           logger.error("[AudioCapture] Paths.cache.uri is undefined/falsy");
+          this.isStartingParams = false;
           return err(EkweError.AUDIO_RECORD_FAIL);
         }
         const cacheDir = rawCacheDir;
@@ -350,6 +351,18 @@ class AudioCaptureClass {
         await EkweNative.deleteFile(path);
       } catch {
         // best-effort cleanup
+      }
+      // iOS records a sibling Opus-in-CAF file next to the .ogg for native
+      // playback — remove it too so cancelled recordings don't leak cache.
+      if (isIOS && /\.ogg$/i.test(path)) {
+        const cafPath = path.replace(/\.ogg$/i, ".caf");
+        if (cafPath !== path) {
+          try {
+            await EkweNative.deleteFile(cafPath);
+          } catch {
+            // best-effort cleanup
+          }
+        }
       }
     }
 

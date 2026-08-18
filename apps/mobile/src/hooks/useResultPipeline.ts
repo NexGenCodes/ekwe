@@ -11,6 +11,7 @@ import { batchTranscriber } from "@/services/BatchTranscriber";
 import { HistoryService } from "@/services/HistoryService";
 import { settings$, auth$, HistoryEntry, history$ } from "@/store";
 import { AppToast } from "@/utils/toast";
+import { EkweError, ErrorMessages } from "@/constants/errors";
 import { default as logger } from "@/utils/logger";
 
 export interface UseResultPipelineProps {
@@ -151,12 +152,7 @@ export const useResultPipeline = ({
   );
 
   useEffect(() => {
-    if (
-      uri &&
-      !isReplay &&
-      !isProcessing &&
-      attemptedUriRef.current !== uri
-    ) {
+    if (uri && !isReplay && !isProcessing && attemptedUriRef.current !== uri) {
       attemptedUriRef.current = uri;
       processSharedAudio(uri);
     }
@@ -213,25 +209,38 @@ export const useResultPipeline = ({
 
       if (!isReplay) {
         savedRef.current = true;
-        await HistoryService.recordTranslation(
-          {
-            sourceLang,
-            targetLang,
-            transcript,
-            translation: val.translation,
-            transliteration: val.transliteration ?? null,
-            duration: durationRef.current,
-            sourceApp: sourceApp || "shared",
-            provider: "gemini",
-            sessionKey: uri,
-            type: "translation",
-          },
-          userSession as Parameters<typeof HistoryService.recordTranslation>[1],
-        );
+        try {
+          await HistoryService.recordTranslation(
+            {
+              sourceLang,
+              targetLang,
+              transcript,
+              translation: val.translation,
+              transliteration: val.transliteration ?? null,
+              duration: durationRef.current,
+              sourceApp: sourceApp || "shared",
+              provider: "gemini",
+              sessionKey: uri,
+              type: "translation",
+            },
+            userSession as Parameters<typeof HistoryService.recordTranslation>[1],
+          );
+        } catch (saveErr) {
+          // The save failed (not the translate call). Revert the saved-once
+          // flag so the unmount fallback can still persist the transcription
+          // instead of silently dropping the session. Re-throw so the outer
+          // catch surfaces the failure to the user.
+          savedRef.current = false;
+          throw saveErr;
+        }
       }
-    } catch {
+    } catch (e) {
+      const code = e instanceof Error ? (e.message as EkweError) : undefined;
       AppToast.error("Translation Failed", {
-        description: "Try again in a moment.",
+        description:
+          code && ErrorMessages[code]
+            ? ErrorMessages[code]
+            : "Try again in a moment.",
       });
     } finally {
       setIsTranslating(false);

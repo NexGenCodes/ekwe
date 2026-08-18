@@ -1,4 +1,5 @@
 import { triggerHaptic } from "@/utils/haptics";
+import { pushOnce } from "@/utils/navigation";
 import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
 import { useSelector } from "@legendapp/state/react";
@@ -63,6 +64,15 @@ export default function HistoryScreen(): React.JSX.Element {
   // Visible cloud-sync failures (set by SyncService.pullFromCloud on error).
   const pullError = useSelector(() => SyncService.pullError.get());
 
+  // History rows that exhausted their outbox retries and never synced.
+  const deadCount = useSelector(() => SyncService.deadCount.get());
+
+  const retryDead = useCallback(() => {
+    SyncService.retryDeadOutbox().catch((err) =>
+      logger.error("[history] Retry dead outbox failed:", err),
+    );
+  }, []);
+
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
     await triggerHaptic();
@@ -97,7 +107,7 @@ export default function HistoryScreen(): React.JSX.Element {
 
   const handleEntryPress = useCallback(
     (entry: HistoryEntry): void => {
-      router.push({
+      pushOnce(router, {
         pathname: "/result",
         params: {
           entryId: entry.id,
@@ -176,6 +186,39 @@ export default function HistoryScreen(): React.JSX.Element {
             </Text>
             <Pressable
               onPress={onRefresh}
+              hitSlop={spacing.sm}
+              style={({ pressed }) => pressed && { opacity: 0.6 }}
+            >
+              <Text
+                variant="caption"
+                style={{ color: color.brand, fontWeight: "600" }}
+              >
+                Retry
+              </Text>
+            </Pressable>
+          </Box>
+        ) : null}
+
+        {/* Unsynced-history banner (outbox rows that exhausted their retries) */}
+        {deadCount > 0 ? (
+          <Box
+            style={[
+              styles.syncErrorBanner,
+              {
+                backgroundColor: withAlpha(color.warning, 0.08),
+                borderColor: withAlpha(color.warning, 0.25),
+              },
+            ]}
+          >
+            <Text
+              variant="caption"
+              numberOfLines={2}
+              style={[styles.syncErrorText, { color: color.warning }]}
+            >
+              {deadCount} change{deadCount === 1 ? "" : "s"} haven't synced yet.
+            </Text>
+            <Pressable
+              onPress={retryDead}
               hitSlop={spacing.sm}
               style={({ pressed }) => pressed && { opacity: 0.6 }}
             >

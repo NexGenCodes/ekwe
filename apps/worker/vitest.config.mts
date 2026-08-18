@@ -16,9 +16,10 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       exclude: [
         "src/types.ts",
-        // Covered by the workers integration tests (tests/workers/), not the
+        // Covered by the workers integration tests (tests/durable/), not the
         // Node unit suite: it only runs against the `cloudflare:workers` mock.
         "src/stream-do.ts",
+        "src/throttle-do.ts",
       ],
       thresholds: {
         statements: 65,
@@ -48,7 +49,7 @@ export default defineConfig({
           // Positive include + test.exclude: negated (`!`) include patterns get
           // appended to coverage.exclude and break all coverage (vitest #10164).
           include: ["tests/**/*.test.ts"],
-          exclude: ["tests/workers/**/*.test.ts"],
+          exclude: ["tests/durable/**/*.test.ts"],
           setupFiles: ["tests/setup.ts"],
         },
       },
@@ -56,7 +57,7 @@ export default defineConfig({
         extends: true,
         plugins: [
           cloudflareTest({
-            wrangler: { configPath: "./tests/workers/wrangler.tests.toml" },
+            wrangler: { configPath: "./tests/durable/wrangler.tests.toml" },
           }),
         ],
         test: {
@@ -68,8 +69,8 @@ export default defineConfig({
           // Always invoke coverage as `vitest run --project unit --coverage`.
           // @ts-expect-error `coverage` does not exist in Vitest's ProjectConfig type
           coverage: { enabled: false },
-          include: ["tests/workers/**/*.test.ts"],
-          setupFiles: ["tests/workers/setup.ts"],
+          include: ["tests/durable/**/*.test.ts"],
+          setupFiles: ["tests/durable/setup.ts"],
         },
       },
     ],

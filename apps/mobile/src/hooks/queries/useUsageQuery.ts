@@ -31,6 +31,6 @@ export function useUsageQuery(): UseQueryResult<UsageSnapshot> {
     // onlineManager; keep the local staleness short so the meter stays honest
     // after the user translates.
     refetchOnMount: isPro ? "always" : true,
-    retry: 1,
+    retry: false,
   });
 }

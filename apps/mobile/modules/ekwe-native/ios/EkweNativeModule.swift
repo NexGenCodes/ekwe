@@ -16,20 +16,29 @@ public class EkweNativeModule: Module {
   // maxAudioBytes); JS passes it in at call time so native never hardcodes it.
   // This is only a defensive default if a caller omits the argument.
 
+  /// Outcome of a share-path size guard, so callers can distinguish a genuine
+  /// "over the cap" rejection (terminal FILE_TOO_LARGE) from an unreadable or
+  /// missing file (generic failure) instead of mislabeling every stat error.
+  private enum SourcePathOutcome {
+    case ok(String)
+    case tooLarge
+    case invalid
+  }
+
   /// Resolves a share file:// path (stripping scheme) and rejects inputs over
   /// the size cap before any decode work begins.
-  private func guardedSourcePath(_ path: String, maxAudioBytes: Int) -> String? {
+  private func guardedSourcePath(_ path: String, maxAudioBytes: Int) -> SourcePathOutcome {
     let plainPath = path.hasPrefix("file://") ? String(path.dropFirst("file://".count)) : path
     let url = URL(fileURLWithPath: plainPath)
     let limit = maxAudioBytes > 0 ? maxAudioBytes : 26_214_400
     guard
       let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
-      let size = values.fileSize,
-      size <= limit
+      let size = values.fileSize
     else {
-      return nil
+      return .invalid
     }
-    return plainPath
+    guard size <= limit else { return .tooLarge }
+    return .ok(plainPath)
   }
 
   public func definition() -> ModuleDefinition {
@@ -72,21 +81,90 @@ public class EkweNativeModule: Module {
     // Audio Conversion
     // ------------------------------------
     AsyncFunction("transcodeToOpusWithWaveform") { (inputPath: String, outputPath: String, maxAudioBytes: Int) -> [String: Any] in
-      guard let sourcePath = self.guardedSourcePath(inputPath, maxAudioBytes: maxAudioBytes) else {
+      switch self.guardedSourcePath(inputPath, maxAudioBytes: maxAudioBytes) {
+      case .tooLarge:
         return [
           "success": false,
           "error": "FILE_TOO_LARGE",
           "durationMs": 0,
           "waveform": [] as [Float],
         ]
+      case .invalid:
+        return [
+          "success": false,
+          "error": "INVALID_INPUT_FILE",
+          "durationMs": 0,
+          "waveform": [] as [Float],
+        ]
+      case .ok(let sourcePath):
+        let result = EkweAudioBridge.transcodeToOpusWithWaveform(sourcePath, outputPath: outputPath)
+        return [
+          "success": result[0] as! Bool,
+          "error": result[1] as! String,
+          "durationMs": result[2] as! Int,
+          "waveform": result[3] as! [Float],
+        ]
       }
-      let result = EkweAudioBridge.transcodeToOpusWithWaveform(sourcePath, outputPath: outputPath)
-      return [
-        "success": result[0] as! Bool,
-        "error": result[1] as! String,
-        "durationMs": result[2] as! Int,
-        "waveform": result[3] as! [Float],
-      ]
+    }
+
+    // Decodes any audio file to a standalone WAV (see cpp::decode_audio_to_wav).
+    // AVPlayer/expo-audio has no Ogg Opus support, so recorded Opus must be
+    // decoded to WAV before playback on iOS.
+    AsyncFunction("decodeAudioToWav") { (inputPath: String, outputPath: String, maxAudioBytes: Int) -> [String: Any] in
+      switch self.guardedSourcePath(inputPath, maxAudioBytes: maxAudioBytes) {
+      case .tooLarge:
+        return [
+          "success": false,
+          "error": "FILE_TOO_LARGE",
+          "durationMs": 0,
+          "waveform": [] as [Float],
+        ]
+      case .invalid:
+        return [
+          "success": false,
+          "error": "INVALID_INPUT_FILE",
+          "durationMs": 0,
+          "waveform": [] as [Float],
+        ]
+      case .ok(let sourcePath):
+        let result = EkweAudioBridge.decodeToWavWithSourcePath(sourcePath, outputPath: outputPath, maxAudioBytes: UInt(max(0, maxAudioBytes)))
+        return [
+          "success": result[0] as! Bool,
+          "error": result[1] as! String,
+          "durationMs": result[2] as! Int,
+          "waveform": result[3] as! [Float],
+        ]
+      }
+    }
+
+    // Remuxes Ogg Opus into Opus-in-CAF, or re-encodes non-Opus sources to Opus
+    // CAF (see cpp::decode_audio_to_caf). CAF is an iOS-supported container, so
+    // playback avoids the size and CPU cost of the WAV round-trip.
+    AsyncFunction("decodeAudioToCaf") { (inputPath: String, outputPath: String, maxAudioBytes: Int) -> [String: Any] in
+      switch self.guardedSourcePath(inputPath, maxAudioBytes: maxAudioBytes) {
+      case .tooLarge:
+        return [
+          "success": false,
+          "error": "FILE_TOO_LARGE",
+          "durationMs": 0,
+          "waveform": [] as [Float],
+        ]
+      case .invalid:
+        return [
+          "success": false,
+          "error": "INVALID_INPUT_FILE",
+          "durationMs": 0,
+          "waveform": [] as [Float],
+        ]
+      case .ok(let sourcePath):
+        let result = EkweAudioBridge.decodeToCafWithSourcePath(sourcePath, outputPath: outputPath, maxAudioBytes: UInt(max(0, maxAudioBytes)))
+        return [
+          "success": result[0] as! Bool,
+          "error": result[1] as! String,
+          "durationMs": result[2] as! Int,
+          "waveform": result[3] as! [Float],
+        ]
+      }
     }
 
     // ------------------------------------
@@ -110,7 +188,6 @@ public class EkweNativeModule: Module {
       }
 
       self.outputPath = path
-      self.captureMode = isLive ? "live" : "file"
 
        do {
          let session = AVAudioSession.sharedInstance()
@@ -252,6 +329,20 @@ public class EkweNativeModule: Module {
          var values = URLResourceValues()
          values.isExcludedFromBackup = true
          try fileURL.setResourceValues(values)
+         return true
+       } catch {
+         return false
+       }
+     }
+
+     AsyncFunction("deleteFile") { (uriString: String) -> Bool in
+       let plainPath = uriString.hasPrefix("file://")
+         ? String(uriString.dropFirst("file://".count))
+         : uriString
+       do {
+         if FileManager.default.fileExists(atPath: plainPath) {
+           try FileManager.default.removeItem(atPath: plainPath)
+         }
          return true
        } catch {
          return false

@@ -26,8 +26,8 @@ interface PickerOption {
   onPress?: () => void;
 }
 
-export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> =
-  React.memo(({ selectedLang, onSelect }) => {
+export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
+  ({ selectedLang, onSelect }) => {
     const { color, spacing, borderRadius, opacity } = useTokens();
     const selectedLanguages = useSelector(() =>
       settings$.selectedLanguages.get(),
@@ -74,7 +74,10 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> =
             isSelected ? ", selected" : ""
           }`}
           accessibilityRole="button"
-          accessibilityState={{ selected: isSelected, disabled: option.disabled }}
+          accessibilityState={{
+            selected: isSelected,
+            disabled: option.disabled,
+          }}
           style={{
             flexBasis: "30%",
             maxWidth: "30%",
@@ -129,15 +132,13 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> =
     };
 
     return (
-      <Box >
+      <Box>
         <Box
           style={{
             marginBottom: spacing.lg,
           }}
         >
-          <Text variant="heading3">
-            {STEP_METADATA.PickLanguage.title}
-          </Text>
+          <Text variant="heading3">{STEP_METADATA.PickLanguage.title}</Text>
         </Box>
         <Box
           style={{
@@ -159,4 +160,5 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> =
         </Box>
       </Box>
     );
-  });
+  },
+);

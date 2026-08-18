@@ -1,0 +1,134 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "ekwe-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // WASM module bundling
+  "rules": [
+    {
+      "type": "CompiledWasm",
+      "globs": ["**/*.wasm"],
+      "fallthrough": true
+    }
+  ],
+
+  // Daily history retention cleanup (free: 30d, pro: 365d) — calls
+  // cleanup_expired_history via the service role in the `scheduled` handler.
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  },
+
+  // Billing provider secrets (set via `wrangler secret put <NAME>`):
+  // - FLUTTERWAVE_SECRET: HMAC-SHA512 signing secret for Flutterwave
+  // - PUSH_NOTIFY_SECRET: shared secret (Authorization: Bearer) for the release
+  //   workflow's POST /push-notify and POST /update/manifest endpoints.
+  // Must be identical to the GitHub Actions secret `PUSH_NOTIFY_SECRET`.
+  // Never commit secrets to this file — use `.dev.vars` for local development.
+
+  "dev": {
+    "ip": "0.0.0.0",
+    "port": 8787
+  },
+
+  "vars": {
+    "SUPABASE_URL": "https://zsjcgebczzbmaarfcdny.supabase.co",
+    "ALLOWED_ORIGINS": "https://ekwe.app,https://www.ekwe.app",
+    // Frontend hostnames Turnstile siteverify must return for /auth/otp.
+    // The Turnstile widget must be registered for these domains (add localhost for
+    // local dev via .dev.vars — never in this production default).
+    "TURNSTILE_HOSTNAMES": "ekwe.app",
+    // Default to production so deploys never ship with debug logging / dev CORS.
+    // Override to "development" locally via .dev.vars (precedence over vars).
+    "APP_ENV": "production"
+  },
+
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  },
+
+  // KV: blacklist, TTS cache, FX rates, webhook idempotency, preflight cache
+  "kv_namespaces": [
+    {
+      "binding": "EKWE_KV",
+      "id": "2a61656b51414ff4ae7cbc13a53fb459"
+    }
+  ],
+
+  // D1 translation/transcription cache — 100K writes/day free (100x KV's 1K).
+  // Created via: wrangler d1 create ekwe-cache
+  "d1_databases": [
+    {
+      "binding": "EKWE_D1",
+      "database_name": "ekwe-cache",
+      "database_id": "1af43324-74dd-40c5-9bb8-e2e70588e16f"
+    }
+  ],
+
+  // Rate limit: 500 requests per minute — global edge guard.
+  // namespace_id derived from worker name ("ekwe-proxy"): proxy=28401.
+  "ratelimits": [
+    {
+      "name": "RATE_LIMITER",
+      "namespace_id": "28401",
+      "simple": { "limit": 500, "period": 60 }
+    }
+  ],
+
+  // Cloudflare Workers AI binding
+  "ai": {
+    "binding": "AI"
+  },
+
+  // Durable Objects
+  "durable_objects": {
+    "bindings": [
+      {
+        // Live-transcription sessions. One DO instance per user (getByName(userId))
+        // so WebSockets survive worker-isolate churn and idle sessions can hibernate.
+        "name": "STREAM_DO",
+        "class_name": "StreamDurableObject"
+      },
+      {
+        // OTP send throttling. A single instance (getByName("otp")) holds per-IP /
+        // per-email counters. Replaces the KV counter, which had no atomic increment
+        // and capped writes to the same key at 1/sec (a spammer's burst silently
+        // stopped the count from rising). DO storage is strongly consistent.
+        "name": "THROTTLE_DO",
+        "class_name": "ThrottleBucket"
+      }
+    ]
+  },
+
+  // Queue: maintenance tasks (cleanup_expired_history RPC)
+  "queues": {
+    "producers": [
+      {
+        "binding": "MAINTENANCE_QUEUE",
+        "queue": "ekwe-maintenance"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "ekwe-maintenance",
+        "max_retries": 3,
+        "dead_letter_queue": "ekwe-maintenance-dlq"
+      }
+    ]
+  },
+
+  // DO migrations — new SQLite-backed classes
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["StreamDurableObject"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["ThrottleBucket"]
+    }
+  ]
+}

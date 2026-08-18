@@ -11,6 +11,20 @@ export type OpusTranscodeResult = {
   waveform: number[];
 };
 
+export type DecodeToWavResult = {
+  success: boolean;
+  error: string;
+  durationMs: number;
+  waveform: number[];
+};
+
+export type DecodeToCafResult = {
+  success: boolean;
+  error: string;
+  durationMs: number;
+  waveform: number[];
+};
+
 export type AudioRecordingResult = {
   success: boolean;
   error: string;

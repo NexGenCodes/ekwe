@@ -1,0 +1,29 @@
+# Test-only Wrangler config for `@cloudflare/vitest-pool-workers`.
+# Lives in tests/durable/ so miniflare doesn't auto-load the root `.dev.vars`
+# (real provider secrets). Kept intentionally minimal: only the Durable Object
+# the tests exercise. Provider keys are omitted so sessions deterministically
+# end with NO_PROVIDER_AVAILABLE instead of dialing real transcription providers.
+name = "ekwe-proxy-tests"
+main = "main.ts"
+compatibility_date = "2026-06-01"
+compatibility_flags = ["nodejs_compat"]
+
+rules = [
+  { type = "CompiledWasm", globs = ["**/*.wasm"], fallthrough = true }
+]
+
+[[durable_objects.bindings]]
+name = "STREAM_DO"
+class_name = "StreamDurableObject"
+
+[[durable_objects.bindings]]
+name = "THROTTLE_DO"
+class_name = "ThrottleBucket"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["StreamDurableObject"]
+
+[[migrations]]
+tag = "v2"
+new_classes = ["ThrottleBucket"]

@@ -1,11 +1,17 @@
-import { logger } from "../logger";
-import { Env, TranscribeResult } from "../types";
+import { logger } from "../core/logger";
+import { Env, TranscribeResult } from "../core/types";
 import { sanitizeKey } from "../utils/keys";
 import { isHallucination } from "../utils/prompts";
-import { getUserAgent, fetchWithIdleTimeout, TIMEOUT_SLOW } from "../utils/fetch";
+import {
+  getUserAgent,
+  fetchWithIdleTimeout,
+  logProviderError,
+  TIMEOUT_SLOW,
+} from "../utils/fetch";
 import { decodeOpusFrame, isOpusDecoderReady } from "../utils/opus";
 import { pcmToWav } from "../utils/wav";
 import { mergePcmFrames } from "../utils/pcm";
+import { clientMessageToBytes } from "../utils/websocket";
 
 const WITAI_DICTATION = "https://api.wit.ai/dictation?v=20240304";
 
@@ -64,11 +70,7 @@ export async function transcribe(
   );
 
   if (!res.ok) {
-    const errText = await res.text().catch(() => "Unreadable error body");
-    logger.error(`[witai] HTTP ${res.status} error`, {
-      status: res.status,
-      body: errText,
-    });
+    await logProviderError("witai transcribe", res);
     return null;
   }
 
@@ -121,68 +123,81 @@ export async function handleStream(
   // Buffer for accumulating decoded PCM frames for WAV wrapping
   let pcmFrames: Int16Array[] = [];
   let lastFlush = Date.now();
+  let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
+
+  const flushPcm = (): void => {
+    if (pcmFrames.length === 0) return;
+    const merged = mergePcmFrames(pcmFrames);
+    pcmFrames = [];
+    const wav = pcmToWav(merged, 16000);
+    controllerRef?.enqueue(wav);
+  };
+
+  const handleMessage = async (event: MessageEvent): Promise<void> => {
+    const data = await clientMessageToBytes(event);
+    if (!data) return;
+
+    if (isOpusDecoderReady()) {
+      const pcm = decodeOpusFrame(data, 16000);
+      if (pcm) {
+        pcmFrames.push(pcm);
+        // Flush periodically (every 500ms) to send WAV chunks
+        const now = Date.now();
+        if (now - lastFlush > 500 || pcmFrames.length >= 25) {
+          flushPcm();
+          lastFlush = now;
+        }
+      }
+    } else {
+      // Fallback: forward raw data
+      controllerRef?.enqueue(data);
+    }
+  };
+
+  const onMessage = (event: MessageEvent): void => {
+    void handleMessage(event).catch((e) => {
+      logger.error("[witai] Stream message handler error", {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    });
+  };
+
+  const onClose = (): void => {
+    flushPcm();
+    if (controllerRef) {
+      try {
+        controllerRef.close();
+      } catch {
+        /* already closed */
+      }
+    }
+  };
+
+  // Listeners are attached inside the ReadableStream start() but must be
+  // removed on EVERY exit path (failed fetch, no body, normal end, thrown
+  // error), not just abort — otherwise a closed session keeps forwarding
+  // frames to the next session and transcripts get duplicated.
+  const detach = (): void => {
+    clientWs.removeEventListener("message", onMessage);
+    clientWs.removeEventListener("close", onClose);
+  };
 
   const audioStream = new ReadableStream({
     start(controller) {
-      const flushPcm = (): void => {
-        if (pcmFrames.length === 0) return;
-        const merged = mergePcmFrames(pcmFrames);
-        pcmFrames = [];
-        const wav = pcmToWav(merged, 16000);
-        controller.enqueue(wav);
-      };
-
-      const onMessage = (event: MessageEvent): void => {
-        void handleMessage(event);
-      };
-
-      const handleMessage = async (event: MessageEvent): Promise<void> => {
-        if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
-          let data: Uint8Array;
-          if (event.data instanceof ArrayBuffer) {
-            data = new Uint8Array(event.data);
-          } else {
-            data = new Uint8Array(await event.data.arrayBuffer());
-          }
-
-          if (isOpusDecoderReady()) {
-            const pcm = decodeOpusFrame(data, 16000);
-            if (pcm) {
-              pcmFrames.push(pcm);
-              // Flush periodically (every 500ms) to send WAV chunks
-              const now = Date.now();
-              if (now - lastFlush > 500 || pcmFrames.length >= 25) {
-                flushPcm();
-                lastFlush = now;
-              }
-            }
-          } else {
-            // Fallback: forward raw data
-            controller.enqueue(data);
-          }
-        }
-      };
-
-      const onClose = (): void => {
-        flushPcm();
-        try {
-          controller.close();
-        } catch {
-          /* already closed */
-        }
-      };
+      controllerRef = controller;
 
       clientWs.addEventListener("message", onMessage);
       clientWs.addEventListener("close", onClose);
 
       signal.addEventListener("abort", () => {
         flushPcm();
-        clientWs.removeEventListener("message", onMessage);
-        clientWs.removeEventListener("close", onClose);
-        try {
-          controller.close();
-        } catch {
-          /* ignore */
+        detach();
+        if (controllerRef) {
+          try {
+            controllerRef.close();
+          } catch {
+            /* ignore */
+          }
         }
       });
     },
@@ -205,16 +220,14 @@ export async function handleStream(
     );
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      logger.error("[witai:stream] HTTP error", {
-        status: res.status,
-        body: errText,
-      });
+      detach();
+      await logProviderError("witai stream", res);
       return false;
     }
 
     const reader = res.body?.getReader();
     if (!reader) {
+      detach();
       logger.error("[witai:stream] No response body");
       return false;
     }
@@ -265,8 +278,10 @@ export async function handleStream(
       }
     }
 
+    detach();
     return true;
   } catch (err) {
+    detach();
     logger.error("[witai:stream] Request failed", { error: String(err) });
     return false;
   }
@@ -338,4 +353,4 @@ function toWitMime(mime: string): string | null {
   return map[baseMime] ?? null;
 }
 
-export { WITAI_LANGUAGES as supportedLanguages } from "../languages";
+export { WITAI_LANGUAGES as supportedLanguages } from "../services/languages";

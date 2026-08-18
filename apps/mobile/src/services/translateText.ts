@@ -1,4 +1,5 @@
-import { z } from "zod";
+import { translateRequestSchema, translateResponseSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
+import type { TranslateRequest, TranslateResponse } from "@ekwe/shared";
 
 import { EkweError } from "@/constants/errors";
 import { supabase } from "@/services/supabase";
@@ -6,27 +7,18 @@ import { Result, ok, err } from "@/types/Result";
 import logger from "@/utils/logger";
 import {
   fetchWithRetry,
+  getWorkerUrl,
   mapWorkerError,
   isOfflineNetworkError,
+  isTimeoutError,
 } from "@/utils/networkUtils";
 
-const translationResponseSchema = z.object({
-  translation: z.string(),
-  transliteration: z.string().optional(),
-  language: z.string().optional(),
-  provider: z.string().optional(),
-});
-
-const getWorkerUrl = (): string => process.env.EXPO_PUBLIC_WORKER_URL ?? "";
-
-export interface TranslationResult {
-  translation: string;
-  transliteration?: string;
-  language?: string;
+// The wire fields come straight from the shared zod schema; sourceLang/targetLang
+// are echoed back to the caller for convenience.
+export type TranslationResult = TranslateResponse & {
   sourceLang: string;
   targetLang: string;
-  provider?: string;
-}
+};
 
 export async function translateText(
   text: string,
@@ -49,6 +41,14 @@ export async function translateText(
   } = await supabase.auth.getSession();
   const token = session?.access_token;
 
+  const payload: TranslateRequest = { text, targetLang, sourceLang };
+  // Fail fast client-side instead of spending a fetch round-trip on a shape
+  // the worker would reject anyway (keeps the two sides in lockstep).
+  const shapeCheck = translateRequestSchema.safeParse(payload);
+  if (!shapeCheck.success) {
+    return err(EkweError.TRANSLATION_FAIL);
+  }
+
   try {
     const response = await fetchWithRetry(`${workerUrl}/translate`, {
       method: "POST",
@@ -56,12 +56,9 @@ export async function translateText(
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({
-        text,
-        targetLang,
-        sourceLang,
-      }),
+      body: JSON.stringify(payload),
       retries: 2,
+      timeout: 60000,
       signal,
       // The worker already tried every LLM provider before returning 5xx;
       // retrying would double the provider spend for no extra chance of success.
@@ -81,7 +78,7 @@ export async function translateText(
         // The worker returns 429 for BOTH the cooldown gate (EKWE_RATE_LIMIT)
         // and the daily quota (EKWE_QUOTA_EXCEEDED) — surface them distinctly
         // so the UI can explain "limit reached" instead of "busy, retry".
-        if (errorCode === "EKWE_QUOTA_EXCEEDED") {
+        if (errorCode === WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED) {
           return err(EkweError.QUOTA_EXCEEDED);
         }
         return err(EkweError.RATE_LIMITED);
@@ -90,7 +87,7 @@ export async function translateText(
     }
 
     const json = await response.json();
-    const parsed = translationResponseSchema.safeParse(json);
+    const parsed = translateResponseSchema.safeParse(json);
     if (!parsed.success) {
       logger.error(
         "[translateText] Response validation failed:",
@@ -118,6 +115,10 @@ export async function translateText(
     // (fail-fast in fetchWithRetry) — map it quietly, no error log needed.
     if (isOfflineNetworkError(e)) {
       return err(EkweError.NETWORK_LOST);
+    }
+    if (isTimeoutError(e)) {
+      logger.info("[translateText] Request timed out");
+      return err(EkweError.TRANSLATION_FAIL);
     }
     if (e instanceof Error) {
       if (e.name === "AbortError") {

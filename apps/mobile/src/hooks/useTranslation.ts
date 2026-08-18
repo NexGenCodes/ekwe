@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Keyboard } from "react-native";
 
-import { EkweError } from "@/constants/errors";
+import { EkweError, ErrorMessages } from "@/constants/errors";
 import { useTranslateMutation } from "@/hooks/queries/useTranslateMutation";
 import { usePermissions } from "@/hooks/usePermissions";
 import { translationSchema } from "@/schemas/translation";
@@ -336,8 +336,12 @@ export const useTranslation = (): UseTranslationReturn => {
         }
       } catch (e: unknown) {
         if (e instanceof Error && e.name === "AbortError") return;
+        const code = e instanceof Error ? (e.message as EkweError) : undefined;
         AppToast.error("Translation Failed", {
-          description: "Something went wrong. Please try again.",
+          description:
+            code && ErrorMessages[code]
+              ? ErrorMessages[code]
+              : "Something went wrong. Please try again.",
         });
       }
     },

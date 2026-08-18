@@ -1,25 +1,15 @@
-import { z } from "zod";
+import { usageSnapshotSchema } from "@ekwe/shared";
+import type { UsageSnapshot } from "@ekwe/shared";
 
 import { supabase } from "@/services/supabase";
-import { fetchWithRetry } from "@/utils/networkUtils";
+import {
+  fetchWithRetry,
+  getWorkerUrl,
+  isTimeoutError,
+} from "@/utils/networkUtils";
 import logger from "@/utils/logger";
 
-const usageSchema = z.object({
-  day: z.string(),
-  resetsAt: z.number(),
-  translate: z.object({
-    used: z.number(),
-    total: z.number(),
-    remaining: z.number(),
-  }),
-  transcribe: z.object({
-    used: z.number(),
-    total: z.number(),
-    remaining: z.number(),
-  }),
-});
-
-export type UsageSnapshot = z.infer<typeof usageSchema>;
+export type { UsageSnapshot };
 
 export interface UsagePool {
   used: number;
@@ -35,7 +25,7 @@ export interface UsagePool {
 export async function fetchUsage(): Promise<
   { ok: true; value: UsageSnapshot } | { ok: false; error: string }
 > {
-  const workerUrl = process.env.EXPO_PUBLIC_WORKER_URL ?? "";
+  const workerUrl = getWorkerUrl();
   if (!workerUrl) {
     return { ok: false, error: "Worker URL not configured" };
   }
@@ -50,7 +40,7 @@ export async function fetchUsage(): Promise<
       method: "GET",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       retries: 1,
-      timeout: 10000,
+      timeout: 15000,
     });
 
     if (!response.ok) {
@@ -58,14 +48,21 @@ export async function fetchUsage(): Promise<
     }
 
     const json = (await response.json()) as unknown;
-    const parsed = usageSchema.safeParse(json);
+    const parsed = usageSnapshotSchema.safeParse(json);
     if (!parsed.success) {
-      logger.error("[fetchUsage] Response validation failed:", parsed.error.message);
+      logger.error(
+        "[fetchUsage] Response validation failed:",
+        parsed.error.message,
+      );
       return { ok: false, error: "Invalid usage payload" };
     }
 
     return { ok: true, value: parsed.data };
   } catch (err) {
+    if (isTimeoutError(err)) {
+      logger.info("[fetchUsage] Timed out waiting for usage snapshot");
+      return { ok: false, error: "Timed out" };
+    }
     logger.error(
       "[fetchUsage] Failed:",
       err instanceof Error ? err.message : String(err),

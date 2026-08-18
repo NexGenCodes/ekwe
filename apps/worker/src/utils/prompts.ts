@@ -52,17 +52,115 @@ function hasRepeatedBlock(text: string): boolean {
 const MAX_WORDS_PER_SECOND = 6;
 const MIN_WORDS_PER_SECOND = 0.15;
 
+/**
+ * Delimiter between a translation and its romanized pronunciation guide.
+ * `<|...|>` never appears in natural prose, so splitting on it is safe.
+ */
+export const ROMANIZATION_MARKER = "<|ekwe:romanization|>";
+
+// Language codes whose primary script is NOT the Latin alphabet. Romanization
+// (a Latin-script pronunciation guide) is only useful when translating INTO
+// these languages — romanizing e.g. Yoruba or French is meaningless.
+const NON_LATIN_SCRIPT_CODES = new Set([
+  // CJK
+  "zh",
+  "yue",
+  "ja",
+  "ko",
+  // Cyrillic
+  "ru",
+  "uk",
+  "bg",
+  "sr",
+  "mk",
+  // Greek / Hebrew
+  "el",
+  "he",
+  "yi",
+  // Arabic script
+  "ar",
+  "fa",
+  "ur",
+  "ug",
+  // Devanagari family
+  "hi",
+  "mr",
+  "ne",
+  "ks",
+  "bn",
+  "pa",
+  "gu",
+  // South-Asian scripts
+  "ta",
+  "te",
+  "ml",
+  "si",
+  // Southeast-Asian scripts
+  "km",
+  "lo",
+  "my",
+  "th",
+  // Other scripts
+  "ka",
+  "am",
+  "ti",
+  "dv",
+  "iu",
+]);
+
+/** Whether translating INTO `langCode` benefits from a romanization guide. */
+export function needsRomanization(langCode: string): boolean {
+  return NON_LATIN_SCRIPT_CODES.has(langCode);
+}
+
+/**
+ * Splits a provider's raw translation output into translation + romanization.
+ *
+ * When `transliteration` was not requested, the raw text is returned as-is
+ * (no parsing — the provider may legally return any prose). When requested,
+ * we look for the marker: if the model declined to romanize (e.g. Latin-script
+ * target, or it just ignored the instruction), fall back to the raw text so a
+ * translation is never lost to a parsing failure.
+ */
+export function parseTranslateOutput(
+  raw: string,
+  transliteration: boolean | undefined,
+): { translation: string; transliteration?: string } {
+  const trimmed = raw.trim();
+  if (!transliteration) return { translation: trimmed };
+
+  const markerIndex = trimmed.lastIndexOf(ROMANIZATION_MARKER);
+  if (markerIndex === -1) return { translation: trimmed };
+
+  const translation = trimmed.slice(0, markerIndex).trim();
+  const romanized = trimmed
+    .slice(markerIndex + ROMANIZATION_MARKER.length)
+    .trim();
+  // Malformed output: never leak the marker into the visible translation.
+  if (!translation) return { translation: trimmed };
+  if (!romanized) return { translation };
+
+  return { translation, transliteration: romanized };
+}
+
 export function buildTranslatePrompt(
   targetLang: string,
   sourceLang?: string,
+  transliteration?: boolean,
 ): string {
+  const outputRule = transliteration
+    ? `4. Output the translation first, then — ONLY if the target script differs from the Latin alphabet — a blank line, then exactly the marker ${ROMANIZATION_MARKER}, then the romanized pronunciation guide in Latin letters, then nothing else.
+5. The romanized guide must cover the full translation word-for-word and contain only Latin alphabet characters.
+6. If the target language uses the Latin alphabet, output ONLY the translation (no marker).`
+    : `4. Output ONLY the final translated text and nothing else.`;
+
   return `You are an expert, highly accurate professional translator.
 Your sole task is to translate the user's text${sourceLang ? ` from ${sourceLang}` : ""} into fluent, natural-sounding ${targetLang}.
 Rules:
 1. Preserve the original tone, context, and formatting exactly.
 2. Do not add any explanations, conversational text, notes, or preambles.
 3. If the text is already in the target language, return it unchanged.
-4. Output ONLY the final translated text and nothing else.`;
+${outputRule}`;
 }
 
 export function isHallucination(text: string, durationMs?: number): boolean {

@@ -45,10 +45,3 @@ function writeString(dv: DataView, offset: number, str: string): void {
     dv.setUint8(offset + i, str.charCodeAt(i));
   }
 }
-
-/**
- * Returns the Content-Type header for WAV audio.
- */
-export function wavMimeType(): string {
-  return "audio/wav";
-}

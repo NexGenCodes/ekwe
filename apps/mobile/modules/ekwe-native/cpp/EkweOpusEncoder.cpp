@@ -14,7 +14,11 @@
 
 namespace ekwe {
 
-OpusStreamEncoder::OpusStreamEncoder(uint32_t sample_rate, uint16_t channels, int complexity)
+OpusStreamEncoder::OpusStreamEncoder(uint32_t sample_rate,
+                                     uint16_t channels,
+                                     int complexity,
+                                     bool enable_fec,
+                                     int packet_loss_perc)
     : ok_(false)
     , encoder_(nullptr)
     , sample_rate_(sample_rate)
@@ -35,11 +39,11 @@ OpusStreamEncoder::OpusStreamEncoder(uint32_t sample_rate, uint16_t channels, in
     }
     ALOG("constructor: encoder created, configuring...");
 
-    opus_encoder_ctl(encoder_, OPUS_SET_BITRATE(32000));
+    opus_encoder_ctl(encoder_, OPUS_SET_BITRATE(64000));
     opus_encoder_ctl(encoder_, OPUS_SET_COMPLEXITY(complexity));
-    opus_encoder_ctl(encoder_, OPUS_SET_VBR(1));
-    opus_encoder_ctl(encoder_, OPUS_SET_INBAND_FEC(0));
-    opus_encoder_ctl(encoder_, OPUS_SET_PACKET_LOSS_PERC(0));
+    opus_encoder_ctl(encoder_, OPUS_SET_VBR(0));
+    opus_encoder_ctl(encoder_, OPUS_SET_INBAND_FEC(enable_fec ? 1 : 0));
+    opus_encoder_ctl(encoder_, OPUS_SET_PACKET_LOSS_PERC(enable_fec ? packet_loss_perc : 0));
     opus_encoder_ctl(encoder_, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
 
     opus_encoder_ctl(encoder_, OPUS_GET_LOOKAHEAD(&lookahead_));

@@ -30,6 +30,46 @@ static std::vector<float> g_last_waveform;
     return @[success, errorStr, duration, waveformArray];
 }
 
++ (NSArray *)decodeToWavWithSourcePath:(NSString *)sourcePath
+                            outputPath:(NSString *)outputPath
+                         maxAudioBytes:(NSUInteger)maxAudioBytes {
+    std::string input([sourcePath UTF8String]);
+    std::string output([outputPath UTF8String]);
+
+    ekwe::DecodeResult result = ekwe::decode_audio_to_wav(input, output, static_cast<size_t>(maxAudioBytes));
+
+    NSNumber *success = @(result.success);
+    NSString *errorStr = [NSString stringWithUTF8String:result.error_message.c_str()];
+    NSNumber *duration = @(result.duration_ms);
+
+    NSMutableArray<NSNumber *> *waveformArray = [NSMutableArray arrayWithCapacity:result.waveform.size()];
+    for (float val : result.waveform) {
+        [waveformArray addObject:@(val)];
+    }
+
+    return @[success, errorStr, duration, waveformArray];
+}
+
++ (NSArray *)decodeToCafWithSourcePath:(NSString *)sourcePath
+                            outputPath:(NSString *)outputPath
+                         maxAudioBytes:(NSUInteger)maxAudioBytes {
+    std::string input([sourcePath UTF8String]);
+    std::string output([outputPath UTF8String]);
+
+    ekwe::DecodeResult result = ekwe::decode_audio_to_caf(input, output, static_cast<size_t>(maxAudioBytes));
+
+    NSNumber *success = @(result.success);
+    NSString *errorStr = [NSString stringWithUTF8String:result.error_message.c_str()];
+    NSNumber *duration = @(result.duration_ms);
+
+    NSMutableArray<NSNumber *> *waveformArray = [NSMutableArray arrayWithCapacity:result.waveform.size()];
+    for (float val : result.waveform) {
+        [waveformArray addObject:@(val)];
+    }
+
+    return @[success, errorStr, duration, waveformArray];
+}
+
 + (BOOL)initCapture:(NSString *)outputPath
          sampleRate:(int32_t)sampleRate
            channels:(int32_t)channels
@@ -43,10 +83,25 @@ static std::vector<float> g_last_waveform;
     std::string path([outputPath UTF8String]);
     ekwe::CaptureMode mode = isLive ? ekwe::CaptureMode::LIVE : ekwe::CaptureMode::FILE;
 
+    // Recorded audio gets a sibling Opus-in-CAF file (same packets, CAF
+    // container) so iOS can play it natively without a remux. Live mode has no
+    // file output, so no CAF.
+    std::string caf_path;
+    if (!isLive) {
+        caf_path = path;
+        std::string::size_type pos = caf_path.rfind(".ogg");
+        if (pos != std::string::npos) {
+            caf_path.replace(pos, 4, ".caf");
+        } else {
+            caf_path += ".caf";
+        }
+    }
+
     auto* capture = new ekwe::CaptureController(
         static_cast<uint32_t>(sampleRate),
         static_cast<uint16_t>(channels),
         path,
+        caf_path,
         mode,
         true
     );

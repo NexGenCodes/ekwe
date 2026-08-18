@@ -1,0 +1,11 @@
+-- Remove the unguarded 2-arg check_preflight(p_user_id, p_tier) overload.
+--
+-- transaction_ledgers (20260509000000) and unlimited_tiers (20260618000000)
+-- created a PUBLIC SECURITY DEFINER 2-arg variant with no auth.uid() guard
+-- and no search_path. Later migrations locked down the 3-arg
+-- (20260804000000) and 7-arg (20260810000000 / 20260813000000) overloads but
+-- never dropped/revoked the 2-arg one, leaving a PUBLIC function that any
+-- caller can invoke with a victim's UUID to pin their cooldown (a
+-- rate-limit poisoning DoS). The Worker only ever calls the 7-arg overload
+-- (apps/worker/src/utils/preflight.ts), so the 2-arg variant is dead code.
+DROP FUNCTION IF EXISTS public.check_preflight(uuid, text);

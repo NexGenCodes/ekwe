@@ -5,9 +5,11 @@
 #include <vector>
 #include <functional>
 #include <atomic>
+#include <memory>
 
 #include "EkweOpusEncoder.h"
 #include "EkweOggMuxer.h"
+#include "EkweCafMuxer.h"
 
 namespace ekwe {
 
@@ -34,9 +36,14 @@ using CaptureCallback = std::function<void(const CaptureEventData&)>;
 
 class CaptureController {
 public:
+    // output_path: Ogg Opus destination. caf_output_path: optional sibling
+    // Opus-in-CAF destination (iOS-native playback) — when non-empty and mode
+    // is FILE, every packet is also written into the CAF container. Android
+    // passes an empty string (ExoPlayer plays Ogg natively).
     CaptureController(uint32_t sample_rate,
                       uint16_t channels,
                       const std::string& output_path,
+                      const std::string& caf_output_path,
                       CaptureMode mode,
                       bool enable_dc_filter = true);
     ~CaptureController();
@@ -67,6 +74,10 @@ private:
     int frame_counter_;
     uint64_t total_samples_encoded_;
     int64_t granule_position_;
+    // Opus pre-skip in 48 kHz sample units (RFC 7845). The granule position of
+    // each page must count ALL decoded samples including pre-skip, so every
+    // computed granule adds this base to the elapsed output.
+    int64_t granule_base_48k_;
     std::atomic<float> current_rms_;
     std::vector<float> rms_history_;
 
@@ -89,12 +100,14 @@ private:
 
     OpusStreamEncoder opus_encoder_;
     OggMuxer ogg_muxer_;
+    std::unique_ptr<CafMuxer> caf_muxer_;
 
     CaptureCallback callback_;
 
     std::vector<int16_t> staging_buffer_;
 
     void apply_dc_blocker(int16_t* data, size_t num_samples);
+    void normalize_volume(int16_t* data, size_t num_samples);
     void process_frame(const int16_t* frame_data, size_t frame_samples);
     void emit_event(CaptureEvent event, const uint8_t* data = nullptr, size_t size = 0);
 };

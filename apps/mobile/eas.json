@@ -1,7 +1,7 @@
 {
   "cli": {
     "version": ">= 16.0.1",
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -22,7 +22,6 @@
       }
     },
     "production": {
-      "autoIncrement": true,
       "android": {
         "resourceClass": "m-medium"
       },
@@ -30,6 +29,9 @@
         "resourceClass": "m-medium"
       }
     }
+  },
+  "update": {
+    "channel": "production"
   },
   "submit": {
     "production": {}

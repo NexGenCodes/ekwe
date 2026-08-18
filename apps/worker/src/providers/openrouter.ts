@@ -1,8 +1,13 @@
-import { Env, TranslateResult } from "../types";
+import { CLIENT_ABORTED, Env, TranslateResult } from "../core/types";
 import { sanitizeKey } from "../utils/keys";
-import { buildTranslatePrompt } from "../utils/prompts";
-import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
-import { logger } from "../logger";
+import { buildTranslatePrompt, parseTranslateOutput } from "../utils/prompts";
+import {
+  getUserAgent,
+  fetchWithTimeout,
+  logProviderError,
+  TIMEOUT_FAST,
+} from "../utils/fetch";
+import { logger } from "../core/logger";
 
 const OPENROUTER_CHAT = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -15,6 +20,7 @@ export async function translate(
   sourceLang: string | undefined,
   env: Env,
   signal: AbortSignal,
+  transliteration: boolean = false,
 ): Promise<TranslateResult | null> {
   logger.info("[openrouter] Requesting translation", {
     targetLang,
@@ -26,49 +32,61 @@ export async function translate(
     return null;
   }
 
-  const res = await fetchWithTimeout(
-    OPENROUTER_CHAT,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://ekwe.app",
-        "X-Title": "Ekwe",
-        "User-Agent": getUserAgent(),
+  try {
+    const res = await fetchWithTimeout(
+      OPENROUTER_CHAT,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://ekwe.app",
+          "X-Title": "Ekwe",
+          "User-Agent": getUserAgent(),
+        },
+        body: JSON.stringify({
+          model: "openrouter/free",
+          messages: [
+            {
+              role: "system",
+              content: buildTranslatePrompt(targetLang, sourceLang, transliteration),
+            },
+            { role: "user", content: text },
+          ],
+          temperature: 0,
+        }),
       },
-      body: JSON.stringify({
-        model: "openrouter/free",
-        messages: [
-          {
-            role: "system",
-            content: buildTranslatePrompt(targetLang, sourceLang),
-          },
-          { role: "user", content: text },
-        ],
-        temperature: 0,
-      }),
-    },
-    TIMEOUT_FAST,
-    signal,
-  );
+      TIMEOUT_FAST,
+      signal,
+    );
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "Unreadable error body");
-    logger.error("[openrouter] Translate HTTP error", {
-      status: res.status,
-      body: errText,
+    if (!res.ok) {
+      await logProviderError("openrouter translate", res);
+      return null;
+    }
+
+    const data = await res.json<{
+      choices?: Array<{ message?: { content?: string } }>;
+    }>();
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) return null;
+
+    const { translation, transliteration: romanized } = parseTranslateOutput(
+      content,
+      transliteration,
+    );
+    return {
+      translation,
+      ...(romanized ? { transliteration: romanized } : {}),
+      provider: "openrouter",
+    };
+  } catch (e) {
+    if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
+    logger.error("[openrouter] Translate exception", {
+      error: e instanceof Error ? e.message : String(e),
     });
     return null;
   }
-
-  const data = await res.json<{
-    choices?: Array<{ message?: { content?: string } }>;
-  }>();
-  const content = data.choices?.[0]?.message?.content?.trim();
-  if (!content) return null;
-
-  return { translation: content, provider: "openrouter" };
 }
 
-export { ALL_LANGUAGES as supportedLanguages } from "../languages";
+export { ALL_LANGUAGES as supportedLanguages } from "../services/languages";

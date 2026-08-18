@@ -1,4 +1,4 @@
-import { Env, TranscribeResult } from "../types";
+import { Env, TranscribeResult } from "../core/types";
 import { rotateKeys } from "../utils/keys";
 import { isHallucination } from "../utils/prompts";
 import { fetchWithTimeout, TIMEOUT_FAST, abortableDelay } from "../utils/fetch";
@@ -6,7 +6,7 @@ import {
   rotateWsKeys,
   createOpusDecodingInterceptor,
 } from "../utils/websocket";
-import { logger } from "../logger";
+import { logger } from "../core/logger";
 
 const ASSEMBLYAI_UPLOAD = "https://api.assemblyai.com/v2/upload";
 const ASSEMBLYAI_TRANSCRIPT = "https://api.assemblyai.com/v2/transcript";
@@ -44,9 +44,11 @@ export async function transcribe(
 
       if (!uploadRes.ok) {
         if (uploadRes.status === 402 || uploadRes.status === 403) {
-          logger.error(
-            "[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!",
-          );
+          const err = await uploadRes.text().catch(() => "No body");
+          logger.error("[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!", {
+            status: uploadRes.status,
+            body: err,
+          });
         } else {
           const err = await uploadRes.text().catch(() => "No body");
           logger.error("[assemblyai] Upload error", {
@@ -86,9 +88,11 @@ export async function transcribe(
 
       if (!createRes.ok) {
         if (createRes.status === 402 || createRes.status === 403) {
-          logger.error(
-            "[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!",
-          );
+          const err = await createRes.text().catch(() => "No body");
+          logger.error("[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!", {
+            status: createRes.status,
+            body: err,
+          });
         } else {
           const err = await createRes.text().catch(() => "No body");
           logger.error("[assemblyai] Create error", {
@@ -161,7 +165,7 @@ interface AssemblyResult {
   language_code?: string;
 }
 
-export { ALL_LANGUAGES as supportedLanguages } from "../languages";
+export { ALL_LANGUAGES as supportedLanguages } from "../services/languages";
 
 /**
  * Handles a real-time streaming session via AssemblyAI WebSocket.

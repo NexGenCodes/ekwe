@@ -26,7 +26,6 @@ import {
 } from "@/hooks";
 import { isIOS, logger } from "@/utils";
 import { AppAlert } from "@/utils/alert";
-import { auth$ } from "@/store/auth";
 import { settings$ } from "@/store/settings";
 
 export interface TranslationInterfaceProps {
@@ -63,6 +62,23 @@ export const TranslationInterface = forwardRef<
 
   const { copied, copy } = useClipboard();
 
+  const autoCopy = useSelector(() => settings$.autoCopy.get());
+  const lastAutoCopiedRef = useRef<string | null>(null);
+
+  // Auto-copy completed translations when the profile toggle is on. Fires once
+  // per unique translation value (reset whenever the result clears) so toggling
+  // the switch mid-session never re-copies the text already on screen.
+  useEffect(() => {
+    if (isTranslating || !translation) {
+      if (!translation) lastAutoCopiedRef.current = null;
+      return;
+    }
+    if (!autoCopy) return;
+    if (lastAutoCopiedRef.current === translation) return;
+    lastAutoCopiedRef.current = translation;
+    void copy(translation);
+  }, [autoCopy, isTranslating, translation, copy]);
+
   const {
     status: dictationStatus,
     amplitude,
@@ -80,11 +96,7 @@ export const TranslationInterface = forwardRef<
     cancelDictation,
   } = useVoiceDictation();
 
-  const isPro = useSelector(() => auth$.isPro.get());
-  const liveTranscriptionEnabled = useSelector(() =>
-    settings$.liveTranscriptionEnabled.get(),
-  );
-  const isLivePro = isPro && liveTranscriptionEnabled;
+  const isLivePro = false; // Live streaming disabled — use batch transcription for all users
 
   const dictatingRef = useRef(false);
 

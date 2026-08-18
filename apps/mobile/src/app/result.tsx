@@ -1,7 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import X from "lucide-react-native/icons/x";
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { StyleSheet } from "react-native";
 
 import { HistoryEntryDetail } from "@/components/history/HistoryEntryDetail";
@@ -9,9 +9,9 @@ import { ResultProcessingIndicator } from "@/components/result";
 import { Box, Pressable } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useResultPipeline, useTheme } from "@/hooks";
+import { useResultPipeline, useClipboard, useTheme } from "@/hooks";
 import { SyncService } from "@/services/SyncService";
-import { auth$, history$, HistoryEntry } from "@/store";
+import { auth$, history$, settings$, HistoryEntry } from "@/store";
 import { triggerHaptic } from "@/utils/haptics";
 import logger from "@/utils/logger";
 import { AppToast } from "@/utils/toast";
@@ -47,6 +47,24 @@ export default function ResultScreen(): React.JSX.Element {
   );
 
   const { color } = useTheme();
+
+  const { copy } = useClipboard();
+  const autoCopy = useSelector(() => settings$.autoCopy.get());
+  const lastAutoCopiedRef = useRef<string | null>(null);
+
+  // Auto-copy completed translations when the profile toggle is on. Fires once
+  // per unique translation value (reset whenever the result clears). Skipped
+  // for history replays so opening a saved entry never re-copies stale text.
+  useEffect(() => {
+    if (isHistoryReplay || isTranslating || !translation) {
+      if (!translation) lastAutoCopiedRef.current = null;
+      return;
+    }
+    if (!autoCopy) return;
+    if (lastAutoCopiedRef.current === translation) return;
+    lastAutoCopiedRef.current = translation;
+    void copy(translation);
+  }, [autoCopy, isTranslating, translation, isHistoryReplay, copy]);
 
   const handleDeleteEntry = useCallback(async (): Promise<void> => {
     if (!entryId) return;

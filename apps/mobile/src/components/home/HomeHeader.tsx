@@ -13,13 +13,8 @@ import { withAlpha } from "@/utils/color";
 export const HomeHeader = React.memo(function HomeHeader(): React.ReactElement {
   const { color } = useTheme();
 
-  // Expose a single accessibility header for the whole header region
-  // rather than marking multiple text nodes as headers.
   return (
     <Box
-      accessible
-      accessibilityRole="header"
-      accessibilityLabel="Ekwe. Ready to translate."
       style={{
         flexDirection: "row",
         alignItems: "center",
@@ -28,6 +23,9 @@ export const HomeHeader = React.memo(function HomeHeader(): React.ReactElement {
       }}
     >
       <Box
+        accessible
+        accessibilityRole="header"
+        accessibilityLabel="Ekwe. Ready to translate."
         style={{
           flexDirection: "row",
           alignItems: "center",

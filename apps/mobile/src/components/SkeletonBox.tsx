@@ -40,7 +40,8 @@ export function SkeletonBox({
 
   // Defaults to a neutral translucent contrast based on the current theme foreground
   const safeBaseColor = baseColor || withAlpha(color.foreground, 0.071);
-  const safeHighlightColor = highlightColor || withAlpha(color.foreground, 0.145);
+  const safeHighlightColor =
+    highlightColor || withAlpha(color.foreground, 0.145);
 
   useEffect(() => {
     shimmerProgress.value = withRepeat(

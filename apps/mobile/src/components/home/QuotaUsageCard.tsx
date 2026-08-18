@@ -1,6 +1,4 @@
-import { useSelector } from "@legendapp/state/react";
 import Activity from "lucide-react-native/icons/activity";
-import InfinityIcon from "lucide-react-native/icons/infinity";
 import React, { useMemo } from "react";
 
 import { Box, Text, Spinner } from "@/components/ui";
@@ -9,7 +7,6 @@ import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useUsageQuery } from "@/hooks/queries/useUsageQuery";
 import { useTheme } from "@/hooks";
-import { auth$ } from "@/store";
 import { withAlpha } from "@/utils/color";
 
 interface PoolRowProps {
@@ -39,7 +36,12 @@ function computeMeterState(used: number, total: number): MeterState | null {
   return { fraction, tone };
 }
 
-function PoolRow({ label, used, total, remaining }: PoolRowProps): React.ReactElement {
+function PoolRow({
+  label,
+  used,
+  total,
+  remaining,
+}: PoolRowProps): React.ReactElement {
   const { color } = useTheme();
   const meter = computeMeterState(used, total);
 
@@ -58,7 +60,10 @@ function PoolRow({ label, used, total, remaining }: PoolRowProps): React.ReactEl
 
       {meter !== null ? (
         <Box
-          style={[styles.track, { backgroundColor: withAlpha(color.muted, 0.18) }]}
+          style={[
+            styles.track,
+            { backgroundColor: withAlpha(color.muted, 0.18) },
+          ]}
           accessibilityRole="progressbar"
           accessibilityValue={{ min: 0, max: total, now: used }}
           accessibilityLabel={`${label}: ${used} of ${total} used today`}
@@ -75,7 +80,10 @@ function PoolRow({ label, used, total, remaining }: PoolRowProps): React.ReactEl
         </Box>
       ) : (
         <Box
-          style={[styles.track, { backgroundColor: withAlpha(color.muted, 0.18) }]}
+          style={[
+            styles.track,
+            { backgroundColor: withAlpha(color.muted, 0.18) },
+          ]}
         />
       )}
     </Box>
@@ -91,7 +99,6 @@ function resetsLabel(resetsAt: number): string {
 
 export function QuotaUsageCard(): React.ReactElement {
   const { color } = useTheme();
-  const isPro = useSelector(() => auth$.isPro.get());
   const { data, isLoading, isError } = useUsageQuery();
 
   const headline = useMemo(() => {
@@ -99,28 +106,33 @@ export function QuotaUsageCard(): React.ReactElement {
     if (!data) return null;
 
     const pools = [data.translate, data.transcribe];
-    const anyExhausted = pools.some(
-      (p) => p.total > 0 && p.remaining === 0,
-    );
+    const anyExhausted = pools.some((p) => p.total > 0 && p.remaining === 0);
     const anyNear = pools.some(
       (p) => p.total > 0 && p.remaining / p.total < 0.25 && p.remaining > 0,
     );
 
-    if (anyExhausted) return { text: "Daily limit reached", tone: "error" as const };
-    if (anyNear) return { text: "Almost out for today", tone: "warning" as const };
+    if (anyExhausted)
+      return { text: "Daily limit reached", tone: "error" as const };
+    if (anyNear)
+      return { text: "Almost out for today", tone: "warning" as const };
     return null;
   }, [data, isError]);
 
   return (
     <Card padding="lg">
       <Box style={styles.header}>
-        <Box style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
-          {isPro ? (
-            <InfinityIcon size={18} color={color.brand} />
-          ) : (
-            <Activity size={18} color={color.foreground} />
-          )}
-          <Text variant="body" style={{ color: color.foreground, fontWeight: "600" }}>
+        <Box
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: spacing.sm,
+          }}
+        >
+          <Activity size={18} color={color.foreground} />
+          <Text
+            variant="body"
+            style={{ color: color.foreground, fontWeight: "600" }}
+          >
             Today's usage
           </Text>
         </Box>
@@ -148,7 +160,10 @@ export function QuotaUsageCard(): React.ReactElement {
       </Box>
 
       {isError ? (
-        <Text variant="bodySmall" style={{ color: color.muted, marginTop: spacing.md }}>
+        <Text
+          variant="bodySmall"
+          style={{ color: color.muted, marginTop: spacing.md }}
+        >
           Usage could not be loaded right now.
         </Text>
       ) : data ? (

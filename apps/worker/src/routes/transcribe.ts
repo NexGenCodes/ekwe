@@ -1,4 +1,5 @@
-import { logger } from "../logger";
+import { WORKER_ERROR_CODES, transcribeResponseSchema } from "@ekwe/shared";
+import { logger } from "../core/logger";
 import * as assemblyai from "../providers/assemblyai";
 import * as cloudflare from "../providers/cloudflare";
 import * as cohere from "../providers/cohere";
@@ -6,19 +7,28 @@ import * as deepgram from "../providers/deepgram";
 import * as gladia from "../providers/gladia";
 import * as groq from "../providers/groq";
 import * as witai from "../providers/witai";
-import { getTranscribeProviderNames, getLimits } from "../config";
+import { getTranscribeProviderNames } from "../core/config";
+import { getLimits } from "../core/limits";
 import {
+  guardAudioDuration,
   guardAudioSize,
   guardAutoDetect,
+  guardContentType,
   guardLanguageCode,
   guardMultipartSize,
+  MULTIPART_OVERHEAD,
   readLimitedBody,
-} from "../security";
+} from "../core/guards";
 import { hashBytes } from "../utils/keys";
 import { sniffAudioMime } from "../utils/mime";
-import { trackBillableSuccess } from "../utils/usage";
-import { validateTranscriptLanguage } from "../autoDetect";
-import { CLIENT_ABORTED, Env, Tier, TranscribeResult } from "../types";
+import { d1Get, d1Put } from "../services/d1-cache";
+import { runProviderFailover } from "../utils/pipeline";
+import { trackBillableSuccess } from "../services/usage";
+import {
+  detectTextLanguage,
+  validateTranscriptLanguage,
+} from "../services/autoDetect";
+import { Env, Tier, TranscribeResult } from "../core/types";
 
 interface PipelineEntry {
   name: string;
@@ -32,9 +42,6 @@ interface PipelineEntry {
     signal: AbortSignal,
   ) => Promise<TranscribeResult | null>;
 }
-
-// Matches the framing/metadata margin used by guardMultipartSize.
-const MULTIPART_OVERHEAD = 256 * 1024;
 
 const PROVIDER_TIMEOUT = {
   deepgram: { premium: 5_000, free: 8_000 },
@@ -126,6 +133,11 @@ export async function handleTranscribe(
 ): Promise<Response> {
   logger.info(`[transcribe] handleTranscribe started`, { tier });
 
+  // Reject non-multipart payloads before parsing: formData() would throw on
+  // JSON/other Content-Types and surface as a confusing 500.
+  const ctGuard = guardContentType(request, "multipart");
+  if (!ctGuard.allowed) return ctGuard.response;
+
   // Reject oversized uploads BEFORE buffering the whole body into memory.
   const sizePreGuard = guardMultipartSize(request, tier);
   if (!sizePreGuard.allowed) return sizePreGuard.response;
@@ -137,7 +149,7 @@ export async function handleTranscribe(
     if (bodyBytes === null) {
       return Response.json(
         {
-          error: "FILE_TOO_LARGE",
+          error: WORKER_ERROR_CODES.FILE_TOO_LARGE,
           message: "Audio file too large. Try a shorter recording.",
         },
         { status: 413 },
@@ -153,21 +165,45 @@ export async function handleTranscribe(
     const msg = err instanceof Error ? err.message : String(err);
     logger.error(`[transcribe] formData() FAILED: ${msg}`);
     return Response.json(
-      { error: "EKWE_TRANSCRIPTION_FAIL", message: `formData error: ${msg}` },
+      {
+        error: WORKER_ERROR_CODES.EKWE_TRANSCRIPTION_FAIL,
+        message: "Failed to parse request body.",
+      },
       { status: 500 },
     );
   }
 
   const file = formData.get("file") as File | null;
   const lang = formData.get("lang") as string | null;
+  const durationRaw = formData.get("duration") as string | null;
+  const durationMs = durationRaw ? Number(durationRaw) : undefined;
   logger.info(
-    `[transcribe] file=${!!file} lang=${lang} fileType=${file?.type} fileName=${file?.name} fileSize=${file?.size}`,
+    `[transcribe] file=${!!file} lang=${lang} duration=${durationMs} fileType=${file?.type} fileName=${file?.name} fileSize=${file?.size}`,
   );
 
-  if (!file) return Response.json({ error: "MISSING_FILE" }, { status: 400 });
+  if (!file)
+    return Response.json(
+      { error: WORKER_ERROR_CODES.MISSING_FILE },
+      { status: 400 },
+    );
+
+  // Reject empty uploads before running any provider: a 0-byte "recording"
+  // wastes the whole failover pipeline and surfaces as a confusing
+  // "all providers failed" to the client.
+  if (file.size === 0)
+    return Response.json(
+      {
+        error: WORKER_ERROR_CODES.EKWE_EMPTY_TRANSCRIPT,
+        message: "Audio file is empty.",
+      },
+      { status: 400 },
+    );
 
   const sizeGuard = guardAudioSize(file.size, tier);
   if (!sizeGuard.allowed) return sizeGuard.response;
+
+  const durationGuard = guardAudioDuration(durationMs, tier);
+  if (!durationGuard.allowed) return durationGuard.response;
 
   const autoGuard = guardAutoDetect(lang, tier);
   if (!autoGuard.allowed) return autoGuard.response;
@@ -186,34 +222,39 @@ export async function handleTranscribe(
     logger.error(`[transcribe] file.arrayBuffer() FAILED: ${msg}`);
     return Response.json(
       {
-        error: "EKWE_ALL_PROVIDERS_FAIL",
-        message: `Failed to read audio file: ${msg}`,
+        error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL,
+        message: "Failed to read audio file.",
       },
       { status: 503 },
     );
   }
 
-  let cacheKey: string;
+  let cacheKey: string | null = null;
   try {
     const audioHash = await hashBytes(audioBuffer);
     // Tier is part of the key so a premium auto-detect result (which may
     // include `language`) can never be served to a downgraded FREE user who
     // isn't entitled to auto-detection.
     cacheKey = `transcribe:${userId}:${tier}:${audioHash}:${lang || "auto"}`;
-    const cached = await env.EKWE_KV.get(cacheKey);
-    if (cached) {
-      return Response.json(JSON.parse(cached) as TranscribeResult);
+    if (env.EKWE_D1) {
+      const cached = await d1Get(env.EKWE_D1, "cache_transcription", cacheKey);
+      if (cached) {
+        const cachedResult = JSON.parse(cached) as TranscribeResult;
+        const shapeCheck = transcribeResponseSchema.safeParse(cachedResult);
+        if (shapeCheck.success) {
+          return Response.json(cachedResult);
+        }
+        logger.warn(
+          `[transcribe] D1 cache entry failed validation (ignoring): ${audioHash}`,
+        );
+      }
     }
   } catch (err) {
+    // The cache is an optimization, never a dependency: any lookup failure
+    // (D1 outage, corrupt/unparseable entry, hashing error) must degrade to a
+    // live transcription rather than fail the request with a 503.
     const msg = err instanceof Error ? err.message : String(err);
-    logger.error(`[transcribe] KV cache lookup error: ${msg}`);
-    return Response.json(
-      {
-        error: "EKWE_ALL_PROVIDERS_FAIL",
-        message: `KV cache error: ${msg}`,
-      },
-      { status: 503 },
-    );
+    logger.error(`[transcribe] D1 cache lookup error (continuing): ${msg}`);
   }
 
   let audioBlob: Blob;
@@ -223,8 +264,11 @@ export async function handleTranscribe(
     const msg = err instanceof Error ? err.message : String(err);
     logger.error(`[transcribe] Blob creation FAILED: ${msg}`);
     return Response.json(
-      { error: "EKWE_ALL_PROVIDERS_FAIL", message: `Blob error: ${msg}` },
-      { status: 503 },
+      {
+        error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL,
+        message: "Failed to process audio file.",
+      },
+      { status: 500 },
     );
   }
   const isAuto = !lang || lang === "auto";
@@ -232,107 +276,143 @@ export async function handleTranscribe(
 
   const pipeline = tier === "FREE" ? FREE_PIPELINE : PREMIUM_PIPELINE;
 
-  const pipelineStart = Date.now();
   logger.info(
     `[transcribe] Starting provider pipeline, pipeline has ${pipeline.length} providers`,
   );
-  for (const provider of pipeline) {
-    if (Date.now() - pipelineStart >= PIPELINE_TOTAL_MS) break;
-
-    if (isAuto && provider.skipOnAuto) {
-      logger.info(`[transcribe] Skipping ${provider.name} (skipOnAuto)`);
-      continue;
-    }
-
-    if (!isAuto && !provider.supportedLanguages.has(effectiveLang)) {
-      logger.info(
-        `[transcribe] Skipping ${provider.name} (unsupported language: ${effectiveLang})`,
-      );
-      continue;
-    }
-
-    try {
-      if (signal.aborted) throw new Error(CLIENT_ABORTED);
-      logger.info(`[transcribe] Trying ${provider.name}`, {
+  const byName = new Map(pipeline.map((p) => [p.name, p]));
+  // Lookup helper: names come from `pipeline` itself, so a miss is a real
+  // misconfiguration — fail loudly instead of hitting `undefined.fn`.
+  const entry = (name: string): PipelineEntry => {
+    const e = byName.get(name);
+    if (!e) throw new Error(`[transcribe] Unknown provider: ${name}`);
+    return e;
+  };
+  const result = await runProviderFailover<TranscribeResult>({
+    providers: pipeline.map((p) => p.name),
+    signal,
+    totalMs: PIPELINE_TOTAL_MS,
+    route: "transcribe",
+    attemptTimeoutMs: (name, remainingMs) =>
+      Math.min(entry(name).timeoutMs, remainingMs),
+    shouldSkip: (name) => {
+      const e = entry(name);
+      if (isAuto && e.skipOnAuto) {
+        logger.info(`[transcribe] Skipping ${name} (skipOnAuto)`);
+        return true;
+      }
+      if (!isAuto && !e.supportedLanguages.has(effectiveLang)) {
+        logger.info(
+          `[transcribe] Skipping ${name} (unsupported language: ${effectiveLang})`,
+        );
+        return true;
+      }
+      return false;
+    },
+    onTrying: (name, remainingMs) => {
+      logger.info(`[transcribe] Trying ${name}`, {
         lang: effectiveLang,
         tier,
-        timeoutMs: provider.timeoutMs,
+        timeoutMs: Math.min(entry(name).timeoutMs, remainingMs),
       });
-
-      const budgetMs = Math.max(
-        1_000,
-        PIPELINE_TOTAL_MS - (Date.now() - pipelineStart),
-      );
-      const timeoutCtrl = new AbortController();
-      const timeoutId = setTimeout(
-        () => timeoutCtrl.abort(),
-        Math.min(provider.timeoutMs, budgetMs),
-      );
-      const onClientAbort = (): void => timeoutCtrl.abort();
-      signal.addEventListener("abort", onClientAbort);
-
-      let result: TranscribeResult | null;
-      try {
-        result = await provider.fn(
-          audioBlob,
-          effectiveLang,
-          env,
-          timeoutCtrl.signal,
-        );
-      } finally {
-        clearTimeout(timeoutId);
-        signal.removeEventListener("abort", onClientAbort);
+    },
+    invoke: (name, attemptSignal) =>
+      entry(name).fn(audioBlob, effectiveLang, env, attemptSignal),
+    handleAttempt: async (name, attempt) => {
+      if (!attempt) {
+        logger.info(`[transcribe] ${name} returned null (no result)`);
+        return false;
       }
-      if (result) {
-        if (
-          isAuto &&
-          result.language &&
-          !validateTranscriptLanguage(result.text, result.language)
-        ) {
-          logger.info(
-            `[transcribe] ${provider.name} rejected (language mismatch)`,
-          );
-          continue;
-        }
 
-        logger.info(`[transcribe] Success: ${provider.name}`, {
-          lang: result.language,
-          provider: result.provider,
+      // Schema gate: malformed provider output is a failed attempt so the
+      // pipeline fails over instead of shipping garbage to the client.
+      const shapeCheck = transcribeResponseSchema.safeParse(attempt);
+      if (!shapeCheck.success) {
+        logger.warn(`[transcribe] ${name} returned a malformed result`, {
+          issues: shapeCheck.error.issues.map((i) => ({
+            path: i.path.join("."),
+            message: i.message,
+          })),
         });
-
-        const limits = getLimits(tier);
-        if (!limits.autoDetectAllowed && "language" in result) {
-          result = { ...result };
-          delete result.language;
-        }
-
-        try {
-          await env.EKWE_KV.put(cacheKey, JSON.stringify(result), {
-            expirationTtl: 4 * 60 * 60,
-          });
-        } catch (err) {
-          logger.error(`[transcribe] KV cache write error`, {
-            error: String(err),
-          });
-        }
-
-        // Billable success: counts against the user's daily transcribe quota.
-        // Also invalidates the preflight gate so the next request sees the
-        // freshly consumed count. Replays served from the KV cache above never
-        // reach this point, so they stay free.
-        trackBillableSuccess(env, userId, "transcribe", ctx);
-
-        return Response.json(result);
+        return false;
       }
-      logger.info(`[transcribe] ${provider.name} returned null (no result)`);
-    } catch (e: unknown) {
-      if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
-      logger.error(`[transcribe] ${provider.name} threw`, {
-        error: e instanceof Error ? e.message : String(e),
+
+      if (
+        isAuto &&
+        attempt.language &&
+        !validateTranscriptLanguage(attempt.text, attempt.language)
+      ) {
+        logger.info(`[transcribe] ${name} rejected (language mismatch)`);
+        return false;
+      }
+
+      // The provider succeeded but didn't report a detected language (e.g.
+      // cohere omits it on auto, deepgram can return null). Fall back to the
+      // worker's own detection so the client's "Detected ·" UI and the
+      // subsequent /translate call still have a concrete source language.
+      if (isAuto && !attempt.language) {
+        try {
+          const detected = await detectTextLanguage(
+            attempt.text,
+            env.EKWE_D1,
+            signal,
+          );
+          if (detected) {
+            attempt = { ...attempt, language: detected };
+            logger.info(
+              `[transcribe] ${name} had no language — worker detected ${detected}`,
+            );
+          }
+        } catch (err) {
+          logger.error(
+            `[transcribe] Language detection fallback failed: ${String(err)}`,
+          );
+        }
+      }
+
+      logger.info(`[transcribe] Success: ${name}`, {
+        lang: attempt.language,
+        provider: attempt.provider,
       });
-    }
-  }
+
+      const limits = getLimits(tier);
+      if (!limits.autoDetectAllowed && "language" in attempt) {
+        attempt = { ...attempt };
+        delete attempt.language;
+      }
+
+      try {
+        if (cacheKey && env.EKWE_D1) {
+          await d1Put(
+            env.EKWE_D1,
+            "cache_transcription",
+            cacheKey,
+            userId,
+            tier,
+            JSON.stringify(attempt),
+            4 * 60 * 60,
+          );
+        }
+      } catch (err) {
+        logger.error(`[transcribe] D1 cache write error`, {
+          error: String(err),
+        });
+      }
+
+      // Billable success: counts against the user's daily transcribe quota.
+      // Also invalidates the preflight gate so the next request sees the
+      // freshly consumed count. Replays served from the KV cache above never
+      // reach this point, so they stay free.
+      trackBillableSuccess(env, userId, "transcribe", ctx);
+
+      return true;
+    },
+  });
+  if (result) return Response.json(result);
+
   logger.error(`[transcribe] ALL providers failed`);
 
-  return Response.json({ error: "ALL_PROVIDERS_FAILED" }, { status: 503 });
+  return Response.json(
+    { error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL },
+    { status: 503 },
+  );
 }

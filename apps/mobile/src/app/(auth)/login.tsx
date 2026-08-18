@@ -17,6 +17,7 @@ import {
 import { Box } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
 import { useAuthFlow, useNetwork } from "@/hooks";
+import { pushOnce } from "@/utils/navigation";
 import { loginSchema, LoginForm } from "@/schemas/auth";
 import { sendOtp } from "@/services/auth";
 
@@ -40,7 +41,7 @@ export default function WelcomeScreen(): React.JSX.Element {
   const onSubmit = async (data: LoginForm): Promise<void> => {
     const result = await run(() => sendOtp(data.email, turnstileToken));
     if (result.ok && result.needsOtp) {
-      router.push({
+      pushOnce(router, {
         pathname: "/(auth)/verify",
         params: { email: data.email.trim(), source: "login" },
       });

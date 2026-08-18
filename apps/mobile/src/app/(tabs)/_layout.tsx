@@ -27,47 +27,51 @@ export default function TabLayout(): React.ReactElement | null {
   if (!onboardingCompleted) return null;
 
   return (
-    <Tabs
-      tabBar={(props) => <CustomTabBar {...props} />}
-      screenOptions={{
-        headerTransparent: false,
-        headerStyle: {
-          backgroundColor: color.background,
-        },
-        headerShadowVisible: false,
-        headerTitleStyle: {
-          fontFamily: typography.heading3.fontFamily,
-          color: color.foreground,
-        },
-        headerTintColor: color.foreground,
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Home",
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
+    <>
+      <Tabs
+        tabBar={(props) => <CustomTabBar {...props} />}
+        screenOptions={{
+          headerTransparent: false,
+          headerStyle: {
+            backgroundColor: color.background,
+          },
+          headerShadowVisible: false,
+          headerTitleStyle: {
+            fontFamily: typography.heading3.fontFamily,
+            color: color.foreground,
+          },
+          headerTintColor: color.foreground,
         }}
-      />
-      <Tabs.Screen
-        name="history"
-        options={{
-          title: "History",
-          headerShown: false,
-          tabBarIcon: ({ color, size }) => (
-            <History size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          headerShown: true,
-          tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
-        }}
-      />
-    </Tabs>
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: "Home",
+            headerShown: false,
+            tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="history"
+          options={{
+            title: "History",
+            headerShown: false,
+            tabBarIcon: ({ color, size }) => (
+              <History size={size} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: "Profile",
+            headerShown: true,
+            tabBarIcon: ({ color, size }) => (
+              <User size={size} color={color} />
+            ),
+          }}
+        />
+      </Tabs>
+    </>
   );
 }

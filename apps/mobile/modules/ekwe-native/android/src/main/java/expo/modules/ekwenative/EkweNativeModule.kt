@@ -19,10 +19,18 @@ class EkweNativeModule : Module() {
   private var echoCanceler: AcousticEchoCanceler? = null
   private var gainControl: AutomaticGainControl? = null
 
-  // AudioRecord capture state
+  // AudioRecord capture state. These are read/written from three threads — the
+  // JS thread (start/stop), the AudioRecord loop, and the C++ capture thread
+  // (emitVadSilenceFromNative) — so every field needs volatile visibility to
+  // avoid stale reads (e.g. the loop never seeing a stop, or the VAD stop and a
+  // concurrent JS stop racing on release).
+  @Volatile
   private var audioRecord: AudioRecord? = null
+  @Volatile
   private var isAudioRecording = false
+  @Volatile
   private var recordingThread: Thread? = null
+  @Volatile
   private var recordingStartedAt = 0L
   @Volatile
   private var currentAmplitude: Float = 0f
@@ -88,7 +96,18 @@ class EkweNativeModule : Module() {
 
     @JvmStatic fun emitVadSilenceFromNative() {
       instance?.let { module ->
-        module.isAudioRecording = false
+        // Full teardown. The C++ controller only emits the event — it keeps
+        // capturing until nativeStopCapture() is called — so the VAD path must
+        // release AudioRecord, effects and the capture controller itself,
+        // otherwise the mic stays reserved, the Ogg is never finalized and the
+        // JS-side stopAudioRecording() (called from the onAutoStop callback)
+        // early-returns "Not recording" and never cleans up.
+        //
+        // Deliberately does NOT read nativeGetLastWaveform() here: that call
+        // clears the native waveform buffer, so the JS stopAudioRecording()
+        // that follows (which builds the RecordingResult) must be its single
+        // reader.
+        module.performStop()
         module.sendEvent("onVadSilence", emptyMap<String, Any>())
       }
     }
@@ -274,19 +293,20 @@ class EkweNativeModule : Module() {
             val read = stream.read(chunk)
             if (read <= 0) break
             total += read
-            if (total > limit) break
+            // Hard cap: once total bytes read exceeds the limit we must reject,
+            // not just stop buffering. Breaking before writing the crossing
+            // chunk would silently keep bytes.size <= limit and let the check
+            // below never fire, truncating the transcoded clip without error.
+            if (total > limit) {
+              Log.w("EkweNative", "resolveAndTranscodeToOpus rejected: bytes=$total over limit")
+              return@AsyncFunction mapOf(
+                "success" to false, "error" to "FILE_TOO_LARGE",
+                "durationMs" to 0, "waveform" to emptyList<Float>()
+              )
+            }
             buffer.write(chunk, 0, read)
           }
           buffer.toByteArray()
-        }
-
-        // Hard cap in bytes read even if the provider misreported size.
-        if (bytes.size > limit) {
-          Log.w("EkweNative", "resolveAndTranscodeToOpus rejected: bytes=${bytes.size} over limit")
-          return@AsyncFunction mapOf(
-            "success" to false, "error" to "FILE_TOO_LARGE",
-            "durationMs" to 0, "waveform" to emptyList<Float>()
-          )
         }
 
         val result = transcodeFromMemoryJNI(bytes, resolvePath(outputPath), limit)
@@ -424,46 +444,24 @@ class EkweNativeModule : Module() {
     AsyncFunction("stopAudioRecording") { ->
       val methodStart = System.currentTimeMillis()
       Log.d("EkweAudio", "stopAudioRecording called, isRecording=$isAudioRecording")
-      if (!isAudioRecording) {
-        return@AsyncFunction mapOf(
-          "success" to false, "error" to "Not recording",
-          "durationMs" to 0, "waveform" to emptyList<Float>()
-        )
-      }
 
-      isAudioRecording = false
-
-      // Unblock the audioRecord.read() loop IMMEDIATELY
-      try {
-        audioRecord?.stop()
-      } catch (_: IllegalStateException) { }
-
-      recordingThread?.interrupt()
-      try {
-        recordingThread?.join(500) // Should die instantly now
-      } catch (_: InterruptedException) {
-        recordingThread?.interrupt()
-      }
-      recordingThread = null
-
-      audioRecord?.release()
-      audioRecord = null
-
-      releaseEffectsInternal()
-
-      Log.d("EkweAudio", "stopAudioRecording: calling nativeStopCapture...")
-      val stopOk = nativeStopCapture()
-      Log.d("EkweAudio", "stopAudioRecording: nativeStopCapture returned $stopOk")
-
+      // Idempotent teardown: the VAD path may already have released everything
+      // when onVadSilence fired (see emitVadSilenceFromNative). In that case we
+      // must still return the recorded waveform/duration so the JS auto-stop can
+      // build a valid RecordingResult, instead of early-returning
+      // "Not recording" and leaking. This is the single reader of the native
+      // waveform buffer — the VAD callback never consumes it.
+      performStop()
       val waveform = nativeGetLastWaveform().toList()
       Log.d("EkweAudio", "stopAudioRecording: waveform bins=${waveform.size}")
-
-      val methodEnd = System.currentTimeMillis()
-      Log.d("EkweAudioPerf", "stopAudioRecording JNI took ${methodEnd - methodStart}ms")
 
       val durationMs = (System.currentTimeMillis() - recordingStartedAt)
         .toInt()
         .coerceAtLeast(0)
+        .toLong()
+
+      val methodEnd = System.currentTimeMillis()
+      Log.d("EkweAudioPerf", "stopAudioRecording JNI took ${methodEnd - methodStart}ms")
 
       return@AsyncFunction mapOf(
         "success" to true,
@@ -472,8 +470,6 @@ class EkweNativeModule : Module() {
         "waveform" to waveform
       )
     }
-
-
 
     // --- Audio Conversion Methods ---
     AsyncFunction("transcodeToOpusWithWaveform") { inputPath: String, outputPath: String, maxAudioBytes: Long ->
@@ -537,6 +533,44 @@ class EkweNativeModule : Module() {
       result.put("gainControl", false)
     }
     return result
+  }
+
+  /**
+   * Releases AudioRecord + effects and stops the native capture controller.
+   * Idempotent and callable from any thread, so both stopAudioRecording (JS
+   * thread) and emitVadSilenceFromNative (C++ capture callback, which runs ON
+   * the AudioRecord thread) share one teardown path. When invoked from the
+   * recording thread itself we skip the join — the read loop exits naturally
+   * once isAudioRecording is false. Does NOT read nativeGetLastWaveform():
+   * that buffer is cleared on read, so stopAudioRecording owns it exclusively.
+   */
+  private fun performStop() = synchronized(this) {
+    isAudioRecording = false
+
+    // Unblock the audioRecord.read() loop IMMEDIATELY
+    try {
+      audioRecord?.stop()
+    } catch (_: IllegalStateException) { }
+
+    val thread = recordingThread
+    if (thread != null && thread !== Thread.currentThread()) {
+      thread.interrupt()
+      try {
+        thread.join(500) // Should die instantly now
+      } catch (_: InterruptedException) {
+        thread.interrupt()
+      }
+    }
+    recordingThread = null
+
+    audioRecord?.release()
+    audioRecord = null
+
+    releaseEffectsInternal()
+
+    Log.d("EkweAudio", "performStop: calling nativeStopCapture...")
+    val stopOk = nativeStopCapture()
+    Log.d("EkweAudio", "performStop: nativeStopCapture returned $stopOk")
   }
 
   private fun releaseEffectsInternal() {

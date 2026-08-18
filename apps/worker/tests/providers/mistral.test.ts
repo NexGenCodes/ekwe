@@ -43,9 +43,7 @@ describe("Mistral provider", () => {
 
   test("returns null on empty choices", async () => {
     server.use(
-      http.post(PROVIDER_URLS.mistralChat, () =>
-        jsonResponse({ choices: [] }),
-      ),
+      http.post(PROVIDER_URLS.mistralChat, () => jsonResponse({ choices: [] })),
     );
     const result = await mistral.translate(
       "Hello",

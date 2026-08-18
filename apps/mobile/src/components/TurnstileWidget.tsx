@@ -39,12 +39,17 @@ const buildHtml = (sitekey: string, action: string): string => `<!DOCTYPE html>
     function onTurnstileLoaded() {
       try {
         if (!window.turnstile) { post('error', { error: 'turnstile-not-loaded' }); return; }
-        window.turnstile.render('ts', {
+        var widgetId = window.turnstile.render('ts', {
           sitekey: ${JSON.stringify(sitekey)},
           action: ${JSON.stringify(action)},
           callback: function (token) { post('token', { token: token }); },
           'error-callback': function (code) { post('error', { error: code }); },
-          'expired-callback': function () { post('expired'); },
+          'expired-callback': function () {
+            // Tokens are single-use with a 300s TTL. Re-solve the challenge on
+            // expiry so the screen always holds a fresh token while mounted.
+            window.turnstile.reset(widgetId);
+            post('expired');
+          },
         });
       } catch (e) { post('error', { error: String(e) }); }
     }

@@ -46,7 +46,10 @@ describe("useHistorySearch", () => {
   });
 
   it("starts with no filter, empty query, and all entries", async () => {
-    const entries = [entry({ id: "a" }), entry({ id: "b", type: "translation" })];
+    const entries = [
+      entry({ id: "a" }),
+      entry({ id: "b", type: "translation" }),
+    ];
     const { result } = await renderHook(() => useHistorySearch(entries));
 
     expect(result.current.query).toBe("");
@@ -112,8 +115,9 @@ describe("useHistorySearch", () => {
   });
 
   it("does not search the DB without an authenticated user", async () => {
-    (jest.requireMock("@/store") as { auth$: { user: { get: () => unknown } } }).auth$.user.get = () =>
-      null;
+    (
+      jest.requireMock("@/store") as { auth$: { user: { get: () => unknown } } }
+    ).auth$.user.get = () => null;
 
     const { result } = await renderHook(() => useHistorySearch([]));
 

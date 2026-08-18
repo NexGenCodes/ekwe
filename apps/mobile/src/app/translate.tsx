@@ -3,17 +3,18 @@ import { BlurView } from "expo-blur";
 import { useLocalSearchParams } from "expo-router";
 import ChevronDown from "lucide-react-native/icons/chevron-down";
 import ArrowDownUp from "lucide-react-native/icons/arrow-down-up";
-import React, { useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 
-import { LanguagePickerSheet, Button, Card } from "@/components";
+import { LanguagePickerSheet, Button, Card, Transliteration } from "@/components";
 import { Box, Text, ScrollArea, Spinner, Pressable } from "@/components/ui";
-import { getLanguageName, FLAG_MAP } from "@/constants/languages";
+import { getLanguageName, getLanguageFlag } from "@/constants/languages";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTranslation, useClipboard, useTheme } from "@/hooks";
 import { HistoryService } from "@/services/HistoryService";
 import { settings$, auth$ } from "@/store";
 import { AppToast, isIOS } from "@/utils";
+import { EkweError, ErrorMessages } from "@/constants/errors";
 
 export default function TranslateScreen(): React.JSX.Element {
   const params = useLocalSearchParams();
@@ -45,7 +46,25 @@ export default function TranslateScreen(): React.JSX.Element {
   );
 
   const [translation, setTranslation] = useState<string | null>(null);
+  const [transliteration, setTransliteration] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
+
+  const autoCopy = useSelector(() => settings$.autoCopy.get());
+  const lastAutoCopiedRef = useRef<string | null>(null);
+
+  // Auto-copy completed translations when the profile toggle is on. Fires once
+  // per unique translation value (reset whenever the result clears) so toggling
+  // the switch mid-session never re-copies the text already on screen.
+  useEffect(() => {
+    if (isTranslating || !translation) {
+      if (!translation) lastAutoCopiedRef.current = null;
+      return;
+    }
+    if (!autoCopy) return;
+    if (lastAutoCopiedRef.current === translation) return;
+    lastAutoCopiedRef.current = translation;
+    void copy(translation);
+  }, [autoCopy, isTranslating, translation, copy]);
 
   // Language Picker State
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -62,9 +81,11 @@ export default function TranslateScreen(): React.JSX.Element {
       if (pickerMode === "source") {
         setSourceLang(selected);
         setTranslation(null);
+        setTransliteration(null);
       } else {
         setTargetLang(selected);
         setTranslation(null);
+        setTransliteration(null);
       }
     }
     setPickerVisible(false);
@@ -98,6 +119,7 @@ export default function TranslateScreen(): React.JSX.Element {
 
       const translationText = result.value.translation;
       setTranslation(translationText);
+      setTransliteration(result.value.transliteration ?? null);
 
       // Save to history via HistoryService
       await HistoryService.recordTranslation(
@@ -106,7 +128,7 @@ export default function TranslateScreen(): React.JSX.Element {
           targetLang,
           transcript: text as string,
           translation: translationText,
-          transliteration: null,
+          transliteration: result.value.transliteration ?? null,
           duration: 0,
           sourceApp: "shared-text",
           provider: "gemini",
@@ -115,8 +137,13 @@ export default function TranslateScreen(): React.JSX.Element {
         userSession,
       );
     } catch (error) {
+      const code =
+        error instanceof Error ? (error.message as EkweError) : undefined;
       AppToast.error("Translation Failed", {
-        description: error instanceof Error ? error.message : String(error),
+        description:
+          code && ErrorMessages[code]
+            ? ErrorMessages[code]
+            : "Something went wrong. Please try again.",
       });
     } finally {
       setIsTranslating(false);
@@ -140,6 +167,7 @@ export default function TranslateScreen(): React.JSX.Element {
     setSourceLang(targetLang);
     setTargetLang(sourceLang);
     setTranslation(null);
+    setTransliteration(null);
   };
 
   const Container = isIOS ? BlurView : Box;
@@ -171,7 +199,7 @@ export default function TranslateScreen(): React.JSX.Element {
                   }}
                 >
                   {shownDetected ? "DETECTED · " : "SOURCE · "}
-                  {getLanguageName(sourceLang)} {FLAG_MAP[sourceLang] || ""}
+                  {getLanguageName(sourceLang)} {getLanguageFlag(sourceLang)}
                 </Text>
                 <ChevronDown size={14} color={mutedColor} />
               </Pressable>
@@ -210,7 +238,7 @@ export default function TranslateScreen(): React.JSX.Element {
                 variant="body"
                 style={{ marginRight: spacing.sm, color: color.foreground }}
               >
-                {getLanguageName(targetLang)} {FLAG_MAP[targetLang] || ""}
+                {getLanguageName(targetLang)} {getLanguageFlag(targetLang)}
               </Text>
               <ChevronDown size={16} color={mutedColor} />
             </Pressable>
@@ -237,6 +265,9 @@ export default function TranslateScreen(): React.JSX.Element {
                 <Text variant="bodyLarge" style={{ color: color.foreground }}>
                   {translation}
                 </Text>
+                {!!transliteration && (
+                  <Transliteration text={transliteration} />
+                )}
               </Card>
             </Box>
           ) : (

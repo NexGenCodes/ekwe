@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
 
-import { SharedAudioPlayer, useSharedAudioPlayer } from "./useSharedAudioPlayer";
+import {
+  SharedAudioPlayer,
+  useSharedAudioPlayer,
+} from "./useSharedAudioPlayer";
 
 export interface WaveformPlaybackOptions {
   /**

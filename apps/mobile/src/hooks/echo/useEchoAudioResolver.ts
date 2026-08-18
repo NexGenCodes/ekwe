@@ -40,9 +40,9 @@ export const useEchoAudioResolver = (props: {
   const [audioUri, setAudioUri] = useState<string | undefined>(undefined);
   const [isResolving, setIsResolving] = useState(false);
   const [convertedWaveform, setConvertedWaveform] = useState<number[]>([]);
-  const [convertedDurationMs, setConvertedDurationMs] = useState<
-    number | null
-  >(null);
+  const [convertedDurationMs, setConvertedDurationMs] = useState<number | null>(
+    null,
+  );
   const [resolveError, setResolveError] = useState<string | null>(null);
   // True while the current failure is a terminal file condition (e.g.
   // FILE_TOO_LARGE) that retrying can never fix. The Error step therefore must
@@ -210,7 +210,8 @@ export const useEchoAudioResolver = (props: {
         validatedUri = result.ok ? result.value.uri : fileUri;
 
         // Convert to Opus + extract waveform via native C++
-        const convertResult = await AudioTranscoder.transcodeToOpus(validatedUri);
+        const convertResult =
+          await AudioTranscoder.transcodeToOpus(validatedUri);
 
         if (isStale) {
           // Nothing was committed to the player; prune the combined output and

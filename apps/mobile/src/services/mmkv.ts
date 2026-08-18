@@ -102,7 +102,10 @@ export async function initializeMMKV(): Promise<void> {
       // and the app silently runs on the ephemeral in-memory store for the
       // whole session — losing all persistence.
       _upgradePromise = null;
-      logger.error("[mmkv] initializeMMKV failed, will retry on next call", err);
+      logger.error(
+        "[mmkv] initializeMMKV failed, will retry on next call",
+        err,
+      );
       throw err;
     }
   })();
@@ -113,9 +116,7 @@ export async function initializeMMKV(): Promise<void> {
 export const mmkv = new Proxy<MMKV>({} as MMKV, {
   get(_, prop): unknown {
     const value = (_storage as MMKV)[prop as keyof MMKV];
-    return typeof value === "function"
-      ? value.bind(_storage as MMKV)
-      : value;
+    return typeof value === "function" ? value.bind(_storage as MMKV) : value;
   },
   set(_, prop, value): boolean {
     (_storage as unknown as Record<string, unknown>)[prop as string] = value;

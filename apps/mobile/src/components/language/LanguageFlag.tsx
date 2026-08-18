@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 
 import { Text } from "@/components/ui";
-import { FLAG_MAP } from "@/constants/languages";
+import { getLanguageFlag } from "@/constants/languages";
 
 export interface LanguageFlagProps {
   code: string;
@@ -21,7 +21,7 @@ export function LanguageFlag({
   }
   return (
     <Text variant={size === "sm" ? "body" : "heading2"}>
-      {FLAG_MAP[code] || "🏳️"}
+      {getLanguageFlag(code)}
     </Text>
   );
 }

@@ -4,6 +4,7 @@ import React from "react";
 import { Text } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { pushOnce } from "@/utils/navigation";
 
 export const Disclaimer = (): React.ReactElement => {
   const router = useRouter();
@@ -32,7 +33,7 @@ export const Disclaimer = (): React.ReactElement => {
           marginVertical: -6,
           marginHorizontal: -4,
         }}
-        onPress={() => router.push("/legal/terms")}
+        onPress={() => pushOnce(router, "/legal/terms")}
       >
         Terms
       </Text>{" "}
@@ -47,7 +48,7 @@ export const Disclaimer = (): React.ReactElement => {
           marginVertical: -6,
           marginHorizontal: -4,
         }}
-        onPress={() => router.push("/legal/privacy")}
+        onPress={() => pushOnce(router, "/legal/privacy")}
       >
         Privacy Policy
       </Text>

@@ -371,6 +371,137 @@ const withEchoDesignTokens = (config) => {
 };
 
 /**
+ * Android: APK update system.
+ *
+ * Replaces Expo's FirebaseMessagingService with our own so `apk_update`
+ * data-only messages are handled natively (download + install prompt) and the
+ * app never opens. Expo's service lives in a library manifest, so it is removed
+ * at merge time with `tools:node="remove"`; the merged result contains only our
+ * service for the MESSAGING_EVENT intent.
+ *
+ * Also registers the foreground download service (dataSync type) and a
+ * FileProvider so the downloaded APK can be handed to the installer.
+ */
+const APK_UPDATE_SERVICE = 'expo.modules.ekwenative.EkweFirebaseMessagingService';
+const APK_DOWNLOAD_SERVICE = 'expo.modules.ekwenative.ApkDownloadService';
+const EXPO_FCM_SERVICE = 'expo.modules.notifications.service.ExpoFirebaseMessagingService';
+
+const withApkUpdateNative = (config) => {
+  return withAndroidManifest(config, (config) => {
+    const mainApplication = AndroidConfig.Manifest.getMainApplicationOrThrow(
+      config.modResults,
+    );
+    const manifest = config.modResults.manifest;
+
+    // tools namespace is required for tools:node="remove" below.
+    if (!manifest.$) manifest.$ = {};
+    manifest.$['xmlns:tools'] = 'http://schemas.android.com/tools';
+
+    // Permissions
+    const permissions = [
+      'android.permission.REQUEST_INSTALL_PACKAGES',
+      'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
+    ];
+    if (!manifest['uses-permission']) manifest['uses-permission'] = [];
+    permissions.forEach((perm) => {
+      if (
+        !manifest['uses-permission'].some((p) => p.$['android:name'] === perm)
+      ) {
+        manifest['uses-permission'].push({ $: { 'android:name': perm } });
+      }
+    });
+
+    // Remove Expo's FCM service (from its library manifest, at merge time) and
+    // register ours in its place.
+    if (!mainApplication.service) mainApplication.service = [];
+    mainApplication.service = mainApplication.service.filter(
+      (s) => s.$ && s.$['android:name'] !== EXPO_FCM_SERVICE,
+    );
+    mainApplication.service.push({
+      $: { 'android:name': EXPO_FCM_SERVICE, 'tools:node': 'remove' },
+    });
+    mainApplication.service.push({
+      $: { 'android:name': APK_UPDATE_SERVICE, 'android:exported': 'false' },
+      'intent-filter': [
+        {
+          action: [
+            { $: { 'android:name': 'com.google.firebase.MESSAGING_EVENT' } },
+          ],
+        },
+      ],
+    });
+    mainApplication.service.push({
+      $: {
+        'android:name': APK_DOWNLOAD_SERVICE,
+        'android:exported': 'false',
+        'android:foregroundServiceType': 'dataSync',
+      },
+    });
+
+    // FileProvider for handing the downloaded APK to the package installer.
+    const authority = '${applicationId}.fileprovider';
+    if (!mainApplication.provider) mainApplication.provider = [];
+    if (
+      !mainApplication.provider.some(
+        (p) => p.$ && p.$['android:authorities'] === authority,
+      )
+    ) {
+      mainApplication.provider.push({
+        $: {
+          'android:name': 'androidx.core.content.FileProvider',
+          'android:authorities': authority,
+          'android:exported': 'false',
+          'android:grantUriPermissions': 'true',
+        },
+        'meta-data': [
+          {
+            $: {
+              'android:name': 'android.support.FILE_PROVIDER_PATHS',
+              'android:resource': '@xml/apk_update_file_paths',
+            },
+          },
+        ],
+      });
+    }
+
+    return config;
+  });
+};
+
+/**
+ * Android: Writes res/xml/apk_update_file_paths.xml (FileProvider paths).
+ * The APK is cached in cacheDir, so <cache-path> covers it.
+ */
+const withApkFileProviderPaths = (config) => {
+  return withDangerousMod(config, [
+    'android',
+    (pluginConfig) => {
+      const outFile = path.join(
+        pluginConfig.modRequest.platformProjectRoot,
+        'app',
+        'src',
+        'main',
+        'res',
+        'xml',
+        'apk_update_file_paths.xml',
+      );
+      fs.mkdirSync(path.dirname(outFile), { recursive: true });
+      fs.writeFileSync(
+        outFile,
+        `<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+  <cache-path name="apk" path="."/>
+</paths>
+`,
+        'utf8',
+      );
+      console.log(`[EkwePlugin] Wrote ${outFile}`);
+      return pluginConfig;
+    },
+  ]);
+};
+
+/**
  * Combined plugin for managing all custom native Ekwe logic.
  */
 const withEkweNativePermissionsAndServices = (config) => {
@@ -405,6 +536,8 @@ const withEkweNativePermissionsAndServices = (config) => {
   updatedConfig = withMainActivityOnNewIntent(updatedConfig);
   updatedConfig = withEchoEnvironment(updatedConfig);
   updatedConfig = withEchoDesignTokens(updatedConfig);
+  updatedConfig = withApkUpdateNative(updatedConfig);
+  updatedConfig = withApkFileProviderPaths(updatedConfig);
   if (process.platform === 'darwin') {
     updatedConfig = withIosAppGroup(updatedConfig);
   }

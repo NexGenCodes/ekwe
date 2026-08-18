@@ -25,6 +25,7 @@ export function FreePlanCard({
 
   const bg = isDark ? color.card : color.background;
   const dividerBg = color.border;
+  const includedFeatures = freePlan.features.filter((f) => f.included);
 
   return (
     <Box
@@ -56,7 +57,7 @@ export function FreePlanCard({
 
       <Box style={[styles.divider, { backgroundColor: dividerBg }]} />
 
-      {freePlan.features.map((f: PlanFeature) => (
+      {includedFeatures.map((f: PlanFeature) => (
         <FeatureRow
           key={f.title}
           feature={f}
@@ -64,6 +65,7 @@ export function FreePlanCard({
           mutedColor={color.muted}
           textColor={color.foreground}
           isPro={false}
+          compact
         />
       ))}
     </Box>

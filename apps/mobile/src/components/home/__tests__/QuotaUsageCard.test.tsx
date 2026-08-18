@@ -11,12 +11,6 @@ jest.mock("@/hooks/ui/useTheme", () => ({
   useTheme: () => mockTheme(),
 }));
 
-jest.mock("@/store", () => ({
-  auth$: {
-    isPro: { get: () => false },
-  },
-}));
-
 jest.mock("@/hooks/queries/useUsageQuery", () => ({
   useUsageQuery: () => mockUsageQuery,
   invalidateUsage: jest.fn(),
@@ -91,7 +85,11 @@ const unlimitedSnapshot: UsageSnapshot = {
 
 describe("QuotaUsageCard", () => {
   beforeEach(() => {
-    mockUsageQuery = { data: healthySnapshot, isLoading: false, isError: false };
+    mockUsageQuery = {
+      data: healthySnapshot,
+      isLoading: false,
+      isError: false,
+    };
   });
 
   it("renders the daily usage title and both pool meters", async () => {
@@ -122,7 +120,11 @@ describe("QuotaUsageCard", () => {
   });
 
   it("shows a warning headline when a pool is almost exhausted", async () => {
-    mockUsageQuery = { data: nearLimitSnapshot, isLoading: false, isError: false };
+    mockUsageQuery = {
+      data: nearLimitSnapshot,
+      isLoading: false,
+      isError: false,
+    };
 
     await render(<QuotaUsageCard />);
 
@@ -130,7 +132,11 @@ describe("QuotaUsageCard", () => {
   });
 
   it("shows an error headline when a pool is fully exhausted", async () => {
-    mockUsageQuery = { data: exhaustedSnapshot, isLoading: false, isError: false };
+    mockUsageQuery = {
+      data: exhaustedSnapshot,
+      isLoading: false,
+      isError: false,
+    };
 
     await render(<QuotaUsageCard />);
 
@@ -138,7 +144,11 @@ describe("QuotaUsageCard", () => {
   });
 
   it("renders 'Unlimited' rows when a plan has no cap", async () => {
-    mockUsageQuery = { data: unlimitedSnapshot, isLoading: false, isError: false };
+    mockUsageQuery = {
+      data: unlimitedSnapshot,
+      isLoading: false,
+      isError: false,
+    };
 
     await render(<QuotaUsageCard />);
 

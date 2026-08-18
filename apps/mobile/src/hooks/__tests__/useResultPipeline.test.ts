@@ -13,7 +13,7 @@ import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 
 jest.mock("@/hooks/queries/useUsageQuery", () => ({
   invalidateUsage: jest.fn(),
-  useUsageQuery: jest.fn(),
+  useUsageQuery: jest.fn(() => ({ data: undefined, isFetching: false })),
   usageQueryKey: ["usage"],
 }));
 
@@ -78,14 +78,13 @@ jest.mock("expo-haptics", () => ({
   NotificationFeedbackType: { Success: 0 },
 }));
 
-const ok = <T,>(value: T) => ({ ok: true, value } as const);
-const fail = <E,>(error: E) => ({ ok: false, error } as const);
+const ok = <T>(value: T) => ({ ok: true, value }) as const;
+const fail = <E>(error: E) => ({ ok: false, error }) as const;
 
 const transcription: TranscriptionResult = {
   transcript: "hello world",
   detectedLang: "en",
   sourceLang: "en",
-  wordTimestamps: [],
   durationSeconds: 2.5,
   isLowQuality: false,
 };

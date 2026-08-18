@@ -63,7 +63,10 @@ export function mirrorSessionToSharedContainer(
           }
         },
         (err: unknown) => {
-          logger.error("[SharedContainer] hardened write of session file failed", err);
+          logger.error(
+            "[SharedContainer] hardened write of session file failed",
+            err,
+          );
         },
       );
     } else {
@@ -101,7 +104,10 @@ export function mirrorSettingsToShared(prefs: SharedPreferences): void {
         }
       },
       (err: unknown) => {
-        logger.error("[SharedContainer] hardened write of settings file failed", err);
+        logger.error(
+          "[SharedContainer] hardened write of settings file failed",
+          err,
+        );
       },
     );
   } catch (err) {

@@ -28,7 +28,9 @@ function entry(overrides: Partial<HistoryEntry>): HistoryEntry {
 
 describe("getEntryType", () => {
   it("respects an explicit persisted type", () => {
-    expect(getEntryType(entry({ type: "transcription" }))).toBe("transcription");
+    expect(getEntryType(entry({ type: "transcription" }))).toBe(
+      "transcription",
+    );
     expect(getEntryType(entry({ type: "translation" }))).toBe("translation");
   });
 

@@ -14,7 +14,7 @@ import { TextBox } from "./TextBox";
 import type { WaveformPlaybackController } from "@/hooks/audio/useAudioWaveformPlayback";
 
 import { Box, Text, Pressable } from "@/components/ui";
-import { LANGUAGES, FLAG_MAP } from "@/constants/languages";
+import { LANGUAGES, getLanguageFlag } from "@/constants/languages";
 import { borderRadius, opacity } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks/ui";
@@ -54,12 +54,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
         selectedLang !== "auto" &&
         selectedLang !== detectedLang;
 
-      // The "Detected ·" pill is only meaningful when the provider actually
-      // reported a language that differs from the user's selection (or the
-      // user asked for auto-detect). A mere echo of the selection is not a
-      // detection and must not be labelled as one.
-      const showsDetection =
-        autoLanguageDetect && !!detectedLang && selectedLang !== detectedLang;
+      const showsDetection = autoLanguageDetect && !!detectedLang;
 
       const selectedName =
         selectedLang === "auto"
@@ -70,8 +65,8 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
         LANGUAGES.find((l) => l.code === detectedLang)?.englishName ??
         detectedLang ??
         "—";
-      const selectedFlag = FLAG_MAP[selectedLang] || "🌐";
-      const detectedFlag = detectedLang ? FLAG_MAP[detectedLang] || "🌐" : "🌐";
+      const selectedFlag = getLanguageFlag(selectedLang);
+      const detectedFlag = detectedLang ? getLanguageFlag(detectedLang) : "🌐";
 
       return (
         <Box>
@@ -190,7 +185,10 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
           />
 
           <Box>
-            <Text variant="body" style={{ marginBottom: spacing.md, color: color.foreground }}>
+            <Text
+              variant="body"
+              style={{ marginBottom: spacing.md, color: color.foreground }}
+            >
               Translate to
             </Text>
             <ScrollView
@@ -220,16 +218,12 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                     marginRight: spacing.sm,
                     gap: spacing.sm,
                     backgroundColor:
-                      targetLang === lang.code
-                        ? brandPrimary
-                        : color.surface,
+                      targetLang === lang.code ? brandPrimary : color.surface,
                     borderColor:
-                      targetLang === lang.code
-                        ? brandPrimary
-                        : color.border,
+                      targetLang === lang.code ? brandPrimary : color.border,
                   }}
                 >
-                  <Text variant="body">{FLAG_MAP[lang.code] || "🌐"}</Text>
+                  <Text variant="body">{getLanguageFlag(lang.code)}</Text>
                   <Text
                     variant="bodySmall"
                     style={{
@@ -266,8 +260,8 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
               <Zap size={16} color={color.onBrand} />
               <Text variant="bodySmall" style={{ color: color.onBrand }}>
                 Translate
-                </Text>
-              </Pressable>
+              </Text>
+            </Pressable>
           </Box>
         </Box>
       );

@@ -1,6 +1,10 @@
 import { useSelector } from "@legendapp/state/react";
 import { useMemo, useCallback, useEffect, useState } from "react";
-import { Appearance, AppState, useColorScheme as useSystemColorScheme } from "react-native";
+import {
+  Appearance,
+  AppState,
+  useColorScheme as useSystemColorScheme,
+} from "react-native";
 
 import { getTheme, bubbleColors } from "@/constants/colors";
 import type { ColorsKey } from "@/constants/colors";
@@ -80,8 +84,7 @@ export const useTheme = (): ThemeTokens => {
   const preference = useSelector(() => settings$.themePreference.get()) as
     "light" | "dark" | "system";
 
-  const resolvedScheme =
-    preference === "system" ? systemScheme : preference;
+  const resolvedScheme = preference === "system" ? systemScheme : preference;
   const isDark = resolvedScheme === "dark";
 
   // Stable reference: only recomputes when theme actually switches.

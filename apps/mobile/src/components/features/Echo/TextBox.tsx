@@ -17,7 +17,7 @@ import { claimTtsFocus, releaseTtsFocus } from "@/hooks/audio/audioFocus";
 
 import { Box, Text, Pressable, Spinner } from "@/components/ui";
 import { ECHO_SHARE_SIGNATURE } from "@/constants/echo";
-import { LANGUAGES, FLAG_MAP } from "@/constants/languages";
+import { LANGUAGES, getLanguageFlag } from "@/constants/languages";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks/ui";
@@ -97,7 +97,7 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
     const langName = lang
       ? (LANGUAGES.find((l) => l.code === lang)?.englishName ?? lang)
       : null;
-    const flag = lang ? FLAG_MAP[lang] : null;
+    const flag = lang ? getLanguageFlag(lang) : null;
 
     // Stop TTS if the text (tab switch, new result) or target language changes.
     useEffect(() => {
@@ -237,9 +237,7 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
         text={text}
         height={height}
         variant={variant}
-        textStyle={
-          [{ ...typography.bodyLarge }, textStyle] as TextStyle[]
-        }
+        textStyle={[{ ...typography.bodyLarge }, textStyle] as TextStyle[]}
         header={
           <Box
             style={{
@@ -324,21 +322,22 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
                         : withAlpha(color.foreground, 0.06)
                   }
                   icon={
-                    isSourceMode
-                      ? audioPlayer?.isDecoding || audioPlayer?.isLoaded === false ? (
-                          <Spinner size="sm" color={color.brand} />
-                        ) : audioPlayer?.isPlaying ? (
-                          <VolumeX size={18} color={color.onBrand} />
-                        ) : (
-                          <Volume2 size={18} color={color.foreground} />
-                        )
-                      : isTTSLoading ? (
-                          <Spinner size="sm" color={color.brand} />
-                        ) : isSpeaking ? (
-                          <VolumeX size={18} color={color.onBrand} />
-                        ) : (
-                          <Volume2 size={18} color={color.foreground} />
-                        )
+                    isSourceMode ? (
+                      audioPlayer?.isDecoding ||
+                      audioPlayer?.isLoaded === false ? (
+                        <Spinner size="sm" color={color.brand} />
+                      ) : audioPlayer?.isPlaying ? (
+                        <VolumeX size={18} color={color.onBrand} />
+                      ) : (
+                        <Volume2 size={18} color={color.foreground} />
+                      )
+                    ) : isTTSLoading ? (
+                      <Spinner size="sm" color={color.brand} />
+                    ) : isSpeaking ? (
+                      <VolumeX size={18} color={color.onBrand} />
+                    ) : (
+                      <Volume2 size={18} color={color.foreground} />
+                    )
                   }
                 />
               )}

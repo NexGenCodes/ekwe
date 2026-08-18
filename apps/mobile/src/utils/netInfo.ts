@@ -1,9 +1,6 @@
 import NetInfo from "@react-native-community/netinfo";
 
-import {
-  networkActions,
-  isDefinitelyOffline,
-} from "@/store/network";
+import { networkActions, isDefinitelyOffline } from "@/store/network";
 
 /**
  * Utility to check the current network connection state.

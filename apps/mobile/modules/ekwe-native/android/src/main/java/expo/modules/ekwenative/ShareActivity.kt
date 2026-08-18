@@ -36,6 +36,12 @@ class ShareActivity : ReactActivity() {
     companion object {
         private const val TAG = "ShareActivity"
 
+        // A shared_voice_* file younger than this is presumed to be actively
+        // in use by an in-flight transcode (resolveAndTranscodeToOpus reads it
+        // in another Activity), so the wipe must NOT delete it. Only files
+        // untouched for this long are safe to treat as orphans.
+        private const val WIPE_MIN_AGE_MS = 10 * 60 * 1000L
+
         @Volatile
         var nativeLoaderView: View? = null
 
@@ -281,8 +287,14 @@ class ShareActivity : ReactActivity() {
     private fun wipeOrphanedCacheFiles() {
         Thread {
             try {
+                val staleBefore = System.currentTimeMillis() - WIPE_MIN_AGE_MS
                 cacheDir.listFiles()?.forEach { file ->
-                    if (file.name.startsWith("shared_voice_")) {
+                    // Age-gate: deleting every shared_voice_* file here could
+                    // wipe a file another Activity is still transcoding (the
+                    // transcode reads it on its own thread), corrupting the
+                    // output. Only remove files that are old enough to be
+                    // genuine orphans.
+                    if (file.name.startsWith("shared_voice_") && file.lastModified() < staleBefore) {
                         file.delete()
                     }
                 }

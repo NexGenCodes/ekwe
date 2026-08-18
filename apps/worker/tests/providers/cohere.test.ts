@@ -114,9 +114,7 @@ describe("Cohere provider", () => {
   });
 
   test("returns null on missing message", async () => {
-    server.use(
-      http.post(PROVIDER_URLS.cohereChat, () => jsonResponse({})),
-    );
+    server.use(http.post(PROVIDER_URLS.cohereChat, () => jsonResponse({})));
     const result = await cohere.translate(
       "Hello",
       "French",

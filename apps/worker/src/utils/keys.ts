@@ -1,5 +1,5 @@
-import { CLIENT_ABORTED, Env } from "../types";
-import { logger } from "../logger";
+import { CLIENT_ABORTED, Env } from "../core/types";
+import { logger } from "../core/logger";
 
 export function getRandomInt(max: number): number {
   // Guard: max <= 0 would make `threshold` NaN and `value < NaN` false forever,
@@ -28,12 +28,19 @@ export function hexEncode(buffer: ArrayBuffer): string {
     .join("");
 }
 
+/** Cache for key → hash lookups. Keys are env vars that never change. */
+const keyHashCache = new Map<string, string>();
+
 export async function hashKey(key: string): Promise<string> {
+  const cached = keyHashCache.get(key);
+  if (cached) return cached;
   const buf = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(key),
   );
-  return hexEncode(buf);
+  const hash = hexEncode(buf);
+  keyHashCache.set(key, hash);
+  return hash;
 }
 
 export async function hashBytes(buffer: ArrayBuffer): Promise<string> {
@@ -41,12 +48,28 @@ export async function hashBytes(buffer: ArrayBuffer): Promise<string> {
   return hexEncode(buf);
 }
 
-export async function rotateKeys(
+export interface RotateKeysDetailedResult {
+  /** First 2xx response, or null if no key succeeded. */
+  response: Response | null;
+  /**
+   * Status code of the terminal non-2xx attempt when rotation stopped without
+   * a 2xx (either a 5xx early-stop or the last failed key before the pool was
+   * exhausted). Null when rotation stopped for another reason (no key pool,
+   * all keys blacklisted, or execution threw for every key).
+   *
+   * Callers use this to distinguish "provider is hard-down" (5xx) from
+   * "every key exhausted / unauthorized" (429/403) when deciding whether to
+   * disable a provider for the rest of the day.
+   */
+  lastStatus: number | null;
+}
+
+export async function rotateKeysDetailed(
   env: Env,
   prefix: string,
   execute: (key: string) => Promise<Response>,
   signal: AbortSignal,
-): Promise<Response | null> {
+): Promise<RotateKeysDetailedResult> {
   const namespace = prefix.replace(/_$/, "").toLowerCase();
   const keys = Object.keys(env)
     .filter((k) => k.startsWith(prefix))
@@ -58,8 +81,22 @@ export async function rotateKeys(
   const idx = keys.map((_, i) => i).sort((a, b) => array[a] - array[b]);
   const shuffled = idx.map((i) => keys[i]);
 
+  let lastStatus: number | null = null;
+
   for (const key of shuffled) {
-    if (signal.aborted) throw new Error(CLIENT_ABORTED);
+    if (signal.aborted) {
+      // The combined attempt signal (AbortSignal.any) aborts for two reasons:
+      // the client hung up (reason is an AbortError-style DOMException) or the
+      // per-attempt timeout fired (AbortSignal.timeout aborts with a
+      // "TimeoutError" DOMException). A timeout must NOT masquerade as a client
+      // abort — that would kill the whole failover chain for one slow provider.
+      // Stop this rotation and let the pipeline try the next provider with a
+      // fresh attempt budget.
+      if ((signal.reason as { name?: string } | undefined)?.name !== "TimeoutError") {
+        throw new Error(CLIENT_ABORTED);
+      }
+      return { response: null, lastStatus };
+    }
 
     const keyHash = await hashKey(key);
     if (await env.EKWE_KV.get(`blacklist:${namespace}:${keyHash}`)) continue;
@@ -75,7 +112,9 @@ export async function rotateKeys(
       continue;
     }
 
-    if (res.ok) return res;
+    if (res.ok) return { response: res, lastStatus: null };
+
+    lastStatus = res.status;
 
     if (res.status === 429) {
       await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, "true", {
@@ -121,11 +160,25 @@ export async function rotateKeys(
         status: res.status,
         namespace,
       });
-      return null;
+      return { response: null, lastStatus: res.status };
     }
 
     continue;
   }
 
-  return null;
+  return { response: null, lastStatus };
+}
+
+/**
+ * Rotation wrapper for callers that only need the first 2xx response.
+ * See {@link rotateKeysDetailed} for the status-aware variant.
+ */
+export async function rotateKeys(
+  env: Env,
+  prefix: string,
+  execute: (key: string) => Promise<Response>,
+  signal: AbortSignal,
+): Promise<Response | null> {
+  const { response } = await rotateKeysDetailed(env, prefix, execute, signal);
+  return response;
 }

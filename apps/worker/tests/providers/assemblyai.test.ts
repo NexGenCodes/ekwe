@@ -5,7 +5,10 @@ import { http } from "msw";
 import { server } from "../msw/server";
 import { PROVIDER_URLS } from "../msw/handlers";
 
-const transcript = () => http.post(PROVIDER_URLS.assemblyaiTranscript, () => jsonResponse({ id: "mock-transcript-id" }));
+const transcript = () =>
+  http.post(PROVIDER_URLS.assemblyaiTranscript, () =>
+    jsonResponse({ id: "mock-transcript-id" }),
+  );
 
 describe("AssemblyAI provider", () => {
   test("returns result on successful full flow", async () => {

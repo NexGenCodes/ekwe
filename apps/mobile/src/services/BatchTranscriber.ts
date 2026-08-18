@@ -8,7 +8,7 @@ import {
 } from "@/services/transcribeAudio";
 import { Result, err } from "@/types/Result";
 import logger from "@/utils/logger";
-import { MAX_AUDIO_BYTES as MAX_FILE_SIZE } from "@ekwe/shared/plans";
+import { MAX_AUDIO_BYTES as MAX_FILE_SIZE, PREMIUM_LIMITS } from "@ekwe/shared/plans";
 
 export interface BatchAudioInput {
   uri: string;
@@ -48,6 +48,14 @@ export class BatchTranscriber {
     if (file.size && file.size > MAX_FILE_SIZE) {
       logger.warn("[BatchTranscriber] File too large:", file.size);
       return err(EkweError.FILE_TOO_LARGE);
+    }
+
+    if (
+      input.durationMs > 0 &&
+      input.durationMs > PREMIUM_LIMITS.dictationDurationMs
+    ) {
+      logger.warn("[BatchTranscriber] Audio too long:", input.durationMs);
+      return err(EkweError.AUDIO_TOO_LONG);
     }
 
     const averageDb = computeAverageDb(input.meteringData);

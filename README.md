@@ -7,13 +7,13 @@ Ekwe is a voice note translation application built specifically for Android and 
 - **Direct Recording & Metering:** Real-time pulse and visual metering on the Home Screen during recording using `react-native-audio-api` and Reanimated spring physics.
 - **Share Intent Integration:** Ekwe is a registered share target. You can share an audio file from external apps directly to Ekwe for instant transcription. Ekwe also handles text sharing intents.
 - **On-Device Processing:** Transcription and translation rely heavily on native APIs ensuring privacy and offline capabilities.
-- **Premium UI System:** Built using an elite layout schema (`NativeWind`), complete with custom haptic feedback, OLED-friendly dark mode scaling, and spring-physics animations.
+- **Premium UI System:** Built on a custom design-token system (`src/constants/` + `src/components/ui/`), complete with custom haptic feedback, OLED-friendly dark mode scaling, and spring-physics animations.
 - **History & Settings Persistence:** Uses `react-native-mmkv` and `Legend-State` to manage high-performance global state, retaining translation histories and user preferences efficiently.
 
 ## Technology Stack
 
 - **Framework:** [Expo](https://expo.dev) / [React Native](https://reactnative.dev)
-- **Styling:** NativeWind (Tailwind CSS for React Native)
+- **Styling:** Custom design-token system (semantic colors, spacing, typography, motion, shadows) with a small `src/components/ui/` primitives layer
 - **State Management:** Legend-State + MMKV
 - **Animations:** React Native Reanimated
 - **Native APIs Integration:**
@@ -28,7 +28,7 @@ Ekwe is a voice note translation application built specifically for Android and 
 1. **Install dependencies:**
 
    ```bash
-   npm install
+   pnpm install
    ```
 
 2. **Start the Metro Bundler:**

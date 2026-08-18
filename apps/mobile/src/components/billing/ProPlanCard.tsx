@@ -157,26 +157,16 @@ export function ProPlanCard({
       </Text>
 
       <Box style={[styles.divider, { backgroundColor: dividerBg }]} />
-      {proPlan.features.map((f: PlanFeature, index: number) => (
-        <React.Fragment key={f.title}>
-          <FeatureRow
-            feature={{ ...f, included: true }}
-            accentColor={color.brand}
-            mutedColor={color.muted}
-            textColor={color.foreground}
-            isPro
-          />
-          {index < proPlan.features.length - 1 && (
-            <Box
-              style={{
-                height: 1,
-                backgroundColor: color.border,
-                opacity: 0.15,
-                marginVertical: spacing.xs,
-              }}
-            />
-          )}
-        </React.Fragment>
+      {proPlan.features.map((f: PlanFeature) => (
+        <FeatureRow
+          key={f.title}
+          feature={{ ...f, included: true }}
+          accentColor={color.brand}
+          mutedColor={color.muted}
+          textColor={color.foreground}
+          isPro
+          compact
+        />
       ))}
       <Box style={styles.ctaContainer}>
         <Button
@@ -200,7 +190,7 @@ const styles = {
     overflow: "hidden",
   } as const,
   proCard: {
-    paddingVertical: spacing["2xl"],
+    paddingVertical: spacing.xl,
   } as const,
   currentBadge: {
     position: "absolute",

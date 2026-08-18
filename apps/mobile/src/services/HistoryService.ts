@@ -1,13 +1,11 @@
 import { SyncService } from "./SyncService";
-import { Db } from "./db";
-import { mmkv as storage } from "./mmkv";
+import { mapSharedRecordToEntry, SharedHistoryRecord } from "./sharedHistory";
 
 import { File, Paths } from "expo-file-system";
 
 import { EntryType } from "@/store";
 import { isIOS } from "@/utils";
 import { logger } from "@/utils";
-import { HISTORY_LOCAL_TTL_DAYS } from "@/constants/retention";
 
 export interface HistoryEntryPayload {
   sourceLang: string;
@@ -27,19 +25,6 @@ export interface HistoryEntryPayload {
 const APP_GROUP_ID = "group.com.ekwe.app";
 const SHARED_HISTORY_FILE = "shared-history.json";
 
-interface SharedHistoryRecord {
-  sessionKey: string;
-  sourceLang: string;
-  targetLang: string;
-  transcript: string;
-  translation: string | null;
-  transliteration: string | null;
-  duration: number;
-  sourceApp: string;
-  provider: string;
-  createdAt: string;
-}
-
 export const HistoryService = {
   recordTranslation: async (
     payload: HistoryEntryPayload,
@@ -52,28 +37,6 @@ export const HistoryService = {
     // (text + audio metadata) and a translation — never a combined row.
     const id = await SyncService.writeHistory(payload, session.user.id);
     return id;
-  },
-
-  cleanupLocalHistory: (): void => {
-    try {
-      const now = Date.now();
-      const CLEANUP_KEY = "ekwe-history-last-cleanup";
-
-      const lastCleanup = Number(storage.getString(CLEANUP_KEY) ?? 0);
-      if (now - lastCleanup < 86_400_000) return;
-      storage.set(CLEANUP_KEY, String(now));
-
-      const ttlDays = HISTORY_LOCAL_TTL_DAYS;
-      const deletedCount = Db.cleanupExpiredHistory(ttlDays);
-
-      if (deletedCount > 0) {
-        logger.info(
-          `[HistoryService] Pruned ${deletedCount} expired local history records.`,
-        );
-      }
-    } catch (e) {
-      logger.error("[HistoryService] Failed to cleanup local history", e);
-    }
   },
 
   /**
@@ -105,24 +68,8 @@ export const HistoryService = {
 
       for (const record of records) {
         try {
-          const hasTranslation =
-            !!record.translation?.trim() &&
-            record.translation.trim() !== record.transcript?.trim();
-          await HistoryService.recordTranslation(
-            {
-              sourceLang: record.sourceLang,
-              targetLang: record.targetLang,
-              transcript: record.transcript,
-              translation: record.translation,
-              transliteration: record.transliteration,
-              duration: record.duration ?? 0,
-              sourceApp: record.sourceApp || "ios",
-              provider: record.provider || "unknown",
-              sessionKey: record.sessionKey,
-              type: hasTranslation ? "translation" : "transcription",
-            },
-            session,
-          );
+          const draft = mapSharedRecordToEntry(record);
+          await HistoryService.recordTranslation(draft, session);
         } catch (e) {
           logger.error("[HistoryService] shared echo record import failed", e);
         }

@@ -45,7 +45,9 @@ function mockTheme() {
 
 describe("EmptyState", () => {
   it("renders title and subtitle", async () => {
-    await render(<EmptyState title="Silent Library" subtitle="History appears here." />);
+    await render(
+      <EmptyState title="Silent Library" subtitle="History appears here." />,
+    );
 
     expect(screen.getByText("Silent Library")).toBeOnTheScreen();
     expect(screen.getByText("History appears here.")).toBeOnTheScreen();
@@ -66,9 +68,7 @@ describe("EmptyState", () => {
   it("exposes a summary accessibility role with combined label", async () => {
     await render(<EmptyState title="Empty" subtitle="No items" />);
 
-    expect(
-      screen.getByLabelText("Empty. No items"),
-    ).toBeOnTheScreen();
+    expect(screen.getByLabelText("Empty. No items")).toBeOnTheScreen();
   });
 
   it("omits the subtitle text node when not provided", async () => {

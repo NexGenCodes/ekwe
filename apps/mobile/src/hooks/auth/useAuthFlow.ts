@@ -8,6 +8,7 @@ import { useRouter } from "expo-router";
 import { useState, useCallback } from "react";
 
 import { signInWithApple, signInWithGoogle, AuthResult } from "@/services/auth";
+import { pushOnce } from "@/utils/navigation";
 
 interface UseAuthFlowReturn {
   isLoading: boolean;
@@ -57,7 +58,7 @@ export const useAuthFlow = (): UseAuthFlowReturn => {
       run(async () => {
         const result = await signIn();
         if (result.needsLink) {
-          router.push({
+          pushOnce(router, {
             pathname: "/(auth)/verify",
             params: { email: result.needsLink.email, source: "link" },
           });

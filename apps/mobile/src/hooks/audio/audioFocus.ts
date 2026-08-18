@@ -61,8 +61,10 @@ export const __resetAudioFocus = (): void => {
  * Because expo-speech is intentionally not imported here (keeps this module
  * pure + unit-testable), each site supplies its own "stop speech now" callback.
  */
-let ttsFocusHandle: { claim: (p: () => void) => void; release: () => void } | null =
-  null;
+let ttsFocusHandle: {
+  claim: (p: () => void) => void;
+  release: () => void;
+} | null = null;
 
 export const claimTtsFocus = (stopSpeech: () => void): void => {
   ttsFocusHandle ??= createAudioFocus();

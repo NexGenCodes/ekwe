@@ -61,15 +61,15 @@ export function sniffAudioMime(bytes: Uint8Array, declared: string): string {
 
   // MP3 frame sync (11-bit all-ones marker) — checked last to avoid
   // false positives on formats whose headers we recognize above.
-  if (
-    bytes.length >= 2 &&
-    bytes[0] === 0xff &&
-    (bytes[1] & 0xe0) === 0xe0
-  ) {
+  if (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) {
     return "audio/mpeg";
   }
 
-  if (base && base !== "application/octet-stream" && base.startsWith("audio/")) {
+  if (
+    base &&
+    base !== "application/octet-stream" &&
+    base.startsWith("audio/")
+  ) {
     return base;
   }
   return "audio/wav";

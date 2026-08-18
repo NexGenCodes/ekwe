@@ -209,6 +209,7 @@ Java_expo_modules_ekwenative_EkweNativeModule_nativeInitCapture(
             static_cast<uint32_t>(sampleRate),
             static_cast<uint16_t>(channels),
             output,
+            std::string(), // caf path — Android plays Ogg natively, no CAF
             mode,
             true
         );

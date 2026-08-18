@@ -1,10 +1,10 @@
-import { Env, TranscribeResult } from "../types";
+import { Env, TranscribeResult } from "../core/types";
 import { rotateKeys } from "../utils/keys";
 import { isHallucination } from "../utils/prompts";
-import { fetchWithTimeout, TIMEOUT_FAST, abortableDelay } from "../utils/fetch";
+import { fetchWithTimeout, logProviderError, TIMEOUT_FAST, abortableDelay } from "../utils/fetch";
 import { mimeToExt } from "../utils/mime";
 import { rotateWsKeys, createStreamInterceptor } from "../utils/websocket";
-import { logger } from "../logger";
+import { logger } from "../core/logger";
 
 const GLADIA_UPLOAD = "https://api.gladia.io/v2/upload";
 const GLADIA_TRANSCRIPTION = "https://api.gladia.io/v2/pre-recorded";
@@ -60,11 +60,7 @@ async function attemptTranscription(
   );
 
   if (!uploadRes.ok) {
-    const err = await uploadRes.text().catch(() => "No body");
-    logger.error("[gladia] Upload error", {
-      status: uploadRes.status,
-      body: err,
-    });
+    await logProviderError("gladia upload", uploadRes);
     return uploadRes;
   }
 
@@ -91,11 +87,7 @@ async function attemptTranscription(
   );
 
   if (!submitRes.ok) {
-    const err = await submitRes.text().catch(() => "No body");
-    logger.error("[gladia] Submit error", {
-      status: submitRes.status,
-      body: err,
-    });
+    await logProviderError("gladia submit", submitRes);
     return submitRes;
   }
 
@@ -147,7 +139,7 @@ interface GladiaResult {
   };
 }
 
-export { ALL_LANGUAGES as supportedLanguages } from "../languages";
+export { ALL_LANGUAGES as supportedLanguages } from "../services/languages";
 
 /**
  * Handles a real-time streaming session via Gladia WebSocket.

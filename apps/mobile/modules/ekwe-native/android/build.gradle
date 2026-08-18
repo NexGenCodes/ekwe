@@ -18,11 +18,15 @@ def expoModuleExtension = project.extensions.getByType(ExpoModuleExtension)
 
 dependencies {
   implementation "androidx.cardview:cardview:1.0.0"
+  implementation "androidx.core:core-ktx:1.13.1"
   implementation "androidx.lifecycle:lifecycle-process:2.8.7"
   implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.8.7"
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
   // Ensure React Native constants and ReactActivity are accessible
   implementation "com.facebook.react:react-android"
+  // Expo notifications (ExpoFirebaseMessagingService) and FCM (RemoteMessage)
+  implementation "host.exp.exponent:expo.modules.notifications:57.0.12"
+  implementation "com.google.firebase:firebase-messaging:25.0.1"
 }
 
 android {

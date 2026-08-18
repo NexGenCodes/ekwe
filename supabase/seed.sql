@@ -15,6 +15,19 @@ ON CONFLICT (id) DO NOTHING;
 
 SET session_replication_role = origin;
 
+-- ─── Subscription Config ─────────────────────────────────────────────
+-- Single-row pricing config the worker /pricing endpoint reads. Discount is
+-- display-only: the store still charges the product list price. Annual price
+-- is monthly × 12 with annual_discount_percent applied on top.
+INSERT INTO public.subscription_config (
+  id,
+  base_price_usd,
+  discount_percent,
+  annual_discount_percent
+)
+VALUES (1, 2.00, 0, 20)
+ON CONFLICT (id) DO NOTHING;
+
 -- ─── Identities (required for email+password sign-in) ───────────────
 
 INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)

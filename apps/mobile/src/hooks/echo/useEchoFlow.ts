@@ -21,7 +21,10 @@ import { default as logger } from "@/utils/logger";
 import { isIOS } from "@/utils/platform";
 import { cleanEchoCache } from "@/utils/echo";
 import { ECHO_SHARE_SIGNATURE } from "@/constants/echo";
-import { resolveDetectedLanguage, getDefaultSourceLang } from "@/utils/languageUtils";
+import {
+  resolveDetectedLanguage,
+  getDefaultSourceLang,
+} from "@/utils/languageUtils";
 import { checkIsOnline } from "@/utils/netInfo";
 import { AppAlert } from "@/utils/alert";
 
@@ -290,13 +293,7 @@ export const useEchoFlow = (
     detectedLangRef.current = null;
     dispatch({ type: "RESET" });
     setIsSubsequentIntent(false);
-  }, [
-    isSubsequentIntent,
-    setIsSubsequentIntent,
-    sourceApp,
-    session,
-    audioUri,
-  ]);
+  }, [isSubsequentIntent, setIsSubsequentIntent, sourceApp, session, audioUri]);
 
   // Tear down and dismiss. Hoisted above the transcribe/translate handlers so
   // they can safely reference it (e.g. the login prompt calls onDismiss).
@@ -342,10 +339,7 @@ export const useEchoFlow = (
 
   // Transcription Logic
   const handleTranscribe = useCallback(
-    async (
-      durationSeconds: number,
-      waveform: number[],
-    ): Promise<void> => {
+    async (durationSeconds: number, waveform: number[]): Promise<void> => {
       if (isGone()) return;
 
       if (!session) {
@@ -370,7 +364,7 @@ export const useEchoFlow = (
                 onDismiss();
               },
             },
-          ]
+          ],
         );
         return;
       }
@@ -402,7 +396,10 @@ export const useEchoFlow = (
       const durationMs =
         convertedDurationMs ?? Math.round(durationSeconds * 1000);
       dispatch({ type: "SET_AUDIO_DURATION", payload: durationMs / 1000 });
-      logger.info("[EchoFlow] Initiating transcription (lang: %s)", state.selectedLang);
+      logger.info(
+        "[EchoFlow] Initiating transcription (lang: %s)",
+        state.selectedLang,
+      );
 
       if (!audioUri) return;
 
@@ -543,9 +540,26 @@ export const useEchoFlow = (
     const target = state.targetLang;
     const stt = state.sttProvider;
 
-    if (!textToTranslate || !source) return;
+    if (!textToTranslate) return;
 
-    logger.info("[EchoFlow] Translating %s → %s", source, target);
+    // The detected language is the source. When auto-detect came back empty
+    // (provider didn't report one AND the worker fallback didn't run), fall
+    // back to a concrete user selection before giving up — an explicit
+    // "English" source is still translatable even without a detection.
+    const sourceLang = source ?? (state.selectedLang !== "auto" ? state.selectedLang : null);
+    if (!sourceLang) {
+      logger.error("[EchoFlow] No source language for translation");
+      dispatch({
+        type: "FAIL",
+        payload: {
+          error:
+            "Couldn't detect the language of this voice note. Try again or pick a language manually.",
+        },
+      });
+      return;
+    }
+
+    logger.info("[EchoFlow] Translating %s → %s", sourceLang, target);
 
     // Set up-front so an offline rejection still lands on a retryable Error step.
     lastOpRef.current = "translate";
@@ -576,7 +590,7 @@ export const useEchoFlow = (
       activateKeepAwakeAsync("echoSession").catch(() => {});
       const trResult = await translate(
         textToTranslate,
-        source,
+        sourceLang,
         target,
         controller.signal,
       );
@@ -645,7 +659,7 @@ export const useEchoFlow = (
     try {
       await HistoryService.recordTranslation(
         {
-          sourceLang: source,
+          sourceLang: sourceLang,
           targetLang: target,
           transcript: textToTranslate,
           translation: null,
@@ -660,7 +674,7 @@ export const useEchoFlow = (
       );
       await HistoryService.recordTranslation(
         {
-          sourceLang: source,
+          sourceLang: sourceLang,
           targetLang: target,
           transcript: textToTranslate,
           translation: translationResultText,
@@ -683,6 +697,7 @@ export const useEchoFlow = (
   }, [
     state.transcription,
     state.detectedLang,
+    state.selectedLang,
     state.targetLang,
     state.sttProvider,
     state.audioDuration,
@@ -732,7 +747,9 @@ export const useEchoFlow = (
       // "inactive" is transient (system dialogs, app switcher) — only dismiss
       // when the app is fully backgrounded to avoid killing the flow mid-step.
       if (nextAppState === "background") {
-        logger.info("[EchoFlow] App state changed to background, dismissing echo...");
+        logger.info(
+          "[EchoFlow] App state changed to background, dismissing echo...",
+        );
         onDismiss();
       }
     });

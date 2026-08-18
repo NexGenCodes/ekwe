@@ -11,8 +11,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedCopyButton } from "@/components/AnimatedCopyButton";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
+import { Transliteration } from "@/components/Transliteration";
 import { Box, Pressable, ScrollArea, Text } from "@/components/ui";
-import { getLanguageName, FLAG_MAP } from "@/constants/languages";
+import { getLanguageName, getLanguageFlag } from "@/constants/languages";
 import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useClipboard, useTheme } from "@/hooks";
@@ -106,12 +107,7 @@ function DetailBlock({
           {text}
         </Text>
         {transliteration ? (
-          <Text
-            variant="caption"
-            style={[styles.transliteration, { color: color.muted }]}
-          >
-            {transliteration}
-          </Text>
+          <Transliteration text={transliteration} />
         ) : null}
       </Card>
     </Box>
@@ -140,8 +136,8 @@ export const HistoryEntryDetail = React.memo(
 
     const sourceName = getLanguageName(entry.sourceLang);
     const targetName = getLanguageName(entry.targetLang);
-    const sourceFlag = FLAG_MAP[entry.sourceLang] ?? "🌐";
-    const targetFlag = FLAG_MAP[entry.targetLang] ?? "🌐";
+    const sourceFlag = getLanguageFlag(entry.sourceLang);
+    const targetFlag = getLanguageFlag(entry.targetLang);
     const durationLabel = formatDuration(entry.duration);
     const sourceLabel = formatSourceApp(entry.sourceApp);
 
@@ -324,10 +320,6 @@ const styles = StyleSheet.create({
   copyChip: {
     padding: spacing.sm,
     borderRadius: borderRadius.full,
-  },
-  transliteration: {
-    marginTop: spacing.sm,
-    fontStyle: "italic",
   },
   footer: {
     marginTop: spacing.xs,

@@ -3,6 +3,9 @@ import type { DB, QueryResult } from "@op-engineering/op-sqlite";
 
 import logger from "@/utils/logger";
 
+/** Minimum gap between outbox push attempts to avoid burning all retries on a flaky network. */
+const OUTBOX_RETRY_BACKOFF_MS = 60_000;
+
 let db: DB;
 
 export interface HistoryRow {
@@ -212,25 +215,34 @@ export const Db = {
     return (res.rows ?? []) as unknown as HistoryRow[];
   },
 
-  getHistoryCount: (userId: string): number => {
-    if (!userId) return 0;
-    const res = getDb().executeSync(
-      "SELECT COUNT(*) as count FROM history WHERE user_id = ?",
-      [userId],
-    ) as QueryResult;
-    return (res.rows?.[0]?.count as number) ?? 0;
-  },
-
-  getHistoryPage: (userId: string, limit: number, offset: number): HistoryRow[] => {
+  getHistoryPage: (
+    userId: string,
+    limit: number,
+    before: { created_at: string; id: string } | null,
+  ): HistoryRow[] => {
     if (!userId) return [];
-    const res = getDb().executeSync(
-      "SELECT * FROM history WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
-      [userId, limit, offset],
-    ) as QueryResult;
+    // Cursor-based (created_at, id) paging instead of OFFSET. Cloud pulls
+    // insert rows into SQLite, which would shift offsets and cause
+    // skipped/duplicated rows in the caller's list.
+    const res = before
+      ? getDb().executeSync(
+          `SELECT * FROM history WHERE user_id = ?
+             AND (created_at < ? OR (created_at = ? AND id < ?))
+           ORDER BY created_at DESC LIMIT ?`,
+          [userId, before.created_at, before.created_at, before.id, limit],
+        )
+      : getDb().executeSync(
+          "SELECT * FROM history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+          [userId, limit],
+        );
     return (res.rows ?? []) as unknown as HistoryRow[];
   },
 
-  searchHistory: (userId: string, query: string, limit: number = 100): HistoryRow[] => {
+  searchHistory: (
+    userId: string,
+    query: string,
+    limit: number = 100,
+  ): HistoryRow[] => {
     if (!userId) return [];
     const ftsQuery = query
       .replace(/['"]/g, "")
@@ -261,8 +273,12 @@ export const Db = {
   },
 
   cleanupExpiredHistory: (ttlDays: number): number => {
+    // julianday() parses both ISO-8601 ('T' separator, as stored) and
+    // SQLite space-separated timestamps, so the comparison is format-agnostic
+    // — a lexicographic compare against datetime("now", ...) would skew rows
+    // created on the boundary day.
     const res = getDb().executeSync(
-      'DELETE FROM history WHERE created_at < datetime("now", ?)',
+      "DELETE FROM history WHERE julianday(created_at) < julianday('now', ?)",
       [`-${ttlDays} days`],
     ) as QueryResult;
     return res.rowsAffected ?? 0;
@@ -290,11 +306,30 @@ export const Db = {
     );
   },
 
-  getPendingOutbox: (): OutboxRow[] => {
+  /**
+   * Pending outbox rows for a single user that are due for a retry. Scoping by
+   * user_id prevents one account's session from draining another account's
+   * unsynced rows (which RLS blocks server-side anyway, stranding them until
+   * they go dead). Rows whose last attempt was < OUTBOX_RETRY_BACKOFF_MS ago
+   * are skipped so a flaky network can't burn all 5 retries in seconds.
+   */
+  getPendingOutbox: (userId: string): OutboxRow[] => {
+    if (!userId) return [];
     const res = getDb().executeSync(
-      "SELECT * FROM outbox WHERE status = 'pending' AND retries < 5 ORDER BY created_at ASC",
+      "SELECT * FROM outbox WHERE user_id = ? AND status = 'pending' AND retries < 5 AND (last_attempt IS NULL OR last_attempt <= ?) ORDER BY created_at ASC",
+      [userId, Date.now() - OUTBOX_RETRY_BACKOFF_MS],
     ) as QueryResult;
     return (res.rows ?? []) as unknown as OutboxRow[];
+  },
+
+  /** Number of outbox rows that exhausted their retries for a user. */
+  countDeadOutbox: (userId: string): number => {
+    if (!userId) return 0;
+    const res = getDb().executeSync(
+      "SELECT COUNT(*) AS count FROM outbox WHERE user_id = ? AND status = 'dead'",
+      [userId],
+    ) as QueryResult;
+    return (res.rows?.[0]?.count as number) ?? 0;
   },
 
   incrementOutboxRetry: (id: string): void => {
@@ -310,9 +345,18 @@ export const Db = {
     ]);
   },
 
-  cleanupDeadOutbox: (): number => {
+  /**
+   * Resurrects outbox rows stuck in a terminal-ish state so they get retried
+   * instead of being lost forever:
+   *   * `dead`     — hit 5 failed pushes; previously purged after 7 days, which
+   *                 silently deleted the user's unsynced history row.
+   *   * `in_flight`— the app died between marking the row in-flight and the
+   *                 push completing; without revival it would never retry.
+   * Upserts are idempotent, so retrying a stale row is always safe.
+   */
+  reviveOutbox: (): number => {
     const res = getDb().executeSync(
-      "DELETE FROM outbox WHERE status = 'dead' AND created_at < datetime('now', '-7 days')",
+      "UPDATE outbox SET status = 'pending', retries = 0 WHERE status IN ('dead', 'in_flight')",
     ) as QueryResult;
     return res.rowsAffected ?? 0;
   },

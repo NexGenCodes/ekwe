@@ -4,7 +4,6 @@ import {
   PREMIUM_FEATURES,
   PREMIUM_LIMITS,
   USD_PRICE,
-  PRO_PRODUCT_IDS,
 } from "@ekwe/shared/plans";
 import type {
   PlanFeatures as SharedPlanFeatures,
@@ -73,39 +72,76 @@ export interface PlanFeature {
   included: boolean;
 }
 
+const fmtInt = (n: number): string => n.toLocaleString("en-US");
+const fmtMinutes = (ms: number): string => `${Math.round(ms / 60_000)} min`;
+const fmtHistory = (days: number): string =>
+  days % 365 === 0 ? `${days / 365}-year` : `${days}-day`;
+
+/** Combined daily caps: "25 translations & 25 transcriptions per day". */
+const dailyCaps = (translate: number, transcribe: number): string =>
+  translate === 0 && transcribe === 0
+    ? "Unlimited translations & transcriptions"
+    : `${fmtInt(translate)} translations & ${fmtInt(transcribe)} transcriptions per day`;
+
+/** Combined content limits: "3,000-char texts & voice notes up to 2 min". */
+const contentLimits = (textChars: number, durationMs: number): string =>
+  `${fmtInt(textChars)}-char texts & voice notes up to ${fmtMinutes(durationMs)}`;
+
 export const BILLING_PLANS = {
   free: {
     id: "free" as const,
-    name: "Basic",
-    tagline: "The full translation experience, with ads",
+    name: "Free",
+    tagline: "The essential translation experience — free forever",
     price: 0,
-    fallbackPrice: { amount: 0, currency: "USD", symbol: "$" },
     features: [
-      { title: "Unlimited text translation", included: true },
-      { title: "Voice dictation (up to 2 min per session)", included: true },
+      {
+        title: dailyCaps(
+          PLAN_LIMITS.free.dailyTranslateLimit,
+          PLAN_LIMITS.free.dailyTranscribeLimit,
+        ),
+        included: true,
+      },
+      {
+        title: contentLimits(
+          PLAN_LIMITS.free.maxTextChars,
+          PLAN_LIMITS.free.dictationDurationMs,
+        ),
+        included: true,
+      },
+      {
+        title: `${fmtHistory(PLAN_LIMITS.free.historyRemoteTtlDays)} cloud history`,
+        included: true,
+      },
       { title: "Auto-copy translations", included: true },
-      { title: "30-day cloud history", included: true },
-      { title: "Auto-detect spoken language", included: false },
-      { title: "Custom avatar icons", included: false },
-      { title: "Ad-free experience", included: false },
-      { title: "Extended dictation (up to 30 min)", included: false },
-      { title: "Live dictation with real-time results", included: false },
     ] as PlanFeature[],
   },
   pro: {
     id: "pro" as const,
     name: "Pro",
     tagline: "Zero distractions. Full power.",
-    productIdMonthly: PRO_PRODUCT_IDS.monthly,
-    productIdAnnual: PRO_PRODUCT_IDS.annual,
     features: [
+      {
+        title: dailyCaps(
+          PLAN_LIMITS.pro.dailyTranslateLimit,
+          PLAN_LIMITS.pro.dailyTranscribeLimit,
+        ),
+        included: true,
+      },
+      {
+        title: contentLimits(
+          PLAN_LIMITS.pro.maxTextChars,
+          PLAN_LIMITS.pro.dictationDurationMs,
+        ),
+        included: true,
+      },
+      { title: "Live dictation with auto-detect", included: true },
       { title: "Ad-free experience", included: true },
-      { title: "Extended voice dictation (up to 30 min)", included: true },
-      { title: "Auto-detect spoken language", included: true },
-      { title: "Live dictation with real-time results", included: true },
-      { title: "1-year cloud history", included: true },
-      { title: "Priority AI context processing", included: true },
-      { title: "Custom avatar icons", included: true },
+      { title: "Premium text-to-speech voices", included: true },
+      {
+        title: `${fmtHistory(PLAN_LIMITS.pro.historyRemoteTtlDays)} cloud history`,
+        included: true,
+      },
+      { title: "Auto-copy translations", included: true },
     ] as PlanFeature[],
   },
 } as const;
