@@ -11,8 +11,6 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.ekwe.app",
       "userInterfaceStyle": "automatic",
-      // Apple Team ID required by @bacons/apple-targets for the ShareExtension
-      // target. Replace with your team ID (Xcode → Signing & Capabilities).
       "appleTeamId": "REPLACE_WITH_YOUR_APPLE_TEAM_ID",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Ekwe uses your microphone to capture your voice for real-time translation.",
@@ -81,7 +79,6 @@
           }
         }
       ],
-
       "expo-localization",
       "expo-status-bar",
       "./modules/ekwe-native/app.plugin.js",
@@ -101,9 +98,10 @@
         }
       ]
     ],
-    "assetBundlePatterns": ["assets/fonts/*"],
+    "assetBundlePatterns": [
+      "assets/fonts/*"
+    ],
     "updates": {
-      "url": "https://u.expo.dev/YOUR_PROJECT_ID",
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
@@ -111,9 +109,32 @@
       "policy": "appVersion"
     },
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "YOUR_PROJECT_ID"
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "bundleIdentifier": "com.ekwe.app.EchoShare",
+                  "targetName": "ShareExtension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.ekwe.app"
+                    ],
+                    "keychain-access-groups": [
+                      "$(AppIdentifierPrefix)com.ekwe.app",
+                      "$(AppIdentifierPrefix)com.ekwe.app.EchoShare"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "fb3d49de-0c12-4b1a-bf94-863befec071a"
       }
-    }
+    },
+    "owner": "nexgen_codes"
   }
 }

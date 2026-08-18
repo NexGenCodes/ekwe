@@ -12,26 +12,23 @@
         "buildType": "apk"
       }
     },
-    "preview": {
+     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
       },
       "ios": {
-        "resourceClass": "m-medium"
+        "resourceClass": "medium"
       }
     },
     "production": {
       "android": {
-        "resourceClass": "m-medium"
+        "resourceClass": "medium"
       },
       "ios": {
-        "resourceClass": "m-medium"
+        "resourceClass": "medium"
       }
     }
-  },
-  "update": {
-    "channel": "production"
   },
   "submit": {
     "production": {}
