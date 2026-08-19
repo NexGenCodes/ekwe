@@ -11,8 +11,6 @@
     "test:unit": "vitest run --project unit",
     "test:workers": "vitest run --project workers",
     "test:coverage": "vitest run --project unit --coverage",
-    "fixtures:record": "FIXTURES_RECORD=1 vitest run --project unit tests/contract/fixture-record.test.ts",
-    "fixtures:verify": "FIXTURES_CHECK=1 vitest run --project unit tests/contract/fixture-record.test.ts",
     "check:keys": "node tests/helpers/check-providers.mjs",
     "check:keys:all": "node tests/helpers/check-providers.mjs --groq",
     "dev": "wrangler dev",

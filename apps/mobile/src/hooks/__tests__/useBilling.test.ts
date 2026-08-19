@@ -128,7 +128,11 @@ describe("useBilling", () => {
     });
 
     it("opens checkout and celebrates when pro reconciles", async () => {
-      mockOpenCheckout.mockResolvedValue({ canceled: false, txRef: "tx_abc" });
+      mockOpenCheckout.mockResolvedValue({
+        canceled: false,
+        checkoutUrl: "https://checkout.flutterwave.com/abc",
+        txRef: "tx_abc",
+      });
       mockReconcile.mockResolvedValue(true);
       const { result } = await renderHook(() => useBilling());
       expect(result.current.isAnnual).toBe(true);
@@ -138,6 +142,19 @@ describe("useBilling", () => {
       });
 
       expect(mockOpenCheckout).toHaveBeenCalledWith(true);
+      expect(result.current.showCheckout).toBe(true);
+      expect(result.current.checkoutUrl).toBe(
+        "https://checkout.flutterwave.com/abc",
+      );
+
+      await act(async () => {
+        await result.current.handleCheckoutComplete({
+          status: "successful",
+          tx_ref: "tx_abc",
+          transaction_id: "123",
+        });
+      });
+
       expect(mockReconcile).toHaveBeenCalled();
       expect(authActions.setIsPro).toHaveBeenCalledWith(true);
       expect(AppAlert.success).toHaveBeenCalledWith(
@@ -174,12 +191,24 @@ describe("useBilling", () => {
     });
 
     it("shows a syncing message when the purchase succeeds but pro never reconciles", async () => {
-      mockOpenCheckout.mockResolvedValue({ canceled: false, txRef: "tx_abc" });
+      mockOpenCheckout.mockResolvedValue({
+        canceled: false,
+        checkoutUrl: "https://checkout.flutterwave.com/abc",
+        txRef: "tx_abc",
+      });
       mockReconcile.mockResolvedValue(false);
       const { result } = await renderHook(() => useBilling());
 
       await act(async () => {
         await result.current.handleUpgrade();
+      });
+
+      await act(async () => {
+        await result.current.handleCheckoutComplete({
+          status: "successful",
+          tx_ref: "tx_abc",
+          transaction_id: "123",
+        });
       });
 
       expect(AppAlert.info).toHaveBeenCalledWith(

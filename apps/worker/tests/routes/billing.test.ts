@@ -77,7 +77,8 @@ describe("handleCheckout", () => {
     expect(data.error).toBe("INVALID_BODY");
   });
 
-  test("returns 400 for missing redirect_url", async () => {
+  test("returns 200 when redirect_url is omitted (worker supplies its own)", async () => {
+    mockPaymentLink();
     const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
     const req = new Request("http://test/billing/checkout", {
       method: "POST",
@@ -86,7 +87,7 @@ describe("handleCheckout", () => {
     });
 
     const res = await handleCheckout(req, env, mockAuth);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
   });
 
   test("returns 503 when FLUTTERWAVE_SECRET is not configured", async () => {

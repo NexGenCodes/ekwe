@@ -245,9 +245,18 @@ describe("checkoutRequestSchema", () => {
     ).toBe(false);
   });
 
-  test("rejects a missing redirect_url", () => {
+  test("accepts a checkout without a redirect_url (worker supplies its own)", () => {
     expect(
       checkoutRequestSchema.safeParse({ plan: "ekwe_pro_monthly" }).success,
+    ).toBe(true);
+  });
+
+  test("rejects an empty redirect_url", () => {
+    expect(
+      checkoutRequestSchema.safeParse({
+        plan: "ekwe_pro_monthly",
+        redirect_url: "",
+      }).success,
     ).toBe(false);
   });
 

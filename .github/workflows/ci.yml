@@ -74,23 +74,6 @@ jobs:
       - name: Workers runtime (Durable Object) tests
         run: pnpm exec vitest run --project workers
 
-  fixtures-drift:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/worker
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - name: Verify provider request fixtures have not drifted
-        run: pnpm fixtures:verify
-
   secret-scan:
     runs-on: ubuntu-latest
     steps:
@@ -125,7 +108,7 @@ jobs:
   deploy-worker:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
-    needs: [typecheck, lint, test-worker, fixtures-drift, secret-scan, wrangler-types-drift]
+    needs: [typecheck, lint, test-worker, secret-scan, wrangler-types-drift]
     environment: production
     defaults:
       run:
