@@ -7,10 +7,3 @@ export {
   interaction,
   spinnerSize,
 } from "@ekwe/shared";
-export type {
-  BorderRadiusKey,
-  IconSizeKey,
-  TouchTargetKey,
-  OpacityKey,
-  ZIndexKey,
-} from "@ekwe/shared";

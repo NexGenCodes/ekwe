@@ -44,6 +44,7 @@ export type {
   SubscriptionPlanDuration,
   PaymentFeatureFlags,
   NormalizedBillingEvent,
+  WebhookProvider,
   WebhookVerificationResult,
   BillingErrorCode,
 } from "./billing";

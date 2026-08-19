@@ -1,4 +1,4 @@
-import { WORKER_ERROR_CODES } from "@ekwe/shared";
+import { WORKER_ERROR_CODES, registerPushTokenRequestSchema } from "@ekwe/shared";
 import { Env } from "../core/types";
 import { safeParseJSON } from "../core/guards";
 import { supabasePost } from "../services/supabase";
@@ -8,13 +8,9 @@ import { supabasePost } from "../services/supabase";
  *
  * Called at app launch (before sign-in), so there is no authenticated user yet:
  * the Worker upserts by token string. Tokens are opaque Expo tokens; the
- * `ExponentPushToken[...]` prefix check is the cheap abuse gate.
+ * `ExponentPushToken[...]` prefix check (enforced in the shared schema) is the
+ * cheap abuse gate.
  */
-interface RegisterPushTokenBody {
-  push_token: string;
-  platform: string;
-  app_version?: string;
-}
 
 export async function handleRegisterPushToken(
   request: Request,
@@ -23,13 +19,8 @@ export async function handleRegisterPushToken(
   const parsed = await safeParseJSON<unknown>(request);
   if (!parsed.ok) return parsed.response;
 
-  const body = parsed.data as Partial<RegisterPushTokenBody> | null;
-  if (
-    !body ||
-    typeof body.push_token !== "string" ||
-    !body.push_token.startsWith("ExponentPushToken[") ||
-    (body.platform !== "android" && body.platform !== "ios")
-  ) {
+  const body = registerPushTokenRequestSchema.safeParse(parsed.data);
+  if (!body.success) {
     return Response.json(
       { error: WORKER_ERROR_CODES.INVALID_BODY },
       { status: 400 },
@@ -37,9 +28,9 @@ export async function handleRegisterPushToken(
   }
 
   const res = await supabasePost(env, "/rest/v1/rpc/upsert_push_token", {
-    p_push_token: body.push_token,
-    p_platform: body.platform,
-    p_app_version: typeof body.app_version === "string" ? body.app_version : null,
+    p_push_token: body.data.push_token,
+    p_platform: body.data.platform,
+    p_app_version: body.data.app_version ?? null,
   });
 
   if (!res) {

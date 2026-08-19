@@ -79,6 +79,8 @@ describe("handleTts", () => {
       new AbortController().signal,
     );
     expect(missingRes.status).toBe(400);
+    const missingBody = (await missingRes.json()) as { error: string };
+    expect(missingBody.error).toBe("INVALID_BODY");
 
     const autoRes = await handleTts(
       makeRequest("Hello", "auto"),
@@ -87,6 +89,43 @@ describe("handleTts", () => {
       new AbortController().signal,
     );
     expect(autoRes.status).toBe(400);
+    const autoBody = (await autoRes.json()) as { error: string };
+    expect(autoBody.error).toBe("INVALID_TARGET_LANGUAGE");
+  });
+
+  test("returns 400 on an unknown gender", async () => {
+    const req = new Request("http://test/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Hello", lang: "es", gender: "other" }),
+    });
+    const res = await handleTts(
+      req,
+      mockEnv(),
+      "PREMIUM",
+      new AbortController().signal,
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("INVALID_BODY");
+  });
+
+  test("accepts an explicit gender", async () => {
+    server.use(
+      http.post(PROVIDER_URLS.geminiTtsGenerate, geminiInlineResponse),
+    );
+    const req = new Request("http://test/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Hello", lang: "es", gender: "male" }),
+    });
+    const res = await handleTts(
+      req,
+      mockEnv(),
+      "PREMIUM",
+      new AbortController().signal,
+    );
+    expect(res.status).toBe(200);
   });
 
   test("returns 400 on invalid language code", async () => {

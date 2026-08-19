@@ -1,13 +1,7 @@
+import { WORKER_ERROR_CODES } from "@ekwe/shared";
+import type { WebhookVerificationResult } from "@ekwe/shared";
 import { logger } from "../core/logger";
 import { hexEncode } from "../utils/keys";
-
-export type WebhookProvider = "flutterwave" | "unknown";
-
-interface WebhookVerificationResult {
-  isValid: boolean;
-  provider: WebhookProvider;
-  error?: string;
-}
 
 // ─── HMAC Timestamp Freshness ────────────────────────────────────
 // Maximum age (in seconds) for a webhook timestamp before we reject it.
@@ -95,6 +89,7 @@ export async function verifyWebhook(
         isValid: false,
         provider: "flutterwave",
         error: "Server misconfiguration",
+        code: WORKER_ERROR_CODES.SERVER_ERROR,
       };
     }
 
@@ -109,6 +104,7 @@ export async function verifyWebhook(
           isValid: false,
           provider: "flutterwave",
           error: "Timestamp expired",
+          code: WORKER_ERROR_CODES.WEBHOOK_TIMESTAMP_EXPIRED,
         };
       }
     }
@@ -117,7 +113,15 @@ export async function verifyWebhook(
     const payload = `${env.FLUTTERWAVE_SECRET}${flutterwaveTimestamp || ""}${rawBody}`;
     const computed = await computeHMAC(env.FLUTTERWAVE_SECRET, payload, "SHA-512");
     const isValid = await timingSafeEqual(computed, flutterwaveSig);
-    if (!isValid) logger.warn("[webhook] Flutterwave signature mismatch");
+    if (!isValid) {
+      logger.warn("[webhook] Flutterwave signature mismatch");
+      return {
+        isValid: false,
+        provider: "flutterwave",
+        error: "Signature mismatch",
+        code: WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
+      };
+    }
     return { isValid, provider: "flutterwave" };
   }
 
@@ -127,5 +131,6 @@ export async function verifyWebhook(
     isValid: false,
     provider: "unknown",
     error: "Missing signature headers",
+    code: WORKER_ERROR_CODES.WEBHOOK_MISSING_HEADERS,
   };
 }

@@ -15,12 +15,6 @@ import EkweNative from "../../modules/ekwe-native";
 
 export type CaptureMode = "file" | "live";
 
-export interface CaptureSession {
-  sessionId: string;
-  startTime: number;
-  mode: CaptureMode;
-}
-
 export interface RecordingResult {
   uri: string;
   durationMs: number;

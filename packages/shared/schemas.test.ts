@@ -1,11 +1,15 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  checkoutRequestSchema,
+  checkoutResponseSchema,
   otpRequestSchema,
+  registerPushTokenRequestSchema,
   storePricingResponseSchema,
   transcribeResponseSchema,
   translateRequestSchema,
   translateResponseSchema,
+  ttsRequestSchema,
   usageSnapshotSchema,
 } from "./schemas";
 
@@ -176,5 +180,146 @@ describe("usageSnapshotSchema", () => {
   test("rejects a snapshot missing quota pools", () => {
     const parsed = usageSnapshotSchema.safeParse({ day: "2026-08-13" });
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe("ttsRequestSchema", () => {
+  test("accepts a minimal TTS body", () => {
+    expect(
+      ttsRequestSchema.safeParse({ text: "Hello", lang: "en" }).success,
+    ).toBe(true);
+  });
+
+  test("accepts an explicit gender", () => {
+    expect(
+      ttsRequestSchema.safeParse({
+        text: "Hello",
+        lang: "en",
+        gender: "male",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects a body missing text or lang", () => {
+    expect(ttsRequestSchema.safeParse({ lang: "en" }).success).toBe(false);
+    expect(ttsRequestSchema.safeParse({ text: "hi" }).success).toBe(false);
+    expect(ttsRequestSchema.safeParse({ text: "", lang: "en" }).success).toBe(
+      false,
+    );
+  });
+
+  test("rejects an unknown gender", () => {
+    expect(
+      ttsRequestSchema.safeParse({ text: "hi", lang: "en", gender: "other" })
+        .success,
+    ).toBe(false);
+  });
+});
+
+describe("checkoutRequestSchema", () => {
+  test("accepts a valid monthly checkout", () => {
+    expect(
+      checkoutRequestSchema.safeParse({
+        plan: "ekwe_pro_monthly",
+        redirect_url: "https://app.ekwe.com/billing/callback",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("accepts an annual checkout with a currency", () => {
+    expect(
+      checkoutRequestSchema.safeParse({
+        plan: "ekwe_pro_annual",
+        redirect_url: "https://app.ekwe.com/billing/callback",
+        currency: "NGN",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects an unknown plan", () => {
+    expect(
+      checkoutRequestSchema.safeParse({
+        plan: "ekwe_pro_weekly",
+        redirect_url: "https://app.ekwe.com/billing/callback",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("rejects a missing redirect_url", () => {
+    expect(
+      checkoutRequestSchema.safeParse({ plan: "ekwe_pro_monthly" }).success,
+    ).toBe(false);
+  });
+
+  test("rejects a malformed currency", () => {
+    expect(
+      checkoutRequestSchema.safeParse({
+        plan: "ekwe_pro_monthly",
+        redirect_url: "https://app.ekwe.com/billing/callback",
+        currency: "BANANA",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("checkoutResponseSchema", () => {
+  test("accepts a valid checkout response", () => {
+    expect(
+      checkoutResponseSchema.safeParse({
+        checkout_url: "https://checkout.flutterwave.com/abc",
+        tx_ref: "ekwe_user_monthly",
+        amount: 19.2,
+        currency: "USD",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects a response missing checkout_url", () => {
+    expect(
+      checkoutResponseSchema.safeParse({
+        tx_ref: "ekwe_user_monthly",
+        amount: 19.2,
+        currency: "USD",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("registerPushTokenRequestSchema", () => {
+  test("accepts a valid Expo push token", () => {
+    expect(
+      registerPushTokenRequestSchema.safeParse({
+        push_token: "ExponentPushToken[abc123]",
+        platform: "android",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("accepts an app_version", () => {
+    expect(
+      registerPushTokenRequestSchema.safeParse({
+        push_token: "ExponentPushToken[abc123]",
+        platform: "ios",
+        app_version: "1.2.3",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects a non-Expo token string", () => {
+    expect(
+      registerPushTokenRequestSchema.safeParse({
+        push_token: "APNs-abc123",
+        platform: "ios",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("rejects an unknown platform", () => {
+    expect(
+      registerPushTokenRequestSchema.safeParse({
+        push_token: "ExponentPushToken[abc123]",
+        platform: "web",
+      }).success,
+    ).toBe(false);
   });
 });

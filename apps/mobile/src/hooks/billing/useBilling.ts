@@ -2,7 +2,7 @@
  * ─── useBilling Hook ─────────────────────────────────────────────
  *
  * Client-side billing orchestrator. Delegates to the Flutterwave
- * web checkout flow via in-app browser.
+ * in-app WebView checkout flow.
  *
  * The purchase flow writes to the `user_subscriptions` table in
  * Supabase via the `set_pro_status` RPC, so the tier resolution is
@@ -10,7 +10,7 @@
  */
 
 import { useSelector } from "@legendapp/state/react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 import { useActivePricing } from "@/hooks/billing/useActivePricing";
 import { usePaymentProvider } from "@/hooks/billing/usePaymentProvider";
@@ -39,6 +39,18 @@ export interface UseBillingReturn {
   provider: "flutterwave" | null;
   /** Available providers for this platform. */
   availableProviders: "flutterwave"[];
+  /** Whether the checkout sheet is visible. */
+  showCheckout: boolean;
+  /** The checkout URL to render in the WebView sheet. */
+  checkoutUrl: string;
+  /** Called when the checkout completes (payment or redirect). */
+  handleCheckoutComplete: (data: {
+    status: string | null;
+    tx_ref: string | null;
+    transaction_id: string | null;
+  }) => void;
+  /** Called when the user dismisses the checkout sheet. */
+  handleCheckoutDismiss: () => void;
 }
 
 // ─── Error Messages ──────────────────────────────────────────────
@@ -53,6 +65,8 @@ export function useBilling(): UseBillingReturn {
   const isPro = useSelector(() => auth$.isPro.get());
   const [isAnnual, setIsAnnual] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutUrl, setCheckoutUrl] = useState("");
   const { pricing } = useActivePricing();
   const { provider, availableProviders } = usePaymentProvider();
 
@@ -79,16 +93,34 @@ export function useBilling(): UseBillingReturn {
       return;
     }
 
+    if (!isFlutterwaveAvailable()) {
+      AppAlert.info(FLUTTERWAVE_UNAVAILABLE_TITLE, FLUTTERWAVE_UNAVAILABLE_MESSAGE);
+      return;
+    }
+
     setLoading(true);
     try {
-      // ── Flutterwave Checkout ──
-      if (!isFlutterwaveAvailable()) {
-        AppAlert.info(FLUTTERWAVE_UNAVAILABLE_TITLE, FLUTTERWAVE_UNAVAILABLE_MESSAGE);
-        return;
-      }
-
       const outcome = await openFlutterwaveCheckout(isAnnual);
-      if (outcome.canceled) return;
+      if (!outcome.checkoutUrl) return;
+      setCheckoutUrl(outcome.checkoutUrl);
+      setShowCheckout(true);
+    } catch (err) {
+      AppAlert.error("Upgrade Failed", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Checkout Complete ────────────────────────────────────────
+
+  const handleCheckoutComplete = useCallback(
+    async (_data: {
+      status: string | null;
+      tx_ref: string | null;
+      transaction_id: string | null;
+    }) => {
+      setShowCheckout(false);
+      setCheckoutUrl("");
 
       // Poll for Pro status (the webhook processes asynchronously)
       const upgraded = await reconcileFlutterwaveStatus();
@@ -105,12 +137,16 @@ export function useBilling(): UseBillingReturn {
           "We are verifying your payment. If your account is not upgraded in a minute, please contact support.",
         );
       }
-    } catch (err) {
-      AppAlert.error("Upgrade Failed", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    []
+  );
+
+  // ── Checkout Dismiss ─────────────────────────────────────────
+
+  const handleCheckoutDismiss = useCallback(() => {
+    setShowCheckout(false);
+    setCheckoutUrl("");
+  }, []);
 
   // ── Manage Handler ──────────────────────────────────────────
 
@@ -161,5 +197,9 @@ export function useBilling(): UseBillingReturn {
     loading,
     provider,
     availableProviders,
+    showCheckout,
+    checkoutUrl,
+    handleCheckoutComplete,
+    handleCheckoutDismiss,
   };
 }

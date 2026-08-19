@@ -5,7 +5,7 @@ import { auth$ } from "@/store";
 import { fetchUsage, type UsageSnapshot } from "@/services/usage";
 import { queryClient } from "./queryClient";
 
-export const usageQueryKey = ["usage"] as const;
+const usageQueryKey = ["usage"] as const;
 
 /**
  * Marks the cached usage snapshot stale so the next visible meter refetches.

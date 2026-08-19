@@ -26,7 +26,7 @@ import { CLIENT_ABORTED, type Env } from "./types";
  *   8. Execution with uniform error handling
  */
 
-export interface RouteContext {
+interface RouteContext {
   request: Request;
   env: Env;
   ctx: ExecutionContext;
@@ -39,12 +39,12 @@ export type AuthedRouteHandler = (
   rctx: RouteContext & { auth: AuthResult },
 ) => Response | Promise<Response>;
 
-export interface PublicRoute extends RouteLike {
+interface PublicRoute extends RouteLike {
   auth: "none";
   handler: RouteHandler;
 }
 
-export interface ProtectedRoute extends RouteLike {
+interface ProtectedRoute extends RouteLike {
   auth: "jwt" | "jwt-subprotocol";
   /** Daily usage pool the preflight gate draws down for billable routes. */
   preflight?: UsageType;

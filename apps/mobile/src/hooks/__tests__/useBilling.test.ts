@@ -82,12 +82,6 @@ const FREE_SESSION = {
   user: { app_metadata: { is_pro: false } },
 };
 
-async function flushReconcileTimers(): Promise<void> {
-  await act(async () => {
-    await jest.advanceTimersByTimeAsync(2500 * 7);
-  });
-}
-
 describe("useBilling", () => {
   beforeEach(() => {
     jest.clearAllMocks();

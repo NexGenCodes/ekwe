@@ -160,7 +160,7 @@ function migrate(): void {
   }
 }
 
-export function getDb(): DB {
+function getDb(): DB {
   if (!db) {
     db = open({ name: "ekwe.db" });
     migrate();

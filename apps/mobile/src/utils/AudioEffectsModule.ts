@@ -1,31 +1,5 @@
 import { isAndroid } from "./platform";
-import EkweNative, { AudioEffectsResult } from "../../modules/ekwe-native";
-
-/**
- * Attaches Android audio effects (NoiseSuppressor, AcousticEchoCanceler,
- * AutomaticGainControl) to the given audio session. No-op on iOS.
- * Each effect is checked for hardware availability — never throws.
- */
-export const attachAudioEffects = async (
-  audioSessionId: number,
-): Promise<AudioEffectsResult> => {
-  if (!isAndroid) {
-    return {
-      noiseSuppressor: false,
-      echoCanceler: false,
-      gainControl: false,
-    };
-  }
-  try {
-    return await EkweNative.attachEffects(audioSessionId);
-  } catch {
-    return {
-      noiseSuppressor: false,
-      echoCanceler: false,
-      gainControl: false,
-    };
-  }
-};
+import EkweNative from "../../modules/ekwe-native";
 
 /**
  * Releases all audio effects and frees native resources.

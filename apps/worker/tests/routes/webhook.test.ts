@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { handleWebhook } from "../../src/routes/webhook";
 import { mockEnv } from "../setup";
 import { verifyWebhook } from "../../src/services/signatures";
@@ -83,11 +84,31 @@ describe("Webhook Endpoint", () => {
         isValid: false,
         provider: "flutterwave",
         error: "Signature mismatch",
+        code: WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
       });
 
       const req = flutterwaveRequest({ event: "test" });
       const res = await handleWebhook(req, env, ctx);
       expect(res.status).toBe(401);
+      expect((await res.json() as { error?: string }).error).toBe(
+        WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
+      );
+    });
+
+    it("maps expired timestamps to WEBHOOK_TIMESTAMP_EXPIRED", async () => {
+      mockedVerifyWebhook.mockResolvedValue({
+        isValid: false,
+        provider: "flutterwave",
+        error: "Timestamp expired",
+        code: WORKER_ERROR_CODES.WEBHOOK_TIMESTAMP_EXPIRED,
+      });
+
+      const req = flutterwaveRequest({ event: "test" });
+      const res = await handleWebhook(req, env, ctx);
+      expect(res.status).toBe(401);
+      expect((await res.json() as { error?: string }).error).toBe(
+        WORKER_ERROR_CODES.WEBHOOK_TIMESTAMP_EXPIRED,
+      );
     });
 
     it("returns 400 for malformed JSON body", async () => {

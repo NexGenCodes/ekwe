@@ -2,6 +2,7 @@ import { File, Paths } from "expo-file-system";
 
 import { EkweError } from "@/constants/errors";
 import { supabase } from "@/services/supabase";
+import { settings$ } from "@/store/settings";
 import { Result, ok, err } from "@/types/Result";
 import logger from "@/utils/logger";
 import { isDefinitelyOffline } from "@/utils/netInfo";
@@ -11,6 +12,7 @@ import {
   healProSession,
 } from "@/utils/networkUtils";
 import { TTS_MAX_TEXT_CHARS } from "@ekwe/shared/plans";
+import type { TtsRequest } from "@ekwe/shared";
 
 // The worker's TTS pipeline may chain providers up to ~20s; give the client a
 // little headroom before it gives up and falls back to device speech.
@@ -75,7 +77,11 @@ export async function synthesizeSpeech(
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ text: trimmed, lang }),
+          body: JSON.stringify({
+            text: trimmed,
+            lang,
+            gender: settings$.ttsVoice.peek(),
+          } satisfies TtsRequest),
           signal: controller.signal,
         });
       } finally {

@@ -22,7 +22,7 @@ export type TranslateResult = import("@ekwe/shared").TranslateResponse;
 
 // ─── Text-to-Speech Contracts ──────────────────────────────────────
 
-export interface TtsAudioResult {
+interface TtsAudioResult {
   audio: Uint8Array;
   mime: string;
   provider: string;

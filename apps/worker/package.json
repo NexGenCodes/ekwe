@@ -2,7 +2,6 @@
   "name": "worker",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -18,7 +17,8 @@
     "check:keys:all": "node tests/helpers/check-providers.mjs --groq",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "knip:check": "knip"
   },
   "keywords": [],
   "author": "",
@@ -28,8 +28,7 @@
     "@ekwe/shared": "workspace:*",
     "franc": "^6.2.0",
     "jose": "^6.2.3",
-    "libopus-wasm": "^0.2.0",
-    "zod": "^4.4.3"
+    "libopus-wasm": "^0.2.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.20.0",
@@ -38,7 +37,9 @@
     "@types/node": "^25.9.3",
     "@vitest/coverage-v8": "^4.1.8",
     "eslint": "^10.5.0",
+    "knip": "^6.4.1",
     "msw": "^2.15.0",
+    "prettier": "^3.8.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1",
     "vitest": "^4.1.6",

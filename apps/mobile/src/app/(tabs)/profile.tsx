@@ -16,6 +16,7 @@ import Copy from "lucide-react-native/icons/copy";
 import Globe from "lucide-react-native/icons/globe";
 import Smartphone from "lucide-react-native/icons/smartphone";
 import Radio from "lucide-react-native/icons/radio";
+import AudioLines from "lucide-react-native/icons/audio-lines";
 import React, { useState, useCallback } from "react";
 import { Linking, Modal, Switch, TextInput } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -27,6 +28,7 @@ import {
   ProfileSection,
   ProfileIdentity,
   ThemePickerModal,
+  VoicePickerModal,
   QuotaUsageCard,
 } from "@/components";
 import { Box, Text, Pressable, ScrollArea } from "@/components/ui";
@@ -65,6 +67,7 @@ export default function ProfileScreen(): React.JSX.Element {
     setHapticsEnabled,
     setAutoCopy,
     setLiveTranscriptionEnabled,
+    setTtsVoice,
   } = settingsActions;
   const selectedLanguages = useSelector(() =>
     settings$.selectedLanguages.get(),
@@ -73,8 +76,10 @@ export default function ProfileScreen(): React.JSX.Element {
   const liveTranscriptionEnabled = useSelector(() =>
     settings$.liveTranscriptionEnabled.get(),
   );
+  const ttsVoice = useSelector(() => settings$.ttsVoice.get());
 
   const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
+  const [isVoiceModalVisible, setIsVoiceModalVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
@@ -332,6 +337,29 @@ export default function ProfileScreen(): React.JSX.Element {
               }
             />
             <ProfileRow
+              icon={AudioLines}
+              sfIcon="speaker.wave.2.fill"
+              iconColor={color.foreground}
+              title="TTS Voice"
+              subtitle="Applied to spoken translations; the device uses the closest matching installed voice"
+              hasDivider
+              onPress={async () => {
+                await triggerHaptic();
+                setIsVoiceModalVisible(true);
+              }}
+              trailing={
+                <Box style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text
+                    variant="body"
+                    style={{ color: color.muted, marginRight: spacing.sm }}
+                  >
+                    {ttsVoice === "male" ? "Male" : "Female"}
+                  </Text>
+                  <ChevronRight size={16} color={color.muted} />
+                </Box>
+              }
+            />
+            <ProfileRow
               icon={Copy}
               sfIcon="doc.on.doc.fill"
               iconColor={color.foreground}
@@ -555,6 +583,17 @@ export default function ProfileScreen(): React.JSX.Element {
           setIsThemeModalVisible(false);
         }}
         currentTheme={colorScheme}
+      />
+
+      <VoicePickerModal
+        visible={isVoiceModalVisible}
+        onClose={() => setIsVoiceModalVisible(false)}
+        onSelect={async (value) => {
+          await triggerHaptic();
+          setTtsVoice(value);
+          setIsVoiceModalVisible(false);
+        }}
+        currentVoice={ttsVoice}
       />
 
       {/* ── Delete Account Confirmation Modal ── */}

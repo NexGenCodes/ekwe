@@ -1,4 +1,4 @@
-import { WORKER_ERROR_CODES, TTS_MAX_TEXT_CHARS } from "@ekwe/shared";
+import { WORKER_ERROR_CODES, TTS_MAX_TEXT_CHARS, ttsRequestSchema } from "@ekwe/shared";
 import { logger } from "../core/logger";
 import { getTtsProviderNames, ttsProviderSupports } from "../core/config";
 import * as gemini from "../providers/gemini";
@@ -229,15 +229,18 @@ export async function handleTts(
     );
   }
 
-  const parsed = await safeParseJSON<{
-    text?: string;
-    lang?: string;
-    gender?: string;
-  }>(request);
-  if (!parsed.ok) return parsed.response;
+  const parsedJson = await safeParseJSON<unknown>(request);
+  if (!parsedJson.ok) return parsedJson.response;
+  const parsed = ttsRequestSchema.safeParse(parsedJson.data);
+  if (!parsed.success) {
+    return Response.json(
+      { error: WORKER_ERROR_CODES.INVALID_BODY },
+      { status: 400 },
+    );
+  }
   const body = parsed.data;
 
-  if (!body.lang || body.lang === "auto") {
+  if (body.lang === "auto") {
     return Response.json(
       {
         error: WORKER_ERROR_CODES.INVALID_TARGET_LANGUAGE,
@@ -250,7 +253,7 @@ export async function handleTts(
   if (!langGuard.allowed) return langGuard.response;
   const lang = body.lang;
 
-  if (typeof body.text !== "string" || !body.text.trim()) {
+  if (!body.text.trim()) {
     return Response.json(
       { error: WORKER_ERROR_CODES.EKWE_EMPTY_TRANSCRIPT },
       { status: 400 },
@@ -274,8 +277,7 @@ export async function handleTts(
     );
   }
 
-  const gender: "male" | "female" =
-    body.gender === "male" || body.gender === "female" ? body.gender : "female";
+  const gender: "male" | "female" = body.gender ?? "female";
 
   // KV cache by (language, text-hash, gender). Gender is part of the key so
   // male/female requests for the same text don't collide.

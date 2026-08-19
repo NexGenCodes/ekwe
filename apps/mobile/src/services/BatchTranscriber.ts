@@ -22,7 +22,7 @@ function computeAverageDb(meteringData: number[]): number {
   return meteringData.reduce((sum, v) => sum + v, 0) / meteringData.length;
 }
 
-export class BatchTranscriber {
+class BatchTranscriber {
   async transcribe(
     input: BatchAudioInput,
     lang: string,

@@ -10,11 +10,6 @@ export interface ErrorOptions {
   extra?: Record<string, unknown>;
 }
 
-/** JSON response with the standard Content-Type header applied. */
-export function json(data: unknown, init: ResponseInit = {}): Response {
-  return Response.json(data, init);
-}
-
 /**
  * Error response following the worker wire contract: `{ error, message }`.
  * `extra` merges additional fields onto the body.

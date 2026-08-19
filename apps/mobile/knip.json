@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignore": [
+    "modules/ekwe-native/app.plugin.js",
+    "targets/share/expo-target.config.js"
+  ],
+  "ignoreDependencies": [
+    "ekwe-native",
+    "babel-jest",
+    "@expo/vector-icons"
+  ],
+  "ignoreBinaries": ["adb"],
+  "ignoreExportsUsedInFile": true
+}

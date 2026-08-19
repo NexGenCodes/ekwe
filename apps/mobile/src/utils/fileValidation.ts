@@ -4,9 +4,7 @@ import { EkweError } from "@/constants/errors";
 import { Result, ok, err } from "@/types/Result";
 import { MAX_AUDIO_BYTES as MAX_FILE_SIZE } from "@ekwe/shared/plans";
 
-export { MAX_FILE_SIZE };
-
-export const VOICE_NOTE_EXTENSIONS = [
+const VOICE_NOTE_EXTENSIONS = [
   ".ogg",
   ".opus",
   ".m4a",
@@ -15,7 +13,7 @@ export const VOICE_NOTE_EXTENSIONS = [
   ".3gp",
 ];
 
-export const VOICE_NOTE_MIME_TYPES = [
+const VOICE_NOTE_MIME_TYPES = [
   "audio/ogg",
   "audio/opus",
   "audio/x-opus",
@@ -34,7 +32,7 @@ export const VOICE_NOTE_MIME_TYPES = [
  * Validates if the given URI has a valid voice-note extension or MIME type.
  * WhatsApp often provides "audio/ogg; codecs=opus".
  */
-export const validateVoiceNoteFormat = (
+const validateVoiceNoteFormat = (
   uri: string,
   mimeType?: string,
 ): boolean => {
@@ -53,7 +51,7 @@ export const validateVoiceNoteFormat = (
 /**
  * Checks if the file exists and is within the size limit using the modern JSI File API.
  */
-export const validateFileSize = async (
+const validateFileSize = async (
   uri: string,
   maxSize = MAX_FILE_SIZE,
 ): Promise<Result<boolean, EkweError>> => {
@@ -79,7 +77,7 @@ export const validateFileSize = async (
  * Verifies if the file actually contains audio headers.
  * Updated for better OggOpus and modern M4A support.
  */
-export const sniffAudioHeader = async (uri: string): Promise<boolean> => {
+const sniffAudioHeader = async (uri: string): Promise<boolean> => {
   try {
     // Read only the first 12 bytes using FileHandle to avoid out-of-memory crashes on large files.
     const file = new ExpoFile(uri);

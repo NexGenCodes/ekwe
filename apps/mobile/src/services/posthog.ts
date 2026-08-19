@@ -32,8 +32,3 @@ export function getPosthogClient(): PostHog | undefined {
   }
   return _client;
 }
-
-export function resetAnalytics(): void {
-  _client?.reset();
-  _client = undefined;
-}

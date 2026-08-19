@@ -60,15 +60,3 @@ export function identify(
   if (!client) return;
   client.identify(userId, properties);
 }
-
-export function reset(): void {
-  const client = getPosthogClient();
-  if (!client) return;
-  client.reset();
-}
-
-export function setPersonProperties(properties: AnalyticsProperties): void {
-  const client = getPosthogClient();
-  if (!client) return;
-  client.setPersonProperties(properties);
-}

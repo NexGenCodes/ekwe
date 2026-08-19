@@ -11,6 +11,7 @@
  * their quirks are documented.
  */
 import { z } from "zod";
+import { PRO_PRODUCT_IDS } from "./plans";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -112,3 +113,47 @@ export const usageSnapshotSchema = z.object({
   }),
 });
 export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>;
+
+// ─── POST /tts ───────────────────────────────────────────────────
+// The TTS request shape. Language-code allowlisting and the text-length
+// ceiling still live in the worker guards layered on top of this base shape.
+// The response is binary audio, so there is no JSON response schema.
+export const ttsRequestSchema = z.object({
+  text: z.string().min(1),
+  lang: z.string().min(1),
+  gender: z.enum(["male", "female"]).optional(),
+});
+export type TtsRequest = z.infer<typeof ttsRequestSchema>;
+
+// ─── POST /billing/checkout ──────────────────────────────────────
+// `plan` is bound to the shared product IDs so the client and the Flutterwave
+// webhook can never drift apart. `currency` is optional and defaults to USD
+// server-side.
+export const checkoutRequestSchema = z.object({
+  plan: z.enum([PRO_PRODUCT_IDS.monthly, PRO_PRODUCT_IDS.annual]),
+  redirect_url: z.string().min(1).optional(),
+  currency: z.string().min(3).max(3).optional(),
+});
+export type CheckoutRequest = z.infer<typeof checkoutRequestSchema>;
+
+// ─── POST /billing/checkout response ─────────────────────────────
+export const checkoutResponseSchema = z.object({
+  checkout_url: z.string(),
+  tx_ref: z.string(),
+  amount: z.number(),
+  currency: z.string(),
+});
+export type CheckoutResponse = z.infer<typeof checkoutResponseSchema>;
+
+// ─── POST /push-tokens ───────────────────────────────────────────
+// Called at app launch before sign-in, so it is unauthenticated. The
+// `ExponentPushToken[...]` prefix is enforced here as the contract (tokens are
+// opaque Expo tokens); the worker surfaces it as INVALID_BODY.
+export const registerPushTokenRequestSchema = z.object({
+  push_token: z.string().startsWith("ExponentPushToken["),
+  platform: z.enum(["ios", "android"]),
+  app_version: z.string().optional(),
+});
+export type RegisterPushTokenRequest = z.infer<
+  typeof registerPushTokenRequestSchema
+>;

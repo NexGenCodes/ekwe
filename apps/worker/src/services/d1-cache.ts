@@ -9,21 +9,6 @@ import { logger } from "../core/logger";
  * Same code works on paid tier with higher limits — zero code changes.
  */
 
-export interface D1CacheEntry {
-  cache_key: string;
-  user_id: string;
-  tier: string;
-  result: string;
-  created_at: number;
-  expires_at: number;
-}
-
-export interface D1LangCacheEntry {
-  cache_key: string;
-  detected_lang: string;
-  expires_at: number;
-}
-
 /**
  * Read a cached value from D1.
  * Returns the parsed result string, or null if expired/missing.

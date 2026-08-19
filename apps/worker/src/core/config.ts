@@ -1,4 +1,4 @@
-export { getLimits, type Tier } from "./limits";
+export { type Tier } from "./limits";
 import type { Tier } from "./limits";
 
 type TranscribeProvider =
@@ -98,7 +98,7 @@ export function getTtsProviderNames(): readonly string[] {
  * here rather than in the model call — a spoken language is a hard capability
  * (unlike translation, where any model can attempt any language).
  */
-export const TTS_LANGUAGE_SUPPORT: Readonly<
+const TTS_LANGUAGE_SUPPORT: Readonly<
   Record<TtsProvider, readonly string[] | "all">
 > = {
   gemini: "all",
@@ -112,5 +112,3 @@ export function ttsProviderSupports(provider: string, lang: string): boolean {
   if (!supported) return false;
   return supported === "all" || supported.includes(lang);
 }
-
-export type { TtsProvider };

@@ -11,12 +11,6 @@ import logger from "@/utils/logger";
 
 export type { UsageSnapshot };
 
-export interface UsagePool {
-  used: number;
-  total: number;
-  remaining: number;
-}
-
 /**
  * Fetches the caller's daily usage snapshot from the worker's read-only
  * /usage endpoint. Returns an error Result rather than throwing so callers

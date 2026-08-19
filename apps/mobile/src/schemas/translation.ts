@@ -23,5 +23,3 @@ export const translationSchema = z
       path: ["targetLang"],
     },
   );
-
-export type TranslationInput = z.infer<typeof translationSchema>;

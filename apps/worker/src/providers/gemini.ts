@@ -249,5 +249,3 @@ export async function tts(
     return { result: null, status: null };
   }
 }
-
-export { ALL_LANGUAGES as supportedLanguages } from "../services/languages";

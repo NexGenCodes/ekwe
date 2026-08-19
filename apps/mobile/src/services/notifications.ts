@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 
 import logger from "@/utils/logger";
 import { getWorkerUrl } from "@/utils/networkUtils";
+import type { RegisterPushTokenRequest } from "@ekwe/shared";
 
 const UPDATE_CHANNEL_ID = "updates";
 const UPDATE_CHANNEL_NAME = "App Updates";
@@ -40,14 +41,16 @@ async function storePushToken(pushToken: string): Promise<void> {
 
     const version = Constants.expoConfig?.version ?? "unknown";
 
+    const body: RegisterPushTokenRequest = {
+      push_token: pushToken,
+      platform: Platform.OS === "ios" ? "ios" : "android",
+      app_version: version,
+    };
+
     const response = await fetch(`${workerUrl}/push-tokens`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        push_token: pushToken,
-        platform: Platform.OS,
-        app_version: version,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -72,7 +75,9 @@ async function createNotificationChannel(): Promise<void> {
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
     lightColor: "#FF231F7C",
-    sound: "default",
+    // Omitting `sound` (rather than "default") avoids expo-notifications logging
+    // "Custom sound 'default' not found" — its Android resolver treats "default"
+    // as a literal raw resource name. Omitting it still yields the system sound.
   });
 }
 

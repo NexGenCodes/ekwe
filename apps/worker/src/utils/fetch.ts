@@ -150,7 +150,7 @@ export function getClientHeaders(): Record<string, string> {
 }
 
 /** Reads a failed response's body as a short string, never throwing. */
-export async function readErrorBody(
+async function readErrorBody(
   res: Response | null | undefined,
 ): Promise<string> {
   if (!res) return "No response";

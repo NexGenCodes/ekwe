@@ -14,7 +14,7 @@
  *     Reads from the payment_config table.
  */
 
-import { WORKER_ERROR_CODES } from "@ekwe/shared";
+import { WORKER_ERROR_CODES, checkoutRequestSchema } from "@ekwe/shared";
 import { Env } from "../core/types";
 import { logger } from "../core/logger";
 import { supabaseGet } from "../services/supabase";
@@ -22,12 +22,6 @@ import { AuthResult } from "../core/auth";
 import { getLocalPlanPrices } from "./pricing";
 
 // ─── Types ───────────────────────────────────────────────────────
-
-interface CheckoutRequest {
-  plan: string;
-  redirect_url: string;
-  currency?: string;
-}
 
 interface FlutterwavePaymentLink {
   status: string;
@@ -49,10 +43,12 @@ export async function handleCheckout(
   env: Env,
   auth: AuthResult,
 ): Promise<Response> {
-  // Parse request body
-  let body: CheckoutRequest;
+  // Parse and validate the body against the shared checkout schema. The
+  // schema binds `plan` to the shared PRO_PRODUCT_IDS so the client, the
+  // webhook, and this route can never drift apart.
+  let raw: unknown;
   try {
-    body = await request.json();
+    raw = await request.json();
   } catch {
     return Response.json(
       { error: WORKER_ERROR_CODES.INVALID_JSON },
@@ -60,30 +56,18 @@ export async function handleCheckout(
     );
   }
 
-  if (!body.plan || !body.redirect_url) {
+  const parsed = checkoutRequestSchema.safeParse(raw);
+  if (!parsed.success) {
     return Response.json(
-      { error: WORKER_ERROR_CODES.INVALID_BODY },
+      { error: WORKER_ERROR_CODES.INVALID_BODY, message: "Invalid request" },
       { status: 400 },
     );
   }
+  const body = parsed.data;
 
-  // Validate the plan ID
-  const validPlans = new Set(["ekwe_pro_monthly", "ekwe_pro_annual"]);
-  if (!validPlans.has(body.plan)) {
-    return Response.json(
-      { error: WORKER_ERROR_CODES.INVALID_BODY, message: "Invalid plan" },
-      { status: 400 },
-    );
-  }
-
-  // Validate currency: optional, default USD, ISO-4217 alpha-3.
+  // Currency is optional, defaults to USD, and is normalized to uppercase
+  // (ISO-4217 alpha-3) before use.
   const currency = (body.currency ?? "USD").toUpperCase();
-  if (!/^[A-Z]{3}$/.test(currency)) {
-    return Response.json(
-      { error: WORKER_ERROR_CODES.INVALID_BODY, message: "Invalid currency" },
-      { status: 400 },
-    );
-  }
 
   if (!env.FLUTTERWAVE_SECRET) {
     logger.error("[billing] FLUTTERWAVE_SECRET not configured");
@@ -114,7 +98,7 @@ export async function handleCheckout(
         tx_ref: `ekwe_${auth.userId}_${body.plan.replace("ekwe_pro_", "")}`,
         amount,
         currency,
-        redirect_url: body.redirect_url,
+        redirect_url: "https://flutterwave.com/rn-redirect",
         customer: {
           email: auth.userEmail || "",
           name: auth.userId,

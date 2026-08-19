@@ -8,13 +8,6 @@ const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN;
 
 const noop = (): void => {};
 
-export enum LogLevel {
-  DEBUG = "DEBUG",
-  INFO = "INFO",
-  WARN = "WARN",
-  ERROR = "ERROR",
-}
-
 export interface Logger {
   debug: (...args: unknown[]) => void;
   info: (...args: unknown[]) => void;

@@ -61,7 +61,12 @@ CREATE POLICY "Service role can read payment_config"
 -- The v4 upgrade is backward-compatible: existing callers that don't pass
 -- p_provider will get the default value of 'revenuecat'.
 
-CREATE OR REPLACE FUNCTION set_pro_status(
+-- Remove the pre-v4 overload so the name is unambiguous for the GRANT below.
+-- CREATE OR REPLACE cannot change a signature, so without this the old 4-arg
+-- version stays and the bare `GRANT ... ON FUNCTION set_pro_status` is ambiguous.
+DROP FUNCTION IF EXISTS public.set_pro_status(TEXT, UUID, BOOLEAN, TIMESTAMPTZ);
+
+CREATE OR REPLACE FUNCTION public.set_pro_status(
   p_email TEXT DEFAULT NULL,
   p_user_id UUID DEFAULT NULL,
   p_is_pro BOOLEAN DEFAULT FALSE,

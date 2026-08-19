@@ -37,9 +37,10 @@ import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 import { synthesizeSpeech } from "@/services/tts";
-import { auth$ } from "@/store";
+import { auth$, settings$ } from "@/store";
 import { cleanEchoCache } from "@/utils/echo";
 import { withAlpha } from "@/utils/color";
+import { loadDeviceVoices, pickDeviceVoice, isMissingVoiceError } from "@/utils/deviceVoice";
 import logger from "@/utils/logger";
 
 export interface ExpressiveOutputProps {
@@ -52,22 +53,6 @@ export interface ExpressiveOutputProps {
 }
 
 type Voice = Awaited<ReturnType<typeof Speech.getAvailableVoicesAsync>>[number];
-
-// Voices don't change during a session, and on iOS the first call can return
-// [] until the speech engine initializes, so cache the last known non-empty
-// result and reuse the in-flight promise to avoid refetch churn.
-let cachedVoices: Voice[] = [];
-let voiceLoadPromise: Promise<Voice[]> | null = null;
-
-function loadVoices(): Promise<Voice[]> {
-  voiceLoadPromise ??= Speech.getAvailableVoicesAsync()
-    .then((voices) => {
-      if (voices.length > 0) cachedVoices = voices;
-      return cachedVoices;
-    })
-    .catch(() => cachedVoices);
-  return voiceLoadPromise;
-}
 
 /**
  * Resolves once the native player reports a source is loaded, so the cloud
@@ -116,6 +101,7 @@ export const ExpressiveOutput = React.memo(
     // Cloud TTS is a premium perk: when it works it plays a downloaded audio
     // file through expo-audio; on any failure we fall back to on-device speech.
     const isPro = useSelector(() => auth$.isPro.get());
+    const ttsVoice = useSelector(() => settings$.ttsVoice.get());
 
     // Cloud-TTS lifecycle (pro users): the in-flight synthesize request and the
     // active expo-audio player + its temp audio file. Every teardown path (stop
@@ -216,7 +202,7 @@ export const ExpressiveOutput = React.memo(
 
     useEffect(() => {
       let active = true;
-      loadVoices().then((voices) => {
+      loadDeviceVoices().then((voices) => {
         if (active) setAvailableVoices(voices);
       });
       return (): void => {
@@ -301,9 +287,20 @@ export const ExpressiveOutput = React.memo(
 
       setIsTTSLoading(true);
       claimTtsFocus(stopAllPlayback);
+
+      // Honor the selected narrator gender on the device fallback (free tier,
+      // offline, or cloud failure). Falls back to the platform default when no
+      // matching voice exists so Listen always still works.
+      const deviceVoice = pickDeviceVoice(
+        availableVoices,
+        targetLang,
+        ttsVoice,
+      );
+
       try {
         Speech.speak(translation, {
           language: targetLang,
+          ...(deviceVoice ? { voice: deviceVoice.identifier } : {}),
           onStart: (): void => {
             setIsTTSLoading(false);
             setIsSpeaking(true);
@@ -331,10 +328,14 @@ export const ExpressiveOutput = React.memo(
 
             // eslint-disable-next-line @typescript-eslint/no-require-imports
             const { AppToast } = require("@/utils");
-            AppToast.error("Speech Unavailable", {
-              description:
-                "Your device does not support text-to-speech for this language, or the voice is not downloaded.",
-            });
+            AppToast.error(
+              isMissingVoiceError(errorMsg) ? "Voice Not Installed" : "Speech Unavailable",
+              {
+                description: isMissingVoiceError(errorMsg)
+                  ? "Add the voice for this language in your device Settings, then try again."
+                  : "Your device does not support text-to-speech for this language.",
+              },
+            );
           },
           onStopped: (): void => {
             releaseTtsFocus();
@@ -363,6 +364,8 @@ export const ExpressiveOutput = React.memo(
       targetLang,
       voiceUnavailable,
       isPro,
+      ttsVoice,
+      availableVoices,
       startCloudTts,
       stopAllPlayback,
       stopPlayback,

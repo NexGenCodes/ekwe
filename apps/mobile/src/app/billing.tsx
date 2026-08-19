@@ -13,6 +13,7 @@ import Animated, {
 
 import { GradientMesh } from "@/components/GradientMesh";
 import { BillingToggle } from "@/components/billing/BillingToggle";
+import { CheckoutSheet } from "@/components/billing/CheckoutSheet";
 import { FreePlanCard } from "@/components/billing/FreePlanCard";
 import { ProPlanCard } from "@/components/billing/ProPlanCard";
 import { Box, Text, Pressable, ScrollArea, Spinner } from "@/components/ui";
@@ -38,6 +39,10 @@ export default function BillingScreen(): React.ReactElement {
     proPlan,
     annualSavingPercent,
     loading,
+    showCheckout,
+    checkoutUrl,
+    handleCheckoutComplete,
+    handleCheckoutDismiss,
   } = useBilling();
 
   const styles = useMemo(
@@ -254,6 +259,13 @@ export default function BillingScreen(): React.ReactElement {
           )}
         </Box>
       </ScrollArea>
+
+      <CheckoutSheet
+        visible={showCheckout}
+        checkoutUrl={checkoutUrl}
+        onDismiss={handleCheckoutDismiss}
+        onComplete={handleCheckoutComplete}
+      />
     </Box>
   );
 }

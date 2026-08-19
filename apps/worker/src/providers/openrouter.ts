@@ -88,5 +88,3 @@ export async function translate(
     return null;
   }
 }
-
-export { ALL_LANGUAGES as supportedLanguages } from "../services/languages";

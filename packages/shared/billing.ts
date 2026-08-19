@@ -1,9 +1,10 @@
 /**
  * ─── Billing Provider Registry ───────────────────────────────────
  *
- * Single source of truth for all payment provider constants, types, and
- * configuration schemas. Both the Cloudflare Worker and the mobile app
- * import from here to prevent drift.
+ * Single source of truth for all payment provider constants and types.
+ * Both the Cloudflare Worker and the mobile app import from here to
+ * prevent drift. The checkout request/response wire shapes live in
+ * `./schemas.ts`.
  *
  * Provider model:
  *   - Flutterwave: web / direct payments (cards, mobile money, bank transfer)
@@ -12,6 +13,9 @@
  * and the custom access token hook reads from it to inject `is_pro` into
  * JWTs. This means the tier resolution is provider-agnostic.
  */
+
+import { WORKER_ERROR_CODES } from "./errors";
+import type { WorkerErrorCode } from "./errors";
 
 // ─── Provider Identifiers ────────────────────────────────────────
 
@@ -87,21 +91,30 @@ export interface NormalizedBillingEvent {
 }
 
 // ─── Webhook Verification ────────────────────────────────────────
+// Shape returned by the worker's signature-verification step. The worker's
+// webhook route reads `isValid`/`code` to pick the exact wire error; `code`
+// is a WorkerErrorCode so the two sides can never drift.
+
+export type WebhookProvider = "flutterwave" | "unknown";
 
 export interface WebhookVerificationResult {
-  valid: boolean;
+  isValid: boolean;
+  provider: WebhookProvider;
   error?: string;
+  code?: WorkerErrorCode;
 }
 
-// ─── Wire Error Codes (billing-specific) ─────────────────────────
+// ─── Wire Error Codes (billing-scoped view) ─────────────────────
+// Billing errors are a subset of the single wire contract in ./errors
+// (WORKER_ERROR_CODES). Defined here as a derived alias so the strings can
+// never drift from the contract.
 
 export const BILLING_ERROR_CODES = {
-  WEBHOOK_SIGNATURE_INVALID: "WEBHOOK_SIGNATURE_INVALID",
-  WEBHOOK_TIMESTAMP_EXPIRED: "WEBHOOK_TIMESTAMP_EXPIRED",
-  WEBHOOK_MISSING_HEADERS: "WEBHOOK_MISSING_HEADERS",
-  PAYMENT_PROVIDER_UNAVAILABLE: "PAYMENT_PROVIDER_UNAVAILABLE",
-  PAYMENT_INITIALIZATION_FAILED: "PAYMENT_INITIALIZATION_FAILED",
-  SUBSCRIPTION_NOT_FOUND: "SUBSCRIPTION_NOT_FOUND",
+  WEBHOOK_SIGNATURE_INVALID: WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
+  WEBHOOK_TIMESTAMP_EXPIRED: WORKER_ERROR_CODES.WEBHOOK_TIMESTAMP_EXPIRED,
+  WEBHOOK_MISSING_HEADERS: WORKER_ERROR_CODES.WEBHOOK_MISSING_HEADERS,
+  PAYMENT_PROVIDER_UNAVAILABLE: WORKER_ERROR_CODES.PAYMENT_PROVIDER_UNAVAILABLE,
+  PAYMENT_INITIALIZATION_FAILED: WORKER_ERROR_CODES.PAYMENT_INITIALIZATION_FAILED,
 } as const;
 
 export type BillingErrorCode =

@@ -15,6 +15,8 @@ export enum ThemePreference {
   System = "system",
 }
 
+export type TtsVoice = "male" | "female";
+
 export interface SettingsState {
   themePreference: ThemePreference;
   selectedLanguages: string[];
@@ -27,6 +29,7 @@ export interface SettingsState {
   autoCopy: boolean;
   hapticsEnabled: boolean;
   liveTranscriptionEnabled: boolean;
+  ttsVoice: TtsVoice;
   analyticsConsent: boolean;
 }
 
@@ -42,6 +45,7 @@ const initialSettings: SettingsState = {
   autoCopy: true,
   hapticsEnabled: true,
   liveTranscriptionEnabled: false,
+  ttsVoice: "female",
   analyticsConsent: false,
 };
 
@@ -106,6 +110,9 @@ export const settingsActions = {
   },
   setLiveTranscriptionEnabled: (val: boolean): void => {
     settings$.liveTranscriptionEnabled.set(val);
+  },
+  setTtsVoice: (val: TtsVoice): void => {
+    settings$.ttsVoice.set(val);
   },
   setAnalyticsConsent: (val: boolean): void => {
     settings$.analyticsConsent.set(val);

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { verifyWebhook } from "../../src/services/signatures";
 
 // ─── Helpers ───────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ describe("verifyWebhook", () => {
       });
       expect(result.isValid).toBe(false);
       expect(result.provider).toBe("unknown");
+      expect(result.code).toBe(WORKER_ERROR_CODES.WEBHOOK_MISSING_HEADERS);
     });
 
     it("accepts valid Flutterwave signature", async () => {
@@ -84,6 +86,7 @@ describe("verifyWebhook", () => {
       });
       expect(result.isValid).toBe(false);
       expect(result.provider).toBe("flutterwave");
+      expect(result.code).toBe(WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID);
     });
 
     it("rejects expired Flutterwave timestamp", async () => {
@@ -102,6 +105,7 @@ describe("verifyWebhook", () => {
       expect(result.isValid).toBe(false);
       expect(result.provider).toBe("flutterwave");
       expect(result.error).toBe("Timestamp expired");
+      expect(result.code).toBe(WORKER_ERROR_CODES.WEBHOOK_TIMESTAMP_EXPIRED);
     });
 
     it("rejects when FLUTTERWAVE_SECRET is missing", async () => {
@@ -118,6 +122,7 @@ describe("verifyWebhook", () => {
       expect(result.isValid).toBe(false);
       expect(result.provider).toBe("flutterwave");
       expect(result.error).toBe("Server misconfiguration");
+      expect(result.code).toBe(WORKER_ERROR_CODES.SERVER_ERROR);
     });
   });
 });

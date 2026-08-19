@@ -34,6 +34,8 @@ export const PROVIDER_URLS = {
     "https://mock.supabase.co/rest/v1/subscription_config",
   supabasePaymentConfig:
     "https://mock.supabase.co/rest/v1/payment_config",
+  supabaseUpsertPushToken:
+    "https://mock.supabase.co/rest/v1/rpc/upsert_push_token",
 } as const;
 
 const notFound = () =>
@@ -74,4 +76,5 @@ export const defaultHandlers = [
   http.post(PROVIDER_URLS.supabaseSetProStatus, notFound),
   http.get(PROVIDER_URLS.supabaseSubscriptionConfig, notFound),
   http.get(PROVIDER_URLS.supabasePaymentConfig, notFound),
+  http.post(PROVIDER_URLS.supabaseUpsertPushToken, notFound),
 ];

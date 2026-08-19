@@ -1,5 +1,7 @@
 import { triggerHaptic } from "@/utils/haptics";
+import { useSelector } from "@legendapp/state/react";
 import * as Speech from "expo-speech";
+import type { Voice } from "expo-speech";
 import CheckCircle2 from "lucide-react-native/icons/circle-check";
 import ShareIcon from "lucide-react-native/icons/share-2";
 import Volume2 from "lucide-react-native/icons/volume-2";
@@ -21,7 +23,9 @@ import { LANGUAGES, getLanguageFlag } from "@/constants/languages";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks/ui";
+import { settings$ } from "@/store";
 import { withAlpha } from "@/utils/color";
+import { loadDeviceVoices, pickDeviceVoice, isMissingVoiceError } from "@/utils/deviceVoice";
 import logger from "@/utils/logger";
 
 interface TextBoxProps {
@@ -89,6 +93,18 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
 
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isTTSLoading, setIsTTSLoading] = useState(false);
+    const [availableVoices, setAvailableVoices] = useState<Voice[]>([]);
+    const ttsVoice = useSelector(() => settings$.ttsVoice.get());
+
+    useEffect(() => {
+      let active = true;
+      loadDeviceVoices().then((voices) => {
+        if (active) setAvailableVoices(voices);
+      });
+      return (): void => {
+        active = false;
+      };
+    }, []);
 
     // Text with the brand signature appended, used for both copy and share so a
     // pasted result always carries the Ekwe call-to-action.
@@ -149,9 +165,15 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
       claimTtsFocus(() => {
         Speech.stop().catch(() => {});
       });
+
+      // Honor the selected narrator gender on device speech. Falls back to the
+      // platform default when no matching voice exists so Listen still works.
+      const deviceVoice = pickDeviceVoice(availableVoices, lang, ttsVoice);
+
       try {
         Speech.speak(text, {
           language: lang,
+          ...(deviceVoice ? { voice: deviceVoice.identifier } : {}),
           onStart: (): void => {
             setIsTTSLoading(false);
             setIsSpeaking(true);
@@ -183,10 +205,14 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
 
             // eslint-disable-next-line @typescript-eslint/no-require-imports
             const { AppToast } = require("@/utils");
-            AppToast.error("Speech Unavailable", {
-              description:
-                "Your device does not support text-to-speech for this language, or the voice is not downloaded.",
-            });
+            AppToast.error(
+              isMissingVoiceError(errorMsg) ? "Voice Not Installed" : "Speech Unavailable",
+              {
+                description: isMissingVoiceError(errorMsg)
+                  ? "Add the voice for this language in your device Settings, then try again."
+                  : "Your device does not support text-to-speech for this language, or the voice is not downloaded.",
+              },
+            );
           },
         });
       } catch (err) {
@@ -197,12 +223,25 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
         logger.warn("[TextBox] TTS threw exception:", errorMsg);
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { AppToast } = require("@/utils");
-        AppToast.error("Speech Unavailable", {
-          description:
-            "Your device does not support text-to-speech for this language.",
-        });
+        AppToast.error(
+          isMissingVoiceError(errorMsg) ? "Voice Not Installed" : "Speech Unavailable",
+          {
+            description: isMissingVoiceError(errorMsg)
+              ? "Add the voice for this language in your device Settings, then try again."
+              : "Your device does not support text-to-speech for this language.",
+          },
+        );
       }
-    }, [isSourceMode, isTTSLoading, isSpeaking, text, lang, audioPlayer]);
+    }, [
+      isSourceMode,
+      isTTSLoading,
+      isSpeaking,
+      text,
+      lang,
+      ttsVoice,
+      availableVoices,
+      audioPlayer,
+    ]);
 
     const handleShare = useCallback(async (): Promise<void> => {
       if (!signedText) return;

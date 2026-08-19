@@ -2,7 +2,7 @@ import { CLIENT_ABORTED, Env, TtsAttempt } from "../core/types";
 import { logger } from "../core/logger";
 
 /** Hard ceiling on decoded provider output. */
-export const MAX_TTS_BYTES = 8 * 1024 * 1024;
+const MAX_TTS_BYTES = 8 * 1024 * 1024;
 
 /**
  * Runs a Workers AI TTS model with `returnRawResponse` and returns the raw
