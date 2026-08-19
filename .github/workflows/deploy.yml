@@ -101,7 +101,8 @@ jobs:
           MOBILE_ENV: ${{ secrets.MOBILE_ENV }}
 
       - name: Install EAS CLI
-        run: pnpm add -g eas-cli
+        # pnpm's global bin dir isn't on PATH on runners; npm's is.
+        run: npm install -g eas-cli
 
       - name: Publish OTA update
         working-directory: apps/mobile
