@@ -1,0 +1,36 @@
+name: Publish OTA Update
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'apps/mobile/src/**'
+      - 'apps/mobile/app.json'
+      - 'apps/mobile/package.json'
+  workflow_dispatch:
+
+jobs:
+  ota:
+    name: Publish EAS Update (production channel)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish OTA update
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas update --channel production --message "OTA update from ${{ github.sha }}" --non-interactive
