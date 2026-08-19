@@ -13,14 +13,9 @@ const run = (cmd) =>
 
 const mobileDir = "apps/mobile";
 
-let base;
-try {
-  base = run("git describe --tags --abbrev=0");
-} catch {
-  // No tags yet — use the version currently in app.json as the base.
-  base = `v${JSON.parse(readFileSync(`${mobileDir}/app.json`, "utf8")).expo.version}`;
-}
-const [maj, min, pat] = base.replace(/^v/, "").split(".").map(Number);
+// The version currently in app.json is the source of truth (no tags involved).
+const base = JSON.parse(readFileSync(`${mobileDir}/app.json`, "utf8")).expo.version;
+const [maj, min, pat] = base.split(".").map(Number);
 const next =
   level === "major"
     ? `${maj + 1}.0.0`
@@ -45,9 +40,8 @@ writeFileSync(pkgJsonPath, JSON.stringify(pkg, null, 2) + "\n");
 
 run(`git add ${appJsonPath} ${pkgJsonPath}`);
 run(`git commit -m "chore: release v${next}"`);
-run(`git tag v${next}`);
 run("git push");
-run(`git push origin v${next}`);
 
 console.log(`\nReleased v${next} (versionCode ${versionCode}).`);
-console.log("GitHub Actions will build the APK and create the release automatically.");
+console.log("Pushed to master — CI will detect the app.json change, build the APK,");
+console.log("create the GitHub Release, and notify all registered devices automatically.");
