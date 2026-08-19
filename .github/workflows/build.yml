@@ -4,11 +4,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Version tag to build (e.g. v1.0.0)"
-        required: true
 
 permissions:
   contents: write
@@ -21,12 +16,14 @@ jobs:
   build:
     name: Build APK
     runs-on: ubuntu-latest
+    env:
+      # Override the dev value in .env so release bundles are built as production.
+      EXPO_PUBLIC_ENV: production
     steps:
       - uses: actions/checkout@v4
         with:
-          # push → the tag ref; manual dispatch → the requested tag. Builds always
-          # run from the tagged source, never from a live branch.
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          # Build from the tagged source, never from a live branch.
+          ref: ${{ github.ref }}
 
       - uses: pnpm/action-setup@v4
         with:
@@ -57,6 +54,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Write mobile .env (EXPO_PUBLIC_* vars for bundle inlining)
+        run: |
+          echo "$MOBILE_ENV" | base64 -d > apps/mobile/.env
+        env:
+          MOBILE_ENV: ${{ secrets.MOBILE_ENV }}
+
       - name: Run prebuild (generate native Android project)
         working-directory: apps/mobile
         run: pnpm run prebuild:android
@@ -80,7 +83,7 @@ jobs:
       - name: Resolve release tag + version
         id: version
         run: |
-          RELEASE_TAG="${{ github.event_name == 'push' && github.ref_name || inputs.tag }}"
+          RELEASE_TAG="${{ github.ref_name }}"
           VERSION_CODE=$(grep -oP '"versionCode":\s*\K\d+' apps/mobile/app.json || echo "1")
           echo "ref=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"

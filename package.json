@@ -13,6 +13,7 @@
     "gen:tokens": "node scripts/tokens/gen-tokens.mjs",
     "gen:env": "node scripts/tokens/gen-env.mjs",
     "gen:icons": "node scripts/icons/generate-icons.mjs",
+    "release": "node scripts/release.mjs",
     "migrate:push": "supabase db push --linked",
     "migrate:stage": "supabase migration new",
     "migrate:status": "supabase migration list",
