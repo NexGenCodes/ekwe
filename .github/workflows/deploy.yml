@@ -60,8 +60,18 @@ jobs:
             echo "ota=true" >> "$GITHUB_OUTPUT"
             echo "release=${{ inputs.publish_release }}" >> "$GITHUB_OUTPUT"
           else
-            echo "ota=${{ steps.paths.outputs.ota }}" >> "$GITHUB_OUTPUT"
-            echo "release=${{ steps.paths.outputs.release }}" >> "$GITHUB_OUTPUT"
+            # A release job commits the version bump + manifest and pushes it.
+            # That push must NOT re-trigger itself, or we'd loop forever
+            # (1.0.1 -> push -> 1.0.2 -> push -> ...). Skip such pushes.
+            AUTHOR=$(git log -1 --format='%an')
+            MSG=$(git log -1 --format='%s')
+            if [[ "$AUTHOR" == "github-actions[bot]" && "$MSG" == "chore: release v"* ]]; then
+              echo "ota=false" >> "$GITHUB_OUTPUT"
+              echo "release=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "ota=${{ steps.paths.outputs.ota }}" >> "$GITHUB_OUTPUT"
+              echo "release=${{ steps.paths.outputs.release }}" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
   ota:
