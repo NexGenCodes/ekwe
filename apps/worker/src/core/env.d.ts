@@ -6,6 +6,11 @@
 // here as optional, because interface merging will widen the type to
 // `T | undefined` and break non-null usage downstream.
 interface Env {
+  // Secrets set via `wrangler secret put` that are not compile-time vars in
+  // wrangler.jsonc (so absent from the generated types). Declared manually.
+  TURNSTILE_SECRET: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
+  PUSH_NOTIFY_SECRET?: string;
   FLUTTERWAVE_SECRET?: string;
   [key: `COHERE_KEY_${number}`]: string | undefined;
   [key: `DEEPGRAM_KEY_${number}`]: string | undefined;

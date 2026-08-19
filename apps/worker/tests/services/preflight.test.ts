@@ -131,7 +131,7 @@ describe("checkPreflight (cooldown + quota gate)", () => {
 
   test("fails closed to PREFLIGHT_CONFIG_ERROR when env vars are missing", async () => {
     const res = await checkPreflight(
-      mockEnv({ SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "" }),
+      mockEnv({ SUPABASE_SERVICE_ROLE_KEY: "" }),
       "uid-4",
       "FREE",
       "translate",
