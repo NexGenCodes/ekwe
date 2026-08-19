@@ -92,6 +92,9 @@ jobs:
         env:
           MOBILE_ENV: ${{ secrets.MOBILE_ENV }}
 
+      - name: Install EAS CLI
+        run: pnpm add -g eas-cli
+
       - name: Publish OTA update
         working-directory: apps/mobile
         env:
@@ -162,17 +165,19 @@ jobs:
           #   - current == last release -> auto-bump the patch (normal push)
           #   - current <  last release -> error (version can never go backwards)
           NEXT=$(node -e '
-            const last = process.argv[1].split(".").map(Number);
-            const cur = process.argv[2].split(".").map(Number);
-            const cmp = (a, b) => a[0]-b[0] || a[1]-b[1] || a[2]-b[2];
-            const c = cmp(cur, last);
-            if (c > 0) return cur.join(".");
-            if (c < 0) {
-              console.error("app.json version (" + cur.join(".") + ") is lower than the last release (" + last.join(".") + "). Set it higher.");
-              process.exit(1);
-            }
-            cur[2] += 1;
-            return cur.join(".");
+            (function () {
+              const last = process.argv[1].split(".").map(Number);
+              const cur = process.argv[2].split(".").map(Number);
+              const cmp = (a, b) => a[0]-b[0] || a[1]-b[1] || a[2]-b[2];
+              const c = cmp(cur, last);
+              if (c > 0) { process.stdout.write(cur.join(".")); return; }
+              if (c < 0) {
+                console.error("app.json version (" + cur.join(".") + ") is lower than the last release (" + last.join(".") + "). Set it higher.");
+                process.exit(1);
+              }
+              cur[2] += 1;
+              process.stdout.write(cur.join("."));
+            })();
           ' "$LAST" "$CURRENT")
           if [[ -z "$NEXT" ]]; then exit 1; fi
 
