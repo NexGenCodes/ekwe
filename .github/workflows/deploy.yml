@@ -28,19 +28,12 @@ jobs:
   detect:
     runs-on: ubuntu-latest
     outputs:
-      ota: ${{ steps.map.outputs.ota }}
-      release: ${{ steps.map.outputs.release }}
+      ota: ${{ steps.outcome.outputs.ota }}
+      release: ${{ steps.outcome.outputs.release }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Manual dispatch -> run OTA by default
-        id: classify
-        if: github.event_name != 'push'
-        run: |
-          echo "ota=true" >> "$GITHUB_OUTPUT"
-          echo "release=${{ inputs.publish_release }}" >> "$GITHUB_OUTPUT"
 
       - uses: dorny/paths-filter@v3
         id: paths
@@ -59,12 +52,17 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'package.json'
 
-      - name: Map push filters to job outputs
-        id: map
-        if: github.event_name == 'push'
+      - name: Classify change (push filters or manual dispatch)
+        id: outcome
         run: |
-          echo "ota=${{ steps.paths.outputs.ota }}" >> "$GITHUB_OUTPUT"
-          echo "release=${{ steps.paths.outputs.release }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" != "push" ]; then
+            # Manual dispatch: OTA by default, release only if explicitly requested.
+            echo "ota=true" >> "$GITHUB_OUTPUT"
+            echo "release=${{ inputs.publish_release }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ota=${{ steps.paths.outputs.ota }}" >> "$GITHUB_OUTPUT"
+            echo "release=${{ steps.paths.outputs.release }}" >> "$GITHUB_OUTPUT"
+          fi
 
   ota:
     name: Publish OTA Update
