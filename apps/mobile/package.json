@@ -104,7 +104,6 @@
     "knip": "^6.4.1",
     "prettier": "^3.8.1",
     "react-refresh": "^0.18.0",
-    "sharp": "^0.35.3",
     "test-renderer": "^1.2.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.61.1"

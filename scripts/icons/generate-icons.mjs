@@ -10,6 +10,7 @@
  *   icon.png                   legacy app icon (light bg, brand glyph)
  *   adaptive-icon.png          Android adaptive FOREGROUND (transparent, safe zone)
  *   monochrome.png             Android 13+ themed icon (transparent, on-color glyph)
+ *   notification-icon.png      Android notification small icon (white glyph, transparent)
  *   splash-icon.png              splash (brand glyph; bg color from app.json)
  *
  * Splash icons are transparent glyphs — the splash background color always
@@ -46,6 +47,7 @@ const VARIANTS = [
   { file: "icon.png", background: LIGHT_BG, glyph: BRAND, scale: 9.7 },
   { file: "adaptive-icon.png", background: null, glyph: BRAND, scale: 6.7 },
   { file: "monochrome.png", background: null, glyph: "#FFFFFF", scale: 6.7 },
+  { file: "notification-icon.png", background: null, glyph: "#FFFFFF", scale: 8.5 },
   { file: "splash-icon.png", background: null, glyph: BRAND, scale: 4.6 },
 ];
 
@@ -94,6 +96,12 @@ function main() {
   if (!existsSync(SVG_SRC)) {
     console.error(`Logo source not found: ${SVG_SRC}`);
     process.exit(1);
+  }
+  if (process.env.CI) {
+    console.log(
+      "Skipping icon generation in CI (icon PNGs are committed; regenerate locally with `pnpm gen:icons` when the logo or brand colors change)."
+    );
+    process.exit(0);
   }
   const renderer = pickRenderer();
   const tmp = path.join(os.tmpdir(), `ekwe-icons-${process.pid}`);
