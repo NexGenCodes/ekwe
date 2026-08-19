@@ -74,7 +74,7 @@
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
             "minSdkVersion": 24,
-            "reactNativeArchitectures": "arm64-v8a,armeabi-v7a",
+            "buildArchs": ["arm64-v8a", "armeabi-v7a"],
             "ndkVersion": "27.1.12297006"
           }
         }
