@@ -6,10 +6,13 @@ export type { _EnvForExport as Env };
 export type { Tier, UsageType } from "@ekwe/shared";
 
 // ─── Billing Provider Secrets ────────────────────────────────────
-// FLUTTERWAVE_SECRET: Webhook signing secret for Flutterwave HMAC-SHA512
-// verification. Set as a Cloudflare Worker secret (never in wrangler.jsonc).
-// The webhook handler checks which provider is configured and only processes
-// events from enabled providers.
+// FLUTTERWAVE_SECRET: Flutterwave API secret key (FLWSECK_...) used as the
+// Authorization bearer for checkout/payment API calls.
+// FLUTTERWAVE_WEBHOOK_SECRET: The webhook secret hash configured in the
+// Flutterwave dashboard (Settings → Webhooks). Used to verify inbound
+// webhooks via the `verif-hash` header (plain equality) and/or the
+// `flutterwave-signature` header (HMAC-SHA256 over the raw body, base64).
+// Both are set as Cloudflare Worker secrets (never in wrangler.jsonc).
 
 // ─── Provider Contracts ───────────────────────────────────────────
 // The transcribe/translate provider results ARE the wire responses, so the

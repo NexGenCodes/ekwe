@@ -99,13 +99,13 @@ describe("Provider Registry", () => {
     expect(body.error).toBe(WORKER_ERROR_CODES.UNKNOWN_PROVIDER);
   });
 
-  test("flutterwave provider is enabled when FLUTTERWAVE_SECRET is set", () => {
-    const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret" });
+  test("flutterwave provider is enabled when FLUTTERWAVE_WEBHOOK_SECRET is set", () => {
+    const env = mockEnv({ FLUTTERWAVE_WEBHOOK_SECRET: "fw-secret" });
     const fw = getProvider("flutterwave");
     expect(fw!.enabled(env)).toBe(true);
   });
 
-  test("flutterwave provider is disabled when FLUTTERWAVE_SECRET is missing", () => {
+  test("flutterwave provider is disabled when FLUTTERWAVE_WEBHOOK_SECRET is missing", () => {
     const env = mockEnv({});
     const fw = getProvider("flutterwave");
     expect(fw!.enabled(env)).toBe(false);

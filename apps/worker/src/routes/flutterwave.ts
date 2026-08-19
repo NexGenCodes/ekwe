@@ -7,7 +7,7 @@
  *
  * Event flow:
  *   1. Flutterwave fires a webhook to POST /webhook/flutterwave
- *   2. signatures.ts verifies HMAC-SHA512
+ *   2. signatures.ts verifies the `verif-hash` and/or `flutterwave-signature`
  *   3. This handler maps the event → Pro status change
  *   4. set_pro_status RPC writes to user_subscriptions (provider: "flutterwave")
  *   5. JWT hook reads user_subscriptions → injects is_pro claim
@@ -28,6 +28,7 @@ import { registerProvider, ProviderResult } from "../services/billing";
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { readLimitedBody } from "../core/guards";
 import { supabasePost } from "../services/supabase";
+import { verifyWebhook } from "../services/signatures";
 import { toLowestUnit } from "@ekwe/shared/money";
 
 // ─── Constants ───────────────────────────────────────────────────
@@ -392,7 +393,7 @@ async function processFlutterwaveEvent(
 // ─── Register Provider ───────────────────────────────────────────
 
 registerProvider("flutterwave", {
-  enabled: (env) => !!env.FLUTTERWAVE_SECRET,
+  enabled: (env) => !!env.FLUTTERWAVE_WEBHOOK_SECRET,
   process: processFlutterwaveEvent,
 });
 
@@ -439,6 +440,27 @@ export async function handleFlutterwaveWebhook(
       { status: 400 },
     );
   }
+
+  // ── Signature Verification ──
+  // The dedicated Flutterwave webhook route MUST verify signatures just like
+  // the generic `/webhook` handler. Accepting unauthenticated webhooks would
+  // let an attacker grant or revoke Pro at will.
+  const verification = await verifyWebhook(request, rawBody, env);
+
+  if (!verification.isValid) {
+    logger.warn(
+      `[flutterwave] Rejected: provider=${verification.provider}, error=${verification.error || "signature mismatch"}`,
+    );
+    return Response.json(
+      {
+        error: verification.code ?? WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
+        message: "Webhook signature verification failed.",
+      },
+      { status: 401 },
+    );
+  }
+
+  logger.info(`[flutterwave] Verified: provider=${verification.provider}`);
 
   let event: Record<string, unknown>;
   try {

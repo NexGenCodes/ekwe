@@ -67,7 +67,7 @@ function buildEvent(overrides: Record<string, unknown> = {}) {
 // ─── Tests ─────────────────────────────────────────────────────────
 
 describe("Flutterwave Event Processor", () => {
-  const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
+  const env = mockEnv({ FLUTTERWAVE_WEBHOOK_SECRET: "fw-secret-123" });
 
   beforeEach(() => {
     vi.clearAllMocks();

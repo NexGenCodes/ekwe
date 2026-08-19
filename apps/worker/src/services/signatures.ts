@@ -3,19 +3,16 @@ import type { WebhookVerificationResult } from "@ekwe/shared";
 import { logger } from "../core/logger";
 import { hexEncode } from "../utils/keys";
 
-// ─── HMAC Timestamp Freshness ────────────────────────────────────
-// Maximum age (in seconds) for a webhook timestamp before we reject it.
-// Prevents replay attacks where an attacker captures a valid signed payload
-// and re-submits it minutes/hours later.
-const TIMESTAMP_FRESHNESS_SECONDS = 300; // 5 minutes
-
 /**
- * Computes an HMAC signature using the Web Crypto API
+ * Computes an HMAC signature using the Web Crypto API.
+ * Returns the signature hex-encoded, or base64-encoded when `encoding` is
+ * set to "base64".
  */
 async function computeHMAC(
   secret: string,
   payload: string,
   algorithm: "SHA-256" | "SHA-512",
+  encoding: "hex" | "base64" = "hex",
 ): Promise<string> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -31,6 +28,15 @@ async function computeHMAC(
     key,
     encoder.encode(payload),
   );
+
+  if (encoding === "base64") {
+    const bytes = new Uint8Array(signatureBuffer);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
 
   return hexEncode(signatureBuffer);
 }
@@ -54,37 +60,30 @@ async function timingSafeEqual(a: string, b: string): Promise<boolean> {
   return diff === 0;
 }
 
-/**
- * Checks whether a unix timestamp (in seconds) is within the allowed freshness
- * window. Rejects replay attacks where captured payloads are re-submitted.
- */
-function isTimestampFresh(timestampSec: number): boolean {
-  const now = Math.floor(Date.now() / 1000);
-  const age = Math.abs(now - timestampSec);
-  return age <= TIMESTAMP_FRESHNESS_SECONDS;
-}
-
 // ─── Provider Detection & Verification ───────────────────────────
 
 export async function verifyWebhook(
   request: Request,
   rawBody: string,
   env: {
-    FLUTTERWAVE_SECRET?: string;
+    FLUTTERWAVE_WEBHOOK_SECRET?: string;
     [key: string]: unknown;
   },
 ): Promise<WebhookVerificationResult> {
   const headers = request.headers;
 
-  // ── FLUTTERWAVE (HMAC-SHA512) ──
-  // Flutterwave sends:
-  //   X-Flutterwave-Signature: SHA512(<secret><timestamp><body>)
-  // where <timestamp> is the request timestamp and <body> is the raw JSON.
-  const flutterwaveSig = headers.get("x-flutterwave-signature");
-  const flutterwaveTimestamp = headers.get("x-flutterwave-timestamp");
-  if (flutterwaveSig) {
-    if (!env.FLUTTERWAVE_SECRET) {
-      logger.error("Missing FLUTTERWAVE_SECRET in environment");
+  // ── FLUTTERWAVE ──
+  // Flutterwave sends two verification mechanisms (both supported):
+  //   1. `verif-hash` header — the plain secret hash configured on the
+  //      dashboard (V3 webhooks). Verified via timing-safe equality.
+  //   2. `flutterwave-signature` header — HMAC-SHA256 over the raw request
+  //      body, base64-encoded, keyed with the secret hash.
+  const verifHash = headers.get("verif-hash");
+  const flutterwaveSig = headers.get("flutterwave-signature");
+
+  if (verifHash || flutterwaveSig) {
+    if (!env.FLUTTERWAVE_WEBHOOK_SECRET) {
+      logger.error("Missing FLUTTERWAVE_WEBHOOK_SECRET in environment");
       return {
         isValid: false,
         provider: "flutterwave",
@@ -93,26 +92,24 @@ export async function verifyWebhook(
       };
     }
 
-    // Reject if timestamp is stale
-    if (flutterwaveTimestamp) {
-      const tsNum = parseInt(flutterwaveTimestamp, 10);
-      if (!Number.isFinite(tsNum) || !isTimestampFresh(tsNum)) {
-        logger.warn("[webhook] Flutterwave timestamp too old", {
-          timestamp: flutterwaveTimestamp,
-        });
-        return {
-          isValid: false,
-          provider: "flutterwave",
-          error: "Timestamp expired",
-          code: WORKER_ERROR_CODES.WEBHOOK_TIMESTAMP_EXPIRED,
-        };
-      }
+    let isValid = false;
+
+    // Mechanism 1: plain verif-hash equality
+    if (verifHash) {
+      isValid = await timingSafeEqual(verifHash, env.FLUTTERWAVE_WEBHOOK_SECRET);
     }
 
-    // Flutterwave signs: SHA512(secret + timestamp + body)
-    const payload = `${env.FLUTTERWAVE_SECRET}${flutterwaveTimestamp || ""}${rawBody}`;
-    const computed = await computeHMAC(env.FLUTTERWAVE_SECRET, payload, "SHA-512");
-    const isValid = await timingSafeEqual(computed, flutterwaveSig);
+    // Mechanism 2: HMAC-SHA256 over the raw body (base64-encoded)
+    if (!isValid && flutterwaveSig) {
+      const computed = await computeHMAC(
+        env.FLUTTERWAVE_WEBHOOK_SECRET,
+        rawBody,
+        "SHA-256",
+        "base64",
+      );
+      isValid = await timingSafeEqual(computed, flutterwaveSig);
+    }
+
     if (!isValid) {
       logger.warn("[webhook] Flutterwave signature mismatch");
       return {

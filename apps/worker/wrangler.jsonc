@@ -21,7 +21,11 @@
   },
 
   // Billing provider secrets (set via `wrangler secret put <NAME>`):
-  // - FLUTTERWAVE_SECRET: HMAC-SHA512 signing secret for Flutterwave
+  // - FLUTTERWAVE_SECRET: Flutterwave API secret key (FLWSECK_...) used as the
+  //   Authorization bearer for checkout / payment API calls.
+  // - FLUTTERWAVE_WEBHOOK_SECRET: webhook secret hash from the Flutterwave
+  //   dashboard (Settings → Webhooks); used to verify inbound webhooks
+  //   (`verif-hash` plain equality and/or `flutterwave-signature` HMAC-SHA256).
   // - PUSH_NOTIFY_SECRET: shared secret (Authorization: Bearer) for the release
   //   workflow's POST /push-notify and POST /update/manifest endpoints.
   // Must be identical to the GitHub Actions secret `PUSH_NOTIFY_SECRET`.

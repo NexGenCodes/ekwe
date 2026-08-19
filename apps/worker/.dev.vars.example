@@ -198,4 +198,10 @@ WIT_KEY_ZU=
 
 # ─── Payments ──────────────────────────────────────────────────────────
 # Required for /checkout/initialize and /webhook to work.
+# FLUTTERWAVE_SECRET: API secret key (FLWSECK_...) for checkout/payment calls.
 FLUTTERWAVE_SECRET=
+# FLUTTERWAVE_WEBHOOK_SECRET: secret hash from the Flutterwave dashboard
+# (Settings → Webhooks), used to verify inbound webhook signatures.
+# Must match the value entered in the dashboard. Flutterwave caps this field
+# at 36 characters.
+FLUTTERWAVE_WEBHOOK_SECRET=

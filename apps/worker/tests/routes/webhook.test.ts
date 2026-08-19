@@ -21,7 +21,7 @@ const mockedProcessWebhookEvent = vi.mocked(processWebhookEvent);
 // ─── Test Env Setup ────────────────────────────────────────────────
 
 const env = mockEnv({
-  FLUTTERWAVE_SECRET: "sk_test_abc123def456",
+  FLUTTERWAVE_WEBHOOK_SECRET: "sk_test_abc123def456",
 });
 
 function fakeCtx(): ExecutionContext {
