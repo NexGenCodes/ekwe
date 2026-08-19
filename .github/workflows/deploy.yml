@@ -109,7 +109,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          npx eas update --channel production --message "OTA update from ${{ github.sha }}" --non-interactive
+          npx eas update --platform android --channel production --message "OTA update from ${{ github.sha }}" --non-interactive
 
   release:
     name: Build APK + Release
