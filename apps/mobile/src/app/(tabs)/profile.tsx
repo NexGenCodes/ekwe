@@ -557,7 +557,7 @@ export default function ProfileScreen(): React.JSX.Element {
             <ProfileRow
               icon={Trash2}
               sfIcon="trash.fill"
-              iconColor={color.error}
+              iconColor={color.success}
               title="Clear History"
               subtitle="Delete all transcripts and translations"
               hasDivider
