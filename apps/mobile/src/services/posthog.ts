@@ -4,6 +4,8 @@ import { settings$ } from "@/store/settings";
 import logger from "@/utils/logger";
 
 const API_KEY = process.env.EXPO_PUBLIC_POSTHOG_API_KEY;
+// Default to US Cloud; set EXPO_PUBLIC_POSTHOG_HOST to match the project's
+// region (https://eu.i.posthog.com for EU Cloud projects).
 const HOST = process.env.EXPO_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
 
 let _client: PostHog | undefined;

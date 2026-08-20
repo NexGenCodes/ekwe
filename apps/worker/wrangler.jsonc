@@ -46,7 +46,7 @@
     // Sentry DSN for worker error tracking. Public key — safe in this file.
     // When empty/absent, the Sentry SDK is not initialized and the worker
     // behaves as before (no error reporting).
-    "SENTRY_DSN": "",
+    "SENTRY_DSN": "https://47d4580978ca72b625ee6460335410bd@o4510603967332352.ingest.us.sentry.io/4511942034259968",
     // Default to production so deploys never ship with debug logging / dev CORS.
     // Override to "development" locally via .dev.vars (precedence over vars).
     "APP_ENV": "production"

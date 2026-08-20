@@ -89,9 +89,7 @@ const streamHandler: AuthedRouteHandler = (rctx) => {
   // One DO per user: persistent, hibernating, per-user concurrency cap.
   const doUrl = new URL(request.url);
   doUrl.searchParams.set("tier", tier);
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- wrangler-generated DurableObjectNamespace<import()> is unresolvable by ESLint
-  const stub = env.STREAM_DO.getByName(userId);
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return -- stub is untyped due to import() in wrangler types
+  const stub = env.STREAM_DO.getByName(userId) as unknown as DurableObjectStub;
   return stub.fetch(new Request(doUrl.toString(), request));
 };
 

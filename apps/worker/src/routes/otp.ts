@@ -115,9 +115,7 @@ async function throttled(
 ): Promise<boolean> {
   if (!env.THROTTLE_DO) return true;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- wrangler-generated DurableObjectNamespace<import()> is unresolvable by ESLint
-    const stub = env.THROTTLE_DO.getByName("otp");
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- stub is untyped due to import() in wrangler types
+    const stub = env.THROTTLE_DO.getByName("otp") as unknown as DurableObjectStub;
     const res: Response = await stub.fetch(
       `https://otp-throttle/allow?key=${encodeURIComponent(key)}&limit=${limit}&windowSec=${windowSec}`,
     );
