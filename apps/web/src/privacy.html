@@ -28,12 +28,17 @@
           </svg>
           {{APP_NAME}}
         </a>
+        <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="Toggle navigation menu" />
         <ul class="nav-links">
           <li><a href="/">Home</a></li>
           <li><a href="/pages/terms.html">Terms</a></li>
           <li><a href="/pages/changelog.html">Changelog</a></li>
         </ul>
         <a href="/" class="nav-cta">Back to Home</a>
+        <label for="nav-toggle" class="nav-burger" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </label>
+        <label for="nav-toggle" class="nav-overlay" aria-hidden="true"></label>
       </div>
     </nav>
 

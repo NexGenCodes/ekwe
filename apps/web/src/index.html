@@ -37,6 +37,7 @@
           </svg>
           {{APP_NAME}}
         </a>
+        <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="Toggle navigation menu" />
         <ul class="nav-links">
           <li><a href="#languages">Languages</a></li>
           <li><a href="#tech">Technology</a></li>
@@ -47,6 +48,10 @@
         <a href="{{DOWNLOAD_URL}}" class="nav-cta" data-download>
           Download APK
         </a>
+        <label for="nav-toggle" class="nav-burger" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </label>
+        <label for="nav-toggle" class="nav-overlay" aria-hidden="true"></label>
       </div>
     </nav>
 

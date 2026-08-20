@@ -108,6 +108,18 @@
     counters.forEach((el) => observer.observe(el));
   }
 
+  /* ── Mobile nav (close on link tap) ─────────────────── */
+  function initMobileNav() {
+    const toggle = document.getElementById("nav-toggle");
+    if (!toggle) return;
+
+    document.querySelectorAll(".nav-links a").forEach((link) => {
+      link.addEventListener("click", () => {
+        toggle.checked = false;
+      });
+    });
+  }
+
   /* ── Live label cycle ─────────────────────────────── */
   function initLiveLabel() {
     const label = document.getElementById("live-label");
@@ -174,6 +186,7 @@
     initTicker();
     initReveal();
     initCounters();
+    initMobileNav();
     initLiveLabel();
 
     // Load Lucide icons
