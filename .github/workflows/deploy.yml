@@ -247,7 +247,7 @@ jobs:
 
       - name: Write version manifest
         run: |
-          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/latest/download/app-release.apk"
+          DOWNLOAD_URL="https://releases.ekwe.app/app-release.apk"
           DATE=$(date -u +%Y-%m-%d)
 
           jq -n \
@@ -282,6 +282,20 @@ jobs:
             dist/version.json
           generate_release_notes: true
 
+      - name: Upload APK to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          pip install --quiet awscli
+          aws s3 cp dist/app-release.apk "s3://${{ secrets.R2_BUCKET_NAME }}/app-release.apk" \
+            --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+            --content-type "application/vnd.android.package-archive"
+          aws s3 cp dist/version.json "s3://${{ secrets.R2_BUCKET_NAME }}/version.json" \
+            --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+            --content-type "application/json"
+
       - name: Publish manifest + notify devices
         # Store the manifest in Worker KV (GET /update/manifest serves it) and
         # push the APK update notification to every registered Android device.
@@ -296,4 +310,4 @@ jobs:
           curl -fsS -X POST "$WORKER_URL/push-notify" \
             -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
             -H "Content-Type: application/json" \
-            -d '{"version": "${{ steps.version.outputs.version }}", "versionCode": ${{ steps.version.outputs.version_code }}, "checksumSha256": "${{ steps.assets.outputs.sha256 }}", "downloadUrl": "https://github.com/${{ github.repository }}/releases/latest/download/app-release.apk"}'
+            -d '{"version": "${{ steps.version.outputs.version }}", "versionCode": ${{ steps.version.outputs.version_code }}, "checksumSha256": "${{ steps.assets.outputs.sha256 }}", "downloadUrl": "https://releases.ekwe.app/app-release.apk"}'

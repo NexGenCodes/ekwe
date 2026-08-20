@@ -1,0 +1,54 @@
+{
+  "app": {
+    "name": "Ekwe",
+    "tagline": "Voice notes, translated instantly.",
+    "description": "Record or import voice notes and get real-time translations in 130+ languages. Powered by AI, built for everyone.",
+    "version": "1.1.1"
+  },
+  "links": {
+    "download": "https://releases.ekwe.app/app-release.apk",
+    "github": "https://github.com/NexGenCodes/ekwe",
+    "githubDownload": "https://github.com/NexGenCodes/ekwe/releases/latest/download/app-release.apk"
+  },
+  "contact": {
+    "email": "support@ekwe.app",
+    "twitter": "",
+    "discord": ""
+  },
+  "legal": {
+    "companyName": "NexGenCodes",
+    "lastUpdated": "2026-08-20"
+  },
+  "features": [
+    {
+      "title": "Voice Translation",
+      "description": "Record or import voice notes and get accurate translations in 130+ languages.",
+      "icon": "mic"
+    },
+    {
+      "title": "AI-Powered",
+      "description": "Built on state-of-the-art speech-to-text and translation models for natural results.",
+      "icon": "cpu"
+    },
+    {
+      "title": "Offline Ready",
+      "description": "Core translation features work without an internet connection.",
+      "icon": "wifi-off"
+    },
+    {
+      "title": "Share Extension",
+      "description": "Translate audio from any app directly via the system share sheet.",
+      "icon": "share"
+    },
+    {
+      "title": "History & Playback",
+      "description": "All your translations saved locally. Search, replay, and export anytime.",
+      "icon": "clock"
+    },
+    {
+      "title": "Secure & Private",
+      "description": "Your audio is processed in real-time and never stored on our servers.",
+      "icon": "shield"
+    }
+  ]
+}

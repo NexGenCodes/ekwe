@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{APP_NAME}} — {{APP_TAGLINE}}</title>
+    <meta name="description" content="{{APP_DESCRIPTION}}" />
+    <meta name="theme-color" content="#0a0a0f" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <!-- Nav -->
+    <nav class="nav">
+      <div class="container nav-inner">
+        <a href="/" class="nav-brand">
+          <span class="logo-mark">E</span>
+          {{APP_NAME}}
+        </a>
+        <ul class="nav-links">
+          <li><a href="#features">Features</a></li>
+          <li><a href="#download">Download</a></li>
+          <li><a href="/pages/changelog.html">Changelog</a></li>
+        </ul>
+        <a href="{{DOWNLOAD_URL}}" class="nav-cta" data-download>
+          Download APK
+        </a>
+      </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container">
+        <div class="hero-badge">
+          <span class="dot"></span>
+          v{{APP_VERSION}}
+        </div>
+        <h1>Voice notes,<br /><span class="gradient">translated instantly.</span></h1>
+        <p>{{APP_DESCRIPTION}}</p>
+        <div class="hero-actions">
+          <a href="{{DOWNLOAD_URL}}" class="btn btn-primary" data-download>
+            Download for Android
+          </a>
+          <a href="{{GITHUB_URL}}" class="btn btn-secondary" data-github>
+            View on GitHub
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="section">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-label">
+            Features
+          </div>
+          <h2 class="section-title">Built for real conversations</h2>
+          <p class="section-desc">
+            Everything you need to translate voice notes across languages, with privacy and speed.
+          </p>
+        </div>
+        <div id="features-grid" class="features-grid"></div>
+      </div>
+    </section>
+
+    <!-- Download CTA -->
+    <section id="download" class="cta-section">
+      <div class="container">
+        <div class="cta-box">
+          <h2>Ready to start?</h2>
+          <p>Download {{APP_NAME}} for free. No account required.</p>
+          <div class="cta-actions">
+            <a href="{{DOWNLOAD_URL}}" class="btn btn-primary" data-download>
+              Download APK
+            </a>
+            <a href="{{GITHUB_URL}}" class="btn btn-secondary" data-github>
+              Source Code
+            </a>
+          </div>
+          <div class="version-badge" data-version></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="container footer-inner">
+        <span class="footer-text">&copy; {{YEAR}} {{COMPANY_NAME}}. All rights reserved.</span>
+        <ul class="footer-links">
+          <li><a href="/pages/privacy.html">Privacy</a></li>
+          <li><a href="/pages/terms.html">Terms</a></li>
+          <li><a href="/pages/changelog.html">Changelog</a></li>
+          <li><a href="{{GITHUB_URL}}" data-github>GitHub</a></li>
+        </ul>
+      </div>
+    </footer>
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="/js/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Changelog — {{APP_NAME}}</title>
+    <meta name="description" content="What's new in {{APP_NAME}}." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <nav class="nav">
+      <div class="container nav-inner">
+        <a href="/" class="nav-brand">
+          <span class="logo-mark">E</span>
+          {{APP_NAME}}
+        </a>
+        <ul class="nav-links">
+          <li><a href="/">Home</a></li>
+          <li><a href="/pages/privacy.html">Privacy</a></li>
+          <li><a href="/pages/terms.html">Terms</a></li>
+        </ul>
+        <a href="/" class="nav-cta">Back to Home</a>
+      </div>
+    </nav>
+
+    <main class="legal">
+      <div class="container">
+        <h1>Changelog</h1>
+        <p class="legal-date">Latest updates to {{APP_NAME}}</p>
+        <div class="changelog-list">
+
+          <div class="changelog-entry">
+            <div class="changelog-version">
+              <h2>v1.1.1</h2>
+              <span class="tag">Latest</span>
+            </div>
+            <p class="changelog-date">August 20, 2026</p>
+            <ul>
+              <li>Improved translation accuracy across all supported languages</li>
+              <li>Fixed audio playback issues on certain Android devices</li>
+              <li>Performance improvements and bug fixes</li>
+            </ul>
+          </div>
+
+          <div class="changelog-entry">
+            <div class="changelog-version">
+              <h2>v1.1.0</h2>
+            </div>
+            <p class="changelog-date">August 2026</p>
+            <ul>
+              <li>Added offline translation support for core languages</li>
+              <li>Share extension improvements</li>
+              <li>New history and playback features</li>
+              <li>General stability improvements</li>
+            </ul>
+          </div>
+
+          <div class="changelog-entry">
+            <div class="changelog-version">
+              <h2>v1.0.0</h2>
+            </div>
+            <p class="changelog-date">July 2026</p>
+            <ul>
+              <li>Initial release</li>
+              <li>Voice recording and import</li>
+              <li>Real-time translation in 130+ languages</li>
+              <li>AI-powered speech-to-text</li>
+              <li>Local history and playback</li>
+            </ul>
+          </div>
+
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer-inner">
+        <span class="footer-text">&copy; {{YEAR}} {{COMPANY_NAME}}. All rights reserved.</span>
+        <ul class="footer-links">
+          <li><a href="/pages/privacy.html">Privacy</a></li>
+          <li><a href="/pages/terms.html">Terms</a></li>
+          <li><a href="/">Home</a></li>
+        </ul>
+      </div>
+    </footer>
+  </body>
+</html>
