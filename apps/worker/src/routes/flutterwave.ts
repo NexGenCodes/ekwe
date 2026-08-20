@@ -157,12 +157,13 @@ function resolveUser(
 
 /**
  * Verifies the charged amount/currency against the checkout `meta` echo.
- * The worker embedded `meta.amount`/`meta.currency` when creating the payment
- * link; Flutterwave echoes `meta` in webhooks. Comparing the charged
- * `data.amount`/`data.currency` against it (to lowest-unit precision) prevents
- * granting Pro for a tampered, wrong-price, or wrong-currency payment.
+ * The mobile SDK embeds `meta.amount`/`meta.currency` (from the authorized
+ * checkout session) in the payment; Flutterwave echoes `meta` in webhooks.
+ * Comparing the charged `data.amount`/`data.currency` against it (to lowest-
+ * unit precision) prevents granting Pro for a tampered, wrong-price, or
+ * wrong-currency payment.
  * Returns true when verification passes or when meta is absent (legacy
- * links), false on mismatch.
+ * payments), false on mismatch.
  */
 function verifyChargeAmount(data: {
   amount?: number;

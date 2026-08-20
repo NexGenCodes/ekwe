@@ -131,14 +131,15 @@ export type TtsRequest = z.infer<typeof ttsRequestSchema>;
 // server-side.
 export const checkoutRequestSchema = z.object({
   plan: z.enum([PRO_PRODUCT_IDS.monthly, PRO_PRODUCT_IDS.annual]),
-  redirect_url: z.string().min(1).optional(),
   currency: z.string().min(3).max(3).optional(),
 });
 export type CheckoutRequest = z.infer<typeof checkoutRequestSchema>;
 
 // ─── POST /billing/checkout response ─────────────────────────────
+// The worker authorizes a checkout session (server-authoritative pricing +
+// unique tx_ref); the SDK initializes the actual payment client-side using
+// the public key. There is no checkout_url anymore.
 export const checkoutResponseSchema = z.object({
-  checkout_url: z.string(),
   tx_ref: z.string(),
   amount: z.number(),
   currency: z.string(),

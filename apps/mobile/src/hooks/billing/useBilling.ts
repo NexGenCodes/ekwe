@@ -1,8 +1,8 @@
 /**
  * ─── useBilling Hook ─────────────────────────────────────────────
  *
- * Client-side billing orchestrator. Delegates to the Flutterwave
- * in-app WebView checkout flow.
+ * Client-side billing orchestrator. Delegates to the Flutterwave SDK
+ * in-app modal checkout flow.
  *
  * The purchase flow writes to the `user_subscriptions` table in
  * Supabase via the `set_pro_status` RPC, so the tier resolution is
@@ -20,6 +20,8 @@ import {
   openFlutterwaveCheckout,
   reconcileFlutterwaveStatus,
   isFlutterwaveAvailable,
+  getFlutterwavePlanId,
+  type CheckoutSession,
 } from "@/services/flutterwave";
 import { auth$, authActions } from "@/store";
 import { AppAlert } from "@/utils/alert";
@@ -41,9 +43,11 @@ export interface UseBillingReturn {
   availableProviders: "flutterwave"[];
   /** Whether the checkout sheet is visible. */
   showCheckout: boolean;
-  /** The checkout URL to render in the WebView sheet. */
-  checkoutUrl: string;
-  /** Called when the checkout completes (payment or redirect). */
+  /** The worker-authorized checkout session to feed the SDK. */
+  checkoutSession: CheckoutSession | null;
+  /** The plan id attached to the active checkout session. */
+  checkoutPlan: string | null;
+  /** Called when the SDK checkout completes (payment or redirect). */
   handleCheckoutComplete: (data: {
     status: string | null;
     tx_ref: string | null;
@@ -66,7 +70,9 @@ export function useBilling(): UseBillingReturn {
   const [isAnnual, setIsAnnual] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
-  const [checkoutUrl, setCheckoutUrl] = useState("");
+  const [checkoutSession, setCheckoutSession] =
+    useState<CheckoutSession | null>(null);
+  const [checkoutPlan, setCheckoutPlan] = useState<string | null>(null);
   const { pricing } = useActivePricing();
   const { provider, availableProviders } = usePaymentProvider();
 
@@ -101,8 +107,9 @@ export function useBilling(): UseBillingReturn {
     setLoading(true);
     try {
       const outcome = await openFlutterwaveCheckout(isAnnual);
-      if (!outcome.checkoutUrl) return;
-      setCheckoutUrl(outcome.checkoutUrl);
+      if (outcome.canceled || !outcome.session) return;
+      setCheckoutSession(outcome.session);
+      setCheckoutPlan(getFlutterwavePlanId(isAnnual));
       setShowCheckout(true);
     } catch (err) {
       AppAlert.error("Upgrade Failed", err);
@@ -120,7 +127,8 @@ export function useBilling(): UseBillingReturn {
       transaction_id: string | null;
     }) => {
       setShowCheckout(false);
-      setCheckoutUrl("");
+      setCheckoutSession(null);
+      setCheckoutPlan(null);
 
       // Poll for Pro status (the webhook processes asynchronously)
       const upgraded = await reconcileFlutterwaveStatus();
@@ -145,7 +153,8 @@ export function useBilling(): UseBillingReturn {
 
   const handleCheckoutDismiss = useCallback(() => {
     setShowCheckout(false);
-    setCheckoutUrl("");
+    setCheckoutSession(null);
+    setCheckoutPlan(null);
   }, []);
 
   // ── Manage Handler ──────────────────────────────────────────
@@ -198,7 +207,8 @@ export function useBilling(): UseBillingReturn {
     provider,
     availableProviders,
     showCheckout,
-    checkoutUrl,
+    checkoutSession,
+    checkoutPlan,
     handleCheckoutComplete,
     handleCheckoutDismiss,
   };

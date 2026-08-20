@@ -15,21 +15,6 @@ const mockAuth = {
   sessionId: "session-abc",
 };
 
-// ─── Shared Flutterwave payment-link stub ─────────────────────────
-function mockPaymentLink(body?: Record<string, unknown>): void {
-  server.use(
-    http.post("https://api.flutterwave.com/v3/payments", async ({ request }) => {
-      if (body) Object.assign(body, await request.clone().json());
-      return jsonResponse({
-        status: "success",
-        data: {
-          link: "https://checkout.flutterwave.com/abc123",
-        },
-      });
-    }),
-  );
-}
-
 // ─── Checkout Tests ───────────────────────────────────────────────
 
 describe("handleCheckout", () => {
@@ -39,35 +24,31 @@ describe("handleCheckout", () => {
     resetFxCache();
   });
 
-  test("returns checkout_url on successful Flutterwave initialization", async () => {
-    mockPaymentLink();
-
-    const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
-    const req = new Request("http://test/billing/checkout", {
+  const monthlyRequest = () =>
+    new Request("http://test/billing/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        plan: "ekwe_pro_monthly",
-        redirect_url: "https://app.ekwe.com/billing/callback",
-      }),
+      body: JSON.stringify({ plan: "ekwe_pro_monthly" }),
     });
 
-    const res = await handleCheckout(req, env, mockAuth);
+  test("authorizes a checkout session with tx_ref, amount, and currency", async () => {
+    const env = mockEnv();
+    const res = await handleCheckout(monthlyRequest(), env, mockAuth);
+
     expect(res.status).toBe(200);
-    const data = (await res.json()) as Record<string, string>;
-    expect(data.checkout_url).toBe("https://checkout.flutterwave.com/abc123");
-    expect(data.tx_ref).toBe("ekwe_test-user-123_monthly");
+    const data = (await res.json()) as Record<string, unknown>;
+    expect(data.tx_ref).toMatch(/^ekwe_test-user-123_monthly_\d+_[a-z0-9]+$/);
+    expect(data.amount).toBe(2); // $2.00 from subscription_config
+    expect(data.currency).toBe("USD");
+    expect(data).not.toHaveProperty("checkout_url");
   });
 
   test("returns 400 for invalid plan ID", async () => {
-    const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
+    const env = mockEnv();
     const req = new Request("http://test/billing/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        plan: "invalid_plan",
-        redirect_url: "https://app.ekwe.com/billing/callback",
-      }),
+      body: JSON.stringify({ plan: "invalid_plan" }),
     });
 
     const res = await handleCheckout(req, env, mockAuth);
@@ -76,101 +57,29 @@ describe("handleCheckout", () => {
     expect(data.error).toBe("INVALID_BODY");
   });
 
-  test("returns 200 when redirect_url is omitted (worker supplies its own)", async () => {
-    mockPaymentLink();
-    const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
-    const req = new Request("http://test/billing/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plan: "ekwe_pro_monthly" }),
-    });
-
-    const res = await handleCheckout(req, env, mockAuth);
-    expect(res.status).toBe(200);
-  });
-
-  test("returns 503 when FLUTTERWAVE_SECRET is not configured", async () => {
-    const env = mockEnv({});
-    const req = new Request("http://test/billing/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        plan: "ekwe_pro_monthly",
-        redirect_url: "https://app.ekwe.com/billing/callback",
-      }),
-    });
-
-    const res = await handleCheckout(req, env, mockAuth);
-    expect(res.status).toBe(503);
-    const data = (await res.json()) as Record<string, string>;
-    expect(data.error).toBe("PAYMENT_PROVIDER_UNAVAILABLE");
-  });
-
-  test("returns 502 when Flutterwave API returns error", async () => {
-    server.use(
-      http.post("https://api.flutterwave.com/v3/payments", async () => {
-        return jsonResponse({ status: "error", message: "Invalid amount" }, 400);
-      }),
-    );
-
-    const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
-    const req = new Request("http://test/billing/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        plan: "ekwe_pro_monthly",
-        redirect_url: "https://app.ekwe.com/billing/callback",
-      }),
-    });
-
-    const res = await handleCheckout(req, env, mockAuth);
-    expect(res.status).toBe(502);
-  });
-
   test("charges the annual USD amount from subscription_config", async () => {
-    const body: Record<string, unknown> = {};
-    mockPaymentLink(body);
-
-    const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
+    const env = mockEnv();
     const req = new Request("http://test/billing/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        plan: "ekwe_pro_annual",
-        redirect_url: "https://app.ekwe.com/billing/callback",
-      }),
+      body: JSON.stringify({ plan: "ekwe_pro_annual" }),
     });
 
     const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(200);
-    expect(body.amount).toBe(19.2); // $19.20 from subscription_config
-    expect(body.currency).toBe("USD");
-    // The charged amount/currency are echoed in meta for webhook verification.
-    expect((body.meta as Record<string, unknown>).amount).toBe(19.2);
-    expect((body.meta as Record<string, unknown>).currency).toBe("USD");
     const data = (await res.json()) as Record<string, unknown>;
-    expect(data.amount).toBe(19.2);
+    expect(data.amount).toBe(19.2); // $19.20 from subscription_config
     expect(data.currency).toBe("USD");
   });
 
   test("charges the monthly USD amount from subscription_config", async () => {
-    const body: Record<string, unknown> = {};
-    mockPaymentLink(body);
+    const env = mockEnv();
+    const res = await handleCheckout(monthlyRequest(), env, mockAuth);
 
-    const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
-    const req = new Request("http://test/billing/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        plan: "ekwe_pro_monthly",
-        redirect_url: "https://app.ekwe.com/billing/callback",
-      }),
-    });
-
-    const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(200);
-    expect(body.amount).toBe(2); // $2.00 from subscription_config
-    expect(body.currency).toBe("USD");
+    const data = (await res.json()) as Record<string, unknown>;
+    expect(data.amount).toBe(2); // $2.00 from subscription_config
+    expect(data.currency).toBe("USD");
   });
 
   test("prices the charge in a requested currency via FX", async () => {
@@ -179,36 +88,31 @@ describe("handleCheckout", () => {
         jsonResponse({ rates: { NGN: 1500 } }),
       ),
     );
-    const body: Record<string, unknown> = {};
-    mockPaymentLink(body);
 
-    const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
+    const env = mockEnv();
     const req = new Request("http://test/billing/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         plan: "ekwe_pro_monthly",
-        redirect_url: "https://app.ekwe.com/billing/callback",
         currency: "NGN",
       }),
     });
 
     const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(200);
-    expect(body.amount).toBe(3000); // $2.00 × 1500
-    expect(body.currency).toBe("NGN");
-    expect((body.meta as Record<string, unknown>).amount).toBe(3000);
-    expect((body.meta as Record<string, unknown>).currency).toBe("NGN");
+    const data = (await res.json()) as Record<string, unknown>;
+    expect(data.amount).toBe(3000); // $2.00 × 1500
+    expect(data.currency).toBe("NGN");
   });
 
   test("returns 400 for an invalid currency code", async () => {
-    const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
+    const env = mockEnv();
     const req = new Request("http://test/billing/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         plan: "ekwe_pro_monthly",
-        redirect_url: "https://app.ekwe.com/billing/callback",
         currency: "BANANA",
       }),
     });
@@ -219,27 +123,21 @@ describe("handleCheckout", () => {
     expect(data.error).toBe("INVALID_BODY");
   });
 
-  test("sends correct tx_ref format with userId and plan", async () => {
-    const body: Record<string, unknown> = {};
-    mockPaymentLink(body);
+  test("generates a unique tx_ref per checkout for the same user and plan", async () => {
+    const env = mockEnv();
 
-    const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
-    const req = new Request("http://test/billing/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        plan: "ekwe_pro_monthly",
-        redirect_url: "https://app.ekwe.com/billing/callback",
-      }),
-    });
+    const resA = await handleCheckout(monthlyRequest(), env, mockAuth);
+    const resB = await handleCheckout(monthlyRequest(), env, mockAuth);
+    const dataA = (await resA.json()) as { tx_ref: string };
+    const dataB = (await resB.json()) as { tx_ref: string };
 
-    await handleCheckout(req, env, mockAuth);
-    expect(body.tx_ref).toBe("ekwe_test-user-123_monthly");
-    expect((body.customer as Record<string, string>).email).toBe("test@example.com");
+    expect(dataA.tx_ref).not.toBe(dataB.tx_ref);
+    // The webhook's resolveUser parses the `ekwe_<userId>_` prefix.
+    expect(dataA.tx_ref).toMatch(/^ekwe_test-user-123_/);
   });
 
   test("returns 400 for malformed JSON body", async () => {
-    const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
+    const env = mockEnv();
     const req = new Request("http://test/billing/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -248,27 +146,6 @@ describe("handleCheckout", () => {
 
     const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(400);
-  });
-
-  test("returns 500 on network error", async () => {
-    server.use(
-      http.post("https://api.flutterwave.com/v3/payments", async () => {
-        return Response.error();
-      }),
-    );
-
-    const env = mockEnv({ FLUTTERWAVE_SECRET: "fw-secret-123" });
-    const req = new Request("http://test/billing/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        plan: "ekwe_pro_monthly",
-        redirect_url: "https://app.ekwe.com/billing/callback",
-      }),
-    });
-
-    const res = await handleCheckout(req, env, mockAuth);
-    expect(res.status).toBe(500);
   });
 });
 

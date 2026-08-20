@@ -4,10 +4,15 @@
  * Endpoints for the mobile billing flow:
  *
  *   POST /billing/checkout
- *     Initializes a Flutterwave checkout session. Requires JWT auth.
- *     Accepts an optional ISO-4217 `currency` (defaults to USD) so the charge
- *     is priced in the device's local currency. Returns
- *     { checkout_url, tx_ref, amount, currency } for the mobile app to open.
+ *     Authorizes a checkout session. Requires JWT auth. Accepts an optional
+ *     ISO-4217 `currency` (defaults to USD) so the charge is priced in the
+ *     device's local currency. Returns { tx_ref, amount, currency }.
+ *
+ *     The worker is server-authoritative for pricing and the unique tx_ref.
+ *     The mobile app initializes the actual Flutterwave payment client-side
+ *     with the flutterwave-react-native-sdk (public key + these session
+ *     params). The webhook still verifies the charged amount/currency against
+ *     the `meta` echo before granting Pro.
  *
  *   GET /billing/flags
  *     Returns payment provider feature flags. Requires JWT auth.
@@ -22,13 +27,6 @@ import { AuthResult } from "../core/auth";
 import { getLocalPlanPrices } from "./pricing";
 
 // ─── Types ───────────────────────────────────────────────────────
-
-interface FlutterwavePaymentLink {
-  status: string;
-  data: {
-    link: string;
-  };
-}
 
 interface PaymentConfigRow {
   flutterwave_enabled: boolean;
@@ -68,107 +66,34 @@ export async function handleCheckout(
   // (ISO-4217 alpha-3) before use.
   const currency = (body.currency ?? "USD").toUpperCase();
 
-  if (!env.FLUTTERWAVE_SECRET) {
-    logger.error("[billing] FLUTTERWAVE_SECRET not configured");
-    return Response.json(
-      { error: WORKER_ERROR_CODES.PAYMENT_PROVIDER_UNAVAILABLE },
-      { status: 503 },
-    );
-  }
-
   // Price the plan in the requested currency from the single source of truth
-  // (subscription_config USD base + discounts × FX). The amount Flutterwave
-  // charges here is exactly what GET /pricing reported, and it is echoed back
-  // in `meta` so the webhook can verify the charged amount/currency.
+  // (subscription_config USD base + discounts × FX). The amount the SDK will
+  // charge is exactly what GET /pricing reported, and it is echoed back in
+  // `meta` so the webhook can verify the charged amount/currency.
   const prices = await getLocalPlanPrices(env, currency);
   const amount =
     body.plan === "ekwe_pro_annual" ? prices.annual : prices.monthly;
 
-  // Create Flutterwave payment link
-  // Flutterwave API: POST https://api.flutterwave.com/v3/payments
-  // The payment-link response only contains `data.link`; the tx_ref we send is
-  // echoed back on redirect/webhook, not in this response — so return the value
-  // we generated (Flutterwave's contract does not include `data.reference`).
-  const txRef = `ekwe_${auth.userId}_${body.plan.replace("ekwe_pro_", "")}`;
-  try {
-    const fwRes = await fetch("https://api.flutterwave.com/v3/payments", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.FLUTTERWAVE_SECRET}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        tx_ref: txRef,
-        amount,
-        currency,
-        redirect_url: "https://flutterwave.com/rn-redirect",
-        customer: {
-          email: auth.userEmail || "",
-          name: auth.userId,
-        },
-        meta: {
-          user_id: auth.userId,
-          plan: body.plan,
-          amount,
-          currency,
-        },
-        customizations: {
-          title: "Ekwe Pro",
-          description: `Upgrade to Ekwe Pro (${body.plan.replace("ekwe_pro_", "")})`,
-        },
-      }),
-    });
+  // tx_ref must be unique per transaction (Flutterwave rejects duplicates).
+  // It keeps the `ekwe_<userId>_` prefix the webhook's resolveUser parses, and
+  // appends the plan + a timestamp/random suffix so the same user+plan can
+  // checkout again without colliding.
+  const txRef = `ekwe_${auth.userId}_${body.plan.replace(
+    "ekwe_pro_",
+    "",
+  )}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    if (!fwRes.ok) {
-      const errorBody = await fwRes.text().catch(() => "");
-      logger.error("[billing] Flutterwave API error", {
-        status: fwRes.status,
-        body: errorBody.slice(0, 300),
-      });
-      return Response.json(
-        { error: WORKER_ERROR_CODES.PAYMENT_INITIALIZATION_FAILED },
-        { status: 502 },
-      );
-    }
-
-    const fwData: FlutterwavePaymentLink = await fwRes.json();
-
-    // Diagnostic: log the raw Flutterwave response so we can trace shape
-    // mismatches that only surface on the mobile client.
-    logger.info("[billing] Flutterwave raw response", {
-      status: fwData.status,
-      hasData: !!fwData.data,
-      dataKeys: fwData.data ? Object.keys(fwData.data) : null,
-      link: fwData.data?.link,
-    });
-
-    if (fwData.status !== "success" || !fwData.data?.link) {
-      logger.error("[billing] Flutterwave returned non-success", {
-        status: fwData.status,
-      });
-      return Response.json(
-        { error: WORKER_ERROR_CODES.PAYMENT_INITIALIZATION_FAILED },
-        { status: 502 },
-      );
-    }
-
-    const responseBody = {
-      checkout_url: fwData.data.link,
-      tx_ref: txRef,
-      amount,
-      currency,
-    };
-    logger.info("[billing] Checkout response payload", responseBody);
-    return Response.json(responseBody);
-  } catch (err) {
-    logger.error("[billing] Flutterwave checkout error", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return Response.json(
-      { error: WORKER_ERROR_CODES.EKWE_SERVER_ERROR },
-      { status: 500 },
-    );
-  }
+  const responseBody = {
+    tx_ref: txRef,
+    amount,
+    currency,
+  };
+  logger.info("[billing] Checkout session authorized", {
+    tx_ref: txRef,
+    amount,
+    currency,
+  });
+  return Response.json(responseBody);
 }
 
 // ─── GET /billing/flags ──────────────────────────────────────────

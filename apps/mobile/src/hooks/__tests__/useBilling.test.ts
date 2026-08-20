@@ -33,6 +33,9 @@ jest.mock("@/services/flutterwave", () => ({
   openFlutterwaveCheckout: jest.fn(),
   reconcileFlutterwaveStatus: jest.fn(),
   isFlutterwaveAvailable: jest.fn(),
+  getFlutterwavePlanId: jest.fn((isAnnual: boolean) =>
+    isAnnual ? "ekwe_pro_annual" : "ekwe_pro_monthly",
+  ),
 }));
 
 jest.mock("@/services/supabase", () => ({
@@ -130,8 +133,11 @@ describe("useBilling", () => {
     it("opens checkout and celebrates when pro reconciles", async () => {
       mockOpenCheckout.mockResolvedValue({
         canceled: false,
-        checkoutUrl: "https://checkout.flutterwave.com/abc",
-        txRef: "tx_abc",
+        session: {
+          tx_ref: "ekwe_test-user-123_monthly_1234",
+          amount: 2,
+          currency: "USD",
+        },
       });
       mockReconcile.mockResolvedValue(true);
       const { result } = await renderHook(() => useBilling());
@@ -143,14 +149,17 @@ describe("useBilling", () => {
 
       expect(mockOpenCheckout).toHaveBeenCalledWith(true);
       expect(result.current.showCheckout).toBe(true);
-      expect(result.current.checkoutUrl).toBe(
-        "https://checkout.flutterwave.com/abc",
-      );
+      expect(result.current.checkoutSession).toEqual({
+        tx_ref: "ekwe_test-user-123_monthly_1234",
+        amount: 2,
+        currency: "USD",
+      });
+      expect(result.current.checkoutPlan).toBe("ekwe_pro_annual");
 
       await act(async () => {
         await result.current.handleCheckoutComplete({
           status: "successful",
-          tx_ref: "tx_abc",
+          tx_ref: "ekwe_test-user-123_monthly_1234",
           transaction_id: "123",
         });
       });
@@ -164,7 +173,14 @@ describe("useBilling", () => {
     });
 
     it("opens checkout for monthly when the toggle is monthly", async () => {
-      mockOpenCheckout.mockResolvedValue({ canceled: false, txRef: "tx_abc" });
+      mockOpenCheckout.mockResolvedValue({
+        canceled: false,
+        session: {
+          tx_ref: "ekwe_test-user-123_monthly_1234",
+          amount: 2,
+          currency: "USD",
+        },
+      });
       mockReconcile.mockResolvedValue(true);
       const { result } = await renderHook(() => useBilling());
 
@@ -176,16 +192,19 @@ describe("useBilling", () => {
       });
 
       expect(mockOpenCheckout).toHaveBeenCalledWith(false);
+      expect(result.current.checkoutPlan).toBe("ekwe_pro_monthly");
     });
 
-    it("does not reconcile when the user cancels the checkout", async () => {
-      mockOpenCheckout.mockResolvedValue({ canceled: true, txRef: null });
+    it("does not open the sheet when the checkout is canceled", async () => {
+      mockOpenCheckout.mockResolvedValue({ canceled: true, session: null });
       const { result } = await renderHook(() => useBilling());
 
       await act(async () => {
         await result.current.handleUpgrade();
       });
 
+      expect(result.current.showCheckout).toBe(false);
+      expect(result.current.checkoutSession).toBeNull();
       expect(mockReconcile).not.toHaveBeenCalled();
       expect(AppAlert.success).not.toHaveBeenCalled();
     });
@@ -193,8 +212,11 @@ describe("useBilling", () => {
     it("shows a syncing message when the purchase succeeds but pro never reconciles", async () => {
       mockOpenCheckout.mockResolvedValue({
         canceled: false,
-        checkoutUrl: "https://checkout.flutterwave.com/abc",
-        txRef: "tx_abc",
+        session: {
+          tx_ref: "ekwe_test-user-123_monthly_1234",
+          amount: 2,
+          currency: "USD",
+        },
       });
       mockReconcile.mockResolvedValue(false);
       const { result } = await renderHook(() => useBilling());
@@ -206,7 +228,7 @@ describe("useBilling", () => {
       await act(async () => {
         await result.current.handleCheckoutComplete({
           status: "successful",
-          tx_ref: "tx_abc",
+          tx_ref: "ekwe_test-user-123_monthly_1234",
           transaction_id: "123",
         });
       });

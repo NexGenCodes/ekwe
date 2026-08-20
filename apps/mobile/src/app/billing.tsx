@@ -27,6 +27,7 @@ export default function BillingScreen(): React.ReactElement {
   const { spacing, borderRadius, duration } = tokens;
 
   const sessionLoaded = useSelector(() => auth$.sessionLoaded.get());
+  const email = useSelector(() => auth$.session.get()?.user?.email ?? "");
 
   const {
     isPro,
@@ -40,7 +41,8 @@ export default function BillingScreen(): React.ReactElement {
     annualSavingPercent,
     loading,
     showCheckout,
-    checkoutUrl,
+    checkoutSession,
+    checkoutPlan,
     handleCheckoutComplete,
     handleCheckoutDismiss,
   } = useBilling();
@@ -262,7 +264,9 @@ export default function BillingScreen(): React.ReactElement {
 
       <CheckoutSheet
         visible={showCheckout}
-        checkoutUrl={checkoutUrl}
+        session={checkoutSession}
+        plan={checkoutPlan}
+        email={email}
         onDismiss={handleCheckoutDismiss}
         onComplete={handleCheckoutComplete}
       />

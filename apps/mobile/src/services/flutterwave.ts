@@ -1,15 +1,19 @@
 /**
  * ─── Flutterwave Service ─────────────────────────────────────────
  *
- * Handles Flutterwave payments on mobile. Checkout happens in an
- * in-app WebView sheet.
+ * Handles Flutterwave payments on mobile via the official
+ * flutterwave-react-native-sdk (modal checkout), instead of a hand-rolled
+ * WebView over a server-generated payment link.
+ *
  * The flow:
  *
  *   1. Mobile calls POST /billing/checkout on the Worker
- *   2. Worker creates a Flutterwave payment link with metadata
- *   3. Mobile renders the checkout URL in an in-app WebView sheet
- *   4. User completes payment on Flutterwave's hosted page
- *   5. Flutterwave redirects to the SDK's monitored URL (rn-redirect)
+ *   2. Worker authorizes a checkout session — { tx_ref, amount, currency } —
+ *      priced server-side from subscription_config × FX
+ *   3. Mobile initializes the payment with the SDK using the session params
+ *      plus the merchant public key (EXPO_PUBLIC_FLUTTERWAVE_PUBLIC_KEY)
+ *   4. User completes payment in the SDK's in-app modal
+ *   5. SDK redirects to rn-redirect → mobile notifies the caller
  *   6. Worker receives the webhook → calls set_pro_status RPC
  *   7. Mobile polls for Pro status via session refresh
  *
@@ -37,16 +41,14 @@ const POLL_INTERVAL_MS = 2500;
 
 // ─── Types ───────────────────────────────────────────────────────
 
-/** The worker's checkout response, typed from the shared schema. */
+/** The worker's checkout session, typed from the shared schema. */
 export type CheckoutSession = CheckoutResponse;
 
 export interface CheckoutOutcome {
   /** User closed the sheet without completing payment. */
   canceled: boolean;
-  /** The checkout URL to render in the WebView sheet. */
-  checkoutUrl: string;
-  /** The transaction reference if payment was initiated. */
-  txRef: string | null;
+  /** The worker-authorized checkout session to feed the SDK. */
+  session: CheckoutSession | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────
@@ -57,11 +59,19 @@ function getWorkerBaseUrl(): string {
 }
 
 /**
- * Maps a billing toggle selection (annual/monthly) to the correct
- * Flutterwave plan identifier. Uses the product IDs as tx_ref metadata so
- * the webhook can identify the plan.
+ * The merchant public key used to initialize the SDK checkout client-side.
+ * It is a publishable key (not a secret), safe to ship in the bundle.
  */
-function getFlutterwavePlanId(
+export function getFlutterwavePublicKey(): string {
+  return process.env.EXPO_PUBLIC_FLUTTERWAVE_PUBLIC_KEY ?? "";
+}
+
+/**
+ * Maps a billing toggle selection (annual/monthly) to the correct
+ * Flutterwave plan identifier. Used as tx_ref metadata so the webhook can
+ * identify the plan.
+ */
+export function getFlutterwavePlanId(
   isAnnual: boolean,
 ): (typeof PRO_PRODUCT_IDS)["monthly"] | (typeof PRO_PRODUCT_IDS)["annual"] {
   return isAnnual ? PRO_PRODUCT_IDS.annual : PRO_PRODUCT_IDS.monthly;
@@ -70,8 +80,9 @@ function getFlutterwavePlanId(
 // ─── API Calls ───────────────────────────────────────────────────
 
 /**
- * Initialize a Flutterwave checkout session. The Worker creates the
- * payment link with the correct amount, currency, and metadata.
+ * Authorize a checkout session with the Worker. The Worker is
+ * server-authoritative for pricing, currency, and the unique tx_ref; the
+ * SDK initializes the actual payment with these params + the public key.
  */
 async function initializeCheckout(
   isAnnual: boolean,
@@ -109,37 +120,12 @@ async function initializeCheckout(
       issues: parsed.error.issues,
       rawBody: raw,
     });
-    // Defensive fallback: if the worker response is structurally close
-    // but one field is missing/undefined, extract what we can and
-    // construct a valid session.  This prevents a single stray
-    // `undefined` from blocking the entire checkout flow while the
-    // diagnostic logging above captures the raw body for root-cause
-    // analysis.
-    const fallback = {
-      checkout_url:
-        (raw as Record<string, unknown>)?.checkout_url ||
-        (raw as Record<string, unknown>)?.checkoutUrl ||
-        "",
-      tx_ref:
-        (raw as Record<string, unknown>)?.tx_ref ||
-        (raw as Record<string, unknown>)?.txRef ||
-        "",
-      amount:
-        (raw as Record<string, unknown>)?.amount as CheckoutResponse["amount"],
-      currency:
-        (raw as Record<string, unknown>)?.currency as CheckoutResponse["currency"],
-    };
-    if (fallback.checkout_url && fallback.tx_ref) {
-      logger.warn("[Flutterwave] Using fallback extraction", {
-        checkout_url: fallback.checkout_url,
-        tx_ref: fallback.tx_ref,
-      });
-      return fallback as CheckoutResponse;
-    }
     throw new Error("Failed to initialize payment. Please try again.");
   }
   const data = parsed.data;
-  logger.info("[Flutterwave] Checkout initialized", { tx_ref: data.tx_ref });
+  logger.info("[Flutterwave] Checkout session authorized", {
+    tx_ref: data.tx_ref,
+  });
   return data;
 }
 
@@ -167,9 +153,9 @@ async function pollForProStatus(): Promise<boolean> {
 // ─── Public API ──────────────────────────────────────────────────
 
 /**
- * Open Flutterwave checkout for a Pro subscription. Returns the
- * checkout URL to render in a WebView sheet, plus the tx_ref for
- * tracking. Does NOT open a browser — the caller renders the sheet.
+ * Authorize a Pro checkout session for the SDK. Returns the worker's
+ * session params (tx_ref, amount, currency) so the caller can render the
+ * SDK checkout. Does NOT open the modal — the caller renders the sheet.
  *
  * The actual Pro activation happens via webhook, not immediately. After
  * the sheet is dismissed, the caller should poll for Pro status.
@@ -178,14 +164,15 @@ export async function openFlutterwaveCheckout(
   isAnnual: boolean,
 ): Promise<CheckoutOutcome> {
   try {
-    const { checkout_url, tx_ref } = await initializeCheckout(isAnnual);
+    const session = await initializeCheckout(isAnnual);
 
-    logger.info("[Flutterwave] Checkout URL received", { tx_ref });
+    logger.info("[Flutterwave] Checkout session received", {
+      tx_ref: session.tx_ref,
+    });
 
     return {
       canceled: false,
-      checkoutUrl: checkout_url,
-      txRef: tx_ref,
+      session,
     };
   } catch (err) {
     logger.error("[Flutterwave] Checkout failed", err);
@@ -205,10 +192,9 @@ export async function reconcileFlutterwaveStatus(): Promise<boolean> {
 }
 
 /**
- * Check if Flutterwave is available on this device. Flutterwave checkout
- * works on all platforms (web-based), but we need a valid session and
- * network connection.
+ * Check if Flutterwave is available on this device. Requires a valid
+ * session and a configured public key (needed for client-side SDK init).
  */
 export function isFlutterwaveAvailable(): boolean {
-  return !!auth$.session.get();
+  return !!auth$.session.get() && !!getFlutterwavePublicKey();
 }

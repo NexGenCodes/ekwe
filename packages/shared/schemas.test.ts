@@ -221,7 +221,6 @@ describe("checkoutRequestSchema", () => {
     expect(
       checkoutRequestSchema.safeParse({
         plan: "ekwe_pro_monthly",
-        redirect_url: "https://app.ekwe.com/billing/callback",
       }).success,
     ).toBe(true);
   });
@@ -230,7 +229,6 @@ describe("checkoutRequestSchema", () => {
     expect(
       checkoutRequestSchema.safeParse({
         plan: "ekwe_pro_annual",
-        redirect_url: "https://app.ekwe.com/billing/callback",
         currency: "NGN",
       }).success,
     ).toBe(true);
@@ -240,22 +238,14 @@ describe("checkoutRequestSchema", () => {
     expect(
       checkoutRequestSchema.safeParse({
         plan: "ekwe_pro_weekly",
-        redirect_url: "https://app.ekwe.com/billing/callback",
       }).success,
     ).toBe(false);
   });
 
-  test("accepts a checkout without a redirect_url (worker supplies its own)", () => {
-    expect(
-      checkoutRequestSchema.safeParse({ plan: "ekwe_pro_monthly" }).success,
-    ).toBe(true);
-  });
-
-  test("rejects an empty redirect_url", () => {
+  test("rejects an empty plan", () => {
     expect(
       checkoutRequestSchema.safeParse({
-        plan: "ekwe_pro_monthly",
-        redirect_url: "",
+        plan: "",
       }).success,
     ).toBe(false);
   });
@@ -264,7 +254,6 @@ describe("checkoutRequestSchema", () => {
     expect(
       checkoutRequestSchema.safeParse({
         plan: "ekwe_pro_monthly",
-        redirect_url: "https://app.ekwe.com/billing/callback",
         currency: "BANANA",
       }).success,
     ).toBe(false);
@@ -275,19 +264,26 @@ describe("checkoutResponseSchema", () => {
   test("accepts a valid checkout response", () => {
     expect(
       checkoutResponseSchema.safeParse({
-        checkout_url: "https://checkout.flutterwave.com/abc",
-        tx_ref: "ekwe_user_monthly",
+        tx_ref: "ekwe_user_monthly_1234",
         amount: 19.2,
         currency: "USD",
       }).success,
     ).toBe(true);
   });
 
-  test("rejects a response missing checkout_url", () => {
+  test("rejects a response missing tx_ref", () => {
     expect(
       checkoutResponseSchema.safeParse({
-        tx_ref: "ekwe_user_monthly",
         amount: 19.2,
+        currency: "USD",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("rejects a response missing amount", () => {
+    expect(
+      checkoutResponseSchema.safeParse({
+        tx_ref: "ekwe_user_monthly_1234",
         currency: "USD",
       }).success,
     ).toBe(false);
