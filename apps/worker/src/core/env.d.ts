@@ -10,6 +10,7 @@ interface Env {
   // wrangler.jsonc (so absent from the generated types). Declared manually.
   TURNSTILE_SECRET: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
+  SENTRY_DSN?: string;
   PUSH_NOTIFY_SECRET?: string;
   FLUTTERWAVE_SECRET?: string;
   FLUTTERWAVE_WEBHOOK_SECRET?: string;

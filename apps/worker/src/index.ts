@@ -1,6 +1,11 @@
 import { createWorker } from "./worker";
+import { instrumentDurableObject, instrumentWorker } from "./sentry";
+import { StreamDurableObject as StreamDurableObjectBase } from "./durable/stream-do";
+import { ThrottleBucket as ThrottleBucketBase } from "./durable/throttle-do";
 
-export { StreamDurableObject } from "./durable/stream-do";
-export { ThrottleBucket } from "./durable/throttle-do";
+export const StreamDurableObject = instrumentDurableObject(
+  StreamDurableObjectBase,
+);
+export const ThrottleBucket = instrumentDurableObject(ThrottleBucketBase);
 
-export default createWorker();
+export default instrumentWorker(createWorker());

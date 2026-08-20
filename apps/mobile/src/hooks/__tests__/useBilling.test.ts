@@ -50,6 +50,11 @@ jest.mock("@/utils/alert", () => ({
   AppAlert: { info: jest.fn(), success: jest.fn(), error: jest.fn() },
 }));
 
+jest.mock("@/utils/analytics", () => ({
+  AnalyticsEvents: { PURCHASE_SUCCESS: "purchase_success" },
+  track: jest.fn(),
+}));
+
 jest.mock("@/store", () => {
   const session = { get: jest.fn(() => null) };
   const isPro = { get: jest.fn(() => false) };

@@ -173,7 +173,7 @@ jobs:
       - name: Resolve version (auto-bump patch) + derive versionCode
         id: version
         run: |
-          LAST=$(node -p "require('./docs/version.json').latest_version" 2>/dev/null || echo "0.0.0")
+          LAST=$(node -p "require('./version.json').latest_version" 2>/dev/null || echo "0.0.0")
           CURRENT=$(node -p "require('./apps/mobile/app.json').expo.version")
 
           # Resolve the version to ship:
@@ -258,15 +258,15 @@ jobs:
             --argjson size "${{ steps.assets.outputs.size }}" \
             --arg date "$DATE" \
             '{latest_version: $v, latest_version_code: $vc, min_supported_version_code: 1, download_url: $url, checksum_sha256: $sha, file_size: $size, release_notes: "", release_date: $date, force_update: false}' \
-            > docs/version.json
+            > version.json
 
-          cp docs/version.json dist/version.json
+          cp version.json dist/version.json
 
       - name: Commit version bump + manifest
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apps/mobile/app.json apps/mobile/package.json docs/version.json
+          git add apps/mobile/app.json apps/mobile/package.json version.json
           git diff --cached --quiet || git commit -m "chore: release v${{ steps.version.outputs.version }}"
           git push origin "${{ github.event.repository.default_branch }}"
 

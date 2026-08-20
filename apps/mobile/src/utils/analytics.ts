@@ -32,6 +32,7 @@ export const AnalyticsEvents = {
   BILLING_PAGE_VIEWED: "billing_page_viewed",
   BILLING_TOGGLED: "billing_toggled",
   CHECKOUT_INITIATED: "checkout_initiated",
+  PURCHASE_SUCCESS: "purchase_success",
 
   // Engagement
   TTS_PLAYED: "tts_played",

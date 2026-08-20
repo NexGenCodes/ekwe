@@ -25,6 +25,7 @@ import {
 } from "@/services/flutterwave";
 import { auth$, authActions } from "@/store";
 import { AppAlert } from "@/utils/alert";
+import { AnalyticsEvents, track } from "@/utils/analytics";
 
 export interface UseBillingReturn {
   isPro: boolean;
@@ -76,6 +77,11 @@ export function useBilling(): UseBillingReturn {
   const { pricing } = useActivePricing();
   const { provider, availableProviders } = usePaymentProvider();
 
+  // Refs mirroring the checkout state so the memoized completion callback can
+  // attach revenue metadata to the success event without stale closures.
+  const checkoutSessionRef = useRef<CheckoutSession | null>(null);
+  const checkoutPlanRef = useRef<string | null>(null);
+
   // Track previous provider to detect switches
   const prevProviderRef = useRef(provider);
   useEffect(() => {
@@ -110,6 +116,8 @@ export function useBilling(): UseBillingReturn {
       if (outcome.canceled || !outcome.session) return;
       setCheckoutSession(outcome.session);
       setCheckoutPlan(getFlutterwavePlanId(isAnnual));
+      checkoutSessionRef.current = outcome.session;
+      checkoutPlanRef.current = getFlutterwavePlanId(isAnnual);
       setShowCheckout(true);
     } catch (err) {
       AppAlert.error("Upgrade Failed", err);
@@ -135,6 +143,12 @@ export function useBilling(): UseBillingReturn {
       if (upgraded) {
         authActions.setIsPro(true);
         authActions.setEntitlementSynced(true, "flutterwave");
+        const session = checkoutSessionRef.current;
+        track(AnalyticsEvents.PURCHASE_SUCCESS, {
+          plan: checkoutPlanRef.current ?? null,
+          amount: session?.amount ?? null,
+          currency: session?.currency ?? null,
+        });
         AppAlert.success(
           "Welcome to Pro!",
           "Your subscription is active. Thank you for supporting Ekwe!",
@@ -155,6 +169,8 @@ export function useBilling(): UseBillingReturn {
     setShowCheckout(false);
     setCheckoutSession(null);
     setCheckoutPlan(null);
+    checkoutSessionRef.current = null;
+    checkoutPlanRef.current = null;
   }, []);
 
   // ── Manage Handler ──────────────────────────────────────────

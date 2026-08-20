@@ -3,17 +3,13 @@
  * Centralized logging control to satisfy the 'no-console' ESLint rule.
  */
 
+import type { Logger } from "@ekwe/shared";
+import { scrubSentryEvent } from "@ekwe/shared";
+
 const IS_DEV = __DEV__;
 const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN;
 
 const noop = (): void => {};
-
-export interface Logger {
-  debug: (...args: unknown[]) => void;
-  info: (...args: unknown[]) => void;
-  warn: (...args: unknown[]) => void;
-  error: (...args: unknown[]) => void;
-}
 
 // Initialize Sentry in production if DSN is configured
 let sentryCaptureException: ((err: unknown) => void) | null = null;
@@ -27,41 +23,9 @@ if (!IS_DEV && SENTRY_DSN && SENTRY_DSN.startsWith("https://")) {
       environment: process.env.EXPO_PUBLIC_ENV || "production",
       tracesSampleRate: 0.1,
       integrations: [Sentry.reactNativeTracingIntegration()],
-      // Scrub potentially sensitive user content before sending to Sentry
-      beforeSend: (event: Record<string, unknown>) => {
-        try {
-          const ev = event as Record<string, Record<string, unknown>>;
-          if (ev.user) {
-            delete ev.user.email;
-            delete ev.user.ip_address;
-          }
-
-          if (ev.request) {
-            delete ev.request.data;
-            delete ev.request.headers;
-          }
-
-          if (ev.tags) {
-            Object.keys(ev.tags).forEach((k) => {
-              if (/transcript|email|phone|text/i.test(k)) delete ev.tags[k];
-            });
-          }
-
-          if (Array.isArray(ev.breadcrumbs)) {
-            ev.breadcrumbs = (ev.breadcrumbs as Record<string, unknown>[]).map(
-              (b: Record<string, unknown>) => {
-                if (b && b.data) {
-                  delete b.data;
-                }
-                return b;
-              },
-            ) as unknown as Record<string, unknown>;
-          }
-        } catch {
-          // If sanitizer fails, do not block error reporting
-        }
-        return event;
-      },
+      // Scrub potentially sensitive user content before sending to Sentry.
+      // Policy is shared with the worker via @ekwe/shared.
+      beforeSend: scrubSentryEvent,
     });
     sentryCaptureException = Sentry.captureException;
   } catch {

@@ -15,6 +15,10 @@ export enum ThemePreference {
   System = "system",
 }
 
+/** Version of the analytics-consent copy. Bump when the wording changes so
+ * returning users are prompted to re-confirm. */
+const CONSENT_VERSION = 1;
+
 export type TtsVoice = "male" | "female";
 
 export interface SettingsState {
@@ -31,6 +35,10 @@ export interface SettingsState {
   liveTranscriptionEnabled: boolean;
   ttsVoice: TtsVoice;
   analyticsConsent: boolean;
+  /** ISO timestamp of the last analytics consent decision. */
+  analyticsConsentUpdatedAt: string | null;
+  /** Version of the consent copy the user agreed to. */
+  analyticsConsentVersion: number | null;
 }
 
 const initialSettings: SettingsState = {
@@ -47,6 +55,8 @@ const initialSettings: SettingsState = {
   liveTranscriptionEnabled: false,
   ttsVoice: "female",
   analyticsConsent: false,
+  analyticsConsentUpdatedAt: null,
+  analyticsConsentVersion: null,
 };
 
 export const settings$ = observable<SettingsState>(initialSettings);
@@ -116,5 +126,7 @@ export const settingsActions = {
   },
   setAnalyticsConsent: (val: boolean): void => {
     settings$.analyticsConsent.set(val);
+    settings$.analyticsConsentUpdatedAt.set(new Date().toISOString());
+    settings$.analyticsConsentVersion.set(CONSENT_VERSION);
   },
 };

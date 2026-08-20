@@ -6,7 +6,7 @@ import { withCache } from "../core/cache";
 /**
  * /update/manifest — the app's update manifest.
  *
- * GET  (public)  → the latest `docs/version.json` (stored in KV by the release
+ * GET  (public)  → the latest `version.json` (stored in KV by the release
  *                  workflow), so the app can check for APK updates without a
  *                  hard dependency on GitHub being reachable from the device.
  * POST (secret)  → the release workflow stores the manifest after a build.
