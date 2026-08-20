@@ -4,3 +4,4 @@ export * from "./ProfileIdentity";
 export * from "./AvatarPickerModal";
 export * from "./ThemePickerModal";
 export * from "./VoicePickerModal";
+export * from "./CurrencyPickerModal";

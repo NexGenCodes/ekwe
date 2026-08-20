@@ -19,7 +19,7 @@ export enum ThemePreference {
  * returning users are prompted to re-confirm. */
 const CONSENT_VERSION = 1;
 
-export type TtsVoice = "male" | "female";
+export type TtsVoice = "male" | "female" | "default";
 
 export interface SettingsState {
   themePreference: ThemePreference;
@@ -34,6 +34,8 @@ export interface SettingsState {
   hapticsEnabled: boolean;
   liveTranscriptionEnabled: boolean;
   ttsVoice: TtsVoice;
+  /** ISO 4217 code the user manually picked; null = auto-detect from device. */
+  currency: string | null;
   analyticsConsent: boolean;
   /** ISO timestamp of the last analytics consent decision. */
   analyticsConsentUpdatedAt: string | null;
@@ -53,7 +55,8 @@ const initialSettings: SettingsState = {
   autoCopy: true,
   hapticsEnabled: true,
   liveTranscriptionEnabled: false,
-  ttsVoice: "female",
+  ttsVoice: "default",
+  currency: null,
   analyticsConsent: false,
   analyticsConsentUpdatedAt: null,
   analyticsConsentVersion: null,
@@ -123,6 +126,9 @@ export const settingsActions = {
   },
   setTtsVoice: (val: TtsVoice): void => {
     settings$.ttsVoice.set(val);
+  },
+  setCurrency: (val: string | null): void => {
+    settings$.currency.set(val);
   },
   setAnalyticsConsent: (val: boolean): void => {
     settings$.analyticsConsent.set(val);

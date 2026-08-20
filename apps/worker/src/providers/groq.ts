@@ -9,7 +9,6 @@ import { mimeToExt } from "../utils/mime";
 import {
   getUserAgent,
   fetchWithTimeout,
-  logProviderError,
   TIMEOUT_FAST,
 } from "../utils/fetch";
 import { logger } from "../core/logger";
@@ -54,7 +53,9 @@ export async function transcribe(
   );
 
   if (!res?.ok) {
-    await logProviderError("groq transcribe", res);
+    logger.warn("[groq] Transcribe failed, provider returned error", {
+      status: res?.status ?? "no response",
+    });
     return null;
   }
 
@@ -133,7 +134,9 @@ export async function translate(
     );
 
     if (!res?.ok) {
-      await logProviderError("groq translate", res);
+      logger.warn("[groq] Translate failed, provider returned error", {
+        status: res?.status ?? "no response",
+      });
       return null;
     }
 

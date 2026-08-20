@@ -4,7 +4,6 @@ import { buildTranslatePrompt, parseTranslateOutput } from "../utils/prompts";
 import {
   fetchWithTimeout,
   getClientHeaders,
-  logProviderError,
   TIMEOUT_FAST,
 } from "../utils/fetch";
 import { mimeToExt } from "../utils/mime";
@@ -68,7 +67,9 @@ export async function translate(
     );
 
     if (!res?.ok) {
-      await logProviderError("cohere translate", res);
+      logger.warn("[cohere] Translate failed, provider returned error", {
+        status: res?.status ?? "no response",
+      });
       return null;
     }
 
@@ -130,7 +131,9 @@ export async function transcribe(
   );
 
   if (!res?.ok) {
-    await logProviderError("cohere transcribe", res);
+    logger.warn("[cohere] Transcribe failed, provider returned error", {
+      status: res?.status ?? "no response",
+    });
     return null;
   }
 

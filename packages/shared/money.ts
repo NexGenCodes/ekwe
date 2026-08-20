@@ -80,3 +80,42 @@ export function countryToCurrency(countryCode: string): string | undefined {
   const country = countries[countryCode.toUpperCase() as keyof typeof countries];
   return country?.currency?.[0];
 }
+
+/**
+ * Currencies we accept as a charge currency on Flutterwave. Flutterwave does
+ * NOT auto-convert: the merchant must send the `amount` + `currency`, and the
+ * customer's card is charged in that currency (Flutterwave converts the card's
+ * own currency, not ours). We therefore only bill in currencies Flutterwave
+ * supports, and we publish a hand-set static price for each in
+ * `./plans.ts` (`LOCAL_PRICES`). Anything outside this set falls back to USD.
+ */
+export const FLUTTERWAVE_CURRENCIES = [
+  "USD",
+  "NGN",
+  "GHS",
+  "KES",
+  "ZAR",
+  "ZMW",
+  "UGX",
+  "TZS",
+  "RWF",
+  "XOF",
+  "XAF",
+  "GBP",
+  "EUR",
+  "CAD",
+] as const;
+
+export type FlutterwaveCurrency = (typeof FLUTTERWAVE_CURRENCIES)[number];
+
+/**
+ * Normalizes an ISO-4217 code to a Flutterwave-billable currency. Unsupported
+ * or unknown codes resolve to USD (our global default) so pricing and checkout
+ * are always deterministic — display == charge in the same currency.
+ */
+export function resolvePaymentCurrency(code: string): FlutterwaveCurrency {
+  const upper = code.toUpperCase();
+  return (FLUTTERWAVE_CURRENCIES as readonly string[]).includes(upper)
+    ? (upper as FlutterwaveCurrency)
+    : "USD";
+}

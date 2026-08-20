@@ -153,11 +153,6 @@ export function useBilling(): UseBillingReturn {
           "Welcome to Pro!",
           "Your subscription is active. Thank you for supporting Ekwe!",
         );
-      } else {
-        AppAlert.info(
-          "Syncing Status",
-          "We are verifying your payment. If your account is not upgraded in a minute, please contact support.",
-        );
       }
     },
     []

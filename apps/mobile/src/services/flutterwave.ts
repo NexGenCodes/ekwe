@@ -9,7 +9,7 @@
  *
  *   1. Mobile calls POST /billing/checkout on the Worker
  *   2. Worker authorizes a checkout session — { tx_ref, amount, currency } —
- *      priced server-side from subscription_config × FX
+ *      priced server-side from subscription_config local_prices
  *   3. Mobile initializes the payment with the SDK using the session params
  *      plus the merchant public key (EXPO_PUBLIC_FLUTTERWAVE_PUBLIC_KEY)
  *   4. User completes payment in the SDK's in-app modal
@@ -27,9 +27,10 @@ import {
   type CheckoutRequest,
   type CheckoutResponse,
 } from "@ekwe/shared";
-import { detectDeviceCurrency } from "@/constants/currency";
+import { getPaymentCurrency } from "@/constants/currency";
 import { supabase } from "@/services/supabase";
 import { auth$ } from "@/store";
+import { settings$ } from "@/store";
 import { getWorkerUrl } from "@/utils/networkUtils";
 import logger from "@/utils/logger";
 
@@ -92,7 +93,7 @@ async function initializeCheckout(
 
   const body: CheckoutRequest = {
     plan: getFlutterwavePlanId(isAnnual),
-    currency: detectDeviceCurrency(),
+    currency: getPaymentCurrency(settings$.currency.peek()),
   };
 
   const res = await fetch(`${getWorkerBaseUrl()}${CHECKOUT_PATH}`, {

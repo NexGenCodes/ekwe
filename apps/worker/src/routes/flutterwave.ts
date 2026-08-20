@@ -29,7 +29,8 @@ import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { readLimitedBody } from "../core/guards";
 import { supabasePost } from "../services/supabase";
 import { verifyWebhook } from "../services/signatures";
-import { toLowestUnit } from "@ekwe/shared/money";
+import { toLowestUnit, resolvePaymentCurrency } from "@ekwe/shared/money";
+import { getAuthoritativePlanPrices } from "./pricing";
 
 // ─── Constants ───────────────────────────────────────────────────
 
@@ -77,6 +78,21 @@ interface ProStatusResult {
   ok: boolean;
   permanent: boolean;
 }
+
+/**
+ * Outcome of charge verification:
+ *  - "ok":     amount + currency match the authoritative price → grant Pro.
+ *  - "reject": definitive tamper/fraud → reject and do NOT grant (permanent;
+ *              Flutterwave stops retrying because the money is not converted
+ *              into Pro access).
+ *  - "retry":  the price could not be confirmed from Supabase (outage) → do
+ *              NOT grant and do NOT permanently reject, so Flutterwave
+ *              re-sends once Supabase is reachable again.
+ */
+type ChargeVerification =
+  | { outcome: "ok" }
+  | { outcome: "reject" }
+  | { outcome: "retry" };
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -156,53 +172,133 @@ function resolveUser(
 }
 
 /**
- * Verifies the charged amount/currency against the checkout `meta` echo.
- * The mobile SDK embeds `meta.amount`/`meta.currency` (from the authorized
- * checkout session) in the payment; Flutterwave echoes `meta` in webhooks.
- * Comparing the charged `data.amount`/`data.currency` against it (to lowest-
- * unit precision) prevents granting Pro for a tampered, wrong-price, or
- * wrong-currency payment.
- * Returns true when verification passes or when meta is absent (legacy
- * payments), false on mismatch.
+ * Extracts the plan (monthly | annual) from the checkout tx_ref, which the
+ * worker formats as `ekwe_<userId>_<plan>_<ts>_<rand>` (plan is the
+ * `ekwe_pro_` prefix stripped). Falls back to null when the tx_ref isn't one
+ * of ours.
  */
-function verifyChargeAmount(data: {
-  amount?: number;
-  currency?: string;
-  meta?: { amount?: number; currency?: string };
-}): boolean {
-  const expected = data.meta?.amount;
-  const expectedCurrency = data.meta?.currency?.toUpperCase();
-  if (
-    typeof expected !== "number" ||
-    typeof data.amount !== "number" ||
-    !expectedCurrency
-  ) {
-    // No expected amount embedded (legacy checkout) or unusable payload —
-    // nothing to verify against; fall through to the normal grant path.
-    return true;
+function parsePlanFromTxRef(txRef: string | null): "monthly" | "annual" | null {
+  if (!txRef) return null;
+  const plan = txRef.split("_")[2];
+  if (plan === "monthly" || plan === "annual") return plan;
+  return null;
+}
+
+/** Resolves the plan from the client-echoed meta (informational only). */
+function planFromMeta(plan?: string): "monthly" | "annual" | null {
+  if (plan === "ekwe_pro_monthly") return "monthly";
+  if (plan === "ekwe_pro_annual") return "annual";
+  return null;
+}
+
+/**
+ * Verifies the charged amount/currency against the price the server would have
+ * authorized for this plan+currency. The worker is server-authoritative for
+ * pricing: GET /pricing and POST /billing/checkout both price from the same
+ * source (subscription_config / LOCAL_PRICES), and the mobile SDK embeds the
+ * authorized amount/currency when it creates the Flutterwave payment. The
+ * webhook must NOT trust the client-echoed `meta` — a modified client could
+ * set `meta.amount` to whatever it actually pays (e.g. 100 NGN) to make the
+ * echo "match". Instead we re-derive the expected amount server-side from the
+ * plan (parsed from tx_ref) and the charged currency.
+ *
+ * The expected price is read strictly from the Supabase `subscription_config`
+ * row via getAuthoritativePlanPrices — never from the bundled map (which the
+ * mobile app also embeds, display-only). If Supabase can't confirm the price
+ * (unreachable / no row / no price for the currency) we return "retry" so the
+ * event is not acked as applied: the grant happens only against a price
+ * confirmed from Supabase. `subscription_config` is REVOKE ALL + RLS-locked
+ * to the service role, so a malicious user can neither change the price nor
+ * read it through the public API.
+ *
+ * When the plan cannot be resolved (legacy/recurring events) we fall back to
+ * comparing against the meta echo, which is only informational.
+ */
+async function verifyChargeAmount(
+  env: Env,
+  data: {
+    amount?: number;
+    currency?: string;
+    tx_ref?: string | null;
+    meta?: { amount?: number; currency?: string; plan?: string };
+  },
+): Promise<ChargeVerification> {
+  const chargedAmount = data.amount;
+  if (typeof chargedAmount !== "number") {
+    // Nothing to compare — fall through to the normal grant path.
+    return { outcome: "ok" };
   }
 
   const chargedCurrency = (data.currency ?? "").toUpperCase();
+  const plan =
+    parsePlanFromTxRef(data.tx_ref ?? null) ?? planFromMeta(data.meta?.plan);
+
+  // Server-authoritative path: re-derive the expected price for the plan in
+  // the charged currency. The checkout endpoint resolves unsupported
+  // currencies to a billable one and charges that, so a charge landing in a
+  // currency we never authorize is anomalous — reject instead of coercing
+  // (coercing would let an attacker pay e.g. ~$0.05 in an unsupported
+  // currency and have it treated as USD).
+  if (plan) {
+    if (resolvePaymentCurrency(chargedCurrency) !== chargedCurrency) {
+      logger.error("[flutterwave] Unsupported currency on charge.success", {
+        charged: chargedCurrency,
+      });
+      return { outcome: "reject" };
+    }
+
+    const prices = await getAuthoritativePlanPrices(env, chargedCurrency);
+    if (!prices) {
+      logger.warn("[flutterwave] Cannot confirm price from Supabase", {
+        currency: chargedCurrency,
+      });
+      return { outcome: "retry" };
+    }
+
+    const expected = plan === "annual" ? prices.annual : prices.monthly;
+
+    const charged = toLowestUnit(chargedAmount, chargedCurrency);
+    const wanted = toLowestUnit(expected, chargedCurrency);
+    if (charged !== wanted) {
+      logger.error("[flutterwave] Amount mismatch on charge.success", {
+        charged: chargedAmount,
+        expected,
+        currency: chargedCurrency,
+      });
+      return { outcome: "reject" };
+    }
+    return { outcome: "ok" };
+  }
+
+  // Fallback for events where the plan can't be resolved (legacy/recurring):
+  // compare against the meta echo. Purely informational.
+  const expected = data.meta?.amount;
+  const expectedCurrency = data.meta?.currency?.toUpperCase();
+  if (typeof expected !== "number" || !expectedCurrency) {
+    // No expected amount embedded (legacy checkout) — nothing to verify.
+    return { outcome: "ok" };
+  }
+
   if (chargedCurrency !== expectedCurrency) {
     logger.error("[flutterwave] Currency mismatch on charge.success", {
       charged: chargedCurrency,
       expected: expectedCurrency,
     });
-    return false;
+    return { outcome: "reject" };
   }
 
-  const charged = toLowestUnit(data.amount, expectedCurrency);
-  const wanted = toLowestUnit(expected, expectedCurrency);
+  const charged = toLowestUnit(chargedAmount, chargedCurrency);
+  const wanted = toLowestUnit(expected, chargedCurrency);
   if (charged !== wanted) {
     logger.error("[flutterwave] Amount mismatch on charge.success", {
-      charged: data.amount,
+      charged: chargedAmount,
       expected,
-      currency: expectedCurrency,
+      currency: chargedCurrency,
     });
-    return false;
+    return { outcome: "reject" };
   }
 
-  return true;
+  return { outcome: "ok" };
 }
 
 // ─── Event Processor ─────────────────────────────────────────────
@@ -247,13 +343,26 @@ async function processFlutterwaveEvent(
   // ── Activation Events ──
   // charge.success: Initial payment or renewal. Grant Pro.
   if (eventType === "charge.success" && data.status === "successful") {
-    if (!verifyChargeAmount(data)) {
+    const verification = await verifyChargeAmount(env, data);
+    if (verification.outcome === "reject") {
       // Do NOT grant Pro and do NOT ack as applied — log and reject. We still
       // return fullyApplied=true so Flutterwave stops retrying a permanent
       // fraud/tamper condition; the money is not converted into Pro access.
       return {
         response: Response.json({ received: true, action: "rejected" }),
         fullyApplied: true,
+      };
+    }
+
+    if (verification.outcome === "retry") {
+      // Supabase could not confirm the price, so we cannot verify the amount.
+      // Do NOT grant Pro and do NOT ack as applied — returning 500 (via
+      // fullyApplied=false) makes Flutterwave re-send the event once Supabase
+      // is reachable again. A permanent 200 "rejected" here would sink a
+      // legitimate full-price payment during a Supabase blip.
+      return {
+        response: Response.json({ received: true, action: "unverified" }),
+        fullyApplied: false,
       };
     }
 

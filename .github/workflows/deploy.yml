@@ -247,7 +247,7 @@ jobs:
 
       - name: Write version manifest
         run: |
-          DOWNLOAD_URL="https://releases.ekwe.app/app-release.apk"
+          DOWNLOAD_URL="https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk"
           DATE=$(date -u +%Y-%m-%d)
 
           jq -n \
@@ -310,4 +310,4 @@ jobs:
           curl -fsS -X POST "$WORKER_URL/push-notify" \
             -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
             -H "Content-Type: application/json" \
-            -d '{"version": "${{ steps.version.outputs.version }}", "versionCode": ${{ steps.version.outputs.version_code }}, "checksumSha256": "${{ steps.assets.outputs.sha256 }}", "downloadUrl": "https://releases.ekwe.app/app-release.apk"}'
+            -d '{"version": "${{ steps.version.outputs.version }}", "versionCode": ${{ steps.version.outputs.version_code }}, "checksumSha256": "${{ steps.assets.outputs.sha256 }}", "downloadUrl": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk"}'

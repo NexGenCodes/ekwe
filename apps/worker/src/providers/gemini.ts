@@ -9,7 +9,6 @@ import { pcmToWav } from "../utils/wav";
 import {
   fetchWithTimeout,
   getClientHeaders,
-  logProviderError,
   TIMEOUT_FAST,
 } from "../utils/fetch";
 import { logger } from "../core/logger";
@@ -77,7 +76,9 @@ export async function translate(
     );
 
     if (!res?.ok) {
-      await logProviderError("gemini translate", res);
+      logger.warn("[gemini] Translate failed, provider returned error", {
+        status: res?.status ?? "no response",
+      });
       return null;
     }
 

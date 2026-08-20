@@ -1,5 +1,4 @@
 import { CLIENT_ABORTED } from "../core/types";
-import { logger } from "../core/logger";
 
 export const TIMEOUT_FAST = 15_000;
 export const TIMEOUT_SLOW = 25_000;
@@ -147,27 +146,4 @@ export function getClientHeaders(): Record<string, string> {
   return {
     "Accept-Language": "en-US,en;q=0.9",
   };
-}
-
-/** Reads a failed response's body as a short string, never throwing. */
-async function readErrorBody(
-  res: Response | null | undefined,
-): Promise<string> {
-  if (!res) return "No response";
-  const text = await res.text().catch(() => "No body");
-  return text || "No body";
-}
-
-/**
- * Logs a provider's failed HTTP response (status + body) and returns the
- * body text. Standardizes the read-and-log block each provider used to
- * inline. `res` is optional because some callers hit non-response failures.
- */
-export async function logProviderError(
-  label: string,
-  res: Response | null | undefined,
-): Promise<string> {
-  const body = await readErrorBody(res);
-  logger.error(`[${label}] HTTP error`, { status: res?.status, body });
-  return body;
 }

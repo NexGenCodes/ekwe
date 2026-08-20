@@ -1,11 +1,13 @@
 import { useMemo } from "react";
 
 import { useQuery } from "@tanstack/react-query";
+import { useSelector } from "@legendapp/state/react";
 
-import { DISPLAY_PRICING } from "@/constants/billing";
-import { detectDeviceCurrency } from "@/constants/currency";
+import { LOCAL_PRICES } from "@ekwe/shared/plans";
 import { getCurrencySymbol } from "@ekwe/shared/money";
+import { getPaymentCurrency } from "@/constants/currency";
 import { fetchWorkerPricing } from "@/services/pricing";
+import { settings$ } from "@/store";
 
 export interface ActivePricing {
   currency: string;
@@ -26,16 +28,22 @@ export interface ActivePricingResult {
  * Single source of truth for the price the billing screen shows, matching the
  * amount Flutterwave will actually charge.
  *
- * Fetches the worker's public /pricing?currency=<detected> endpoint. The
- * worker prices from subscription_config (USD base + discounts × FX), which
- * is exactly what /billing/checkout charges.
+ * Fetches the worker's public /pricing?currency=<resolved> endpoint. Both the
+ * worker and the client resolve the device currency the same way
+ * (`getPaymentCurrency()`), and both GET /pricing and POST /billing/checkout
+ * price from the same static LOCAL_PRICES map — so the displayed amount is
+ * always exactly what the checkout charges, in the same currency.
  *
- * Falls back to DISPLAY_PRICING.USD when the source is unavailable.
+ * Falls back to the same static LOCAL_PRICES locally when the source is
+ * unavailable (offline), so pricing is always deterministic.
  */
 export function useActivePricing(): ActivePricingResult {
+  const manualCurrency = useSelector(() => settings$.currency.get());
+  const currency = getPaymentCurrency(manualCurrency);
+
   const { data: workerPricing, isPending } = useQuery({
-    queryKey: ["workerPricing", detectDeviceCurrency()],
-    queryFn: () => fetchWorkerPricing(detectDeviceCurrency()),
+    queryKey: ["workerPricing", currency],
+    queryFn: () => fetchWorkerPricing(currency),
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
@@ -53,16 +61,17 @@ export function useActivePricing(): ActivePricingResult {
       };
     }
 
-    const fallback = DISPLAY_PRICING.USD;
+    const local = LOCAL_PRICES[currency];
+    const symbol = getCurrencySymbol(currency);
     return {
-      currency: fallback.monthly.currency,
-      symbol: fallback.monthly.symbol,
-      monthlyAmount: fallback.monthly.amount,
-      annualAmount: fallback.annual.amount,
-      annualMonthlyCost: fallback.annualMonthlyCost,
-      annualSavingPercent: fallback.annualSavingPercent,
+      currency,
+      symbol,
+      monthlyAmount: local.monthly,
+      annualAmount: local.annual,
+      annualMonthlyCost: +(local.annual / 12).toFixed(2),
+      annualSavingPercent: 20,
     };
-  }, [workerPricing]);
+  }, [workerPricing, currency]);
 
   return { pricing, isPending };
 }

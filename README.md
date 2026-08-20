@@ -1,7 +1,7 @@
 # Ekwe
 
 [![Landing Page](https://img.shields.io/badge/Website-ekwe.pages.dev-blue?style=for-the-badge&logo=googlechrome)](https://ekwe.pages.dev)
-[![Download APK](https://img.shields.io/badge/Download-APK-green?style=for-the-badge&logo=android)](https://releases.ekwe.app/app-release.apk)
+[![Download APK](https://img.shields.io/badge/Download-APK-green?style=for-the-badge&logo=android)](https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk)
 [![GitHub Release](https://img.shields.io/badge/GitHub-Release-gray?style=for-the-badge&logo=github)](https://github.com/NexGenCodes/ekwe/releases/latest)
 
 Ekwe is a voice note translation application built specifically for Android and iOS using React Native and Expo. It allows users to capture voice notes (either by recording directly or via sharing external audio files from social/messaging apps like WhatsApp) and seamlessly transcribes and translates them on-device.
@@ -49,7 +49,7 @@ ekwe/
 
 Download the latest APK directly from our CDN:
 
-**[Download APK](https://releases.ekwe.app/app-release.apk)**
+**[Download APK](https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk)**
 
 ### Web
 

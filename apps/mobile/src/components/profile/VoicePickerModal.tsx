@@ -2,6 +2,8 @@ import Check from "lucide-react-native/icons/check";
 import X from "lucide-react-native/icons/x";
 import Venus from "lucide-react-native/icons/venus";
 import Mars from "lucide-react-native/icons/mars";
+import Volume2 from "lucide-react-native/icons/volume-2";
+import Crown from "lucide-react-native/icons/crown";
 import type { LucideIcon } from "lucide-react-native";
 import React from "react";
 import { Modal, ScrollView } from "react-native";
@@ -11,6 +13,7 @@ import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 import { type TtsVoice } from "@/store/settings";
+import { AppAlert } from "@/utils/alert";
 import { withAlpha } from "@/utils/color";
 
 interface VoicePickerModalProps {
@@ -18,6 +21,7 @@ interface VoicePickerModalProps {
   onClose: () => void;
   onSelect: (value: TtsVoice) => void;
   currentVoice: TtsVoice;
+  isPro?: boolean;
 }
 
 const VOICE_OPTIONS: {
@@ -25,6 +29,7 @@ const VOICE_OPTIONS: {
   label: string;
   icon: LucideIcon;
 }[] = [
+  { value: "default", label: "Default (System Voice)", icon: Volume2 },
   { value: "female", label: "Female", icon: Venus },
   { value: "male", label: "Male", icon: Mars },
 ];
@@ -34,6 +39,7 @@ export function VoicePickerModal({
   onClose,
   onSelect,
   currentVoice,
+  isPro = true,
 }: VoicePickerModalProps): React.JSX.Element {
   const { color } = useTheme();
 
@@ -78,7 +84,7 @@ export function VoicePickerModal({
                 color: color.foreground,
               }}
             >
-              Select TTS Voice
+              Select Voice
             </Text>
             <Pressable
               onPress={onClose}
@@ -100,6 +106,7 @@ export function VoicePickerModal({
           >
             {VOICE_OPTIONS.map((item) => {
               const isSelected = currentVoice === item.value;
+              const isLocked = !isPro && item.value !== "default";
               return (
                 <Pressable
                   key={item.value}
@@ -112,14 +119,23 @@ export function VoicePickerModal({
                       borderRadius: borderRadius.lg,
                       marginVertical: spacing.hairline,
                     },
-                    pressed && {
+                    pressed && !isLocked && {
                       backgroundColor: withAlpha(color.foreground, 0.102),
                     },
                     isSelected && {
                       backgroundColor: withAlpha(color.foreground, 0.051),
                     },
                   ]}
-                  onPress={() => onSelect(item.value)}
+                  onPress={() => {
+                    if (isLocked) {
+                      AppAlert.info(
+                        "Ekwe Pro Required",
+                        "Upgrade to Ekwe Pro to unlock this voice.",
+                      );
+                      return;
+                    }
+                    onSelect(item.value);
+                  }}
                   accessibilityLabel={`Select ${item.label} voice`}
                   accessibilityState={
                     isSelected ? { selected: true } : undefined
@@ -128,7 +144,7 @@ export function VoicePickerModal({
                   <Box style={{ marginRight: spacing.md }}>
                     <item.icon
                       size={20}
-                      color={color.foreground}
+                      color={isLocked ? color.muted : color.foreground}
                       strokeWidth={2}
                     />
                   </Box>
@@ -136,14 +152,25 @@ export function VoicePickerModal({
                     <Text
                       variant="body"
                       style={{
-                        color: color.foreground,
+                        color: isLocked ? color.muted : color.foreground,
                         fontWeight: isSelected ? "600" : "400",
                       }}
                     >
                       {item.label}
                     </Text>
+                    {isLocked && (
+                      <Text
+                        variant="caption"
+                        style={{ color: color.muted, marginTop: 2 }}
+                      >
+                        Pro feature
+                      </Text>
+                    )}
                   </Box>
                   {isSelected && <Check size={20} color={color.foreground} />}
+                  {isLocked && !isSelected && (
+                    <Crown size={16} color={color.muted} />
+                  )}
                 </Pressable>
               );
             })}

@@ -3,13 +3,11 @@ import {
   FREE_LIMITS,
   PREMIUM_FEATURES,
   PREMIUM_LIMITS,
-  USD_PRICE,
 } from "@ekwe/shared/plans";
 import type {
   PlanFeatures as SharedPlanFeatures,
   PlanLimits as SharedPlanLimits,
 } from "@ekwe/shared/plans";
-import { computeSavingPercent } from "@ekwe/shared/money";
 
 export type PlanLimits = SharedPlanLimits;
 
@@ -24,47 +22,6 @@ export const PLAN_FEATURES: {
 } = {
   free: FREE_FEATURES,
   pro: PREMIUM_FEATURES,
-};
-
-export interface FallbackPrice {
-  amount: number;
-  currency: string;
-  symbol: string;
-}
-
-export const DISPLAY_PRICING: Record<
-  string,
-  {
-    monthly: FallbackPrice;
-    annual: FallbackPrice;
-    annualMonthlyCost: number;
-    annualSavingPercent: number;
-  }
-> = {
-  USD: ((): {
-    monthly: FallbackPrice;
-    annual: FallbackPrice;
-    annualMonthlyCost: number;
-    annualSavingPercent: number;
-  } => {
-    const monthly = {
-      amount: USD_PRICE.monthly.amount,
-      currency: "USD",
-      symbol: "$",
-    };
-    const annual = {
-      amount: USD_PRICE.annual.amount,
-      currency: "USD",
-      symbol: "$",
-    };
-    const annualMonthlyCost = +(annual.amount / 12).toFixed(2);
-    return {
-      monthly,
-      annual,
-      annualMonthlyCost,
-      annualSavingPercent: computeSavingPercent(monthly.amount, annual.amount),
-    };
-  })(),
 };
 
 export interface PlanFeature {

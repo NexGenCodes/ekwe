@@ -1,7 +1,6 @@
 import { describe, test, expect, beforeEach } from "vitest";
 import { handleCheckout, handleBillingFlags } from "../../src/routes/billing";
 import { resetPricingCache } from "../../src/routes/pricing";
-import { resetFxCache } from "../../src/services/money";
 import { mockEnv, jsonResponse } from "../setup";
 import { http } from "msw";
 import { server } from "../msw/server";
@@ -19,9 +18,8 @@ const mockAuth = {
 
 describe("handleCheckout", () => {
   beforeEach(() => {
-    server.resetHandlers();
     resetPricingCache();
-    resetFxCache();
+    server.resetHandlers();
   });
 
   const monthlyRequest = () =>
@@ -38,7 +36,7 @@ describe("handleCheckout", () => {
     expect(res.status).toBe(200);
     const data = (await res.json()) as Record<string, unknown>;
     expect(data.tx_ref).toMatch(/^ekwe_test-user-123_monthly_\d+_[a-z0-9]+$/);
-    expect(data.amount).toBe(2); // $2.00 from subscription_config
+    expect(data.amount).toBe(2.23); // $2.23/mo from LOCAL_PRICES
     expect(data.currency).toBe("USD");
     expect(data).not.toHaveProperty("checkout_url");
   });
@@ -57,7 +55,7 @@ describe("handleCheckout", () => {
     expect(data.error).toBe("INVALID_BODY");
   });
 
-  test("charges the annual USD amount from subscription_config", async () => {
+  test("charges the static annual USD amount", async () => {
     const env = mockEnv();
     const req = new Request("http://test/billing/checkout", {
       method: "POST",
@@ -68,25 +66,51 @@ describe("handleCheckout", () => {
     const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(200);
     const data = (await res.json()) as Record<string, unknown>;
-    expect(data.amount).toBe(19.2); // $19.20 from subscription_config
+    expect(data.amount).toBe(21.41); // $21.41/yr from LOCAL_PRICES
     expect(data.currency).toBe("USD");
   });
 
-  test("charges the monthly USD amount from subscription_config", async () => {
+  test("charges the static monthly USD amount", async () => {
     const env = mockEnv();
     const res = await handleCheckout(monthlyRequest(), env, mockAuth);
 
     expect(res.status).toBe(200);
     const data = (await res.json()) as Record<string, unknown>;
-    expect(data.amount).toBe(2); // $2.00 from subscription_config
+    expect(data.amount).toBe(2.23); // $2.23/mo from LOCAL_PRICES
     expect(data.currency).toBe("USD");
   });
 
-  test("prices the charge in a requested currency via FX", async () => {
+  test("charges the static local price in a requested currency", async () => {
+    const env = mockEnv();
+    const req = new Request("http://test/billing/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        plan: "ekwe_pro_monthly",
+        currency: "NGN",
+      }),
+    });
+
+    const res = await handleCheckout(req, env, mockAuth);
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as Record<string, unknown>;
+    expect(data.amount).toBe(3000); // static ₦3,000/mo from LOCAL_PRICES
+    expect(data.currency).toBe("NGN");
+  });
+
+  test("charges local_prices from the subscription_config row in Supabase", async () => {
     server.use(
-      http.get(PROVIDER_URLS.openErApiLatest, () =>
-        jsonResponse({ rates: { NGN: 1500 } }),
-      ),
+      http.get(PROVIDER_URLS.supabaseSubscriptionConfig, () => {
+        return Response.json([
+          {
+            id: 1,
+            base_price_usd: 2.5,
+            discount_percent: 0,
+            annual_discount_percent: 20,
+            local_prices: { NGN: { monthly: 4000, annual: 38400 } },
+          },
+        ]);
+      }),
     );
 
     const env = mockEnv();
@@ -102,8 +126,26 @@ describe("handleCheckout", () => {
     const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(200);
     const data = (await res.json()) as Record<string, unknown>;
-    expect(data.amount).toBe(3000); // $2.00 × 1500
+    expect(data.amount).toBe(4000);
     expect(data.currency).toBe("NGN");
+  });
+
+  test("resolves unsupported currencies to USD server-side", async () => {
+    const env = mockEnv();
+    const req = new Request("http://test/billing/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        plan: "ekwe_pro_monthly",
+        currency: "BRL",
+      }),
+    });
+
+    const res = await handleCheckout(req, env, mockAuth);
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as Record<string, unknown>;
+    expect(data.amount).toBe(2.23);
+    expect(data.currency).toBe("USD");
   });
 
   test("returns 400 for an invalid currency code", async () => {

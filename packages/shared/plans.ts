@@ -1,3 +1,5 @@
+import type { FlutterwaveCurrency } from "./money";
+
 export interface PlanLimits {
   maxAudioBytes: number;
   maxTextChars: number;
@@ -110,13 +112,57 @@ export const PLAN_CONFIG: PlanConfigPlans = {
 
 /**
  * Offline fallback price for the mobile billing screen. Mirrors the
- * subscription_config defaults (base $2.00/mo, 20% annual discount): the
+ * subscription_config defaults (base $2.23/mo, 20% annual discount): the
  * worker /pricing endpoint is authoritative and this only shows while that
  * query has no data. Keep it in sync with the seed row.
  */
 export const USD_PRICE: PlanPricing = {
-  monthly: { amount: 2.0, currency: "USD", lowestUnit: 200 },
-  annual: { amount: 19.2, currency: "USD", lowestUnit: 1920 },
+  monthly: { amount: 2.23, currency: "USD", lowestUnit: 223 },
+  annual: { amount: 21.41, currency: "USD", lowestUnit: 2141 },
+};
+
+/**
+ * Default local price per Flutterwave-billable currency (the same "price tier"
+ * model the app stores use). The annual price bakes in a ~20% discount over
+ * 12 × monthly.
+ *
+ * NGN is the anchor: ₦3,000/mo (≈ $2 at the ~1,500 NGN/USD rate), and every
+ * other currency is its equivalent so pricing feels consistent across markets.
+ *
+ * ⚠️ The authoritative copy lives in Supabase `subscription_config.local_prices`
+ * (editable in one DB row with zero redeploys). THIS map is:
+ *   1. the fallback the worker serves when Supabase is unreachable, and
+ *   2. the mobile offline mirror while GET /pricing has no data.
+ * Keep it in sync with the seed row and the migration that backfills it.
+ *
+ * The worker GET /pricing and POST /billing/checkout read the SAME source
+ * (DB first, this map second), so the amount the Flutterwave flow collects is
+ * always identical to what the billing screen shows. There is intentionally no
+ * live FX — Flutterwave does not auto-convert, so we bill exactly these
+ * amounts in exactly these currencies.
+ *
+ * Keep the keys aligned with `FLUTTERWAVE_CURRENCIES` in `./money.ts`.
+ */
+export interface LocalPrice {
+  monthly: number;
+  annual: number;
+}
+
+export const LOCAL_PRICES: Record<FlutterwaveCurrency, LocalPrice> = {
+  USD: { monthly: 2.23, annual: 21.41 },
+  NGN: { monthly: 3000, annual: 28800 },
+  GHS: { monthly: 25, annual: 240 },
+  KES: { monthly: 288, annual: 2765 },
+  ZAR: { monthly: 36, annual: 346 },
+  ZMW: { monthly: 41, annual: 394 },
+  UGX: { monthly: 8200, annual: 78720 },
+  TZS: { monthly: 5900, annual: 56640 },
+  RWF: { monthly: 3260, annual: 31296 },
+  XOF: { monthly: 1270, annual: 12192 },
+  XAF: { monthly: 1270, annual: 12192 },
+  GBP: { monthly: 1.65, annual: 15.84 },
+  EUR: { monthly: 1.93, annual: 18.53 },
+  CAD: { monthly: 3.09, annual: 29.66 },
 };
 
 export const MAX_AUDIO_BYTES = PREMIUM_LIMITS.maxAudioBytes;

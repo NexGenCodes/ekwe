@@ -3,9 +3,8 @@ import { Env, TranscribeResult } from "../core/types";
 import { sanitizeKey } from "../utils/keys";
 import { isHallucination } from "../utils/prompts";
 import {
-  getUserAgent,
   fetchWithIdleTimeout,
-  logProviderError,
+  getUserAgent,
   TIMEOUT_SLOW,
 } from "../utils/fetch";
 import { decodeOpusFrame, isOpusDecoderReady } from "../utils/opus";
@@ -70,7 +69,9 @@ export async function transcribe(
   );
 
   if (!res.ok) {
-    await logProviderError("witai transcribe", res);
+    logger.warn("[witai] Transcribe failed, provider returned error", {
+      status: res.status,
+    });
     return null;
   }
 
@@ -221,7 +222,9 @@ export async function handleStream(
 
     if (!res.ok) {
       detach();
-      await logProviderError("witai stream", res);
+      logger.warn("[witai] Stream failed, provider returned error", {
+        status: res.status,
+      });
       return false;
     }
 

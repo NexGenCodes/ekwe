@@ -17,6 +17,7 @@ import Globe from "lucide-react-native/icons/globe";
 import Smartphone from "lucide-react-native/icons/smartphone";
 import Radio from "lucide-react-native/icons/radio";
 import AudioLines from "lucide-react-native/icons/audio-lines";
+import Banknote from "lucide-react-native/icons/banknote";
 import React, { useState, useCallback } from "react";
 import { Linking, Modal, Switch, TextInput } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -29,6 +30,7 @@ import {
   ProfileIdentity,
   ThemePickerModal,
   VoicePickerModal,
+  CurrencyPickerModal,
   QuotaUsageCard,
 } from "@/components";
 import { Box, Text, Pressable, ScrollArea } from "@/components/ui";
@@ -40,6 +42,7 @@ import { SyncService } from "@/services/SyncService";
 import { supabase } from "@/services/supabase";
 import { auth$, authActions, settings$, settingsActions } from "@/store";
 import { isIOS } from "@/utils";
+import { LEGAL_CONTACT_EMAIL } from "@/constants/legal";
 import { AppAlert } from "@/utils/alert";
 import { triggerHaptic } from "@/utils/haptics";
 import logger from "@/utils/logger";
@@ -68,6 +71,7 @@ export default function ProfileScreen(): React.JSX.Element {
     setAutoCopy,
     setLiveTranscriptionEnabled,
     setTtsVoice,
+    setCurrency,
   } = settingsActions;
   const selectedLanguages = useSelector(() =>
     settings$.selectedLanguages.get(),
@@ -77,9 +81,11 @@ export default function ProfileScreen(): React.JSX.Element {
     settings$.liveTranscriptionEnabled.get(),
   );
   const ttsVoice = useSelector(() => settings$.ttsVoice.get());
+  const currency = useSelector(() => settings$.currency.get());
 
   const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
   const [isVoiceModalVisible, setIsVoiceModalVisible] = useState(false);
+  const [isCurrencyModalVisible, setIsCurrencyModalVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
@@ -243,6 +249,29 @@ export default function ProfileScreen(): React.JSX.Element {
               }}
             />
             <ProfileRow
+              icon={Banknote}
+              sfIcon="dollarsign.circle.fill"
+              iconColor={color.foreground}
+              title="Currency"
+              subtitle="Payment currency for subscriptions"
+              hasDivider
+              onPress={async () => {
+                await triggerHaptic();
+                setIsCurrencyModalVisible(true);
+              }}
+              trailing={
+                <Box style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text
+                    variant="body"
+                    style={{ color: color.muted, marginRight: spacing.sm }}
+                  >
+                    {currency ?? "Auto"}
+                  </Text>
+                  <ChevronRight size={16} color={color.muted} />
+                </Box>
+              }
+            />
+            <ProfileRow
               icon={Smartphone}
               sfIcon="hand.tap.fill"
               iconColor={color.foreground}
@@ -311,9 +340,8 @@ export default function ProfileScreen(): React.JSX.Element {
                   await triggerHaptic();
                   AppAlert.info(
                     "Ekwe Pro Required",
-                    "Live Transcription is a premium feature. Please upgrade to use this.",
+                    "Live Transcription is a premium feature. Upgrade to Pro to enable it.",
                   );
-                  pushOnce(router, "/billing");
                   return;
                 }
                 await triggerHaptic();
@@ -340,10 +368,19 @@ export default function ProfileScreen(): React.JSX.Element {
               icon={AudioLines}
               sfIcon="speaker.wave.2.fill"
               iconColor={color.foreground}
-              title="TTS Voice"
+              title="Voice"
               subtitle="Applied to spoken translations; the device uses the closest matching installed voice"
               hasDivider
+              locked={!isPro}
               onPress={async () => {
+                if (!isPro) {
+                  await triggerHaptic();
+                  AppAlert.info(
+                    "Ekwe Pro Required",
+                    "Voice selection is a premium feature. Upgrade to Pro to choose a voice.",
+                  );
+                  return;
+                }
                 await triggerHaptic();
                 setIsVoiceModalVisible(true);
               }}
@@ -353,7 +390,11 @@ export default function ProfileScreen(): React.JSX.Element {
                     variant="body"
                     style={{ color: color.muted, marginRight: spacing.sm }}
                   >
-                    {ttsVoice === "male" ? "Male" : "Female"}
+                    {ttsVoice === "male"
+                      ? "Male"
+                      : ttsVoice === "female"
+                        ? "Female"
+                        : "Default"}
                   </Text>
                   <ChevronRight size={16} color={color.muted} />
                 </Box>
@@ -594,6 +635,18 @@ export default function ProfileScreen(): React.JSX.Element {
           setIsVoiceModalVisible(false);
         }}
         currentVoice={ttsVoice}
+        isPro={isPro}
+      />
+
+      <CurrencyPickerModal
+        visible={isCurrencyModalVisible}
+        onClose={() => setIsCurrencyModalVisible(false)}
+        onSelect={async (value) => {
+          await triggerHaptic();
+          setCurrency(value);
+          setIsCurrencyModalVisible(false);
+        }}
+        currentCurrency={currency}
       />
 
       {/* ── Delete Account Confirmation Modal ── */}

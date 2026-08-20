@@ -1,8 +1,39 @@
 import * as Localization from "expo-localization";
 
-import { countryToCurrency } from "@ekwe/shared/money";
+import { countryToCurrency, resolvePaymentCurrency } from "@ekwe/shared/money";
+import type { FlutterwaveCurrency } from "@ekwe/shared/money";
 
 const DEFAULT_CURRENCY = "USD";
+
+/**
+ * Currencies the user can pick manually. A curated shortlist — full coverage
+ * of the 14 billable codes is handled by auto-detection, so the manual
+ * picker stays short. Anything here resolves cleanly via
+ * `resolvePaymentCurrency`, and the resolved code is what pricing + checkout
+ * actually use.
+ */
+export const MANUAL_CURRENCY_OPTIONS = [
+  "NGN",
+  "USD",
+  "GHS",
+  "KES",
+  "ZAR",
+  "GBP",
+  "EUR",
+  "XOF",
+] as const;
+
+/** Human-friendly display names for the manual options. */
+export const CURRENCY_NAMES: Record<string, string> = {
+  NGN: "Nigerian Naira",
+  USD: "US Dollar",
+  GHS: "Ghanaian Cedi",
+  KES: "Kenyan Shilling",
+  ZAR: "South African Rand",
+  GBP: "British Pound",
+  EUR: "Euro",
+  XOF: "West African CFA Franc",
+};
 
 /**
  * Auto-detects the user's currency (ISO 4217, e.g. "NGN"). Currency helpers
@@ -35,4 +66,15 @@ export function detectDeviceCurrency(): string {
     // Fail silently, fallback to USD
   }
   return DEFAULT_CURRENCY;
+}
+
+/**
+ * The currency Ekwe actually bills in: a manual selection wins, otherwise the
+ * device currency is resolved to a Flutterwave-billable code (unsupported
+ * codes fall back to USD). This is the single currency used for BOTH the
+ * pricing request and the checkout request, so the amount displayed always
+ * matches the amount charged.
+ */
+export function getPaymentCurrency(manual?: string | null): FlutterwaveCurrency {
+  return resolvePaymentCurrency(manual?.toUpperCase() ?? detectDeviceCurrency());
 }

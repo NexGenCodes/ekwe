@@ -10,8 +10,26 @@ function ensureDir(dir) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
+function loadEnvFile() {
+  const envPath = join(__dirname, ".env");
+  if (!existsSync(envPath)) return {};
+  const env = {};
+  for (const line of readFileSync(envPath, "utf-8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+  }
+  return env;
+}
+
 function readConfig() {
-  return JSON.parse(readFileSync(join(__dirname, "config.json"), "utf-8"));
+  const config = JSON.parse(readFileSync(join(__dirname, "config.json"), "utf-8"));
+  const fileEnv = loadEnvFile();
+  const email = process.env.CONTACT_EMAIL || fileEnv.CONTACT_EMAIL || config.contact.email;
+  if (email) config.contact.email = email;
+  return config;
 }
 
 function renderTemplate(html, config) {
@@ -22,8 +40,7 @@ function renderTemplate(html, config) {
     .replace(/\{\{APP_DESCRIPTION\}\}/g, config.app.description)
     .replace(/\{\{APP_VERSION\}\}/g, config.app.version)
     .replace(/\{\{DOWNLOAD_URL\}\}/g, config.links.download)
-    .replace(/\{\{GITHUB_URL\}\}/g, config.links.github)
-    .replace(/\{\{GITHUB_DOWNLOAD_URL\}\}/g, config.links.githubDownload)
+
     .replace(/\{\{CONTACT_EMAIL\}\}/g, config.contact.email)
     .replace(/\{\{COMPANY_NAME\}\}/g, config.legal.companyName)
     .replace(/\{\{LAST_UPDATED\}\}/g, config.legal.lastUpdated)
@@ -40,6 +57,8 @@ function build() {
   // Copy static assets
   copyFileSync(join(__dirname, "src/css/style.css"), join(dist, "css/style.css"));
   copyFileSync(join(__dirname, "src/js/main.js"), join(dist, "js/main.js"));
+  copyFileSync(join(__dirname, "src/favicon.svg"), join(dist, "favicon.svg"));
+  copyFileSync(join(__dirname, "src/og-image.png"), join(dist, "og-image.png"));
 
   // Copy config.json for JS to read
   writeFileSync(join(dist, "config.json"), JSON.stringify(config, null, 2));

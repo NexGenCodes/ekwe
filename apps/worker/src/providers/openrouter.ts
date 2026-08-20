@@ -4,7 +4,6 @@ import { buildTranslatePrompt, parseTranslateOutput } from "../utils/prompts";
 import {
   getUserAgent,
   fetchWithTimeout,
-  logProviderError,
   TIMEOUT_FAST,
 } from "../utils/fetch";
 import { logger } from "../core/logger";
@@ -61,7 +60,9 @@ export async function translate(
     );
 
     if (!res.ok) {
-      await logProviderError("openrouter translate", res);
+      logger.warn("[openrouter] Translate failed, provider returned error", {
+        status: res.status,
+      });
       return null;
     }
 

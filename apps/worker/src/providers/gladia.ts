@@ -1,7 +1,7 @@
 import { Env, TranscribeResult } from "../core/types";
 import { rotateKeys } from "../utils/keys";
 import { isHallucination } from "../utils/prompts";
-import { fetchWithTimeout, logProviderError, TIMEOUT_FAST, abortableDelay } from "../utils/fetch";
+import { fetchWithTimeout, TIMEOUT_FAST, abortableDelay } from "../utils/fetch";
 import { mimeToExt } from "../utils/mime";
 import { rotateWsKeys, createStreamInterceptor } from "../utils/websocket";
 import { logger } from "../core/logger";
@@ -60,7 +60,9 @@ async function attemptTranscription(
   );
 
   if (!uploadRes.ok) {
-    await logProviderError("gladia upload", uploadRes);
+    logger.warn("[gladia] Upload failed, provider returned error", {
+      status: uploadRes.status,
+    });
     return uploadRes;
   }
 
@@ -87,7 +89,9 @@ async function attemptTranscription(
   );
 
   if (!submitRes.ok) {
-    await logProviderError("gladia submit", submitRes);
+    logger.warn("[gladia] Submit failed, provider returned error", {
+      status: submitRes.status,
+    });
     return submitRes;
   }
 

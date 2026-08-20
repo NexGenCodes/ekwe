@@ -1,6 +1,9 @@
 import * as Localization from "expo-localization";
 
-import { detectDeviceCurrency } from "@/constants/currency";
+import {
+  detectDeviceCurrency,
+  getPaymentCurrency,
+} from "@/constants/currency";
 
 jest.mock("expo-localization", () => ({
   getLocales: jest.fn(),
@@ -52,5 +55,36 @@ describe("detectDeviceCurrency", () => {
       throw new Error("localization unavailable");
     });
     expect(detectDeviceCurrency()).toBe("USD");
+  });
+});
+
+describe("getPaymentCurrency", () => {
+  beforeEach(() => {
+    mockGetLocales.mockReset();
+  });
+
+  test("manual selection wins over device detection", () => {
+    mockGetLocales.mockReturnValue([{ regionCode: "NG", currencyCode: "USD" }]);
+    expect(getPaymentCurrency("ZAR")).toBe("ZAR");
+  });
+
+  test("normalizes a lowercase manual selection", () => {
+    mockGetLocales.mockReturnValue([{ regionCode: "US" }]);
+    expect(getPaymentCurrency("kes")).toBe("KES");
+  });
+
+  test("falls back to USD for an unsupported manual code", () => {
+    mockGetLocales.mockReturnValue([{ regionCode: "US" }]);
+    expect(getPaymentCurrency("INR")).toBe("USD");
+  });
+
+  test("falls back to device detection when no manual selection is set", () => {
+    mockGetLocales.mockReturnValue([{ regionCode: "NG" }]);
+    expect(getPaymentCurrency(null)).toBe("NGN");
+  });
+
+  test("falls back to device detection when manual is empty", () => {
+    mockGetLocales.mockReturnValue([{ regionCode: "NG" }]);
+    expect(getPaymentCurrency(undefined)).toBe("NGN");
   });
 });

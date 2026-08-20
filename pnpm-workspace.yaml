@@ -11,3 +11,4 @@ allowBuilds:
   workerd: true
 minimumReleaseAgeExclude:
   - expo-updates@57.0.14
+

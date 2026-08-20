@@ -214,7 +214,7 @@ describe("useBilling", () => {
       expect(AppAlert.success).not.toHaveBeenCalled();
     });
 
-    it("shows a syncing message when the purchase succeeds but pro never reconciles", async () => {
+    it("silently handles when the purchase succeeds but pro never reconciles", async () => {
       mockOpenCheckout.mockResolvedValue({
         canceled: false,
         session: {
@@ -238,10 +238,7 @@ describe("useBilling", () => {
         });
       });
 
-      expect(AppAlert.info).toHaveBeenCalledWith(
-        "Syncing Status",
-        expect.any(String),
-      );
+      expect(AppAlert.info).not.toHaveBeenCalled();
     });
 
     it("shows upgrade-failed for checkout errors", async () => {

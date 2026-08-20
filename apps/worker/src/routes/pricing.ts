@@ -1,139 +1,230 @@
 import { logger } from "../core/logger";
 import { Env } from "../core/types";
-import { getRates, getRateFor } from "../services/money";
-import { roundToCurrency } from "@ekwe/shared/money";
+import {
+  computeSavingPercent,
+  resolvePaymentCurrency,
+  roundToCurrency,
+} from "@ekwe/shared/money";
+import { LocalPrice, LOCAL_PRICES } from "@ekwe/shared/plans";
 import { storePricingResponseSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
-import { supabaseGet } from "../services/supabase";
 import { withCache } from "../core/cache";
+import { supabaseGet } from "../services/supabase";
 
 /**
  * ─── GET /pricing?currency=NGN ─────────────────────────────────────
  *
- * Store-ready, display-only pricing. Reads the global subscription_config
- * row (base USD price + discount_percent + annual_discount_percent), applies
- * the discounts in USD, then converts to the caller's currency via the cached
- * FX table. Omit/invalidate `currency` to get USD pricing.
+ * Store-ready, display-only pricing. Reads the single `subscription_config`
+ * row (base price + `local_prices` per currency) from Supabase and resolves
+ * unsupported or unknown currencies to USD. Omit/invalidate `currency` to get
+ * USD pricing.
  *
- * The discounts are a UI concern only: the store always charges the product's
- * list price (real discounts = Play/App Store offers or promo codes). The
- * response is promo-code-ready — a future code lookup folds into
- * `discountPercent` and the client already renders the strikethrough
- * `originalPriceUsd`/`originalAnnualUsd`.
+ * Flutterwave does NOT auto-convert: the merchant must send `amount` +
+ * `currency`, and the customer's card is charged in that currency. So the
+ * prices here are static "price tiers" (like App Store/Play tiers) and the
+ * amount POST /billing/checkout charges is always identical to what this
+ * endpoint reports — display == charge, deterministic and offline-capable.
+ * The DB row is the source of truth; `LOCAL_PRICES` in @ekwe/shared is only
+ * the fallback when Supabase is unreachable (kept in sync with the seed).
+ *
+ * The USD fields (`usd`, `originalPriceUsd`, `annualUsd`, `originalAnnualUsd`)
+ * are a reference anchor for cross-currency comparisons and strikethrough
+ * rendering; `discountPercent` is always 0 because prices are flat (no promo
+ * code support yet). The annual price bakes in the ~20% discount, reported via
+ * `annualDiscountPercent`.
  */
 
-interface SubscriptionConfig {
-  basePriceUsd: number;
-  discountPercent: number;
-  annualDiscountPercent: number;
-}
-
-const DEFAULT_CONFIG: SubscriptionConfig = {
-  basePriceUsd: 2.0,
-  discountPercent: 0,
-  annualDiscountPercent: 20,
-};
-
-const CONFIG_CACHE_TTL_MS = 10_000;
-const CONFIG_PATH =
-  "/rest/v1/subscription_config?id=eq.1&select=base_price_usd,discount_percent,annual_discount_percent";
-
-let memConfig: { config: SubscriptionConfig; ts: number } | null = null;
-
-/** Test-only: drop the 10s config cache so tests run against fresh state. */
-export function resetPricingCache(): void {
-  memConfig = null;
-}
-
-async function getSubscriptionConfig(env: Env): Promise<SubscriptionConfig> {
-  if (memConfig && Date.now() - memConfig.ts < CONFIG_CACHE_TTL_MS) {
-    return memConfig.config;
-  }
-
-  try {
-    const res = await supabaseGet(env, CONFIG_PATH);
-    if (!res || !res.ok) {
-      logger.error("[pricing] Failed to read subscription_config", {
-        status: res?.status ?? "unconfigured",
-      });
-      memConfig = { config: DEFAULT_CONFIG, ts: Date.now() };
-      return DEFAULT_CONFIG;
-    }
-
-    const data: unknown = await res.json();
-    const rows = data as Array<{
-      base_price_usd?: string | number;
-      discount_percent?: string | number;
-      annual_discount_percent?: string | number;
-    }>;
-    const row = rows[0];
-
-    const config: SubscriptionConfig = {
-      basePriceUsd:
-        Number(row?.base_price_usd ?? DEFAULT_CONFIG.basePriceUsd) ||
-        DEFAULT_CONFIG.basePriceUsd,
-      discountPercent:
-        Number(row?.discount_percent ?? DEFAULT_CONFIG.discountPercent) || 0,
-      annualDiscountPercent:
-        Number(row?.annual_discount_percent ?? DEFAULT_CONFIG.annualDiscountPercent) ||
-        DEFAULT_CONFIG.annualDiscountPercent,
-    };
-    memConfig = { config, ts: Date.now() };
-    return config;
-  } catch (err) {
-    logger.error("[pricing] subscription_config read error", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    memConfig = { config: DEFAULT_CONFIG, ts: Date.now() };
-    return DEFAULT_CONFIG;
-  }
-}
-
-/**
- * Computes the monthly + annual local prices for a currency from the single
- * source of truth (subscription_config USD base + discounts) converted
- * through the cached FX table. Shared by GET /pricing and POST /billing/checkout
- * so the price the Flutterwave checkout charges is always identical to the
- * price the pricing endpoint reported.
- */
 export interface LocalPlanPrices {
   currency: string;
   monthly: number;
   annual: number;
   monthlyUsd: number;
   annualUsd: number;
-  /** False when the FX table is unavailable and rates fell back to 1. */
-  fxAvailable: boolean;
 }
 
+interface SubscriptionConfigRow {
+  base_price_usd?: number | null;
+  discount_percent?: number | null;
+  annual_discount_percent?: number | null;
+  local_prices?: unknown;
+}
+
+interface SubscriptionConfig {
+  basePriceUsd: number;
+  discountPercent: number;
+  annualDiscountPercent: number;
+  localPrices: Record<string, LocalPrice>;
+}
+
+/** Path selecting every pricing field the worker needs from the config row. */
+const SUBSCRIPTION_CONFIG_PATH =
+  "/rest/v1/subscription_config?id=eq.1&select=base_price_usd,discount_percent,annual_discount_percent,local_prices";
+
+/** How long a loaded config is reused before re-reading Supabase (10s). */
+const CONFIG_CACHE_TTL_MS = 10_000;
+
+/**
+ * Fallback used when Supabase is unavailable or the row is missing. Mirrors
+ * the seed row so fallback pricing == DB pricing. `localPrices` empty means
+ * `LOCAL_PRICES` in @ekwe/shared supplies the per-currency amounts.
+ */
+const DEFAULT_CONFIG: SubscriptionConfig = {
+  basePriceUsd: 2.23,
+  discountPercent: 0,
+  annualDiscountPercent: 20,
+  localPrices: {},
+};
+
+/**
+ * Outcome of a config read from Supabase. `loaded` means the row was read;
+ * `missing` means Supabase responded but there is no row; `unreachable` means
+ * the read failed (network / non-ok). Display pricing treats `missing` and
+ * `unreachable` the same (bundled defaults), but the webhook's grant path
+ * only ever trusts `loaded` prices.
+ */
+export type ConfigLoad =
+  | { kind: "loaded"; config: SubscriptionConfig }
+  | { kind: "missing" }
+  | { kind: "unreachable" };
+
+let configCache: { load: ConfigLoad; expiresAt: number } | null = null;
+
+/** Test-only: drops the cached config so the next call re-reads Supabase. */
+export function resetPricingCache(): void {
+  configCache = null;
+}
+
+function toFinite(value: unknown, fallback: number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/**
+ * Validates a jsonb `local_prices` map into `{ code: { monthly, annual } }`,
+ * dropping malformed entries. Accepts the wire format directly (numbers or
+ * numeric strings).
+ */
+export function parseLocalPrices(raw: unknown): Record<string, LocalPrice> {
+  const parsed: Record<string, LocalPrice> = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return parsed;
+
+  for (const [code, value] of Object.entries(raw)) {
+    if (!/^[A-Z]{3}$/.test(code) || !value || typeof value !== "object") continue;
+    const v = value as Record<string, unknown>;
+    const monthly = toFinite(v.monthly, NaN);
+    const annual = toFinite(v.annual, NaN);
+    if (!Number.isFinite(monthly) || !Number.isFinite(annual)) continue;
+    if (monthly <= 0 || annual <= 0) continue;
+    parsed[code] = { monthly, annual };
+  }
+
+  return parsed;
+}
+
+/** Reads and (briefly) caches the subscription config row from Supabase. */
+async function loadSubscriptionConfig(env: Env): Promise<ConfigLoad> {
+  if (configCache && configCache.expiresAt > Date.now()) {
+    return configCache.load;
+  }
+
+  let load: ConfigLoad;
+  try {
+    const res = await supabaseGet(env, SUBSCRIPTION_CONFIG_PATH);
+    if (!res || !res.ok) {
+      logger.warn("[pricing] Subscription config unavailable", {
+        status: res?.status ?? "unconfigured",
+      });
+      load = { kind: "unreachable" };
+    } else {
+      const rows: SubscriptionConfigRow[] = await res.json();
+      const row = rows[0];
+      if (!row) {
+        logger.warn("[pricing] No subscription_config row");
+        load = { kind: "missing" };
+      } else {
+        load = {
+          kind: "loaded",
+          config: {
+            basePriceUsd: toFinite(row.base_price_usd, DEFAULT_CONFIG.basePriceUsd),
+            discountPercent: toFinite(row.discount_percent, DEFAULT_CONFIG.discountPercent),
+            annualDiscountPercent: toFinite(
+              row.annual_discount_percent,
+              DEFAULT_CONFIG.annualDiscountPercent,
+            ),
+            localPrices: parseLocalPrices(row.local_prices),
+          },
+        };
+      }
+    }
+  } catch (error) {
+    logger.error("[pricing] Failed to load subscription config", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    load = { kind: "unreachable" };
+  }
+
+  configCache = { load, expiresAt: Date.now() + CONFIG_CACHE_TTL_MS };
+  return load;
+}
+
+/**
+ * The config for display pricing. Falls back to bundled defaults when
+ * Supabase is unreachable or the row is missing, so GET /pricing and checkout
+ * stay offline-capable.
+ */
+export async function getSubscriptionConfig(env: Env): Promise<SubscriptionConfig> {
+  const load = await loadSubscriptionConfig(env);
+  return load.kind === "loaded" ? load.config : DEFAULT_CONFIG;
+}
+
+/**
+ * Resolves the monthly + annual local prices for a currency. Shared by GET
+ * /pricing and POST /billing/checkout so the price the Flutterwave checkout
+ * charges is always identical to the price the pricing endpoint reported.
+ * DB `local_prices` wins; the shared map is the fallback.
+ */
 export async function getLocalPlanPrices(
   env: Env,
   currency: string,
 ): Promise<LocalPlanPrices> {
+  const code = resolvePaymentCurrency(currency);
   const config = await getSubscriptionConfig(env);
 
-  // Monthly: base price with the global/promo discount applied.
-  const monthlyUsd = roundToCurrency(
-    config.basePriceUsd * (1 - config.discountPercent / 100),
-    "USD",
-  );
-
-  // Annual: monthly × 12, then the annual discount on top. Computed from the
-  // discounted monthly so a global campaign compounds across both periods.
-  const annualUsd = roundToCurrency(
-    monthlyUsd * 12 * (1 - config.annualDiscountPercent / 100),
-    "USD",
-  );
-
-  const rates = await getRates(env);
-  const rate = getRateFor(currency, rates);
+  const local = config.localPrices[code] ?? LOCAL_PRICES[code];
+  const usd = config.localPrices.USD ?? LOCAL_PRICES.USD;
 
   return {
-    currency,
-    monthly: roundToCurrency(monthlyUsd * rate, currency),
-    annual: roundToCurrency(annualUsd * rate, currency),
-    monthlyUsd,
-    annualUsd,
-    fxAvailable: rates !== null,
+    currency: code,
+    monthly: local.monthly,
+    annual: local.annual,
+    monthlyUsd: usd.monthly,
+    annualUsd: usd.annual,
+  };
+}
+
+/**
+ * The monthly + annual price for a currency, read strictly from the Supabase
+ * `subscription_config` row — never from the bundled map. Returns null when
+ * Supabase cannot confirm it (unreachable, no row, or the currency has no
+ * price in the row). The webhook uses this so a Pro grant only ever happens
+ * against a price read from Supabase; the bundled `LOCAL_PRICES` mirror (also
+ * embedded in the mobile bundle for display) can never influence a grant.
+ */
+export async function getAuthoritativePlanPrices(
+  env: Env,
+  currency: string,
+): Promise<LocalPlanPrices | null> {
+  const code = resolvePaymentCurrency(currency);
+  const load = await loadSubscriptionConfig(env);
+  if (load.kind !== "loaded") return null;
+  const local = load.config.localPrices[code];
+  if (!local) return null;
+  const usd = load.config.localPrices.USD;
+  return {
+    currency: code,
+    monthly: local.monthly,
+    annual: local.annual,
+    monthlyUsd: usd?.monthly ?? LOCAL_PRICES.USD.monthly,
+    annualUsd: usd?.annual ?? LOCAL_PRICES.USD.annual,
   };
 }
 
@@ -148,20 +239,6 @@ export async function handleStorePricing(
     const currency = /^[A-Z]{3}$/.test(requested) ? requested : "USD";
 
     const prices = await getLocalPlanPrices(env, currency);
-
-    // If FX is down, a non-USD currency would silently render USD amounts as
-    // local prices (rate falls back to 1). Signal the client to fall back to
-    // USD explicitly instead of showing a wrong local price.
-    if (currency !== "USD" && !prices.fxAvailable) {
-      return Response.json(
-        {
-          error: WORKER_ERROR_CODES.SERVICE_UNAVAILABLE,
-          message: "Currency conversion unavailable, request USD instead",
-        },
-        { status: 503 },
-      );
-    }
-
     const config = await getSubscriptionConfig(env);
 
     const body = {
@@ -173,9 +250,7 @@ export async function handleStorePricing(
       annualPrice: prices.annual,
       annualUsd: prices.annualUsd,
       originalAnnualUsd: roundToCurrency(config.basePriceUsd * 12, "USD"),
-      annualDiscountPercent: Math.round(
-        (1 - prices.annualUsd / (prices.monthlyUsd * 12)) * 100,
-      ),
+      annualDiscountPercent: computeSavingPercent(prices.monthly, prices.annual),
     };
 
     const parsed = storePricingResponseSchema.safeParse(body);

@@ -2,8 +2,9 @@
  * ─── Worker Pricing Service ──────────────────────────────────────
  *
  * Reads the worker's public GET /pricing endpoint (no auth required). The
- * worker computes local prices from the single source of truth
- * (subscription_config USD base + discounts × FX), which is exactly the price
+ * worker prices from the single source of truth — the `subscription_config`
+ * row's `local_prices` (per-currency monthly/annual amounts, NGN anchor), the
+ * shared LOCAL_PRICES map as fallback — which is exactly the price
  * /billing/checkout will charge, so the billing screen can show the same
  * amount the Flutterwave flow will collect.
  */

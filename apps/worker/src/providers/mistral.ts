@@ -4,7 +4,6 @@ import { buildTranslatePrompt, parseTranslateOutput } from "../utils/prompts";
 import {
   fetchWithTimeout,
   getClientHeaders,
-  logProviderError,
   TIMEOUT_FAST,
 } from "../utils/fetch";
 import { logger } from "../core/logger";
@@ -62,7 +61,9 @@ export async function translate(
     );
 
     if (!res?.ok) {
-      await logProviderError("mistral translate", res);
+      logger.warn("[mistral] Translate failed, provider returned error", {
+        status: res?.status ?? "no response",
+      });
       return null;
     }
 

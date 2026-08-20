@@ -1,6 +1,8 @@
 import * as Speech from "expo-speech";
 import { VoiceQuality, type Voice } from "expo-speech";
 
+import type { TtsVoice } from "@/store/settings";
+
 export type DeviceVoiceGender = "male" | "female";
 
 // Voices don't change during a session, and on iOS the first call can return
@@ -163,8 +165,11 @@ export function inferVoiceGender(voice: {
 export function pickDeviceVoice(
   voices: Voice[],
   lang: string,
-  gender: DeviceVoiceGender,
+  gender: TtsVoice,
 ): Voice | undefined {
+  // "default" means the user hasn't chosen a gender — let the platform pick.
+  if (gender === "default") return undefined;
+
   const langCode = lang.split("-")[0].toLowerCase();
   const candidates = voices.filter((voice) =>
     voice.language?.toLowerCase().startsWith(langCode),

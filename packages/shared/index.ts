@@ -13,6 +13,7 @@ export {
   PREMIUM_FEATURES,
   PLAN_CONFIG,
   USD_PRICE,
+  LOCAL_PRICES,
   MAX_AUDIO_BYTES,
   PRO_PRODUCT_IDS,
   TTS_MAX_TEXT_CHARS,
@@ -23,6 +24,7 @@ export type {
   PriceDetail,
   PlanPricing,
   PlanConfigPlans,
+  LocalPrice,
 } from "./plans";
 export {
   getDecimals,
@@ -32,7 +34,10 @@ export {
   computeSavingPercent,
   formatMoney,
   countryToCurrency,
+  resolvePaymentCurrency,
+  FLUTTERWAVE_CURRENCIES,
 } from "./money";
+export type { FlutterwaveCurrency } from "./money";
 export * from "./schemas";
 export { WORKER_ERROR_CODES, isWorkerErrorCode } from "./errors";
 export type { WorkerErrorCode, Tier, UsageType } from "./errors";

@@ -5,8 +5,9 @@
  *
  *   POST /billing/checkout
  *     Authorizes a checkout session. Requires JWT auth. Accepts an optional
- *     ISO-4217 `currency` (defaults to USD) so the charge is priced in the
- *     device's local currency. Returns { tx_ref, amount, currency }.
+ *     ISO-4217 `currency` (defaults to USD). Unsupported currencies resolve to
+ *     USD server-side so the charged amount always matches GET /pricing.
+ *     Returns { tx_ref, amount, currency }.
  *
  *     The worker is server-authoritative for pricing and the unique tx_ref.
  *     The mobile app initializes the actual Flutterwave payment client-side
@@ -20,6 +21,7 @@
  */
 
 import { WORKER_ERROR_CODES, checkoutRequestSchema } from "@ekwe/shared";
+import { resolvePaymentCurrency } from "@ekwe/shared/money";
 import { Env } from "../core/types";
 import { logger } from "../core/logger";
 import { supabaseGet } from "../services/supabase";
@@ -63,13 +65,14 @@ export async function handleCheckout(
   const body = parsed.data;
 
   // Currency is optional, defaults to USD, and is normalized to uppercase
-  // (ISO-4217 alpha-3) before use.
-  const currency = (body.currency ?? "USD").toUpperCase();
+  // (ISO-4217 alpha-3). Unsupported currencies resolve to USD so the charge is
+  // always in a currency Flutterwave bills and always matches GET /pricing.
+  const currency = resolvePaymentCurrency(body.currency ?? "USD");
 
-  // Price the plan in the requested currency from the single source of truth
-  // (subscription_config USD base + discounts × FX). The amount the SDK will
-  // charge is exactly what GET /pricing reported, and it is echoed back in
-  // `meta` so the webhook can verify the charged amount/currency.
+  // Price the plan from the single source of truth (the subscription_config
+  // row in Supabase; the shared LOCAL_PRICES map as fallback). The amount the
+  // SDK will charge is exactly what GET /pricing reported, and it is echoed
+  // back in `meta` so the webhook can verify the charged amount/currency.
   const prices = await getLocalPlanPrices(env, currency);
   const amount =
     body.plan === "ekwe_pro_annual" ? prices.annual : prices.monthly;

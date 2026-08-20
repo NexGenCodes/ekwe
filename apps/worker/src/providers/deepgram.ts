@@ -1,7 +1,7 @@
 import { Env, TranscribeResult, TtsAttempt } from "../core/types";
 import { rotateKeys } from "../utils/keys";
 import { isHallucination } from "../utils/prompts";
-import { fetchWithTimeout, logProviderError, TIMEOUT_FAST } from "../utils/fetch";
+import { fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
 import { runAiTtsRaw } from "../utils/ai";
 import { rotateWsKeys, createStreamInterceptor } from "../utils/websocket";
 import { logger } from "../core/logger";
@@ -49,8 +49,11 @@ export async function transcribe(
   if (!res?.ok) {
     if (res?.status === 402 || res?.status === 403) {
       logger.error("[CREDIT_EXHAUSTED] Deepgram key requires manual rotation!");
+    } else {
+      logger.warn("[deepgram] Transcribe failed, provider returned error", {
+        status: res?.status ?? "no response",
+      });
     }
-    await logProviderError("deepgram transcribe", res);
     return null;
   }
 

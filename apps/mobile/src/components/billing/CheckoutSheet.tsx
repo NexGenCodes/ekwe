@@ -1,13 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import React, { useCallback, useEffect, useRef } from "react";
 import { PayWithFlutterwave } from "flutterwave-react-native-sdk";
 import type { ComponentProps } from "react";
 
 import type { CheckoutSession } from "@/services/flutterwave";
 import { getFlutterwavePublicKey } from "@/services/flutterwave";
-import { Box, Spinner, Text } from "@/components/ui";
-import { useTheme } from "@/hooks";
 import { AppAlert } from "@/utils/alert";
+import type { FlutterwaveCurrency } from "@ekwe/shared/money";
 
 type SdkOptions = ComponentProps<typeof PayWithFlutterwave>["options"];
 
@@ -28,8 +26,37 @@ interface CheckoutSheetProps {
 }
 
 /**
+ * Payment methods offered per currency. Flutterwave takes a comma-separated
+ * `payment_options` string; we always offer the card/bank/USSD/account basics
+ * and add the local mobile-money rail where Flutterwave supports it, so the
+ * checkout never surfaces a dead payment method.
+ */
+const BASE_PAYMENT_OPTIONS = ["card", "banktransfer", "ussd", "account"];
+
+const MOBILE_MONEY_OPTIONS: Partial<Record<FlutterwaveCurrency, string[]>> = {
+  KES: ["mpesa"],
+  GHS: ["mobilemoneyghana"],
+  UGX: ["mobilemoneyuganda"],
+  RWF: ["mobilemoneyrwanda"],
+  ZMW: ["mobilemoneyzambia"],
+  TZS: ["mobilemoneytanzania"],
+  XOF: ["mobilemoneyxof"],
+  XAF: ["mobilemoneyxaf"],
+};
+
+export function getPaymentOptions(currency: string): string {
+  const extra = MOBILE_MONEY_OPTIONS[currency as FlutterwaveCurrency] ?? [];
+  return [...BASE_PAYMENT_OPTIONS, ...extra].join(",");
+}
+
+const PLAN_LABELS: Record<string, string> = {
+  monthly: "Monthly",
+  annual: "Annual",
+};
+
+/**
  * Flutterwave SDK checkout. Mounts `PayWithFlutterwave` (which renders its
- * own full-screen checkout modal) and auto-triggers initialization via the
+ * own full-screen checkout modal) and triggers initialization through the
  * `customButton` render-prop's `onPress`, captured into a ref.
  *
  * `key={session.tx_ref}` remounts the SDK per session so its SAME_TXREF
@@ -43,21 +70,17 @@ export function CheckoutSheet({
   onDismiss,
   onComplete,
 }: CheckoutSheetProps): React.ReactElement | null {
-  const { color } = useTheme();
-  const [initializing, setInitializing] = useState(false);
   const triggerPressRef = useRef<(() => void) | null>(null);
 
-  const handleWillInitialize = useCallback(() => {
-    setInitializing(true);
-  }, []);
-
-  const handleDidInitialize = useCallback(() => {
-    setInitializing(false);
-  }, []);
+  // Auto-trigger the SDK when a new session arrives.
+  useEffect(() => {
+    if (visible && session) {
+      requestAnimationFrame(() => triggerPressRef.current?.());
+    }
+  }, [visible, session]);
 
   const handleInitializeError = useCallback(
     (err: unknown) => {
-      setInitializing(false);
       const message =
         err &&
         typeof err === "object" &&
@@ -68,7 +91,7 @@ export function CheckoutSheet({
       AppAlert.error("Checkout Error", message);
       onDismiss();
     },
-    [onDismiss]
+    [onDismiss],
   );
 
   const handleRedirect = useCallback(
@@ -79,23 +102,17 @@ export function CheckoutSheet({
         transaction_id: data.transaction_id ?? null,
       });
     },
-    [onComplete]
+    [onComplete],
   );
 
-  // Trigger SDK initialization once the sheet becomes visible and the SDK
-  // has had a chance to render (populating triggerPressRef via customButton).
-  useEffect(() => {
-    if (visible && session) {
-      triggerPressRef.current?.();
-    }
-  }, [visible, session]);
-
   if (!visible || !session) return null;
+
+  const planLabel = PLAN_LABELS[plan?.replace("ekwe_pro_", "") ?? "monthly"] ?? "Monthly";
 
   const options: SdkOptions = {
     amount: session.amount,
     currency: session.currency,
-    payment_options: "card",
+    payment_options: getPaymentOptions(session.currency),
     authorization: getFlutterwavePublicKey(),
     tx_ref: session.tx_ref,
     customer: {
@@ -110,7 +127,7 @@ export function CheckoutSheet({
     },
     customizations: {
       title: "Ekwe Pro",
-      description: `Upgrade to Ekwe Pro (${plan?.replace("ekwe_pro_", "") ?? "monthly"})`,
+      description: `Upgrade to Ekwe Pro (${planLabel.toLowerCase()})`,
     },
   } as SdkOptions;
 
@@ -123,42 +140,10 @@ export function CheckoutSheet({
           triggerPressRef.current = onPress;
           return null;
         }}
-        onWillInitialize={handleWillInitialize}
-        onDidInitialize={handleDidInitialize}
         onInitializeError={handleInitializeError}
         onAbort={onDismiss}
         onRedirect={handleRedirect}
       />
-      {initializing && (
-        <View style={[styles.overlay, { backgroundColor: color.overlay }]}>
-          <Box style={[styles.card, { backgroundColor: color.background }]}>
-            <Spinner size="lg" color={color.foreground} />
-            <Text variant="bodySmall" style={{ color: color.muted }}>
-              Starting secure payment…
-            </Text>
-          </Box>
-        </View>
-      )}
     </>
   );
 }
-
-const styles = StyleSheet.create({
-  overlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
-  },
-  card: {
-    alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 24,
-    paddingVertical: 20,
-    borderRadius: 16,
-  },
-});
