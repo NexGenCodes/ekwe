@@ -30,6 +30,7 @@ jobs:
     outputs:
       ota: ${{ steps.outcome.outputs.ota }}
       release: ${{ steps.outcome.outputs.release }}
+      pages: ${{ steps.outcome.outputs.pages }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,6 +60,7 @@ jobs:
             # Manual dispatch: OTA by default, release only if explicitly requested.
             echo "ota=true" >> "$GITHUB_OUTPUT"
             echo "release=${{ inputs.publish_release }}" >> "$GITHUB_OUTPUT"
+            echo "pages=true" >> "$GITHUB_OUTPUT"
           else
             # A release job commits the version bump + manifest and pushes it.
             # That push must NOT re-trigger itself, or we'd loop forever
@@ -68,9 +70,13 @@ jobs:
             if [[ "$AUTHOR" == "github-actions[bot]" && "$MSG" == "chore: release v"* ]]; then
               echo "ota=false" >> "$GITHUB_OUTPUT"
               echo "release=false" >> "$GITHUB_OUTPUT"
+              echo "pages=false" >> "$GITHUB_OUTPUT"
             else
               echo "ota=${{ steps.paths.outputs.ota }}" >> "$GITHUB_OUTPUT"
               echo "release=${{ steps.paths.outputs.release }}" >> "$GITHUB_OUTPUT"
+              # The landing site always deploys on a real push; only the release
+              # bot's own commit (handled above) is skipped.
+              echo "pages=true" >> "$GITHUB_OUTPUT"
             fi
           fi
 
@@ -311,3 +317,35 @@ jobs:
             -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
             -H "Content-Type: application/json" \
             -d '{"version": "${{ steps.version.outputs.version }}", "versionCode": ${{ steps.version.outputs.version_code }}, "checksumSha256": "${{ steps.assets.outputs.sha256 }}", "downloadUrl": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk"}'
+
+  pages:
+    name: Deploy Landing Site (Pages)
+    needs: detect
+    if: needs.detect.outputs.pages == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        # frozen-lockfile is deterministic; brings in the pinned wrangler below.
+        run: pnpm install --frozen-lockfile
+
+      - name: Build landing site (static, zero deps)
+        run: node apps/web/build.mjs
+
+      - name: Deploy to Cloudflare Pages
+        working-directory: apps/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        # Use the workspace's pinned wrangler (^4.102.0) — never `npx wrangler`
+        # (floating latest). --branch master matches the Pages project's
+        # production_branch, so this is a production deployment of apps/web/dist.
+        run: pnpm exec wrangler pages deploy ../web/dist --project-name ekwe --branch master

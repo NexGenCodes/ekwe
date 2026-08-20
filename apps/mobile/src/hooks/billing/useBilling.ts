@@ -19,6 +19,7 @@ import { supabase } from "@/services/supabase";
 import {
   openFlutterwaveCheckout,
   reconcileFlutterwaveStatus,
+  verifyTransaction,
   isFlutterwaveAvailable,
   getFlutterwavePlanId,
   type CheckoutSession,
@@ -129,7 +130,7 @@ export function useBilling(): UseBillingReturn {
   // ── Checkout Complete ────────────────────────────────────────
 
   const handleCheckoutComplete = useCallback(
-    async (_data: {
+    async (data: {
       status: string | null;
       tx_ref: string | null;
       transaction_id: string | null;
@@ -138,12 +139,41 @@ export function useBilling(): UseBillingReturn {
       setCheckoutSession(null);
       setCheckoutPlan(null);
 
-      // Poll for Pro status (the webhook processes asynchronously)
+      const session = checkoutSessionRef.current;
+
+      // Primary path: SDK reports successful payment with a transaction_id.
+      // Call the verify endpoint which verifies with Flutterwave API and
+      // calls set_pro_status RPC. Works in both test and live modes.
+      if (data.status === "successful" && data.transaction_id) {
+        try {
+          const txId = Number(data.transaction_id);
+          if (!Number.isNaN(txId)) {
+            const result = await verifyTransaction(txId);
+            if (result.ok) {
+              authActions.setIsPro(true);
+              authActions.setEntitlementSynced(true, "flutterwave");
+              track(AnalyticsEvents.PURCHASE_SUCCESS, {
+                plan: checkoutPlanRef.current ?? null,
+                amount: session?.amount ?? null,
+                currency: session?.currency ?? null,
+              });
+              AppAlert.success(
+                "Welcome to Pro!",
+                "Your subscription is active. Thank you for supporting Ekwe!",
+              );
+              return;
+            }
+          }
+        } catch {
+          // Verify failed — fall through to polling fallback
+        }
+      }
+
+      // Fallback: poll for Pro status (webhook processes asynchronously on live).
       const upgraded = await reconcileFlutterwaveStatus();
       if (upgraded) {
         authActions.setIsPro(true);
         authActions.setEntitlementSynced(true, "flutterwave");
-        const session = checkoutSessionRef.current;
         track(AnalyticsEvents.PURCHASE_SUCCESS, {
           plan: checkoutPlanRef.current ?? null,
           amount: session?.amount ?? null,

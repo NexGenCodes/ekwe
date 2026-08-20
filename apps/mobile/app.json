@@ -105,6 +105,11 @@
       "assets/fonts/*"
     ],
     "updates": {
+      "url": "https://u.expo.dev/fb3d49de-0c12-4b1a-bf94-863befec071a",
+      "channel": "production",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      },
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },

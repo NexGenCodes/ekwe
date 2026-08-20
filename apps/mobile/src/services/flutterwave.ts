@@ -37,7 +37,8 @@ import logger from "@/utils/logger";
 // ─── Configuration ───────────────────────────────────────────────
 
 const CHECKOUT_PATH = "/billing/checkout";
-const POLL_ATTEMPTS = 8;
+const VERIFY_TRANSACTION_PATH = "/billing/verify-transaction";
+const POLL_ATTEMPTS = 20;
 const POLL_INTERVAL_MS = 2500;
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -50,6 +51,13 @@ export interface CheckoutOutcome {
   canceled: boolean;
   /** The worker-authorized checkout session to feed the SDK. */
   session: CheckoutSession | null;
+}
+
+export interface VerifyTransactionResponse {
+  ok: boolean;
+  permanent: boolean;
+  transaction_id: number;
+  tx_ref: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────
@@ -128,6 +136,42 @@ async function initializeCheckout(
     tx_ref: data.tx_ref,
   });
   return data;
+}
+
+/**
+ * Client-side verification endpoint. After the SDK reports a successful
+ * payment (status + transaction_id), the client calls this endpoint to
+ * have the Worker verify it with Flutterwave and grant Pro via RPC.
+ * This is the primary activation path — webhooks are the fallback.
+ */
+export async function verifyTransaction(
+  transactionId: number,
+): Promise<VerifyTransactionResponse> {
+  const session = auth$.session.get();
+  if (!session) throw new Error("Authentication required");
+
+  const res = await fetch(
+    `${getWorkerBaseUrl()}${VERIFY_TRANSACTION_PATH}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ transaction_id: transactionId }),
+    },
+  );
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    logger.error("[Flutterwave] Verify transaction failed", {
+      status: res.status,
+      body: body.slice(0, 200),
+    });
+    throw new Error("Failed to verify payment");
+  }
+
+  return res.json() as Promise<VerifyTransactionResponse>;
 }
 
 /**

@@ -42,7 +42,7 @@ import { SyncService } from "@/services/SyncService";
 import { supabase } from "@/services/supabase";
 import { auth$, authActions, settings$, settingsActions } from "@/store";
 import { isIOS } from "@/utils";
-import { LEGAL_CONTACT_EMAIL } from "@/constants/legal";
+
 import { AppAlert } from "@/utils/alert";
 import { triggerHaptic } from "@/utils/haptics";
 import logger from "@/utils/logger";

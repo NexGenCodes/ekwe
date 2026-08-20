@@ -27,7 +27,11 @@ import { handleStorePricing } from "./routes/pricing";
 import { handleUsage } from "./routes/usage";
 import { handleWebhook } from "./routes/webhook";
 import { handleFlutterwaveWebhook } from "./routes/flutterwave";
-import { handleCheckout, handleBillingFlags } from "./routes/billing";
+import {
+  handleCheckout,
+  handleVerifyTransaction,
+  handleBillingFlags,
+} from "./routes/billing";
 import { handleSendOtp } from "./routes/otp";
 import { handleRegisterPushToken } from "./routes/push-tokens";
 import { handlePushNotify } from "./routes/push-notify";
@@ -56,6 +60,9 @@ const flutterwaveWebhookHandler: RouteHandler = (rctx) =>
 
 const checkoutHandler: AuthedRouteHandler = (rctx) =>
   handleCheckout(rctx.request, rctx.env, rctx.auth);
+
+const verifyTransactionHandler: AuthedRouteHandler = (rctx) =>
+  handleVerifyTransaction(rctx.request, rctx.env, rctx.auth);
 
 const billingFlagsHandler: RouteHandler = (rctx) =>
   handleBillingFlags(rctx.request, rctx.env);
@@ -157,6 +164,12 @@ const routes: AppRoute[] = [
     path: "/billing/checkout",
     auth: "jwt",
     handler: checkoutHandler,
+  },
+  {
+    method: "POST",
+    path: "/billing/verify-transaction",
+    auth: "jwt",
+    handler: verifyTransactionHandler,
   },
   {
     method: "GET",

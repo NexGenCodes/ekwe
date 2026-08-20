@@ -177,7 +177,7 @@ export async function handleSendOtp(
   if (!(await throttled(env, `ip:${clientIp}`, 5, 60))) {
     return tooManyRequests("Please wait a moment.", 60);
   }
-  if (!(await throttled(env, `email:${email}`, 3, 600))) {
+  if (!(await throttled(env, `email:${email}`, 2, 600))) {
     return tooManyRequests("Please wait a few minutes.", 600);
   }
 

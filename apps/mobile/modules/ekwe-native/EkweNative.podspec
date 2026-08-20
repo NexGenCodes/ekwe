@@ -4,7 +4,7 @@ Pod::Spec.new do |s|
   s.summary        = 'Ekwe native audio capture, Opus/Ogg encoding and Opus-in-CAF remuxing'
   s.description    = 'Native C++ audio pipeline: capture + Ogg Opus recording, and an iOS Opus-in-CAF decoder so AVPlayer can play Ogg Opus recordings without a WAV round-trip.'
   s.author         = 'Ekwe'
-  s.homepage       = 'https://ekwe.app'
+  s.homepage       = 'https://ekwe.pages.dev'
   s.platforms      = {
     :ios => '16.4',
     :tvos => '16.4'

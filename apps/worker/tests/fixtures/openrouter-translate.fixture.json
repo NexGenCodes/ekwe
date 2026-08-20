@@ -11,7 +11,7 @@
       "headers": {
         "authorization": "Bearer <REDACTED>",
         "content-type": "application/json",
-        "http-referer": "https://ekwe.app",
+        "http-referer": "https://ekwe.pages.dev",
         "x-title": "Ekwe"
       },
       "body": {

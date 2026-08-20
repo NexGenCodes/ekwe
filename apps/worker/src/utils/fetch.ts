@@ -136,7 +136,7 @@ export async function abortableDelay(
 // party providers risks ToS violations and bulk key bans; a descriptive UA is
 // sufficient and defensible.
 const USER_AGENT =
-  "Ekwe/1.0 (voice-translation-app; https://ekwe.app; Android/iOS)";
+  "Ekwe/1.0 (voice-translation-app; https://ekwe.pages.dev; Android/iOS)";
 
 export function getUserAgent(): string {
   return USER_AGENT;

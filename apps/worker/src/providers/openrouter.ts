@@ -39,7 +39,7 @@ export async function translate(
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "https://ekwe.app",
+          "HTTP-Referer": "https://ekwe.pages.dev",
           "X-Title": "Ekwe",
           "User-Agent": getUserAgent(),
         },

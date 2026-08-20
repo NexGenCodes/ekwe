@@ -1,5 +1,5 @@
 import { CLIENT_ABORTED, Env, TranscribeResult, TranslateResult } from "../core/types";
-import { rotateKeys } from "../utils/keys";
+import { rotateKeysDetailed } from "../utils/keys";
 import {
   isHallucination,
   buildTranslatePrompt,
@@ -27,7 +27,7 @@ export async function transcribe(
 ): Promise<TranscribeResult | null> {
   logger.info("[groq] Requesting transcription", { lang, size: blob.size });
 
-  const res = await rotateKeys(
+  const { response: res } = await rotateKeysDetailed(
     env,
     "GROQ_KEY_",
     (key) => {
@@ -85,7 +85,7 @@ export async function transcribe(
   return null;
 }
 
-// ─── Translation (LLaMA 3.3 70B) ─────────────────────────────────
+// ─── Translation (OpenAI GPT-OSS 120B) ──────────────────────────
 
 export async function translate(
   text: string,
@@ -98,7 +98,7 @@ export async function translate(
   logger.info("[groq] Requesting translation", { targetLang, sourceLang });
 
   try {
-    const res = await rotateKeys(
+    const { response: res, lastStatus } = await rotateKeysDetailed(
       env,
       "GROQ_KEY_",
       (key) =>
@@ -112,7 +112,7 @@ export async function translate(
               "User-Agent": getUserAgent(),
             },
             body: JSON.stringify({
-              model: "llama-3.3-70b-versatile",
+              model: "openai/gpt-oss-120b",
               messages: [
                 {
                   role: "system",
@@ -136,6 +136,7 @@ export async function translate(
     if (!res?.ok) {
       logger.warn("[groq] Translate failed, provider returned error", {
         status: res?.status ?? "no response",
+        lastStatus,
       });
       return null;
     }
