@@ -1,10 +1,10 @@
 {
-  "latest_version": "1.1.1",
-  "latest_version_code": 10101,
+  "latest_version": "1.1.2",
+  "latest_version_code": 10102,
   "min_supported_version_code": 1,
-  "download_url": "https://github.com/NexGenCodes/ekwe/releases/latest/download/app-release.apk",
-  "checksum_sha256": "c85f40172900ece76b9d4e68c824daaef68f78bff256a46def0c521b87341f66",
-  "file_size": 105078508,
+  "download_url": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk",
+  "checksum_sha256": "35ce5c9041128e104d83d8700eb866d8c9898cb56e21e1f8321b33128f072a93",
+  "file_size": 105084556,
   "release_notes": "",
   "release_date": "2026-08-20",
   "force_update": false
