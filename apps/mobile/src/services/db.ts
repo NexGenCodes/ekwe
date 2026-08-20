@@ -206,6 +206,66 @@ export const Db = {
     getDb().executeSync("DELETE FROM history WHERE id = ?", [id]);
   },
 
+  /**
+   * Finds the existing translation row for the same user, language pair and
+   * source text. Used by SyncService.writeHistory to de-duplicate repeated
+   * translations of the same text into the same target language: instead of
+   * inserting a fresh row, the existing one is updated in place (reusing its
+   * id keeps the row's position in history and makes the cloud upsert
+   * idempotent). Only text translations (`entry_type = 'translation'`) are
+   * considered; re-recording the same audio phrase still creates a new
+   * transcription row each time.
+   */
+  findTranslationByDedupKey: (
+    userId: string,
+    sourceLang: string,
+    targetLang: string,
+    transcript: string,
+  ): HistoryRow | null => {
+    if (!userId) return null;
+    const res = getDb().executeSync(
+      `SELECT * FROM history
+       WHERE user_id = ?
+         AND entry_type = 'translation'
+         AND source_lang = ?
+         AND target_lang = ?
+         AND transcript = ?
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId, sourceLang, targetLang, transcript],
+    ) as QueryResult;
+    return (res.rows?.[0] as unknown as HistoryRow) ?? null;
+  },
+
+  /**
+   * Updates a translation row in place, keeping its original id and created_at
+   * (so the entry doesn't jump to the top of history when it's re-translated).
+   */
+  updateTranslationRow: (
+    id: string,
+    row: {
+      translation_text: string | null;
+      transliteration_text: string | null;
+      duration: number;
+      source_app: string;
+      provider: string;
+    },
+  ): void => {
+    getDb().executeSync(
+      `UPDATE history
+       SET translation_text = ?, transliteration_text = ?, duration = ?,
+           source_app = ?, provider = ?
+       WHERE id = ?`,
+      [
+        row.translation_text,
+        row.transliteration_text,
+        row.duration,
+        row.source_app,
+        row.provider,
+        id,
+      ],
+    );
+  },
+
   getRecentHistory: (userId: string, limit: number = 200): HistoryRow[] => {
     if (!userId) return [];
     const res = getDb().executeSync(

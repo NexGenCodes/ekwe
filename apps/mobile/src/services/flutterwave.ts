@@ -102,11 +102,40 @@ async function initializeCheckout(
     throw new Error("Failed to initialize payment. Please try again.");
   }
 
-  const parsed = checkoutResponseSchema.safeParse(await res.json());
+  const raw = await res.json();
+  const parsed = checkoutResponseSchema.safeParse(raw);
   if (!parsed.success) {
     logger.error("[Flutterwave] Checkout response shape mismatch", {
       issues: parsed.error.issues,
+      rawBody: raw,
     });
+    // Defensive fallback: if the worker response is structurally close
+    // but one field is missing/undefined, extract what we can and
+    // construct a valid session.  This prevents a single stray
+    // `undefined` from blocking the entire checkout flow while the
+    // diagnostic logging above captures the raw body for root-cause
+    // analysis.
+    const fallback = {
+      checkout_url:
+        (raw as Record<string, unknown>)?.checkout_url ||
+        (raw as Record<string, unknown>)?.checkoutUrl ||
+        "",
+      tx_ref:
+        (raw as Record<string, unknown>)?.tx_ref ||
+        (raw as Record<string, unknown>)?.txRef ||
+        "",
+      amount:
+        (raw as Record<string, unknown>)?.amount as CheckoutResponse["amount"],
+      currency:
+        (raw as Record<string, unknown>)?.currency as CheckoutResponse["currency"],
+    };
+    if (fallback.checkout_url && fallback.tx_ref) {
+      logger.warn("[Flutterwave] Using fallback extraction", {
+        checkout_url: fallback.checkout_url,
+        tx_ref: fallback.tx_ref,
+      });
+      return fallback as CheckoutResponse;
+    }
     throw new Error("Failed to initialize payment. Please try again.");
   }
   const data = parsed.data;

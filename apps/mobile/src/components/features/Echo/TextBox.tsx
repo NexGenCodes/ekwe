@@ -27,6 +27,7 @@ import { settings$ } from "@/store";
 import { withAlpha } from "@/utils/color";
 import { loadDeviceVoices, pickDeviceVoice, isMissingVoiceError } from "@/utils/deviceVoice";
 import logger from "@/utils/logger";
+import { AppToast } from "@/utils/toast";
 
 interface TextBoxProps {
   text: string | null;
@@ -203,8 +204,6 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
               return;
             }
 
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const { AppToast } = require("@/utils");
             AppToast.error(
               isMissingVoiceError(errorMsg) ? "Voice Not Installed" : "Speech Unavailable",
               {
@@ -221,8 +220,6 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
         releaseTtsFocus();
         const errorMsg = err instanceof Error ? err.message : String(err);
         logger.warn("[TextBox] TTS threw exception:", errorMsg);
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { AppToast } = require("@/utils");
         AppToast.error(
           isMissingVoiceError(errorMsg) ? "Voice Not Installed" : "Speech Unavailable",
           {

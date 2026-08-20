@@ -192,19 +192,16 @@ export const cleanupAuth = (): void => {
 /**
  * Send a one-time code to the given email.
  *
- * When Turnstile is configured (EXPO_PUBLIC_TURNSTILE_SITEKEY + a worker URL),
- * the request is routed through the Worker, which siteverifies the token and
- * throttles per IP + email before dispatching the code. Without those env
- * vars (local dev), it falls back to calling Supabase directly.
+ * Requests are routed through the Worker which throttles per IP + email
+ * before dispatching the code. Without worker URL (local dev), it falls
+ * back to calling Supabase directly.
  */
 export const sendOtp = async (
   email: string,
-  turnstileToken?: string,
 ): Promise<AuthResult> => {
   const workerUrl = getWorkerUrl();
-  const sitekey = process.env.EXPO_PUBLIC_TURNSTILE_SITEKEY;
 
-  if (workerUrl && sitekey) {
+  if (workerUrl) {
     try {
       if (isDefinitelyOffline()) {
         track(AnalyticsEvents.AUTH_OTP_FAILED, {
@@ -212,17 +209,6 @@ export const sendOtp = async (
           error: "network_lost",
         });
         return { ok: false, error: OFFLINE_MESSAGE };
-      }
-
-      if (!turnstileToken) {
-        track(AnalyticsEvents.AUTH_OTP_FAILED, {
-          method: "otp",
-          error: "missing_turnstile_token",
-        });
-        return {
-          ok: false,
-          error: "One more second — verifying. Try again.",
-        };
       }
 
       const controller = new AbortController();
@@ -235,7 +221,7 @@ export const sendOtp = async (
         res = await fetch(`${workerUrl}/auth/otp`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email.trim(), turnstileToken }),
+          body: JSON.stringify({ email: email.trim() }),
           signal: controller.signal,
         });
       } finally {

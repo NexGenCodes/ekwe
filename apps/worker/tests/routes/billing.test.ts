@@ -24,7 +24,6 @@ function mockPaymentLink(body?: Record<string, unknown>): void {
         status: "success",
         data: {
           link: "https://checkout.flutterwave.com/abc123",
-          reference: "tx-ref-abc",
         },
       });
     }),
@@ -57,7 +56,7 @@ describe("handleCheckout", () => {
     expect(res.status).toBe(200);
     const data = (await res.json()) as Record<string, string>;
     expect(data.checkout_url).toBe("https://checkout.flutterwave.com/abc123");
-    expect(data.tx_ref).toBe("tx-ref-abc");
+    expect(data.tx_ref).toBe("ekwe_test-user-123_monthly");
   });
 
   test("returns 400 for invalid plan ID", async () => {

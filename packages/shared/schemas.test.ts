@@ -49,11 +49,11 @@ describe("otpRequestSchema", () => {
     }
   });
 
-  test("rejects missing/oversized token on the token field", () => {
+  test("accepts missing token, rejects oversized token on the token field", () => {
     const missing = otpRequestSchema.safeParse({ email: "a@b.co" });
-    expect(missing.success).toBe(false);
-    if (!missing.success) {
-      expect(missing.error.issues[0]?.path[0]).toBe("turnstileToken");
+    expect(missing.success).toBe(true);
+    if (missing.success) {
+      expect(missing.data.turnstileToken).toBeUndefined();
     }
 
     const oversized = otpRequestSchema.safeParse({

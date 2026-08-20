@@ -11,7 +11,6 @@ import {
   ErrorBanner,
   Button,
   OtpInput,
-  TurnstileWidget,
 } from "@/components";
 import { Box, Text, Pressable } from "@/components/ui";
 import { duration } from "@/constants/motion";
@@ -41,11 +40,8 @@ export default function VerifyScreen(): React.JSX.Element {
   const { color } = useTheme();
   const { isLoading, error, cooldown, verify, resend } = useOtpVerify();
   const [linkError, setLinkError] = useState("");
-  const [turnstileToken, setTurnstileToken] = useState("");
   const [shakeSignal, setShakeSignal] = useState(0);
   const [resent, setResent] = useState(false);
-  const sitekey = process.env.EXPO_PUBLIC_TURNSTILE_SITEKEY;
-  const hasTurnstile = !!sitekey;
 
   const { control, handleSubmit, reset } = useForm<OtpForm>({
     resolver: zodResolver(otpSchema),
@@ -87,17 +83,13 @@ export default function VerifyScreen(): React.JSX.Element {
   const handleResend = async (): Promise<void> => {
     if (cooldown > 0 || isLoading) return;
     setResent(false);
-    const ok = await resend(email, turnstileToken);
+    const ok = await resend(email);
     if (ok) setResent(true);
   };
 
   return (
     <AuthShell showBackButton>
       <Animated.View entering={FadeInDown.duration(duration.slow).springify()}>
-        {hasTurnstile && sitekey ? (
-          <TurnstileWidget sitekey={sitekey} onToken={setTurnstileToken} />
-        ) : null}
-
         <AuthHeader
           title={isLinkMode ? "Link your account" : "Check your inbox"}
           subtitle={

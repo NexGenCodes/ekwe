@@ -40,6 +40,7 @@ import { synthesizeSpeech } from "@/services/tts";
 import { auth$, settings$ } from "@/store";
 import { cleanEchoCache } from "@/utils/echo";
 import { withAlpha } from "@/utils/color";
+import { AppToast } from "@/utils/toast";
 import { loadDeviceVoices, pickDeviceVoice, isMissingVoiceError } from "@/utils/deviceVoice";
 import logger from "@/utils/logger";
 
@@ -269,8 +270,6 @@ export const ExpressiveOutput = React.memo(
       }
 
       if (voiceUnavailable) {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { AppToast } = require("@/utils");
         AppToast.error("No Voice Installed", {
           description:
             "Your device has no text-to-speech voice for this language. Add one in your device's Settings (Accessibility > Spoken Content on iOS, Language & input on Android).",
@@ -326,8 +325,6 @@ export const ExpressiveOutput = React.memo(
               return;
             }
 
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            const { AppToast } = require("@/utils");
             AppToast.error(
               isMissingVoiceError(errorMsg) ? "Voice Not Installed" : "Speech Unavailable",
               {
@@ -350,8 +347,6 @@ export const ExpressiveOutput = React.memo(
         const errorMsg = err instanceof Error ? err.message : String(err);
         logger.warn("Speech.speak threw exception:", errorMsg);
 
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { AppToast } = require("@/utils");
         AppToast.error("Speech Unavailable", {
           description:
             "Your device does not support text-to-speech for this language.",

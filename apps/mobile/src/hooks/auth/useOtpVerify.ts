@@ -12,7 +12,7 @@ interface OtpVerifyHook {
     token: string,
     type?: "signup" | "email",
   ) => Promise<AuthResult>;
-  resend: (email: string, turnstileToken?: string) => Promise<boolean>;
+  resend: (email: string) => Promise<boolean>;
 }
 
 export function useOtpVerify(): OtpVerifyHook {
@@ -47,12 +47,12 @@ export function useOtpVerify(): OtpVerifyHook {
   );
 
   const resend = useCallback(
-    async (email: string, turnstileToken?: string): Promise<boolean> => {
+    async (email: string): Promise<boolean> => {
       if (cooldown > 0) return false;
       setIsLoading(true);
       setError("");
       try {
-        const result = await sendOtp(email, turnstileToken);
+        const result = await sendOtp(email);
         if (result.ok) {
           track(AnalyticsEvents.AUTH_OTP_RESENT, { method: "otp" });
           setCooldown(60);

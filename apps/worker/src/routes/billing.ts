@@ -27,7 +27,6 @@ interface FlutterwavePaymentLink {
   status: string;
   data: {
     link: string;
-    reference: string;
   };
 }
 
@@ -87,6 +86,10 @@ export async function handleCheckout(
 
   // Create Flutterwave payment link
   // Flutterwave API: POST https://api.flutterwave.com/v3/payments
+  // The payment-link response only contains `data.link`; the tx_ref we send is
+  // echoed back on redirect/webhook, not in this response — so return the value
+  // we generated (Flutterwave's contract does not include `data.reference`).
+  const txRef = `ekwe_${auth.userId}_${body.plan.replace("ekwe_pro_", "")}`;
   try {
     const fwRes = await fetch("https://api.flutterwave.com/v3/payments", {
       method: "POST",
@@ -95,7 +98,7 @@ export async function handleCheckout(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        tx_ref: `ekwe_${auth.userId}_${body.plan.replace("ekwe_pro_", "")}`,
+        tx_ref: txRef,
         amount,
         currency,
         redirect_url: "https://flutterwave.com/rn-redirect",
@@ -130,6 +133,15 @@ export async function handleCheckout(
 
     const fwData: FlutterwavePaymentLink = await fwRes.json();
 
+    // Diagnostic: log the raw Flutterwave response so we can trace shape
+    // mismatches that only surface on the mobile client.
+    logger.info("[billing] Flutterwave raw response", {
+      status: fwData.status,
+      hasData: !!fwData.data,
+      dataKeys: fwData.data ? Object.keys(fwData.data) : null,
+      link: fwData.data?.link,
+    });
+
     if (fwData.status !== "success" || !fwData.data?.link) {
       logger.error("[billing] Flutterwave returned non-success", {
         status: fwData.status,
@@ -140,12 +152,14 @@ export async function handleCheckout(
       );
     }
 
-    return Response.json({
+    const responseBody = {
       checkout_url: fwData.data.link,
-      tx_ref: fwData.data.reference,
+      tx_ref: txRef,
       amount,
       currency,
-    });
+    };
+    logger.info("[billing] Checkout response payload", responseBody);
+    return Response.json(responseBody);
   } catch (err) {
     logger.error("[billing] Flutterwave checkout error", {
       error: err instanceof Error ? err.message : String(err),

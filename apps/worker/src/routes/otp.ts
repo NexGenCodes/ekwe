@@ -19,6 +19,9 @@ import { otpRequestSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
 const TURNSTILE_ACTION = "send_otp";
 
 // ─── Turnstile siteverify (canonical) ─────────────────────────────
+// Returns:
+//   true  = token valid, or Turnstile unavailable (fail open)
+//   false = token explicitly invalid (bad token, wrong action/hostname)
 
 async function verifyTurnstile(
   token: string,
@@ -26,7 +29,10 @@ async function verifyTurnstile(
   clientIp: string,
 ): Promise<boolean> {
   const secret = env.TURNSTILE_SECRET;
-  if (!secret) return false;
+  // No secret configured (local dev) → skip verification, allow through
+  if (!secret) {
+    return true;
+  }
 
   const expectedHostnames = (env.TURNSTILE_HOSTNAMES ?? "")
     .split(",")
@@ -47,15 +53,37 @@ async function verifyTurnstile(
         }),
       },
     );
-    if (!res.ok) return false;
+
+    // Network error or non-2xx → Turnstile unavailable, fail OPEN
+    if (!res.ok) {
+      logger.warn("[otp] Turnstile siteverify non-OK, failing open", {
+        status: res.status,
+      });
+      return true;
+    }
 
     const result: {
       success?: boolean;
       action?: string;
       hostname?: string;
+      "error-codes"?: string[];
     } = await res.json();
 
-    if (!result.success || result.action !== TURNSTILE_ACTION) return false;
+    // Token explicitly invalid (expired, already used, malformed)
+    if (result.success === false) {
+      const codes = result["error-codes"] ?? [];
+      if (codes.includes("invalid-input-response")) {
+        return false; // bad/expired/reused token
+      }
+      // Service-side issue (timeout, internal error) → fail OPEN
+      logger.warn("[otp] Turnstile validation failed, failing open", {
+        codes,
+      });
+      return true;
+    }
+
+    // Valid token but wrong action/hostname
+    if (result.action !== TURNSTILE_ACTION) return false;
     if (
       expectedHostnames.length > 0 &&
       !expectedHostnames.includes(result.hostname ?? "")
@@ -63,8 +91,12 @@ async function verifyTurnstile(
       return false;
     }
     return true;
-  } catch {
-    return false;
+  } catch (e) {
+    // Network timeout, DNS failure, etc. → Turnstile unavailable, fail OPEN
+    logger.warn("[otp] Turnstile siteverify error, failing open", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return true;
   }
 }
 
@@ -115,8 +147,6 @@ export async function handleSendOtp(
 
   const body = otpRequestSchema.safeParse(parsed.data);
   if (!body.success) {
-    // Order matters: report a bad email before a bad token, matching the
-    // pre-zod handler so error surfaces don't shift for existing clients.
     const firstPath = body.error.issues[0]?.path[0];
     if (firstPath === "email") {
       return Response.json(
@@ -125,28 +155,24 @@ export async function handleSendOtp(
       );
     }
     return Response.json(
-      { error: WORKER_ERROR_CODES.TURNSTILE_REQUIRED },
-      { status: 403 },
+      { error: WORKER_ERROR_CODES.INVALID_BODY },
+      { status: 400 },
     );
   }
 
   const { email, turnstileToken: token } = body.data;
-  if (!env.TURNSTILE_SECRET) {
-    logger.error("[otp] TURNSTILE_SECRET is not configured");
-    return Response.json(
-      { error: WORKER_ERROR_CODES.SERVICE_UNAVAILABLE },
-      { status: 503 },
-    );
-  }
-
   const clientIp = request.headers.get("CF-Connecting-IP") || "unknown";
 
-  if (!(await verifyTurnstile(token, env, clientIp))) {
-    return Response.json(
-      { error: WORKER_ERROR_CODES.TURNSTILE_INVALID },
-      { status: 403 },
-    );
+  // Only verify Turnstile if token was provided and secret is configured
+  if (token && env.TURNSTILE_SECRET) {
+    if (!(await verifyTurnstile(token, env, clientIp))) {
+      return Response.json(
+        { error: WORKER_ERROR_CODES.TURNSTILE_INVALID },
+        { status: 403 },
+      );
+    }
   }
+  // If no token or no secret, skip Turnstile and rely on rate limiting
 
   if (!(await throttled(env, `ip:${clientIp}`, 5, 60))) {
     return tooManyRequests("Please wait a moment.", 60);

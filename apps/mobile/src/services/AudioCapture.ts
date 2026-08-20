@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { Linking } from "react-native";
 
 import { EkweError } from "@/constants/errors";
+import { claimRecordingFocus, releaseRecordingFocus } from "@/hooks/audio/audioFocus";
 import AudioService from "@/services/AudioService";
 import { Result, ok, err } from "@/types/Result";
 import { isAndroid, isIOS, triggerHaptic } from "@/utils";
@@ -104,11 +105,14 @@ class AudioCaptureClass {
       this.currentMode = mode;
       this.onAutoStopCallback = onAutoStop ?? null;
 
+      claimRecordingFocus(() => {}); // no-op pauseOwn — recording can't be paused
+
       if (isAndroid) {
         const rawCacheDir = Paths?.cache?.uri;
         if (!rawCacheDir) {
           logger.error("[AudioCapture] Paths.cache.uri is undefined/falsy");
           this.isStartingParams = false;
+          releaseRecordingFocus();
           return err(EkweError.AUDIO_RECORD_FAIL);
         }
         const cacheDir = rawCacheDir;
@@ -118,6 +122,7 @@ class AudioCaptureClass {
             "[AudioCapture] EkweNative.startAudioRecording is not a function",
           );
           this.isStartingParams = false;
+          releaseRecordingFocus();
           return err(EkweError.AUDIO_RECORD_FAIL);
         }
         let startResult;
@@ -130,6 +135,7 @@ class AudioCaptureClass {
         } catch (nativeErr) {
           logger.error("[AudioCapture] startAudioRecording threw:", nativeErr);
           this.isStartingParams = false;
+          releaseRecordingFocus();
           return err(EkweError.AUDIO_RECORD_FAIL);
         }
         if (!startResult.success) {
@@ -138,6 +144,7 @@ class AudioCaptureClass {
             startResult.error,
           );
           this.isStartingParams = false;
+          releaseRecordingFocus();
           return err(EkweError.AUDIO_RECORD_FAIL);
         }
         this.currentRecordingPath = outputPath;
@@ -161,6 +168,7 @@ class AudioCaptureClass {
             startResult.error,
           );
           this.isStartingParams = false;
+          releaseRecordingFocus();
           return err(EkweError.AUDIO_RECORD_FAIL);
         }
         this.currentRecordingPath = outputPath;
@@ -175,6 +183,7 @@ class AudioCaptureClass {
           "[AudioCapture] EkweNative.addListener is not a function — native module broken?",
         );
         this.isStartingParams = false;
+        releaseRecordingFocus();
         return err(EkweError.AUDIO_RECORD_FAIL);
       }
 
@@ -240,6 +249,7 @@ class AudioCaptureClass {
       }
       this.currentSessionId = null;
       this.isStartingParams = false;
+      releaseRecordingFocus();
       triggerHaptic(Haptics.NotificationFeedbackType.Error);
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
@@ -270,6 +280,7 @@ class AudioCaptureClass {
         this.currentSessionId = null;
         this.currentMeteringData = [];
         this.notifyStatusListeners("stopped");
+        releaseRecordingFocus();
         return err(EkweError.AUDIO_RECORD_FAIL);
       }
       const uri = this.currentRecordingPath ?? "";
@@ -295,11 +306,13 @@ class AudioCaptureClass {
         await releaseAudioEffects();
       }
 
+      releaseRecordingFocus();
       triggerHaptic(Haptics.NotificationFeedbackType.Success);
       return ok(recordingResult);
     } catch {
       this.currentSessionId = null;
       this.currentMeteringData = [];
+      releaseRecordingFocus();
       this.notifyStatusListeners("stopped");
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
@@ -338,6 +351,8 @@ class AudioCaptureClass {
     if (isAndroid) {
       await releaseAudioEffects();
     }
+
+    releaseRecordingFocus();
 
     // Delete temp file
     if (path) {

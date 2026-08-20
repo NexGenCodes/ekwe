@@ -27,8 +27,8 @@ export const otpRequestSchema = z.object({
     .regex(EMAIL_RE, { message: "INVALID_EMAIL" }),
   turnstileToken: z
     .string()
-    .min(1, { message: "TURNSTILE_REQUIRED" })
-    .max(2048, { message: "TURNSTILE_REQUIRED" }),
+    .max(2048, { message: "TURNSTILE_REQUIRED" })
+    .optional(),
 });
 export type OtpRequest = z.infer<typeof otpRequestSchema>;
 

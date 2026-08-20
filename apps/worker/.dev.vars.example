@@ -7,13 +7,11 @@ SUPABASE_URL=your-supabase-project-url
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 # ─── Cloudflare Turnstile ─────────────────────────────────────────────
-# Required for /auth/otp (OTP send). Widget "ekwe-app" (managed mode) in the
-# Cloudflare dashboard. Paste its SECRET key here. The mobile app uses the
-# matching EXPO_PUBLIC_TURNSTILE_SITEKEY from its own .env.
+# Optional: for web clients on /auth/otp (OTP send). Widget "ekwe-app" (managed
+# mode) in Cloudflare dashboard. Paste its SECRET key here.
 TURNSTILE_SECRET=
 # Comma-separated allowed hostnames the widget can render on (siteverify).
-# The widget renders inside the mobile app's WebView with baseUrl https://ekwe.app
-# Override per-environment here or in wrangler.jsonc vars.
+# For web: your domain(s). For mobile WebView: the baseUrl domain.
 TURNSTILE_HOSTNAMES=ekwe.app
 
 # ─── STT / TTS Providers (multiply-keys = failover rotation) ──────────

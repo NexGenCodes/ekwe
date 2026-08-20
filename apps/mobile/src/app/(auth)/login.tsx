@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React from "react";
 import { Controller, useForm } from "react-hook-form";
 
 import {
@@ -12,7 +12,6 @@ import {
   ErrorBanner,
   Button,
   Disclaimer,
-  TurnstileWidget,
 } from "@/components";
 import { Box } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
@@ -27,19 +26,15 @@ export default function WelcomeScreen(): React.JSX.Element {
   const { isLoading, error, run, handleApple, handleGoogle } = useAuthFlow();
   const { isOffline } = useNetwork();
 
-  const [turnstileToken, setTurnstileToken] = useState("");
-  const sitekey = process.env.EXPO_PUBLIC_TURNSTILE_SITEKEY;
-  const hasTurnstile = !!sitekey;
-
   const { control, handleSubmit } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "" },
   });
 
-  const disabled = isLoading || isOffline || (hasTurnstile && !turnstileToken);
+  const disabled = isLoading || isOffline;
 
   const onSubmit = async (data: LoginForm): Promise<void> => {
-    const result = await run(() => sendOtp(data.email, turnstileToken));
+    const result = await run(() => sendOtp(data.email));
     if (result.ok && result.needsOtp) {
       pushOnce(router, {
         pathname: "/(auth)/verify",
@@ -50,10 +45,6 @@ export default function WelcomeScreen(): React.JSX.Element {
 
   return (
     <AuthShell>
-      {hasTurnstile && sitekey ? (
-        <TurnstileWidget sitekey={sitekey} onToken={setTurnstileToken} />
-      ) : null}
-
       <AuthHeader
         title="Welcome to Ekwe"
         subtitle="Sign in or create an account to start translating."

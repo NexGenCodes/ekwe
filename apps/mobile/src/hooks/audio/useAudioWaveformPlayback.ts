@@ -71,8 +71,7 @@ export const useAudioWaveformPlayback = (
   // brand-new prop object on EVERY parent render (~2Hz status ticks), silently
   // undoing their React.memo boundary.
   return useMemo(
-    () => ({ ...playerRef.current, peaks }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => ({ ...player, peaks }),
     [player, peaks],
   );
 };

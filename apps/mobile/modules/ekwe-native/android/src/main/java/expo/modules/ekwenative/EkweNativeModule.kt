@@ -1,13 +1,19 @@
 package expo.modules.ekwenative
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
+import android.media.AudioFocusRequest
 import android.media.MediaRecorder
+import android.os.Build
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
 import android.provider.OpenableColumns
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.webkit.MimeTypeMap
 import expo.modules.kotlin.modules.Module
@@ -34,6 +40,25 @@ class EkweNativeModule : Module() {
   private var recordingStartedAt = 0L
   @Volatile
   private var currentAmplitude: Float = 0f
+
+  // Audio focus state — request GAIN_TRANSIENT before recording so other apps
+  // (music, podcasts) duck, and abandon when recording stops. Pre-API 26
+  // (minSdk 24) uses the deprecated listener-based API; API 26+ uses
+  // AudioFocusRequest which also carries AudioAttributes for the system to
+  // understand *why* we're requesting focus (voice communication).
+  private var audioFocusRequest: AudioFocusRequest? = null
+  @Volatile
+  private var isAudioFocusHeld = false
+  private val legacyFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+    if (focusChange != AudioManager.AUDIOFOCUS_GAIN && isAudioRecording) {
+      Log.w("EkweAudio", "Audio focus lost ($focusChange), stopping recording")
+      // performStop is idempotent and safe from any thread
+      performStop()
+      // Must dispatch to main thread — emitVadSilenceFromNative runs on the
+      // AudioRecord thread; module.sendEvent must be called from main/JS.
+      Handler(Looper.getMainLooper()).post { emitVadSilenceFromNative() }
+    }
+  }
 
   companion object {
     var instance: EkweNativeModule? = null
@@ -360,9 +385,26 @@ class EkweNativeModule : Module() {
           return@AsyncFunction mapOf("success" to false, "error" to "Failed to init capture")
         }
 
+        Log.d("EkweAudio", "startAudioRecording: requesting audio focus...")
+        requestAudioFocus()
+
         Log.d("EkweAudio", "startAudioRecording: creating AudioRecord...")
+        // VOICE_COMMUNICATION routes the mic through the call-mode DSP path:
+        // built-in acoustic echo cancellation, noise suppression and automatic
+        // gain control with ~20ms latency — the best production-quality speech
+        // capture for dictation/translation. The manual audiofx effects attached
+        // below are best-effort on top; where the framework already applies them
+        // isAvailable() reports false and the attach is skipped, so there is no
+        // double-processing. Fall back to the raw MIC source on old devices that
+        // don't honor the call-mode source.
+        val source =
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION
+          } else {
+            MediaRecorder.AudioSource.MIC
+          }
         audioRecord = AudioRecord(
-          MediaRecorder.AudioSource.MIC,
+          source,
           sampleRate,
           AudioFormat.CHANNEL_IN_MONO,
           AudioFormat.ENCODING_PCM_16BIT,
@@ -375,6 +417,7 @@ class EkweNativeModule : Module() {
           nativeStopCapture()
           audioRecord?.release()
           audioRecord = null
+          abandonAudioFocus()
           return@AsyncFunction mapOf("success" to false, "error" to "AudioRecord init failed")
         }
 
@@ -431,6 +474,7 @@ class EkweNativeModule : Module() {
         isAudioRecording = false
         audioRecord?.release()
         audioRecord = null
+        abandonAudioFocus()
         return@AsyncFunction mapOf("success" to false, "error" to (e.message ?: "Unknown error"))
       }
     }
@@ -495,6 +539,71 @@ class EkweNativeModule : Module() {
     AsyncFunction("releaseEffects") { ->
       releaseEffectsInternal()
     }
+  }
+
+  /**
+   * Requests transient audio focus so other apps (music, podcasts) duck while
+   * we record. API 26+ uses the modern AudioFocusRequest with AudioAttributes
+   * tagged as VOICE_COMMUNICATION; pre-26 uses the deprecated listener-based
+   * API. Both paths share one focus-abandon path for cleanup.
+   */
+  private fun requestAudioFocus() {
+    if (isAudioFocusHeld) return
+    val ctx = appContext.reactContext ?: return
+    val audioManager = ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      val attrs = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+      val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+        .setAudioAttributes(attrs)
+        .setOnAudioFocusChangeListener(legacyFocusChangeListener)
+        .setAcceptsDelayedFocusGain(false)
+        .build()
+      val result = audioManager.requestAudioFocus(request)
+      if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+        audioFocusRequest = request
+        isAudioFocusHeld = true
+        Log.d("EkweAudio", "Audio focus granted (API 26+)")
+      } else {
+        Log.w("EkweAudio", "Audio focus denied (API 26+): $result")
+      }
+    } else {
+      @Suppress("DEPRECATION")
+      val result = audioManager.requestAudioFocus(
+        legacyFocusChangeListener,
+        AudioManager.STREAM_VOICE_CALL,
+        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+      )
+      if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+        isAudioFocusHeld = true
+        Log.d("EkweAudio", "Audio focus granted (legacy)")
+      } else {
+        Log.w("EkweAudio", "Audio focus denied (legacy): $result")
+      }
+    }
+  }
+
+  /**
+   * Abandons audio focus if held. Must be safe to call from any thread and
+   * idempotent — performStop shares this teardown path.
+   */
+  private fun abandonAudioFocus() {
+    if (!isAudioFocusHeld) return
+    val ctx = appContext.reactContext ?: return
+    val audioManager = ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+      audioFocusRequest = null
+    } else {
+      @Suppress("DEPRECATION")
+      audioManager.abandonAudioFocus(legacyFocusChangeListener)
+    }
+    isAudioFocusHeld = false
+    Log.d("EkweAudio", "Audio focus abandoned")
   }
 
   private fun attachEffectsInternal(sessionId: Int): Map<String, Boolean> {
@@ -571,6 +680,8 @@ class EkweNativeModule : Module() {
     Log.d("EkweAudio", "performStop: calling nativeStopCapture...")
     val stopOk = nativeStopCapture()
     Log.d("EkweAudio", "performStop: nativeStopCapture returned $stopOk")
+
+    abandonAudioFocus()
   }
 
   private fun releaseEffectsInternal() {

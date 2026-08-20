@@ -251,8 +251,7 @@ export function AudioWaveform({
         }),
     // `measuredWidth` is a useSharedValue: the object is stable across renders
     // and `.value` is read inside the gesture callback, not during render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [interactive, onScrubStateChange, onSeek],
+    [interactive, onScrubStateChange, measuredWidth, onSeek],
   );
 
   const composed = useMemo(

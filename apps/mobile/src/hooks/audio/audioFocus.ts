@@ -30,6 +30,7 @@ export const createAudioFocus = (): {
 
   return {
     claim: (pauseOwnNow: () => void): void => {
+      if (recordingLocked) return; // recording in progress — block new claims
       if (owner && owner.token !== token) {
         // Silently stop whatever else is playing before we start.
         try {
@@ -50,6 +51,8 @@ export const createAudioFocus = (): {
 export const __resetAudioFocus = (): void => {
   owner = null;
   ttsFocusHandle = null;
+  recordingLocked = false;
+  recordingFocusToken = null;
 };
 
 /**
@@ -73,4 +76,40 @@ export const claimTtsFocus = (stopSpeech: () => void): void => {
 
 export const releaseTtsFocus = (): void => {
   ttsFocusHandle?.release();
+};
+
+/**
+ * Recording is the most privileged focus owner. While a voice-note is being
+ * recorded we *block* new player/TTS claims entirely (the bus early-returns)
+ * so the user never hears their own playback leaking into the mic, or a TTS
+ * utterance stealing the audio session mid-recording.
+ *
+ * `claimRecordingFocus` pauses whatever is currently playing (player or TTS),
+ * then locks the bus. `releaseRecordingFocus` clears the lock and lets the
+ * next claim through. Both are safe to call from any teardown path because
+ * the guard checks are idempotent.
+ */
+let recordingFocusToken: symbol | null = null;
+let recordingLocked = false;
+
+export const claimRecordingFocus = (pauseOwnNow: () => void): void => {
+  if (recordingLocked) return; // already recording — idempotent
+  // If another owner exists (player or TTS), pause it first.
+  if (owner && owner.token !== recordingFocusToken) {
+    try { owner.pauseNow(); } catch { /* stale */ }
+  }
+  const token = Symbol("recording-focus");
+  recordingFocusToken = token;
+  owner = {
+    token,
+    pauseNow: pauseOwnNow,
+  };
+  recordingLocked = true;
+};
+
+export const releaseRecordingFocus = (): void => {
+  if (!recordingLocked) return;
+  recordingLocked = false;
+  if (owner && owner.token === recordingFocusToken) owner = null;
+  recordingFocusToken = null;
 };

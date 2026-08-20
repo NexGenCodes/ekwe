@@ -36,7 +36,6 @@ export * from "./ToastContainer";
 export * from "./Disclaimer";
 export * from "./OtpInput";
 export * from "./AuthBackground";
-export * from "./TurnstileWidget";
 
 // Screen-specific
 export * from "./home";

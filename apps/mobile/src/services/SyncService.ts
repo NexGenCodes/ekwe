@@ -77,6 +77,70 @@ class SyncServiceClass {
     },
     userId: string,
   ): Promise<string> {
+    // Dedup text translations: translating the same text into the same target
+    // language again updates the existing row instead of inserting a duplicate.
+    // Reusing the row's id + created_at keeps its position in history and makes
+    // the cloud upsert idempotent. Transcriptions are never deduped — recording
+    // the same audio phrase again is a legitimate new entry.
+    if (payload.type === "translation") {
+      const existing = Db.findTranslationByDedupKey(
+        userId,
+        payload.sourceLang,
+        payload.targetLang,
+        payload.transcript,
+      );
+      if (existing) {
+        Db.transaction(() => {
+          Db.updateTranslationRow(existing.id, {
+            translation_text: payload.translation || null,
+            transliteration_text: payload.transliteration || null,
+            duration: payload.duration,
+            source_app: payload.sourceApp,
+            provider: payload.provider,
+          });
+          Db.insertOutbox({
+            id: existing.id,
+            payload: buildUpsertOutboxPayload(
+              payload.type,
+              {
+                sourceLang: payload.sourceLang,
+                targetLang: payload.targetLang,
+                transcript: payload.transcript,
+                translation: payload.translation,
+                transliteration: payload.transliteration,
+                duration: payload.duration,
+                sourceApp: payload.sourceApp,
+                provider: payload.provider,
+              },
+              existing.created_at,
+            ),
+            user_id: userId,
+            created_at: existing.created_at,
+          });
+        });
+
+        history$[existing.id].set({
+          id: existing.id,
+          sourceLang: payload.sourceLang,
+          targetLang: payload.targetLang,
+          transcript: payload.transcript,
+          translation: payload.translation || null,
+          transliteration: payload.transliteration || null,
+          duration: payload.duration,
+          sourceApp: payload.sourceApp,
+          provider: payload.provider,
+          timestamp: Date.parse(existing.created_at),
+          type: "translation",
+        });
+
+        this.pushToCloud(existing.id, userId).catch((err) =>
+          logger.error("[Sync] pushToCloud (dedup update) failed", existing.id, err),
+        );
+
+        return existing.id;
+      }
+    }
+
     const id = Crypto.randomUUID();
     const created_at = new Date().toISOString();
 
