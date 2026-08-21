@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 
 import { preventAutoHideAsync } from "expo-splash-screen";
+import * as Notifications from "expo-notifications";
 
 if (typeof globalThis !== "undefined") {
   globalThis.appStartTime = Date.now();
@@ -17,6 +18,13 @@ if (typeof globalThis !== "undefined") {
 // app's first frame paints. Hooking here guarantees the splash stays up while
 // the module graph evaluates; the layout decides exactly when to hideAsync.
 preventAutoHideAsync();
+
+// Handle messages received while the app is killed (background/terminated).
+// Without this handler, FCM data-only messages are silently dropped on Android
+// when the app process is not running.
+Notifications.setBackgroundMessageHandler(async (remoteMessage) => {
+  console.log("[BG Notification]", JSON.stringify(remoteMessage));
+});
 
 // Global unhandled promise rejection handler — logs full stack to Metro
 if (typeof ErrorUtils !== "undefined") {

@@ -115,7 +115,9 @@ async function throttled(
 ): Promise<boolean> {
   if (!env.THROTTLE_DO) return true;
   try {
-    const stub = env.THROTTLE_DO.getByName("otp") as unknown as DurableObjectStub;
+    const stub = env.THROTTLE_DO.getByName(
+      "otp",
+    ) as unknown as DurableObjectStub;
     const res: Response = await stub.fetch(
       `https://otp-throttle/allow?key=${encodeURIComponent(key)}&limit=${limit}&windowSec=${windowSec}`,
     );
@@ -182,7 +184,10 @@ export async function handleSendOtp(
   }
 
   try {
-    const res = await supabasePost(env, "/auth/v1/otp", { email, create_user: true });
+    const res = await supabasePost(env, "/auth/v1/otp", {
+      email,
+      create_user: true,
+    });
 
     if (!res || !res.ok) {
       const upstreamBody = res

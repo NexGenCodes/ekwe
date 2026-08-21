@@ -24,55 +24,44 @@ export interface TransliterationProps {
  * romanized text make the pronunciation guide read as a deliberate element
  * instead of an orphan italic line.
  */
-export const Transliteration = React.memo(
-  function Transliteration({
-    text,
-    tone = "default",
-  }: TransliterationProps): React.ReactElement | null {
-    const { color } = useTheme();
-    const isPro = useSelector(() => auth$.isPro.get());
+export const Transliteration = React.memo(function Transliteration({
+  text,
+  tone = "default",
+}: TransliterationProps): React.ReactElement | null {
+  const { color } = useTheme();
+  const isPro = useSelector(() => auth$.isPro.get());
 
-    // Transliteration is a premium-only extra — the worker never returns it to
-    // free users, and this guards against stale/historical entries that still
-    // carry one (e.g. after a Pro → Free downgrade).
-    if (!isPro) return null;
-    if (!text.trim()) return null;
+  // Transliteration is a premium-only extra — the worker never returns it to
+  // free users, and this guards against stale/historical entries that still
+  // carry one (e.g. after a Pro → Free downgrade).
+  if (!isPro) return null;
+  if (!text.trim()) return null;
 
-    const isBrand = tone === "brand";
+  const isBrand = tone === "brand";
 
-    const dividerColor = isBrand
-      ? withAlpha(color.onBrand, 0.16)
-      : color.border;
-    const labelColor = isBrand
-      ? withAlpha(color.onBrand, 0.72)
-      : color.muted;
-    const textColor = isBrand ? color.onBrand : color.foreground;
+  const dividerColor = isBrand ? withAlpha(color.onBrand, 0.16) : color.border;
+  const labelColor = isBrand ? withAlpha(color.onBrand, 0.72) : color.muted;
+  const textColor = isBrand ? color.onBrand : color.foreground;
 
-    return (
-      <Box style={styles.root}>
-        <Box
-          style={[styles.divider, { backgroundColor: dividerColor }]}
-        />
-        <Box style={styles.labelRow}>
-          <CaseSensitive size={14} color={labelColor} strokeWidth={2.25} />
-          <Text
-            variant="caption"
-            style={[styles.label, { color: labelColor }]}
-          >
-            Romanized
-          </Text>
-        </Box>
-        <Text
-          variant="body"
-          selectable
-          style={[styles.text, { color: textColor }]}
-        >
-          {text}
+  return (
+    <Box style={styles.root}>
+      <Box style={[styles.divider, { backgroundColor: dividerColor }]} />
+      <Box style={styles.labelRow}>
+        <CaseSensitive size={14} color={labelColor} strokeWidth={2.25} />
+        <Text variant="caption" style={[styles.label, { color: labelColor }]}>
+          Romanized
         </Text>
       </Box>
-    );
-  },
-);
+      <Text
+        variant="body"
+        selectable
+        style={[styles.text, { color: textColor }]}
+      >
+        {text}
+      </Text>
+    </Box>
+  );
+});
 
 const styles = StyleSheet.create({
   root: {

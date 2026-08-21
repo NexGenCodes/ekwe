@@ -348,9 +348,7 @@ describe("handleTts", () => {
       const env = mockEnv();
       // PCM > 8 MB exceeds MAX_TTS_BYTES; pre-compute base64 outside the
       // handler so the MSW thread isn't blocked by String.fromCharCode spread.
-      const hugePcmBase64 = bytesToBase64(
-        new Uint8Array(9 * 1024 * 1024),
-      );
+      const hugePcmBase64 = bytesToBase64(new Uint8Array(9 * 1024 * 1024));
       server.use(
         http.post(PROVIDER_URLS.geminiTtsGenerate, () => {
           return jsonResponse({

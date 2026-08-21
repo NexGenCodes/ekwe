@@ -4,14 +4,7 @@ import { EkweError } from "@/constants/errors";
 import { Result, ok, err } from "@/types/Result";
 import { MAX_AUDIO_BYTES as MAX_FILE_SIZE } from "@ekwe/shared/plans";
 
-const VOICE_NOTE_EXTENSIONS = [
-  ".ogg",
-  ".opus",
-  ".m4a",
-  ".aac",
-  ".amr",
-  ".3gp",
-];
+const VOICE_NOTE_EXTENSIONS = [".ogg", ".opus", ".m4a", ".aac", ".amr", ".3gp"];
 
 const VOICE_NOTE_MIME_TYPES = [
   "audio/ogg",
@@ -32,10 +25,7 @@ const VOICE_NOTE_MIME_TYPES = [
  * Validates if the given URI has a valid voice-note extension or MIME type.
  * WhatsApp often provides "audio/ogg; codecs=opus".
  */
-const validateVoiceNoteFormat = (
-  uri: string,
-  mimeType?: string,
-): boolean => {
+const validateVoiceNoteFormat = (uri: string, mimeType?: string): boolean => {
   const lowerUri = uri.toLowerCase();
   const hasExt = VOICE_NOTE_EXTENSIONS.some((ext) => lowerUri.endsWith(ext));
   if (hasExt) return true;

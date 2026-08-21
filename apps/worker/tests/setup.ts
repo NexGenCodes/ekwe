@@ -8,7 +8,9 @@ const cacheStore = new Map<string, Response>();
 
 const mockCaches = {
   default: {
-    match: vi.fn(async (request: Request) => cacheStore.get(request.url) ?? null),
+    match: vi.fn(
+      async (request: Request) => cacheStore.get(request.url) ?? null,
+    ),
     put: vi.fn(async (request: Request, response: Response) => {
       cacheStore.set(request.url, response.clone());
     }),
@@ -76,7 +78,10 @@ class InMemoryD1 {
     return {
       bind: (...args: unknown[]) => {
         // SELECT by cache_key
-        if (/SELECT result, expires_at/i.test(sql) && /WHERE cache_key = \?/.test(sql)) {
+        if (
+          /SELECT result, expires_at/i.test(sql) &&
+          /WHERE cache_key = \?/.test(sql)
+        ) {
           const key = args[0] as string;
           return {
             first: async <T>() => {
@@ -94,7 +99,10 @@ class InMemoryD1 {
         }
 
         // SELECT cache_key WHERE expires_at < ? LIMIT ?
-        if (/SELECT cache_key/i.test(sql) && /WHERE expires_at < \?/.test(sql)) {
+        if (
+          /SELECT cache_key/i.test(sql) &&
+          /WHERE expires_at < \?/.test(sql)
+        ) {
           const now = args[0] as number;
           return {
             first: async () => null,
@@ -147,9 +155,7 @@ class InMemoryD1 {
     };
   }
 
-  batch(
-    stmts: Array<{ run: () => Promise<unknown> }>,
-  ): Promise<unknown[]> {
+  batch(stmts: Array<{ run: () => Promise<unknown> }>): Promise<unknown[]> {
     return Promise.all(stmts.map((s) => s.run()));
   }
 }
@@ -159,18 +165,23 @@ class InMemoryD1 {
 export function mockEnv(overrides: Partial<Env> = {}): Env {
   const store = new Map<string, string | Uint8Array>();
   const kv = {
-    get: vi.fn(
-      async (key: string, opts?: { type?: string }) => {
-        const raw = store.get(key);
-        if (raw == null) return null;
-        if (opts?.type === "arrayBuffer" && typeof raw !== "string") {
-          return raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
-        }
-        return raw;
-      },
-    ) as unknown as Env["EKWE_KV"]["get"],
+    get: vi.fn(async (key: string, opts?: { type?: string }) => {
+      const raw = store.get(key);
+      if (raw == null) return null;
+      if (opts?.type === "arrayBuffer" && typeof raw !== "string") {
+        return raw.buffer.slice(
+          raw.byteOffset,
+          raw.byteOffset + raw.byteLength,
+        );
+      }
+      return raw;
+    }) as unknown as Env["EKWE_KV"]["get"],
     put: vi.fn(
-      async (key: string, value: string | ArrayBuffer | Uint8Array, opts?: { expirationTtl?: number }) => {
+      async (
+        key: string,
+        value: string | ArrayBuffer | Uint8Array,
+        opts?: { expirationTtl?: number },
+      ) => {
         if (value instanceof ArrayBuffer) {
           store.set(key, new Uint8Array(value));
         } else if (value instanceof Uint8Array) {
@@ -212,10 +223,7 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
   // In-memory stand-in for the ThrottleBucket DO: getByName("otp") returns a
   // stub whose fetch mirrors the production counter semantics (fixed window
   // rolled over by a stored resetAt timestamp, no storage TTL).
-  const throttleStore = new Map<
-    string,
-    { count: number; resetAt: number }
-  >();
+  const throttleStore = new Map<string, { count: number; resetAt: number }>();
   const throttleDo = {
     getByName: vi.fn((_name: string) => ({
       fetch: vi.fn(async (input: string | URL) => {

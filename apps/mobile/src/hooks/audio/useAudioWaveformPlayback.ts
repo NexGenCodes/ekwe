@@ -70,8 +70,5 @@ export const useAudioWaveformPlayback = (
   // `{ ...player, peaks }` spread below would hand memoized step components a
   // brand-new prop object on EVERY parent render (~2Hz status ticks), silently
   // undoing their React.memo boundary.
-  return useMemo(
-    () => ({ ...player, peaks }),
-    [player, peaks],
-  );
+  return useMemo(() => ({ ...player, peaks }), [player, peaks]);
 };

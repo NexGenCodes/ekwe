@@ -125,11 +125,13 @@ const MALE_NAMES = new Set([
 ]);
 
 function firstToken(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z\u00e0-\u017f\s-]/g, "")
-    .split(/[\s-]+/)
-    .find((token) => token.length > 0) ?? "";
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z\u00e0-\u017f\s-]/g, "")
+      .split(/[\s-]+/)
+      .find((token) => token.length > 0) ?? ""
+  );
 }
 
 /**

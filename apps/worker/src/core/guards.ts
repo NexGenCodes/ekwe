@@ -47,12 +47,9 @@ export function tooManyRequests(
   message = "Rate limit exceeded. Please slow down.",
   retryAfterSeconds = 60,
 ): Response {
-  return error(
-    WORKER_ERROR_CODES.TOO_MANY_REQUESTS,
-    429,
-    message,
-    { headers: { "Retry-After": String(retryAfterSeconds) } }
-  );
+  return error(WORKER_ERROR_CODES.TOO_MANY_REQUESTS, 429, message, {
+    headers: { "Retry-After": String(retryAfterSeconds) },
+  });
 }
 
 /**
@@ -98,7 +95,7 @@ export function guardContentType(
         415,
         expected === "json"
           ? "Expected application/json"
-          : "Expected multipart/form-data"
+          : "Expected multipart/form-data",
       ),
     };
   }
@@ -168,7 +165,11 @@ export async function safeParseJSON<T>(
     logger.warn("[security] Failed to read JSON request body");
     return {
       ok: false,
-      response: error(WORKER_ERROR_CODES.INVALID_JSON, 400, "Request body is not valid JSON."),
+      response: error(
+        WORKER_ERROR_CODES.INVALID_JSON,
+        400,
+        "Request body is not valid JSON.",
+      ),
     };
   }
 
@@ -178,7 +179,11 @@ export async function safeParseJSON<T>(
     );
     return {
       ok: false,
-      response: error(WORKER_ERROR_CODES.PAYLOAD_TOO_LARGE, 413, `Request body exceeds ${Math.round(maxBytes / 1024)}KB limit.`),
+      response: error(
+        WORKER_ERROR_CODES.PAYLOAD_TOO_LARGE,
+        413,
+        `Request body exceeds ${Math.round(maxBytes / 1024)}KB limit.`,
+      ),
     };
   }
 
@@ -189,7 +194,11 @@ export async function safeParseJSON<T>(
     logger.warn("[security] Malformed JSON in request body");
     return {
       ok: false,
-      response: error(WORKER_ERROR_CODES.INVALID_JSON, 400, "Request body is not valid JSON."),
+      response: error(
+        WORKER_ERROR_CODES.INVALID_JSON,
+        400,
+        "Request body is not valid JSON.",
+      ),
     };
   }
 }
@@ -207,7 +216,11 @@ export function guardTextLength(text: string, tier: Tier): GuardResult {
     );
     return {
       allowed: false,
-      response: error(WORKER_ERROR_CODES.TEXT_TOO_LONG, 413, `Text exceeds the ${maxTextChars} character limit.`),
+      response: error(
+        WORKER_ERROR_CODES.TEXT_TOO_LONG,
+        413,
+        `Text exceeds the ${maxTextChars} character limit.`,
+      ),
     };
   }
 
@@ -227,7 +240,11 @@ export function guardAudioSize(fileSize: number, tier: Tier): GuardResult {
     );
     return {
       allowed: false,
-      response: error(WORKER_ERROR_CODES.FILE_TOO_LARGE, 413, "Audio file too large. Try a shorter recording."),
+      response: error(
+        WORKER_ERROR_CODES.FILE_TOO_LARGE,
+        413,
+        "Audio file too large. Try a shorter recording.",
+      ),
     };
   }
 
@@ -309,7 +326,11 @@ export function guardLanguageCode(
     );
     return {
       allowed: false,
-      response: error(WORKER_ERROR_CODES.INVALID_LANGUAGE, 400, `Unsupported language code: ${code}`),
+      response: error(
+        WORKER_ERROR_CODES.INVALID_LANGUAGE,
+        400,
+        `Unsupported language code: ${code}`,
+      ),
     };
   }
 
@@ -331,7 +352,11 @@ export function guardJsonSize(request: Request, maxBytes: number): GuardResult {
     );
     return {
       allowed: false,
-      response: error(WORKER_ERROR_CODES.PAYLOAD_TOO_LARGE, 413, `Request body exceeds ${Math.round(maxBytes / 1024)}KB limit.`),
+      response: error(
+        WORKER_ERROR_CODES.PAYLOAD_TOO_LARGE,
+        413,
+        `Request body exceeds ${Math.round(maxBytes / 1024)}KB limit.`,
+      ),
     };
   }
   return { allowed: true };
@@ -368,7 +393,11 @@ export function guardMultipartSize(
     );
     return {
       allowed: false,
-      response: error(WORKER_ERROR_CODES.FILE_TOO_LARGE, 413, "Audio file too large. Try a shorter recording."),
+      response: error(
+        WORKER_ERROR_CODES.FILE_TOO_LARGE,
+        413,
+        "Audio file too large. Try a shorter recording.",
+      ),
     };
   }
   return { allowed: true };
@@ -385,7 +414,11 @@ export function guardStreamingAllowed(tier: Tier): GuardResult {
     logger.warn(`[security] Rejected streaming for tier ${tier}`);
     return {
       allowed: false,
-      response: error(WORKER_ERROR_CODES.STREAM_PRO_ONLY, 403, "Live transcription is a Pro feature."),
+      response: error(
+        WORKER_ERROR_CODES.STREAM_PRO_ONLY,
+        403,
+        "Live transcription is a Pro feature.",
+      ),
     };
   }
 

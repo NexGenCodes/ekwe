@@ -64,13 +64,7 @@ describe("checkPreflight (cooldown + quota gate)", () => {
       }),
     );
 
-    await checkPreflight(
-      mockEnv(),
-      "uid-2",
-      "PREMIUM",
-      "transcribe",
-      null,
-    );
+    await checkPreflight(mockEnv(), "uid-2", "PREMIUM", "transcribe", null);
 
     expect(body).toMatchObject({
       p_type: "transcribe",
@@ -90,13 +84,7 @@ describe("checkPreflight (cooldown + quota gate)", () => {
       }),
     );
 
-    await checkPreflight(
-      mockEnv(),
-      "uid-5",
-      "PREMIUM",
-      "translate",
-      null,
-    );
+    await checkPreflight(mockEnv(), "uid-5", "PREMIUM", "translate", null);
 
     expect(body).toMatchObject({
       p_type: "translate",

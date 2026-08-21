@@ -96,7 +96,11 @@ export const claimRecordingFocus = (pauseOwnNow: () => void): void => {
   if (recordingLocked) return; // already recording — idempotent
   // If another owner exists (player or TTS), pause it first.
   if (owner && owner.token !== recordingFocusToken) {
-    try { owner.pauseNow(); } catch { /* stale */ }
+    try {
+      owner.pauseNow();
+    } catch {
+      /* stale */
+    }
   }
   const token = Symbol("recording-focus");
   recordingFocusToken = token;

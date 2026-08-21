@@ -107,7 +107,10 @@ export function useBilling(): UseBillingReturn {
     }
 
     if (!isFlutterwaveAvailable()) {
-      AppAlert.info(FLUTTERWAVE_UNAVAILABLE_TITLE, FLUTTERWAVE_UNAVAILABLE_MESSAGE);
+      AppAlert.info(
+        FLUTTERWAVE_UNAVAILABLE_TITLE,
+        FLUTTERWAVE_UNAVAILABLE_MESSAGE,
+      );
       return;
     }
 
@@ -185,7 +188,7 @@ export function useBilling(): UseBillingReturn {
         );
       }
     },
-    []
+    [],
   );
 
   // ── Checkout Dismiss ─────────────────────────────────────────
@@ -214,8 +217,7 @@ export function useBilling(): UseBillingReturn {
     const { data: sessionData, error } = await supabase.auth.refreshSession();
     if (error) throw error;
 
-    const upgraded =
-      sessionData.session?.user?.app_metadata?.is_pro === true;
+    const upgraded = sessionData.session?.user?.app_metadata?.is_pro === true;
     authActions.setIsPro(upgraded);
     if (upgraded) {
       authActions.setEntitlementSynced(true, "flutterwave");

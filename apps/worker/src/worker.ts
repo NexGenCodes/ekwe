@@ -39,6 +39,7 @@ import {
   handleGetUpdateManifest,
   handlePostUpdateManifest,
 } from "./routes/update-manifest";
+import { type OptionalAuthedRouteHandler } from "./core/pipeline";
 
 // ─── Route table ─────────────────────────────────────────────────
 // Single source of truth for every endpoint the worker serves. Each route
@@ -136,8 +137,8 @@ const ttsHandler: AuthedRouteHandler = (rctx) => {
   return handleTts(rctx.request, rctx.env, rctx.auth.tier, rctx.request.signal);
 };
 
-const registerPushTokenHandler: RouteHandler = (rctx) =>
-  handleRegisterPushToken(rctx.request, rctx.env);
+const registerPushTokenHandler: OptionalAuthedRouteHandler = (rctx) =>
+  handleRegisterPushToken(rctx.request, rctx.env, rctx.auth);
 
 const pushNotifyHandler: RouteHandler = (rctx) =>
   handlePushNotify(rctx.request, rctx.env);
@@ -150,7 +151,12 @@ const postUpdateManifestHandler: RouteHandler = (rctx) =>
 
 const routes: AppRoute[] = [
   { method: "GET", path: "/health", auth: "none", handler: healthHandler },
-  { method: "GET", path: "/pricing", auth: "none", handler: storePricingHandler },
+  {
+    method: "GET",
+    path: "/pricing",
+    auth: "none",
+    handler: storePricingHandler,
+  },
   { method: "POST", path: "/webhook", auth: "none", handler: webhookHandler },
   {
     method: "POST",
@@ -207,7 +213,7 @@ const routes: AppRoute[] = [
   {
     method: "POST",
     path: "/push-tokens",
-    auth: "none",
+    auth: "optional-jwt",
     handler: registerPushTokenHandler,
   },
   {

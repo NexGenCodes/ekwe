@@ -7,6 +7,8 @@ import logger from "@/utils/logger";
 import { getWorkerUrl } from "@/utils/networkUtils";
 import type { RegisterPushTokenRequest } from "@ekwe/shared";
 
+import { getToken } from "@/store/auth";
+
 const UPDATE_CHANNEL_ID = "updates";
 const UPDATE_CHANNEL_NAME = "App Updates";
 
@@ -47,18 +49,33 @@ async function storePushToken(pushToken: string): Promise<void> {
       app_version: version,
     };
 
+    const token = getToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
     const response = await fetch(`${workerUrl}/push-tokens`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body),
     });
 
     if (!response.ok) {
       const text = await response.text();
-      logger.warn("[Notifications] Failed to store push token:", response.status, text);
+      logger.warn(
+        "[Notifications] Failed to store push token:",
+        response.status,
+        text,
+      );
     }
   } catch (error) {
-    logger.warn("[Notifications] Failed to store push token (non-blocking):", error);
+    logger.warn(
+      "[Notifications] Failed to store push token (non-blocking):",
+      error,
+    );
   }
 }
 
@@ -91,7 +108,9 @@ async function createNotificationChannel(): Promise<void> {
 export async function registerForPushNotifications(): Promise<string | null> {
   try {
     if (!Device.isDevice) {
-      logger.warn("[Notifications] Push notifications require a physical device");
+      logger.warn(
+        "[Notifications] Push notifications require a physical device",
+      );
       return null;
     }
 
@@ -99,7 +118,8 @@ export async function registerForPushNotifications(): Promise<string | null> {
     await createNotificationChannel();
 
     // Check existing permissions
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    const { status: existingStatus } =
+      await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
 
     if (existingStatus !== "granted") {
@@ -116,16 +136,22 @@ export async function registerForPushNotifications(): Promise<string | null> {
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
 
     if (!projectId || projectId === "YOUR_PROJECT_ID") {
-      logger.warn("[Notifications] No EAS project ID found — push token not generated");
+      logger.warn(
+        "[Notifications] No EAS project ID found — push token not generated",
+      );
       return null;
     }
 
-    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId,
+    });
     const pushToken = tokenData.data;
 
     logger.info("[Notifications] Push token registered:", pushToken);
 
-    // Store push token in the Worker's database so it can send update notifications
+    // The Worker upserts using the token string as the PK. We don't need to
+    // track whether this specific user was the one who registered it last,
+    // we just fire and forget. The JWT token handles the auth mapping in the worker.
     await storePushToken(pushToken);
 
     return pushToken;
@@ -137,3 +163,20 @@ export async function registerForPushNotifications(): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Listen for token refresh events. FCM tokens can rotate at any time
+ * (e.g. app data clear, token rotation). Without re-storing the new token,
+ * subsequent notifications will be sent to the old (dead) token.
+ */
+Notifications.addPushTokenListener(async () => {
+  try {
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    if (!projectId || projectId === "YOUR_PROJECT_ID") return;
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    logger.info("[Notifications] Token refreshed:", tokenData.data);
+    await storePushToken(tokenData.data);
+  } catch (error) {
+    logger.warn("[Notifications] Token refresh re-register failed:", error);
+  }
+});

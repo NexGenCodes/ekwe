@@ -104,7 +104,9 @@ export async function d1GetLang(
 ): Promise<string | null> {
   try {
     const row = await db
-      .prepare(`SELECT detected_lang, expires_at FROM cache_lang WHERE cache_key = ?`)
+      .prepare(
+        `SELECT detected_lang, expires_at FROM cache_lang WHERE cache_key = ?`,
+      )
       .bind(cacheKey)
       .first<{ detected_lang: string; expires_at: number }>();
 

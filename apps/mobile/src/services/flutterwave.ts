@@ -93,9 +93,7 @@ export function getFlutterwavePlanId(
  * server-authoritative for pricing, currency, and the unique tx_ref; the
  * SDK initializes the actual payment with these params + the public key.
  */
-async function initializeCheckout(
-  isAnnual: boolean,
-): Promise<CheckoutSession> {
+async function initializeCheckout(isAnnual: boolean): Promise<CheckoutSession> {
   const session = auth$.session.get();
   if (!session) throw new Error("Authentication required");
 
@@ -150,17 +148,14 @@ export async function verifyTransaction(
   const session = auth$.session.get();
   if (!session) throw new Error("Authentication required");
 
-  const res = await fetch(
-    `${getWorkerBaseUrl()}${VERIFY_TRANSACTION_PATH}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ transaction_id: transactionId }),
+  const res = await fetch(`${getWorkerBaseUrl()}${VERIFY_TRANSACTION_PATH}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
     },
-  );
+    body: JSON.stringify({ transaction_id: transactionId }),
+  });
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");

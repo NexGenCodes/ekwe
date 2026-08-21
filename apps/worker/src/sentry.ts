@@ -30,12 +30,17 @@ function optionsForDo(env: Env): CloudflareOptions {
   return optionsFor(env) ?? {};
 }
 
-export function instrumentWorker<H extends ExportedHandler<Env>>(handler: H): H {
+export function instrumentWorker<H extends ExportedHandler<Env>>(
+  handler: H,
+): H {
   return Sentry.withSentry(optionsFor, handler);
 }
 
 export function instrumentDurableObject<
   C extends new (state: DurableObjectState, env: Env) => DurableObject<Env>,
 >(DurableObjectClass: C): C {
-  return Sentry.instrumentDurableObjectWithSentry(optionsForDo, DurableObjectClass);
+  return Sentry.instrumentDurableObjectWithSentry(
+    optionsForDo,
+    DurableObjectClass,
+  );
 }

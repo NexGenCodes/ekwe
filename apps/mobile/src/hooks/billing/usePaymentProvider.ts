@@ -104,7 +104,9 @@ async function fetchFeatureFlags(): Promise<PaymentFeatureFlags> {
   try {
     const cached = mmkv.getString(FLAGS_CACHE_KEY);
     if (cached) {
-      const parsed = JSON.parse(cached) as PaymentFeatureFlags & { _cachedAt: number };
+      const parsed = JSON.parse(cached) as PaymentFeatureFlags & {
+        _cachedAt: number;
+      };
       if (Date.now() - parsed._cachedAt < FLAGS_CACHE_TTL) {
         return {
           flutterwave_enabled: parsed.flutterwave_enabled,

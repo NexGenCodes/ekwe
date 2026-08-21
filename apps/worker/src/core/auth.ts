@@ -2,22 +2,16 @@ import { jwtVerify, createRemoteJWKSet } from "jose";
 import { logger } from "./logger";
 import { Env, Tier, JWTPayloadWithMeta } from "./types";
 
-let JWKS: ReturnType<typeof createRemoteJWKSet>;
-let JWKS_TS = 0;
-const JWKS_TTL = 3_600_000;
+const jwksFetchers = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
-function getJWKS(
-  env: Env,
-  force = false,
-): ReturnType<typeof createRemoteJWKSet> {
-  const now = Date.now();
-  if (!JWKS || force || now - JWKS_TS > JWKS_TTL) {
-    JWKS = createRemoteJWKSet(
-      new URL(`${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`),
-    );
-    JWKS_TS = now;
+function getJWKS(env: Env): ReturnType<typeof createRemoteJWKSet> {
+  const url = `${env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`;
+  let fetcher = jwksFetchers.get(url);
+  if (!fetcher) {
+    fetcher = createRemoteJWKSet(new URL(url));
+    jwksFetchers.set(url, fetcher);
   }
-  return JWKS;
+  return fetcher;
 }
 
 export interface AuthResult {
@@ -40,7 +34,7 @@ function extractAuthResult(payload: JWTPayloadWithMeta): AuthResult | null {
 
 /**
  * Verifies a Supabase JWT and returns the user's ID, email, and tier.
- * Retries once with a fresh JWKS on verification failure (key rotation).
+ * `createRemoteJWKSet` natively handles key rotation by re-fetching if a `kid` is missing.
  */
 export async function authenticate(
   token: string,
@@ -52,16 +46,8 @@ export async function authenticate(
       audience: "authenticated",
     });
     return extractAuthResult(payload);
-  } catch {
-    try {
-      const { payload } = await jwtVerify(token, getJWKS(env, true), {
-        issuer: `${env.SUPABASE_URL}/auth/v1`,
-        audience: "authenticated",
-      });
-      return extractAuthResult(payload);
-    } catch {
-      logger.warn("[auth] JWT verification failed after JWKS refresh");
-      return null;
-    }
+  } catch (err) {
+    logger.warn("[auth] JWT verification failed", { error: String(err) });
+    return null;
   }
 }

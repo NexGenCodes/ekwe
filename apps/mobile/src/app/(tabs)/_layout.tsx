@@ -66,9 +66,7 @@ export default function TabLayout(): React.ReactElement | null {
           options={{
             title: "Profile",
             headerShown: true,
-            tabBarIcon: ({ color, size }) => (
-              <User size={size} color={color} />
-            ),
+            tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
           }}
         />
       </Tabs>

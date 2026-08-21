@@ -1,4 +1,8 @@
-import { WORKER_ERROR_CODES, TTS_MAX_TEXT_CHARS, ttsRequestSchema } from "@ekwe/shared";
+import {
+  WORKER_ERROR_CODES,
+  TTS_MAX_TEXT_CHARS,
+  ttsRequestSchema,
+} from "@ekwe/shared";
 import { logger } from "../core/logger";
 import { getTtsProviderNames, ttsProviderSupports } from "../core/config";
 import * as gemini from "../providers/gemini";
@@ -37,11 +41,17 @@ const TTS_DOWN_TTL_SECONDS = 23 * 60 * 60;
 // ─── KV binary cache format ──────────────────────────────────────
 // Layout: [2B mime_len][2B provider_len][mime UTF-8][provider UTF-8][audio bytes]
 // This eliminates the ~33% base64 overhead of the old JSON+base64 format.
-function packTtsCache(mime: string, provider: string, audio: Uint8Array): Uint8Array {
+function packTtsCache(
+  mime: string,
+  provider: string,
+  audio: Uint8Array,
+): Uint8Array {
   const enc = new TextEncoder();
   const mimeBytes = enc.encode(mime);
   const providerBytes = enc.encode(provider);
-  const buf = new ArrayBuffer(4 + mimeBytes.length + providerBytes.length + audio.byteLength);
+  const buf = new ArrayBuffer(
+    4 + mimeBytes.length + providerBytes.length + audio.byteLength,
+  );
   const view = new DataView(buf);
   const u8 = new Uint8Array(buf);
 
@@ -58,7 +68,9 @@ function packTtsCache(mime: string, provider: string, audio: Uint8Array): Uint8A
   return new Uint8Array(buf);
 }
 
-function unpackTtsCache(buf: ArrayBuffer): { mime: string; provider: string; audio: Uint8Array } | null {
+function unpackTtsCache(
+  buf: ArrayBuffer,
+): { mime: string; provider: string; audio: Uint8Array } | null {
   if (buf.byteLength < 4) return null;
   const view = new DataView(buf);
   const mimeLen = view.getUint16(0, true);
@@ -72,7 +84,8 @@ function unpackTtsCache(buf: ArrayBuffer): { mime: string; provider: string; aud
   const provider = dec.decode(u8.slice(4 + mimeLen, headerLen));
   const audio = new Uint8Array(buf.slice(headerLen));
 
-  if (mime.length === 0 || provider.length === 0 || audio.byteLength === 0) return null;
+  if (mime.length === 0 || provider.length === 0 || audio.byteLength === 0)
+    return null;
   return { mime, provider, audio };
 }
 
@@ -117,8 +130,7 @@ const TTS_PROVIDER_MODULES: Record<string, TtsFn> = {
     gemini.tts(text, env, signal, voice),
   aura2: (text, lang, env, _signal, voice) =>
     deepgram.aura2(text, lang as "en" | "es", env, voice),
-  aura1: (text, _lang, env, _signal, voice) =>
-    deepgram.aura1(text, env, voice),
+  aura1: (text, _lang, env, _signal, voice) => deepgram.aura1(text, env, voice),
   melotts: (text, _lang, env, _signal) => cloudflare.melotts(text, _lang, env),
 };
 
@@ -290,12 +302,7 @@ export async function handleTts(
         const hit = unpackTtsCache(cached);
         if (hit) {
           logger.info(`[tts] KV cache hit (${hit.provider})`);
-          return ttsAudioResponse(
-            hit.mime,
-            hit.audio,
-            hit.provider,
-            true,
-          );
+          return ttsAudioResponse(hit.mime, hit.audio, hit.provider, true);
         }
       } catch {
         // Corrupt cache value → fall through and regenerate.

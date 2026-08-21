@@ -421,14 +421,14 @@ export const Db = {
     return res.rowsAffected ?? 0;
   },
 
-  /** Removes every history row (used when the account is deleted or cleared). */
-  purgeAllHistory: (): void => {
-    getDb().executeSync("DELETE FROM history");
+  /** Removes every history row for a user (used when the account is deleted or cleared). */
+  purgeUserHistory: (userId: string): void => {
+    getDb().executeSync("DELETE FROM history WHERE user_id = ?", [userId]);
   },
 
-  /** Removes every outbox row (used when the account is deleted or cleared). */
-  purgeAllOutbox: (): void => {
-    getDb().executeSync("DELETE FROM outbox");
+  /** Removes every outbox row for a user (used when the account is deleted or cleared). */
+  purgeUserOutbox: (userId: string): void => {
+    getDb().executeSync("DELETE FROM outbox WHERE user_id = ?", [userId]);
   },
 
   vacuum: (): void => {

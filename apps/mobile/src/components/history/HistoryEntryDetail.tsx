@@ -106,9 +106,7 @@ function DetailBlock({
         <Text variant="bodyLarge" style={{ color: color.foreground }}>
           {text}
         </Text>
-        {transliteration ? (
-          <Transliteration text={transliteration} />
-        ) : null}
+        {transliteration ? <Transliteration text={transliteration} /> : null}
       </Card>
     </Box>
   );

@@ -33,10 +33,7 @@ export interface ProviderConfig {
 
 const registry = new Map<string, ProviderConfig>();
 
-export function registerProvider(
-  name: string,
-  config: ProviderConfig,
-): void {
+export function registerProvider(name: string, config: ProviderConfig): void {
   registry.set(name, config);
 }
 

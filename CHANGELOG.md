@@ -13,6 +13,7 @@ Version numbers mirror Git tags (`v1.0.0` → `1.0.0`) and the `versionCode` in
 ## [1.0.0] - 2026-08-18
 
 ### Added
+
 - Initial Android release.
 
 <!-- TEMPLATE

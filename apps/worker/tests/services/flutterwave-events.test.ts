@@ -3,7 +3,8 @@ import { describe, test, expect, beforeEach, vi, type Mock } from "vitest";
 // Mock supabasePost (the RPC calls) before importing the module under test.
 // Keep the real supabaseGet so the pricing config read hits the MSW server.
 vi.mock("../../src/services/supabase", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("../../src/services/supabase")>();
+  const mod =
+    await importOriginal<typeof import("../../src/services/supabase")>();
   return { ...mod, supabasePost: vi.fn() };
 });
 
@@ -53,7 +54,11 @@ function serveSeededConfig() {
 }
 
 function successRpc() {
-  mockedSupabasePost.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+  mockedSupabasePost.mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({}),
+  });
 }
 
 function failRpc(status = 500) {
@@ -120,11 +125,15 @@ describe("Flutterwave Event Processor", () => {
 
   describe("charge.success", () => {
     test("grants Pro for successful charge", async () => {
-      const result = await processWebhookEvent("flutterwave", buildEvent(), env);
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent(),
+        env,
+      );
 
       expect(result.fullyApplied).toBe(true);
       expect(result.response.status).toBe(200);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("activated");
 
       expect(mockedSupabasePost).toHaveBeenCalledWith(
@@ -179,7 +188,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("activated");
     });
 
@@ -191,7 +200,13 @@ describe("Flutterwave Event Processor", () => {
       server.use(
         http.get(PROVIDER_URLS.supabaseSubscriptionConfig, () =>
           Response.json([
-            { ...SEEDED_CONFIG, local_prices: { ...SEEDED_CONFIG.local_prices, NGN: { monthly: 2500, annual: 24000 } } },
+            {
+              ...SEEDED_CONFIG,
+              local_prices: {
+                ...SEEDED_CONFIG.local_prices,
+                NGN: { monthly: 2500, annual: 24000 },
+              },
+            },
           ]),
         ),
       );
@@ -213,7 +228,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("rejected");
       expect(mockedSupabasePost).not.toHaveBeenCalled();
     });
@@ -222,7 +237,13 @@ describe("Flutterwave Event Processor", () => {
       server.use(
         http.get(PROVIDER_URLS.supabaseSubscriptionConfig, () =>
           Response.json([
-            { ...SEEDED_CONFIG, local_prices: { ...SEEDED_CONFIG.local_prices, NGN: { monthly: 2500, annual: 24000 } } },
+            {
+              ...SEEDED_CONFIG,
+              local_prices: {
+                ...SEEDED_CONFIG.local_prices,
+                NGN: { monthly: 2500, annual: 24000 },
+              },
+            },
           ]),
         ),
       );
@@ -244,7 +265,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("activated");
     });
 
@@ -259,10 +280,14 @@ describe("Flutterwave Event Processor", () => {
       );
       resetPricingCache();
 
-      const result = await processWebhookEvent("flutterwave", buildEvent(), env);
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent(),
+        env,
+      );
 
       expect(result.fullyApplied).toBe(false);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("unverified");
       expect(mockedSupabasePost).not.toHaveBeenCalled();
     });
@@ -285,7 +310,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("rejected");
       expect(mockedSupabasePost).not.toHaveBeenCalled();
     });
@@ -310,7 +335,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("rejected");
       expect(mockedSupabasePost).not.toHaveBeenCalled();
     });
@@ -335,7 +360,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("rejected");
       expect(mockedSupabasePost).not.toHaveBeenCalled();
     });
@@ -358,7 +383,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("rejected");
       expect(mockedSupabasePost).not.toHaveBeenCalled();
     });
@@ -380,7 +405,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("activated");
     });
 
@@ -405,7 +430,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("rejected");
       expect(mockedSupabasePost).not.toHaveBeenCalled();
     });
@@ -416,7 +441,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("skipped");
     });
   });
@@ -430,7 +455,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("deactivated");
 
       expect(mockedSupabasePost).toHaveBeenCalledWith(
@@ -462,7 +487,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("retained");
 
       expect(mockedSupabasePost).toHaveBeenCalledWith(
@@ -494,7 +519,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("retained");
 
       // Should keep is_pro=true so user has access through paid period
@@ -517,7 +542,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("deactivated");
 
       expect(mockedSupabasePost).toHaveBeenCalledWith(
@@ -551,7 +576,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("renewed");
 
       expect(mockedSupabasePost).toHaveBeenCalledWith(
@@ -580,7 +605,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("skipped");
     });
   });
@@ -605,7 +630,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("ignored");
       expect(mockedSupabasePost).not.toHaveBeenCalled();
     });
@@ -620,7 +645,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("unknown");
     });
   });
@@ -706,7 +731,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = await result.response.json() as Record<string, string>;
+      const body = (await result.response.json()) as Record<string, string>;
       expect(body.action).toBe("skipped");
       expect(mockedSupabasePost).not.toHaveBeenCalled();
     });

@@ -1,4 +1,9 @@
-import { CLIENT_ABORTED, Env, TranscribeResult, TranslateResult } from "../core/types";
+import {
+  CLIENT_ABORTED,
+  Env,
+  TranscribeResult,
+  TranslateResult,
+} from "../core/types";
 import { rotateKeys } from "../utils/keys";
 import { buildTranslatePrompt, parseTranslateOutput } from "../utils/prompts";
 import {

@@ -242,9 +242,7 @@ describe("useBilling", () => {
     });
 
     it("shows upgrade-failed for checkout errors", async () => {
-      mockOpenCheckout.mockRejectedValue(
-        new Error("Payment method rejected"),
-      );
+      mockOpenCheckout.mockRejectedValue(new Error("Payment method rejected"));
       const { result } = await renderHook(() => useBilling());
 
       await act(async () => {

@@ -5,7 +5,12 @@ import ChevronDown from "lucide-react-native/icons/chevron-down";
 import ArrowDownUp from "lucide-react-native/icons/arrow-down-up";
 import React, { useEffect, useState, useRef } from "react";
 
-import { LanguagePickerSheet, Button, Card, Transliteration } from "@/components";
+import {
+  LanguagePickerSheet,
+  Button,
+  Card,
+  Transliteration,
+} from "@/components";
 import { Box, Text, ScrollArea, Spinner, Pressable } from "@/components/ui";
 import { getLanguageName, getLanguageFlag } from "@/constants/languages";
 import { borderRadius } from "@/constants/sizes";

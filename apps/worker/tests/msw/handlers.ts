@@ -32,8 +32,7 @@ export const PROVIDER_URLS = {
   supabaseSetProStatus: "https://mock.supabase.co/rest/v1/rpc/set_pro_status",
   supabaseSubscriptionConfig:
     "https://mock.supabase.co/rest/v1/subscription_config",
-  supabasePaymentConfig:
-    "https://mock.supabase.co/rest/v1/payment_config",
+  supabasePaymentConfig: "https://mock.supabase.co/rest/v1/payment_config",
   supabaseUpsertPushToken:
     "https://mock.supabase.co/rest/v1/rpc/upsert_push_token",
 } as const;

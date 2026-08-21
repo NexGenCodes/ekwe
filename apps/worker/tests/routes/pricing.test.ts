@@ -1,5 +1,8 @@
 import { describe, test, expect, beforeEach } from "vitest";
-import { handleStorePricing, resetPricingCache } from "../../src/routes/pricing";
+import {
+  handleStorePricing,
+  resetPricingCache,
+} from "../../src/routes/pricing";
 import { mockEnv, mockExecutionContext } from "../setup";
 import { http } from "msw";
 import { server } from "../msw/server";
@@ -18,7 +21,11 @@ describe("handleStorePricing", () => {
   });
 
   test("returns USD monthly + annual pricing by default", async () => {
-    const res = await handleStorePricing(pricingRequest(), mockEnv(), mockExecutionContext());
+    const res = await handleStorePricing(
+      pricingRequest(),
+      mockEnv(),
+      mockExecutionContext(),
+    );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       currency: "USD",
@@ -34,7 +41,11 @@ describe("handleStorePricing", () => {
   });
 
   test("serves static local prices for a supported currency", async () => {
-    const res = await handleStorePricing(pricingRequest("NGN"), mockEnv(), mockExecutionContext());
+    const res = await handleStorePricing(
+      pricingRequest("NGN"),
+      mockEnv(),
+      mockExecutionContext(),
+    );
     expect(res.status).toBe(200);
     const json = (await res.json()) as {
       currency: string;
@@ -53,7 +64,11 @@ describe("handleStorePricing", () => {
   });
 
   test("falls back to USD for unsupported currencies", async () => {
-    const res = await handleStorePricing(pricingRequest("BRL"), mockEnv(), mockExecutionContext());
+    const res = await handleStorePricing(
+      pricingRequest("BRL"),
+      mockEnv(),
+      mockExecutionContext(),
+    );
     expect(res.status).toBe(200);
     const json = (await res.json()) as { currency: string; price: number };
     expect(json.currency).toBe("USD");
@@ -94,7 +109,11 @@ describe("handleStorePricing", () => {
   });
 
   test("serves a cacheable header with a short TTL and SWR", async () => {
-    const res = await handleStorePricing(pricingRequest("USD"), mockEnv(), mockExecutionContext());
+    const res = await handleStorePricing(
+      pricingRequest("USD"),
+      mockEnv(),
+      mockExecutionContext(),
+    );
     expect(res.headers.get("Cache-Control")).toBe(
       "public, max-age=60, stale-while-revalidate=300",
     );

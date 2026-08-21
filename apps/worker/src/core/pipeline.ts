@@ -51,7 +51,16 @@ interface ProtectedRoute extends RouteLike {
   handler: AuthedRouteHandler;
 }
 
-export type AppRoute = PublicRoute | ProtectedRoute;
+export type OptionalAuthedRouteHandler = (
+  rctx: RouteContext & { auth: AuthResult | null },
+) => Response | Promise<Response>;
+
+interface OptionalAuthRoute extends RouteLike {
+  auth: "optional-jwt";
+  handler: OptionalAuthedRouteHandler;
+}
+
+export type AppRoute = PublicRoute | ProtectedRoute | OptionalAuthRoute;
 
 type UnauthorizedReason = "missing" | "invalid";
 
@@ -123,8 +132,20 @@ export async function runPipeline(
     );
   }
 
-  // ─── Auth: Strict JWT Only ───
   const token = extractToken(request, isStream);
+
+  if (route.auth === "optional-jwt") {
+    let auth: AuthResult | null = null;
+    if (token) {
+      auth = await authenticate(token, env);
+    }
+    return addCorsHeaders(
+      await route.handler({ request, env, ctx, params, auth }),
+      corsHeaders,
+    );
+  }
+
+  // ─── Auth: Strict JWT Only ───
   if (!token) {
     logger.info("[auth] Missing token", { path: url.pathname });
     return unauthorizedResponse(isStream, "missing", corsHeaders);

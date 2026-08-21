@@ -223,7 +223,9 @@ export const useResultPipeline = ({
               sessionKey: uri,
               type: "translation",
             },
-            userSession as Parameters<typeof HistoryService.recordTranslation>[1],
+            userSession as Parameters<
+              typeof HistoryService.recordTranslation
+            >[1],
           );
         } catch (saveErr) {
           // The save failed (not the translate call). Revert the saved-once

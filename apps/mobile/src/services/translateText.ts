@@ -1,4 +1,8 @@
-import { translateRequestSchema, translateResponseSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
+import {
+  translateRequestSchema,
+  translateResponseSchema,
+  WORKER_ERROR_CODES,
+} from "@ekwe/shared";
 import type { TranslateRequest, TranslateResponse } from "@ekwe/shared";
 
 import { EkweError } from "@/constants/errors";

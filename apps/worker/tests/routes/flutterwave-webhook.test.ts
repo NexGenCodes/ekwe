@@ -12,7 +12,8 @@ vi.mock("../../src/services/signatures", () => ({
 }));
 
 vi.mock("../../src/services/billing", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/services/billing")>();
+  const actual =
+    await importOriginal<typeof import("../../src/services/billing")>();
   return {
     ...actual,
     processWebhookEvent: vi.fn(),
@@ -69,7 +70,7 @@ describe("POST /webhook/flutterwave - Signature Verification", () => {
 
     const res = await handleFlutterwaveWebhook(req, env, ctx);
     expect(res.status).toBe(401);
-    expect((await res.json() as { error?: string }).error).toBe(
+    expect(((await res.json()) as { error?: string }).error).toBe(
       WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
     );
   });
@@ -90,7 +91,7 @@ describe("POST /webhook/flutterwave - Signature Verification", () => {
 
     const res = await handleFlutterwaveWebhook(req, env, ctx);
     expect(res.status).toBe(401);
-    expect((await res.json() as { error?: string }).error).toBe(
+    expect(((await res.json()) as { error?: string }).error).toBe(
       WORKER_ERROR_CODES.WEBHOOK_MISSING_HEADERS,
     );
   });

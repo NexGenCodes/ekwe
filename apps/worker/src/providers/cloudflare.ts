@@ -5,7 +5,11 @@ import {
   TranslateResult,
   TtsAttempt,
 } from "../core/types";
-import { isHallucination, buildTranslatePrompt, parseTranslateOutput } from "../utils/prompts";
+import {
+  isHallucination,
+  buildTranslatePrompt,
+  parseTranslateOutput,
+} from "../utils/prompts";
 import { logger } from "../core/logger";
 import { toWhisperCode } from "../services/languages";
 import { bytesToBase64 } from "../utils/base64";
@@ -69,7 +73,11 @@ export async function translate(
       messages: [
         {
           role: "system",
-          content: buildTranslatePrompt(targetLang, sourceLang, transliteration),
+          content: buildTranslatePrompt(
+            targetLang,
+            sourceLang,
+            transliteration,
+          ),
         },
         { role: "user", content: text },
       ],
@@ -110,5 +118,10 @@ export async function melotts(
   lang: string,
   env: Env,
 ): Promise<TtsAttempt> {
-  return runAiTtsRaw(env, "@cf/myshell-ai/melotts", { prompt: text, lang }, "melotts");
+  return runAiTtsRaw(
+    env,
+    "@cf/myshell-ai/melotts",
+    { prompt: text, lang },
+    "melotts",
+  );
 }

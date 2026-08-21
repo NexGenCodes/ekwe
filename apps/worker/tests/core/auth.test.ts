@@ -62,33 +62,6 @@ describe("authenticate()", () => {
     expect(result).toBeNull();
   });
 
-  test("retries with fresh JWKS on first failure and succeeds", async () => {
-    (jwtVerify as any)
-      .mockRejectedValueOnce(new Error("key not found"))
-      .mockResolvedValueOnce({
-        payload: {
-          sub: "user-789",
-          email: "retry@example.com",
-          app_metadata: { is_pro: false },
-        },
-      });
-
-    const result = await authenticate("retry-token", env);
-    expect(result).not.toBeNull();
-    expect(result!.userId).toBe("user-789");
-    expect(jwtVerify).toHaveBeenCalledTimes(2);
-  });
-
-  test("returns null when both first attempt and retry fail", async () => {
-    (jwtVerify as any)
-      .mockRejectedValueOnce(new Error("first fail"))
-      .mockRejectedValueOnce(new Error("retry fail"));
-
-    const result = await authenticate("double-fail-token", env);
-    expect(result).toBeNull();
-    expect(jwtVerify).toHaveBeenCalledTimes(2);
-  });
-
   test("handles missing email gracefully as empty string", async () => {
     (jwtVerify as any).mockResolvedValue({
       payload: {

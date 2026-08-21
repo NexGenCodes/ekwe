@@ -90,9 +90,7 @@ interface ProStatusResult {
  *              re-sends once Supabase is reachable again.
  */
 type ChargeVerification =
-  | { outcome: "ok" }
-  | { outcome: "reject" }
-  | { outcome: "retry" };
+  { outcome: "ok" } | { outcome: "reject" } | { outcome: "retry" };
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -448,11 +446,14 @@ async function processFlutterwaveEvent(
     // Keep is_pro=true so the user retains access through the paid period.
     // The expires_at is the authoritative end date enforced by the JWT hook.
     const applied = await setProStatus(env, identifier, true, expiresAt);
-    logger.info("[flutterwave] Subscription cancelled (retained until expiry)", {
-      email,
-      tx_ref: txRef,
-      expires_at: expiresAt,
-    });
+    logger.info(
+      "[flutterwave] Subscription cancelled (retained until expiry)",
+      {
+        email,
+        tx_ref: txRef,
+        expires_at: expiresAt,
+      },
+    );
     return {
       response: Response.json({ received: true, action: "retained" }),
       fullyApplied: applied.ok,
@@ -519,9 +520,7 @@ export async function handleFlutterwaveWebhook(
   // Max size guard
   const contentLength = request.headers.get("Content-Length");
   if (contentLength && parseInt(contentLength, 10) > WEBHOOK_MAX_BYTES) {
-    logger.warn(
-      `[flutterwave] Payload too large: ${contentLength} bytes`,
-    );
+    logger.warn(`[flutterwave] Payload too large: ${contentLength} bytes`);
     return Response.json(
       { error: WORKER_ERROR_CODES.PAYLOAD_TOO_LARGE },
       { status: 413 },
@@ -563,7 +562,8 @@ export async function handleFlutterwaveWebhook(
     );
     return Response.json(
       {
-        error: verification.code ?? WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
+        error:
+          verification.code ?? WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
         message: "Webhook signature verification failed.",
       },
       { status: 401 },
@@ -581,6 +581,26 @@ export async function handleFlutterwaveWebhook(
       { error: WORKER_ERROR_CODES.INVALID_JSON },
       { status: 400 },
     );
+  }
+
+  // ── Idempotency Check ──
+  const eventId = event.id;
+  const idempotencyKey =
+    eventId && typeof eventId === "number"
+      ? `webhook:fw:${eventId}`
+      : `webhook:hash:${await (async () => {
+          const { hashKey } = await import("../utils/keys");
+          return hashKey(rawBody);
+        })()}`;
+
+  if (env.EKWE_KV && idempotencyKey) {
+    const existing = await env.EKWE_KV.get(idempotencyKey);
+    if (existing) {
+      logger.info(
+        `[flutterwave] Duplicate event detected (key: ${idempotencyKey.slice(0, 32)})`,
+      );
+      return Response.json({ received: true, action: "duplicate" });
+    }
   }
 
   // Use the processWebhookEvent from the registry, which checks if the
@@ -602,6 +622,18 @@ export async function handleFlutterwaveWebhook(
         message: "Failed to sync subscription state; retryable",
       },
       { status: 500 },
+    );
+  }
+
+  if (env.EKWE_KV && idempotencyKey && response.ok) {
+    _ctx.waitUntil(
+      env.EKWE_KV.put(idempotencyKey, "1", {
+        expirationTtl: 86400,
+      }).catch((err: unknown) =>
+        logger.error("[flutterwave] Failed to store idempotency key", {
+          error: String(err),
+        }),
+      ),
     );
   }
 

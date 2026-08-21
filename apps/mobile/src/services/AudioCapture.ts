@@ -3,7 +3,10 @@ import * as Haptics from "expo-haptics";
 import { Linking } from "react-native";
 
 import { EkweError } from "@/constants/errors";
-import { claimRecordingFocus, releaseRecordingFocus } from "@/hooks/audio/audioFocus";
+import {
+  claimRecordingFocus,
+  releaseRecordingFocus,
+} from "@/hooks/audio/audioFocus";
 import AudioService from "@/services/AudioService";
 import { Result, ok, err } from "@/types/Result";
 import { isAndroid, isIOS, triggerHaptic } from "@/utils";

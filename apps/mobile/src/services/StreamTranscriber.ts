@@ -43,7 +43,9 @@ class StreamTranscriberClass {
   // resolve with a retry, and 4005 (duration exceeded) would reset the
   // server-side startTime on a fresh connection and bypass the per-session
   // duration cap.
-  private static readonly NON_RETRYABLE_CLOSE_CODES = new Set([1000, 4004, 4005]);
+  private static readonly NON_RETRYABLE_CLOSE_CODES = new Set([
+    1000, 4004, 4005,
+  ]);
   private durationTimer: ReturnType<typeof setTimeout> | null = null;
   private startTime = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -156,15 +158,12 @@ class StreamTranscriberClass {
           // Track the timer so disconnect() can cancel a pending reconnect —
           // otherwise a stale timer would call connect(null) after config was
           // cleared and throw.
-          this.reconnectTimer = setTimeout(
-            () => {
-              this.reconnectTimer = null;
-              if (this.config) {
-                this.connect(this.config);
-              }
-            },
-            1000 * this.reconnectAttempts,
-          );
+          this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            if (this.config) {
+              this.connect(this.config);
+            }
+          }, 1000 * this.reconnectAttempts);
         }
       };
     } catch (err) {

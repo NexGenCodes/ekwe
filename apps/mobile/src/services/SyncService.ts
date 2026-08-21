@@ -134,7 +134,11 @@ class SyncServiceClass {
         });
 
         this.pushToCloud(existing.id, userId).catch((err) =>
-          logger.error("[Sync] pushToCloud (dedup update) failed", existing.id, err),
+          logger.error(
+            "[Sync] pushToCloud (dedup update) failed",
+            existing.id,
+            err,
+          ),
         );
 
         return existing.id;
@@ -272,18 +276,18 @@ class SyncServiceClass {
   }
 
   /**
-   * Purges every local history + outbox row and clears the in-memory cache.
+   * Purges local history + outbox rows for a user and clears the in-memory cache.
    * Does not touch the cloud — used by account deletion, where the cloud is
    * already wiped via the delete_user cascade.
    */
-  purgeLocalHistory(): void {
+  purgeLocalHistory(userId: string): void {
     try {
       Db.transaction(() => {
-        Db.purgeAllHistory();
-        Db.purgeAllOutbox();
+        Db.purgeUserHistory(userId);
+        Db.purgeUserOutbox(userId);
       });
       history$.set({});
-      logger.info("[Sync] Purged local history + outbox");
+      logger.info("[Sync] Purged local history + outbox for user", userId);
     } catch (err) {
       logger.error("[Sync] purgeLocalHistory failed", err);
     }
@@ -305,8 +309,8 @@ class SyncServiceClass {
   async clearAllHistory(userId: string): Promise<void> {
     try {
       Db.transaction(() => {
-        Db.purgeAllHistory();
-        Db.purgeAllOutbox();
+        Db.purgeUserHistory(userId);
+        Db.purgeUserOutbox(userId);
         Db.insertOutbox({
           id: Crypto.randomUUID(),
           payload: buildDeleteAllOutboxPayload(),

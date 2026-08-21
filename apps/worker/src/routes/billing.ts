@@ -32,7 +32,7 @@ import { Env } from "../core/types";
 import { logger } from "../core/logger";
 import { supabaseGet, supabasePost } from "../services/supabase";
 import { AuthResult } from "../core/auth";
-import { getLocalPlanPrices } from "./pricing";
+import { getAuthoritativePlanPrices, getLocalPlanPrices } from "./pricing";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -143,7 +143,10 @@ export async function handleVerifyTransaction(
   const { transaction_id } = (raw ?? {}) as { transaction_id?: unknown };
   if (!transaction_id || typeof transaction_id !== "number") {
     return Response.json(
-      { error: WORKER_ERROR_CODES.INVALID_BODY, message: "transaction_id required" },
+      {
+        error: WORKER_ERROR_CODES.INVALID_BODY,
+        message: "transaction_id required",
+      },
       { status: 400 },
     );
   }
@@ -202,15 +205,16 @@ export async function handleVerifyTransaction(
       tx_ref: fwData.data.tx_ref,
       status: fwData.data.status,
     });
-    return Response.json(
-      { error: "Payment not completed" },
-      { status: 400 },
-    );
+    return Response.json({ error: "Payment not completed" }, { status: 400 });
   }
 
-  // Extract userId from tx_ref (format: ekwe_<userId>_<plan>_<ts>_<rand>).
-  const parts = fwData.data.tx_ref.split("_");
-  const userId = parts[1];
+  // Extract userId and plan from tx_ref (format: ekwe_<userId>_<plan>_<ts>_<rand>).
+  const txRefMatch = fwData.data.tx_ref.match(
+    /ekwe_([a-f0-9-]+)_(monthly|annual)_/,
+  );
+  const userId = txRefMatch ? txRefMatch[1] : null;
+  const planPart = txRefMatch ? txRefMatch[2] : null;
+
   if (!userId || userId !== auth.userId) {
     logger.warn("[billing/verify] tx_ref userId mismatch", {
       tx_ref: fwData.data.tx_ref,
@@ -223,41 +227,44 @@ export async function handleVerifyTransaction(
   }
 
   // Determine plan from tx_ref.
-  const planPart = parts[2]; // "monthly" or "annual"
-  const plan =
-    planPart === "annual" ? "ekwe_pro_annual" : "ekwe_pro_monthly";
+  const plan = planPart === "annual" ? "ekwe_pro_annual" : "ekwe_pro_monthly";
 
-  // Verify amount and currency against what we would have charged.
-  const prices = await getLocalPlanPrices(env, fwData.data.currency);
-  const expectedAmount = plan === "ekwe_pro_annual" ? prices.annual : prices.monthly;
+  // Verify amount and currency against authoritative pricing
+  const prices = await getAuthoritativePlanPrices(env, fwData.data.currency);
+  if (!prices) {
+    logger.warn("[billing/verify] Cannot confirm price from Supabase", {
+      currency: fwData.data.currency,
+    });
+    return Response.json(
+      { error: "Pricing currently unavailable, please try again later" },
+      { status: 503 },
+    );
+  }
+
+  const expectedAmount =
+    plan === "ekwe_pro_annual" ? prices.annual : prices.monthly;
   if (fwData.data.amount !== expectedAmount) {
-    logger.warn("[billing/verify] Amount mismatch", {
+    logger.error("[billing/verify] Amount mismatch", {
       expected: expectedAmount,
       actual: fwData.data.amount,
       tx_ref: fwData.data.tx_ref,
+      currency: fwData.data.currency,
     });
-    // Still grant — the webhook would have done so, but log the discrepancy.
+    return Response.json({ error: "Payment amount mismatch" }, { status: 400 });
   }
 
   // Grant Pro via set_pro_status RPC.
-  const rpcResult = await supabasePost(
-    env,
-    "/rest/v1/rpc/set_pro_status",
-    {
-      p_email: auth.userEmail,
-      p_user_id: auth.userId,
-      p_is_pro: true,
-      p_expires_at: null,
-      p_provider: "flutterwave",
-    },
-  );
+  const rpcResult = await supabasePost(env, "/rest/v1/rpc/set_pro_status", {
+    p_email: auth.userEmail,
+    p_user_id: auth.userId,
+    p_is_pro: true,
+    p_expires_at: null,
+    p_provider: "flutterwave",
+  });
 
   if (!rpcResult) {
     logger.error("[billing/verify] Failed to call set_pro_status (no env)");
-    return Response.json(
-      { error: "Failed to activate Pro" },
-      { status: 500 },
-    );
+    return Response.json({ error: "Failed to activate Pro" }, { status: 500 });
   }
 
   if (!rpcResult.ok) {
@@ -266,10 +273,7 @@ export async function handleVerifyTransaction(
       status: rpcResult.status,
       body: body.slice(0, 200),
     });
-    return Response.json(
-      { error: "Failed to activate Pro" },
-      { status: 500 },
-    );
+    return Response.json({ error: "Failed to activate Pro" }, { status: 500 });
   }
 
   const rpcData: { permanent?: boolean } | null = await rpcResult.json();

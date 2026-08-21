@@ -107,7 +107,8 @@ export function CheckoutSheet({
 
   if (!visible || !session) return null;
 
-  const planLabel = PLAN_LABELS[plan?.replace("ekwe_pro_", "") ?? "monthly"] ?? "Monthly";
+  const planLabel =
+    PLAN_LABELS[plan?.replace("ekwe_pro_", "") ?? "monthly"] ?? "Monthly";
 
   const options: SdkOptions = {
     amount: session.amount,

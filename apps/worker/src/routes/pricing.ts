@@ -108,7 +108,8 @@ export function parseLocalPrices(raw: unknown): Record<string, LocalPrice> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return parsed;
 
   for (const [code, value] of Object.entries(raw)) {
-    if (!/^[A-Z]{3}$/.test(code) || !value || typeof value !== "object") continue;
+    if (!/^[A-Z]{3}$/.test(code) || !value || typeof value !== "object")
+      continue;
     const v = value as Record<string, unknown>;
     const monthly = toFinite(v.monthly, NaN);
     const annual = toFinite(v.annual, NaN);
@@ -121,8 +122,11 @@ export function parseLocalPrices(raw: unknown): Record<string, LocalPrice> {
 }
 
 /** Reads and (briefly) caches the subscription config row from Supabase. */
-async function loadSubscriptionConfig(env: Env): Promise<ConfigLoad> {
-  if (configCache && configCache.expiresAt > Date.now()) {
+async function loadSubscriptionConfig(
+  env: Env,
+  forceReload = false,
+): Promise<ConfigLoad> {
+  if (!forceReload && configCache && configCache.expiresAt > Date.now()) {
     return configCache.load;
   }
 
@@ -144,8 +148,14 @@ async function loadSubscriptionConfig(env: Env): Promise<ConfigLoad> {
         load = {
           kind: "loaded",
           config: {
-            basePriceUsd: toFinite(row.base_price_usd, DEFAULT_CONFIG.basePriceUsd),
-            discountPercent: toFinite(row.discount_percent, DEFAULT_CONFIG.discountPercent),
+            basePriceUsd: toFinite(
+              row.base_price_usd,
+              DEFAULT_CONFIG.basePriceUsd,
+            ),
+            discountPercent: toFinite(
+              row.discount_percent,
+              DEFAULT_CONFIG.discountPercent,
+            ),
             annualDiscountPercent: toFinite(
               row.annual_discount_percent,
               DEFAULT_CONFIG.annualDiscountPercent,
@@ -162,7 +172,10 @@ async function loadSubscriptionConfig(env: Env): Promise<ConfigLoad> {
     load = { kind: "unreachable" };
   }
 
-  configCache = { load, expiresAt: Date.now() + CONFIG_CACHE_TTL_MS };
+  // Only cache successful loads so transient failures recover immediately
+  if (load.kind === "loaded") {
+    configCache = { load, expiresAt: Date.now() + CONFIG_CACHE_TTL_MS };
+  }
   return load;
 }
 
@@ -171,7 +184,9 @@ async function loadSubscriptionConfig(env: Env): Promise<ConfigLoad> {
  * Supabase is unreachable or the row is missing, so GET /pricing and checkout
  * stay offline-capable.
  */
-export async function getSubscriptionConfig(env: Env): Promise<SubscriptionConfig> {
+export async function getSubscriptionConfig(
+  env: Env,
+): Promise<SubscriptionConfig> {
   const load = await loadSubscriptionConfig(env);
   return load.kind === "loaded" ? load.config : DEFAULT_CONFIG;
 }
@@ -214,7 +229,9 @@ export async function getAuthoritativePlanPrices(
   currency: string,
 ): Promise<LocalPlanPrices | null> {
   const code = resolvePaymentCurrency(currency);
-  const load = await loadSubscriptionConfig(env);
+  // Authoritative reads should always fetch fresh data from the DB to avoid
+  // granting access against stale prices or cached outage states.
+  const load = await loadSubscriptionConfig(env, true);
   if (load.kind !== "loaded") return null;
   const local = load.config.localPrices[code];
   if (!local) return null;
@@ -233,42 +250,52 @@ export async function handleStorePricing(
   env: Env,
   ctx: ExecutionContext,
 ): Promise<Response> {
-  return withCache(request, ctx, async () => {
-    const url = new URL(request.url);
-    const requested = (url.searchParams.get("currency") ?? "").toUpperCase();
-    const currency = /^[A-Z]{3}$/.test(requested) ? requested : "USD";
+  return withCache(
+    request,
+    ctx,
+    async () => {
+      const url = new URL(request.url);
+      const requested = (url.searchParams.get("currency") ?? "").toUpperCase();
+      const currency = /^[A-Z]{3}$/.test(requested) ? requested : "USD";
 
-    const prices = await getLocalPlanPrices(env, currency);
-    const config = await getSubscriptionConfig(env);
+      const prices = await getLocalPlanPrices(env, currency);
+      const config = await getSubscriptionConfig(env);
 
-    const body = {
-      currency: prices.currency,
-      price: prices.monthly,
-      usd: prices.monthlyUsd,
-      originalPriceUsd: config.basePriceUsd,
-      discountPercent: config.discountPercent,
-      annualPrice: prices.annual,
-      annualUsd: prices.annualUsd,
-      originalAnnualUsd: roundToCurrency(config.basePriceUsd * 12, "USD"),
-      annualDiscountPercent: computeSavingPercent(prices.monthly, prices.annual),
-    };
+      const body = {
+        currency: prices.currency,
+        price: prices.monthly,
+        usd: prices.monthlyUsd,
+        originalPriceUsd: config.basePriceUsd,
+        discountPercent: config.discountPercent,
+        annualPrice: prices.annual,
+        annualUsd: prices.annualUsd,
+        originalAnnualUsd: roundToCurrency(config.basePriceUsd * 12, "USD"),
+        annualDiscountPercent: computeSavingPercent(
+          prices.monthly,
+          prices.annual,
+        ),
+      };
 
-    const parsed = storePricingResponseSchema.safeParse(body);
-    if (!parsed.success) {
-      logger.error("[pricing] Internal response failed schema", {
-        error: parsed.error.message,
-      });
-      return Response.json(
-        {
-          error: WORKER_ERROR_CODES.SERVER_ERROR,
-          message: "An internal error occurred",
+      const parsed = storePricingResponseSchema.safeParse(body);
+      if (!parsed.success) {
+        logger.error("[pricing] Internal response failed schema", {
+          error: parsed.error.message,
+        });
+        return Response.json(
+          {
+            error: WORKER_ERROR_CODES.SERVER_ERROR,
+            message: "An internal error occurred",
+          },
+          { status: 500 },
+        );
+      }
+
+      return Response.json(parsed.data, {
+        headers: {
+          "Cache-Control": "public, max-age=60, stale-while-revalidate=300",
         },
-        { status: 500 },
-      );
-    }
-
-    return Response.json(parsed.data, {
-      headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" },
-    });
-  }, 60);
+      });
+    },
+    60,
+  );
 }

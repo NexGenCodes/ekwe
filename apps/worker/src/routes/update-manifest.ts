@@ -46,21 +46,26 @@ export async function handleGetUpdateManifest(
   env: Env,
   ctx: ExecutionContext,
 ): Promise<Response> {
-  return withCache(request, ctx, async () => {
-    const raw = await env.EKWE_KV.get(MANIFEST_KEY);
-    if (!raw) {
-      return Response.json(
-        { error: WORKER_ERROR_CODES.NOT_FOUND },
-        { status: 404 },
-      );
-    }
-    return new Response(raw, {
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "public, max-age=300",
-      },
-    });
-  }, 300);
+  return withCache(
+    request,
+    ctx,
+    async () => {
+      const raw = await env.EKWE_KV.get(MANIFEST_KEY);
+      if (!raw) {
+        return Response.json(
+          { error: WORKER_ERROR_CODES.NOT_FOUND },
+          { status: 404 },
+        );
+      }
+      return new Response(raw, {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=300",
+        },
+      });
+    },
+    300,
+  );
 }
 
 export async function handlePostUpdateManifest(

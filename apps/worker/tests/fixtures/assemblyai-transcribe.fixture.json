@@ -24,10 +24,7 @@
       },
       "body": {
         "audio_url": "https://mock.assemblyai/uploaded",
-        "speech_models": [
-          "universal-3-5-pro",
-          "universal-2"
-        ],
+        "speech_models": ["universal-3-5-pro", "universal-2"],
         "language_code": "en"
       }
     },

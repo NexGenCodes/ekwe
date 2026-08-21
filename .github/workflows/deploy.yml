@@ -58,32 +58,69 @@ jobs:
         id: outcome
         run: |
           if [ "${{ github.event_name }}" != "push" ]; then
-            # Manual dispatch: OTA by default, release only if explicitly requested.
-            echo "ota=true" >> "$GITHUB_OUTPUT"
-            echo "release=${{ inputs.publish_release }}" >> "$GITHUB_OUTPUT"
-            echo "pages=true" >> "$GITHUB_OUTPUT"
+            # Manual dispatch:
+            if [ "${{ inputs.publish_release }}" == "true" ]; then
+              echo "ota=false" >> "$GITHUB_OUTPUT"
+              echo "release=true" >> "$GITHUB_OUTPUT"
+              echo "pages=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "ota=true" >> "$GITHUB_OUTPUT"
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              echo "pages=true" >> "$GITHUB_OUTPUT"
+            fi
           else
             # A release job commits the version bump + manifest and pushes it.
-            # That push must NOT re-trigger itself, or we'd loop forever
-            # (1.0.1 -> push -> 1.0.2 -> push -> ...). Skip such pushes.
+            # That push must NOT re-trigger itself, or we'd loop forever.
             AUTHOR=$(git log -1 --format='%an')
             MSG=$(git log -1 --format='%s')
             if [[ "$AUTHOR" == "github-actions[bot]" && "$MSG" == "chore: release v"* ]]; then
               echo "ota=false" >> "$GITHUB_OUTPUT"
               echo "release=false" >> "$GITHUB_OUTPUT"
-              echo "pages=false" >> "$GITHUB_OUTPUT"
+              echo "pages=true" >> "$GITHUB_OUTPUT" # Deploy the landing site for the new version
             else
-              echo "ota=${{ steps.paths.outputs.ota }}" >> "$GITHUB_OUTPUT"
-              echo "release=${{ steps.paths.outputs.release }}" >> "$GITHUB_OUTPUT"
-              # The landing site always deploys on a real push; only the release
-              # bot's own commit (handled above) is skipped.
-              echo "pages=true" >> "$GITHUB_OUTPUT"
+              if [ "${{ steps.paths.outputs.release }}" == "true" ]; then
+                echo "ota=false" >> "$GITHUB_OUTPUT" # New APK has the JS, old APK doesn't need it
+                echo "release=true" >> "$GITHUB_OUTPUT"
+                echo "pages=false" >> "$GITHUB_OUTPUT" # Defer to the bot commit for pages
+              else
+                echo "ota=${{ steps.paths.outputs.ota }}" >> "$GITHUB_OUTPUT"
+                echo "release=false" >> "$GITHUB_OUTPUT"
+                echo "pages=true" >> "$GITHUB_OUTPUT"
+              fi
             fi
           fi
 
+  infrastructure:
+    name: Deploy Infrastructure (Supabase & Worker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Migrate Supabase Database
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: |
+          pnpm exec supabase link --project-ref $SUPABASE_PROJECT_ID --password $SUPABASE_DB_PASSWORD
+          pnpm exec supabase db push
+      - name: Deploy Cloudflare Worker
+        working-directory: apps/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm exec wrangler deploy
+
   ota:
     name: Publish OTA Update
-    needs: detect
+    needs: [detect, infrastructure]
     if: needs.detect.outputs.ota == 'true'
     runs-on: ubuntu-latest
     env:
@@ -120,7 +157,7 @@ jobs:
 
   release:
     name: Build APK + Release
-    needs: detect
+    needs: [detect, infrastructure]
     if: needs.detect.outputs.release == 'true'
     runs-on: ubuntu-latest
     env:
@@ -180,59 +217,14 @@ jobs:
       - name: Resolve version (auto-bump patch) + derive versionCode
         id: version
         run: |
-          LAST=$(node -p "require('./version.json').latest_version" 2>/dev/null || echo "0.0.0")
-          CURRENT=$(node -p "require('./apps/mobile/app.json').expo.version")
-
-          # Resolve the version to ship:
-          #   - current > last release  -> respect the manual bump (minor/major)
-          #   - current == last release -> auto-bump the patch (normal push)
-          #   - current <  last release -> error (version can never go backwards)
-          NEXT=$(node -e '
-            (function () {
-              const last = process.argv[1].split(".").map(Number);
-              const cur = process.argv[2].split(".").map(Number);
-              const cmp = (a, b) => a[0]-b[0] || a[1]-b[1] || a[2]-b[2];
-              const c = cmp(cur, last);
-              if (c > 0) { process.stdout.write(cur.join(".")); return; }
-              if (c < 0) {
-                console.error("app.json version (" + cur.join(".") + ") is lower than the last release (" + last.join(".") + "). Set it higher.");
-                process.exit(1);
-              }
-              cur[2] += 1;
-              process.stdout.write(cur.join("."));
-            })();
-          ' "$LAST" "$CURRENT")
-          if [[ -z "$NEXT" ]]; then exit 1; fi
-
-          IFS=. read -r M m p <<< "$NEXT"
-          if (( M > 99 || m > 99 || p > 99 )); then
-            echo "::error::Version segments must be < 100 so versionCode stays unique (got $NEXT)."
-            exit 1
-          fi
-          VC=$(( M * 10000 + m * 100 + p ))
-
-          # Bake the resolved version + derived versionCode into app.json, and
-          # keep package.json in sync, so the committed repo matches what was built.
-          node -e "
-            const fs = require('fs');
-            const a = './apps/mobile/app.json';
-            const j = require(a);
-            j.expo.version = '$NEXT';
-            j.expo.android.versionCode = $VC;
-            fs.writeFileSync(a, JSON.stringify(j, null, 2) + '\n');
-            const p = './apps/mobile/package.json';
-            const k = require(p);
-            k.version = '$NEXT';
-            fs.writeFileSync(p, JSON.stringify(k, null, 2) + '\n');
-            const c = './apps/web/config.json';
-            const w = JSON.parse(fs.readFileSync(c, 'utf8'));
-            w.version = '$NEXT';
-            fs.writeFileSync(c, JSON.stringify(w, null, 2) + '\n');
-          "
-
+          LAST_VERSION_FILE="version.json"
+          CURRENT_VERSION=$(node -p "require('./apps/mobile/app.json').expo.version")
+          node scripts/bump-version.mjs "$LAST_VERSION_FILE" "$CURRENT_VERSION" "$GITHUB_OUTPUT"
+          
+          source "$GITHUB_OUTPUT"
           echo "version=$NEXT" >> "$GITHUB_OUTPUT"
           echo "version_code=$VC" >> "$GITHUB_OUTPUT"
-          echo "tag=v$NEXT" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Run prebuild (generate native Android project)
         working-directory: apps/mobile
@@ -257,27 +249,22 @@ jobs:
           echo "sha256=$(cat dist/app-release.apk.sha256)" >> "$GITHUB_OUTPUT"
 
       - name: Write version manifest
+        run: node scripts/generate-update-manifest.mjs "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.version_code }}" "${{ steps.assets.outputs.sha256 }}" "${{ steps.assets.outputs.size }}"
+
+      - name: Update CHANGELOG and README
         run: |
-          DOWNLOAD_URL="https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk"
-          DATE=$(date -u +%Y-%m-%d)
-
-          jq -n \
-            --arg v "${{ steps.version.outputs.version }}" \
-            --argjson vc "${{ steps.version.outputs.version_code }}" \
-            --arg url "$DOWNLOAD_URL" \
-            --arg sha "${{ steps.assets.outputs.sha256 }}" \
-            --argjson size "${{ steps.assets.outputs.size }}" \
-            --arg date "$DATE" \
-            '{latest_version: $v, latest_version_code: $vc, min_supported_version_code: 1, download_url: $url, checksum_sha256: $sha, file_size: $size, release_notes: "", release_date: $date, force_update: false}' \
-            > version.json
-
-          cp version.json dist/version.json
+          DATE=$(date +'%Y-%m-%d')
+          VERSION="${{ steps.version.outputs.version }}"
+          # Basic sed replacement to update the changelog Unreleased tag to the new version
+          sed -i "s/## \[Unreleased\]/## \[Unreleased\]\n\n## \[${VERSION}\] - ${DATE}/g" CHANGELOG.md
+          # Example of updating README if needed (currently README relies on /latest links)
+          echo "Updated CHANGELOG.md for v${VERSION}"
 
       - name: Commit version bump + manifest
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apps/mobile/app.json apps/mobile/package.json version.json apps/web/config.json
+          git add apps/mobile/app.json apps/mobile/package.json package.json version.json apps/web/config.json CHANGELOG.md README.md
           git diff --cached --quiet || git commit -m "chore: release v${{ steps.version.outputs.version }}"
           git push origin "${{ github.event.repository.default_branch }}"
 

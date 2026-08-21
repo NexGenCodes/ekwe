@@ -85,8 +85,7 @@ export const useSharedAudioPlayer = (
   const isOggSource = isIOS && !!uri && /\.ogg$/i.test(uri);
   const cafSiblingUri =
     isOggSource && uri ? uri.replace(/\.ogg$/i, ".caf") : null;
-  const hasCafSibling =
-    cafSiblingUri != null && new File(cafSiblingUri).exists;
+  const hasCafSibling = cafSiblingUri != null && new File(cafSiblingUri).exists;
   const [playableSource, setPlayableSource] = useState<string | null>(
     hasCafSibling ? cafSiblingUri : isOggSource ? null : uri,
   );
@@ -167,9 +166,7 @@ export const useSharedAudioPlayer = (
       })
       .catch((error) => {
         if (cancelled) return;
-        fallbackToWav(
-          error instanceof Error ? error.message : String(error),
-        );
+        fallbackToWav(error instanceof Error ? error.message : String(error));
       });
 
     return (): void => {
@@ -438,7 +435,15 @@ export const useSharedAudioPlayer = (
     const atEnd = duration > 0 && progressSV.value >= duration - 0.05;
     resumeAfterScrubRef.current =
       isPlayingRef.current && !isEndedRef.current && !atEnd;
-    if (isPlayingRef.current) player.pause();
+
+    // Always pause the native player on scrub. If a finished track is seeked,
+    // AVPlayer might automatically resume if it was never explicitly paused.
+    try {
+      player.pause();
+    } catch {
+      // Ignored
+    }
+
     setScrubbing(true);
   }, [player, setScrubbing, duration, progressSV]);
 
@@ -452,6 +457,13 @@ export const useSharedAudioPlayer = (
       // resume is gated entirely by what `beginScrub` captured.
       setIsEnded(false);
       isEndedRef.current = false;
+
+      // Ensure the native player is paused before we seek, preventing auto-play
+      try {
+        player.pause();
+      } catch {
+        // Ignored
+      }
 
       player.seekTo(clampedPos);
       progressSV.value = clampedPos;

@@ -74,10 +74,7 @@
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
             "minSdkVersion": 24,
-            "buildArchs": [
-              "arm64-v8a",
-              "armeabi-v7a"
-            ],
+            "buildArchs": ["arm64-v8a", "armeabi-v7a"],
             "ndkVersion": "27.1.12297006"
           }
         }
@@ -101,9 +98,7 @@
         }
       ]
     ],
-    "assetBundlePatterns": [
-      "assets/fonts/*"
-    ],
+    "assetBundlePatterns": ["assets/fonts/*"],
     "updates": {
       "url": "https://u.expo.dev/fb3d49de-0c12-4b1a-bf94-863befec071a",
       "channel": "production",

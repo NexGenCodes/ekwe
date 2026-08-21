@@ -168,7 +168,10 @@ export function CurrencyPickerModal({
                     {item.value ? (
                       <Text
                         variant="caption"
-                        style={{ color: color.muted, marginTop: spacing.hairline }}
+                        style={{
+                          color: color.muted,
+                          marginTop: spacing.hairline,
+                        }}
                       >
                         {item.value}
                       </Text>

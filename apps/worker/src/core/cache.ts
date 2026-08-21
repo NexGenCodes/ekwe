@@ -19,13 +19,16 @@ export async function withCache(
   // Preserve handler's Cache-Control if set; otherwise add a default.
   const headers = new Headers(res.headers);
   if (!headers.has("Cache-Control")) {
-    headers.set("Cache-Control", `public, max-age=${ttlSeconds}, stale-while-revalidate=${Math.min(ttlSeconds, 300)}`);
+    headers.set(
+      "Cache-Control",
+      `public, max-age=${ttlSeconds}, stale-while-revalidate=${Math.min(ttlSeconds, 300)}`,
+    );
   }
 
   const cacheRes = new Response(res.body, { ...res, headers });
-  
+
   // Cache in the background.
   ctx.waitUntil(cache.put(request, cacheRes.clone()));
-  
+
   return cacheRes;
 }

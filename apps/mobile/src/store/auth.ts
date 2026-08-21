@@ -35,8 +35,7 @@ export const authActions = {
   setSession: (session: Session | null): void => {
     const metadataIsPro = session?.user?.app_metadata?.is_pro === true;
     const previousUser = auth$.user.peek();
-    const sameUser =
-      !!previousUser && session?.user?.id === previousUser.id;
+    const sameUser = !!previousUser && session?.user?.id === previousUser.id;
 
     // The payment provider's status reconciliation (useBilling) is the
     // real-time source of truth for isPro. app_metadata.is_pro is minted by
@@ -69,7 +68,10 @@ export const authActions = {
   setIsPro: (isPro: boolean): void => {
     auth$.isPro.set(isPro);
   },
-  setEntitlementSynced: (synced: boolean, _provider?: PaymentProvider): void => {
+  setEntitlementSynced: (
+    synced: boolean,
+    _provider?: PaymentProvider,
+  ): void => {
     auth$.isProEntitlementSynced.set(synced);
   },
   /** Clears the entitlement-synced flag when the active payment provider

@@ -92,7 +92,10 @@ export async function rotateKeysDetailed(
       // abort — that would kill the whole failover chain for one slow provider.
       // Stop this rotation and let the pipeline try the next provider with a
       // fresh attempt budget.
-      if ((signal.reason as { name?: string } | undefined)?.name !== "TimeoutError") {
+      if (
+        (signal.reason as { name?: string } | undefined)?.name !==
+        "TimeoutError"
+      ) {
         throw new Error(CLIENT_ABORTED);
       }
       return { response: null, lastStatus };

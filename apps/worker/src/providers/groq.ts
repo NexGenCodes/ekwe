@@ -1,4 +1,9 @@
-import { CLIENT_ABORTED, Env, TranscribeResult, TranslateResult } from "../core/types";
+import {
+  CLIENT_ABORTED,
+  Env,
+  TranscribeResult,
+  TranslateResult,
+} from "../core/types";
 import { rotateKeysDetailed } from "../utils/keys";
 import {
   isHallucination,
@@ -6,11 +11,7 @@ import {
   parseTranslateOutput,
 } from "../utils/prompts";
 import { mimeToExt } from "../utils/mime";
-import {
-  getUserAgent,
-  fetchWithTimeout,
-  TIMEOUT_FAST,
-} from "../utils/fetch";
+import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
 import { logger } from "../core/logger";
 import { toWhisperCode } from "../services/languages";
 

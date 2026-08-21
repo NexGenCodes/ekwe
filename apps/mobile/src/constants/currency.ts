@@ -75,6 +75,10 @@ export function detectDeviceCurrency(): string {
  * pricing request and the checkout request, so the amount displayed always
  * matches the amount charged.
  */
-export function getPaymentCurrency(manual?: string | null): FlutterwaveCurrency {
-  return resolvePaymentCurrency(manual?.toUpperCase() ?? detectDeviceCurrency());
+export function getPaymentCurrency(
+  manual?: string | null,
+): FlutterwaveCurrency {
+  return resolvePaymentCurrency(
+    manual?.toUpperCase() ?? detectDeviceCurrency(),
+  );
 }

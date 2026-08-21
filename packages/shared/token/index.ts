@@ -1,9 +1,4 @@
-export {
-  lightColors,
-  darkColors,
-  getTheme,
-  bubbleColors,
-} from "./colors";
+export { lightColors, darkColors, getTheme, bubbleColors } from "./colors";
 export type { ColorsKey } from "./colors";
 export { spacing } from "./spacing";
 export type { SpacingKey } from "./spacing";

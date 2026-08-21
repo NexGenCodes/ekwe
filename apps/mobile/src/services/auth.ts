@@ -95,7 +95,10 @@ export const initAuth = async (): Promise<void> => {
     // share extension can authenticate without a deep-link handoff.
     mirrorSessionToSharedContainer(session, buildSettingsSharedPrefs());
 
-    if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session?.user) {
+    if (
+      (event === "SIGNED_IN" || event === "INITIAL_SESSION") &&
+      session?.user
+    ) {
       // Cold start with a persisted session emits INITIAL_SESSION (not
       // SIGNED_IN); without handling it, cloud history is never pulled until
       // a fresh sign-in. Both paths are idempotent (cursor-based pull).
@@ -103,6 +106,14 @@ export const initAuth = async (): Promise<void> => {
         identify(session.user.id, {
           email: session.user.email ?? "",
           is_pro: session.user.app_metadata?.is_pro === true,
+        });
+
+        // Push token re-registration: link the existing push token to this user
+        // in the Worker now that we have an active session (and JWT).
+        import("./notifications").then(({ registerForPushNotifications }) => {
+          registerForPushNotifications().catch((err) =>
+            logger.error("Failed to sync push token post-login:", err),
+          );
         });
       }
       SyncService.onUserSignedIn(session.user.id);
@@ -196,9 +207,7 @@ export const cleanupAuth = (): void => {
  * before dispatching the code. Without worker URL (local dev), it falls
  * back to calling Supabase directly.
  */
-export const sendOtp = async (
-  email: string,
-): Promise<AuthResult> => {
+export const sendOtp = async (email: string): Promise<AuthResult> => {
   const workerUrl = getWorkerUrl();
 
   if (workerUrl) {
@@ -527,7 +536,7 @@ export const signOut = async (): Promise<AuthResult> => {
       await SyncService.drain();
       const remaining = Db.getPendingOutbox(userId).length;
       if (remaining === 0) {
-        SyncService.purgeLocalHistory();
+        SyncService.purgeLocalHistory(userId);
         SyncService.clearSyncCursor(userId);
       } else {
         logger.warn(
@@ -565,6 +574,7 @@ export const signOut = async (): Promise<AuthResult> => {
 
 export const deleteAccount = async (): Promise<AuthResult> => {
   try {
+    const userId = auth$.user.get()?.id;
     const { error } = await supabase.rpc("delete_user");
     if (error) {
       logger.error("[Auth] delete_user RPC error:", error);
@@ -593,7 +603,9 @@ export const deleteAccount = async (): Promise<AuthResult> => {
 
     // The cloud rows are gone via delete_user cascade — purge the local
     // device cache so nothing of the account survives on this device.
-    SyncService.purgeLocalHistory();
+    if (userId) {
+      SyncService.purgeLocalHistory(userId);
+    }
 
     return { ok: true };
   } catch (err) {

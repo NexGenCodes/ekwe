@@ -546,7 +546,8 @@ export const useEchoFlow = (
     // (provider didn't report one AND the worker fallback didn't run), fall
     // back to a concrete user selection before giving up — an explicit
     // "English" source is still translatable even without a detection.
-    const sourceLang = source ?? (state.selectedLang !== "auto" ? state.selectedLang : null);
+    const sourceLang =
+      source ?? (state.selectedLang !== "auto" ? state.selectedLang : null);
     if (!sourceLang) {
       logger.error("[EchoFlow] No source language for translation");
       dispatch({

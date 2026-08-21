@@ -1,7 +1,12 @@
-import { WORKER_ERROR_CODES, registerPushTokenRequestSchema } from "@ekwe/shared";
+import {
+  WORKER_ERROR_CODES,
+  registerPushTokenRequestSchema,
+} from "@ekwe/shared";
 import { Env } from "../core/types";
 import { safeParseJSON } from "../core/guards";
 import { supabasePost } from "../services/supabase";
+
+import { type AuthResult } from "../core/auth";
 
 /**
  * POST /push-tokens — register (or refresh) a device push token.
@@ -15,6 +20,7 @@ import { supabasePost } from "../services/supabase";
 export async function handleRegisterPushToken(
   request: Request,
   env: Env,
+  auth: AuthResult | null,
 ): Promise<Response> {
   const parsed = await safeParseJSON<unknown>(request);
   if (!parsed.ok) return parsed.response;
@@ -31,6 +37,7 @@ export async function handleRegisterPushToken(
     p_push_token: body.data.push_token,
     p_platform: body.data.platform,
     p_app_version: body.data.app_version ?? null,
+    ...(auth?.userId ? { p_user_id: auth.userId } : {}),
   });
 
   if (!res) {

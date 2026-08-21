@@ -25,6 +25,7 @@ interface PushNotifyBody {
 interface ActiveTokenRow {
   push_token: string;
   platform: string;
+  user_id: string | null;
 }
 
 interface ExpoTicket {
@@ -155,7 +156,10 @@ export async function handlePushNotify(
   let deactivated = 0;
   for (let i = 0; i < tickets.length && i < androidTokens.length; i++) {
     const ticket = tickets[i];
-    if (ticket.status === "error" && ticket.details?.error === "DeviceNotRegistered") {
+    if (
+      ticket.status === "error" &&
+      ticket.details?.error === "DeviceNotRegistered"
+    ) {
       const token = androidTokens[i];
       try {
         await supabasePost(env, "/rest/v1/rpc/deactivate_push_token", {

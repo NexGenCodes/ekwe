@@ -17,14 +17,16 @@ const makeVoice = (overrides: Partial<Voice>): Voice => ({
 describe("inferVoiceGender", () => {
   it("detects female from Android engine identifier tokens", () => {
     expect(
-      inferVoiceGender(makeVoice({ identifier: "com.google.android.tts#female_1" })),
+      inferVoiceGender(
+        makeVoice({ identifier: "com.google.android.tts#female_1" }),
+      ),
     ).toBe("female");
   });
 
   it("detects male from Android engine name tokens", () => {
-    expect(
-      inferVoiceGender(makeVoice({ name: "English (US) Male 2" })),
-    ).toBe("male");
+    expect(inferVoiceGender(makeVoice({ name: "English (US) Male 2" }))).toBe(
+      "male",
+    );
   });
 
   it("treats 'female' before 'male' so the substring never wins", () => {
@@ -34,12 +36,8 @@ describe("inferVoiceGender", () => {
   });
 
   it("recognizes curated iOS female voice names", () => {
-    expect(
-      inferVoiceGender(makeVoice({ name: "Samantha" })),
-    ).toBe("female");
-    expect(
-      inferVoiceGender(makeVoice({ name: "Zosia" })),
-    ).toBe("female");
+    expect(inferVoiceGender(makeVoice({ name: "Samantha" }))).toBe("female");
+    expect(inferVoiceGender(makeVoice({ name: "Zosia" }))).toBe("female");
   });
 
   it("recognizes curated iOS male voice names", () => {
@@ -55,7 +53,10 @@ describe("inferVoiceGender", () => {
     expect(inferVoiceGender(makeVoice({ name: "Google Deutsch" }))).toBe(null);
     expect(
       inferVoiceGender(
-        makeVoice({ identifier: "-en-us-x-aph-network", name: "Network voice" }),
+        makeVoice({
+          identifier: "-en-us-x-aph-network",
+          name: "Network voice",
+        }),
       ),
     ).toBe(null);
   });
@@ -94,9 +95,9 @@ describe("pickDeviceVoice", () => {
     expect(
       pickDeviceVoice([maleEnUs, femaleEnUs], "en", "female"),
     ).toMatchObject({ identifier: "en-us-female" });
-    expect(
-      pickDeviceVoice([maleEnUs, femaleEnUs], "en", "male"),
-    ).toMatchObject({ identifier: "en-us-male" });
+    expect(pickDeviceVoice([maleEnUs, femaleEnUs], "en", "male")).toMatchObject(
+      { identifier: "en-us-male" },
+    );
   });
 
   it("falls back to an unclassified voice when no gender match exists", () => {
@@ -157,9 +158,13 @@ describe("pickDeviceVoice", () => {
 describe("isMissingVoiceError", () => {
   it("matches missing-voice and synthesis failures", () => {
     expect(isMissingVoiceError("No voice found for the language")).toBe(true);
-    expect(isMissingVoiceError("The selected voice is not installed")).toBe(true);
+    expect(isMissingVoiceError("The selected voice is not installed")).toBe(
+      true,
+    );
     expect(isMissingVoiceError("TextToSpeech synthesis failed")).toBe(true);
-    expect(isMissingVoiceError("language not supported by the engine")).toBe(true);
+    expect(isMissingVoiceError("language not supported by the engine")).toBe(
+      true,
+    );
   });
 
   it("ignores interruptions, stops, and generic failures", () => {

@@ -92,7 +92,8 @@ export async function handleWebhook(
     );
     return Response.json(
       {
-        error: verification.code ?? WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
+        error:
+          verification.code ?? WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
         message: "Webhook signature verification failed.",
       },
       { status: 401 },

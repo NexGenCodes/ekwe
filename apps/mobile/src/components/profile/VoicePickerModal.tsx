@@ -119,9 +119,10 @@ export function VoicePickerModal({
                       borderRadius: borderRadius.lg,
                       marginVertical: spacing.hairline,
                     },
-                    pressed && !isLocked && {
-                      backgroundColor: withAlpha(color.foreground, 0.102),
-                    },
+                    pressed &&
+                      !isLocked && {
+                        backgroundColor: withAlpha(color.foreground, 0.102),
+                      },
                     isSelected && {
                       backgroundColor: withAlpha(color.foreground, 0.051),
                     },

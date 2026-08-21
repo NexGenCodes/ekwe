@@ -1,11 +1,7 @@
 import { CLIENT_ABORTED, Env, TranslateResult } from "../core/types";
 import { sanitizeKey } from "../utils/keys";
 import { buildTranslatePrompt, parseTranslateOutput } from "../utils/prompts";
-import {
-  getUserAgent,
-  fetchWithTimeout,
-  TIMEOUT_FAST,
-} from "../utils/fetch";
+import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
 import { logger } from "../core/logger";
 
 const OPENROUTER_CHAT = "https://openrouter.ai/api/v1/chat/completions";
@@ -48,7 +44,11 @@ export async function translate(
           messages: [
             {
               role: "system",
-              content: buildTranslatePrompt(targetLang, sourceLang, transliteration),
+              content: buildTranslatePrompt(
+                targetLang,
+                sourceLang,
+                transliteration,
+              ),
             },
             { role: "user", content: text },
           ],

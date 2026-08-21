@@ -205,6 +205,7 @@ function RootLayout(): React.ReactElement {
 
     // Register for push notifications — used for APK update alerts.
     // APK updates themselves are handled natively, so the app never opens.
+    // Pass no userId yet — will re-register after auth resolves below.
     registerForPushNotifications();
 
     // Must resolve BEFORE initAuth: until initializeMMKV finishes, the mmkv
@@ -212,6 +213,14 @@ function RootLayout(): React.ReactElement {
     // would persist session tokens unencrypted.
     initializeMMKV()
       .then(() => initAuth())
+      .then(() => {
+        // Re-register push token now that auth is resolved.
+        // The Worker reads the user from the JWT; no need to pass user_id.
+        const session = auth$.session.peek();
+        if (session?.user?.id) {
+          registerForPushNotifications();
+        }
+      })
       .catch((err: unknown) => {
         logger.error("[RootLayout] initializeMMKV failed", err);
       })

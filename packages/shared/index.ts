@@ -1,9 +1,5 @@
 export * from "./token";
-export {
-  type Logger,
-  makeLogEntry,
-  scrubSentryEvent,
-} from "./observability";
+export { type Logger, makeLogEntry, scrubSentryEvent } from "./observability";
 export { LANGUAGES, languageName, getLanguageFlag } from "./languages";
 export type { Language } from "./languages";
 export {

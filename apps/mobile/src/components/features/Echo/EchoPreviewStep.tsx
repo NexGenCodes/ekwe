@@ -67,7 +67,13 @@ const PlaybackControl: React.FC<PlaybackControlProps> = React.memo(
 
     const handleSeeking = useCallback(
       (normalizedProgress: number): void => {
-        setScrubTime(normalizedProgress * duration);
+        const nextTime = normalizedProgress * duration;
+        setScrubTime((prev) => {
+          if (prev !== null && Math.floor(prev) === Math.floor(nextTime)) {
+            return prev;
+          }
+          return nextTime;
+        });
       },
       [duration],
     );
@@ -202,7 +208,7 @@ export const EchoPreviewStep: React.FC<EchoPreviewStepProps> = React.memo(
       if (player.isPlaying) {
         player.pause();
       } else {
-        player.play();
+        void player.play();
       }
     }, [player]);
 

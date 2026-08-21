@@ -1,9 +1,6 @@
 import * as Localization from "expo-localization";
 
-import {
-  detectDeviceCurrency,
-  getPaymentCurrency,
-} from "@/constants/currency";
+import { detectDeviceCurrency, getPaymentCurrency } from "@/constants/currency";
 
 jest.mock("expo-localization", () => ({
   getLocales: jest.fn(),
@@ -29,9 +26,7 @@ describe("detectDeviceCurrency", () => {
   });
 
   test("falls back to the device locale currencyCode when the region is unknown", () => {
-    mockGetLocales.mockReturnValue([
-      { regionCode: "XA", currencyCode: "ngn" },
-    ]);
+    mockGetLocales.mockReturnValue([{ regionCode: "XA", currencyCode: "ngn" }]);
     expect(detectDeviceCurrency()).toBe("NGN");
   });
 

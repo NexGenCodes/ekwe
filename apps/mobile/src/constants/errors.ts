@@ -78,8 +78,7 @@ export const ErrorMessages: Record<EkweError, string> = {
     "No audio was captured. Make sure the voice note is audible.",
   [EkweError.FILE_TOO_LARGE]:
     "This file is too large to process. Maximum size is 25MB.",
-  [EkweError.AUDIO_TOO_LONG]:
-    `This audio is too long for your plan. Free: ${FREE_MAX_MIN} min per file · Pro: ${PRO_MAX_MIN} min.`,
+  [EkweError.AUDIO_TOO_LONG]: `This audio is too long for your plan. Free: ${FREE_MAX_MIN} min per file · Pro: ${PRO_MAX_MIN} min.`,
   [EkweError.TTS_FAIL]: "Text-to-speech failed. Please try again.",
   [EkweError.SERVER_ERROR]: "Server error. Please try again.",
   [EkweError.REQUEST_CANCELLED]: "Request was cancelled.",

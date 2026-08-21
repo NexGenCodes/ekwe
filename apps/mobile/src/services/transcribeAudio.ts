@@ -1,7 +1,10 @@
 import { File as ExpoFile, UploadType } from "expo-file-system";
 
 import { transcribeResponseSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
-import { MAX_AUDIO_BYTES as MAX_FILE_SIZE_BYTES, PREMIUM_LIMITS } from "@ekwe/shared/plans";
+import {
+  MAX_AUDIO_BYTES as MAX_FILE_SIZE_BYTES,
+  PREMIUM_LIMITS,
+} from "@ekwe/shared/plans";
 import { EkweError } from "@/constants/errors";
 import { ProcessedAudio } from "@/services/AudioProcessor";
 import { supabase } from "@/services/supabase";

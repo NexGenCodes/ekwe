@@ -45,10 +45,13 @@ export async function transcribe(
       if (!uploadRes.ok) {
         if (uploadRes.status === 402 || uploadRes.status === 403) {
           const err = await uploadRes.text().catch(() => "No body");
-          logger.error("[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!", {
-            status: uploadRes.status,
-            body: err,
-          });
+          logger.error(
+            "[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!",
+            {
+              status: uploadRes.status,
+              body: err,
+            },
+          );
         } else {
           const err = await uploadRes.text().catch(() => "No body");
           logger.error("[assemblyai] Upload error", {
@@ -89,10 +92,13 @@ export async function transcribe(
       if (!createRes.ok) {
         if (createRes.status === 402 || createRes.status === 403) {
           const err = await createRes.text().catch(() => "No body");
-          logger.error("[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!", {
-            status: createRes.status,
-            body: err,
-          });
+          logger.error(
+            "[CREDIT_EXHAUSTED] AssemblyAI key requires manual rotation!",
+            {
+              status: createRes.status,
+              body: err,
+            },
+          );
         } else {
           const err = await createRes.text().catch(() => "No body");
           logger.error("[assemblyai] Create error", {

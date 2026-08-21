@@ -133,14 +133,17 @@ describe("translateResponseSchema", () => {
       }).success,
     ).toBe(true);
     expect(
-      translateResponseSchema.safeParse({ translation: "Pẹlẹ o", provider: "gemini" }).success,
+      translateResponseSchema.safeParse({
+        translation: "Pẹlẹ o",
+        provider: "gemini",
+      }).success,
     ).toBe(true);
   });
 
   test("rejects a response without translation", () => {
-    expect(translateResponseSchema.safeParse({ provider: "gemini" }).success).toBe(
-      false,
-    );
+    expect(
+      translateResponseSchema.safeParse({ provider: "gemini" }).success,
+    ).toBe(false);
   });
 });
 
@@ -155,7 +158,10 @@ describe("transcribeResponseSchema", () => {
       }).success,
     ).toBe(true);
     expect(
-      transcribeResponseSchema.safeParse({ text: "hello", provider: "deepgram" }).success,
+      transcribeResponseSchema.safeParse({
+        text: "hello",
+        provider: "deepgram",
+      }).success,
     ).toBe(true);
   });
 

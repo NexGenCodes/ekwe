@@ -63,7 +63,10 @@ function createInterceptor(
   clientWs: WebSocket,
   providerWs: WebSocket,
   onProviderMessage: (data: string) => void,
-  hooks: { handleClientBytes?: (data: Uint8Array) => void; flush?: () => void } = {},
+  hooks: {
+    handleClientBytes?: (data: Uint8Array) => void;
+    flush?: () => void;
+  } = {},
 ): () => void {
   const { handleClientBytes, flush } = hooks;
   let isClosed = false;

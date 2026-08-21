@@ -96,7 +96,10 @@ export async function verifyWebhook(
 
     // Mechanism 1: plain verif-hash equality
     if (verifHash) {
-      isValid = await timingSafeEqual(verifHash, env.FLUTTERWAVE_WEBHOOK_SECRET);
+      isValid = await timingSafeEqual(
+        verifHash,
+        env.FLUTTERWAVE_WEBHOOK_SECRET,
+      );
     }
 
     // Mechanism 2: HMAC-SHA256 over the raw body (base64-encoded)

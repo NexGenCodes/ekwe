@@ -25,7 +25,11 @@ import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks/ui";
 import { settings$ } from "@/store";
 import { withAlpha } from "@/utils/color";
-import { loadDeviceVoices, pickDeviceVoice, isMissingVoiceError } from "@/utils/deviceVoice";
+import {
+  loadDeviceVoices,
+  pickDeviceVoice,
+  isMissingVoiceError,
+} from "@/utils/deviceVoice";
 import logger from "@/utils/logger";
 import { AppToast } from "@/utils/toast";
 
@@ -205,7 +209,9 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
             }
 
             AppToast.error(
-              isMissingVoiceError(errorMsg) ? "Voice Not Installed" : "Speech Unavailable",
+              isMissingVoiceError(errorMsg)
+                ? "Voice Not Installed"
+                : "Speech Unavailable",
               {
                 description: isMissingVoiceError(errorMsg)
                   ? "Add the voice for this language in your device Settings, then try again."
@@ -221,7 +227,9 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
         const errorMsg = err instanceof Error ? err.message : String(err);
         logger.warn("[TextBox] TTS threw exception:", errorMsg);
         AppToast.error(
-          isMissingVoiceError(errorMsg) ? "Voice Not Installed" : "Speech Unavailable",
+          isMissingVoiceError(errorMsg)
+            ? "Voice Not Installed"
+            : "Speech Unavailable",
           {
             description: isMissingVoiceError(errorMsg)
               ? "Add the voice for this language in your device Settings, then try again."

@@ -77,7 +77,8 @@ export function formatMoney(amount: number, code: string): string {
  * callers can fall back to a platform currency code as a secondary signal.
  */
 export function countryToCurrency(countryCode: string): string | undefined {
-  const country = countries[countryCode.toUpperCase() as keyof typeof countries];
+  const country =
+    countries[countryCode.toUpperCase() as keyof typeof countries];
   return country?.currency?.[0];
 }
 

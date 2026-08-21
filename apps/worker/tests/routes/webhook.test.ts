@@ -90,7 +90,7 @@ describe("Webhook Endpoint", () => {
       const req = flutterwaveRequest({ event: "test" });
       const res = await handleWebhook(req, env, ctx);
       expect(res.status).toBe(401);
-      expect((await res.json() as { error?: string }).error).toBe(
+      expect(((await res.json()) as { error?: string }).error).toBe(
         WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
       );
     });
@@ -106,7 +106,7 @@ describe("Webhook Endpoint", () => {
       const req = flutterwaveRequest({ event: "test" });
       const res = await handleWebhook(req, env, ctx);
       expect(res.status).toBe(401);
-      expect((await res.json() as { error?: string }).error).toBe(
+      expect(((await res.json()) as { error?: string }).error).toBe(
         WORKER_ERROR_CODES.WEBHOOK_TIMESTAMP_EXPIRED,
       );
     });
@@ -156,7 +156,11 @@ describe("Webhook Endpoint", () => {
       expect(await res.json()).toEqual(responseBody);
       expect(mockedProcessWebhookEvent).toHaveBeenCalledWith(
         "flutterwave",
-        { id: 12345, event: "charge.completed", data: { amount: 1000, currency: "NGN" } },
+        {
+          id: 12345,
+          event: "charge.completed",
+          data: { amount: 1000, currency: "NGN" },
+        },
         env,
       );
     });
@@ -189,7 +193,7 @@ describe("Webhook Endpoint", () => {
 
       const req2 = flutterwaveRequest(event);
       const res2 = await handleWebhook(req2, env, ctx);
-      const body = await res2.json() as Record<string, unknown>;
+      const body = (await res2.json()) as Record<string, unknown>;
       expect(body.action).toBe("duplicate");
     });
   });

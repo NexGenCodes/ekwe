@@ -83,7 +83,8 @@ export class ThrottleBucket extends DurableObject<Env> {
    */
   private async prune(): Promise<void> {
     const now = Date.now();
-    const lastPrune = (await this.ctx.storage.get<number>("otp:throttle:prune")) ?? 0;
+    const lastPrune =
+      (await this.ctx.storage.get<number>("otp:throttle:prune")) ?? 0;
     if (now - lastPrune < ThrottleBucket.PRUNE_INTERVAL_MS) return;
     const entries = await this.ctx.storage.list<WindowCounter>({
       prefix: ThrottleBucket.PREFIX,

@@ -105,10 +105,32 @@ jobs:
       - name: Fail if worker-configuration.d.ts is out of date
         run: git diff --exit-code -- worker-configuration.d.ts
 
+  deploy-supabase:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    needs: [typecheck, lint, test-worker, secret-scan]
+    environment: production
+    defaults:
+      run:
+        working-directory: supabase
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install Supabase CLI
+        run: npm install -g supabase
+      - name: Link and Push Migrations
+        run: |
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }} --password ${{ secrets.SUPABASE_DB_PASSWORD }} || true
+          supabase db push
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
   deploy-worker:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
-    needs: [typecheck, lint, test-worker, secret-scan, wrangler-types-drift]
+    needs: [typecheck, lint, test-worker, secret-scan, wrangler-types-drift, deploy-supabase]
     environment: production
     defaults:
       run:

@@ -41,17 +41,16 @@ describe("parseTranslateOutput", () => {
       translation: "Hola mundo",
     });
     // Even a stray marker is left alone: the prompt never asked for one.
-    expect(parseTranslateOutput(`Hola${ROMANIZATION_MARKER}\nO-la`, false)).toEqual({
+    expect(
+      parseTranslateOutput(`Hola${ROMANIZATION_MARKER}\nO-la`, false),
+    ).toEqual({
       translation: `Hola${ROMANIZATION_MARKER}\nO-la`,
     });
   });
 
   test("splits translation and romanization when requested", () => {
     expect(
-      parseTranslateOutput(
-        `नमस्ते\n${ROMANIZATION_MARKER}\nNamaste`,
-        true,
-      ),
+      parseTranslateOutput(`नमस्ते\n${ROMANIZATION_MARKER}\nNamaste`, true),
     ).toEqual({ translation: "नमस्ते", transliteration: "Namaste" });
   });
 

@@ -41,7 +41,11 @@ import { auth$, settings$ } from "@/store";
 import { cleanEchoCache } from "@/utils/echo";
 import { withAlpha } from "@/utils/color";
 import { AppToast } from "@/utils/toast";
-import { loadDeviceVoices, pickDeviceVoice, isMissingVoiceError } from "@/utils/deviceVoice";
+import {
+  loadDeviceVoices,
+  pickDeviceVoice,
+  isMissingVoiceError,
+} from "@/utils/deviceVoice";
 import logger from "@/utils/logger";
 
 export interface ExpressiveOutputProps {
@@ -326,7 +330,9 @@ export const ExpressiveOutput = React.memo(
             }
 
             AppToast.error(
-              isMissingVoiceError(errorMsg) ? "Voice Not Installed" : "Speech Unavailable",
+              isMissingVoiceError(errorMsg)
+                ? "Voice Not Installed"
+                : "Speech Unavailable",
               {
                 description: isMissingVoiceError(errorMsg)
                   ? "Add the voice for this language in your device Settings, then try again."

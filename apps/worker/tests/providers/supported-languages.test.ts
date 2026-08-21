@@ -51,13 +51,15 @@ describe("all transcription providers export supportedLanguages", () => {
   });
 
   test("assemblyai streaming only supports en", async () => {
-    const { ASSEMBLYAI_STREAM_LANGUAGES } = await import("../../src/services/languages");
+    const { ASSEMBLYAI_STREAM_LANGUAGES } =
+      await import("../../src/services/languages");
     expect(ASSEMBLYAI_STREAM_LANGUAGES.size).toBe(1);
     expect(ASSEMBLYAI_STREAM_LANGUAGES.has("en")).toBe(true);
   });
 
   test("streaming pipeline includes witai with correct languages", async () => {
-    const { STREAM_STT_LANGUAGES } = await import("../../src/services/languages");
+    const { STREAM_STT_LANGUAGES } =
+      await import("../../src/services/languages");
     expect(STREAM_STT_LANGUAGES.witai).toBeDefined();
     expect(STREAM_STT_LANGUAGES.witai.has("ig")).toBe(true);
     expect(STREAM_STT_LANGUAGES.witai.has("en")).toBe(true);
@@ -80,9 +82,10 @@ describe("all transcription providers export supportedLanguages", () => {
   test("ALL_LANGUAGES stays a subset of the shared product language list", () => {
     const shared = new Set(LANGUAGES.map((l) => l.code));
     for (const code of ALL_LANGUAGES) {
-      expect(shared.has(code), `${code} missing from @ekwe/shared LANGUAGES`).toBe(
-        true,
-      );
+      expect(
+        shared.has(code),
+        `${code} missing from @ekwe/shared LANGUAGES`,
+      ).toBe(true);
     }
   });
 });

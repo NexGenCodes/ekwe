@@ -41,6 +41,7 @@ describe("handleRegisterPushToken", () => {
         }),
       ),
       mockEnv(),
+      null,
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -52,6 +53,7 @@ describe("handleRegisterPushToken", () => {
         JSON.stringify({ push_token: "APNs-abc123", platform: "ios" }),
       ),
       mockEnv(),
+      null,
     );
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "INVALID_BODY" });
@@ -66,6 +68,7 @@ describe("handleRegisterPushToken", () => {
         }),
       ),
       mockEnv(),
+      null,
     );
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "INVALID_BODY" });
@@ -75,6 +78,7 @@ describe("handleRegisterPushToken", () => {
     const res = await handleRegisterPushToken(
       pushTokenRequest(JSON.stringify({ platform: "android" })),
       mockEnv(),
+      null,
     );
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "INVALID_BODY" });
