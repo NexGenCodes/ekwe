@@ -28,6 +28,7 @@ const versionCode = M * 10000 + m * 100 + p;
 
 const appJsonPath = `${mobileDir}/app.json`;
 const pkgJsonPath = `${mobileDir}/package.json`;
+const webConfigPath = `apps/web/config.json`;
 
 const app = JSON.parse(readFileSync(appJsonPath, "utf8"));
 app.expo.version = next;
@@ -38,7 +39,11 @@ const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf8"));
 pkg.version = next;
 writeFileSync(pkgJsonPath, JSON.stringify(pkg, null, 2) + "\n");
 
-run(`git add ${appJsonPath} ${pkgJsonPath}`);
+const webConfig = JSON.parse(readFileSync(webConfigPath, "utf8"));
+webConfig.version = next;
+writeFileSync(webConfigPath, JSON.stringify(webConfig, null, 2) + "\n");
+
+run(`git add ${appJsonPath} ${pkgJsonPath} ${webConfigPath}`);
 run(`git commit -m "chore: release v${next}"`);
 run("git push");
 
