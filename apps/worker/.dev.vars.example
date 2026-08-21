@@ -2,6 +2,8 @@
 # Cloudflare Dashboard → Workers & Pages → ekwe-proxy → Settings → Variables
 # DO NOT commit `.dev.vars`. This file is a safe, documented template.
 
+APP_ENV=development
+
 # ─── Supabase ─────────────────────────────────────────────────────────
 SUPABASE_URL=your-supabase-project-url
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
@@ -34,6 +36,8 @@ GROQ_KEY_10=
 GEMINI_KEY_1=
 GEMINI_KEY_2=
 GEMINI_KEY_3=
+GEMINI_KEY_4=
+GEMINI_KEY_5=
 
 COHERE_KEY_1=
 COHERE_KEY_2=
@@ -198,6 +202,8 @@ WIT_KEY_ZU=
 # Required for /checkout/initialize and /webhook to work.
 # FLUTTERWAVE_SECRET: API secret key (FLWSECK_...) for checkout/payment calls.
 FLUTTERWAVE_SECRET=
+PUSH_NOTIFY_SECRET=
+
 # FLUTTERWAVE_WEBHOOK_SECRET: secret hash from the Flutterwave dashboard
 # (Settings → Webhooks), used to verify inbound webhook signatures.
 # Must match the value entered in the dashboard. Flutterwave caps this field
