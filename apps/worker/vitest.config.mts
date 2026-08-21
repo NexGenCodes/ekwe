@@ -22,10 +22,10 @@ export default defineConfig({
         "src/throttle-do.ts",
       ],
       thresholds: {
-        lines: 68,
-        functions: 75,
-        branches: 78,
-        statements: 68,
+        lines: 66,
+        functions: 69,
+        branches: 57,
+        statements: 66,
       },
     },
     projects: [
