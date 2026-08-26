@@ -47,6 +47,9 @@ desktop.ini
 # logs
 *.log
 
+# CI artifacts
+.bump.env
+
 # Cloudflare Workers
 .dev.vars
 .wrangler/
