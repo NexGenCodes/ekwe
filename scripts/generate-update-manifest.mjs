@@ -20,4 +20,6 @@ const manifest = {
   force_update: false
 };
 
-fs.writeFileSync(path.resolve('dist/version.json'), JSON.stringify(manifest, null, 2) + '\n');
+const outDir = path.resolve('dist');
+fs.mkdirSync(outDir, { recursive: true });
+fs.writeFileSync(path.join(outDir, 'version.json'), JSON.stringify(manifest, null, 2) + '\n');
