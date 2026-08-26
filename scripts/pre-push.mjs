@@ -26,9 +26,12 @@ if (diff) {
 // ── 2. Push supabase migrations (auto no-op if nothing new) ──────
 console.log("Checking Supabase migrations...\n");
 try {
-  run("supabase db push --linked", { stdio: "inherit" });
+  run("supabase db push --linked", {
+    stdio: "inherit",
+    env: { ...process.env, SUPABASE_DB_PASSWORD: process.env.SUPABASE_DB_PASSWORD ?? "" },
+  });
 } catch {
-  console.warn("⚠  Supabase not linked or push failed. Run 'pnpm db:link' first.\n");
+  console.warn("⚠  Supabase: pending migrations or link issue. Run 'supabase db push --linked --include-all' manually.\n");
 }
 
 // ── 3. Lint ───────────────────────────────────────────────────────

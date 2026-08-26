@@ -15,22 +15,48 @@ import { PRO_PRODUCT_IDS } from "./plans";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// ─── Auth email field (single source) ────────────────────────────
+// One rule set for every auth email crossing the boundary: trim, lowercase,
+// RFC 5321 max length, shape regex. Callers pass their own message — machine
+// error codes on the wire, user-facing text in forms — but acceptance is
+// identical by construction.
+const authEmailField = (message: string) =>
+  z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(254, { message })
+    .regex(EMAIL_RE, { message });
+
 // ─── POST /auth/otp ──────────────────────────────────────────────
 // Mirrors the worker's send-otp validation exactly (trim, lowercase,
 // max length, shape regex, 2048-char token cap).
 export const otpRequestSchema = z.object({
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .max(254, { message: "INVALID_EMAIL" })
-    .regex(EMAIL_RE, { message: "INVALID_EMAIL" }),
+  email: authEmailField("INVALID_EMAIL"),
   turnstileToken: z
     .string()
     .max(2048, { message: "TURNSTILE_REQUIRED" })
     .optional(),
 });
 export type OtpRequest = z.infer<typeof otpRequestSchema>;
+
+// ─── Auth form schemas ───────────────────────────────────────────
+// Client-side form validation for the auth flow, shared so mobile and any
+// future client validate identically before hitting the worker. Messages are
+// user-facing (forms render them verbatim). The email rules come from
+// `authEmailField`, so a value the login form accepts is byte-for-byte what
+// the worker's `otpRequestSchema` accepts; `token` is the same 6-digit code
+// Supabase issues for verification.
+export const loginSchema = z.object({
+  email: authEmailField("Please enter a valid email address."),
+});
+export const otpSchema = z.object({
+  token: z.string().length(6, "Please enter the 6-digit code."),
+});
+// The login form captures exactly the email half of an OTP request — derive
+// the type from the wire shape so a rename upstream breaks here first.
+export type LoginForm = Pick<OtpRequest, "email">;
+export type OtpForm = z.infer<typeof otpSchema>;
 
 // ─── POST /translate ─────────────────────────────────────────────
 // Mirrors the worker's /translate request shape. Tier-aware semantics
@@ -42,6 +68,37 @@ export const translateRequestSchema = z.object({
   sourceLang: z.string().optional(),
 });
 export type TranslateRequest = z.infer<typeof translateRequestSchema>;
+
+// ─── Translation form schema ─────────────────────────────────────
+// Client-side pre-flight guard derived from the wire shape above (extend, so
+// wire fields can never silently vanish from the form): non-empty text,
+// concrete language selections (no "none" placeholder), and the auto-detect
+// exception to the same-language rule. Messages are user-facing — toasts
+// render them verbatim.
+export const translationSchema = translateRequestSchema
+  .extend({
+    text: z.string().min(1, "Please enter text to translate."),
+    sourceLang: z
+      .string()
+      .min(1, "Please select a source language.")
+      .refine((val) => val !== "none" && val !== "", {
+        message: "Please select a source language.",
+      }),
+    targetLang: z
+      .string()
+      .min(1, "Please select a target language.")
+      .refine((val) => val !== "none" && val !== "", {
+        message: "Please select a target language.",
+      }),
+  })
+  .refine(
+    (data) => data.sourceLang === "auto" || data.sourceLang !== data.targetLang,
+    {
+      message: "Source and target languages cannot be the same.",
+      path: ["targetLang"],
+    },
+  );
+export type TranslationForm = z.infer<typeof translationSchema>;
 
 // ─── POST /translate response ────────────────────────────────────
 // `transliteration`/`language` are premium-only extras the worker may include;

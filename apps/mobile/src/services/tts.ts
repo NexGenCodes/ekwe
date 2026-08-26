@@ -80,7 +80,7 @@ export async function synthesizeSpeech(
           body: JSON.stringify({
             text: trimmed,
             lang,
-            gender: ((): "male" | "female" | undefined => {
+            gender: ((): TtsRequest["gender"] => {
               const v = settings$.ttsVoice.peek();
               return v === "default" ? undefined : v;
             })(),

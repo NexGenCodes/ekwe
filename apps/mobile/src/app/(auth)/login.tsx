@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { loginSchema, type LoginForm } from "@ekwe/shared";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -17,7 +18,6 @@ import { Box } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
 import { useAuthFlow, useNetwork } from "@/hooks";
 import { pushOnce } from "@/utils/navigation";
-import { loginSchema, LoginForm } from "@/schemas/auth";
 import { sendOtp } from "@/services/auth";
 
 export default function WelcomeScreen(): React.JSX.Element {

@@ -3,13 +3,16 @@ import { describe, expect, test } from "vitest";
 import {
   checkoutRequestSchema,
   checkoutResponseSchema,
+  loginSchema,
   otpRequestSchema,
+  otpSchema,
   registerPushTokenRequestSchema,
   storePricingResponseSchema,
   transcribeResponseSchema,
   translateRequestSchema,
   translateResponseSchema,
   ttsRequestSchema,
+  translationSchema,
   usageSnapshotSchema,
 } from "./schemas";
 
@@ -63,6 +66,79 @@ describe("otpRequestSchema", () => {
     expect(oversized.success).toBe(false);
     if (!oversized.success) {
       expect(oversized.error.issues[0]?.path[0]).toBe("turnstileToken");
+    }
+  });
+});
+
+describe("loginSchema", () => {
+  test("accepts a valid email", () => {
+    expect(loginSchema.safeParse({ email: "user@example.com" }).success).toBe(
+      true,
+    );
+  });
+
+  test("normalizes like the wire schema (trim + lowercase)", () => {
+    const parsed = loginSchema.safeParse({ email: "  User@Example.COM " });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.email).toBe("user@example.com");
+    }
+  });
+
+  test("rejects a malformed email with a user-facing message", () => {
+    const parsed = loginSchema.safeParse({ email: "not-an-email" });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toBe(
+        "Please enter a valid email address.",
+      );
+    }
+  });
+
+  test("caps length at 254 with a user-facing message", () => {
+    const parsed = loginSchema.safeParse({ email: `${"a".repeat(250)}@b.co` });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toBe(
+        "Please enter a valid email address.",
+      );
+    }
+  });
+
+  test("rejects a missing email", () => {
+    expect(loginSchema.safeParse({}).success).toBe(false);
+  });
+
+  test("form and wire accept identical email sets", () => {
+    const cases = [
+      "user@example.com",
+      "USER@EXAMPLE.COM",
+      "not-an-email",
+      "",
+      "@x.co",
+      "a b@c.co",
+      `${"a".repeat(250)}@b.co`,
+    ];
+    for (const email of cases) {
+      const viaForm = loginSchema.safeParse({ email }).success;
+      const viaWire = otpRequestSchema.safeParse({ email }).success;
+      expect(viaForm).toBe(viaWire);
+    }
+  });
+});
+
+describe("otpSchema", () => {
+  test("accepts a 6-digit token", () => {
+    expect(otpSchema.safeParse({ token: "123456" }).success).toBe(true);
+  });
+
+  test("rejects tokens that are not exactly 6 chars", () => {
+    for (const token of ["", "12345", "1234567", "abcdefg"]) {
+      const parsed = otpSchema.safeParse({ token });
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues[0]?.path[0]).toBe("token");
+      }
     }
   });
 });
@@ -186,6 +262,68 @@ describe("usageSnapshotSchema", () => {
   test("rejects a snapshot missing quota pools", () => {
     const parsed = usageSnapshotSchema.safeParse({ day: "2026-08-13" });
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe("translationSchema", () => {
+  test("accepts distinct languages and non-empty text", () => {
+    expect(
+      translationSchema.safeParse({
+        text: "hello",
+        sourceLang: "en",
+        targetLang: "yo",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("accepts auto-detect even when it matches the target code", () => {
+    expect(
+      translationSchema.safeParse({
+        text: "hello",
+        sourceLang: "auto",
+        targetLang: "auto",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects empty text with a user-facing message", () => {
+    const parsed = translationSchema.safeParse({
+      text: "",
+      sourceLang: "en",
+      targetLang: "yo",
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toBe(
+        "Please enter text to translate.",
+      );
+    }
+  });
+
+  test("rejects the 'none' placeholder on either language", () => {
+    for (const sourceLang of ["none", "en"]) {
+      const parsed = translationSchema.safeParse({
+        text: "hello",
+        sourceLang,
+        targetLang: sourceLang === "none" ? "yo" : "none",
+      });
+      expect(parsed.success).toBe(false);
+    }
+  });
+
+  test("rejects identical concrete languages on the targetLang path", () => {
+    const parsed = translationSchema.safeParse({
+      text: "hello",
+      sourceLang: "yo",
+      targetLang: "yo",
+    });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.path[0]).toBe("targetLang");
+      expect(parsed.error.issues[0]?.message).toBe(
+        "Source and target languages cannot be the same.",
+      );
+    }
   });
 });
 

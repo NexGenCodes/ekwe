@@ -1,4 +1,5 @@
 import { useSelector } from "@legendapp/state/react";
+import { translationSchema } from "@ekwe/shared";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Keyboard } from "react-native";
@@ -6,7 +7,6 @@ import { Keyboard } from "react-native";
 import { EkweError, ErrorMessages } from "@/constants/errors";
 import { useTranslateMutation } from "@/hooks/queries/useTranslateMutation";
 import { usePermissions } from "@/hooks/usePermissions";
-import { translationSchema } from "@/schemas/translation";
 import { HistoryService } from "@/services/HistoryService";
 import { TranslationResult } from "@/services/translateText";
 import { audioActions, settings$, auth$, audio$ } from "@/store";

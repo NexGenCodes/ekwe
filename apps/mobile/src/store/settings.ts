@@ -1,5 +1,6 @@
 import { observable } from "@legendapp/state";
 import { persistObservable } from "@legendapp/state/persist";
+import type { TtsRequest } from "@ekwe/shared";
 
 import { PLAN_LIMITS } from "@/constants/billing";
 import {
@@ -19,7 +20,10 @@ export enum ThemePreference {
  * returning users are prompted to re-confirm. */
 const CONSENT_VERSION = 1;
 
-export type TtsVoice = "male" | "female" | "default";
+/** User's TTS voice-gender preference. The gender values mirror the TTS wire
+ * enum (`ttsRequestSchema`); "default" is a UI-only state meaning the
+ * platform picks, and is stripped before the request. */
+export type TtsVoice = NonNullable<TtsRequest["gender"]> | "default";
 
 export interface SettingsState {
   themePreference: ThemePreference;

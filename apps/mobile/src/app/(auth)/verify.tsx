@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { otpSchema, type OtpForm } from "@ekwe/shared";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -17,7 +18,6 @@ import { duration } from "@/constants/motion";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import { useTheme, useOtpVerify } from "@/hooks";
-import { otpSchema, OtpForm } from "@/schemas/auth";
 import { getPendingLinkProvider, linkSocialIdentity } from "@/services/auth";
 import { triggerHaptic } from "@/utils/haptics";
 
