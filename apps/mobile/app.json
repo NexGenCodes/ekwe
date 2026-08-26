@@ -2,7 +2,7 @@
   "expo": {
     "name": "EKWE",
     "slug": "ekwe",
-    "version": "1.1.4",
+    "version": "1.1.5",
     "scheme": "ekwe",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -20,7 +20,7 @@
       "privacyManifests": {}
     },
     "android": {
-      "versionCode": 10104,
+      "versionCode": 10105,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
