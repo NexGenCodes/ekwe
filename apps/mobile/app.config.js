@@ -8,7 +8,7 @@ module.exports = ({ config }) => {
     process.env.NODE_ENV === 'production';
 
   const reactNativeArchitectures = isProduction
-    ? 'armeabi-v7a,arm64-v8a,x86,x86_64'
+    ? 'armeabi-v7a,arm64-v8a'
     : process.env.EXPO_PUBLIC_DEV_ARCH || 'arm64-v8a';
 
   const plugins = (config.plugins || [])
