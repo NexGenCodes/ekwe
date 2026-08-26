@@ -17,7 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
-      supabase: ${{ steps.changes.outputs.supabase }}
       worker: ${{ steps.changes.outputs.worker }}
       pages: ${{ steps.changes.outputs.pages }}
       ota: ${{ steps.outcome.outputs.ota }}
@@ -32,20 +31,19 @@ jobs:
         if: github.event_name == 'push'
         with:
           filters: |
-            supabase:
-              - 'supabase/**'
             worker:
               - 'apps/worker/**'
             pages:
               - 'apps/web/**'
             ota:
               - 'apps/mobile/src/**'
-            release:
+            native:
               - 'apps/mobile/app.json'
               - 'apps/mobile/app.config.*'
               - 'apps/mobile/package.json'
               - 'apps/mobile/android/**'
               - 'apps/mobile/ios/**'
+              - 'apps/mobile/modules/ekwe-native/**'
               - 'apps/mobile/eas.json'
               - 'pnpm-lock.yaml'
               - 'package.json'
@@ -57,47 +55,19 @@ jobs:
             echo "ota=true" >> "$GITHUB_OUTPUT"
             echo "release=true" >> "$GITHUB_OUTPUT"
           else
-            AUTHOR=$(git log -1 --format='%an')
-            MSG=$(git log -1 --format='%s')
-            if [[ "$AUTHOR" == "github-actions[bot]" && "$MSG" == "chore: release v"* ]]; then
+            if [ "${{ steps.changes.outputs.native }}" == "true" ]; then
               echo "ota=false" >> "$GITHUB_OUTPUT"
-              echo "release=false" >> "$GITHUB_OUTPUT"
+              echo "release=true" >> "$GITHUB_OUTPUT"
             else
-              if [ "${{ steps.changes.outputs.release }}" == "true" ]; then
-                echo "ota=false" >> "$GITHUB_OUTPUT"
-                echo "release=true" >> "$GITHUB_OUTPUT"
-              else
-                echo "ota=${{ steps.changes.outputs.ota }}" >> "$GITHUB_OUTPUT"
-                echo "release=false" >> "$GITHUB_OUTPUT"
-              fi
+              echo "ota=${{ steps.changes.outputs.ota }}" >> "$GITHUB_OUTPUT"
+              echo "release=false" >> "$GITHUB_OUTPUT"
             fi
           fi
 
-  supabase:
-    name: Deploy Supabase
-    needs: detect
-    if: needs.detect.outputs.supabase == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    environment: production
-    steps:
-      - uses: actions/checkout@v7
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-      - name: Push migrations
-        run: |
-          supabase link --project-ref "$SUPABASE_PROJECT_ID"
-          supabase db push --include-all
-        env:
-          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-
   worker:
     name: Deploy Worker
-    needs: [detect, supabase]
-    if: always() && needs.detect.outputs.worker == 'true' && (needs.supabase.result == 'success' || needs.supabase.result == 'skipped')
+    needs: detect
+    if: needs.detect.outputs.worker == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: production
@@ -122,7 +92,7 @@ jobs:
   pages:
     name: Deploy Landing Site
     needs: detect
-    if: needs.detect.outputs.pages == 'true'
+    if: needs.detect.outputs.pages == 'true' && needs.detect.outputs.release == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: production
@@ -148,7 +118,7 @@ jobs:
   ota:
     name: Publish OTA Update
     needs: detect
-    if: needs.detect.outputs.ota == 'true'
+    if: needs.detect.outputs.ota == 'true' && needs.detect.outputs.release == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -183,6 +153,8 @@ jobs:
       EXPO_PUBLIC_ENV: production
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -216,16 +188,33 @@ jobs:
         env:
           MOBILE_ENV: ${{ secrets.MOBILE_ENV }}
 
-      - name: Resolve version + derive versionCode
+      - name: Read current version
         id: version
         run: |
-          LAST_VERSION_FILE="version.json"
-          CURRENT_VERSION=$(node -p "require('./apps/mobile/app.json').expo.version")
-          node scripts/bump-version.mjs "$LAST_VERSION_FILE" "$CURRENT_VERSION" "$GITHUB_OUTPUT"
-          source "$GITHUB_OUTPUT"
-          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
-          echo "version_code=$VC" >> "$GITHUB_OUTPUT"
+          VERSION=$(node -p "require('./apps/mobile/app.json').expo.version")
+          VERSION_CODE=$(node -p "require('./apps/mobile/app.json').expo.android.versionCode")
+          TAG="v${VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check for duplicate release
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" > /dev/null 2>&1; then
+            echo "::error::Release ${{ steps.version.outputs.tag }} already exists. Bump version in app.json first."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-bump patch version
+        id: bump
+        run: |
+          node scripts/bump-version.mjs "${{ steps.version.outputs.version }}" .bump.env
+          source .bump.env
+          echo "next_version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "next_version_code=$VC" >> "$GITHUB_OUTPUT"
+          echo "next_tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Run prebuild
         working-directory: apps/mobile
@@ -250,27 +239,21 @@ jobs:
           echo "sha256=$(cat dist/app-release.apk.sha256)" >> "$GITHUB_OUTPUT"
 
       - name: Write version manifest
-        run: node scripts/generate-update-manifest.mjs "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.version_code }}" "${{ steps.assets.outputs.sha256 }}" "${{ steps.assets.outputs.size }}"
+        run: node scripts/generate-update-manifest.mjs "${{ steps.bump.outputs.next_version }}" "${{ steps.bump.outputs.next_version_code }}" "${{ steps.assets.outputs.sha256 }}" "${{ steps.assets.outputs.size }}"
 
-      - name: Update CHANGELOG
-        run: |
-          DATE=$(date +'%Y-%m-%d')
-          VERSION="${{ steps.version.outputs.version }}"
-          sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [${VERSION}] - ${DATE}/g" CHANGELOG.md
-
-      - name: Commit version bump + manifest
+      - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apps/mobile/app.json apps/mobile/package.json package.json version.json apps/web/config.json CHANGELOG.md
-          git diff --cached --quiet || git commit -m "chore: release v${{ steps.version.outputs.version }}"
-          git push origin "${{ github.event.repository.default_branch }}"
+          git add apps/mobile/app.json apps/mobile/package.json package.json apps/web/config.json CHANGELOG.md
+          git commit -m "chore: release ${{ steps.bump.outputs.next_tag }}"
+          git push
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: ${{ steps.version.outputs.tag }}
+          tag_name: ${{ steps.bump.outputs.next_tag }}
+          name: ${{ steps.bump.outputs.next_tag }}
           target_commitish: ${{ github.sha }}
           files: |
             dist/app-release.apk
@@ -304,4 +287,13 @@ jobs:
           curl -fsS -X POST "$WORKER_URL/push-notify" \
             -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
             -H "Content-Type: application/json" \
-            -d '{"version": "${{ steps.version.outputs.version }}", "versionCode": ${{ steps.version.outputs.version_code }}, "checksumSha256": "${{ steps.assets.outputs.sha256 }}", "downloadUrl": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk"}'
+            -d '{"version": "${{ steps.bump.outputs.next_version }}", "versionCode": ${{ steps.bump.outputs.next_version_code }}, "checksumSha256": "${{ steps.assets.outputs.sha256 }}", "downloadUrl": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk"}'
+
+      - name: Rebuild landing site
+        run: node apps/web/build.mjs
+      - name: Deploy landing site
+        working-directory: apps/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm exec wrangler pages deploy ../web/dist --project-name ekwe --branch master

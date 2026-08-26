@@ -1,36 +1,37 @@
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
-const lastVersionFile = path.resolve(process.argv[2]);
-const currentVersion = process.argv[3];
-const nextVersionOutFile = process.argv[4];
+const currentVersion = process.argv[2];
+const nextVersionOutFile = process.argv[3];
 
 let last = [0, 0, 0];
 try {
-  const v = require(lastVersionFile).latest_version;
-  if (v) last = v.split(".").map(Number);
+  const tag = execSync('git describe --tags --abbrev=0', { encoding: 'utf8' }).trim();
+  const v = tag.replace(/^v/, '');
+  last = v.split('.').map(Number);
 } catch (e) {
-  // Ignore
+  // No tags yet
 }
 
-const cur = currentVersion.split(".").map(Number);
+const cur = currentVersion.split('.').map(Number);
 const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 const c = cmp(cur, last);
 
 let NEXT;
 if (c > 0) {
-  NEXT = cur.join(".");
+  NEXT = cur.join('.');
 } else if (c < 0) {
-  console.error("app.json version (" + cur.join(".") + ") is lower than the last release (" + last.join(".") + "). Set it higher.");
+  console.error('app.json version (' + cur.join('.') + ') is lower than the last release (' + last.join('.') + '). Set it higher.');
   process.exit(1);
 } else {
   cur[2] += 1;
-  NEXT = cur.join(".");
+  NEXT = cur.join('.');
 }
 
-const [M, m, p] = NEXT.split(".").map(Number);
+const [M, m, p] = NEXT.split('.').map(Number);
 if (M > 99 || m > 99 || p > 99) {
-  console.error("::error::Version segments must be < 100 so versionCode stays unique (got " + NEXT + ").");
+  console.error('::error::Version segments must be < 100 so versionCode stays unique (got ' + NEXT + ').');
   process.exit(1);
 }
 
@@ -48,6 +49,6 @@ const updateJson = (filePath, updater) => {
 updateJson('./apps/mobile/app.json', j => { j.expo.version = NEXT; j.expo.android.versionCode = VC; });
 updateJson('./apps/mobile/package.json', k => { k.version = NEXT; });
 updateJson('./package.json', rk => { rk.version = NEXT; });
-updateJson('./apps/web/config.json', w => { w.version = NEXT; if (w.app) w.app.version = NEXT; });
+updateJson('./apps/web/config.json', w => { if (w.app) w.app.version = NEXT; });
 
 fs.writeFileSync(path.resolve(nextVersionOutFile), `NEXT=${NEXT}\nVC=${VC}\nTAG=v${NEXT}\n`);

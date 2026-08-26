@@ -11,33 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  guard:
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    outputs:
-      should_run: ${{ steps.check.outputs.run }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Skip bot commits
-        id: check
-        run: |
-          if [ "${{ github.event_name }}" == "push" ]; then
-            AUTHOR=$(git log -1 --format='%an')
-            MSG=$(git log -1 --format='%s')
-            if [[ "$AUTHOR" == "github-actions[bot]" && "$MSG" == "chore: release v"* ]]; then
-              echo "run=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "run=true" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          fi
-
   lint:
-    needs: guard
-    if: needs.guard.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -52,8 +26,6 @@ jobs:
       - run: pnpm lint
 
   typecheck:
-    needs: guard
-    if: needs.guard.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -68,8 +40,6 @@ jobs:
       - run: pnpm typecheck
 
   test-mobile:
-    needs: guard
-    if: needs.guard.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -87,8 +57,6 @@ jobs:
       - run: npx jest --runInBand --coverage
 
   test-worker:
-    needs: guard
-    if: needs.guard.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -108,9 +76,24 @@ jobs:
       - name: Workers runtime (Durable Object) tests
         run: pnpm exec vitest run --project workers
 
+  test-shared:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: packages/shared
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --coverage
+
   secret-scan:
-    needs: guard
-    if: needs.guard.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -124,8 +107,6 @@ jobs:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
   supabase-status:
-    needs: guard
-    if: needs.guard.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -140,4 +121,3 @@ jobs:
         env:
           SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}

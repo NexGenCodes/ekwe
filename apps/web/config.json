@@ -48,6 +48,5 @@
       "description": "Your audio is never stored by us. It's processed on the fly and only the resulting text is kept.",
       "icon": "shield"
     }
-  ],
-  "version": "1.1.4"
+  ]
 }

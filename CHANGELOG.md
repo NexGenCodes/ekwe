@@ -16,11 +16,12 @@ Version numbers mirror Git tags (`v1.0.0` → `1.0.0`) and the `versionCode` in
 
 - Initial Android release.
 
-<!-- TEMPLATE
 ## [Unreleased]
 
 ### Added
+
 ### Changed
+
 ### Fixed
+
 ### Removed
--->
