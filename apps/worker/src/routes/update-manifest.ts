@@ -18,6 +18,10 @@ interface UpdateManifest {
   latest_version: string;
   latest_version_code: number;
   min_supported_version_code: number;
+  download_urls?: Record<string, string>;
+  checksums?: Record<string, string>;
+  file_sizes?: Record<string, number>;
+  // Backward compat — armv7 URL works on both archs
   download_url: string;
   checksum_sha256?: string;
   file_size?: number;
@@ -27,13 +31,21 @@ interface UpdateManifest {
 function isUpdateManifest(value: unknown): value is UpdateManifest {
   if (typeof value !== "object" || value === null) return false;
   const m = value as Partial<UpdateManifest>;
-  return (
-    typeof m.latest_version === "string" &&
-    typeof m.latest_version_code === "number" &&
-    typeof m.min_supported_version_code === "number" &&
-    typeof m.download_url === "string" &&
-    m.download_url.startsWith("https://")
-  );
+  if (
+    typeof m.latest_version !== "string" ||
+    typeof m.latest_version_code !== "number" ||
+    typeof m.min_supported_version_code !== "number" ||
+    typeof m.download_url !== "string" ||
+    !m.download_url.startsWith("https://")
+  ) {
+    return false;
+  }
+  if (m.download_urls && typeof m.download_urls === "object") {
+    for (const [, url] of Object.entries(m.download_urls)) {
+      if (typeof url !== "string" || !url.startsWith("https://")) return false;
+    }
+  }
+  return true;
 }
 
 function bearerSecret(env: Env): string | undefined {

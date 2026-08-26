@@ -11,6 +11,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import org.json.JSONObject
 
 /**
  * Handles `apk_update` data-only push messages: decides whether the user should
@@ -36,9 +37,11 @@ object UpdateNotifier {
 
   fun handleApkUpdate(context: Context, data: Map<String, String>) {
     val version = data["version"]?.takeIf { it.isNotBlank() } ?: return
-    val downloadUrl = data["downloadUrl"]?.takeIf { it.isNotBlank() } ?: return
     val versionCode = data["versionCode"]?.toIntOrNull()
-    val checksum = data["checksumSha256"]?.takeIf { it.isNotBlank() }
+
+    // Resolve download URL — prefer per-ABI map, fall back to single URL
+    val downloadUrl = resolveAbiUrl(data) ?: return
+    val checksum = resolveAbiChecksum(data)
 
     // Never notify users who are already on this version or newer. Prefer the
     // numeric versionCode (catches native-only rebuilds that don't bump the
@@ -69,7 +72,7 @@ object UpdateNotifier {
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    Log.d(TAG, "Notifying user about EKWE $version")
+    Log.d(TAG, "Notifying user about EKWE $version (ABI: ${deviceAbi()}, URL: $downloadUrl)")
 
     val notification = NotificationCompat.Builder(context, CHANNEL_ID)
       .setSmallIcon(notificationIcon(context))
@@ -82,6 +85,51 @@ object UpdateNotifier {
       .build()
 
     NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+  }
+
+  /** Primary ABI of this device (e.g. "arm64-v8a", "armeabi-v7a"). */
+  private fun deviceAbi(): String = Build.SUPPORTED_ABIS.firstOrNull() ?: "armeabi-v7a"
+
+  /**
+   * Pick the right download URL for this device's ABI.
+   * Checks the per-ABI `downloadUrls` map first; falls back to the legacy
+   * `downloadUrl` field (armv7, works on both archs).
+   */
+  private fun resolveAbiUrl(data: Map<String, String>): String? {
+    val urlsJson = data["downloadUrls"]?.takeIf { it.isNotBlank() }
+    if (urlsJson != null) {
+      try {
+        val urls = JSONObject(urlsJson)
+        val abi = deviceAbi()
+        // Exact match first (arm64-v8a on arm64 device)
+        if (urls.has(abi)) return urls.getString(abi)
+        // Fallback: arm64 devices can run armv7
+        if (urls.has("armeabi-v7a")) return urls.getString("armeabi-v7a")
+      } catch (e: Exception) {
+        Log.w(TAG, "Failed to parse downloadUrls JSON, falling back to downloadUrl", e)
+      }
+    }
+    // Legacy single-URL format (old server / backward compat)
+    return data["downloadUrl"]?.takeIf { it.isNotBlank() }
+  }
+
+  /**
+   * Pick the matching checksum for the resolved ABI.
+   * Falls back to the legacy `checksumSha256` field.
+   */
+  private fun resolveAbiChecksum(data: Map<String, String>): String? {
+    val checksumsJson = data["checksums"]?.takeIf { it.isNotBlank() }
+    if (checksumsJson != null) {
+      try {
+        val checksums = JSONObject(checksumsJson)
+        val abi = deviceAbi()
+        if (checksums.has(abi)) return checksums.getString(abi)
+        if (checksums.has("armeabi-v7a")) return checksums.getString("armeabi-v7a")
+      } catch (e: Exception) {
+        Log.w(TAG, "Failed to parse checksums JSON, falling back to checksumSha256", e)
+      }
+    }
+    return data["checksumSha256"]?.takeIf { it.isNotBlank() }
   }
 
   /**

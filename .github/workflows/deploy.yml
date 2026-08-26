@@ -220,26 +220,40 @@ jobs:
         working-directory: apps/mobile
         run: pnpm run prebuild:android
 
-      - name: Build Release APK
+      - name: Build Release APKs
         working-directory: apps/mobile/android
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a --no-daemon -x lintVitalAnalyzeRelease
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon -x lintVitalAnalyzeRelease
+          ./gradlew assembleRelease -PreactNativeArchitectures=armeabi-v7a --no-daemon -x lintVitalAnalyzeRelease
 
       - name: Stage release assets
         id: assets
         run: |
-          APK=$(find apps/mobile/android/app/build/outputs/apk -name "*.apk" ! -name "*androidTest*" | head -1)
           mkdir -p dist
-          cp "$APK" dist/app-release.apk
-          sha256sum dist/app-release.apk | awk '{print $1}' > dist/app-release.apk.sha256
-          echo "size=$(stat -c%s dist/app-release.apk)" >> "$GITHUB_OUTPUT"
-          echo "sha256=$(cat dist/app-release.apk.sha256)" >> "$GITHUB_OUTPUT"
+          for ABI in arm64-v8a armeabi-v7a; do
+            APK=$(find apps/mobile/android/app/build/outputs/apk -name "*${ABI}*" ! -name "*androidTest*" | head -1)
+            if [ -z "$APK" ]; then
+              echo "::error::No APK found for ABI $ABI"
+              exit 1
+            fi
+            cp "$APK" "dist/app-${ABI}-release.apk"
+            sha256sum "dist/app-${ABI}-release.apk" | awk '{print $1}' > "dist/app-${ABI}.sha256"
+            echo "${ABI}_size=$(stat -c%s "dist/app-${ABI}-release.apk")" >> "$GITHUB_OUTPUT"
+            echo "${ABI}_sha256=$(cat "dist/app-${ABI}.sha256")" >> "$GITHUB_OUTPUT"
+          done
 
       - name: Write version manifest
-        run: node scripts/generate-update-manifest.mjs "${{ steps.bump.outputs.next_version }}" "${{ steps.bump.outputs.next_version_code }}" "${{ steps.assets.outputs.sha256 }}" "${{ steps.assets.outputs.size }}"
+        run: |
+          node scripts/generate-update-manifest.mjs \
+            "${{ steps.bump.outputs.next_version }}" \
+            "${{ steps.bump.outputs.next_version_code }}" \
+            "${{ steps.assets.outputs.arm64-v8a_sha256 }}" \
+            "${{ steps.assets.outputs.arm64-v8a_size }}" \
+            "${{ steps.assets.outputs.armeabi-v7a_sha256 }}" \
+            "${{ steps.assets.outputs.armeabi-v7a_size }}"
 
       - name: Commit version bump
         run: |
@@ -256,21 +270,25 @@ jobs:
           name: ${{ steps.bump.outputs.next_tag }}
           target_commitish: ${{ github.sha }}
           files: |
-            dist/app-release.apk
-            dist/app-release.apk.sha256
+            dist/app-arm64-v8a-release.apk
+            dist/app-arm64-v8a.sha256
+            dist/app-armeabi-v7a-release.apk
+            dist/app-armeabi-v7a.sha256
             dist/version.json
           generate_release_notes: true
 
-      - name: Upload APK to Cloudflare R2
+      - name: Upload APKs to Cloudflare R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
         run: |
           pip install --quiet awscli
-          aws s3 cp dist/app-release.apk "s3://${{ secrets.R2_BUCKET_NAME }}/app-release.apk" \
-            --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-            --content-type "application/vnd.android.package-archive"
+          for ABI in arm64-v8a armeabi-v7a; do
+            aws s3 cp "dist/app-${ABI}-release.apk" "s3://${{ secrets.R2_BUCKET_NAME }}/app-${ABI}-release.apk" \
+              --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+              --content-type "application/vnd.android.package-archive"
+          done
           aws s3 cp dist/version.json "s3://${{ secrets.R2_BUCKET_NAME }}/version.json" \
             --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
             --content-type "application/json"
@@ -287,7 +305,19 @@ jobs:
           curl -fsS -X POST "$WORKER_URL/push-notify" \
             -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
             -H "Content-Type: application/json" \
-            -d '{"version": "${{ steps.bump.outputs.next_version }}", "versionCode": ${{ steps.bump.outputs.next_version_code }}, "checksumSha256": "${{ steps.assets.outputs.sha256 }}", "downloadUrl": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk"}'
+            -d '{
+              "version": "${{ steps.bump.outputs.next_version }}",
+              "versionCode": ${{ steps.bump.outputs.next_version_code }},
+              "downloadUrl": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-armeabi-v7a-release.apk",
+              "downloadUrls": {
+                "arm64-v8a": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-arm64-v8a-release.apk",
+                "armeabi-v7a": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-armeabi-v7a-release.apk"
+              },
+              "checksums": {
+                "arm64-v8a": "${{ steps.assets.outputs.arm64-v8a_sha256 }}",
+                "armeabi-v7a": "${{ steps.assets.outputs.armeabi-v7a_sha256 }}"
+              }
+            }'
 
       - name: Rebuild landing site
         run: node apps/web/build.mjs

@@ -18,6 +18,8 @@ const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 interface PushNotifyBody {
   version: string;
   downloadUrl: string;
+  downloadUrls?: Record<string, string>;
+  checksums?: Record<string, string>;
   versionCode?: number;
   checksumSha256?: string;
 }
@@ -89,6 +91,16 @@ export async function handlePushNotify(
       { status: 400 },
     );
   }
+  if (body.downloadUrls && typeof body.downloadUrls === "object") {
+    for (const [, url] of Object.entries(body.downloadUrls)) {
+      if (typeof url !== "string" || !url.startsWith("https://")) {
+        return Response.json(
+          { error: WORKER_ERROR_CODES.INVALID_BODY },
+          { status: 400 },
+        );
+      }
+    }
+  }
 
   const tokensRes = await supabasePost(
     env,
@@ -121,6 +133,7 @@ export async function handlePushNotify(
 
   // Expo push `data` values must be strings; forward the fields the native
   // service uses for gating (versionCode) and integrity (checksumSha256).
+  // downloadUrls is serialized as a JSON string for per-ABI resolution.
   const payload = androidTokens.map((token) => ({
     to: token,
     priority: "high",
@@ -128,6 +141,10 @@ export async function handlePushNotify(
       type: "apk_update",
       version,
       downloadUrl: body.downloadUrl,
+      ...(body.downloadUrls && {
+        downloadUrls: JSON.stringify(body.downloadUrls),
+      }),
+      ...(body.checksums && { checksums: JSON.stringify(body.checksums) }),
       ...(versionCode !== undefined && { versionCode: String(versionCode) }),
       ...(checksumSha256 !== undefined && { checksumSha256 }),
     },
