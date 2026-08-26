@@ -198,15 +198,6 @@ jobs:
           echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Check for duplicate release
-        run: |
-          if gh release view "${{ steps.version.outputs.tag }}" > /dev/null 2>&1; then
-            echo "::error::Release ${{ steps.version.outputs.tag }} already exists. Bump version in app.json first."
-            exit 1
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Auto-bump patch version
         id: bump
         run: |
