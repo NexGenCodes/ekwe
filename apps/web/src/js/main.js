@@ -160,7 +160,7 @@
         }
       } catch {}
     }
-    return "armeabi-v7a";
+    return "arm64-v8a";
   }
 
   function renderDynamicContent(config, abi) {
