@@ -1,7 +1,7 @@
 # Changelog
 
 All notable changes to the Ekwe Android app are documented here. The GitHub
-release workflow (`/.github/workflows/build.yml`) publishes each `v*` tag and
+release workflow (`/.github/workflows/deploy-mobile.yml`) publishes each `v*` tag and
 regenerates this file's per-release notes from commit history.
 
 ## Format

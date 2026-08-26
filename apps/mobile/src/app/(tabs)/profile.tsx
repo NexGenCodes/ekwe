@@ -18,6 +18,7 @@ import Smartphone from "lucide-react-native/icons/smartphone";
 import Radio from "lucide-react-native/icons/radio";
 import AudioLines from "lucide-react-native/icons/audio-lines";
 import Banknote from "lucide-react-native/icons/banknote";
+import RefreshCw from "lucide-react-native/icons/refresh-cw";
 import React, { useState, useCallback } from "react";
 import { Linking, Modal, Switch, TextInput } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -38,6 +39,7 @@ import { duration, borderRadius, opacity, spacing } from "@/constants";
 import { PLAN_LIMITS } from "@/constants/billing";
 import { useLogout, useTheme, usePermissions, useReduceMotion } from "@/hooks";
 import { deleteAccount } from "@/services/auth";
+import { checkForApkUpdate } from "@/services/otaUpdates";
 import { SyncService } from "@/services/SyncService";
 import { supabase } from "@/services/supabase";
 import { auth$, authActions, settings$, settingsActions } from "@/store";
@@ -443,6 +445,35 @@ export default function ProfileScreen(): React.JSX.Element {
               }}
             />
             <ProfileRow
+              icon={RefreshCw}
+              sfIcon="arrow.triangle.2.circlepath"
+              iconColor={color.foreground}
+              title="Check for update"
+              hasDivider
+              onPress={async () => {
+                await triggerHaptic();
+                const manifest = await checkForApkUpdate();
+                if (manifest) {
+                  AppAlert.info(
+                    "Update available",
+                    `Version ${manifest.latest_version} is available.`,
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Download",
+                        onPress: () => Linking.openURL(manifest.download_url),
+                      },
+                    ],
+                  );
+                } else {
+                  AppAlert.info(
+                    "Up to date",
+                    "You're running the latest version.",
+                  );
+                }
+              }}
+            />
+            <ProfileRow
               icon={Star}
               sfIcon="star.fill"
               iconColor={color.foreground}
@@ -784,3 +815,4 @@ const styles = {
     paddingVertical: spacing.xl,
   },
 };
+// test

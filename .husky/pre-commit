@@ -1,1 +1,3 @@
-pnpm test
+pnpm exec lint-staged
+pnpm typecheck
+cd apps/worker && ([ -f .dev.vars ] || cp .dev.vars.example .dev.vars) && pnpm exec wrangler types

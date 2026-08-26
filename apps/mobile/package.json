@@ -114,11 +114,5 @@
   "op-sqlite": {
     "fts5": true
   },
-  "private": true,
-  "lint-staged": {
-    "*.{ts,tsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ]
-  }
+  "private": true
 }

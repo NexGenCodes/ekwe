@@ -1,11 +1,4 @@
-name: Deploy (OTA + Release)
-
-# One workflow for everything you push to master:
-#   - Only apps/mobile/src/** changed  -> OTA update (no version bump needed)
-#   - Version/native/config changed    -> full APK release + GitHub Release + device notify
-#   - Both changed in one push         -> both happen
-# Just bump the version in apps/mobile/app.json to trigger a release.
-# CI derives versionCode from the version (1.2.3 -> 10203); keep segments < 100.
+name: Deploy Mobile
 
 on:
   push:
@@ -14,23 +7,23 @@ on:
     inputs:
       publish_release:
         type: boolean
-        description: Also build and publish an APK release
+        description: Build and publish an APK release
         default: false
 
 permissions:
   contents: write
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-mobile-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   detect:
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     outputs:
       ota: ${{ steps.outcome.outputs.ota }}
       release: ${{ steps.outcome.outputs.release }}
-      pages: ${{ steps.outcome.outputs.pages }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -50,135 +43,81 @@ jobs:
               - 'apps/mobile/android/**'
               - 'apps/mobile/ios/**'
               - 'apps/mobile/eas.json'
-              - 'apps/web/config.json'
               - 'pnpm-lock.yaml'
               - 'package.json'
 
-      - name: Classify change (push filters or manual dispatch)
+      - name: Classify change
         id: outcome
         run: |
           if [ "${{ github.event_name }}" != "push" ]; then
-            # Manual dispatch:
             if [ "${{ inputs.publish_release }}" == "true" ]; then
               echo "ota=false" >> "$GITHUB_OUTPUT"
               echo "release=true" >> "$GITHUB_OUTPUT"
-              echo "pages=false" >> "$GITHUB_OUTPUT"
             else
               echo "ota=true" >> "$GITHUB_OUTPUT"
               echo "release=false" >> "$GITHUB_OUTPUT"
-              echo "pages=true" >> "$GITHUB_OUTPUT"
             fi
           else
-            # A release job commits the version bump + manifest and pushes it.
-            # That push must NOT re-trigger itself, or we'd loop forever.
             AUTHOR=$(git log -1 --format='%an')
             MSG=$(git log -1 --format='%s')
             if [[ "$AUTHOR" == "github-actions[bot]" && "$MSG" == "chore: release v"* ]]; then
               echo "ota=false" >> "$GITHUB_OUTPUT"
               echo "release=false" >> "$GITHUB_OUTPUT"
-              echo "pages=true" >> "$GITHUB_OUTPUT" # Deploy the landing site for the new version
             else
               if [ "${{ steps.paths.outputs.release }}" == "true" ]; then
-                echo "ota=false" >> "$GITHUB_OUTPUT" # New APK has the JS, old APK doesn't need it
+                echo "ota=false" >> "$GITHUB_OUTPUT"
                 echo "release=true" >> "$GITHUB_OUTPUT"
-                echo "pages=false" >> "$GITHUB_OUTPUT" # Defer to the bot commit for pages
               else
                 echo "ota=${{ steps.paths.outputs.ota }}" >> "$GITHUB_OUTPUT"
                 echo "release=false" >> "$GITHUB_OUTPUT"
-                echo "pages=true" >> "$GITHUB_OUTPUT"
               fi
             fi
           fi
 
-  infrastructure:
-    name: Deploy Infrastructure (Supabase & Worker)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Install Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
-      - name: Migrate Supabase Database
-        if: env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_DB_PASSWORD != '' && env.SUPABASE_PROJECT_ID != ''
-        env:
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-        run: |
-          supabase link --project-ref "$SUPABASE_PROJECT_ID" || true
-          supabase db push --include-all
-      - name: Deploy Cloudflare Worker
-        working-directory: apps/worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm exec wrangler deploy
-
   ota:
     name: Publish OTA Update
-    needs: [detect, infrastructure]
+    needs: detect
     if: needs.detect.outputs.ota == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
-      # Override the dev value in .env so OTA bundles are built as production.
       EXPO_PUBLIC_ENV: production
     steps:
       - uses: actions/checkout@v7
-
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-
       - uses: pnpm/action-setup@v6
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Write mobile .env (EXPO_PUBLIC_* vars for bundle inlining)
-        run: |
-          echo "$MOBILE_ENV" | base64 -d > apps/mobile/.env
+      - name: Write mobile .env
+        run: echo "$MOBILE_ENV" | base64 -d > apps/mobile/.env
         env:
           MOBILE_ENV: ${{ secrets.MOBILE_ENV }}
-
       - name: Install EAS CLI
-        # pnpm's global bin dir isn't on PATH on runners; npm's is.
         run: npm install -g eas-cli
-
       - name: Publish OTA update
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          npx eas update --platform android --channel production --message "OTA update from ${{ github.sha }}" --non-interactive
+        run: npx eas update --platform android --channel production --message "OTA update from ${{ github.sha }}" --non-interactive
 
   release:
     name: Build APK + Release
-    needs: [detect, infrastructure]
+    needs: detect
     if: needs.detect.outputs.release == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
-      # Override the dev value in .env so release bundles are built as production.
       EXPO_PUBLIC_ENV: production
     steps:
       - uses: actions/checkout@v7
-
       - uses: pnpm/action-setup@v6
-
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -196,42 +135,34 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install NDK + CMake
-        # The ekwe-native module has a C++/CMake build pinned to this NDK. It is
-        # NOT preinstalled on ubuntu-latest, so without this step assembleRelease
-        # fails with "NDK not configured".
-        run: |
-          sdkmanager --install "ndk;27.1.12297006" "cmake;3.22.1" > /dev/null 2>&1
+        run: sdkmanager --install "ndk;27.1.12297006" "cmake;3.22.1" > /dev/null 2>&1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Write mobile .env (EXPO_PUBLIC_* vars for bundle inlining)
-        run: |
-          echo "$MOBILE_ENV" | base64 -d > apps/mobile/.env
+      - name: Write mobile .env
+        run: echo "$MOBILE_ENV" | base64 -d > apps/mobile/.env
         env:
           MOBILE_ENV: ${{ secrets.MOBILE_ENV }}
 
       - name: Ensure on default branch for commit
-        # Push checkout is already on master, but this guarantees we can commit
-        # the auto-bumped version + manifest back to the branch (no detached HEAD).
         run: |
           DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
           git fetch origin "$DEFAULT_BRANCH" --depth=1
           git checkout "$DEFAULT_BRANCH"
 
-      - name: Resolve version (auto-bump patch) + derive versionCode
+      - name: Resolve version + derive versionCode
         id: version
         run: |
           LAST_VERSION_FILE="version.json"
           CURRENT_VERSION=$(node -p "require('./apps/mobile/app.json').expo.version")
           node scripts/bump-version.mjs "$LAST_VERSION_FILE" "$CURRENT_VERSION" "$GITHUB_OUTPUT"
-          
           source "$GITHUB_OUTPUT"
           echo "version=$NEXT" >> "$GITHUB_OUTPUT"
           echo "version_code=$VC" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Run prebuild (generate native Android project)
+      - name: Run prebuild
         working-directory: apps/mobile
         run: pnpm run prebuild:android
 
@@ -256,20 +187,17 @@ jobs:
       - name: Write version manifest
         run: node scripts/generate-update-manifest.mjs "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.version_code }}" "${{ steps.assets.outputs.sha256 }}" "${{ steps.assets.outputs.size }}"
 
-      - name: Update CHANGELOG and README
+      - name: Update CHANGELOG
         run: |
           DATE=$(date +'%Y-%m-%d')
           VERSION="${{ steps.version.outputs.version }}"
-          # Basic sed replacement to update the changelog Unreleased tag to the new version
-          sed -i "s/## \[Unreleased\]/## \[Unreleased\]\n\n## \[${VERSION}\] - ${DATE}/g" CHANGELOG.md
-          # Example of updating README if needed (currently README relies on /latest links)
-          echo "Updated CHANGELOG.md for v${VERSION}"
+          sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [${VERSION}] - ${DATE}/g" CHANGELOG.md
 
       - name: Commit version bump + manifest
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apps/mobile/app.json apps/mobile/package.json package.json version.json apps/web/config.json CHANGELOG.md README.md
+          git add apps/mobile/app.json apps/mobile/package.json package.json version.json apps/web/config.json CHANGELOG.md
           git diff --cached --quiet || git commit -m "chore: release v${{ steps.version.outputs.version }}"
           git push origin "${{ github.event.repository.default_branch }}"
 
@@ -300,8 +228,6 @@ jobs:
             --content-type "application/json"
 
       - name: Publish manifest + notify devices
-        # Store the manifest in Worker KV (GET /update/manifest serves it) and
-        # push the APK update notification to every registered Android device.
         env:
           WORKER_URL: ${{ secrets.WORKER_URL }}
           PUSH_NOTIFY_SECRET: ${{ secrets.PUSH_NOTIFY_SECRET }}
@@ -314,35 +240,3 @@ jobs:
             -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
             -H "Content-Type: application/json" \
             -d '{"version": "${{ steps.version.outputs.version }}", "versionCode": ${{ steps.version.outputs.version_code }}, "checksumSha256": "${{ steps.assets.outputs.sha256 }}", "downloadUrl": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk"}'
-
-  pages:
-    name: Deploy Landing Site (Pages)
-    needs: detect
-    if: needs.detect.outputs.pages == 'true'
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: pnpm/action-setup@v6
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-
-      - name: Install dependencies
-        # frozen-lockfile is deterministic; brings in the pinned wrangler below.
-        run: pnpm install --frozen-lockfile
-
-      - name: Build landing site (static, zero deps)
-        run: node apps/web/build.mjs
-
-      - name: Deploy to Cloudflare Pages
-        working-directory: apps/worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        # Use the workspace's pinned wrangler (^4.102.0) — never `npx wrangler`
-        # (floating latest). --branch master matches the Pages project's
-        # production_branch, so this is a production deployment of apps/web/dist.
-        run: pnpm exec wrangler pages deploy ../web/dist --project-name ekwe --branch master

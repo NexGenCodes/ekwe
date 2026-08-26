@@ -41,9 +41,19 @@ writeFileSync(pkgJsonPath, JSON.stringify(pkg, null, 2) + "\n");
 
 const webConfig = JSON.parse(readFileSync(webConfigPath, "utf8"));
 webConfig.version = next;
+if (webConfig.app) webConfig.app.version = next;
 writeFileSync(webConfigPath, JSON.stringify(webConfig, null, 2) + "\n");
 
-run(`git add ${appJsonPath} ${pkgJsonPath} ${webConfigPath}`);
+const date = new Date().toISOString().split("T")[0];
+const changelogPath = "CHANGELOG.md";
+const changelog = readFileSync(changelogPath, "utf8");
+const updated = changelog.replace(
+  "## [Unreleased]",
+  `## [Unreleased]\n\n## [${next}] - ${date}`
+);
+writeFileSync(changelogPath, updated);
+
+run(`git add ${appJsonPath} ${pkgJsonPath} ${webConfigPath} ${changelogPath}`);
 run(`git commit -m "chore: release v${next}"`);
 run("git push");
 

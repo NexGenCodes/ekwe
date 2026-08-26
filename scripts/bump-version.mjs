@@ -48,6 +48,6 @@ const updateJson = (filePath, updater) => {
 updateJson('./apps/mobile/app.json', j => { j.expo.version = NEXT; j.expo.android.versionCode = VC; });
 updateJson('./apps/mobile/package.json', k => { k.version = NEXT; });
 updateJson('./package.json', rk => { rk.version = NEXT; });
-updateJson('./apps/web/config.json', w => { w.version = NEXT; });
+updateJson('./apps/web/config.json', w => { w.version = NEXT; if (w.app) w.app.version = NEXT; });
 
 fs.writeFileSync(path.resolve(nextVersionOutFile), `NEXT=${NEXT}\nVC=${VC}\nTAG=v${NEXT}\n`);
