@@ -461,7 +461,9 @@ export default function ProfileScreen(): React.JSX.Element {
                       { text: "Cancel", style: "cancel" },
                       {
                         text: "Download",
-                        onPress: () => Linking.openURL(manifest.download_url),
+                        onPress: (): void => {
+                          Linking.openURL(manifest.download_url);
+                        },
                       },
                     ],
                   );
