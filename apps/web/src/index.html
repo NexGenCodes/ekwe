@@ -93,8 +93,11 @@
         </div>
 
         <div class="hero-actions" data-reveal>
-          <a href="{{DOWNLOAD_URL}}" class="btn btn-primary" data-download>
+          <a href="{{DOWNLOAD_URL}}" class="btn btn-primary" data-download-primary>
             Download for Android
+          </a>
+          <a href="{{DOWNLOAD_URL}}" class="btn btn-secondary" data-download-fallback>
+            Download (<span data-download-abi-label>arm64</span>)
           </a>
         </div>
         <p class="hero-note" data-reveal>Free to start · No card required · 130+ languages</p>
@@ -293,8 +296,11 @@
           <h2>Ready to start?</h2>
           <p>Download {{APP_NAME}} free and start translating in seconds — 25 free translations every day, no card required.</p>
           <div class="cta-actions">
-            <a href="{{DOWNLOAD_URL}}" class="btn btn-primary" data-download>
+            <a href="{{DOWNLOAD_URL}}" class="btn btn-primary" data-download-primary>
               Download APK
+            </a>
+            <a href="{{DOWNLOAD_URL}}" class="btn btn-secondary" data-download-fallback>
+              Download (<span data-download-abi-label>arm64</span>)
             </a>
           </div>
           <div class="version-badge" data-version></div>

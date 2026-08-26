@@ -150,18 +150,45 @@
       .join("");
   }
 
-  function renderDynamicContent(config) {
-    // Download buttons
-    document.querySelectorAll("[data-download]").forEach((el) => {
-      el.href = config.links.download;
+  async function detectAbi() {
+    if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+      try {
+        const hints = await navigator.userAgentData.getHighEntropyValues(["architecture"]);
+        if (hints.architecture) {
+          if (hints.architecture.includes("arm")) return "arm64-v8a";
+          if (hints.architecture.includes("x86")) return "armeabi-v7a";
+        }
+      } catch {}
+    }
+    return "armeabi-v7a";
+  }
+
+  function renderDynamicContent(config, abi) {
+    const urls = config.links.downloadUrls || {};
+    const primaryUrl = urls[abi] || config.links.download;
+    const fallbackAbi = abi === "arm64-v8a" ? "armeabi-v7a" : "arm64-v8a";
+    const fallbackUrl = urls[fallbackAbi] || config.links.download;
+
+    document.querySelectorAll("[data-download-primary]").forEach((el) => {
+      el.href = primaryUrl;
     });
 
-    // Version badges
+    document.querySelectorAll("[data-download-fallback]").forEach((el) => {
+      el.href = fallbackUrl;
+    });
+
+    document.querySelectorAll("[data-download]").forEach((el) => {
+      el.href = primaryUrl;
+    });
+
+    document.querySelectorAll("[data-download-abi-label]").forEach((el) => {
+      el.textContent = fallbackAbi === "arm64-v8a" ? "arm64" : "armv7";
+    });
+
     document.querySelectorAll("[data-version]").forEach((el) => {
       el.textContent = `v${config.app.version}`;
     });
 
-    // Contact email
     document.querySelectorAll("[data-email]").forEach((el) => {
       el.href = `mailto:${config.contact.email}`;
       el.textContent = config.contact.email;
@@ -177,9 +204,11 @@
       config = null;
     }
 
+    const abi = await detectAbi();
+
     if (config) {
       renderFeatures(config.features);
-      renderDynamicContent(config);
+      renderDynamicContent(config, abi);
     }
 
     initWaveform();
