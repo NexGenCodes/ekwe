@@ -52,13 +52,16 @@ jobs:
         id: outcome
         run: |
           if [ "${{ github.event_name }}" != "push" ]; then
-            echo "ota=true" >> "$GITHUB_OUTPUT"
+            # Manual dispatch: full release by default. A release embeds the
+            # JS, so no OTA update is needed alongside it.
+            echo "ota=false" >> "$GITHUB_OUTPUT"
             echo "release=true" >> "$GITHUB_OUTPUT"
           else
             if [ "${{ steps.changes.outputs.native }}" == "true" ]; then
               echo "ota=false" >> "$GITHUB_OUTPUT"
               echo "release=true" >> "$GITHUB_OUTPUT"
             else
+              # Non-native change: only OTA unless it's a release (never both).
               echo "ota=${{ steps.changes.outputs.ota }}" >> "$GITHUB_OUTPUT"
               echo "release=false" >> "$GITHUB_OUTPUT"
             fi
