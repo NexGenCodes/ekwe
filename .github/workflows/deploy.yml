@@ -52,10 +52,13 @@ jobs:
         id: outcome
         run: |
           if [ "${{ github.event_name }}" != "push" ]; then
-            # Manual dispatch: full release by default. A release embeds the
-            # JS, so no OTA update is needed alongside it.
+            # Manual dispatch: full release. A release embeds the JS so no OTA
+            # is needed; the landing site is superseded by the released APKs,
+            # so it stays off (the pages job also guards on release != true).
             echo "ota=false" >> "$GITHUB_OUTPUT"
             echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "worker=true" >> "$GITHUB_OUTPUT"
+            echo "pages=false" >> "$GITHUB_OUTPUT"
           else
             if [ "${{ steps.changes.outputs.native }}" == "true" ]; then
               echo "ota=false" >> "$GITHUB_OUTPUT"
@@ -217,10 +220,14 @@ jobs:
       - name: Build Release APKs
         working-directory: apps/mobile/android
         env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dorg.gradle.caching=true"
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon -x lintVitalAnalyzeRelease
+          # Build per ABI so each output APK is named with its ABI and the
+          # asset staging step below can match them. Build caching means the
+          # second ABI reuses the first ABI's Kotlin/Java compilation output.
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon -x lintVitalAnalyzeRelease
+          ./gradlew assembleRelease -PreactNativeArchitectures=armeabi-v7a --no-daemon -x lintVitalAnalyzeRelease
 
       - name: Stage release assets
         id: assets
