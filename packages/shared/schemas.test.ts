@@ -258,6 +258,7 @@ describe("usageSnapshotSchema", () => {
       resetsAt: 1784160000000,
       translate: { used: 2, total: 25, remaining: 23 },
       transcribe: { used: 0, total: 10, remaining: 10 },
+      tts: { used: 40, total: 256, remaining: 216 },
     });
     expect(parsed.success).toBe(true);
   });

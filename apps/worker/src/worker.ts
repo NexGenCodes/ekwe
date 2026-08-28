@@ -134,7 +134,17 @@ const ttsHandler: AuthedRouteHandler = (rctx) => {
   if (!ctGuard.allowed) return ctGuard.response;
   const sizeGuard = guardJsonSize(rctx.request, MAX_JSON_BODY_BYTES);
   if (!sizeGuard.allowed) return sizeGuard.response;
-  return handleTts(rctx.request, rctx.env, rctx.auth.tier, rctx.request.signal);
+  return handleTts(
+    rctx.request,
+    rctx.env,
+    rctx.auth.tier,
+    rctx.request.signal,
+    {
+      userId: rctx.auth.userId,
+      sessionId: rctx.auth.sessionId,
+      ctx: rctx.ctx,
+    },
+  );
 };
 
 const registerPushTokenHandler: OptionalAuthedRouteHandler = (rctx) =>

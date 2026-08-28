@@ -95,6 +95,43 @@ describe("checkPreflight (cooldown + quota gate)", () => {
     });
   });
 
+  test("sends the premium tts char limit and this request's charge for a tts gate", async () => {
+    let body: Record<string, unknown> = {};
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return jsonResponse({ allowed: true, tier_active: "PREMIUM" });
+      }),
+    );
+
+    await checkPreflight(mockEnv(), "uid-tts", "PREMIUM", "tts", null, 42);
+
+    expect(body).toMatchObject({
+      p_type: "tts",
+      p_free_daily_limit: 0,
+      p_premium_tts_chars_limit: 256,
+      p_charge_chars: 42,
+      p_premium_throttle_threshold: 0,
+    });
+  });
+
+  test("sends a zero char charge for non-tts usage types", async () => {
+    let body: Record<string, unknown> = {};
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return jsonResponse({ allowed: true, tier_active: "FREE" });
+      }),
+    );
+
+    await checkPreflight(mockEnv(), "uid-free", "FREE", "translate", null);
+
+    expect(body).toMatchObject({
+      p_type: "translate",
+      p_charge_chars: 0,
+    });
+  });
+
   test("fails closed to PREFLIGHT_UNAVAILABLE when the RPC returns an error", async () => {
     server.use(
       http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>

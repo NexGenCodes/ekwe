@@ -21,10 +21,11 @@ export function trackBillableSuccess(
   userId: string,
   type: UsageType,
   ctx: ExecutionContext | undefined,
+  charCount = 0,
 ): void {
   if (!ctx) return;
   ctx.waitUntil(
-    consumeUsage(env, userId, type).finally(async () => {
+    consumeUsage(env, userId, type, charCount).finally(async () => {
       try {
         await env.EKWE_KV.delete(preflightCacheKey(userId));
       } catch {
@@ -36,19 +37,22 @@ export function trackBillableSuccess(
 }
 
 /**
- * Atomic +1 against today's counter for the given request type. On failure we
- * log and move on (fail-open): quota is a fairness/abuse backstop, not a
- * billing system, and the per-request gate still caps concurrency.
+ * Atomic increment against today's counter for the given request type —
+ * translate/transcribe add one request, tts adds `charCount` characters. On
+ * failure we log and move on (fail-open): quota is a fairness/abuse backstop,
+ * not a billing system, and the per-request gate still caps concurrency.
  */
 async function consumeUsage(
   env: Env,
   userId: string,
   type: UsageType,
+  charCount = 0,
 ): Promise<void> {
   try {
     const res = await supabasePost(env, "/rest/v1/rpc/consume_usage", {
       p_user_id: userId,
       p_type: type,
+      p_chars: charCount,
     });
 
     if (res && !res.ok) {
@@ -91,6 +95,7 @@ export async function fetchUsageSnapshot(
       day: string;
       translate: number;
       transcribe: number;
+      tts: number;
     } = await res.json();
 
     const limits = getLimits(tier);
@@ -107,6 +112,13 @@ export async function fetchUsageSnapshot(
         used: data.transcribe,
         total: limits.dailyTranscribeLimit,
         remaining: Math.max(limits.dailyTranscribeLimit - data.transcribe, 0),
+      },
+      tts: {
+        // `data.tts` can be absent when talking to a pre-migration database;
+        // treat a missing column as zero used rather than failing the schema.
+        used: data.tts ?? 0,
+        total: limits.dailyTtsCharsLimit,
+        remaining: Math.max(limits.dailyTtsCharsLimit - (data.tts ?? 0), 0),
       },
     };
 

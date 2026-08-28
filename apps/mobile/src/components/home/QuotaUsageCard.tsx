@@ -105,7 +105,7 @@ export function QuotaUsageCard(): React.ReactElement {
     if (isError) return null;
     if (!data) return null;
 
-    const pools = [data.translate, data.transcribe];
+    const pools = [data.translate, data.transcribe, data.tts];
     const anyExhausted = pools.some((p) => p.total > 0 && p.remaining === 0);
     const anyNear = pools.some(
       (p) => p.total > 0 && p.remaining / p.total < 0.25 && p.remaining > 0,
@@ -180,6 +180,16 @@ export function QuotaUsageCard(): React.ReactElement {
             total={data.transcribe.total}
             remaining={data.transcribe.remaining}
           />
+          {/* Premium-only worker speech: hidden for FREE (dailyTtsCharsLimit = 0)
+              so the card never reads as "unlimited" for a feature that is a 403. */}
+          {data.tts.total > 0 || data.tts.used > 0 ? (
+            <PoolRow
+              label="Speech"
+              used={data.tts.used}
+              total={data.tts.total}
+              remaining={data.tts.remaining}
+            />
+          ) : null}
         </Box>
       ) : null}
     </Card>

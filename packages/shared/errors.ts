@@ -85,4 +85,4 @@ export function isWorkerErrorCode(code: string): code is WorkerErrorCode {
 export type Tier = "PREMIUM" | "FREE";
 
 /** Request types that draw down the user's daily usage quota. */
-export type UsageType = "translate" | "transcribe";
+export type UsageType = "translate" | "transcribe" | "tts";

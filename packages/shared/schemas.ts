@@ -175,6 +175,11 @@ export const usageSnapshotSchema = z.object({
     total: z.number(),
     remaining: z.number(),
   }),
+  tts: z.object({
+    used: z.number(),
+    total: z.number(),
+    remaining: z.number(),
+  }),
 });
 export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>;
 

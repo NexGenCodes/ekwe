@@ -12,14 +12,21 @@ import { guardLanguageCode, safeParseJSON } from "../core/guards";
 import { sanitizeTranslationText } from "../core/sanitize";
 import { hashKey } from "../utils/keys";
 import { Env, Tier, TtsAttempt } from "../core/types";
+import { runPreflightGate, nextUtcMidnightMs } from "../services/preflight";
+import { trackBillableSuccess } from "../services/usage";
 
 /**
  * Premium text-to-speech.
  *
  * Gate model: `/tts` is PREMIUM-only. FREE tier (including a throttled
  * PREMIUM user downgraded for the day) gets a 403 and the app falls back to
- * on-device speech. TTS is not a daily-quota draw, so there is no preflight
- * usage gate here — the tier check IS the gate.
+ * on-device speech. The route is not wired to the pipeline preflight because
+ * the quota charge depends on the parsed text length, so the same atomic gate
+ * runs here instead — after the KV cache lookup (cached replays were already
+ * paid for and stay free). PREMIUM users draw down a daily CHARACTER pool
+ * (`dailyTtsCharsLimit`, a hard cap) so scripting unlimited TTS is impossible.
+ * The DB-backed `tier_active` is authoritative: a lapsed subscription is
+ * rejected even if the JWT still says PREMIUM.
  *
  * Voice selection: the client sends `gender: "male" | "female"`. The worker
  * tries the 3 curated best voices for that gender under the current provider.
@@ -225,11 +232,23 @@ async function tryProviderVoices(
   return last;
 }
 
+/**
+ * Auth context needed to run the daily char-quota gate and record consumption.
+ * Production callers pass `rctx.auth` + `rctx.ctx`; the user is always set on
+ * the `jwt`-authed /tts route.
+ */
+export interface TtsGateContext {
+  userId: string;
+  sessionId: string | null;
+  ctx: ExecutionContext;
+}
+
 export async function handleTts(
   request: Request,
   env: Env,
   tier: Tier,
   signal: AbortSignal,
+  gate: TtsGateContext,
 ): Promise<Response> {
   if (tier !== "PREMIUM") {
     return Response.json(
@@ -312,6 +331,57 @@ export async function handleTts(
     logger.error(`[tts] KV cache lookup error`, { error: String(err) });
   }
 
+  // ─── Daily char-quota gate ─────────────────────────────────────
+  // Runs after the cache lookup so cached replays (already paid for) never
+  // draw quota again. The charge is the sanitized text's length; the atomic
+  // RPC asserts `used + charge <= cap`, and the buffered-remaining check below
+  // closes the 2s KV-preflight staleness window so a single generation can
+  // never spend more than a fresh gate would permit.
+  const gateResult = await runPreflightGate(
+    env,
+    gate.ctx,
+    gate.userId,
+    tier,
+    "tts",
+    gate.sessionId,
+    cleanText.length,
+  );
+  if (!gateResult.ok) return gateResult.response;
+
+  // The DB-backed tier is authoritative: FREE (or a lapsed subscription) is a
+  // 403 so the app falls back to on-device speech instead of a quota error.
+  if (gateResult.preflight.tier_active !== "PREMIUM") {
+    return Response.json(
+      {
+        error: WORKER_ERROR_CODES.PREMIUM_FEATURE_REQUIRED,
+        message: "Premium text-to-speech requires an active Premium plan.",
+      },
+      { status: 403 },
+    );
+  }
+
+  const quotaTotal = gateResult.preflight.quota_total ?? 0;
+  const quotaRemaining =
+    gateResult.preflight.quota_remaining ?? cleanText.length;
+  if (quotaTotal > 0 && cleanText.length > quotaRemaining) {
+    return Response.json(
+      {
+        error: WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED,
+        message: "You've reached your daily speech limit. Try again tomorrow.",
+        quota_total: quotaTotal,
+        quota_remaining: Math.max(quotaRemaining, 0),
+      },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(
+            Math.max(1, Math.ceil((nextUtcMidnightMs() - Date.now()) / 1000)),
+          ),
+        },
+      },
+    );
+  }
+
   // ─── Voice-selection failover loop ─────────────────────────────
   // For each provider in priority order: try its 3 curated voices for the
   // requested gender. If all 3 fail (or the provider is down), move to the
@@ -361,6 +431,15 @@ export async function handleTts(
             logger.error(`[tts] KV cache write error`, { error: String(err) });
           }
         }
+
+        // Draw down the daily char pool (fire-and-forget, non-blocking).
+        trackBillableSuccess(
+          env,
+          gate.userId,
+          "tts",
+          gate.ctx,
+          cleanText.length,
+        );
 
         return ttsAudioResponse(
           att.result.mime,

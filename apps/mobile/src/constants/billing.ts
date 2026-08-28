@@ -40,6 +40,12 @@ const dailyCaps = (translate: number, transcribe: number): string =>
     ? "Unlimited translations & transcriptions"
     : `${fmtInt(translate)} translations & ${fmtInt(transcribe)} transcriptions per day`;
 
+/** Premium speech cap: "Premium speech · 256 chars/day". */
+const speechCap = (chars: number): string =>
+  chars === 0
+    ? "No text-to-speech"
+    : `Premium speech · ${fmtInt(chars)} chars/day`;
+
 /** Combined content limits: "3,000-char texts & voice notes up to 2 min". */
 const contentLimits = (textChars: number, durationMs: number): string =>
   `${fmtInt(textChars)}-char texts & voice notes up to ${fmtMinutes(durationMs)}`;
@@ -93,7 +99,10 @@ export const BILLING_PLANS = {
       },
       { title: "Live dictation with auto-detect", included: true },
       { title: "Ad-free experience", included: true },
-      { title: "Premium text-to-speech voices", included: true },
+      {
+        title: speechCap(PLAN_LIMITS.pro.dailyTtsCharsLimit),
+        included: true,
+      },
       {
         title: `${fmtHistory(PLAN_LIMITS.pro.historyRemoteTtlDays)} cloud history`,
         included: true,

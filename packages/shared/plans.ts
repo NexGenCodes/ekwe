@@ -18,6 +18,13 @@ export interface PlanLimits {
   /** Daily hard cap for /transcribe, per user (0 = unlimited, never blocked). */
   dailyTranscribeLimit: number;
   /**
+   * Daily character cap for /tts, per user — measured in generated characters,
+   * not requests (0 = unavailable — FREE gets no worker TTS, on-device only).
+   * Premium TTS is the most expensive provider call per user, so unlike the
+   * translate/transcribe pools this one is a hard cap even for PREMIUM.
+   */
+  dailyTtsCharsLimit: number;
+  /**
    * Abuse throttle for /translate. Once a day's count crosses this threshold
    * the user is served FREE-tier limits (slower cooldown, no premium features)
    * until UTC midnight — throttled, never blocked. 0 = no throttle.
@@ -68,6 +75,7 @@ export const FREE_LIMITS: PlanLimits = {
   cooldownSeconds: 3,
   dailyTranslateLimit: 25,
   dailyTranscribeLimit: 25,
+  dailyTtsCharsLimit: 0,
   throttleTranslateThreshold: 0,
   throttleTranscribeThreshold: 0,
 };
@@ -87,6 +95,7 @@ export const PREMIUM_LIMITS: PlanLimits = {
   cooldownSeconds: 1,
   dailyTranslateLimit: 0,
   dailyTranscribeLimit: 0,
+  dailyTtsCharsLimit: 256,
   throttleTranslateThreshold: 500,
   throttleTranscribeThreshold: 500,
 };

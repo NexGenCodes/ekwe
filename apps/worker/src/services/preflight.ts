@@ -64,6 +64,7 @@ export async function runPreflightGate(
   tier: Tier,
   usageType: UsageType,
   sessionId: string | null,
+  chargeChars = 0,
 ): Promise<PreflightGateResult> {
   type CachedPreflight = PreflightResponse & { usage_type?: UsageType };
 
@@ -79,13 +80,34 @@ export async function runPreflightGate(
       preflight =
         parsed.usage_type === usageType
           ? parsed
-          : await checkPreflight(env, userId, tier, usageType, sessionId);
+          : await checkPreflight(
+              env,
+              userId,
+              tier,
+              usageType,
+              sessionId,
+              chargeChars,
+            );
     } catch {
       logger.debug("[preflight] Cache parse failed, fetching fresh preflight");
-      preflight = await checkPreflight(env, userId, tier, usageType, sessionId);
+      preflight = await checkPreflight(
+        env,
+        userId,
+        tier,
+        usageType,
+        sessionId,
+        chargeChars,
+      );
     }
   } else {
-    preflight = await checkPreflight(env, userId, tier, usageType, sessionId);
+    preflight = await checkPreflight(
+      env,
+      userId,
+      tier,
+      usageType,
+      sessionId,
+      chargeChars,
+    );
   }
 
   if (!preflight.allowed) {
@@ -216,24 +238,33 @@ export async function checkPreflight(
   requestedTier: Tier,
   type: UsageType,
   sessionId: string | null,
+  chargeChars = 0,
 ): Promise<PreflightResponse> {
   const isTranscribe = type === "transcribe";
+  const isTts = type === "tts";
   // Pass BOTH tiers' limits: the RPC picks the effective ones from the
-  // authoritative tier. The free tier never throttles (threshold 0), and a
+  // authoritative tier. The free tier never throttles (threshold 0), the tts
+  // pool has no throttle at all (it is already a hard char cap), and a
   // throttled PREMIUM request is served with the free cooldown.
   const freeLimits = getLimits("FREE");
   const premiumLimits = getLimits("PREMIUM");
   const freeCooldownSeconds = freeLimits.cooldownSeconds;
-  const freeDailyLimit = isTranscribe
-    ? freeLimits.dailyTranscribeLimit
-    : freeLimits.dailyTranslateLimit;
+  const freeDailyLimit = isTts
+    ? freeLimits.dailyTtsCharsLimit
+    : isTranscribe
+      ? freeLimits.dailyTranscribeLimit
+      : freeLimits.dailyTranslateLimit;
   const premiumCooldownSeconds = premiumLimits.cooldownSeconds;
-  const premiumDailyLimit = isTranscribe
-    ? premiumLimits.dailyTranscribeLimit
-    : premiumLimits.dailyTranslateLimit;
-  const premiumThrottleThreshold = isTranscribe
-    ? premiumLimits.throttleTranscribeThreshold
-    : premiumLimits.throttleTranslateThreshold;
+  const premiumDailyLimit = isTts
+    ? premiumLimits.dailyTtsCharsLimit
+    : isTranscribe
+      ? premiumLimits.dailyTranscribeLimit
+      : premiumLimits.dailyTranslateLimit;
+  const premiumThrottleThreshold = isTts
+    ? 0
+    : isTranscribe
+      ? premiumLimits.throttleTranscribeThreshold
+      : premiumLimits.throttleTranslateThreshold;
 
   // Reject a deleted/banned user before touching the quota RPC (a revoked
   // session must not burn cooldown or quota for a user that no longer exists).
@@ -264,6 +295,8 @@ export async function checkPreflight(
       p_premium_daily_limit: premiumDailyLimit,
       p_premium_throttle_threshold: premiumThrottleThreshold,
       p_throttle_cooldown_seconds: freeCooldownSeconds,
+      p_premium_tts_chars_limit: premiumLimits.dailyTtsCharsLimit,
+      p_charge_chars: chargeChars,
     });
 
     if (res?.ok) {

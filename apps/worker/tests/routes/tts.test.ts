@@ -1,10 +1,11 @@
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import { handleTts } from "../../src/routes/tts";
-import { mockEnv, jsonResponse } from "../setup";
+import { mockEnv, jsonResponse, mockExecutionContext } from "../setup";
 import { bytesToBase64 } from "../../src/utils/base64";
 import { http } from "msw";
 import { server } from "../msw/server";
 import { PROVIDER_URLS } from "../msw/handlers";
+import type { TtsGateContext } from "../../src/routes/tts";
 
 function mp3Response(): Response {
   const mp3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00, 0x00]);
@@ -53,13 +54,35 @@ function geminiError(status: number): Response {
   return jsonResponse({ error: { code: status, message: "err" } }, status);
 }
 
+/**
+ * Auth context for the route's internal daily char-quota gate. A fresh ctx per
+ * call keeps the fire-and-forget consume/waitUntil promises isolated.
+ */
+function gate(): TtsGateContext {
+  return { userId: "uid-tts", sessionId: null, ctx: mockExecutionContext() };
+}
+
 describe("handleTts", () => {
+  beforeEach(() => {
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+        jsonResponse({
+          allowed: true,
+          tier_active: "PREMIUM",
+          quota_total: 256,
+          quota_remaining: 256,
+        }),
+      ),
+    );
+  });
+
   test("FREE tier is rejected with 403", async () => {
     const res = await handleTts(
       makeRequest(),
       mockEnv(),
       "FREE",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(403);
     const body = (await res.json()) as { error: string };
@@ -77,6 +100,7 @@ describe("handleTts", () => {
       mockEnv(),
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(missingRes.status).toBe(400);
     const missingBody = (await missingRes.json()) as { error: string };
@@ -87,6 +111,7 @@ describe("handleTts", () => {
       mockEnv(),
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(autoRes.status).toBe(400);
     const autoBody = (await autoRes.json()) as { error: string };
@@ -104,6 +129,7 @@ describe("handleTts", () => {
       mockEnv(),
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
@@ -124,6 +150,7 @@ describe("handleTts", () => {
       mockEnv(),
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(200);
   });
@@ -134,6 +161,7 @@ describe("handleTts", () => {
       mockEnv(),
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(400);
   });
@@ -144,6 +172,7 @@ describe("handleTts", () => {
       mockEnv(),
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(400);
   });
@@ -154,6 +183,7 @@ describe("handleTts", () => {
       mockEnv(),
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(413);
   });
@@ -168,6 +198,7 @@ describe("handleTts", () => {
       mockEnv(),
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("audio/wav");
@@ -191,6 +222,7 @@ describe("handleTts", () => {
       env,
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(first.status).toBe(200);
     expect(first.headers.get("X-TTS-Cache")).toBe("MISS");
@@ -200,6 +232,7 @@ describe("handleTts", () => {
       env,
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(second.status).toBe(200);
     expect(second.headers.get("X-TTS-Cache")).toBe("HIT");
@@ -222,6 +255,7 @@ describe("handleTts", () => {
       env,
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("audio/mpeg");
@@ -254,6 +288,7 @@ describe("handleTts", () => {
       env,
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("X-TTS-Provider")).toBe("aura2");
@@ -274,6 +309,7 @@ describe("handleTts", () => {
       env,
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("X-TTS-Provider")).toBe("melotts");
@@ -293,6 +329,7 @@ describe("handleTts", () => {
       env,
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(503);
     const body = (await res.json()) as { error: string };
@@ -310,6 +347,7 @@ describe("handleTts", () => {
       env,
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(503);
 
@@ -333,6 +371,7 @@ describe("handleTts", () => {
       env,
       "PREMIUM",
       new AbortController().signal,
+      gate(),
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("X-TTS-Provider")).toBe("gemini");
@@ -375,8 +414,123 @@ describe("handleTts", () => {
         env,
         "PREMIUM",
         new AbortController().signal,
+        gate(),
       );
       expect(res.status).toBe(503);
     },
   );
+
+  test("returns 429 when the premium daily speech pool is exhausted", async () => {
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+        jsonResponse({
+          allowed: false,
+          reason: "QUOTA_EXCEEDED",
+          quota_total: 256,
+          quota_remaining: 0,
+        }),
+      ),
+    );
+
+    const res = await handleTts(
+      makeRequest(),
+      mockEnv(),
+      "PREMIUM",
+      new AbortController().signal,
+      gate(),
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBeTruthy();
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe("EKWE_QUOTA_EXCEEDED");
+    expect(body.quota_total).toBe(256);
+  });
+
+  test("rejects with 403 when the JWT says PREMIUM but the DB tier is FREE", async () => {
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+        jsonResponse({ allowed: true, tier_active: "FREE" }),
+      ),
+    );
+
+    const res = await handleTts(
+      makeRequest(),
+      mockEnv(),
+      "PREMIUM",
+      new AbortController().signal,
+      gate(),
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("PREMIUM_FEATURE_REQUIRED");
+  });
+
+  test("rejects when the request text exceeds the remaining speech pool", async () => {
+    // text = 11 chars, only 10 chars remain in the (cached) gate decision.
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+        jsonResponse({
+          allowed: true,
+          tier_active: "PREMIUM",
+          quota_total: 256,
+          quota_remaining: 10,
+        }),
+      ),
+    );
+
+    const res = await handleTts(
+      makeRequest("Hello world"),
+      mockEnv(),
+      "PREMIUM",
+      new AbortController().signal,
+      gate(),
+    );
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe("EKWE_QUOTA_EXCEEDED");
+  });
+
+  test("charges generated characters only on provider misses, not cache hits", async () => {
+    const env = mockEnv();
+    server.use(
+      http.post(PROVIDER_URLS.geminiTtsGenerate, geminiInlineResponse),
+    );
+
+    let preflightCalls = 0;
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, () => {
+        preflightCalls += 1;
+        return jsonResponse({
+          allowed: true,
+          tier_active: "PREMIUM",
+          quota_total: 256,
+          quota_remaining: 256,
+        });
+      }),
+    );
+
+    const first = await handleTts(
+      makeRequest("Cached phrase", "fr"),
+      env,
+      "PREMIUM",
+      new AbortController().signal,
+      gate(),
+    );
+    expect(first.status).toBe(200);
+    expect(first.headers.get("X-TTS-Cache")).toBe("MISS");
+
+    const second = await handleTts(
+      makeRequest("Cached phrase", "fr"),
+      env,
+      "PREMIUM",
+      new AbortController().signal,
+      gate(),
+    );
+    expect(second.status).toBe(200);
+    expect(second.headers.get("X-TTS-Cache")).toBe("HIT");
+
+    // The cache hit returns before the gate, so it neither re-checks nor
+    // charges again — the audio was already paid for on the generation.
+    expect(preflightCalls).toBe(1);
+  });
 });
