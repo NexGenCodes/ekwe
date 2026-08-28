@@ -65,6 +65,43 @@ function isIdentityLinkError(error: unknown): boolean {
   );
 }
 
+/**
+ * Maps a Supabase auth error to user-safe plain text.
+ *
+ * Raw AuthApiError messages can leak implementation details (database
+ * constraint names, provider internals, project-specific wording) straight to
+ * the UI. Never surface `error.message` verbatim — translate recognizable
+ * codes/messages to friendly copy and fall back to a neutral line otherwise.
+ */
+function safeAuthErrorMessage(error: unknown): string {
+  if (error instanceof AuthApiError) {
+    switch (error.code) {
+      case "over_email_send_rate_limit":
+      case "rate_limit":
+        return "Too many attempts. Please wait a moment and try again.";
+      case "email_not_confirmed":
+        return "Please confirm your email address before signing in.";
+      case "otp_expired":
+        return "That code expired. Request a new one and try again.";
+      case "invalid_token":
+      case "verification_expired":
+        return "That code is no longer valid. Please request a new one.";
+      case "weak_password":
+        return "Please choose a stronger password.";
+      case "validation_failed":
+      case "invalid_credentials":
+        return "The details you entered don't match. Please try again.";
+      case "user_already_exists":
+        return "An account already exists with this email.";
+      case "email_exists":
+        return "An account already exists — try signing in instead.";
+      case "user_not_found":
+        return "We couldn't find an account for this email.";
+    }
+  }
+  return "That didn't work. Please try again.";
+}
+
 // ── Initialization ─────────────────────────────────────────────────
 
 let _authSubscription: { unsubscribe: () => void } | null = null;
@@ -301,7 +338,7 @@ const sendOtpDirect = async (email: string): Promise<AuthResult> => {
         method: "otp",
         error: error.message,
       });
-      return { ok: false, error: error.message };
+      return { ok: false, error: safeAuthErrorMessage(error) };
     }
     track(AnalyticsEvents.AUTH_OTP_SENT, { method: "otp" });
     return { ok: true, needsOtp: true };
@@ -338,7 +375,7 @@ export const verifyOtp = async (
         type,
         error: error.message,
       });
-      return { ok: false, error: error.message };
+      return { ok: false, error: safeAuthErrorMessage(error) };
     }
     if (!data.session) {
       track(AnalyticsEvents.AUTH_VERIFY_FAILED, {
@@ -400,7 +437,7 @@ export const signInWithApple = async (): Promise<AuthResult> => {
         track(AnalyticsEvents.AUTH_NEEDS_LINK, { method: "apple" });
         return { ok: false, needsLink: { provider: "apple", email } };
       }
-      return { ok: false, error: error.message };
+      return { ok: false, error: safeAuthErrorMessage(error) };
     }
 
     if (credential.fullName) {
@@ -463,7 +500,7 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
         track(AnalyticsEvents.AUTH_NEEDS_LINK, { method: "google" });
         return { ok: false, needsLink: { provider: "google", email } };
       }
-      return { ok: false, error: error.message };
+      return { ok: false, error: safeAuthErrorMessage(error) };
     }
 
     track(AnalyticsEvents.SIGN_IN, { method: "google" });
@@ -506,7 +543,7 @@ export const linkSocialIdentity = async (): Promise<AuthResult> => {
         provider: link.provider,
         error: error.message,
       });
-      return { ok: false, error: error.message };
+      return { ok: false, error: safeAuthErrorMessage(error) };
     }
 
     track(AnalyticsEvents.AUTH_LINKED, { provider: link.provider });
@@ -561,7 +598,7 @@ export const signOut = async (): Promise<AuthResult> => {
     getPosthogClient()?.reset();
     track(AnalyticsEvents.SIGN_OUT);
 
-    if (error) return { ok: false, error: error.message };
+    if (error) return { ok: false, error: safeAuthErrorMessage(error) };
     return { ok: true };
   } catch (err) {
     logger.error("[Auth] signOut error:", err);

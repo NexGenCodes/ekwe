@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
-      worker: ${{ steps.changes.outputs.worker }}
-      pages: ${{ steps.changes.outputs.pages }}
+      worker: ${{ steps.outcome.outputs.worker }}
+      pages: ${{ steps.outcome.outputs.pages }}
       ota: ${{ steps.outcome.outputs.ota }}
       release: ${{ steps.outcome.outputs.release }}
     steps:
@@ -63,10 +63,14 @@ jobs:
             if [ "${{ steps.changes.outputs.native }}" == "true" ]; then
               echo "ota=false" >> "$GITHUB_OUTPUT"
               echo "release=true" >> "$GITHUB_OUTPUT"
+              echo "worker=${{ steps.changes.outputs.worker }}" >> "$GITHUB_OUTPUT"
+              echo "pages=${{ steps.changes.outputs.pages }}" >> "$GITHUB_OUTPUT"
             else
               # Non-native change: only OTA unless it's a release (never both).
               echo "ota=${{ steps.changes.outputs.ota }}" >> "$GITHUB_OUTPUT"
               echo "release=false" >> "$GITHUB_OUTPUT"
+              echo "worker=${{ steps.changes.outputs.worker }}" >> "$GITHUB_OUTPUT"
+              echo "pages=${{ steps.changes.outputs.pages }}" >> "$GITHUB_OUTPUT"
             fi
           fi
 

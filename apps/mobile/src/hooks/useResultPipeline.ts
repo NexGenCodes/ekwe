@@ -96,6 +96,16 @@ export const useResultPipeline = ({
   // effect re-fires, producing an infinite retry loop with a toast per attempt.
   const attemptedUriRef = useRef<string | null>(null);
 
+  // Guards against setState after unmount in the async callbacks below
+  // (transcribe/translate can settle after the tree is torn down).
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return (): void => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // Saved-once refs (transcription-only semantics on unmount/dismiss)
   const savedRef = useRef(false);
   const transcriptRef = useRef(transcript);
@@ -115,6 +125,7 @@ export const useResultPipeline = ({
 
   const processSharedAudio = useCallback(
     async (audioUri: string): Promise<void> => {
+      if (!mountedRef.current) return;
       setIsProcessing(true);
       try {
         const txResultResponse = await batchTranscriber.transcribe(
@@ -128,6 +139,7 @@ export const useResultPipeline = ({
 
         const txResult = txResultResponse.value;
         durationRef.current = txResult.durationSeconds;
+        if (!mountedRef.current) return;
         setTranscript(txResult.transcript);
 
         // Clean up file system
@@ -204,6 +216,7 @@ export const useResultPipeline = ({
       }
 
       const val = trResultResponse.value;
+      if (!mountedRef.current) return;
       setTranslation(val.translation);
       triggerHaptic(Haptics.NotificationFeedbackType.Success);
 

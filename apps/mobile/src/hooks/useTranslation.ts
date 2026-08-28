@@ -274,8 +274,7 @@ export const useTranslation = (): UseTranslationReturn => {
         if (currentSessionId !== null && duration > 0) {
           // Voice note transcribed then translated → TWO separate history
           // entries: a transcription (text + audio metadata) and a separate
-          // translation. The audio is only ever saved once — skip the
-          // transcription if an earlier save already persisted it.
+          // translation. The audio is only ever saved once.
           const resolvedSource =
             resolveDetectedLanguage(
               audio$.sourceLang.get(),
@@ -284,22 +283,34 @@ export const useTranslation = (): UseTranslationReturn => {
             ) ?? sourceLang;
 
           if (!audio$.isSaved.get()) {
-            audioActions.setSaved(true);
-            await HistoryService.recordTranslation(
-              {
-                sourceLang: resolvedSource,
-                targetLang,
-                transcript: textToTranslate,
-                translation: null,
-                transliteration: null,
-                duration,
-                sourceApp: "ekwe",
-                provider: "gemini",
-                sessionKey: currentSessionId,
-                type: "transcription",
-              },
-              userSession,
-            );
+            try {
+              await HistoryService.recordTranslation(
+                {
+                  sourceLang: resolvedSource,
+                  targetLang,
+                  transcript: textToTranslate,
+                  translation: null,
+                  transliteration: null,
+                  duration,
+                  sourceApp: "ekwe",
+                  provider: "gemini",
+                  sessionKey: currentSessionId,
+                  type: "transcription",
+                },
+                userSession,
+              );
+              // Mark saved ONLY after the write succeeded — otherwise a failed
+              // save would permanently suppress the transcription entry on
+              // every later save attempt (and leak history).
+              audioActions.setSaved(true);
+            } catch (saveErr) {
+              // Non-fatal: don't drop the translation entry because the
+              // transcription history write failed — log and continue.
+              logger.error(
+                "[Translation] Failed to save transcription",
+                saveErr,
+              );
+            }
           }
 
           // Translation entry — text → text, no audio metadata.

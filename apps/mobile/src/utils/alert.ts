@@ -2,6 +2,7 @@ import * as Haptics from "expo-haptics";
 import { AlertButton } from "react-native";
 
 import { triggerHaptic } from "./haptics";
+import { sanitizeErrorMessage } from "./errorSafe";
 import logger from "./logger";
 
 import { appAlertActions } from "@/store/appAlert";
@@ -56,15 +57,10 @@ export const AppAlert = {
     buttons?: AlertButton[],
     options?: AppAlertOptions,
   ): void => {
-    // Determine the safest string to display
-    let message = "An unexpected error occurred.";
-    if (typeof error === "string") {
-      message = error;
-    } else if (error instanceof Error) {
-      message = error.message;
-    } else if (error && typeof error === "object" && "message" in error) {
-      message = String(error.message);
-    }
+    // Raw error internals (Supabase URLs/project refs, provider details) are
+    // logged for diagnostics but the user only ever sees sanitized plain text.
+    const message =
+      sanitizeErrorMessage(error) ?? "An unexpected error occurred.";
 
     logger.error(`[AppAlert Error] ${title} - ${message}`);
 

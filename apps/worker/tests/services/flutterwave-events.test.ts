@@ -410,8 +410,10 @@ describe("Flutterwave Event Processor", () => {
     });
 
     test("rejects charge with currency mismatch (legacy meta fallback)", async () => {
-      // Events without a resolvable plan fall back to comparing against the
-      // client meta echo. Charged NGN but meta expects USD → rejected.
+      // Events without a resolvable plan fail closed — the server cannot price
+      // them, so they never grant Pro (previously the client meta echo could
+      // be matched to a tiny underpayment). Charged NGN but meta expects USD →
+      // rejected.
       const event = buildEvent({
         data: {
           ...buildEvent().data,
@@ -423,6 +425,60 @@ describe("Flutterwave Event Processor", () => {
             plan: "",
             amount: 2.23,
             currency: "USD",
+          },
+        },
+      });
+
+      const result = await processWebhookEvent("flutterwave", event, env);
+
+      expect(result.fullyApplied).toBe(true);
+      const body = (await result.response.json()) as Record<string, string>;
+      expect(body.action).toBe("rejected");
+      expect(mockedSupabasePost).not.toHaveBeenCalled();
+    });
+
+    test("rejects underpayment where an unresolvable plan echoes its own meta amount", async () => {
+      // The critical exploit: an attacker pays 100 NGN with a non-ekwe tx_ref
+      // and echoes meta.amount=100 so the legacy meta comparison would match.
+      // The plan cannot be resolved, so this must fail closed — NO grant.
+      const event = buildEvent({
+        data: {
+          ...buildEvent().data,
+          tx_ref: "flw-sub-ref-no-plan",
+          amount: 100,
+          currency: "NGN",
+          meta: {
+            ...buildEvent().data.meta,
+            plan: "",
+            amount: 100,
+            currency: "NGN",
+          },
+        },
+      });
+
+      const result = await processWebhookEvent("flutterwave", event, env);
+
+      expect(result.fullyApplied).toBe(true);
+      const body = (await result.response.json()) as Record<string, string>;
+      expect(body.action).toBe("rejected");
+      expect(mockedSupabasePost).not.toHaveBeenCalled();
+    });
+
+    test("rejects a charge with no meta.amount at all (unconditional grant hole)", async () => {
+      // Previously a charge.success with an unresolvable plan and NO
+      // meta.amount returned ok unconditionally — an attacker could pay ~0 and
+      // get Pro. It must fail closed now.
+      const event = buildEvent({
+        data: {
+          ...buildEvent().data,
+          tx_ref: "flw-sub-ref-no-plan",
+          amount: 0.01,
+          currency: "USD",
+          meta: {
+            ...buildEvent().data.meta,
+            plan: "",
+            amount: undefined,
+            currency: undefined,
           },
         },
       });
@@ -610,6 +666,70 @@ describe("Flutterwave Event Processor", () => {
     });
   });
 
+  // ── Refund events ──
+
+  describe("charge.refund / charge.refunded", () => {
+    test("revokes Pro on a completed refund", async () => {
+      const event = buildEvent({
+        event: "charge.refund",
+        data: {
+          ...buildEvent().data,
+          status: "completed",
+        },
+      });
+
+      const result = await processWebhookEvent("flutterwave", event, env);
+
+      expect(result.fullyApplied).toBe(true);
+      const body = (await result.response.json()) as Record<string, string>;
+      expect(body.action).toBe("deactivated");
+
+      expect(mockedSupabasePost).toHaveBeenCalledWith(
+        env,
+        "/rest/v1/rpc/set_pro_status",
+        expect.objectContaining({
+          p_is_pro: false,
+          p_expires_at: null,
+        }),
+        expect.any(Number),
+      );
+    });
+
+    test("revokes Pro on charge.refunded", async () => {
+      const event = buildEvent({
+        event: "charge.refunded",
+        data: {
+          ...buildEvent().data,
+          status: "successful",
+        },
+      });
+
+      const result = await processWebhookEvent("flutterwave", event, env);
+
+      expect(result.fullyApplied).toBe(true);
+      const body = (await result.response.json()) as Record<string, string>;
+      expect(body.action).toBe("deactivated");
+      expect(mockedSupabasePost).toHaveBeenCalled();
+    });
+
+    test("ignores pending refunds (no auth change yet)", async () => {
+      const event = buildEvent({
+        event: "charge.refund",
+        data: {
+          ...buildEvent().data,
+          status: "pending",
+        },
+      });
+
+      const result = await processWebhookEvent("flutterwave", event, env);
+
+      expect(result.fullyApplied).toBe(true);
+      const body = (await result.response.json()) as Record<string, string>;
+      expect(body.action).toBe("ignored");
+      expect(mockedSupabasePost).not.toHaveBeenCalled();
+    });
+  });
+
   // ── Ignored events ──
 
   describe("ignored events", () => {
@@ -662,13 +782,17 @@ describe("Flutterwave Event Processor", () => {
       expect(result.fullyApplied).toBe(false);
     });
 
-    test("returns not fullyApplied when Supabase returns 400 (permanent)", async () => {
+    test("acks (does not retry) when Supabase returns 400 (permanent)", async () => {
+      // A 4xx from set_pro_status is a permanent condition (e.g. no Supabase
+      // user for the email) — no retry can fix it, so the event is acked to
+      // stop the infinite Flutterwave redelivery loop, even though Pro wasn't
+      // granted.
       failRpc(400);
       const event = buildEvent();
 
       const result = await processWebhookEvent("flutterwave", event, env);
 
-      expect(result.fullyApplied).toBe(false);
+      expect(result.fullyApplied).toBe(true);
     });
 
     test("returns not fullyApplied on network error", async () => {

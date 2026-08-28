@@ -577,6 +577,7 @@ export const dictationActions = {
   teardown(): void {
     clearTimers();
     abortController?.abort();
+    abortController = null;
     if (streamUnsub) {
       streamUnsub();
       streamUnsub = null;
@@ -585,5 +586,12 @@ export const dictationActions = {
     if (AudioCapture.isRecording()) {
       AudioCapture.cancelRecording().catch(() => {});
     }
+    // Fully reset the machine, mirroring `cancelDictation`. Without this an
+    // unmount mid-start (e.g. navigating away while "initializing") leaves the
+    // store stuck at a non-idle status and `stopInFlight` latched, so the next
+    // mount's `startDictation` bails early and the session can never recover.
+    stopInFlight = false;
+    dictation$.set({ ...INITIAL_STATE });
+    audioActions.resetAudioState();
   },
 };

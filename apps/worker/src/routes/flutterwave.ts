@@ -99,6 +99,24 @@ function isPermanentFailure(status: number): boolean {
 }
 
 /**
+ * Builds a ProviderResult from a Pro-status change.
+ *
+ * The `permanent` flag matters: set_pro_status returns 4xx for conditions that
+ * no retry will fix (e.g. "No user found with email: …" when the payment was
+ * created with an email that has no Supabase account). Retrying those forever
+ * is a silent retry loop — Flutterwave keeps re-sending, the Worker keeps
+ * returning 500, and Pro is never granted. So a permanent failure is acked
+ * (fullyApplied) even though it didn't apply; only transient failures (5xx/
+ * network) trigger re-delivery.
+ */
+function ackResult(
+  response: Response,
+  applied: ProStatusResult,
+): ProviderResult {
+  return { response, fullyApplied: applied.ok || applied.permanent };
+}
+
+/**
  * Calls the set_pro_status RPC with the given parameters. The RPC inserts or
  * updates a row in user_subscriptions and derives the canonical tier. The
  * optional p_expires_at parameter prevents overwriting a future expiry with null
@@ -209,8 +227,11 @@ function planFromMeta(plan?: string): "monthly" | "annual" | null {
  * to the service role, so a malicious user can neither change the price nor
  * read it through the public API.
  *
- * When the plan cannot be resolved (legacy/recurring events) we fall back to
- * comparing against the meta echo, which is only informational.
+ * When the plan cannot be resolved (anomalous / non-ekwe tx_ref) we fail
+ * CLOSED: a charge we cannot price never grants Pro. The previous fallback
+ * compared against the client-echoed `meta`, which is attacker-controlled —
+ * a modified client could pay e.g. 100 NGN and echo meta.amount=100 to make
+ * the "match" succeed, or omit meta.amount to get an unconditional grant.
  */
 async function verifyChargeAmount(
   env: Env,
@@ -223,8 +244,12 @@ async function verifyChargeAmount(
 ): Promise<ChargeVerification> {
   const chargedAmount = data.amount;
   if (typeof chargedAmount !== "number") {
-    // Nothing to compare — fall through to the normal grant path.
-    return { outcome: "ok" };
+    // A successful charge always carries an amount; without one we cannot
+    // verify anything, so do NOT grant.
+    logger.error("[flutterwave] charge.success without an amount", {
+      tx_ref: data.tx_ref,
+    });
+    return { outcome: "reject" };
   }
 
   const chargedCurrency = (data.currency ?? "").toUpperCase();
@@ -237,53 +262,30 @@ async function verifyChargeAmount(
   // currency we never authorize is anomalous — reject instead of coercing
   // (coercing would let an attacker pay e.g. ~$0.05 in an unsupported
   // currency and have it treated as USD).
-  if (plan) {
-    if (resolvePaymentCurrency(chargedCurrency) !== chargedCurrency) {
-      logger.error("[flutterwave] Unsupported currency on charge.success", {
-        charged: chargedCurrency,
-      });
-      return { outcome: "reject" };
-    }
-
-    const prices = await getAuthoritativePlanPrices(env, chargedCurrency);
-    if (!prices) {
-      logger.warn("[flutterwave] Cannot confirm price from Supabase", {
-        currency: chargedCurrency,
-      });
-      return { outcome: "retry" };
-    }
-
-    const expected = plan === "annual" ? prices.annual : prices.monthly;
-
-    const charged = toLowestUnit(chargedAmount, chargedCurrency);
-    const wanted = toLowestUnit(expected, chargedCurrency);
-    if (charged !== wanted) {
-      logger.error("[flutterwave] Amount mismatch on charge.success", {
-        charged: chargedAmount,
-        expected,
-        currency: chargedCurrency,
-      });
-      return { outcome: "reject" };
-    }
-    return { outcome: "ok" };
-  }
-
-  // Fallback for events where the plan can't be resolved (legacy/recurring):
-  // compare against the meta echo. Purely informational.
-  const expected = data.meta?.amount;
-  const expectedCurrency = data.meta?.currency?.toUpperCase();
-  if (typeof expected !== "number" || !expectedCurrency) {
-    // No expected amount embedded (legacy checkout) — nothing to verify.
-    return { outcome: "ok" };
-  }
-
-  if (chargedCurrency !== expectedCurrency) {
-    logger.error("[flutterwave] Currency mismatch on charge.success", {
-      charged: chargedCurrency,
-      expected: expectedCurrency,
+  if (!plan) {
+    logger.error("[flutterwave] Unresolvable plan on charge.success", {
+      tx_ref: data.tx_ref,
+      meta_plan: data.meta?.plan,
     });
     return { outcome: "reject" };
   }
+
+  if (resolvePaymentCurrency(chargedCurrency) !== chargedCurrency) {
+    logger.error("[flutterwave] Unsupported currency on charge.success", {
+      charged: chargedCurrency,
+    });
+    return { outcome: "reject" };
+  }
+
+  const prices = await getAuthoritativePlanPrices(env, chargedCurrency);
+  if (!prices) {
+    logger.warn("[flutterwave] Cannot confirm price from Supabase", {
+      currency: chargedCurrency,
+    });
+    return { outcome: "retry" };
+  }
+
+  const expected = plan === "annual" ? prices.annual : prices.monthly;
 
   const charged = toLowestUnit(chargedAmount, chargedCurrency);
   const wanted = toLowestUnit(expected, chargedCurrency);
@@ -295,7 +297,6 @@ async function verifyChargeAmount(
     });
     return { outcome: "reject" };
   }
-
   return { outcome: "ok" };
 }
 
@@ -374,9 +375,34 @@ async function processFlutterwaveEvent(
       email,
       tx_ref: txRef,
     });
+    return ackResult(
+      Response.json({ received: true, action: "activated" }),
+      applied,
+    );
+  }
+
+  // ── Refund Events ──
+  // A refunded charge (full or partial enough to invalidate Pro) must revoke
+  // access. Previously lead events were unhandled, so refunded customers
+  // retained paid-for Pro indefinitely.
+  if (eventType === "charge.refund" || eventType === "charge.refunded") {
+    // Only revoke on a completed refund from Flutterwave's signed webhook;
+    // event.data.status distinguishes it from a pending request.
+    if (data.status === "successful" || data.status === "completed") {
+      const applied = await setProStatus(env, identifier, false, null);
+      logger.info("[flutterwave] Charge refunded — Pro revoked", {
+        email,
+        tx_ref: txRef,
+      });
+      return ackResult(
+        Response.json({ received: true, action: "deactivated" }),
+        applied,
+      );
+    }
+    // Pending / abandoned refund events carry no auth change yet.
     return {
-      response: Response.json({ received: true, action: "activated" }),
-      fullyApplied: applied.ok,
+      response: Response.json({ received: true, action: "ignored" }),
+      fullyApplied: true,
     };
   }
 
@@ -395,10 +421,10 @@ async function processFlutterwaveEvent(
         email,
         tx_ref: txRef,
       });
-      return {
-        response: Response.json({ received: true, action: "renewed" }),
-        fullyApplied: applied.ok,
-      };
+      return ackResult(
+        Response.json({ received: true, action: "renewed" }),
+        applied,
+      );
     }
     // No end_date → skip (status unknown)
     return {
@@ -415,10 +441,10 @@ async function processFlutterwaveEvent(
       email,
       tx_ref: txRef,
     });
-    return {
-      response: Response.json({ received: true, action: "deactivated" }),
-      fullyApplied: applied.ok,
-    };
+    return ackResult(
+      Response.json({ received: true, action: "deactivated" }),
+      applied,
+    );
   }
 
   // subscription.completed: Final installment paid → keep Pro until end_date
@@ -431,10 +457,10 @@ async function processFlutterwaveEvent(
       email,
       tx_ref: txRef,
     });
-    return {
-      response: Response.json({ received: true, action: "retained" }),
-      fullyApplied: applied.ok,
-    };
+    return ackResult(
+      Response.json({ received: true, action: "retained" }),
+      applied,
+    );
   }
 
   // subscription.cancelled: User cancelled → keep Pro until expires_at
@@ -454,10 +480,10 @@ async function processFlutterwaveEvent(
         expires_at: expiresAt,
       },
     );
-    return {
-      response: Response.json({ received: true, action: "retained" }),
-      fullyApplied: applied.ok,
-    };
+    return ackResult(
+      Response.json({ received: true, action: "retained" }),
+      applied,
+    );
   }
 
   // subscription.expired: Full expiry → revoke Pro
@@ -467,10 +493,10 @@ async function processFlutterwaveEvent(
       email,
       tx_ref: txRef,
     });
-    return {
-      response: Response.json({ received: true, action: "deactivated" }),
-      fullyApplied: applied.ok,
-    };
+    return ackResult(
+      Response.json({ received: true, action: "deactivated" }),
+      applied,
+    );
   }
 
   // ── Ignored Events ──

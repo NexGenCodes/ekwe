@@ -264,6 +264,9 @@ export const useEchoAudioResolver = (props: {
         if (validatedUri && validatedUri !== fileUri) {
           cleanEchoCache(validatedUri);
         }
+        // Do not setState if the tree unmounted (or a newer resolve superseded
+        // this one) while the promise settled — the UI is gone.
+        if (isStale) return;
         setIsResolving(false);
         setResolveError("Could not process the shared audio file.");
       }
