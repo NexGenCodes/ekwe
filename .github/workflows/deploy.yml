@@ -265,11 +265,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add apps/mobile/app.json apps/mobile/package.json package.json apps/web/config.json CHANGELOG.md
-          # Only commit when the bump actually changed files. When the version
-          # is already at the target (e.g. releasing exactly v1.2.0), there is
-          # nothing to commit — skip it so the release can still be created.
+          # Skip the commit when the bump produced no changes (releasing exactly
+          # v1.2.0 when files are already at 1.2.0). Skip pre-commit hooks too,
+          # since lint-staged's prettier re-staging makes its own emptiness guard
+          # reject these scripted release commits.
           if ! git diff --cached --quiet; then
-            git commit -m "chore: release ${{ steps.bump.outputs.next_tag }}"
+            git commit --no-verify -m "chore: release ${{ steps.bump.outputs.next_tag }}"
           fi
           git push
 
