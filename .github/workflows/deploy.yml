@@ -223,11 +223,12 @@ jobs:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dorg.gradle.caching=true"
         run: |
           chmod +x gradlew
-          # Build per ABI so each output APK is named with its ABI and the
-          # asset staging step below can match them. Build caching means the
-          # second ABI reuses the first ABI's Kotlin/Java compilation output.
-          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon -x lintVitalAnalyzeRelease
-          ./gradlew assembleRelease -PreactNativeArchitectures=armeabi-v7a --no-daemon -x lintVitalAnalyzeRelease
+          # ABI splits are enabled via the ekwe-native config plugin, so a single
+          # gradle run compiles both ABIs once and emits per-ABI APKs
+          # (app-arm64-v8a-release.apk / app-armeabi-v7a-release.apk) that the
+          # asset staging step below matches. reactNativeArchitectures defaults
+          # to armeabi-v7a,arm64-v8a in gradle.properties.
+          ./gradlew assembleRelease --no-daemon -x lintVitalAnalyzeRelease
 
       - name: Stage release assets
         id: assets

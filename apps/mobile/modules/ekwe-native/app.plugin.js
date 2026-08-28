@@ -4,6 +4,7 @@ const {
   withAndroidManifest,
   withMainActivity,
   withAndroidStyles,
+  withAppBuildGradle,
   withDangerousMod,
   withEntitlementsPlist,
   AndroidConfig,
@@ -502,6 +503,77 @@ const withApkFileProviderPaths = (config) => {
 };
 
 /**
+ * Android: Enables ABI splits so the gradle build emits one per-ABI APK
+ * (arm64-v8a and armeabi-v7a), each named app-<abi>-release.apk. The release
+ * pipeline stages, uploads to R2, and serves these per-ABI files to devices
+ * (see scripts/generate-update-manifest.mjs and apps/web/config.json).
+ */
+const ABI_SPLIT_BLOCK = `
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'armeabi-v7a', 'arm64-v8a'
+            universalApk false
+        }
+    }
+`;
+const ABI_OUTPUT_NAMING = `
+// Per-ABI output naming for the ABI-split release build.
+android.applicationVariants.all { variant ->
+    def filters = variant.getFilters()
+    def abi = filters?.find { it.getFilterType() == com.android.build.OutputFile.ABI }?.getIdentifier()
+    if (abi != null) {
+        variant.outputs.each { output ->
+            output.outputFileName = "app-\${abi}-\${variant.buildType.name}.apk"
+        }
+    }
+}
+`;
+
+const withAbiSplits = (config) => {
+  return withAppBuildGradle(config, (config) => {
+    let buildGradle = config.modResults.contents;
+
+    if (buildGradle.includes('splits {') && buildGradle.includes('applicationVariants.all')) {
+      return config;
+    }
+
+    if (!/^android\s*\{/m.exec(buildGradle)) {
+      throw new Error('[EkwePlugin] Could not find android {} block to inject ABI splits');
+    }
+    // Insert the splits block just before the closing brace of android {}.
+    // Locate it by scanning brace-balanced from the `android {` line.
+    const startIdx = /^android\s*\{/m.exec(buildGradle).index;
+    let depth = 0;
+    let insertAt = -1;
+    for (let i = startIdx; i < buildGradle.length; i++) {
+      const ch = buildGradle[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          insertAt = i;
+          break;
+        }
+      }
+    }
+    if (insertAt === -1) {
+      throw new Error('[EkwePlugin] Could not locate android {} close brace to inject ABI splits');
+    }
+    buildGradle =
+      buildGradle.slice(0, insertAt) + ABI_SPLIT_BLOCK + buildGradle.slice(insertAt);
+
+    if (!buildGradle.includes('applicationVariants.all')) {
+      buildGradle += '\n' + ABI_OUTPUT_NAMING;
+    }
+
+    config.modResults.contents = buildGradle;
+    return config;
+  });
+};
+
+/**
  * Combined plugin for managing all custom native Ekwe logic.
  */
 const withEkweNativePermissionsAndServices = (config) => {
@@ -542,6 +614,7 @@ const withEkweNativePermissionsAndServices = (config) => {
     updatedConfig = withIosAppGroup(updatedConfig);
   }
   updatedConfig = withAutofillHighlightFix(updatedConfig);
+  updatedConfig = withAbiSplits(updatedConfig);
   return updatedConfig;
 };
 
