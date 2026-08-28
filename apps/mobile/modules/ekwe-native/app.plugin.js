@@ -521,10 +521,9 @@ const ABI_SPLIT_BLOCK = `
 const ABI_OUTPUT_NAMING = `
 // Per-ABI output naming for the ABI-split release build.
 android.applicationVariants.all { variant ->
-    def filters = variant.getFilters()
-    def abi = filters?.find { it.getFilterType() == com.android.build.OutputFile.ABI }?.getIdentifier()
-    if (abi != null) {
-        variant.outputs.each { output ->
+    variant.outputs.all { output ->
+        def abi = output.getFilter(com.android.build.OutputFile.ABI)
+        if (abi != null) {
             output.outputFileName = "app-\${abi}-\${variant.buildType.name}.apk"
         }
     }
