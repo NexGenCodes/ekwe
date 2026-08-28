@@ -1,2 +1,0 @@
-apps/worker/tests/routes/webhook.test.ts
-apps/worker/.dev.vars.example

@@ -1,0 +1,15 @@
+title = "gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Dummy/placeholder credentials used only in tests and env templates"
+regexes = [
+  '''FLWPUBK_TEST-abc123''',
+  '''FLWSECK_TEST-abc123''',
+  '''FLWPUBK-abc123''',
+  '''FLWSECK-abc123''',
+  '''sk_test_abc123def456''',
+  '''your-service-role-key''',
+]
