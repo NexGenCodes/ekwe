@@ -167,7 +167,7 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -181,7 +181,7 @@ jobs:
           df -h /
 
       - name: Accept Android SDK licenses
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install NDK + CMake
         run: sdkmanager --install "ndk;27.1.12297006" "cmake;3.22.1" > /dev/null 2>&1
@@ -261,7 +261,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add apps/mobile/app.json apps/mobile/package.json package.json apps/web/config.json CHANGELOG.md
-          git commit -m "chore: release ${{ steps.bump.outputs.next_tag }}"
+          # Only commit when the bump actually changed files. When the version
+          # is already at the target (e.g. releasing exactly v1.2.0), there is
+          # nothing to commit — skip it so the release can still be created.
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: release ${{ steps.bump.outputs.next_tag }}"
+          fi
           git push
 
       - name: Create GitHub Release
