@@ -13,6 +13,7 @@ interface Env {
   SENTRY_DSN?: string;
   PUSH_NOTIFY_SECRET?: string;
   FLUTTERWAVE_SECRET?: string;
+  FLUTTERWAVE_PUBLIC?: string;
   FLUTTERWAVE_WEBHOOK_SECRET?: string;
   [key: `COHERE_KEY_${number}`]: string | undefined;
   [key: `DEEPGRAM_KEY_${number}`]: string | undefined;

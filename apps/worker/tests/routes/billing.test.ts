@@ -1,5 +1,9 @@
 import { describe, test, expect, beforeEach } from "vitest";
-import { handleCheckout, handleBillingFlags } from "../../src/routes/billing";
+import {
+  handleCheckout,
+  handleVerifyTransaction,
+  handleBillingFlags,
+} from "../../src/routes/billing";
 import { resetPricingCache } from "../../src/routes/pricing";
 import { mockEnv, jsonResponse } from "../setup";
 import { http } from "msw";
@@ -178,6 +182,64 @@ describe("handleCheckout", () => {
     expect(dataA.tx_ref).toMatch(/^ekwe_test-user-123_/);
   });
 
+  test("echoes the worker's public key in the checkout session", async () => {
+    const res = await handleCheckout(
+      monthlyRequest(),
+      mockEnv({ FLUTTERWAVE_PUBLIC: "FLWPUBK-abc123" }),
+      mockAuth,
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { public_key?: string };
+    expect(data.public_key).toBe("FLWPUBK-abc123");
+  });
+
+  test("fails closed in production when a TEST secret key is configured", async () => {
+    const res = await handleCheckout(
+      monthlyRequest(),
+      mockEnv({
+        APP_ENV: "production",
+        FLUTTERWAVE_SECRET: "FLWSECK_TEST-abc123",
+        FLUTTERWAVE_PUBLIC: "FLWPUBK_TEST-abc123",
+      }),
+      mockAuth,
+    );
+    expect(res.status).toBe(503);
+    const data = (await res.json()) as { error: string };
+    expect(data.error).toBe("PAYMENT_PROVIDER_UNAVAILABLE");
+  });
+
+  test("fails closed in production when the secret or public key is missing", async () => {
+    const missingSecret = await handleCheckout(
+      monthlyRequest(),
+      mockEnv({ APP_ENV: "production", FLUTTERWAVE_PUBLIC: "FLWPUBK-abc123" }),
+      mockAuth,
+    );
+    expect(missingSecret.status).toBe(503);
+
+    const missingPublic = await handleCheckout(
+      monthlyRequest(),
+      mockEnv({
+        APP_ENV: "production",
+        FLUTTERWAVE_SECRET: "FLWSECK-abc123",
+      }),
+      mockAuth,
+    );
+    expect(missingPublic.status).toBe(503);
+  });
+
+  test("accepts TEST keys in non-production so the full flow is testable", async () => {
+    const res = await handleCheckout(
+      monthlyRequest(),
+      mockEnv({
+        APP_ENV: "development",
+        FLUTTERWAVE_SECRET: "FLWSECK_TEST-abc123",
+        FLUTTERWAVE_PUBLIC: "FLWPUBK_TEST-abc123",
+      }),
+      mockAuth,
+    );
+    expect(res.status).toBe(200);
+  });
+
   test("returns 400 for malformed JSON body", async () => {
     const env = mockEnv();
     const req = new Request("http://test/billing/checkout", {
@@ -188,6 +250,47 @@ describe("handleCheckout", () => {
 
     const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── Verify Transaction Tests ─────────────────────────────────────
+
+describe("handleVerifyTransaction", () => {
+  beforeEach(() => {
+    server.resetHandlers();
+  });
+
+  const verifyRequest = () =>
+    new Request("http://test/billing/verify-transaction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transaction_id: 288200108 }),
+    });
+
+  test("fails closed in production with a TEST key (before contacting Flutterwave)", async () => {
+    const res = await handleVerifyTransaction(
+      verifyRequest(),
+      mockEnv({
+        APP_ENV: "production",
+        FLUTTERWAVE_SECRET: "FLWSECK_TEST-abc123",
+      }),
+      mockAuth,
+    );
+    expect(res.status).toBe(503);
+    const data = (await res.json()) as { error: string };
+    expect(data.error).toBe("PAYMENT_PROVIDER_UNAVAILABLE");
+  });
+
+  test("rejects a non-numeric transaction_id", async () => {
+    const req = new Request("http://test/billing/verify-transaction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transaction_id: "abc" }),
+    });
+    const res = await handleVerifyTransaction(req, mockEnv({}), mockAuth);
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as { error: string };
+    expect(data.error).toBe("INVALID_BODY");
   });
 });
 

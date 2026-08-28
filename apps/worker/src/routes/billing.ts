@@ -26,11 +26,18 @@
  *     Reads from the payment_config table.
  */
 
-import { WORKER_ERROR_CODES, checkoutRequestSchema } from "@ekwe/shared";
+import {
+  WORKER_ERROR_CODES,
+  checkoutRequestSchema,
+  checkoutResponseSchema,
+  verifyTransactionRequestSchema,
+  verifyTransactionResponseSchema,
+} from "@ekwe/shared";
 import { resolvePaymentCurrency } from "@ekwe/shared/money";
 import { Env } from "../core/types";
 import { logger } from "../core/logger";
 import { supabaseGet, supabasePost } from "../services/supabase";
+import { guardFlutterwaveKeys } from "../services/flutterwaveKeys";
 import { AuthResult } from "../core/auth";
 import { getAuthoritativePlanPrices, getLocalPlanPrices } from "./pricing";
 
@@ -75,6 +82,12 @@ export async function handleCheckout(
   // always in a currency Flutterwave bills and always matches GET /pricing.
   const currency = resolvePaymentCurrency(body.currency ?? "USD");
 
+  // Fail closed in production if the configured Flutterwave keys are missing
+  // or the test-mode keys (a free-Pro bypass vector). Test keys stay usable in
+  // development/test deployments for the full checkout→grant flow.
+  const keyGuard = guardFlutterwaveKeys(env);
+  if (!keyGuard.allowed) return keyGuard.response;
+
   // Price the plan from the single source of truth (the subscription_config
   // row in Supabase; the shared LOCAL_PRICES map as fallback). The amount the
   // SDK will charge is exactly what GET /pricing reported, and it is echoed
@@ -96,13 +109,17 @@ export async function handleCheckout(
     tx_ref: txRef,
     amount,
     currency,
+    // Server-authoritative public key so the client always initializes the
+    // SDK with the key matching the configured secret's environment — the
+    // mobile never picks its own (possibly test) key.
+    public_key: env.FLUTTERWAVE_PUBLIC ?? "",
   };
   logger.info("[billing] Checkout session authorized", {
     tx_ref: txRef,
     amount,
     currency,
   });
-  return Response.json(responseBody);
+  return Response.json(checkoutResponseSchema.parse(responseBody));
 }
 
 // ─── POST /billing/verify-transaction ────────────────────────────
@@ -129,7 +146,8 @@ export async function handleVerifyTransaction(
   env: Env,
   auth: AuthResult,
 ): Promise<Response> {
-  // Parse body — must include transaction_id.
+  // Parse body — must include transaction_id (shared schema, one source
+  // of truth with the mobile client).
   let raw: unknown;
   try {
     raw = await request.json();
@@ -140,8 +158,8 @@ export async function handleVerifyTransaction(
     );
   }
 
-  const { transaction_id } = (raw ?? {}) as { transaction_id?: unknown };
-  if (!transaction_id || typeof transaction_id !== "number") {
+  const parsed = verifyTransactionRequestSchema.safeParse(raw);
+  if (!parsed.success) {
     return Response.json(
       {
         error: WORKER_ERROR_CODES.INVALID_BODY,
@@ -150,6 +168,12 @@ export async function handleVerifyTransaction(
       { status: 400 },
     );
   }
+  const { transaction_id } = parsed.data;
+
+  // Fail closed in production if the configured Flutterwave keys are missing
+  // or the test-mode keys (a free-Pro bypass vector).
+  const keyGuard = guardFlutterwaveKeys(env);
+  if (!keyGuard.allowed) return keyGuard.response;
 
   if (!env.FLUTTERWAVE_SECRET) {
     logger.error("[billing/verify] FLUTTERWAVE_SECRET not configured");
@@ -285,12 +309,14 @@ export async function handleVerifyTransaction(
     permanent: permanentlyActivated,
   });
 
-  return Response.json({
-    ok: true,
-    permanent: permanentlyActivated,
-    transaction_id: fwData.data.id,
-    tx_ref: fwData.data.tx_ref,
-  });
+  return Response.json(
+    verifyTransactionResponseSchema.parse({
+      ok: true,
+      permanent: permanentlyActivated,
+      transaction_id: fwData.data.id,
+      tx_ref: fwData.data.tx_ref,
+    }),
+  );
 }
 
 // ─── GET /billing/flags ──────────────────────────────────────────

@@ -24,9 +24,11 @@
 import { PRO_PRODUCT_IDS } from "@ekwe/shared/plans";
 import {
   checkoutResponseSchema,
+  verifyTransactionResponseSchema,
   type CheckoutRequest,
   type CheckoutResponse,
 } from "@ekwe/shared";
+import { z } from "zod";
 import { getPaymentCurrency } from "@/constants/currency";
 import { supabase } from "@/services/supabase";
 import { auth$ } from "@/store";
@@ -53,12 +55,9 @@ export interface CheckoutOutcome {
   session: CheckoutSession | null;
 }
 
-export interface VerifyTransactionResponse {
-  ok: boolean;
-  permanent: boolean;
-  transaction_id: number;
-  tx_ref: string;
-}
+export type VerifyTransactionResponse = z.infer<
+  typeof verifyTransactionResponseSchema
+>;
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -166,7 +165,16 @@ export async function verifyTransaction(
     throw new Error("Failed to verify payment");
   }
 
-  return res.json() as Promise<VerifyTransactionResponse>;
+  const raw = await res.json();
+  const parsed = verifyTransactionResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    logger.error("[Flutterwave] Verify response shape mismatch", {
+      issues: parsed.error.issues,
+      rawBody: raw,
+    });
+    throw new Error("Failed to verify payment");
+  }
+  return parsed.data;
 }
 
 /**
@@ -233,8 +241,10 @@ export async function reconcileFlutterwaveStatus(): Promise<boolean> {
 
 /**
  * Check if Flutterwave is available on this device. Requires a valid
- * session and a configured public key (needed for client-side SDK init).
+ * session. The SDK's public key is now server-authoritative (returned in
+ * the checkout response), so availability is decided by the worker's own
+ * key guard at checkout time rather than by a client-side env var.
  */
 export function isFlutterwaveAvailable(): boolean {
-  return !!auth$.session.get() && !!getFlutterwavePublicKey();
+  return !!auth$.session.get();
 }

@@ -12,8 +12,15 @@
  */
 import { z } from "zod";
 import { PRO_PRODUCT_IDS } from "./plans";
+import { LANGUAGES } from "./languages";
+import { FLUTTERWAVE_CURRENCIES } from "./money";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Language-code tuples for z.enum, derived from the shared allowlist so the
+// worker's VALID_LANG_CODES (guards.ts) and the wire schemas can never drift.
+const LANG_CODES = LANGUAGES.map((l) => l.code) as [string, ...string[]];
+const SOURCE_LANG_CODES = ["auto", ...LANG_CODES] as [string, ...string[]];
 
 // ─── Auth email field (single source) ────────────────────────────
 // One rule set for every auth email crossing the boundary: trim, lowercase,
@@ -35,7 +42,7 @@ export const otpRequestSchema = z.object({
   email: authEmailField("INVALID_EMAIL"),
   turnstileToken: z
     .string()
-    .max(2048, { message: "TURNSTILE_REQUIRED" })
+    .max(2048, { message: "TURNSTILE_INVALID" })
     .optional(),
 });
 export type OtpRequest = z.infer<typeof otpRequestSchema>;
@@ -63,9 +70,9 @@ export type OtpForm = z.infer<typeof otpSchema>;
 // (text-length ceiling, auto-detect allowance, language-code allowlist)
 // still live in the worker guards layered on top of this base shape.
 export const translateRequestSchema = z.object({
-  text: z.string(),
-  targetLang: z.string(),
-  sourceLang: z.string().optional(),
+  text: z.string().max(10_000),
+  targetLang: z.enum(LANG_CODES),
+  sourceLang: z.enum(SOURCE_LANG_CODES).optional(),
 });
 export type TranslateRequest = z.infer<typeof translateRequestSchema>;
 
@@ -176,7 +183,7 @@ export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>;
 // ceiling still live in the worker guards layered on top of this base shape.
 // The response is binary audio, so there is no JSON response schema.
 export const ttsRequestSchema = z.object({
-  text: z.string().min(1),
+  text: z.string().min(1).max(10_000),
   lang: z.string().min(1),
   gender: z.enum(["male", "female"]).optional(),
 });
@@ -188,20 +195,53 @@ export type TtsRequest = z.infer<typeof ttsRequestSchema>;
 // server-side.
 export const checkoutRequestSchema = z.object({
   plan: z.enum([PRO_PRODUCT_IDS.monthly, PRO_PRODUCT_IDS.annual]),
-  currency: z.string().min(3).max(3).optional(),
+  // ISO-4217 alpha-3, shape-only: unsupported codes resolve to USD server-side
+  // (the worker's resolvePaymentCurrency is the billable-set source of truth).
+  currency: z
+    .string()
+    .min(3)
+    .max(3)
+    .regex(/^[A-Za-z]{3}$/)
+    .optional(),
 });
 export type CheckoutRequest = z.infer<typeof checkoutRequestSchema>;
 
 // ─── POST /billing/checkout response ─────────────────────────────
 // The worker authorizes a checkout session (server-authoritative pricing +
 // unique tx_ref); the SDK initializes the actual payment client-side using
-// the public key. There is no checkout_url anymore.
+// the server-provided public key. There is no checkout_url anymore.
 export const checkoutResponseSchema = z.object({
   tx_ref: z.string(),
   amount: z.number(),
-  currency: z.string(),
+  currency: z.enum(FLUTTERWAVE_CURRENCIES),
+  public_key: z.string(),
 });
 export type CheckoutResponse = z.infer<typeof checkoutResponseSchema>;
+
+// ─── POST /billing/verify-transaction ────────────────────────────
+export const verifyTransactionRequestSchema = z.object({
+  transaction_id: z.number().int().positive(),
+});
+export type VerifyTransactionRequest = z.infer<
+  typeof verifyTransactionRequestSchema
+>;
+
+export const verifyTransactionResponseSchema = z.object({
+  ok: z.literal(true),
+  permanent: z.boolean(),
+  transaction_id: z.number(),
+  tx_ref: z.string(),
+});
+export type VerifyTransactionResponse = z.infer<
+  typeof verifyTransactionResponseSchema
+>;
+
+// ─── GET /billing/flags ──────────────────────────────────────────
+export const billingFlagsResponseSchema = z.object({
+  flutterwave_enabled: z.boolean(),
+  default_provider: z.string(),
+});
+export type BillingFlagsResponse = z.infer<typeof billingFlagsResponseSchema>;
 
 // ─── POST /push-tokens ───────────────────────────────────────────
 // Called at app launch before sign-in, so it is unauthenticated. The

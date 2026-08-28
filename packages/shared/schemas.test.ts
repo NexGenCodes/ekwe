@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  billingFlagsResponseSchema,
   checkoutRequestSchema,
   checkoutResponseSchema,
   loginSchema,
@@ -14,6 +15,8 @@ import {
   ttsRequestSchema,
   translationSchema,
   usageSnapshotSchema,
+  verifyTransactionRequestSchema,
+  verifyTransactionResponseSchema,
 } from "./schemas";
 
 describe("otpRequestSchema", () => {
@@ -402,15 +405,25 @@ describe("checkoutRequestSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  test("accepts any 3-letter code (unsupported ones resolve to USD server-side)", () => {
+    expect(
+      checkoutRequestSchema.safeParse({
+        plan: "ekwe_pro_monthly",
+        currency: "JOD",
+      }).success,
+    ).toBe(true);
+  });
 });
 
 describe("checkoutResponseSchema", () => {
-  test("accepts a valid checkout response", () => {
+  test("accepts a valid checkout response with a public key", () => {
     expect(
       checkoutResponseSchema.safeParse({
         tx_ref: "ekwe_user_monthly_1234",
         amount: 19.2,
         currency: "USD",
+        public_key: "FLWPUBK-xxx",
       }).success,
     ).toBe(true);
   });
@@ -420,6 +433,7 @@ describe("checkoutResponseSchema", () => {
       checkoutResponseSchema.safeParse({
         amount: 19.2,
         currency: "USD",
+        public_key: "FLWPUBK-xxx",
       }).success,
     ).toBe(false);
   });
@@ -429,8 +443,71 @@ describe("checkoutResponseSchema", () => {
       checkoutResponseSchema.safeParse({
         tx_ref: "ekwe_user_monthly_1234",
         currency: "USD",
+        public_key: "FLWPUBK-xxx",
       }).success,
     ).toBe(false);
+  });
+
+  test("rejects a response missing the public key", () => {
+    expect(
+      checkoutResponseSchema.safeParse({
+        tx_ref: "ekwe_user_monthly_1234",
+        amount: 19.2,
+        currency: "USD",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("verifyTransactionRequestSchema", () => {
+  test("accepts a positive integer transaction id", () => {
+    expect(
+      verifyTransactionRequestSchema.safeParse({ transaction_id: 288200108 })
+        .success,
+    ).toBe(true);
+  });
+
+  test("rejects non-numeric or non-integer ids", () => {
+    expect(
+      verifyTransactionRequestSchema.safeParse({ transaction_id: "abc" })
+        .success,
+    ).toBe(false);
+    expect(
+      verifyTransactionRequestSchema.safeParse({ transaction_id: 1.5 }).success,
+    ).toBe(false);
+  });
+
+  test("rejects a zero or negative id", () => {
+    expect(
+      verifyTransactionRequestSchema.safeParse({ transaction_id: 0 }).success,
+    ).toBe(false);
+    expect(
+      verifyTransactionRequestSchema.safeParse({ transaction_id: -1 }).success,
+    ).toBe(false);
+  });
+});
+
+describe("verifyTransactionResponseSchema", () => {
+  test("accepts a successful verify response", () => {
+    expect(
+      verifyTransactionResponseSchema.safeParse({
+        ok: true,
+        permanent: false,
+        transaction_id: 288200108,
+        tx_ref: "ekwe_u_1_1",
+      }).success,
+    ).toBe(true);
+  });
+});
+
+describe("billingFlagsResponseSchema", () => {
+  test("accepts the flags shape", () => {
+    expect(
+      billingFlagsResponseSchema.safeParse({
+        flutterwave_enabled: true,
+        default_provider: "flutterwave",
+      }).success,
+    ).toBe(true);
   });
 });
 

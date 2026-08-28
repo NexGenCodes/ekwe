@@ -21,8 +21,12 @@
   },
 
   // Billing provider secrets (set via `wrangler secret put <NAME>`):
-  // - FLUTTERWAVE_SECRET: Flutterwave API secret key (FLWSECK_...) used as the
-  //   Authorization bearer for checkout / payment API calls.
+  // - FLUTTERWAVE_SECRET: Flutterwave API secret key (FLWSECK_... or
+  //   FLWSECK_TEST-...). In production this MUST be a live key: a test-mode
+  //   secret would let anyone bypass payment and grant Pro for free.
+  // - FLUTTERWAVE_PUBLIC: matching Flutterwave public key (FLWPUBK_... or
+  //   FLWPUBK_TEST-...). Returned to the client in the checkout response so
+  //   the SDK always charges against the key matching the configured secret.
   // - FLUTTERWAVE_WEBHOOK_SECRET: webhook secret hash from the Flutterwave
   //   dashboard (Settings → Webhooks); used to verify inbound webhooks
   //   (`verif-hash` plain equality and/or `flutterwave-signature` HMAC-SHA256).

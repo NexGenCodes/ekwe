@@ -197,6 +197,27 @@ export async function handleSendOtp(
         status: res?.status,
         body: upstreamBody,
       });
+
+      // Upstream rate-limit / verification-code flood guard: Supabase returns
+      // 429 (or 422 with over_email_send_rate_limit) when its per-IP / per-email
+      // buckets trip. Because the Worker funnels ALL OTP sends through one
+      // egress IP, the upstream bucket trips far earlier than it would for a
+      // direct client. Surface this to the client as a 429 (retryable) instead
+      // of a 502 (server error) so the UI stops the user immediately.
+      const status = res?.status ?? 0;
+      const isRateLimited =
+        status === 429 ||
+        (status === 422 &&
+          /over_.*_send_rate_limit|too.many/.test(upstreamBody));
+      if (isRateLimited) {
+        const retryAfter = res?.headers.get("Retry-After");
+        const seconds = Number(retryAfter) || 60;
+        return tooManyRequests(
+          "Too many requests. Please try again later.",
+          seconds,
+        );
+      }
+
       return Response.json(
         { error: WORKER_ERROR_CODES.OTP_SEND_FAILED },
         { status: 502 },

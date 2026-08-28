@@ -114,7 +114,10 @@ export function CheckoutSheet({
     amount: session.amount,
     currency: session.currency,
     payment_options: getPaymentOptions(session.currency),
-    authorization: getFlutterwavePublicKey(),
+    // Prefer the server-authoritative public key so the SDK always initializes
+    // with the key matching the configured secret's environment. Falls back to
+    // the env key so older workers / local dev still work.
+    authorization: session.public_key || getFlutterwavePublicKey(),
     tx_ref: session.tx_ref,
     customer: {
       email,

@@ -188,8 +188,15 @@ password_requirements = ""
 # rp_origins = ["http://127.0.0.1:3000"]
 
 [auth.rate_limit]
+# Rate limits are per-IP. The Worker proxies every OTP send through a single
+# Cloudflare egress IP, so the effective global send budget is whatever this
+# bucket allows — 30/5min would trip after ~30 sends spread across ALL users.
+# Real abuse control happens in the Worker (per-email 2/600s + per-IP 5/60s
+# Durable Object throttle + Turnstile); these are backstops, so keep them
+# comfortably above the Worker's own limits. Apply the same values in the
+# hosted dashboard (Authentication → Rate Limits).
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
-email_sent = 30
+email_sent = 3000
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
@@ -197,9 +204,9 @@ anonymous_users = 30
 # Number of sessions that can be refreshed in a 5 minute interval per IP address.
 token_refresh = 150
 # Number of sign up and sign-in requests that can be made in a 5 minute interval per IP address (excludes anonymous users).
-sign_in_sign_ups = 30
+sign_in_sign_ups = 300
 # Number of OTP / Magic link verifications that can be made in a 5 minute interval per IP address.
-token_verifications = 30
+token_verifications = 300
 # Number of Web3 logins that can be made in a 5 minute interval per IP address.
 web3 = 30
 
