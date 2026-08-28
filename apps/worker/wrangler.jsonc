@@ -80,7 +80,11 @@
     }
   ],
 
-  // Rate limit: 500 requests per minute — global edge guard.
+  // Rate limit: 500 requests per minute per KEY per edge location — NOT a
+  // global cap. The pipeline keys by `auth.userId::clientIp` (see
+  // core/pipeline.ts), so each signed-in user gets their own 500/min budget
+  // at each Cloudflare location. Generous for a burst guard; abuse throttling
+  // (OTP) lives in the DO counters and per-route preflight gates.
   // namespace_id derived from worker name ("ekwe-proxy"): proxy=28401.
   "ratelimits": [
     {
