@@ -39,7 +39,10 @@ import { duration, borderRadius, opacity, spacing } from "@/constants";
 import { PLAN_LIMITS } from "@/constants/billing";
 import { useLogout, useTheme, usePermissions, useReduceMotion } from "@/hooks";
 import { deleteAccount } from "@/services/auth";
-import { checkForApkUpdate } from "@/services/otaUpdates";
+import {
+  checkForApkUpdate,
+  resolveApkDownloadUrl,
+} from "@/services/otaUpdates";
 import { SyncService } from "@/services/SyncService";
 import { supabase } from "@/services/supabase";
 import { auth$, authActions, settings$, settingsActions } from "@/store";
@@ -462,7 +465,7 @@ export default function ProfileScreen(): React.JSX.Element {
                       {
                         text: "Download",
                         onPress: (): void => {
-                          Linking.openURL(manifest.download_url);
+                          Linking.openURL(resolveApkDownloadUrl(manifest));
                         },
                       },
                     ],

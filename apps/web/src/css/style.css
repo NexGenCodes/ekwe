@@ -8,19 +8,19 @@
 }
 
 :root {
-  --bg-primary: #09090B;
-  --bg-secondary: #18181B;
-  --bg-card: #27272A80;
+  --bg-primary: #09090b;
+  --bg-secondary: #18181b;
+  --bg-card: #27272a80;
   --border: #ffffff0d;
-  --border-accent: #006FEE20;
-  --text-primary: #FFFFFF;
-  --text-secondary: #A1A1AA;
-  --text-muted: #71717A;
-  --accent: #006FEE;
-  --accent-glow: #006FEE40;
+  --border-accent: #006fee20;
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --accent: #006fee;
+  --accent-glow: #006fee40;
   --accent-secondary: #7c3aed;
-  --gradient-start: #09090B;
-  --gradient-end: #0D0D12;
+  --gradient-start: #09090b;
+  --gradient-end: #0d0d12;
   --radius: 12px;
   --radius-lg: 20px;
   --max-width: 1100px;
@@ -34,7 +34,13 @@ html {
 }
 
 body {
-  font-family: "Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    "Outfit",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.6;
@@ -49,7 +55,7 @@ a {
 }
 
 a:hover {
-  color: #3B9EFF;
+  color: #3b9eff;
 }
 
 img {
@@ -81,7 +87,12 @@ body::before {
   content: "";
   position: fixed;
   inset: 0;
-  background: radial-gradient(ellipse 80% 50% at 50% -20%, var(--accent-glow), transparent),
+  background:
+    radial-gradient(
+      ellipse 80% 50% at 50% -20%,
+      var(--accent-glow),
+      transparent
+    ),
     radial-gradient(ellipse 60% 40% at 80% 50%, #7c3aed15, transparent);
   pointer-events: none;
   z-index: 0;
@@ -155,7 +166,9 @@ body > * {
   font-weight: 600;
   font-size: 0.85rem;
   border-radius: 10px;
-  transition: transform var(--transition), box-shadow var(--transition);
+  transition:
+    transform var(--transition),
+    box-shadow var(--transition);
 }
 
 .nav-cta:hover {
@@ -194,7 +207,9 @@ body > * {
   height: 2px;
   border-radius: 2px;
   background: var(--text-primary);
-  transition: transform var(--transition), opacity var(--transition);
+  transition:
+    transform var(--transition),
+    opacity var(--transition);
 }
 
 .nav-overlay {
@@ -372,7 +387,9 @@ body > * {
   font-size: 0.95rem;
   cursor: pointer;
   border: none;
-  transition: transform var(--transition), box-shadow var(--transition);
+  transition:
+    transform var(--transition),
+    box-shadow var(--transition);
 }
 
 .btn:hover {
@@ -512,7 +529,9 @@ body > * {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   backdrop-filter: blur(10px);
-  transition: border-color var(--transition), transform var(--transition);
+  transition:
+    border-color var(--transition),
+    transform var(--transition);
 }
 
 .stat-block:hover {
@@ -554,14 +573,21 @@ body > * {
   backdrop-filter: blur(10px);
   position: relative;
   overflow: hidden;
-  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+  transition:
+    transform var(--transition),
+    border-color var(--transition),
+    box-shadow var(--transition);
 }
 
 .arch-card::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at top, var(--accent-glow), transparent 70%);
+  background: radial-gradient(
+    ellipse at top,
+    var(--accent-glow),
+    transparent 70%
+  );
   opacity: 0;
   transition: opacity var(--transition);
   pointer-events: none;
@@ -578,7 +604,7 @@ body > * {
 }
 
 .arch-mobile {
-  border-color: #006FEE33;
+  border-color: #006fee33;
 }
 
 .arch-worker {
@@ -586,7 +612,7 @@ body > * {
 }
 
 .arch-ai {
-  border-color: #006FEE44;
+  border-color: #006fee44;
 }
 
 .arch-title {
@@ -688,14 +714,21 @@ body > * {
   width: 56px;
   height: 1px;
   margin-top: 70px;
-  background: linear-gradient(to right, transparent, var(--border-accent), transparent);
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--border-accent),
+    transparent
+  );
 }
 
 /* ── Reveal on scroll ──────────────────────────────── */
 html.js [data-reveal] {
   opacity: 0;
   transform: translateY(24px);
-  transition: opacity 0.7s ease, transform 0.7s ease;
+  transition:
+    opacity 0.7s ease,
+    transform 0.7s ease;
 }
 
 html.js [data-reveal].is-visible {
@@ -731,7 +764,9 @@ html.js [data-reveal].is-visible {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   backdrop-filter: blur(10px);
-  transition: border-color var(--transition), transform var(--transition);
+  transition:
+    border-color var(--transition),
+    transform var(--transition);
 }
 
 .feature-card:hover {
@@ -789,7 +824,11 @@ html.js [data-reveal].is-visible {
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at center, var(--accent-glow), transparent 70%);
+  background: radial-gradient(
+    ellipse at center,
+    var(--accent-glow),
+    transparent 70%
+  );
   opacity: 0.3;
   pointer-events: none;
 }
@@ -970,6 +1009,11 @@ html.js [data-reveal].is-visible {
   color: var(--bg-primary);
 }
 
+.changelog-version .tag.legacy {
+  background: var(--text-muted);
+  color: var(--bg-primary);
+}
+
 .changelog-date {
   font-size: 0.8rem;
   color: var(--text-muted);
@@ -1017,7 +1061,9 @@ html.js [data-reveal].is-visible {
     border-left: 1px solid var(--border);
     transform: translateX(100%);
     visibility: hidden;
-    transition: transform var(--transition), visibility var(--transition);
+    transition:
+      transform var(--transition),
+      visibility var(--transition);
     z-index: 99;
   }
 
@@ -1112,7 +1158,12 @@ html.js [data-reveal].is-visible {
     width: 1px;
     height: 32px;
     margin: 0 auto;
-    background: linear-gradient(to bottom, transparent, var(--border-accent), transparent);
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      var(--border-accent),
+      transparent
+    );
   }
 
   .stats-row {

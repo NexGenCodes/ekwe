@@ -295,6 +295,12 @@ jobs:
           AWS_DEFAULT_REGION: auto
         run: |
           pip install --quiet awscli
+          # Remove legacy universal APKs — the old per-ABI-less build can't
+          # install on 64-bit-only phones and must never be served as latest.
+          for stale in app-release.apk app-universal-release.apk; do
+            aws s3 rm "s3://${{ secrets.R2_BUCKET_NAME }}/$stale" \
+              --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" || true
+          done
           for ABI in arm64-v8a armeabi-v7a; do
             aws s3 cp "dist/app-${ABI}-release.apk" "s3://${{ secrets.R2_BUCKET_NAME }}/app-${ABI}-release.apk" \
               --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \

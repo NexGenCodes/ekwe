@@ -61,7 +61,7 @@
           }
         });
       },
-      { threshold: 0.15, rootMargin: "0px 0px -40px 0px" }
+      { threshold: 0.15, rootMargin: "0px 0px -40px 0px" },
     );
 
     els.forEach((el) => observer.observe(el));
@@ -102,7 +102,7 @@
           }
         });
       },
-      { threshold: 0.5 }
+      { threshold: 0.5 },
     );
 
     counters.forEach((el) => observer.observe(el));
@@ -145,19 +145,28 @@
           <div class="feature-icon">${icon(f.icon)}</div>
           <h3>${f.title}</h3>
           <p>${f.description}</p>
-        </div>`
+        </div>`,
       )
       .join("");
   }
 
   async function detectAbi() {
-    if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+    if (
+      navigator.userAgentData &&
+      navigator.userAgentData.getHighEntropyValues
+    ) {
       try {
-        const hints = await navigator.userAgentData.getHighEntropyValues(["architecture"]);
-        if (hints.architecture) {
-          if (hints.architecture.includes("arm")) return "arm64-v8a";
-          if (hints.architecture.includes("x86")) return "armeabi-v7a";
+        const hints = await navigator.userAgentData.getHighEntropyValues([
+          "architecture",
+          "bitness",
+        ]);
+        const arch = (hints.architecture || "").toLowerCase();
+        if (arch.includes("arm") || arch.includes("aarch")) {
+          // 32-bit ARM builds are only shipped as armeabi-v7a; everything
+          // modern is arm64, which defaults to the arm64-v8a APK.
+          return hints.bitness === "32" ? "armeabi-v7a" : "arm64-v8a";
         }
+        if (arch.includes("x86")) return "armeabi-v7a";
       } catch {}
     }
     return "arm64-v8a";
@@ -165,24 +174,30 @@
 
   function renderDynamicContent(config, abi) {
     const urls = config.links.downloadUrls || {};
-    const primaryUrl = urls[abi] || config.links.download;
-    const fallbackAbi = abi === "arm64-v8a" ? "armeabi-v7a" : "arm64-v8a";
-    const fallbackUrl = urls[fallbackAbi] || config.links.download;
+    const arm64Url = urls["arm64-v8a"] || config.links.download;
+    const primaryUrl = urls[abi] || arm64Url;
+    // The second button always offers the legacy armv7 build so 32-bit ARM
+    // devices (and the rare armv7 install) always have a working APK.
+    const legacyUrl = urls["armeabi-v7a"] || config.links.download;
 
     document.querySelectorAll("[data-download-primary]").forEach((el) => {
       el.href = primaryUrl;
     });
 
     document.querySelectorAll("[data-download-fallback]").forEach((el) => {
-      el.href = fallbackUrl;
+      el.href = legacyUrl;
     });
 
     document.querySelectorAll("[data-download]").forEach((el) => {
       el.href = primaryUrl;
     });
 
+    document.querySelectorAll("[data-download-arch]").forEach((el) => {
+      el.textContent = abi === "armeabi-v7a" ? "armv7" : "arm64";
+    });
+
     document.querySelectorAll("[data-download-abi-label]").forEach((el) => {
-      el.textContent = fallbackAbi === "arm64-v8a" ? "arm64" : "armv7";
+      el.textContent = "armv7";
     });
 
     document.querySelectorAll("[data-version]").forEach((el) => {

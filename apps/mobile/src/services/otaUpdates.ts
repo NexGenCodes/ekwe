@@ -1,5 +1,8 @@
 import * as Updates from "expo-updates";
 import Constants from "expo-constants";
+import { Platform } from "react-native";
+
+import EkweNativeModule from "../../modules/ekwe-native";
 
 import logger from "@/utils/logger";
 
@@ -45,6 +48,33 @@ interface UpdateManifest {
   latest_version: string;
   latest_version_code: number;
   download_url: string;
+  download_urls?: Record<string, string>;
+}
+
+/**
+ * The device's primary CPU ABI ("arm64-v8a" | "armeabi-v7a"), read from the
+ * native module. Falls back to arm64-v8a if the native module is unavailable
+ * (e.g. on iOS, where no APK downloads are offered).
+ */
+function getDeviceAbi(): string {
+  try {
+    const abi = EkweNativeModule.getDeviceAbi();
+    if (abi === "armeabi-v7a" || abi === "arm64-v8a") return abi;
+  } catch {
+    // Native module not available on this platform — default below.
+  }
+  return Platform.OS === "android" ? "arm64-v8a" : "";
+}
+
+/**
+ * Resolve the correct per-ABI APK URL for this device, falling back to the
+ * legacy armv7 `download_url` (works on both archs) when the manifest has no
+ * per-ABI map.
+ */
+export function resolveApkDownloadUrl(manifest: UpdateManifest): string {
+  const abi = getDeviceAbi();
+  const url = abi && manifest.download_urls?.[abi];
+  return url || manifest.download_url;
 }
 
 /**

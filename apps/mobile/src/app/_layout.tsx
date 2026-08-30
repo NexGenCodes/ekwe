@@ -193,7 +193,9 @@ function RootLayout(): React.ReactElement {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { silentUpdateCheck } = require("@/services/otaUpdates");
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { registerForPushNotifications } = require("@/services/notifications");
+    const {
+      registerForPushNotifications,
+    } = require("@/services/notifications");
 
     // Seed the network store + TanStack onlineManager as early as possible so
     // "am I offline?" is answered the same way everywhere from the first frame.

@@ -199,6 +199,12 @@ class EkweNativeModule : Module() {
       if (nightActive) "dark" else "light"
     }
 
+    // Primary device CPU ABI — used to pick the matching per-ABI update APK
+    // (arm64-v8a vs armeabi-v7a) from the update manifest.
+    Function("getDeviceAbi") {
+      Build.SUPPORTED_ABIS.firstOrNull() ?: ""
+    }
+
     AsyncFunction("dismissNativeLoader") { ->
       val activity = appContext.currentActivity
       if (activity is ShareActivity) {

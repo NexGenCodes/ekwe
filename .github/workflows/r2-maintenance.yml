@@ -1,0 +1,29 @@
+name: R2 Maintenance
+
+on:
+  workflow_dispatch:
+    inputs:
+      object:
+        description: "R2 object to delete (relative to bucket root)"
+        required: true
+        default: "app-release.apk"
+
+permissions:
+  contents: read
+
+jobs:
+  delete-legacy:
+    name: Delete stale R2 object
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - name: Delete object from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          pip install --quiet awscli
+          aws s3 rm "s3://${{ secrets.R2_BUCKET_NAME }}/${{ github.event.inputs.object }}" \
+            --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"

@@ -3,10 +3,10 @@
     "name": "Ekwe",
     "tagline": "Voice notes, translated instantly.",
     "description": "Record or import voice notes and get instant translations in 130+ languages. Powered by AI, built for everyone.",
-    "version": "1.2.1"
+    "version": "1.2.2"
   },
   "links": {
-    "download": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-armeabi-v7a-release.apk",
+    "download": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-arm64-v8a-release.apk",
     "downloadUrls": {
       "arm64-v8a": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-arm64-v8a-release.apk",
       "armeabi-v7a": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-armeabi-v7a-release.apk"

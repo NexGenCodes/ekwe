@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, TextInput } from "react-native";
+import { TextInput } from "react-native";
 import Animated, {
   FadeIn,
   useAnimatedStyle,
@@ -131,10 +131,6 @@ export const OtpInput = memo(function OtpInput({
     .split("")
     .concat(Array(DIGIT_COUNT - value.length).fill(""));
 
-  const handlePress = useCallback(() => {
-    if (!disabled) inputRef.current?.focus();
-  }, [disabled]);
-
   const handleChange = useCallback(
     (text: string) => {
       if (!/^\d*$/.test(text)) return;
@@ -152,44 +148,45 @@ export const OtpInput = memo(function OtpInput({
 
   return (
     <Box>
-      <Pressable
-        onPress={handlePress}
-        disabled={disabled}
-        accessibilityRole="none"
-      >
-        <Animated.View style={shakeStyle}>
-          <Box
-            style={{
-              flexDirection: "row",
-              gap: spacing.sm,
-              justifyContent: "center",
-            }}
-          >
-            {digits.map((digit, index) => {
-              const isCurrentFocused =
-                isFocused &&
-                (index === value.length ||
-                  (index === DIGIT_COUNT - 1 && value.length === DIGIT_COUNT));
+      <Animated.View style={shakeStyle}>
+        {/* The TextInput below covers this entire row, so taps land directly on
+            the input and reliably summon the keyboard on Android. The digit
+            boxes are non-interactive (pointerEvents="none"). */}
+        <Box
+          pointerEvents="none"
+          style={{
+            flexDirection: "row",
+            gap: spacing.sm,
+            justifyContent: "center",
+          }}
+        >
+          {digits.map((digit, index) => {
+            const isCurrentFocused =
+              isFocused &&
+              (index === value.length ||
+                (index === DIGIT_COUNT - 1 && value.length === DIGIT_COUNT));
 
-              return (
-                <OtpDigitBox
-                  key={index}
-                  digit={digit}
-                  isFocused={isCurrentFocused}
-                  hasError={!!error}
-                  borderColor={color.border}
-                  secondaryColor={color.brand}
-                  errorColor={color.error}
-                  cardColor={color.card}
-                  foregroundColor={color.foreground}
-                />
-              );
-            })}
-          </Box>
-        </Animated.View>
-      </Pressable>
+            return (
+              <OtpDigitBox
+                key={index}
+                digit={digit}
+                isFocused={isCurrentFocused}
+                hasError={!!error}
+                borderColor={color.border}
+                secondaryColor={color.brand}
+                errorColor={color.error}
+                cardColor={color.card}
+                foregroundColor={color.foreground}
+              />
+            );
+          })}
+        </Box>
+      </Animated.View>
 
-      {/* Hidden input — native autofill + paste */}
+      {/* Invisible-but-tappable input stretched over the digit row. A hidden
+          1x1 text input won't summon the IME on Android when tapped — by
+          making it fill the row, every tap focuses it and opens the keyboard
+          while remaining visually hidden (transparent text + caret). */}
       <TextInput
         ref={inputRef}
         value={value}
@@ -202,7 +199,17 @@ export const OtpInput = memo(function OtpInput({
         autoFocus={autoFocus}
         onFocus={handleFocus}
         onBlur={handleBlur}
-        style={{ position: "absolute", width: 1, height: 1, opacity: 0 }}
+        caretHidden
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          color: "transparent",
+          opacity: 0.01,
+          backgroundColor: "transparent",
+        }}
         accessibilityLabel="Enter verification code"
       />
     </Box>
