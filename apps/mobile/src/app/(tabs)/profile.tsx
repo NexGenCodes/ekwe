@@ -35,9 +35,11 @@ import {
   QuotaUsageCard,
 } from "@/components";
 import { Box, Text, Pressable, ScrollArea } from "@/components/ui";
+import { getCurrencySymbol } from "@ekwe/shared/money";
 import { duration, borderRadius, opacity, spacing } from "@/constants";
 import { PLAN_LIMITS } from "@/constants/billing";
 import { useLogout, useTheme, usePermissions, useReduceMotion } from "@/hooks";
+import { useActivePricing } from "@/hooks/billing/useActivePricing";
 import { deleteAccount } from "@/services/auth";
 import {
   checkForApkUpdate,
@@ -87,6 +89,12 @@ export default function ProfileScreen(): React.JSX.Element {
   );
   const ttsVoice = useSelector(() => settings$.ttsVoice.get());
   const currency = useSelector(() => settings$.currency.get());
+  // Server-resolved currency: manual selection wins, otherwise the worker's
+  // geo resolution (CF-IPCountry → billable set → USD). Users see the actual
+  // currency they'll be billed in, never an opaque "Auto" placeholder.
+  const { pricing } = useActivePricing();
+  const effectiveCurrency = currency ?? pricing.currency;
+  const currencyLabel = `${getCurrencySymbol(effectiveCurrency)} ${effectiveCurrency}`;
 
   const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
   const [isVoiceModalVisible, setIsVoiceModalVisible] = useState(false);
@@ -270,7 +278,7 @@ export default function ProfileScreen(): React.JSX.Element {
                     variant="body"
                     style={{ color: color.muted, marginRight: spacing.sm }}
                   >
-                    {currency ?? "Auto"}
+                    {currencyLabel}
                   </Text>
                   <ChevronRight size={16} color={color.muted} />
                 </Box>
@@ -683,6 +691,7 @@ export default function ProfileScreen(): React.JSX.Element {
           setIsCurrencyModalVisible(false);
         }}
         currentCurrency={currency}
+        resolvedCurrency={effectiveCurrency}
       />
 
       {/* ── Delete Account Confirmation Modal ── */}

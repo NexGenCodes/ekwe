@@ -15,10 +15,16 @@ import { withAlpha } from "@/utils/color";
 interface CurrencyPickerModalProps {
   visible: boolean;
   onClose: () => void;
-  /** Picked ISO 4217 code, or null for Auto (device detection). */
+  /** Picked ISO 4217 code, or null for Auto (worker geo detection). */
   onSelect: (value: string | null) => void;
   /** Currently selected code, or null for Auto. */
   currentCurrency: string | null;
+  /**
+   * The currency the worker resolves for Auto (geo IP, falls back to USD).
+   * Shown on the Auto row so users see the currency they'll actually be
+   * billed in instead of an opaque "Auto" label.
+   */
+  resolvedCurrency?: string;
 }
 
 const AUTO_LABEL = "Auto (detected)";
@@ -28,11 +34,18 @@ export function CurrencyPickerModal({
   onClose,
   onSelect,
   currentCurrency,
+  resolvedCurrency,
 }: CurrencyPickerModalProps): React.JSX.Element {
   const { color } = useTheme();
 
+  const autoLabel = resolvedCurrency
+    ? `${getCurrencySymbol(resolvedCurrency)} ${
+        CURRENCY_NAMES[resolvedCurrency] ?? resolvedCurrency
+      } (auto)`
+    : AUTO_LABEL;
+
   const options = [
-    { value: null as string | null, label: AUTO_LABEL },
+    { value: null as string | null, label: autoLabel },
     ...MANUAL_CURRENCY_OPTIONS.map((code) => ({
       value: code,
       label: CURRENCY_NAMES[code] ?? code,
@@ -174,6 +187,16 @@ export function CurrencyPickerModal({
                         }}
                       >
                         {item.value}
+                      </Text>
+                    ) : resolvedCurrency ? (
+                      <Text
+                        variant="caption"
+                        style={{
+                          color: color.muted,
+                          marginTop: spacing.hairline,
+                        }}
+                      >
+                        {resolvedCurrency} · based on your region
                       </Text>
                     ) : null}
                   </Box>
