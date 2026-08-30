@@ -12,4 +12,17 @@ regexes = [
   '''FLWSECK-abc123''',
   '''sk_test_abc123def456''',
   '''your-service-role-key''',
+  # Flutterwave TEST-mode key pair in apps/mobile/.env.example (matched exactly;
+  # treating the full string as a constant unit rather than per-part regexes).
+  '''FLWPUBK_TEST-431faadc1b0f600baf9b2004f4974573-X''',
+  '''FLWSECK_TESTe4a8c93f9420''',
+  # Google/Firebase project API key in google-services.json — public by design
+  # (shipped in every Android build; access is governed server-side / App Check).
+  '''AIzaSyDl4YPne5Kz6QLv5KKaebfpb4BRtpnCX6k''',
+  # Supabase anon (publishable) key for the share extension — public by design,
+  # used in client code; RLS enforces row-level security.
+  '''sb_publishable_CJoH2-aFPqmP1sGB4iZv1Q_wSl_fiyg''',
+  # Empty provider-key placeholders in apps/worker/.dev.vars.example
+  # (ASSEMBLYAI_KEY_1=, MISTRAL_KEY_2=, etc.) — no value, so nothing to leak.
+  '''^[A-Z0-9_]+_KEY_[0-9]+=$''',
 ]

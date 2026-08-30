@@ -29,7 +29,6 @@ import {
   type CheckoutResponse,
 } from "@ekwe/shared";
 import { z } from "zod";
-import { getPaymentCurrency } from "@/constants/currency";
 import { supabase } from "@/services/supabase";
 import { auth$ } from "@/store";
 import { settings$ } from "@/store";
@@ -96,9 +95,15 @@ async function initializeCheckout(isAnnual: boolean): Promise<CheckoutSession> {
   const session = auth$.session.get();
   if (!session) throw new Error("Authentication required");
 
+  const manual = settings$.currency.peek();
   const body: CheckoutRequest = {
     plan: getFlutterwavePlanId(isAnnual),
-    currency: getPaymentCurrency(settings$.currency.peek()),
+    // Only send a currency when the user picked one manually; otherwise omit
+    // it so the worker resolves the currency authoritatively from the request
+    // geo (Cloudflare CF-IPCountry). Trusting the server avoids the Android
+    // locale quirk that misreports region (e.g. an English-US phone in
+    // Nigeria resolving to USD).
+    ...(manual ? { currency: manual } : {}),
   };
 
   const res = await fetch(`${getWorkerBaseUrl()}${CHECKOUT_PATH}`, {
@@ -112,20 +117,20 @@ async function initializeCheckout(isAnnual: boolean): Promise<CheckoutSession> {
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    logger.error("[Flutterwave] Checkout init failed", {
-      status: res.status,
-      body: body.slice(0, 200),
-    });
+    logger.error(
+      "[Flutterwave] Checkout init failed",
+      JSON.stringify({ status: res.status, body: body.slice(0, 200) }),
+    );
     throw new Error("Failed to initialize payment. Please try again.");
   }
 
   const raw = await res.json();
   const parsed = checkoutResponseSchema.safeParse(raw);
   if (!parsed.success) {
-    logger.error("[Flutterwave] Checkout response shape mismatch", {
-      issues: parsed.error.issues,
-      rawBody: raw,
-    });
+    logger.error(
+      "[Flutterwave] Checkout response shape mismatch",
+      JSON.stringify({ issues: parsed.error.issues, rawBody: raw }),
+    );
     throw new Error("Failed to initialize payment. Please try again.");
   }
   const data = parsed.data;

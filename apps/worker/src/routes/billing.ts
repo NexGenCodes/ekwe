@@ -33,13 +33,16 @@ import {
   verifyTransactionRequestSchema,
   verifyTransactionResponseSchema,
 } from "@ekwe/shared";
-import { resolvePaymentCurrency } from "@ekwe/shared/money";
 import { Env } from "../core/types";
 import { logger } from "../core/logger";
 import { supabaseGet, supabasePost } from "../services/supabase";
 import { guardFlutterwaveKeys } from "../services/flutterwaveKeys";
 import { AuthResult } from "../core/auth";
-import { getAuthoritativePlanPrices, getLocalPlanPrices } from "./pricing";
+import {
+  getAuthoritativePlanPrices,
+  getLocalPlanPrices,
+  resolveRequestCurrency,
+} from "./pricing";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -77,10 +80,12 @@ export async function handleCheckout(
   }
   const body = parsed.data;
 
-  // Currency is optional, defaults to USD, and is normalized to uppercase
-  // (ISO-4217 alpha-3). Unsupported currencies resolve to USD so the charge is
-  // always in a currency Flutterwave bills and always matches GET /pricing.
-  const currency = resolvePaymentCurrency(body.currency ?? "USD");
+  // Currency is optional. An explicit client currency wins; otherwise the
+  // worker resolves it from the request's geo country (Cloudflare
+  // `CF-IPCountry`→billable code) and falls back to USD. Unsupported codes
+  // resolve to USD so the charge is always in a currency Flutterwave bills
+  // and always matches GET /pricing.
+  const currency = resolveRequestCurrency(body.currency, request);
 
   // Fail closed in production if the configured Flutterwave keys are missing
   // or the test-mode keys (a free-Pro bypass vector). Test keys stay usable in

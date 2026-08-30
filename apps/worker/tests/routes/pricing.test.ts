@@ -8,10 +8,13 @@ import { http } from "msw";
 import { server } from "../msw/server";
 import { PROVIDER_URLS } from "../msw/handlers";
 
-function pricingRequest(currency?: string): Request {
+function pricingRequest(
+  currency?: string,
+  headers?: Record<string, string>,
+): Request {
   const url = new URL("http://test/pricing");
   if (currency) url.searchParams.set("currency", currency);
-  return new Request(url);
+  return new Request(url, { headers });
 }
 
 describe("handleStorePricing", () => {
@@ -73,6 +76,43 @@ describe("handleStorePricing", () => {
     const json = (await res.json()) as { currency: string; price: number };
     expect(json.currency).toBe("USD");
     expect(json.price).toBe(2.23);
+  });
+
+  test("resolves currency from geo CF-IPCountry when none is explicit", async () => {
+    // No explicit currency, but the request comes from Nigeria (NG → NGN): the
+    // worker should bill in NGN, not fall back to USD. This is the battle-tested
+    // path that fixes the Android locale misreporting bug.
+    const res = await handleStorePricing(
+      pricingRequest(undefined, { "CF-IPCountry": "NG" }),
+      mockEnv(),
+      mockExecutionContext(),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { currency: string; price: number };
+    expect(json.currency).toBe("NGN");
+    expect(json.price).toBe(3000);
+  });
+
+  test("explicit currency wins over geo CF-IPCountry", async () => {
+    // User is geo-Ghana (GH → GHS) but explicitly chose USD — manual wins.
+    const res = await handleStorePricing(
+      pricingRequest("USD", { "CF-IPCountry": "GH" }),
+      mockEnv(),
+      mockExecutionContext(),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { currency: string };
+    expect(json.currency).toBe("USD");
+  });
+
+  test("unmapped geo country falls back to USD", async () => {
+    const res = await handleStorePricing(
+      pricingRequest(undefined, { "CF-IPCountry": "XX" }),
+      mockEnv(),
+      mockExecutionContext(),
+    );
+    const json = (await res.json()) as { currency: string };
+    expect(json.currency).toBe("USD");
   });
 
   test("reads local_prices from the subscription_config row in Supabase", async () => {

@@ -8,9 +8,9 @@ interface WebhookPayload {
   record: {
     id: string;
     email?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
-  old_record: any | null;
+  old_record: Record<string, unknown> | null;
 }
 
 // Brevo SMTP relay — same credentials Supabase Auth already uses for OTP emails.
@@ -139,7 +139,14 @@ async function sendWelcomeEmail(to: string, html: string): Promise<void> {
 const WELCOME_HTML = `
   <html>
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-      <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+      <div style="max-width: 600px; margin: 0 auto; padding: 20px; text-align: center;">
+        <img
+          src="https://ekwe.pages.dev/logo.png"
+          alt="Ekwe"
+          width="88"
+          height="88"
+          style="border: 0; outline: none; text-decoration: none;"
+        />
         <h2 style="color: #4A90E2;">Welcome to Ekwe!</h2>
         <p>Hi there,</p>
         <p>We're thrilled to have you join us. Ekwe is designed to help you unlock your creativity.</p>
@@ -185,7 +192,6 @@ serve(async (req) => {
     );
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
-    console.error("Edge Function Error:", errorMessage);
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
     });

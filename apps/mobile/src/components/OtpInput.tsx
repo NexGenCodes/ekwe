@@ -1,7 +1,6 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from "react";
 import { TextInput } from "react-native";
 import Animated, {
-  FadeIn,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
@@ -80,7 +79,6 @@ const OtpDigitBox = memo(function OtpDigitBox({
     >
       {digit ? (
         <Animated.Text
-          entering={FadeIn.duration(100)}
           style={{
             ...typography.heading2,
             color: foregroundColor,

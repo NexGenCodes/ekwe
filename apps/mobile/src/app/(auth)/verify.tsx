@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { otpSchema, type OtpForm } from "@ekwe/shared";
+import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -42,8 +43,26 @@ export default function VerifyScreen(): React.JSX.Element {
   const [linkError, setLinkError] = useState("");
   const [shakeSignal, setShakeSignal] = useState(0);
   const [resent, setResent] = useState(false);
+  const [clipboardCode, setClipboardCode] = useState("");
 
-  const { control, handleSubmit, reset } = useForm<OtpForm>({
+  // Surface a "Paste code" affordance on Android (iOS auto-fills the field via
+  // oneTimeCode). Never auto-paste — copying is a privacy-sensitive action.
+  useEffect(() => {
+    let active = true;
+    Clipboard.getStringAsync()
+      .then((text) => {
+        const trimmed = (text ?? "").trim();
+        if (active && /^\d{6}$/.test(trimmed)) setClipboardCode(trimmed);
+      })
+      .catch(() => {
+        /* clipboard unavailable */
+      });
+    return (): void => {
+      active = false;
+    };
+  }, []);
+
+  const { control, handleSubmit, reset, setValue } = useForm<OtpForm>({
     resolver: zodResolver(otpSchema),
     defaultValues: { token: "" },
   });
@@ -87,6 +106,14 @@ export default function VerifyScreen(): React.JSX.Element {
     if (ok) setResent(true);
   };
 
+  const handlePaste = (): void => {
+    if (!clipboardCode || isLoading) return;
+    triggerHaptic(Haptics.NotificationFeedbackType.Success);
+    setValue("token", clipboardCode, { shouldValidate: true });
+    setClipboardCode("");
+    handleSubmit(onSubmit)();
+  };
+
   return (
     <AuthShell showBackButton>
       <Animated.View entering={FadeInDown.duration(duration.slow).springify()}>
@@ -112,12 +139,7 @@ export default function VerifyScreen(): React.JSX.Element {
               render={({ field: { onChange, value }, fieldState }) => (
                 <OtpInput
                   value={value}
-                  onChangeText={(text: string) => {
-                    onChange(text);
-                    if (text.length === 6) {
-                      handleSubmit(onSubmit)();
-                    }
-                  }}
+                  onChangeText={(text: string) => onChange(text)}
                   onSubmitEditing={handleSubmit(onSubmit)}
                   error={fieldState.error?.message}
                   autoFocus
@@ -126,6 +148,23 @@ export default function VerifyScreen(): React.JSX.Element {
                 />
               )}
             />
+
+            {clipboardCode ? (
+              <Pressable
+                onPress={handlePaste}
+                disabled={isLoading}
+                style={{ marginTop: spacing.sm }}
+                accessibilityRole="button"
+                accessibilityLabel={`Paste code ${clipboardCode}`}
+              >
+                <Text
+                  variant="bodySmall"
+                  style={{ color: color.brand, fontWeight: "600" }}
+                >
+                  Paste code from clipboard
+                </Text>
+              </Pressable>
+            ) : null}
           </Box>
 
           <Button

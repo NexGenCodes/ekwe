@@ -5,7 +5,9 @@
  * Requests land here first so we can:
  *   1. Verify the Cloudflare Turnstile token (siteverify — fail closed).
  *   2. Throttle per IP and per email (Durable Object counters).
- *   3. Proxy to Supabase's OTP endpoint with the service-role key.
+ *   3. Proxy to Supabase's OTP endpoint with the secret API key and the
+ *      end-user IP in `Sb-Forwarded-For`, so Supabase rate-limits each
+ *      client's real IP instead of the worker's single egress IP.
  *
  * Responses never reveal whether an email is registered (anti-enumeration):
  * a well-formed request always yields the same success shape.
@@ -13,7 +15,7 @@
 import { logger } from "../core/logger";
 import { Env } from "../core/types";
 import { safeParseJSON, tooManyRequests } from "../core/guards";
-import { supabasePost } from "../services/supabase";
+import { supabaseOtpHeaders, supabasePost } from "../services/supabase";
 import { otpRequestSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
 
 const TURNSTILE_ACTION = "send_otp";
@@ -176,18 +178,33 @@ export async function handleSendOtp(
   }
   // If no token or no secret, skip Turnstile and rely on rate limiting
 
-  if (!(await throttled(env, `ip:${clientIp}`, 5, 60))) {
+  // Per-user (email) and per-IP sends. The per-email bucket is the real
+  // per-user abuse gate; the per-IP bucket is only a coarse burst guard and is
+  // set high enough that a NAT/office/event where ~50-100 people sign up from
+  // one public IP never trips it. Turnstile (when a token is supplied)
+  // handles the bot traffic these backstops used to carry.
+  if (!(await throttled(env, `ip:${clientIp}`, 20, 60))) {
     return tooManyRequests("Please wait a moment.", 60);
   }
-  if (!(await throttled(env, `email:${email}`, 2, 600))) {
+  if (!(await throttled(env, `email:${email}`, 4, 600))) {
     return tooManyRequests("Please wait a few minutes.", 600);
   }
 
   try {
-    const res = await supabasePost(env, "/auth/v1/otp", {
-      email,
-      create_user: true,
-    });
+    // Forward the end-user IP (CF-Connecting-IP) to Supabase so its per-IP
+    // rate-limit buckets key on each real client rather than the worker's
+    // single egress IP. Requires the secret API key (supabaseOtpHeaders falls
+    // back to service-role headers when no secret key is configured).
+    const res = await supabasePost(
+      env,
+      "/auth/v1/otp",
+      {
+        email,
+        create_user: true,
+      },
+      undefined,
+      supabaseOtpHeaders(env, clientIp),
+    );
 
     if (!res || !res.ok) {
       const upstreamBody = res

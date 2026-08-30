@@ -14,11 +14,14 @@ import type { StorePricingResponse } from "@ekwe/shared";
 import { getWorkerUrl } from "@/utils/networkUtils";
 
 /**
- * Fetch local monthly/annual prices for a currency from the worker.
+ * Fetch local monthly/annual prices from the worker. `currency` is optional:
+ * when omitted the worker resolves the currency authoritatively from the
+ * request geo (Cloudflare CF-IPCountry→billable code, falling back to USD),
+ * so "auto" pricing matches the currency the checkout will actually charge.
  * Throws on network/HTTP failure so callers can fall back to store pricing.
  */
 export async function fetchWorkerPricing(
-  currency: string,
+  currency?: string,
 ): Promise<StorePricingResponse> {
   const base = getWorkerUrl();
   if (!base) {
@@ -26,7 +29,7 @@ export async function fetchWorkerPricing(
   }
 
   const url = new URL(`${base}/pricing`);
-  url.searchParams.set("currency", currency.toUpperCase());
+  if (currency) url.searchParams.set("currency", currency.toUpperCase());
 
   const res = await fetch(url.toString());
   if (!res.ok) {

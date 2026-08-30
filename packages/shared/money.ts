@@ -1,9 +1,10 @@
 /**
  * Currency helpers built on Intl (ECMA-402) plus the ISO 4217 country →
- * currency dataset from `countries-list`, with no hand-maintained currency
- * table. Both Hermes (mobile) and Cloudflare Workers ship full
- * Intl.NumberFormat support; decimals and symbols come from Unicode CLDR, so
- * any ISO 4217 code the stores bill in is supported.
+ * currency dataset from `countries-list`. Decimals come from Unicode CLDR;
+ * symbols come from CLDR too, EXCEPT for the billable set in
+ * `FLUTTERWAVE_CURRENCIES`, which has an explicit override because CLDR's
+ * `narrowSymbol` falls back to the ISO code for several of them (KES, UGX,
+ * TZS) and emits an ambiguous `$` for CAD.
  */
 import { countries } from "countries-list";
 
@@ -25,15 +26,45 @@ export function getDecimals(code: string): number {
 }
 
 /**
- * Returns the currency symbol, preferring the device locale (the currency is
- * device-derived, so the locale matches the region and CLDR can emit the local
- * glyph, e.g. ₦ from en-NG). Falls back to the code or "$".
+ * Proper display symbols for the Flutterwave-billable currencies. Kept in sync
+ * with `FLUTTERWAVE_CURRENCIES` below. CLDR's `narrowSymbol` is insufficient
+ * here (it returns the bare ISO code for KES/UGX/TZS and `$` for CAD, which is
+ * indistinguishable from USD), so the billable set is explicit and stable on
+ * every runtime (Hermes, Workers, Node). Keys must match the billable list.
+ */
+export const CURRENCY_SYMBOLS: Record<FlutterwaveCurrency, string> = {
+  USD: "$",
+  NGN: "₦",
+  GHS: "GH₵",
+  KES: "KSh",
+  ZAR: "R",
+  ZMW: "ZK",
+  UGX: "USh",
+  TZS: "TSh",
+  RWF: "RF",
+  XOF: "FCFA",
+  XAF: "FCFA",
+  GBP: "£",
+  EUR: "€",
+  CAD: "C$",
+};
+
+/**
+ * Returns the currency symbol, preferring the explicit override for the
+ * billable set (see `CURRENCY_SYMBOLS`), otherwise the device locale (the
+ * currency is device-derived, so the locale matches the region and CLDR can
+ * emit the local glyph, e.g. ₦ from en-NG). Falls back to the code or "$".
  */
 export function getCurrencySymbol(code: string): string {
+  const upper = code.toUpperCase();
+  const explicit = CURRENCY_SYMBOLS[upper as FlutterwaveCurrency];
+  if (explicit) {
+    return explicit;
+  }
   try {
     const parts = new Intl.NumberFormat(undefined, {
       style: "currency",
-      currency: code,
+      currency: upper,
       currencyDisplay: "narrowSymbol",
     }).formatToParts(0);
     return parts.find((p) => p.type === "currency")?.value || "$";

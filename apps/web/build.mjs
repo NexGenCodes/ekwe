@@ -59,6 +59,7 @@ function build() {
   copyFileSync(join(__dirname, "src/js/main.js"), join(dist, "js/main.js"));
   copyFileSync(join(__dirname, "src/favicon.svg"), join(dist, "favicon.svg"));
   copyFileSync(join(__dirname, "src/og-image.png"), join(dist, "og-image.png"));
+  copyFileSync(join(__dirname, "src/logo.png"), join(dist, "logo.png"));
 
   // Copy config.json for JS to read
   writeFileSync(join(dist, "config.json"), JSON.stringify(config, null, 2));

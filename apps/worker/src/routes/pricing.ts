@@ -2,9 +2,11 @@ import { logger } from "../core/logger";
 import { Env } from "../core/types";
 import {
   computeSavingPercent,
+  countryToCurrency,
   resolvePaymentCurrency,
   roundToCurrency,
 } from "@ekwe/shared/money";
+import type { FlutterwaveCurrency } from "@ekwe/shared/money";
 import { LocalPrice, LOCAL_PRICES } from "@ekwe/shared/plans";
 import { storePricingResponseSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
 import { withCache } from "../core/cache";
@@ -245,6 +247,37 @@ export async function getAuthoritativePlanPrices(
   };
 }
 
+/**
+ * Resolves the billing currency for a request. Order of precedence:
+ *
+ *   1. Explicit client currency (manual selection) — always wins.
+ *   2. The request's geo country via Cloudflare's `CF-IPCountry` header,
+ *      mapped to a billable currency. This is the battle-tested signal for
+ *      "where the user actually is": device locales misreport region on
+ *      Android (e.g. an English-US phone in Nigeria reports USD), so we trust
+ *      the network's authoritative geo instead of the client when the user
+ *      hasn't picked a currency themselves.
+ *   3. Unsupported/absent → USD (our global default), so pricing + checkout
+ *      stay deterministic.
+ *
+ * Shared by GET /pricing and POST /billing/checkout so the displayed price
+ * always matches the charged amount in the same resolved currency.
+ */
+export function resolveRequestCurrency(
+  explicit: string | undefined,
+  request?: Request,
+): FlutterwaveCurrency {
+  if (explicit) return resolvePaymentCurrency(explicit);
+
+  const geo = request?.headers.get("CF-IPCountry");
+  if (geo) {
+    const fromCountry = countryToCurrency(geo);
+    if (fromCountry) return resolvePaymentCurrency(fromCountry);
+  }
+
+  return "USD";
+}
+
 export async function handleStorePricing(
   request: Request,
   env: Env,
@@ -254,9 +287,10 @@ export async function handleStorePricing(
     request,
     ctx,
     async () => {
-      const url = new URL(request.url);
-      const requested = (url.searchParams.get("currency") ?? "").toUpperCase();
-      const currency = /^[A-Z]{3}$/.test(requested) ? requested : "USD";
+      const currency = resolveRequestCurrency(
+        new URL(request.url).searchParams.get("currency") ?? undefined,
+        request,
+      );
 
       const prices = await getLocalPlanPrices(env, currency);
       const config = await getSubscriptionConfig(env);

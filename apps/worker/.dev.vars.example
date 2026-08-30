@@ -7,6 +7,10 @@ APP_ENV=development
 # ─── Supabase ─────────────────────────────────────────────────────────
 SUPABASE_URL=your-supabase-project-url
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+# Optional: secret API key (sb_secret_...) from Authentication → API Keys. When
+# set, the OTP route forwards the end-user IP (Sb-Forwarded-For) to Supabase Auth
+# so its per-IP rate-limit buckets key on each client instead of the worker egress IP.
+SUPABASE_SECRET_KEY=your-secret-key
 
 # ─── Cloudflare Turnstile ─────────────────────────────────────────────
 # Optional: for web clients on /auth/otp (OTP send). Widget "ekwe-app" (managed

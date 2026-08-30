@@ -94,18 +94,28 @@ export async function transcribeAudio(
       } catch {
         /* ignore parse failures on error body */
       }
+      // 429 (quota exceeded / rate limited) is an expected, user-facing
+      // condition — surface it at warn level so it doesn't flood Sentry as a
+      // crash error. Only genuine server failures are error-level.
+      if (uploadResult.status === 429) {
+        const handled =
+          errorCode === WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED
+            ? EkweError.QUOTA_EXCEEDED
+            : EkweError.RATE_LIMITED;
+        logger.warn(
+          "[transcribeAudio] FAIL: handled 429",
+          uploadResult.status,
+          errorCode,
+        );
+        return err(handled);
+      }
+
       logger.error(
         "[transcribeAudio] FAIL: non-ok response",
         uploadResult.status,
         errorCode,
       );
 
-      if (uploadResult.status === 429) {
-        if (errorCode === WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED) {
-          return err(EkweError.QUOTA_EXCEEDED);
-        }
-        return err(EkweError.RATE_LIMITED);
-      }
       if (uploadResult.status === 401) {
         return err(EkweError.TRANSCRIPTION_FAIL);
       }

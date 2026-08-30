@@ -169,11 +169,16 @@ export async function registerForPushNotifications(): Promise<string | null> {
  * (e.g. app data clear, token rotation). Without re-storing the new token,
  * subsequent notifications will be sent to the old (dead) token.
  */
-Notifications.addPushTokenListener(async () => {
+Notifications.addPushTokenListener(async (token) => {
   try {
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
     if (!projectId || projectId === "YOUR_PROJECT_ID") return;
-    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    // Pass the device push token from the event. Without it, getExpoPushTokenAsync
+    // re-fetches the device token, which fires this listener again — infinite loop.
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId,
+      devicePushToken: token,
+    });
     logger.info("[Notifications] Token refreshed:", tokenData.data);
     await storePushToken(tokenData.data);
   } catch (error) {

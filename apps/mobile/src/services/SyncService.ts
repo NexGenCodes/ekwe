@@ -496,7 +496,10 @@ class SyncServiceClass {
       // Surface the failure so the history screen can show a sync banner
       // instead of silently degrading (e.g. a missing remote column).
       this.pullError.set(err instanceof Error ? err.message : String(err));
-      logger.error("[Sync] Pull from cloud failed", err);
+      logger.error(
+        "[Sync] Pull from cloud failed",
+        err instanceof Error ? err : JSON.stringify(err),
+      );
     }
   }
 

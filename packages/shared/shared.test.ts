@@ -52,6 +52,23 @@ describe("money helpers", () => {
     expect(getCurrencySymbol("EUR")).toBe("€");
   });
 
+  test("every Flutterwave-billable currency has a proper symbol", () => {
+    expect(getCurrencySymbol("USD")).toBe("$");
+    expect(getCurrencySymbol("NGN")).toBe("₦");
+    expect(getCurrencySymbol("GHS")).toBe("GH₵");
+    expect(getCurrencySymbol("KES")).toBe("KSh");
+    expect(getCurrencySymbol("ZAR")).toBe("R");
+    expect(getCurrencySymbol("ZMW")).toBe("ZK");
+    expect(getCurrencySymbol("UGX")).toBe("USh");
+    expect(getCurrencySymbol("TZS")).toBe("TSh");
+    expect(getCurrencySymbol("RWF")).toBe("RF");
+    expect(getCurrencySymbol("XOF")).toBe("FCFA");
+    expect(getCurrencySymbol("XAF")).toBe("FCFA");
+    expect(getCurrencySymbol("GBP")).toBe("£");
+    expect(getCurrencySymbol("EUR")).toBe("€");
+    expect(getCurrencySymbol("CAD")).toBe("C$");
+  });
+
   test("roundToCurrency respects per-currency decimals", () => {
     expect(roundToCurrency(3.005, "USD")).toBe(3.01);
     expect(roundToCurrency(1234.5, "XOF")).toBe(1235);

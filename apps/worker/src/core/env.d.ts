@@ -10,6 +10,10 @@ interface Env {
   // wrangler.jsonc (so absent from the generated types). Declared manually.
   TURNSTILE_SECRET: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
+  // Opaque `sb_secret_...` API key. When set, the OTP route sends this on the
+  // `apikey` header plus the end-user IP in `Sb-Forwarded-For` so Supabase Auth
+  // rate-limits each client's real IP instead of the worker's egress IP.
+  SUPABASE_SECRET_KEY?: string;
   SENTRY_DSN?: string;
   PUSH_NOTIFY_SECRET?: string;
   FLUTTERWAVE_SECRET?: string;
