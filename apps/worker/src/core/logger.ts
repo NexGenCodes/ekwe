@@ -20,9 +20,34 @@ export const logger = {
     // Surface `data.error` (or its string form) as the exception itself.
     const cause = data?.error;
     const err =
-      cause instanceof Error
-        ? cause
-        : new Error(cause == null ? message : `${message}: ${String(cause)}`);
+      cause instanceof Error ? cause : new Error(appendCause(message, cause));
+
+    function appendCause(msg: string, value: unknown): string {
+      if (value == null) return msg;
+      switch (typeof value) {
+        case "string":
+          return `${msg}: ${value}`;
+        case "object": {
+          try {
+            return `${msg}: ${JSON.stringify(value)}`;
+          } catch {
+            return msg;
+          }
+        }
+        case "function":
+          return `${msg}: <function>`;
+        case "bigint":
+          return `${msg}: <bigint>`;
+        case "symbol":
+          return `${msg}: <symbol>`;
+        default: {
+          if (typeof value === "number" || typeof value === "boolean") {
+            return `${msg}: ${value}`;
+          }
+          return `${msg}: <unsupported ${typeof value}>`;
+        }
+      }
+    }
     Sentry.captureException(err, { extra: data });
   },
   warn: (message: string, data?: Record<string, unknown>): void => {
