@@ -147,9 +147,6 @@ importers:
       expo-linking:
         specifier: ~57.0.5
         version: 57.0.5(expo@57.0.11)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2)
-      expo-localization:
-        specifier: ~57.0.1
-        version: 57.0.1(expo@57.0.11)(react@19.2.3)
       expo-notifications:
         specifier: ^57.0.12
         version: 57.0.12(expo@57.0.11)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2)(typescript@6.0.3)
@@ -11265,6 +11262,7 @@ snapshots:
       expo: 57.0.11(34b362ec62e0fa8067b8854d857d62f9)
       react: 19.2.3
       rtl-detect: 1.1.2
+    optional: true
 
   expo-manifests@57.0.1(expo@57.0.11):
     dependencies:
@@ -13669,7 +13667,8 @@ snapshots:
       '@rolldown/binding-win32-arm64-msvc': 1.2.1
       '@rolldown/binding-win32-x64-msvc': 1.2.1
 
-  rtl-detect@1.1.2: {}
+  rtl-detect@1.1.2:
+    optional: true
 
   safe-array-concat@1.1.4:
     dependencies:
