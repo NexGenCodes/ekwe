@@ -207,8 +207,10 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
             : "";
         return { text };
       }
-      if (_model === "@cf/meta/llama-3-8b-instruct") {
-        return { response: "translated text" };
+      if (_model === "@cf/zai-org/glm-4.7-flash") {
+        return {
+          choices: [{ index: 0, message: { content: "translated text" } }],
+        };
       }
       return {};
     }) as unknown as Env["AI"]["run"],

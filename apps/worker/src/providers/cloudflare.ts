@@ -57,7 +57,7 @@ export async function transcribe(
   return null;
 }
 
-// ─── Translation (@cf/meta/llama-3-8b-instruct) ──────────────────
+// ─── Translation (@cf/zai-org/glm-4.7-flash) ─────────────────────
 
 export async function translate(
   text: string,
@@ -69,7 +69,7 @@ export async function translate(
 ): Promise<TranslateResult | null> {
   try {
     if (signal.aborted) throw new Error(CLIENT_ABORTED);
-    const result = await env.AI.run("@cf/meta/llama-3-8b-instruct", {
+    const result = await env.AI.run("@cf/zai-org/glm-4.7-flash", {
       messages: [
         {
           role: "system",
@@ -84,8 +84,9 @@ export async function translate(
     });
     if (signal.aborted) throw new Error(CLIENT_ABORTED);
 
-    const response =
-      typeof result?.response === "string" ? result.response : "";
+    // GLM returns OpenAI-style chat completions; read the first choice's
+    // assistant text content.
+    const response = result?.choices?.[0]?.message?.content ?? "";
     if (response) {
       const { translation, transliteration: romanized } = parseTranslateOutput(
         response,
