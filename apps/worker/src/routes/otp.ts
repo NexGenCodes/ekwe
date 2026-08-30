@@ -210,10 +210,12 @@ export async function handleSendOtp(
       const upstreamBody = res
         ? (await res.text().catch(() => "")).slice(0, 300)
         : "";
-      logger.error("[otp] Supabase OTP error", {
-        status: res?.status,
-        body: upstreamBody,
-      });
+      // Include status + upstream body in the message: the Sentry server SDK
+      // drops the `extra` hint, so without them the issue is unactionable.
+      const status = res?.status ?? 0;
+      logger.error(
+        `[otp] Supabase OTP error (status ${status}): ${upstreamBody}`,
+      );
 
       // Upstream rate-limit / verification-code flood guard: Supabase returns
       // 429 (or 422 with over_email_send_rate_limit) when its per-IP / per-email
@@ -221,7 +223,6 @@ export async function handleSendOtp(
       // egress IP, the upstream bucket trips far earlier than it would for a
       // direct client. Surface this to the client as a 429 (retryable) instead
       // of a 502 (server error) so the UI stops the user immediately.
-      const status = res?.status ?? 0;
       const isRateLimited =
         status === 429 ||
         (status === 422 &&

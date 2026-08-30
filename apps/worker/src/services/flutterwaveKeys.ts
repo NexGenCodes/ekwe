@@ -48,30 +48,33 @@ export function guardFlutterwaveKeys(env: {
 }): FlutterwaveKeyGuard {
   const isProduction = env.APP_ENV === "production";
 
+  const reject = (why: string): FlutterwaveKeyGuard => {
+    logger.error(`[flutterwave] Rejected payment keys in production: ${why}`);
+    return {
+      allowed: false,
+      response: Response.json(
+        { error: WORKER_ERROR_CODES.PAYMENT_PROVIDER_UNAVAILABLE },
+        { status: 503 },
+      ),
+    };
+  };
+
   if (isProduction) {
-    if (!env.FLUTTERWAVE_SECRET || isTestSecretKey(env.FLUTTERWAVE_SECRET)) {
-      logger.error(
-        "[flutterwave] Rejected payment keys in production: missing or TEST secret key",
-      );
-      return {
-        allowed: false,
-        response: Response.json(
-          { error: WORKER_ERROR_CODES.PAYMENT_PROVIDER_UNAVAILABLE },
-          { status: 503 },
-        ),
-      };
+    if (!env.FLUTTERWAVE_SECRET) {
+      return reject("secret key missing");
     }
-    if (!env.FLUTTERWAVE_PUBLIC || isTestPublicKey(env.FLUTTERWAVE_PUBLIC)) {
-      logger.error(
-        "[flutterwave] Rejected payment keys in production: missing or TEST public key",
+    if (isTestSecretKey(env.FLUTTERWAVE_SECRET)) {
+      return reject(
+        "secret key is TEST-prefixed (FLWSECK_TEST-) — set a live key",
       );
-      return {
-        allowed: false,
-        response: Response.json(
-          { error: WORKER_ERROR_CODES.PAYMENT_PROVIDER_UNAVAILABLE },
-          { status: 503 },
-        ),
-      };
+    }
+    if (!env.FLUTTERWAVE_PUBLIC) {
+      return reject("public key missing");
+    }
+    if (isTestPublicKey(env.FLUTTERWAVE_PUBLIC)) {
+      return reject(
+        "public key is TEST-prefixed (FLWPUBK_TEST-) — set a live key",
+      );
     }
   }
 

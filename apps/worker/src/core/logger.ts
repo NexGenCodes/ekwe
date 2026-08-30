@@ -15,7 +15,14 @@ export const logger = {
   },
   error: (message: string, data?: Record<string, unknown>): void => {
     console.error(makeLogEntry("ERROR", message, data));
-    const err = data?.error instanceof Error ? data.error : new Error(message);
+    // The `@sentry/cloudflare` server SDK does not attach the `extra` hint to
+    // the event, so a bare `new Error(message)` would hide the actual cause.
+    // Surface `data.error` (or its string form) as the exception itself.
+    const cause = data?.error;
+    const err =
+      cause instanceof Error
+        ? cause
+        : new Error(cause == null ? message : `${message}: ${String(cause)}`);
     Sentry.captureException(err, { extra: data });
   },
   warn: (message: string, data?: Record<string, unknown>): void => {
