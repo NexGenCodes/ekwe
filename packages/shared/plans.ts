@@ -95,7 +95,10 @@ export const PREMIUM_LIMITS: PlanLimits = {
   cooldownSeconds: 1,
   dailyTranslateLimit: 0,
   dailyTranscribeLimit: 0,
-  dailyTtsCharsLimit: 256,
+  // Moderate invisible speech ceiling — the client never surfaces it and
+  // falls back to on-device speech when hit, so it only guards against
+  // scripting (most of the pipeline rides Cloudflare's free tiers).
+  dailyTtsCharsLimit: 5000,
   throttleTranslateThreshold: 500,
   throttleTranscribeThreshold: 500,
 };

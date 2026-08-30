@@ -69,8 +69,8 @@ describe("handleTts", () => {
         jsonResponse({
           allowed: true,
           tier_active: "PREMIUM",
-          quota_total: 256,
-          quota_remaining: 256,
+          quota_total: 5000,
+          quota_remaining: 5000,
         }),
       ),
     );
@@ -426,7 +426,7 @@ describe("handleTts", () => {
         jsonResponse({
           allowed: false,
           reason: "QUOTA_EXCEEDED",
-          quota_total: 256,
+          quota_total: 5000,
           quota_remaining: 0,
         }),
       ),
@@ -443,7 +443,7 @@ describe("handleTts", () => {
     expect(res.headers.get("Retry-After")).toBeTruthy();
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.error).toBe("EKWE_QUOTA_EXCEEDED");
-    expect(body.quota_total).toBe(256);
+    expect(body.quota_total).toBe(5000);
   });
 
   test("rejects with 403 when the JWT says PREMIUM but the DB tier is FREE", async () => {
@@ -472,7 +472,7 @@ describe("handleTts", () => {
         jsonResponse({
           allowed: true,
           tier_active: "PREMIUM",
-          quota_total: 256,
+          quota_total: 5000,
           quota_remaining: 10,
         }),
       ),
@@ -503,8 +503,8 @@ describe("handleTts", () => {
         return jsonResponse({
           allowed: true,
           tier_active: "PREMIUM",
-          quota_total: 256,
-          quota_remaining: 256,
+          quota_total: 5000,
+          quota_remaining: 5000,
         });
       }),
     );

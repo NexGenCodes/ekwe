@@ -40,11 +40,12 @@ const dailyCaps = (translate: number, transcribe: number): string =>
     ? "Unlimited translations & transcriptions"
     : `${fmtInt(translate)} translations & ${fmtInt(transcribe)} transcriptions per day`;
 
-/** Premium speech cap: "Premium speech · 256 chars/day". */
+/**
+ * Premium speech feature line. The daily ceiling is intentionally not shown to
+ * users — the client silently falls back to on-device speech when it's hit.
+ */
 const speechCap = (chars: number): string =>
-  chars === 0
-    ? "No text-to-speech"
-    : `Premium speech · ${fmtInt(chars)} chars/day`;
+  chars === 0 ? "No text-to-speech" : "Premium natural text-to-speech";
 
 /** Combined content limits: "3,000-char texts & voice notes up to 2 min". */
 const contentLimits = (textChars: number, durationMs: number): string =>

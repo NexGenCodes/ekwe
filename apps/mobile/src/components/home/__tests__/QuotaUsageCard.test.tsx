@@ -60,7 +60,7 @@ const healthySnapshot: UsageSnapshot = {
   resetsAt: Date.now() + 5 * 3_600_000,
   translate: { used: 10, total: 25, remaining: 15 },
   transcribe: { used: 5, total: 25, remaining: 20 },
-  tts: { used: 40, total: 256, remaining: 216 },
+  tts: { used: 40, total: 5000, remaining: 4960 },
 };
 
 const nearLimitSnapshot: UsageSnapshot = {
@@ -68,7 +68,7 @@ const nearLimitSnapshot: UsageSnapshot = {
   resetsAt: Date.now() + 5 * 3_600_000,
   translate: { used: 24, total: 25, remaining: 1 },
   transcribe: { used: 0, total: 25, remaining: 25 },
-  tts: { used: 100, total: 256, remaining: 156 },
+  tts: { used: 100, total: 5000, remaining: 4900 },
 };
 
 const exhaustedSnapshot: UsageSnapshot = {
@@ -76,7 +76,7 @@ const exhaustedSnapshot: UsageSnapshot = {
   resetsAt: Date.now() + 5 * 3_600_000,
   translate: { used: 25, total: 25, remaining: 0 },
   transcribe: { used: 25, total: 25, remaining: 0 },
-  tts: { used: 256, total: 256, remaining: 0 },
+  tts: { used: 5000, total: 5000, remaining: 0 },
 };
 
 const unlimitedSnapshot: UsageSnapshot = {
@@ -104,16 +104,6 @@ describe("QuotaUsageCard", () => {
     expect(screen.getByText("Transcriptions")).toBeOnTheScreen();
     expect(screen.getByText("10 / 25 used · 15 left")).toBeOnTheScreen();
     expect(screen.getByText("5 / 25 used · 20 left")).toBeOnTheScreen();
-  });
-
-  it("shows the premium speech pool meter with chars used today", async () => {
-    await render(<QuotaUsageCard />);
-
-    expect(screen.getByText("Speech")).toBeOnTheScreen();
-    expect(screen.getByText("40 / 256 used · 216 left")).toBeOnTheScreen();
-    expect(
-      screen.getByLabelText("Speech: 40 of 256 used today"),
-    ).toHaveAccessibleName("Speech: 40 of 256 used today");
   });
 
   it("exposes accessible progressbar roles with used/total values", async () => {

@@ -18,7 +18,7 @@ import React, {
   useMemo,
   useRef,
 } from "react";
-import { Share } from "react-native";
+import { Platform, Share } from "react-native";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -258,9 +258,11 @@ export const ExpressiveOutput = React.memo(
       stopPlayback();
 
       // Premium users get the cloud TTS pipeline (natural voices in every
-      // supported language); on any failure we fall through to the on-device
-      // voice so Listen always works.
-      if (isPro) {
+      // supported language) on Android; iOS always uses the on-device voice,
+      // and on any failure we fall through to device speech so Listen always
+      // works. The daily ceiling is deliberately silent — hitting it just
+      // degrades to the device voice, never an error.
+      if (isPro && Platform.OS !== "ios") {
         const stopEpoch = stopRequestedRef.current;
         const started = await startCloudTts(translation, targetLang);
         if (started) return;
