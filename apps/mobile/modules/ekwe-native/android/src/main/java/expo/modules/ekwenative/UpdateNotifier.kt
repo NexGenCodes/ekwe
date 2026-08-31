@@ -14,10 +14,13 @@ import androidx.core.app.NotificationManagerCompat
 import org.json.JSONObject
 
 /**
- * Handles `apk_update` data-only push messages: decides whether the user should
- * see an update notification (never notify users already on the incoming
- * version) and fires the native download+install flow via [ApkDownloadService].
- */
+   * Handles `apk_update` data-only push messages: decides whether the user should
+   * see an update notification (suppressed only when the installed build is
+   * NEWER than the incoming one — an equal version still notifies so the alert
+   * shows on a device that installed the same build, e.g. the developer's
+   * native test build) and fires the native download+install flow via
+   * [ApkDownloadService].
+   */
 object UpdateNotifier {
   const val CHANNEL_ID = "apk-updates"
   const val NOTIFICATION_ID = 1001
@@ -43,18 +46,20 @@ object UpdateNotifier {
     val downloadUrl = resolveAbiUrl(data) ?: return
     val checksum = resolveAbiChecksum(data)
 
-    // Never notify users who are already on this version or newer. Prefer the
-    // numeric versionCode (catches native-only rebuilds that don't bump the
-    // versionName) and fall back to the versionName comparison for pushes
-    // that don't carry a versionCode.
+    // Suppress only when the installed build is NEWER than the one being
+    // pushed. An equal version still notifies, so the alert is visible on a
+    // device that already installed this exact build (e.g. the developer's
+    // native test build). Prefer the numeric versionCode (catches native-only
+    // rebuilds that don't bump the versionName) and fall back to the
+    // versionName comparison for pushes that don't carry a versionCode.
     if (versionCode != null) {
-      if (versionCode <= currentVersionCode(context)) {
-        Log.d(TAG, "Skipping $version: installed versionCode >= $versionCode")
+      if (versionCode < currentVersionCode(context)) {
+        Log.d(TAG, "Skipping $version: installed versionCode > $versionCode")
         return
       }
     } else {
       val installed = currentVersionName(context) ?: return
-      if (compareVersions(installed, version) >= 0) return
+      if (compareVersions(installed, version) > 0) return
     }
 
     ensureChannel(context)

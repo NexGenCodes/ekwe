@@ -153,7 +153,7 @@ export async function handleStream(
   env: Env,
   lang: string,
   clientWs: WebSocket,
-  _signal: AbortSignal,
+  signal: AbortSignal,
 ): Promise<boolean> {
   const glWs = await rotateWsKeys(env, "GLADIA_KEY_", (key) => {
     const params = new URLSearchParams({
@@ -167,31 +167,36 @@ export async function handleStream(
   });
   if (!glWs) return false;
 
-  createStreamInterceptor(clientWs, glWs, (data) => {
-    try {
-      const payload = JSON.parse(data) as {
-        type?: string;
-        transcription?: string;
-        time_end?: number;
-      };
-      if (payload.type === "transcript" && payload.transcription) {
-        const text = payload.transcription;
-        const isFinal = payload.time_end !== undefined;
+  createStreamInterceptor(
+    clientWs,
+    glWs,
+    (data) => {
+      try {
+        const payload = JSON.parse(data) as {
+          type?: string;
+          transcription?: string;
+          time_end?: number;
+        };
+        if (payload.type === "transcript" && payload.transcription) {
+          const text = payload.transcription;
+          const isFinal = payload.time_end !== undefined;
 
-        if (text && !isHallucination(text)) {
-          clientWs.send(
-            JSON.stringify({
-              type: isFinal ? "final" : "interim",
-              text,
-              provider: "gladia",
-            }),
-          );
+          if (text && !isHallucination(text)) {
+            clientWs.send(
+              JSON.stringify({
+                type: isFinal ? "final" : "interim",
+                text,
+                provider: "gladia",
+              }),
+            );
+          }
         }
+      } catch {
+        /* ignore parse errors */
       }
-    } catch {
-      /* ignore parse errors */
-    }
-  });
+    },
+    signal,
+  );
 
   return true;
 }

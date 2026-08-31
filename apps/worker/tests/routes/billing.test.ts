@@ -33,16 +33,51 @@ describe("handleCheckout", () => {
       body: JSON.stringify({ plan: "ekwe_pro_monthly" }),
     });
 
+  // Checkout prices are read authoritatively from the Supabase
+  // subscription_config row (matching the verify-transaction grant path). The
+  // seeded default matches the bundled LOCAL_PRICES so these tests assert the
+  // familiar amounts.
+  const seedSubscriptionConfig = (
+    localPrices: Record<string, { monthly: number; annual: number }> = {
+      USD: { monthly: 2.23, annual: 21.41 },
+      NGN: { monthly: 3000, annual: 28800 },
+    },
+  ) => {
+    server.use(
+      http.get(PROVIDER_URLS.supabaseSubscriptionConfig, () => {
+        return Response.json([
+          {
+            id: 1,
+            base_price_usd: 2.23,
+            discount_percent: 0,
+            annual_discount_percent: 20,
+            local_prices: localPrices,
+          },
+        ]);
+      }),
+    );
+  };
+
   test("authorizes a checkout session with tx_ref, amount, and currency", async () => {
+    seedSubscriptionConfig();
     const env = mockEnv();
     const res = await handleCheckout(monthlyRequest(), env, mockAuth);
 
     expect(res.status).toBe(200);
     const data = (await res.json()) as Record<string, unknown>;
     expect(data.tx_ref).toMatch(/^ekwe_test-user-123_monthly_\d+_[a-z0-9]+$/);
-    expect(data.amount).toBe(2.23); // $2.23/mo from LOCAL_PRICES
+    expect(data.amount).toBe(2.23); // $2.23/mo from subscription_config
     expect(data.currency).toBe("USD");
     expect(data).not.toHaveProperty("checkout_url");
+  });
+
+  test("fails closed when Supabase cannot confirm the price", async () => {
+    // No subscription_config handler → getAuthoritativePlanPrices returns
+    // null, so checkout must 503 rather than mint a price that the grant
+    // path would later reject.
+    const env = mockEnv();
+    const res = await handleCheckout(monthlyRequest(), env, mockAuth);
+    expect(res.status).toBe(503);
   });
 
   test("returns 400 for invalid plan ID", async () => {
@@ -60,6 +95,7 @@ describe("handleCheckout", () => {
   });
 
   test("charges the static annual USD amount", async () => {
+    seedSubscriptionConfig();
     const env = mockEnv();
     const req = new Request("http://test/billing/checkout", {
       method: "POST",
@@ -70,21 +106,23 @@ describe("handleCheckout", () => {
     const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(200);
     const data = (await res.json()) as Record<string, unknown>;
-    expect(data.amount).toBe(21.41); // $21.41/yr from LOCAL_PRICES
+    expect(data.amount).toBe(21.41); // $21.41/yr from subscription_config
     expect(data.currency).toBe("USD");
   });
 
   test("charges the static monthly USD amount", async () => {
+    seedSubscriptionConfig();
     const env = mockEnv();
     const res = await handleCheckout(monthlyRequest(), env, mockAuth);
 
     expect(res.status).toBe(200);
     const data = (await res.json()) as Record<string, unknown>;
-    expect(data.amount).toBe(2.23); // $2.23/mo from LOCAL_PRICES
+    expect(data.amount).toBe(2.23); // $2.23/mo from subscription_config
     expect(data.currency).toBe("USD");
   });
 
   test("charges the static local price in a requested currency", async () => {
+    seedSubscriptionConfig();
     const env = mockEnv();
     const req = new Request("http://test/billing/checkout", {
       method: "POST",
@@ -98,7 +136,7 @@ describe("handleCheckout", () => {
     const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(200);
     const data = (await res.json()) as Record<string, unknown>;
-    expect(data.amount).toBe(3000); // static ₦3,000/mo from LOCAL_PRICES
+    expect(data.amount).toBe(3000); // static ₦3,000/mo from subscription_config
     expect(data.currency).toBe("NGN");
   });
 
@@ -135,6 +173,7 @@ describe("handleCheckout", () => {
   });
 
   test("resolves unsupported currencies to USD server-side", async () => {
+    seedSubscriptionConfig();
     const env = mockEnv();
     const req = new Request("http://test/billing/checkout", {
       method: "POST",
@@ -170,6 +209,7 @@ describe("handleCheckout", () => {
   });
 
   test("generates a unique tx_ref per checkout for the same user and plan", async () => {
+    seedSubscriptionConfig();
     const env = mockEnv();
 
     const resA = await handleCheckout(monthlyRequest(), env, mockAuth);
@@ -183,6 +223,7 @@ describe("handleCheckout", () => {
   });
 
   test("echoes the worker's public key in the checkout session", async () => {
+    seedSubscriptionConfig();
     const res = await handleCheckout(
       monthlyRequest(),
       mockEnv({ FLUTTERWAVE_PUBLIC: "FLWPUBK-abc123" }),
@@ -228,6 +269,7 @@ describe("handleCheckout", () => {
   });
 
   test("accepts TEST keys in non-production so the full flow is testable", async () => {
+    seedSubscriptionConfig();
     const res = await handleCheckout(
       monthlyRequest(),
       mockEnv({

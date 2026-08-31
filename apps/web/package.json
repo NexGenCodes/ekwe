@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "dev": "node build.mjs --watch"
+    "dev": "node build.mjs --watch",
+    "deploy": "wrangler pages deploy --branch master"
+  },
+  "devDependencies": {
+    "wrangler": "^4.102.0"
   }
 }

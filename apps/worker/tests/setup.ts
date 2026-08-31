@@ -119,6 +119,28 @@ class InMemoryD1 {
 
         // INSERT ... ON CONFLICT DO UPDATE
         if (/INSERT INTO/i.test(sql)) {
+          // Idempotency claim: atomic INSERT ... ON CONFLICT DO NOTHING.
+          // Only the first insert wins (changes 1); a concurrent/duplicate
+          // insert changes nothing (changes 0).
+          if (/webhook_idempotency/i.test(sql)) {
+            const [key, createdAt, expiresAt] = args;
+            return {
+              first: async () => null,
+              all: async () => ({ results: [] }),
+              run: async () => {
+                const exists = store.has(key as string);
+                if (!exists) {
+                  store.set(key as string, {
+                    cache_key: key as string,
+                    result: "",
+                    created_at: (createdAt as number) ?? 0,
+                    expires_at: (expiresAt as number) ?? 0,
+                  });
+                }
+                return { meta: { changes: exists ? 0 : 1 } };
+              },
+            };
+          }
           const [key, userId, tier, result, createdAt, expiresAt] = args;
           return {
             first: async () => null,

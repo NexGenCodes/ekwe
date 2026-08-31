@@ -181,7 +181,7 @@ export async function handleStream(
   env: Env,
   lang: string,
   clientWs: WebSocket,
-  _signal: AbortSignal,
+  signal: AbortSignal,
 ): Promise<boolean> {
   const aaiWs = await rotateWsKeys(env, "ASSEMBLYAI_KEY_", (key) => {
     const params = new URLSearchParams({
@@ -193,33 +193,40 @@ export async function handleStream(
   });
   if (!aaiWs) return false;
 
-  createOpusDecodingInterceptor(clientWs, aaiWs, (data) => {
-    try {
-      const payload = JSON.parse(data) as {
-        message_type?: string;
-        text?: string;
-      };
-      if (
-        payload.message_type === "PartialTranscript" ||
-        payload.message_type === "FinalTranscript"
-      ) {
-        const text = payload.text;
-        const isFinal = payload.message_type === "FinalTranscript";
+  createOpusDecodingInterceptor(
+    clientWs,
+    aaiWs,
+    (data) => {
+      try {
+        const payload = JSON.parse(data) as {
+          message_type?: string;
+          text?: string;
+        };
+        if (
+          payload.message_type === "PartialTranscript" ||
+          payload.message_type === "FinalTranscript"
+        ) {
+          const text = payload.text;
+          const isFinal = payload.message_type === "FinalTranscript";
 
-        if (text && !isHallucination(text)) {
-          clientWs.send(
-            JSON.stringify({
-              type: isFinal ? "final" : "interim",
-              text,
-              provider: "assemblyai",
-            }),
-          );
+          if (text && !isHallucination(text)) {
+            clientWs.send(
+              JSON.stringify({
+                type: isFinal ? "final" : "interim",
+                text,
+                provider: "assemblyai",
+              }),
+            );
+          }
         }
+      } catch {
+        /* ignore parse errors */
       }
-    } catch {
-      /* ignore parse errors */
-    }
-  });
+    },
+    false,
+    16000,
+    signal,
+  );
 
   return true;
 }

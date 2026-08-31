@@ -1,0 +1,10 @@
+{
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "ekwe",
+  "compatibility_date": "2026-06-01",
+
+  // Landing site (Cloudflare Pages). `node build.mjs` renders src/ into ./dist;
+  // `wrangler pages deploy` reads this config for the project name and the build
+  // output directory to upload as the production (ekwe.pages.dev) deployment.
+  "pages_build_output_dir": "./dist"
+}

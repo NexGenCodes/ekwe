@@ -119,11 +119,11 @@ jobs:
       - name: Build landing site
         run: node apps/web/build.mjs
       - name: Deploy to Cloudflare Pages
-        working-directory: apps/worker
+        working-directory: apps/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm exec wrangler pages deploy ../web/dist --project-name ekwe --branch master
+        run: pnpm exec wrangler pages deploy --branch master
 
   ota:
     name: Publish OTA Update
@@ -339,8 +339,8 @@ jobs:
       - name: Rebuild landing site
         run: node apps/web/build.mjs
       - name: Deploy landing site
-        working-directory: apps/worker
+        working-directory: apps/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm exec wrangler pages deploy ../web/dist --project-name ekwe --branch master
+        run: pnpm exec wrangler pages deploy --branch master

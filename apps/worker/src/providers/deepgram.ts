@@ -146,7 +146,7 @@ export async function handleStream(
   env: Env,
   lang: string,
   clientWs: WebSocket,
-  _signal: AbortSignal,
+  signal: AbortSignal,
 ): Promise<boolean> {
   const dgWs = await rotateWsKeys(env, "DEEPGRAM_KEY_", (key) => {
     const params = new URLSearchParams({
@@ -163,36 +163,41 @@ export async function handleStream(
   });
   if (!dgWs) return false;
 
-  createStreamInterceptor(clientWs, dgWs, (data) => {
-    try {
-      const payload = JSON.parse(data) as {
-        type?: string;
-        channel?: { alternatives?: Array<{ transcript?: string }> };
-        is_final?: boolean;
-      };
-      const alternatives = payload.channel?.alternatives;
-      if (
-        payload.type === "Results" &&
-        alternatives &&
-        alternatives.length > 0
-      ) {
-        const text = alternatives[0].transcript;
-        const isFinal = payload.is_final === true;
+  createStreamInterceptor(
+    clientWs,
+    dgWs,
+    (data) => {
+      try {
+        const payload = JSON.parse(data) as {
+          type?: string;
+          channel?: { alternatives?: Array<{ transcript?: string }> };
+          is_final?: boolean;
+        };
+        const alternatives = payload.channel?.alternatives;
+        if (
+          payload.type === "Results" &&
+          alternatives &&
+          alternatives.length > 0
+        ) {
+          const text = alternatives[0].transcript;
+          const isFinal = payload.is_final === true;
 
-        if (text && !isHallucination(text)) {
-          clientWs.send(
-            JSON.stringify({
-              type: isFinal ? "final" : "interim",
-              text,
-              provider: "deepgram",
-            }),
-          );
+          if (text && !isHallucination(text)) {
+            clientWs.send(
+              JSON.stringify({
+                type: isFinal ? "final" : "interim",
+                text,
+                provider: "deepgram",
+              }),
+            );
+          }
         }
+      } catch {
+        /* ignore parse errors */
       }
-    } catch {
-      /* ignore parse errors */
-    }
-  });
+    },
+    signal,
+  );
 
   return true;
 }

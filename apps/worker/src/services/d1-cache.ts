@@ -80,7 +80,11 @@ export async function d1Put(
  */
 export async function d1Cleanup(
   db: D1Database,
-  table: "cache_translation" | "cache_transcription" | "cache_lang",
+  table:
+    | "cache_translation"
+    | "cache_transcription"
+    | "cache_lang"
+    | "webhook_idempotency",
 ): Promise<number> {
   try {
     const now = Math.floor(Date.now() / 1000);

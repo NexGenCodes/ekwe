@@ -609,7 +609,7 @@ export async function handleFlutterwaveWebhook(
     );
   }
 
-  // ── Idempotency Check ──
+  // ── Idempotency Claim ──
   const eventId = event.id;
   const idempotencyKey =
     eventId && typeof eventId === "number"
@@ -619,14 +619,18 @@ export async function handleFlutterwaveWebhook(
           return hashKey(rawBody);
         })()}`;
 
-  if (env.EKWE_KV && idempotencyKey) {
-    const existing = await env.EKWE_KV.get(idempotencyKey);
-    if (existing) {
-      logger.info(
-        `[flutterwave] Duplicate event detected (key: ${idempotencyKey.slice(0, 32)})`,
-      );
-      return Response.json({ received: true, action: "duplicate" });
-    }
+  // Atomic claim (D1 INSERT ... ON CONFLICT DO NOTHING): one of several
+  // concurrent duplicates wins and processes; the rest are dropped. Released
+  // when the event cannot be fully applied so Flutterwave's re-delivery can
+  // retry instead of being permanently deduped.
+  const { claimIdempotency, releaseIdempotency } =
+    await import("../services/idempotency");
+  const claimed = await claimIdempotency(env.EKWE_D1, idempotencyKey, 86_400);
+  if (!claimed) {
+    logger.info(
+      `[flutterwave] Duplicate event detected (key: ${idempotencyKey.slice(0, 32)})`,
+    );
+    return Response.json({ received: true, action: "duplicate" });
   }
 
   // Use the processWebhookEvent from the registry, which checks if the
@@ -639,6 +643,7 @@ export async function handleFlutterwaveWebhook(
   );
 
   if (!fullyApplied) {
+    await releaseIdempotency(env.EKWE_D1, idempotencyKey);
     logger.warn(
       "[flutterwave] Event not fully applied; returning 500 so Flutterwave retries",
     );
@@ -648,18 +653,6 @@ export async function handleFlutterwaveWebhook(
         message: "Failed to sync subscription state; retryable",
       },
       { status: 500 },
-    );
-  }
-
-  if (env.EKWE_KV && idempotencyKey && response.ok) {
-    _ctx.waitUntil(
-      env.EKWE_KV.put(idempotencyKey, "1", {
-        expirationTtl: 86400,
-      }).catch((err: unknown) =>
-        logger.error("[flutterwave] Failed to store idempotency key", {
-          error: String(err),
-        }),
-      ),
     );
   }
 

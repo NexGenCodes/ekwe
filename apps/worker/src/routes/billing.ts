@@ -38,11 +38,7 @@ import { logger } from "../core/logger";
 import { supabaseGet, supabasePost } from "../services/supabase";
 import { guardFlutterwaveKeys } from "../services/flutterwaveKeys";
 import { AuthResult } from "../core/auth";
-import {
-  getAuthoritativePlanPrices,
-  getLocalPlanPrices,
-  resolveRequestCurrency,
-} from "./pricing";
+import { getAuthoritativePlanPrices, resolveRequestCurrency } from "./pricing";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -93,11 +89,28 @@ export async function handleCheckout(
   const keyGuard = guardFlutterwaveKeys(env);
   if (!keyGuard.allowed) return keyGuard.response;
 
-  // Price the plan from the single source of truth (the subscription_config
-  // row in Supabase; the shared LOCAL_PRICES map as fallback). The amount the
-  // SDK will charge is exactly what GET /pricing reported, and it is echoed
-  // back in `meta` so the webhook can verify the charged amount/currency.
-  const prices = await getLocalPlanPrices(env, currency);
+  // Price the plan from the AUTHORITATIVE source (the subscription_config row
+  // in Supabase) — the same source verify-transaction and the webhook grant
+  // path use. Minting from getLocalPlanPrices (which falls back to bundled
+  // LOCAL_PRICES when Supabase is unreachable) would let a checkout created
+  // during a blip mint a price that verify-transaction later rejects (verify
+  // fails closed on an unconfirmed price). Failing checkout closed here keeps
+  // the amount minted always equal to what the grant path expects. The amount
+  // the SDK will charge is exactly what GET /pricing reported when the row is
+  // reachable, and it is echoed back in `meta` for the webhook to verify.
+  const prices = await getAuthoritativePlanPrices(env, currency);
+  if (!prices) {
+    logger.warn("[billing/checkout] Cannot confirm price from Supabase", {
+      currency,
+    });
+    return Response.json(
+      {
+        error: WORKER_ERROR_CODES.SERVICE_UNAVAILABLE,
+        message: "Pricing currently unavailable, please try again later",
+      },
+      { status: 503 },
+    );
+  }
   const amount =
     body.plan === "ekwe_pro_annual" ? prices.annual : prices.monthly;
 

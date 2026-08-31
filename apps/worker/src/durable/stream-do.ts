@@ -531,11 +531,16 @@ export class StreamDurableObject extends DurableObject<Env> {
     }
     conn.resumed = false;
 
-    conn.pipelinePromise = this.runProviderPipeline(ws, state, conn).finally(
-      () => {
+    const pipeline = this.runProviderPipeline(ws, state, conn).finally(() => {
+      // Only clear the slot if this pipeline is still the one installed. A new
+      // pipeline may have been installed during an abort/relaunch (language
+      // change) before this one settled; blindly clearing would let the next
+      // frame start a third concurrent upstream.
+      if (conn.pipelinePromise === pipeline) {
         conn.pipelinePromise = undefined;
-      },
-    );
+      }
+    });
+    conn.pipelinePromise = pipeline;
   }
 
   private async runProviderPipeline(

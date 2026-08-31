@@ -13,6 +13,8 @@
     "test:coverage": "vitest run --project unit --coverage",
     "check:keys": "node tests/helpers/check-providers.mjs",
     "check:keys:all": "node tests/helpers/check-providers.mjs --groq",
+    "db:migrate": "for f in migrations/*.sql; do wrangler d1 execute ekwe-cache --remote --file \"$f\"; done",
+    "db:migrate:local": "for f in migrations/*.sql; do wrangler d1 execute ekwe-cache --local --file \"$f\"; done",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "gen:types": "wrangler types",

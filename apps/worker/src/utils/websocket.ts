@@ -66,9 +66,10 @@ function createInterceptor(
   hooks: {
     handleClientBytes?: (data: Uint8Array) => void;
     flush?: () => void;
+    signal?: AbortSignal;
   } = {},
 ): () => void {
-  const { handleClientBytes, flush } = hooks;
+  const { handleClientBytes, flush, signal } = hooks;
   let isClosed = false;
 
   function closeBoth(): void {
@@ -158,6 +159,38 @@ function createInterceptor(
   providerWs.addEventListener("close", onProviderClose);
   providerWs.addEventListener("error", onProviderError);
 
+  // Abort tears down this provider only. The client socket belongs to the DO
+  // session and may be reused by a newly-installed pipeline after an abort
+  // (language change), so we remove our listeners and close just the upstream
+  // socket rather than closeBoth(). Closing the provider fires its close
+  // handler, which drains buffered PCM.
+  function abortProviderOnly(): void {
+    if (isClosed) return;
+    isClosed = true;
+    drain();
+    clientWs.removeEventListener("message", onClientMessage);
+    clientWs.removeEventListener("close", onClientClose);
+    clientWs.removeEventListener("error", onClientError);
+    providerWs.removeEventListener("message", onProviderMessageEvent);
+    providerWs.removeEventListener("close", onProviderClose);
+    providerWs.removeEventListener("error", onProviderError);
+    try {
+      providerWs.close();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Registered at the end so `abortProviderOnly` (and the listener consts it
+  // references) are fully initialized if the signal is already aborted.
+  if (signal) {
+    if (signal.aborted) {
+      abortProviderOnly();
+    } else {
+      signal.addEventListener("abort", abortProviderOnly, { once: true });
+    }
+  }
+
   return () => {
     drain();
     clientWs.removeEventListener("message", onClientMessage);
@@ -168,6 +201,9 @@ function createInterceptor(
     providerWs.removeEventListener("close", onProviderClose);
     providerWs.removeEventListener("error", onProviderError);
 
+    if (signal) {
+      signal.removeEventListener("abort", abortProviderOnly);
+    }
     closeBoth();
   };
 }
@@ -183,6 +219,7 @@ export function createOpusDecodingInterceptor(
   onProviderMessage: (data: string) => void,
   wrapInWav: boolean = false,
   sampleRate: number = 16000,
+  signal?: AbortSignal,
 ): () => void {
   let pcmBuffer: Int16Array[] = [];
 
@@ -218,6 +255,7 @@ export function createOpusDecodingInterceptor(
       }
     },
     flush: flushPcm,
+    signal,
   });
 }
 
@@ -268,6 +306,9 @@ export function createStreamInterceptor(
   clientWs: WebSocket,
   providerWs: WebSocket,
   onProviderMessage: (data: string) => void,
+  signal?: AbortSignal,
 ): () => void {
-  return createInterceptor(clientWs, providerWs, onProviderMessage);
+  return createInterceptor(clientWs, providerWs, onProviderMessage, {
+    signal,
+  });
 }

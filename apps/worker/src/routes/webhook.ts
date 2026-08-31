@@ -21,6 +21,7 @@ import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { readLimitedBody } from "../core/guards";
 import { hashKey } from "../utils/keys";
 import { processWebhookEvent } from "../services/billing";
+import { claimIdempotency, releaseIdempotency } from "../services/idempotency";
 
 const WEBHOOK_MAX_BYTES = 256 * 1024; // 256KB
 const IDEMPOTENCY_TTL = 86400; // 24 hours
@@ -47,7 +48,7 @@ function extractIdempotencyKey(
 export async function handleWebhook(
   request: Request,
   env: Env,
-  ctx: ExecutionContext,
+  _ctx: ExecutionContext,
 ): Promise<Response> {
   // Max size guard
   const contentLength = request.headers.get("Content-Length");
@@ -115,20 +116,28 @@ export async function handleWebhook(
     );
   }
 
-  // ── Idempotency Check ──
+  // ── Idempotency Claim ──
   // Use the provider-specific event ID when available (prevents double-processing
   // of the same event even if the JSON serialization differs). Falls back to body
   // hash for unknown providers.
+  //
+  // Claiming is ATOMIC via a D1 INSERT ... ON CONFLICT DO NOTHING: of several
+  // concurrent duplicate deliveries, exactly one wins the insert and processes;
+  // the rest see `changes === 0` and are dropped. If processing fails to apply
+  // fully, the claim is released so the provider's re-delivery can reclaim and
+  // retry rather than being permanently deduped.
   const idempotencyKey = extractIdempotencyKey(event, bodyHash);
 
-  if (env.EKWE_KV) {
-    const existing = await env.EKWE_KV.get(idempotencyKey);
-    if (existing) {
-      logger.info(
-        `[webhook] Duplicate event detected (key: ${idempotencyKey.slice(0, 32)})`,
-      );
-      return Response.json({ received: true, action: "duplicate" });
-    }
+  const claimed = await claimIdempotency(
+    env.EKWE_D1,
+    idempotencyKey,
+    IDEMPOTENCY_TTL,
+  );
+  if (!claimed) {
+    logger.info(
+      `[webhook] Duplicate event detected (key: ${idempotencyKey.slice(0, 32)})`,
+    );
+    return Response.json({ received: true, action: "duplicate" });
   }
 
   // ── Process Event ──
@@ -140,9 +149,10 @@ export async function handleWebhook(
 
   // A webhook that required a Supabase status change but failed to apply it
   // must NOT be acked. Returning 200 here would silently drop a Pro grant or
-  // revocation. Return 500 and skip the idempotency store so the re-delivery
-  // is processed as a fresh attempt.
+  // revocation. Release the claim so a re-delivery is processed as a fresh
+  // attempt (returns 500 to trigger it).
   if (!fullyApplied) {
+    await releaseIdempotency(env.EKWE_D1, idempotencyKey);
     logger.warn(
       "[webhook] Event not fully applied; returning 500 so the provider retries",
     );
@@ -152,21 +162,6 @@ export async function handleWebhook(
         message: "Failed to sync subscription state; retryable",
       },
       { status: 500 },
-    );
-  }
-
-  // Store the idempotency key only after the event was fully applied. If a Pro
-  // status update failed (e.g. Supabase down), skip the store so a re-delivery
-  // of the same event is not deduped and can retry the grant.
-  if (env.EKWE_KV && response.ok) {
-    ctx.waitUntil(
-      env.EKWE_KV.put(idempotencyKey, "1", {
-        expirationTtl: IDEMPOTENCY_TTL,
-      }).catch((err: unknown) =>
-        logger.error("[webhook] Failed to store idempotency key", {
-          error: String(err),
-        }),
-      ),
     );
   }
 

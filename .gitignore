@@ -1,6 +1,7 @@
 # dependencies
 /node_modules/
 /apps/mobile/node_modules/
+/apps/web/node_modules/
 /apps/worker/node_modules/
 /packages/shared/node_modules/
 apps/mobile/modules/*/node_modules/

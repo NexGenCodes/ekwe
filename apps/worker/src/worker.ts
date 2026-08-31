@@ -257,6 +257,7 @@ async function runMaintenance(env: Env): Promise<void> {
       await d1Cleanup(env.EKWE_D1, "cache_translation");
       await d1Cleanup(env.EKWE_D1, "cache_transcription");
       await d1Cleanup(env.EKWE_D1, "cache_lang");
+      await d1Cleanup(env.EKWE_D1, "webhook_idempotency");
       logger.info("[scheduled] D1 cache cleanup completed");
     } catch (err) {
       logger.error("[scheduled] D1 cache cleanup failed", {

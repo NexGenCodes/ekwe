@@ -181,20 +181,19 @@ describe("Webhook Endpoint", () => {
 
       const event = { id: 99999, event: "charge.completed", data: {} };
 
-      // First call
+      // First call claims the idempotency key atomically in D1 and processes.
       const req1 = flutterwaveRequest(event);
-      await handleWebhook(req1, env, ctx);
+      const res1 = await handleWebhook(req1, env, ctx);
+      expect(res1.status).toBe(200);
 
-      // Simulate KV already storing the key (from the first call's waitUntil)
-      // For the second call, we mock KV.get to return the key
-      if (env.EKWE_KV) {
-        await env.EKWE_KV.put("webhook:fw:99999", "1");
-      }
-
+      // Second (duplicate) delivery: the key is already claimed, so it is
+      // dropped without re-running the event processor.
+      mockedProcessWebhookEvent.mockClear();
       const req2 = flutterwaveRequest(event);
       const res2 = await handleWebhook(req2, env, ctx);
       const body = (await res2.json()) as Record<string, unknown>;
       expect(body.action).toBe("duplicate");
+      expect(mockedProcessWebhookEvent).not.toHaveBeenCalled();
     });
   });
 
@@ -218,6 +217,34 @@ describe("Webhook Endpoint", () => {
 
       const res = await handleWebhook(req, env, ctx);
       expect(res.status).toBe(500);
+    });
+
+    it("releases the idempotency claim so a retry can reprocess a failed grant", async () => {
+      mockedVerifyWebhook.mockResolvedValue({
+        isValid: true,
+        provider: "flutterwave",
+      });
+
+      const event = { id: 55555, event: "charge.completed", data: {} };
+
+      // First delivery fails to fully apply (e.g. Supabase down) → 500 + claim released.
+      mockedProcessWebhookEvent.mockResolvedValue({
+        response: Response.json({ error: "DB_ERROR" }, { status: 500 }),
+        fullyApplied: false,
+      });
+      const res1 = await handleWebhook(flutterwaveRequest(event), env, ctx);
+      expect(res1.status).toBe(500);
+
+      // Re-delivery now reprocesses (not dropped as a duplicate) and succeeds.
+      // A fresh Request is required — a Request body is single-use.
+      mockedProcessWebhookEvent.mockClear();
+      mockedProcessWebhookEvent.mockResolvedValue({
+        response: Response.json({ ok: true }, { status: 200 }),
+        fullyApplied: true,
+      });
+      const res2 = await handleWebhook(flutterwaveRequest(event), env, ctx);
+      expect(res2.status).toBe(200);
+      expect(mockedProcessWebhookEvent).toHaveBeenCalledTimes(1);
     });
 
     it("returns 500 for unknown event types", async () => {
