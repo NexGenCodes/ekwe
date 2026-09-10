@@ -104,20 +104,5 @@ jobs:
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-
-  supabase-status:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-      - uses: supabase/setup-cli@v3
-        with:
-          version: latest
-      - name: Check migration status
-        run: |
-          supabase link --project-ref "$SUPABASE_PROJECT_ID" || true
-          supabase migration list --linked || true
-        env:
-          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          # GITLEAKS_LICENSE is only required when this repository is hosted in
+          # an organization account; it is a personal repo today, so none is set.

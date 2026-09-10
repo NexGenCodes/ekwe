@@ -89,12 +89,23 @@ export function computeSavingPercent(
   return Math.round((1 - annualAmount / (monthlyAmount * 12)) * 100);
 }
 
+export function formatAmount(amount: number, code: string): string {
+  const upperCode = code.toUpperCase();
+  const decimals = getDecimals(upperCode);
+
+  // Drop unnecessary zero decimal places only for these configured currencies
+  const dropDecimals = ["NGN", "CAD", "USD", "GHS"].includes(upperCode);
+  const minimumFractionDigits = dropDecimals && amount % 1 === 0 ? 0 : decimals;
+
+  return amount.toLocaleString("en-US", {
+    minimumFractionDigits,
+    maximumFractionDigits: decimals,
+  });
+}
+
 export function formatMoney(amount: number, code: string): string {
   const symbol = getCurrencySymbol(code);
-  return `${symbol}${amount.toLocaleString("en-US", {
-    minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return `${symbol}${formatAmount(amount, code)}`;
 }
 
 /**

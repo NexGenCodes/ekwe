@@ -89,6 +89,20 @@ final class ShareViewController: UIViewController {
                     return
                 }
 
+                // Guard: reject files that exceed the plan limit before the
+                // full decode — the extension's memory budget is ~120 MB.
+                do {
+                    let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+                    if let fileSize = attrs[.size] as? Int,
+                       fileSize > EchoEnvironment.maxAudioBytes {
+                        self.model.fail("File too large. Maximum size is \(EchoEnvironment.maxAudioBytes / 1_048_576) MB.")
+                        return
+                    }
+                } catch {
+                    // If we can't stat the file, proceed and let loadAudio
+                    // handle the failure downstream.
+                }
+
                 await self.model.loadAudio(from: url)
             }
         }

@@ -134,12 +134,16 @@ static std::vector<float> compute_waveform(const std::vector<int16_t>& pcm_data)
     for (int i = 0; i < num_bins; ++i) {
         int start_idx = i * samples_per_bin;
         int end_idx = std::min((int)pcm_data.size(), (i + 1) * samples_per_bin);
-        float bin_max = 0.0f;
-
+        int16_t bin_max_int = 0;
         for (int j = start_idx; j < end_idx; ++j) {
-            float val = std::abs((float)pcm_data[j] / 32768.0f);
-            if (val > bin_max) bin_max = val;
+            // std::abs promotes int16_t to int, so -32768 safely becomes 32768, 
+            // which exceeds int16_t max (32767). We cap it back to 32767 for uint cast
+            // or just use int for the max tracking to avoid UB.
+            int val = std::abs(static_cast<int>(pcm_data[j]));
+            if (val > bin_max_int) bin_max_int = static_cast<int16_t>(std::min(val, 32767));
         }
+
+        float bin_max = (float)bin_max_int / 32768.0f;
 
         waveform.push_back(bin_max);
         if (bin_max > max_val) max_val = bin_max;

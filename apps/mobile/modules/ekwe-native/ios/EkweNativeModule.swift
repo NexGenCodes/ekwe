@@ -44,24 +44,6 @@ public class EkweNativeModule: Module {
   public func definition() -> ModuleDefinition {
     Name("EkweNative")
 
-    OnCreate {
-      do {
-        let rt = try appContext.runtime
-        try rt.execute {
-          rt.withUnsafePointee { pointer in
-            installEkweNativeJSI(pointer)
-          }
-        }
-      } catch {
-        NSLog("[EkweNative] Failed to install JSI binding: \(error.localizedDescription)")
-      }
-    }
-
-    // ------------------------------------
-    // Events
-    // ------------------------------------
-    Events("onOpusPacket", "onVadSilence")
-
     // ------------------------------------
     // Audio Effects — iOS stubs
     // ------------------------------------
@@ -210,21 +192,14 @@ public class EkweNativeModule: Module {
                                            channels: 1,
                                            interleaved: false)!
 
-         // Initialize C++ capture controller through bridge with callbacks
+         // Initialize C++ capture controller through bridge.
+         // Pass nil for legacy Expo event blocks since we use Nitro now.
          let captureOk = EkweAudioBridge.initCapture(path,
                                                       sampleRate: Int32(sampleRate),
                                                       channels: 1,
                                                       isLive: isLive,
-                                                      opusPacketBlock: { [weak self] packet, rms in
-           guard let self = self else { return }
-           self.sendEvent("onOpusPacket", [
-             "packet": packet.base64EncodedString(),
-             "rms": rms
-           ])
-         }, vadSilenceBlock: { [weak self] in
-           guard let self = self else { return }
-           self.sendEvent("onVadSilence", [:])
-         })
+                                                      opusPacketBlock: nil,
+                                                      vadSilenceBlock: nil)
          if !captureOk {
            return ["success": false, "error": "Failed to init capture"]
          }
@@ -233,27 +208,20 @@ public class EkweNativeModule: Module {
                               bufferSize: 320,
                               format: desiredFormat) { [weak self] buffer, _ in
            guard let channelData = buffer.floatChannelData else { return }
-
            let frameLength = Int(buffer.frameLength)
-           // Copy samples into a stable Int16 buffer (16 kHz mono) before handing
-           // them to the capture queue. The C++ side owns no reference to the
-           // AVAudioPCMBuffer, so a defensive copy is cheap and race-free.
-           var pcmBuffer = [Int16](repeating: 0, count: frameLength)
-
-           for i in 0..<frameLength {
-             let sample = channelData[0][i]
-             let clamped = max(-1.0, min(1.0, Double(sample)))
-             pcmBuffer[i] = clamped >= 0
-               ? Int16(clamped * 32767.0)
-               : Int16(clamped * 32768.0)
-           }
-
+           
+           // Defensive copy of the float samples into a stable array. The C++ 
+           // side does not own the AVAudioPCMBuffer memory, and the engine 
+           // may overwrite it before the async queue processes it.
+           let floatBuffer = Array(UnsafeBufferPointer(start: channelData[0], count: frameLength))
+           
            // Encode off the render thread; feed order is preserved by the serial queue.
+           // The controller handles clamping and float-to-int conversion in one fast C++ pass.
            self?.audioQueue.async {
-             pcmBuffer.withUnsafeBufferPointer { ptr in
+             floatBuffer.withUnsafeBufferPointer { ptr in
                if let base = ptr.baseAddress {
-                 EkweAudioBridge.feedPcm(UnsafeMutablePointer(mutating: base),
-                                         numSamples: Int32(frameLength))
+                 EkweAudioBridge.feedPcmFloat(UnsafeMutablePointer(mutating: base),
+                                              numSamples: Int32(frameLength))
                }
              }
            }

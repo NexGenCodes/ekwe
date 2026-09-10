@@ -66,4 +66,9 @@ Pod::Spec.new do |s|
     'GCC_C_LANGUAGE_STANDARD' => 'gnu99',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'gnu++14',
   }
+
+  # Nitrogen autolinking — adds NitroModules dependency, generated source files,
+  # C++20, and Swift-C++ interop. Merges with existing xcconfig above.
+  load 'nitrogen/generated/ios/EkweNative+autolinking.rb'
+  add_nitrogen_files(s)
 end

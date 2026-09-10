@@ -150,54 +150,28 @@
       .join("");
   }
 
-  async function detectAbi() {
-    if (
-      navigator.userAgentData &&
-      navigator.userAgentData.getHighEntropyValues
-    ) {
-      try {
-        const hints = await navigator.userAgentData.getHighEntropyValues([
-          "architecture",
-          "bitness",
-        ]);
-        const arch = (hints.architecture || "").toLowerCase();
-        if (arch.includes("arm") || arch.includes("aarch")) {
-          // 32-bit ARM builds are only shipped as armeabi-v7a; everything
-          // modern is arm64, which defaults to the arm64-v8a APK.
-          return hints.bitness === "32" ? "armeabi-v7a" : "arm64-v8a";
-        }
-        if (arch.includes("x86")) return "armeabi-v7a";
-      } catch {}
-    }
-    return "arm64-v8a";
-  }
-
-  function renderDynamicContent(config, abi) {
-    const urls = config.links.downloadUrls || {};
-    const arm64Url = urls["arm64-v8a"] || config.links.download;
-    const primaryUrl = urls[abi] || arm64Url;
-    // The second button always offers the legacy armv7 build so 32-bit ARM
-    // devices (and the rare armv7 install) always have a working APK.
-    const legacyUrl = urls["armeabi-v7a"] || config.links.download;
+  function renderDynamicContent(config) {
+    // A single universal APK is served for every device architecture.
+    const downloadUrl = config.links.download;
 
     document.querySelectorAll("[data-download-primary]").forEach((el) => {
-      el.href = primaryUrl;
+      el.href = downloadUrl;
     });
 
     document.querySelectorAll("[data-download-fallback]").forEach((el) => {
-      el.href = legacyUrl;
+      el.href = downloadUrl;
     });
 
     document.querySelectorAll("[data-download]").forEach((el) => {
-      el.href = primaryUrl;
+      el.href = downloadUrl;
     });
 
     document.querySelectorAll("[data-download-arch]").forEach((el) => {
-      el.textContent = abi === "armeabi-v7a" ? "armv7" : "arm64";
+      el.textContent = "universal";
     });
 
     document.querySelectorAll("[data-download-abi-label]").forEach((el) => {
-      el.textContent = "armv7";
+      el.textContent = "universal";
     });
 
     document.querySelectorAll("[data-version]").forEach((el) => {
@@ -219,11 +193,9 @@
       config = null;
     }
 
-    const abi = await detectAbi();
-
     if (config) {
       renderFeatures(config.features);
-      renderDynamicContent(config, abi);
+      renderDynamicContent(config);
     }
 
     initWaveform();

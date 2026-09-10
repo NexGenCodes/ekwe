@@ -24,11 +24,21 @@ function loadEnvFile() {
   return env;
 }
 
+function readSharedVersion() {
+  const versionTsPath = join(__dirname, "../../packages/shared/version.ts");
+  if (!existsSync(versionTsPath)) return null;
+  const content = readFileSync(versionTsPath, "utf-8");
+  const match = content.match(/APP_VERSION\s*=\s*"([^"]+)"/);
+  return match ? match[1] : null;
+}
+
 function readConfig() {
   const config = JSON.parse(readFileSync(join(__dirname, "config.json"), "utf-8"));
   const fileEnv = loadEnvFile();
   const email = process.env.CONTACT_EMAIL || fileEnv.CONTACT_EMAIL || config.contact.email;
   if (email) config.contact.email = email;
+  const sharedVersion = readSharedVersion();
+  if (sharedVersion) config.app.version = sharedVersion;
   return config;
 }
 

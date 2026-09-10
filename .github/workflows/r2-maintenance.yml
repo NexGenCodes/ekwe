@@ -24,6 +24,5 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
         run: |
-          pip install --quiet awscli
           aws s3 rm "s3://${{ secrets.R2_BUCKET_NAME }}/${{ github.event.inputs.object }}" \
             --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"

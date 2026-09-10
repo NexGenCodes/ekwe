@@ -43,6 +43,9 @@ CaptureController::CaptureController(uint32_t sample_rate,
     , opus_encoder_(sample_rate, channels, 10)
     , ogg_muxer_(output_path, sample_rate, 1)
     , caf_muxer_(nullptr)
+    , rms_count_(0)
+    , staging_read_pos_(0)
+    , staging_write_pos_(0)
 {
     ALOG("constructor: sr=%d ch=%d mode=%d", sample_rate, channels, (int)mode);
     if (!opus_encoder_.is_ok()) {
@@ -107,20 +110,78 @@ CaptureController::~CaptureController() {
 bool CaptureController::feed_pcm(const int16_t* data, size_t num_samples) {
     if (!ok_ || !active_) return false;
 
-    // Accumulate samples in staging buffer
-    staging_buffer_.insert(staging_buffer_.end(), data, data + num_samples);
+    if (num_samples > staging_buffer_.size()) {
+        num_samples = staging_buffer_.size();
+    }
+    
+    size_t unread = staging_write_pos_ - staging_read_pos_;
+    if (staging_write_pos_ + num_samples > staging_buffer_.size()) {
+        if (unread > 0) {
+            std::memmove(staging_buffer_.data(), staging_buffer_.data() + staging_read_pos_, unread * sizeof(int16_t));
+        }
+        staging_read_pos_ = 0;
+        staging_write_pos_ = unread;
+    }
+    
+    // If it still doesn't fit, clip it (buffer overflow protection)
+    if (staging_write_pos_ + num_samples > staging_buffer_.size()) {
+        num_samples = staging_buffer_.size() - staging_write_pos_;
+    }
+
+    std::memcpy(staging_buffer_.data() + staging_write_pos_, data, num_samples * sizeof(int16_t));
+    staging_write_pos_ += num_samples;
 
     // Process complete frames
     size_t samples_per_frame = frame_size_ * channels_;
-    while (staging_buffer_.size() >= samples_per_frame) {
-        process_frame(staging_buffer_.data(), frame_size_);
+    while (staging_write_pos_ - staging_read_pos_ >= samples_per_frame) {
+        process_frame(staging_buffer_.data() + staging_read_pos_, frame_size_);
         // If process_frame called stop() (e.g. VAD auto-stop), the buffer was
         // already consumed — exit immediately to avoid UB on invalid iterators.
         if (!active_) break;
-        staging_buffer_.erase(
-            staging_buffer_.begin(),
-            staging_buffer_.begin() + static_cast<ptrdiff_t>(samples_per_frame)
-        );
+        staging_read_pos_ += samples_per_frame;
+    }
+
+    return true;
+}
+
+bool CaptureController::feed_pcm_float(const float* data, size_t num_samples) {
+    if (!active_) return false;
+    
+    if (num_samples > staging_buffer_.size()) {
+        num_samples = staging_buffer_.size();
+    }
+    
+    size_t unread = staging_write_pos_ - staging_read_pos_;
+    if (staging_write_pos_ + num_samples > staging_buffer_.size()) {
+        if (unread > 0) {
+            std::memmove(staging_buffer_.data(), staging_buffer_.data() + staging_read_pos_, unread * sizeof(int16_t));
+        }
+        staging_read_pos_ = 0;
+        staging_write_pos_ = unread;
+    }
+    
+    // If it still doesn't fit, clip it (buffer overflow protection)
+    if (staging_write_pos_ + num_samples > staging_buffer_.size()) {
+        num_samples = staging_buffer_.size() - staging_write_pos_;
+    }
+
+    int16_t* dest = staging_buffer_.data() + staging_write_pos_;
+    for (size_t i = 0; i < num_samples; ++i) {
+        float sample = data[i];
+        if (sample > 1.0f) sample = 1.0f;
+        else if (sample < -1.0f) sample = -1.0f;
+        dest[i] = sample >= 0.0f ? 
+            static_cast<int16_t>(sample * 32767.0f) : 
+            static_cast<int16_t>(sample * 32768.0f);
+    }
+    staging_write_pos_ += num_samples;
+
+    // Process complete frames
+    size_t samples_per_frame = frame_size_ * channels_;
+    while (staging_write_pos_ - staging_read_pos_ >= samples_per_frame) {
+        process_frame(staging_buffer_.data() + staging_read_pos_, frame_size_);
+        if (!active_) break;
+        staging_read_pos_ += samples_per_frame;
     }
 
     return true;
@@ -131,12 +192,18 @@ bool CaptureController::stop() {
     active_ = false;
 
     // Flush remaining staging buffer (pad with silence)
-    if (!staging_buffer_.empty()) {
+    size_t unread = staging_write_pos_ - staging_read_pos_;
+    if (unread > 0) {
         size_t samples_per_frame = frame_size_ * channels_;
-        size_t needed = samples_per_frame - staging_buffer_.size();
-        staging_buffer_.resize(samples_per_frame, 0);
-        process_frame(staging_buffer_.data(), frame_size_);
-        staging_buffer_.clear();
+        size_t padding = (samples_per_frame - (unread % samples_per_frame)) % samples_per_frame;
+        if (padding > 0) {
+             std::memset(staging_buffer_.data() + staging_write_pos_, 0, padding * sizeof(int16_t));
+             staging_write_pos_ += padding;
+        }
+        while (staging_write_pos_ - staging_read_pos_ >= samples_per_frame) {
+             process_frame(staging_buffer_.data() + staging_read_pos_, frame_size_);
+             staging_read_pos_ += samples_per_frame;
+        }
     }
 
     if (mode_ == CaptureMode::FILE) {
@@ -165,39 +232,32 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
         sum_sq += s * s;
     }
     current_rms_ = static_cast<float>(std::sqrt(sum_sq / total) / 32768.0);
-    rms_history_.push_back(current_rms_);
+    if (rms_count_ < 9000) {
+        rms_history_[rms_count_++] = current_rms_;
+    }
 
-    if (rms_history_.size() > 9000) {
-        std::vector<float> downsampled;
-        downsampled.reserve(4500);
-        for (size_t i = 0; i < rms_history_.size() - 1; i += 2) {
-            downsampled.push_back(std::max(rms_history_[i], rms_history_[i+1]));
+    if (rms_count_ >= 9000) {
+        size_t write_idx = 0;
+        for (size_t i = 0; i < 8999; i += 2) {
+            rms_history_[write_idx++] = std::max(rms_history_[i], rms_history_[i+1]);
         }
-        rms_history_ = std::move(downsampled);
+        rms_count_ = write_idx;
     }
 
-    // Apply DC blocker
-    std::vector<int16_t> processed_data;
-    const int16_t* process_ptr = frame_data;
+    // Apply DC blocker and Normalize in a reusable local buffer
+    static thread_local std::vector<int16_t> scratch_buffer;
+    if (scratch_buffer.size() < total) scratch_buffer.resize(total);
+    std::memcpy(scratch_buffer.data(), frame_data, total * sizeof(int16_t));
+
     if (dc_filter_enabled_) {
-        processed_data.assign(frame_data, frame_data + total);
-        apply_dc_blocker(processed_data.data(), total);
-        process_ptr = processed_data.data();
+        apply_dc_blocker(scratch_buffer.data(), total);
     }
-
-    // Normalize volume for consistent audio levels
-    if (process_ptr == processed_data.data()) {
-        normalize_volume(processed_data.data(), total);
-    } else {
-        processed_data.assign(frame_data, frame_data + total);
-        normalize_volume(processed_data.data(), total);
-        process_ptr = processed_data.data();
-    }
+    normalize_volume(scratch_buffer.data(), total);
 
     // VAD: energy-based with hysteresis (both modes)
     double frame_energy = 0.0;
     for (size_t i = 0; i < total; ++i) {
-        double s = static_cast<double>(std::abs(process_ptr[i]));
+        double s = static_cast<double>(std::abs(scratch_buffer[i]));
         frame_energy += s;
     }
     frame_energy /= total;
@@ -238,7 +298,7 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
         if (!vad_speech_active_ && vad_hangover_ <= 0) {
             // Still encode to maintain encoder lookahead continuity, but suppress emit
             std::vector<uint8_t> dummy;
-            opus_encoder_.encode_frame(process_ptr, total, dummy);
+            opus_encoder_.encode_frame(scratch_buffer.data(), total, dummy);
             total_samples_encoded_ += frame_samples;
             granule_position_ = granule_base_48k_ + static_cast<int64_t>(total_samples_encoded_) * 48000 / sample_rate_;
             return;
@@ -246,7 +306,7 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
     }
 
     std::vector<uint8_t> opus_packet;
-    if (!opus_encoder_.encode_frame(process_ptr, total, opus_packet)) {
+    if (!opus_encoder_.encode_frame(scratch_buffer.data(), total, opus_packet)) {
         emit_event(CaptureEvent::ERROR);
         return;
     }
@@ -308,9 +368,9 @@ void CaptureController::normalize_volume(int16_t* data, size_t num_samples) {
     static constexpr double kSilenceThreshold = 500.0;
 
     // Find peak amplitude
-    int16_t peak = 0;
+    int peak = 0;
     for (size_t i = 0; i < num_samples; ++i) {
-        int16_t abs_val = std::abs(data[i]);
+        int abs_val = std::abs(static_cast<int>(data[i]));
         if (abs_val > peak) peak = abs_val;
     }
 
@@ -335,13 +395,20 @@ void CaptureController::normalize_volume(int16_t* data, size_t num_samples) {
 }
 
 std::vector<float> CaptureController::get_waveform(size_t num_bins) const {
-    if (rms_history_.empty() || num_bins == 0) return {};
-    std::vector<float> out(num_bins);
+    std::vector<float> waveform;
+    const size_t total_rms = rms_count_;
+    if (total_rms == 0 || num_bins == 0) return waveform;
+
+    if (num_bins > total_rms) {
+        num_bins = total_rms;
+    }
+    
+    waveform.resize(num_bins);
     float mx = 0.001f;
     for (size_t i = 0; i < num_bins; i++) {
-        size_t lo = (i * rms_history_.size()) / num_bins;
-        size_t hi = std::max(lo + 1, ((i + 1) * rms_history_.size()) / num_bins);
-        if (hi > rms_history_.size()) hi = rms_history_.size();
+        size_t lo = (i * total_rms) / num_bins;
+        size_t hi = std::max(lo + 1, ((i + 1) * total_rms) / num_bins);
+        if (hi > total_rms) hi = total_rms;
         float sum = 0, pk = 0;
         for (size_t j = lo; j < hi; j++) {
             float v = rms_history_[j];
@@ -350,12 +417,12 @@ std::vector<float> CaptureController::get_waveform(size_t num_bins) const {
         }
         float blended = (pk + sum / (float)(hi - lo)) / 2.0f;
         if (blended > mx) mx = blended;
-        out[i] = blended;
+        waveform[i] = blended;
     }
-    for (auto& v : out) {
+    for (auto& v : waveform) {
         v = std::min(1.0f, std::max(0.02f, v / mx));
     }
-    return out;
+    return waveform;
 }
 
 } // namespace ekwe

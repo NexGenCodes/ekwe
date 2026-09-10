@@ -28,17 +28,38 @@ export function hexEncode(buffer: ArrayBuffer): string {
     .join("");
 }
 
-/** Cache for key → hash lookups. Keys are env vars that never change. */
+/** Cache for key → hash lookups. Bounded LRU cache (max 1000). */
 const keyHashCache = new Map<string, string>();
+const MAX_CACHE_SIZE = 1000;
+const MAX_CACHE_KEY_LENGTH = 512;
 
 export async function hashKey(key: string): Promise<string> {
+  if (key.length > MAX_CACHE_KEY_LENGTH) {
+    const buf = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(key),
+    );
+    return hexEncode(buf);
+  }
   const cached = keyHashCache.get(key);
-  if (cached) return cached;
+  if (cached) {
+    keyHashCache.delete(key);
+    keyHashCache.set(key, cached);
+    return cached;
+  }
   const buf = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(key),
   );
   const hash = hexEncode(buf);
+
+  if (keyHashCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = keyHashCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      keyHashCache.delete(oldestKey);
+    }
+  }
+
   keyHashCache.set(key, hash);
   return hash;
 }

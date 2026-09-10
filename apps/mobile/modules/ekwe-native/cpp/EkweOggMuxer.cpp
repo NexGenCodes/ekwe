@@ -164,12 +164,11 @@ OggPage OggMuxer::make_page(const uint8_t* data, size_t size, int64_t granule_po
     page.serial_number = serial_number_;
     page.page_number = page_number_++;
 
-    // Compute the segment count in size_t BEFORE narrowing: for a page with
-    // exactly 255*256 bytes of data, (size + 254) / 255 is 256 which wraps to
-    // 0 when cast to uint8_t — silently producing a 0-segment page with a
-    // bogus table. Clamp data to the page capacity first so the count is
-    // always a valid 1..255 value.
-    size_t segment_count = (size + 254) / 255;
+    size_t segment_count = 0;
+    if (size > 0 || data != nullptr) {
+        segment_count = size / 255 + 1;
+    }
+    
     if (segment_count > MAX_SEGMENTS) {
         segment_count = MAX_SEGMENTS;
         size = MAX_PAGE_DATA;
@@ -240,7 +239,7 @@ OggPage OggMuxer::make_page(const uint8_t* data, size_t size, int64_t granule_po
     return page;
 }
 
-std::vector<uint8_t> OggMuxer::calculate_checksum(const OggPage& page) {
+std::array<uint8_t, 4> OggMuxer::calculate_checksum(const OggPage& page) {
     // CRC32 for Ogg pages
     static const uint32_t crc_table[256] = {
         0x00000000, 0x04c11db7, 0x09823b6e, 0x0d4326d9,
@@ -314,7 +313,7 @@ std::vector<uint8_t> OggMuxer::calculate_checksum(const OggPage& page) {
         crc = (crc << 8) ^ crc_table[((crc >> 24) ^ page.data[i]) & 0xFF];
     }
 
-    std::vector<uint8_t> result(4);
+    std::array<uint8_t, 4> result;
     result[0] = static_cast<uint8_t>(crc & 0xFF);
     result[1] = static_cast<uint8_t>((crc >> 8) & 0xFF);
     result[2] = static_cast<uint8_t>((crc >> 16) & 0xFF);

@@ -18,10 +18,7 @@ interface UpdateManifest {
   latest_version: string;
   latest_version_code: number;
   min_supported_version_code: number;
-  download_urls?: Record<string, string>;
-  checksums?: Record<string, string>;
-  file_sizes?: Record<string, number>;
-  // Backward compat — armv7 URL works on both archs
+  // Single universal APK — the release pipeline only ever produces one URL.
   download_url: string;
   checksum_sha256?: string;
   file_size?: number;
@@ -39,11 +36,6 @@ function isUpdateManifest(value: unknown): value is UpdateManifest {
     !m.download_url.startsWith("https://")
   ) {
     return false;
-  }
-  if (m.download_urls && typeof m.download_urls === "object") {
-    for (const [, url] of Object.entries(m.download_urls)) {
-      if (typeof url !== "string" || !url.startsWith("https://")) return false;
-    }
   }
   return true;
 }

@@ -45,20 +45,10 @@ ekwe/
 
 ## Download
 
-Two installable builds are published (see which architecture your 64-bit
-Android device is — most modern phones use **arm64**):
+A single universal APK is published — one build for every Android device
+(64-bit arm64 and 32-bit ARM):
 
-### Recommended (arm64-v8a)
-
-For modern 64-bit ARM devices:
-
-**[Download arm64-v8a APK](https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-arm64-v8a-release.apk)**
-
-### Legacy Android (armeabi-v7a)
-
-For older 32-bit ARM devices:
-
-**[Download Legacy Android APK](https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-armeabi-v7a-release.apk)**
+**[Download Ekwe APK](https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk)**
 
 ### Web
 

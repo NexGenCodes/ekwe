@@ -2,9 +2,18 @@ import { File as ExpoFile, FileMode } from "expo-file-system";
 
 import { EkweError } from "@/constants/errors";
 import { Result, ok, err } from "@/types/Result";
-import { MAX_AUDIO_BYTES as MAX_FILE_SIZE } from "@ekwe/shared/plans";
+import { auth$ } from "@/store";
+import { FREE_LIMITS, PREMIUM_LIMITS } from "@ekwe/shared/plans";
 
-const VOICE_NOTE_EXTENSIONS = [".ogg", ".opus", ".m4a", ".aac", ".amr", ".3gp"];
+const VOICE_NOTE_EXTENSIONS = [
+  ".ogg",
+  ".opus",
+  ".m4a",
+  ".aac",
+  ".amr",
+  ".3gp",
+  ".wav",
+];
 
 const VOICE_NOTE_MIME_TYPES = [
   "audio/ogg",
@@ -19,6 +28,8 @@ const VOICE_NOTE_MIME_TYPES = [
   "audio/3gpp",
   "audio/3gp",
   "audio/mp4",
+  "audio/wav",
+  "audio/x-wav",
 ];
 
 /**
@@ -43,7 +54,7 @@ const validateVoiceNoteFormat = (uri: string, mimeType?: string): boolean => {
  */
 const validateFileSize = async (
   uri: string,
-  maxSize = MAX_FILE_SIZE,
+  maxSize: number,
 ): Promise<Result<boolean, EkweError>> => {
   try {
     const file = new ExpoFile(uri);
@@ -115,7 +126,11 @@ export const validateSharedAudio = async (
     return err(EkweError.BAD_FORMAT);
   }
 
-  const sizeResult = await validateFileSize(uri);
+  const maxSize = auth$.isPro.peek()
+    ? PREMIUM_LIMITS.maxAudioBytes
+    : FREE_LIMITS.maxAudioBytes;
+
+  const sizeResult = await validateFileSize(uri, maxSize);
   if (!sizeResult.ok) {
     return err(sizeResult.error);
   }

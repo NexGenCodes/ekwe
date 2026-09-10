@@ -10,6 +10,7 @@
     <meta property="og:title" content="{{APP_NAME}} — {{APP_TAGLINE}}" />
     <meta property="og:description" content="{{APP_DESCRIPTION}}" />
     <meta property="og:image" content="/og-image.png" />
+    <meta property="og:url" content="https://ekwe.pages.dev" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="{{APP_NAME}} — {{APP_TAGLINE}}" />
     <meta name="twitter:description" content="{{APP_DESCRIPTION}}" />
@@ -157,7 +158,7 @@
             class="btn btn-secondary"
             data-download-fallback
           >
-            Legacy Android (<span data-download-abi-label>armv7</span>)
+            Get the APK (<span data-download-abi-label>universal</span>)
           </a>
         </div>
         <p class="hero-note" data-reveal>
@@ -321,7 +322,7 @@
             <h3>Record or import</h3>
             <p>
               Hold to record, or share any audio straight from WhatsApp,
-              Instagram, or your files.
+              Telegram, Signal, WeChat, or your files.
             </p>
           </div>
           <div class="step-line" aria-hidden="true"></div>
@@ -368,6 +369,50 @@
       </div>
     </section>
 
+    <!-- Works With -->
+    <section class="section works-with-section">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-label" data-reveal>
+            <span class="label-line"></span>
+            Compatibility
+          </div>
+          <h2 class="section-title" data-reveal>
+            Works with <span class="gradient">every messaging app</span>
+          </h2>
+          <p class="section-desc" data-reveal>
+            Share voice notes directly from any app on your phone.
+          </p>
+        </div>
+        <div class="works-with-grid" data-reveal>
+          <div class="works-with-item">
+            <span class="works-with-icon">💬</span>
+            <span>WhatsApp</span>
+          </div>
+          <div class="works-with-item">
+            <span class="works-with-icon">✈️</span>
+            <span>Telegram</span>
+          </div>
+          <div class="works-with-item">
+            <span class="works-with-icon">🔒</span>
+            <span>Signal</span>
+          </div>
+          <div class="works-with-item">
+            <span class="works-with-icon">💬</span>
+            <span>WeChat</span>
+          </div>
+          <div class="works-with-item">
+            <span class="works-with-icon">📸</span>
+            <span>Instagram</span>
+          </div>
+          <div class="works-with-item">
+            <span class="works-with-icon">📁</span>
+            <span>Any file</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Download CTA -->
     <section id="download" class="cta-section">
       <div class="container">
@@ -377,6 +422,10 @@
             Download {{APP_NAME}} free and start translating in seconds — 25
             free translations every day, no card required.
           </p>
+          <div class="platform-badge">
+            <span class="platform-badge-icon">📱</span>
+            Available on Android &amp; iOS
+          </div>
           <div class="cta-actions">
             <a
               href="{{DOWNLOAD_URL}}"
@@ -390,7 +439,7 @@
               class="btn btn-secondary"
               data-download-fallback
             >
-              Legacy Android (<span data-download-abi-label>armv7</span>)
+              Get the APK (<span data-download-abi-label>universal</span>)
             </a>
           </div>
           <div class="version-badge" data-version></div>
@@ -405,15 +454,15 @@
           >&copy; {{YEAR}} {{COMPANY_NAME}}. All rights reserved.</span
         >
         <ul class="footer-links">
-          <li><a href="/pages/privacy.html">Privacy</a></li>
-          <li><a href="/pages/terms.html">Terms</a></li>
-          <li><a href="/pages/changelog.html">Changelog</a></li>
+          <li><a href="/privacy.html">Privacy</a></li>
+          <li><a href="/terms.html">Terms</a></li>
+          <li><a href="/changelog.html">Changelog</a></li>
           <li><a href="mailto:{{CONTACT_EMAIL}}" data-email>Support</a></li>
         </ul>
       </div>
     </footer>
 
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide@0.460.0"></script>
     <script src="/js/main.js"></script>
   </body>
 </html>

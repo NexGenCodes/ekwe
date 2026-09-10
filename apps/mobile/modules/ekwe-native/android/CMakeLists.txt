@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.10.2)
 project(EkweNative)
 
 # Set common flags
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
@@ -75,26 +75,31 @@ target_include_directories(ekwe_capture_engine PUBLIC
 )
 target_link_libraries(ekwe_capture_engine PRIVATE ekwe_opus_util)
 
-# Consume JSI and fbjni from ReactAndroid prefab
-find_package(fbjni REQUIRED CONFIG)
-find_package(ReactAndroid REQUIRED CONFIG)
-
-# JNI Interface
+# JNI Interface — define the target BEFORE including the Nitrogen autolinking
+# cmake, which calls target_sources() / target_link_libraries() on it.
 add_library(ekwe_native_jni SHARED
     EkweNativeModuleJNI.cpp
+    cpp-adapter.cpp
+    ../cpp/HybridEkweAudio.cpp
 )
 
 target_include_directories(ekwe_native_jni PRIVATE
     ../../../node_modules/react-native/ReactCommon
     ../../../node_modules/react-native/ReactCommon/jsi
+    ../cpp
+    ../nitrogen/generated/android
 )
 
-target_compile_features(ekwe_native_jni PUBLIC cxx_std_17)
+target_compile_features(ekwe_native_jni PUBLIC cxx_std_20)
 
-target_link_libraries(ekwe_native_jni PRIVATE 
+# Nitrogen autolinking — adds generated sources, include dirs, find_package()
+# for fbjni / ReactAndroid / react-native-nitro-modules, and links them all.
+include(${CMAKE_CURRENT_SOURCE_DIR}/../nitrogen/generated/android/ekwe_native_jni+autolinking.cmake)
+
+# Link our own static libraries (autolinking already links fbjni, ReactAndroid, NitroModules)
+target_link_libraries(ekwe_native_jni
     ekwe_audio_decoder
     ekwe_capture_engine
     log
-    ReactAndroid::jsi
-    fbjni::fbjni
 )
+

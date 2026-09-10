@@ -12,7 +12,7 @@ import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { duration } from "@/constants";
 import { useActivePricing } from "@/hooks/billing/useActivePricing";
-import { getDecimals } from "@ekwe/shared/money";
+import { formatAmount } from "@ekwe/shared/money";
 import type { ThemeTokens } from "@/hooks/ui/useTheme";
 
 export interface ProPlanCardProps {
@@ -24,19 +24,6 @@ export interface ProPlanCardProps {
   proPlan: (typeof BILLING_PLANS)["pro"];
   handleUpgrade: () => Promise<void>;
   handleManage: () => Promise<void>;
-}
-
-/**
- * Formats a currency amount with the per-currency decimal places (e.g. XOF
- * has 0) and thousands grouping. Keeps precision consistent with the money
- * helpers in @ekwe/shared/{money,currencies}.
- */
-function formatAmount(amount: number, code: string): string {
-  const decimals = getDecimals(code);
-  return amount.toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
 }
 
 export function ProPlanCard({

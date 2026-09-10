@@ -27,6 +27,7 @@ import {
 import { auth$, authActions } from "@/store";
 import { AppAlert } from "@/utils/alert";
 import { AnalyticsEvents, track } from "@/utils/analytics";
+import logger from "@/utils/logger";
 
 export interface UseBillingReturn {
   isPro: boolean;
@@ -213,25 +214,33 @@ export function useBilling(): UseBillingReturn {
   // ── Restore Handler ──────────────────────────────────────────
 
   const handleRestore = async (): Promise<void> => {
-    // Flutterwave doesn't have a restore concept — check session directly
-    const { data: sessionData, error } = await supabase.auth.refreshSession();
-    if (error) throw error;
+    try {
+      // Flutterwave doesn't have a restore concept — check session directly
+      const { data: sessionData, error } = await supabase.auth.refreshSession();
+      if (error) throw error;
 
-    const upgraded = sessionData.session?.user?.app_metadata?.is_pro === true;
-    authActions.setIsPro(upgraded);
-    if (upgraded) {
-      authActions.setEntitlementSynced(true, "flutterwave");
-    }
+      const upgraded = sessionData.session?.user?.app_metadata?.is_pro === true;
+      authActions.setIsPro(upgraded);
+      if (upgraded) {
+        authActions.setEntitlementSynced(true, "flutterwave");
+      }
 
-    if (upgraded) {
-      AppAlert.success(
-        "Subscription Active",
-        "Your Pro subscription is active.",
-      );
-    } else {
-      AppAlert.info(
-        "No Active Subscription",
-        "We could not find an active Pro subscription on this account. If you believe this is an error, please contact support.",
+      if (upgraded) {
+        AppAlert.success(
+          "Subscription Active",
+          "Your Pro subscription is active.",
+        );
+      } else {
+        AppAlert.info(
+          "No Active Subscription",
+          "We could not find an active Pro subscription on this account. If you believe this is an error, please contact support.",
+        );
+      }
+    } catch (err) {
+      logger.error("[billing] Restore check failed", err);
+      AppAlert.error(
+        "Restore Failed",
+        "Could not check your subscription status. Please check your connection and try again.",
       );
     }
   };

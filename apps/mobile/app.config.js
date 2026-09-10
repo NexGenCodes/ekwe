@@ -1,4 +1,21 @@
+const fs = require('node:fs');
+const path = require('node:path');
+
+function readSharedVersion() {
+  const versionTsPath = path.resolve(__dirname, '../../packages/shared/version.ts');
+  const content = fs.readFileSync(versionTsPath, 'utf8');
+  const version = content.match(/APP_VERSION\s*=\s*"([^"]+)"/)?.[1];
+  const versionCode = content.match(/APP_VERSION_CODE\s*=\s*(\d+)/)?.[1];
+  if (!version || !versionCode) {
+    throw new Error(`Could not parse APP_VERSION/APP_VERSION_CODE from ${versionTsPath}`);
+  }
+  return { version, versionCode: Number(versionCode) };
+}
+
 module.exports = ({ config }) => {
+  // Version lives in packages/shared/version.ts (single source of truth).
+  const { version, versionCode } = readSharedVersion();
+
   // Dev builds: build only for the connected device's CPU architecture.
   // Pass the detected arch via EXPO_PUBLIC_DEV_ARCH (set by the android script).
   // Production releases: build all active ABIs to support all Android devices.
@@ -14,11 +31,16 @@ module.exports = ({ config }) => {
   const plugins = (config.plugins || [])
     .map((plugin) => {
       if (Array.isArray(plugin) && plugin[0] === 'expo-build-properties') {
+        // Preserve every option that app.json declares for this plugin
+        // (minify, shrinkResources, extraProguardRules, buildArchs, png
+        // crunch, ...) and only override the fields this file owns.
+        const previous = plugin[1] || {};
         return [
           'expo-build-properties',
           {
-            ...plugin[1],
+            ...previous,
             android: {
+              ...(previous.android || {}),
               compileSdkVersion: 36,
               targetSdkVersion: 36,
               minSdkVersion: 24,
@@ -56,6 +78,15 @@ module.exports = ({ config }) => {
 
   return {
     ...config,
+    version,
+    android: {
+      ...config.android,
+      versionCode,
+    },
+    ios: {
+      ...config.ios,
+      buildNumber: String(versionCode),
+    },
     plugins,
   };
 };

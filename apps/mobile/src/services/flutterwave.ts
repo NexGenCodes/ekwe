@@ -60,9 +60,14 @@ export type VerifyTransactionResponse = z.infer<
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
-/** Worker base URL from the canonical source (EXPO_PUBLIC_WORKER_URL). */
 function getWorkerBaseUrl(): string {
-  return getWorkerUrl();
+  const url = getWorkerUrl();
+  if (!url) {
+    throw new Error(
+      "Billing service is temporarily unavailable. Please check your connection and try again.",
+    );
+  }
+  return url;
 }
 
 /**

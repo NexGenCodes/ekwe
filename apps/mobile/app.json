@@ -74,13 +74,11 @@
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
             "minSdkVersion": 24,
-            "buildArchs": [
-              "arm64-v8a",
-              "armeabi-v7a"
-            ],
+            "buildArchs": ["arm64-v8a", "armeabi-v7a"],
             "ndkVersion": "27.1.12297006",
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
+            "enableBundleCompression": true,
             "extraProguardRules": "-keep class expo.modules.ekwenative.EkweNativeModule { @JvmStatic <methods>; <methods>; }\n-keep class expo.modules.ReactActivityDelegateWrapper { *; }\n-keep class expo.modules.ekwenative.ShareActivity { *; }\n-keep class expo.modules.ekwenative.ApkDownloadService { *; }\n-keep class expo.modules.ekwenative.EkweFirebaseMessagingService { *; }\n-keep class expo.modules.ekwenative.UpdateNotifier { *; }\n-keep class com.google.firebase.messaging.FirebaseMessagingService { *; }\n-keepclassmembers class **.R$drawable { static int notification_icon; }"
           }
         }
@@ -103,12 +101,9 @@
         }
       ]
     ],
-    "assetBundlePatterns": [
-      "assets/fonts/*"
-    ],
+    "assetBundlePatterns": ["assets/fonts/*"],
     "updates": {
       "url": "https://u.expo.dev/fb3d49de-0c12-4b1a-bf94-863befec071a",
-      "channel": "production",
       "requestHeaders": {
         "expo-channel-name": "production"
       },

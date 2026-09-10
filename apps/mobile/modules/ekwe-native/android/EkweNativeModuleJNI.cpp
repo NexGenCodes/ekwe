@@ -3,24 +3,28 @@
 #include <vector>
 #include <cstring>
 #include <mutex>
+#include <atomic>
 #include <android/log.h>
 #include <jsi/jsi.h>
 #include "../cpp/EkweAudioDecoder.h"
 #include "../cpp/EkweCaptureController.h"
+#include "../cpp/HybridEkweAudio.hpp"
 
 #define ALOG(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, "EkweJNI", fmt, ##__VA_ARGS__)
 
 static std::mutex g_capture_mutex;
 static ekwe::CaptureController* g_capture = nullptr;
-static JavaVM* g_jvm = nullptr;
-
-static jmethodID g_emitOpusPacket = nullptr;
-static jmethodID g_emitVadSilence = nullptr;
-
-static jclass g_moduleClass = nullptr;
+static std::atomic<float> g_current_rms{0.0f};
 
 // Last captured waveform (60 bins), stored before deleting g_capture
 static std::vector<float> g_last_waveform;
+
+// Accessor for HybridEkweAudio — reads the platform's g_current_rms atomic
+namespace ekwe {
+    float get_current_rms() {
+        return g_current_rms.load(std::memory_order_relaxed);
+    }
+}
 
 static jobjectArray buildResultArray(JNIEnv* env, const ekwe::DecodeResult& result) {
     jclass objClass = env->FindClass("java/lang/Object");
@@ -48,49 +52,32 @@ static jobjectArray buildResultArray(JNIEnv* env, const ekwe::DecodeResult& resu
     return retArray;
 }
 
-// ─── Capture callback: forwards C++ events → Kotlin ──────────────────────
+static jobjectArray buildErrorResult(JNIEnv* env, const char* message) {
+    ekwe::DecodeResult err;
+    err.success = false;
+    err.error_message = message ? message : "";
+    err.duration_ms = 0;
+    return buildResultArray(env, err);
+}
+
+// ─── Capture callback: forwards C++ events → JS via Nitro ──────────────────────
 static void captureCallback(const ekwe::CaptureEventData& event) {
-    if (!g_jvm) return;
-
-    JNIEnv* env = nullptr;
-    bool needDetach = false;
-
-    jint getEnvRes = g_jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
-    if (getEnvRes == JNI_EDETACHED) {
-        if (g_jvm->AttachCurrentThread(&env, nullptr) != JNI_OK) return;
-        needDetach = true;
-    } else if (getEnvRes != JNI_OK) {
-        return;
-    }
-
     switch (event.event) {
         case ekwe::CaptureEvent::AUDIO_DATA: {
-            if (g_emitOpusPacket && !event.data.empty()) {
-                jbyteArray byteArray = env->NewByteArray(event.data.size());
-                if (byteArray) {
-                    env->SetByteArrayRegion(byteArray, 0, event.data.size(),
-                        reinterpret_cast<const jbyte*>(event.data.data()));
-                    env->CallStaticVoidMethod(
-                        g_moduleClass, g_emitOpusPacket, byteArray, (jfloat)event.rms);
-                    if (env->ExceptionCheck()) env->ExceptionClear();
-                    env->DeleteLocalRef(byteArray);
-                }
+            // Nitro path — zero-copy ArrayBuffer dispatch
+            if (!event.data.empty()) {
+                margelo::nitro::ekwe::HybridEkweAudio::dispatchOpusPacket(
+                    event.data.data(), event.data.size(), event.rms);
             }
             break;
         }
         case ekwe::CaptureEvent::VAD_SILENCE: {
-            if (g_emitVadSilence) {
-                env->CallStaticVoidMethod(g_moduleClass, g_emitVadSilence);
-                if (env->ExceptionCheck()) env->ExceptionClear();
-            }
+            // Nitro path
+            margelo::nitro::ekwe::HybridEkweAudio::dispatchVadSilence();
             break;
         }
         default:
             break;
-    }
-
-    if (needDetach) {
-        g_jvm->DetachCurrentThread();
     }
 }
 
@@ -100,6 +87,11 @@ Java_expo_modules_ekwenative_EkweNativeModule_transcodeToOpusWithWaveformJNI(
 
     const char *input_c_str = env->GetStringUTFChars(inputPath, nullptr);
     const char *output_c_str = env->GetStringUTFChars(outputPath, nullptr);
+    if (!input_c_str || !output_c_str) {
+        if (input_c_str) env->ReleaseStringUTFChars(inputPath, input_c_str);
+        if (output_c_str) env->ReleaseStringUTFChars(outputPath, output_c_str);
+        return buildErrorResult(env, "String allocation failed");
+    }
 
     std::string input(input_c_str);
     std::string output(output_c_str);
@@ -118,11 +110,13 @@ Java_expo_modules_ekwenative_EkweNativeModule_encodePcmToOpusJNI(
     jshortArray pcmData, jint sampleRate, jint channels, jstring outputPath) {
 
     const char *output_c_str = env->GetStringUTFChars(outputPath, nullptr);
+    if (!output_c_str) return buildErrorResult(env, "String allocation failed");
     std::string output(output_c_str);
     env->ReleaseStringUTFChars(outputPath, output_c_str);
 
     jsize num_samples = env->GetArrayLength(pcmData);
     jshort *pcm_ptr = env->GetShortArrayElements(pcmData, nullptr);
+    if (!pcm_ptr) return buildErrorResult(env, "Array allocation failed");
 
     ekwe::DecodeResult result = ekwe::encode_pcm_to_opus(
         reinterpret_cast<const int16_t*>(pcm_ptr),
@@ -142,11 +136,13 @@ Java_expo_modules_ekwenative_EkweNativeModule_transcodeFromMemoryJNI(
     JNIEnv *env, jobject thiz, jbyteArray data, jstring outputPath, jlong maxAudioBytes) {
 
     const char *output_c_str = env->GetStringUTFChars(outputPath, nullptr);
+    if (!output_c_str) return buildErrorResult(env, "String allocation failed");
     std::string output(output_c_str);
     env->ReleaseStringUTFChars(outputPath, output_c_str);
 
     jsize data_size = env->GetArrayLength(data);
     jbyte* data_ptr = env->GetByteArrayElements(data, nullptr);
+    if (!data_ptr) return buildErrorResult(env, "Array allocation failed");
 
     ekwe::DecodeResult result = ekwe::transcode_audio_to_opus_from_memory(
         reinterpret_cast<const uint8_t*>(data_ptr),
@@ -167,37 +163,8 @@ Java_expo_modules_ekwenative_EkweNativeModule_nativeInitCapture(
     try {
         ALOG("nativeInitCapture: sr=%d ch=%d live=%d", sampleRate, channels, isLive);
 
-        if (!g_jvm) {
-            env->GetJavaVM(&g_jvm);
-        }
-
-        if (!g_moduleClass) {
-            jclass local = env->FindClass("expo/modules/ekwenative/EkweNativeModule");
-            if (!local) return JNI_FALSE;
-            g_moduleClass = static_cast<jclass>(env->NewGlobalRef(local));
-            env->DeleteLocalRef(local);
-        }
-
-        if (env->ExceptionCheck()) env->ExceptionClear();
-        if (!g_emitOpusPacket) {
-            g_emitOpusPacket = env->GetStaticMethodID(
-                g_moduleClass, "emitOpusPacketFromNative", "([BF)V");
-            if (env->ExceptionCheck()) {
-                env->ExceptionClear();
-                g_emitOpusPacket = nullptr;
-            }
-        }
-        if (env->ExceptionCheck()) env->ExceptionClear();
-        if (!g_emitVadSilence) {
-            g_emitVadSilence = env->GetStaticMethodID(
-                g_moduleClass, "emitVadSilenceFromNative", "()V");
-            if (env->ExceptionCheck()) {
-                env->ExceptionClear();
-                g_emitVadSilence = nullptr;
-            }
-        }
-        if (env->ExceptionCheck()) env->ExceptionClear();
         const char *output_c_str = env->GetStringUTFChars(outputPath, nullptr);
+        if (!output_c_str) return JNI_FALSE;
         std::string output(output_c_str);
         env->ReleaseStringUTFChars(outputPath, output_c_str);
 
@@ -223,11 +190,12 @@ Java_expo_modules_ekwenative_EkweNativeModule_nativeInitCapture(
         }
 
         cap->set_callback(captureCallback);
-
         {
             std::lock_guard<std::mutex> lock(g_capture_mutex);
             if (g_capture) delete g_capture;
             g_capture = cap;
+            g_last_waveform.clear();
+            g_current_rms.store(0.0f, std::memory_order_relaxed);
         }
 
         ALOG("nativeInitCapture: SUCCESS");
@@ -257,6 +225,7 @@ Java_expo_modules_ekwenative_EkweNativeModule_nativeFeedPcm(
                     reinterpret_cast<const int16_t*>(pcm_ptr),
                     static_cast<size_t>(numSamples)
                 );
+                g_current_rms.store(g_capture->rms(), std::memory_order_relaxed);
             }
         }
 
@@ -281,7 +250,6 @@ Java_expo_modules_ekwenative_EkweNativeModule_nativeStopCapture(
         std::lock_guard<std::mutex> lock(g_capture_mutex);
         if (!g_capture) {
             ALOG("nativeStopCapture: no capture");
-            g_last_waveform.clear();
             return JNI_FALSE;
         }
 
@@ -289,6 +257,7 @@ Java_expo_modules_ekwenative_EkweNativeModule_nativeStopCapture(
         g_last_waveform = g_capture->get_waveform(60);
         delete g_capture;
         g_capture = nullptr;
+        g_current_rms.store(0.0f, std::memory_order_relaxed);
 
         ALOG("nativeStopCapture: SUCCESS (waveform=%zu)", g_last_waveform.size());
         return JNI_TRUE;
@@ -306,9 +275,7 @@ Java_expo_modules_ekwenative_EkweNativeModule_nativeGetAmplitude(
     JNIEnv *env, jobject thiz) {
 
     try {
-        std::lock_guard<std::mutex> lock(g_capture_mutex);
-        if (!g_capture) return 0.0f;
-        return g_capture->rms();
+        return g_current_rms.load(std::memory_order_relaxed);
     } catch (const std::exception& e) {
         ALOG("nativeGetAmplitude EXCEPTION: %s", e.what());
         return 0.0f;
@@ -318,42 +285,11 @@ Java_expo_modules_ekwenative_EkweNativeModule_nativeGetAmplitude(
     }
 }
 
-// ─── JSI: install ekweNativeGetAmplitude on JS runtime ──────────────────────
+// ─── Trigger Nitro event from Kotlin (e.g. audio focus loss) ────────────
 extern "C" JNIEXPORT void JNICALL
-Java_expo_modules_ekwenative_EkweNativeModule_nativeInstallJsi(
-    JNIEnv* env, jobject thiz, jlong jsContextPointer) {
-
-    try {
-        auto* runtime = reinterpret_cast<facebook::jsi::Runtime*>(
-            static_cast<intptr_t>(jsContextPointer));
-        if (!runtime) {
-            ALOG("nativeInstallJsi: null runtime pointer");
-            return;
-        }
-
-        auto hostFn = facebook::jsi::Function::createFromHostFunction(
-            *runtime,
-            facebook::jsi::PropNameID::forAscii(*runtime, "ekweNativeGetAmplitude"),
-            0,
-            [](facebook::jsi::Runtime& rt,
-               const facebook::jsi::Value& thisVal,
-               const facebook::jsi::Value* args,
-               size_t count) -> facebook::jsi::Value {
-                std::lock_guard<std::mutex> lock(g_capture_mutex);
-                if (!g_capture) return facebook::jsi::Value(0.0);
-                return facebook::jsi::Value(
-                    static_cast<double>(g_capture->rms()));
-            });
-
-        runtime->global().setProperty(
-            *runtime, "ekweNativeGetAmplitude", std::move(hostFn));
-
-        ALOG("nativeInstallJsi: installed ekweNativeGetAmplitude");
-    } catch (const std::exception& e) {
-        ALOG("nativeInstallJsi EXCEPTION: %s", e.what());
-    } catch (...) {
-        ALOG("nativeInstallJsi UNKNOWN EXCEPTION");
-    }
+Java_expo_modules_ekwenative_EkweNativeModule_nativeDispatchVadSilence(
+    JNIEnv *env, jobject thiz) {
+    margelo::nitro::ekwe::HybridEkweAudio::dispatchVadSilence();
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL

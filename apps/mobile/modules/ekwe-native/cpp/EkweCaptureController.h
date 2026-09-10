@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <array>
 #include <functional>
 #include <atomic>
 #include <memory>
@@ -54,6 +55,7 @@ public:
     void set_callback(CaptureCallback cb) { callback_ = std::move(cb); }
 
     bool feed_pcm(const int16_t* data, size_t num_samples);
+    bool feed_pcm_float(const float* data, size_t num_samples);
 
     bool stop();
 
@@ -79,7 +81,8 @@ private:
     // computed granule adds this base to the elapsed output.
     int64_t granule_base_48k_;
     std::atomic<float> current_rms_;
-    std::vector<float> rms_history_;
+    std::array<float, 9000> rms_history_;
+    size_t rms_count_;
 
     bool dc_filter_enabled_;
     double dc_blocker_prev_in_;
@@ -104,7 +107,9 @@ private:
 
     CaptureCallback callback_;
 
-    std::vector<int16_t> staging_buffer_;
+    std::array<int16_t, 8192> staging_buffer_;
+    size_t staging_read_pos_;
+    size_t staging_write_pos_;
 
     void apply_dc_blocker(int16_t* data, size_t num_samples);
     void normalize_volume(int16_t* data, size_t num_samples);

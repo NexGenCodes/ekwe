@@ -1,15 +1,14 @@
 import { useEffect } from "react";
 import { useSharedValue, SharedValue } from "react-native-reanimated";
 
+import { ekweAudio } from "../../../modules/ekwe-native";
+
 /**
- * Real-time amplitude metering backed by a JSI host function.
+ * Real-time amplitude metering backed by a Nitro HybridObject.
  *
  * Data path (3 hops, <16ms latency):
- *   C++ current_rms_ (atomic<float>) → JSI host function (synchronous)
+ *   C++ current_rms_ (atomic<float>) → Nitro JSI sync call
  *   → JS thread rAF → SharedValue.set → Reanimated sync → UI thread bars
- *
- * Falls back to 0 (silent bars) when the JSI function is not installed
- * (e.g., iOS where JSI hasn't been ported yet).
  *
  * The rAF loop only runs while `isActive` is true, so idle screens do not
  * wake the JS thread at 60fps for no reason.
@@ -28,7 +27,7 @@ export const useMetering = (isActive: boolean): SharedValue<number> => {
 
     const loop = (): void => {
       if (!running) return;
-      const rms = globalThis.ekweNativeGetAmplitude?.() ?? 0;
+      const rms = ekweAudio.getAmplitude();
       amplitude.value = rms < 0 ? 0 : rms > 1 ? 1 : rms;
       rafId = requestAnimationFrame(loop);
     };

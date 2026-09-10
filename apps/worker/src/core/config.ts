@@ -24,8 +24,11 @@ const PLAN_CONFIG = {
       "cloudflare",
     ] as readonly TranscribeProvider[],
     PREMIUM: [
-      "deepgram",
+      // Wit.ai is free and first so it absorbs most transcribed mutations
+      // (skipped for auto-detect, see PROVIDER_SKIP_AUTO) before any paid
+      // provider runs a single request.
       "witai",
+      "deepgram",
       "gladia",
       "assemblyai",
       "groq",

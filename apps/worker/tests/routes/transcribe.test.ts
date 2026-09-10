@@ -351,9 +351,13 @@ describe("handleTranscribe pipeline", () => {
     expect(res.status).toBe(503);
   });
 
-  test("PREMIUM pipeline uses different provider order", async () => {
+  test("PREMIUM pipeline tries witai (free) before paid providers for non-auto", async () => {
     const providerOrder: string[] = [];
     server.use(
+      http.post(PROVIDER_URLS.witaiDictation, () => {
+        providerOrder.push("witai");
+        return jsonResponse({ text: "wit result" });
+      }),
       http.post(PROVIDER_URLS.deepgram, () => {
         providerOrder.push("deepgram");
         return jsonResponse({
@@ -386,7 +390,8 @@ describe("handleTranscribe pipeline", () => {
       "test-user",
     );
     const body = (await res.json()) as { text?: string };
-    expect(body.text).toContain("deepgram");
-    expect(providerOrder[0]).toBe("deepgram");
+    expect(body.text).toBe("wit result");
+    expect(providerOrder[0]).toBe("witai");
+    expect(providerOrder).not.toContain("deepgram");
   });
 });

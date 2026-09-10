@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo } from "react";
 import { LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { Canvas, RoundedRect, Group } from "@shopify/react-native-skia";
 import Animated, {
   useSharedValue,
-  useDerivedValue,
+  useAnimatedStyle,
   SharedValue,
   useAnimatedReaction,
   runOnJS,
@@ -46,11 +45,23 @@ interface BarItemProps {
   duration: number;
   barCount: number;
   canvasHeight: number;
+  barWidth: number;
+  barGap: number;
   minBarHeight: number;
   activeColor: string;
   inactiveColor: string;
 }
 
+// Each bar is a memoized leaf: its props (shared values + primitives) stay
+// referentially stable across parent renders, so the 40 children never
+// re-render. All per-update math runs in a UI-thread worklet, so bar
+// height/width/color changes never round-trip through the JS bridge.
+//
+// Bars use the Skia layout model: every bar is absolutely positioned at
+// x = index * step (step = measuredWidth / barCount) so the strip spans the
+// full container width. This keeps the drawn bars, the seek thumb, and the
+// drag hit-target in the exact same coordinate space — progress = x / width
+// always lands on the visible bar underneath the finger.
 const BarItem = React.memo(function BarItem({
   index,
   barHeights,
@@ -59,49 +70,32 @@ const BarItem = React.memo(function BarItem({
   duration,
   barCount,
   canvasHeight,
+  barWidth,
+  barGap,
   minBarHeight,
   activeColor,
   inactiveColor,
 }: BarItemProps) {
-  const h = useDerivedValue(() => {
-    return Math.max(minBarHeight, barHeights.value[index] ?? minBarHeight);
+  const style = useAnimatedStyle(() => {
+    const h = Math.max(minBarHeight, barHeights.value[index] ?? minBarHeight);
+    const step = Math.max(minBarHeight, measuredWidth.value / barCount);
+    const w = Math.max(minBarHeight, Math.min(barWidth, step - barGap));
+    const y = Math.max(0, (canvasHeight - h) / 2);
+    const dur = duration > 0 ? duration : 1;
+    const frac = progressSV ? progressSV.value / dur : 1;
+    const color = index / barCount <= frac ? activeColor : inactiveColor;
+    return {
+      position: "absolute",
+      left: index * step,
+      top: y,
+      width: w,
+      height: h,
+      borderRadius: w / 2,
+      backgroundColor: color,
+    };
   });
 
-  // Bars span the full measured width so they are never clipped. Step and
-  // width adapt to the real container width instead of a fixed 6px grid —
-  // this also keeps the seek hit-target aligned with the drawn bars.
-  const step = useDerivedValue(() => measuredWidth.value / barCount);
-  const x = useDerivedValue(() => index * step.value);
-  const barWidth = useDerivedValue(() =>
-    Math.max(
-      minBarHeight,
-      Math.min(DEFAULT_BAR_W, step.value - DEFAULT_BAR_GAP),
-    ),
-  );
-  const barRadius = useDerivedValue(() => barWidth.value / 2);
-
-  // Centered vertically for WhatsApp style
-  const y = useDerivedValue(() => {
-    return Math.max(0, (canvasHeight - h.value) / 2);
-  });
-
-  const color = useDerivedValue(() => {
-    if (!progressSV) return activeColor;
-    const dur = duration ?? 1;
-    const frac = dur > 0 ? progressSV.value / dur : 0;
-    return index / barCount <= frac ? activeColor : inactiveColor;
-  });
-
-  return (
-    <RoundedRect
-      x={x}
-      y={y}
-      width={barWidth}
-      height={h}
-      r={barRadius}
-      color={color}
-    />
-  );
+  return <Animated.View style={style} />;
 });
 
 export function AudioWaveform({
@@ -110,6 +104,8 @@ export function AudioWaveform({
   duration,
   barCount = DEFAULT_BAR_COUNT,
   height = 40,
+  barWidth = DEFAULT_BAR_W,
+  barGap = DEFAULT_BAR_GAP,
   minBarHeight = DEFAULT_MIN_H,
   activeColor,
   inactiveColor,
@@ -291,25 +287,30 @@ export function AudioWaveform({
         style={[{ height, flex: 1 }, style]}
         onLayout={handleLayout}
       >
-        <Canvas style={{ flex: 1, height }}>
-          <Group>
-            {bars.map((i) => (
-              <BarItem
-                key={i}
-                index={i}
-                barHeights={barHeights}
-                measuredWidth={measuredWidth}
-                progressSV={progressSV}
-                duration={duration ?? 1}
-                barCount={barCount}
-                canvasHeight={height}
-                minBarHeight={minBarHeight}
-                activeColor={finalActiveColor}
-                inactiveColor={finalInactiveColor}
-              />
-            ))}
-          </Group>
-        </Canvas>
+        <Animated.View
+          style={{
+            flex: 1,
+            position: "relative",
+          }}
+        >
+          {bars.map((i) => (
+            <BarItem
+              key={i}
+              index={i}
+              barHeights={barHeights}
+              measuredWidth={measuredWidth}
+              progressSV={progressSV}
+              duration={duration ?? 1}
+              barCount={barCount}
+              canvasHeight={height}
+              barWidth={barWidth}
+              barGap={barGap}
+              minBarHeight={minBarHeight}
+              activeColor={finalActiveColor}
+              inactiveColor={finalInactiveColor}
+            />
+          ))}
+        </Animated.View>
       </Animated.View>
     </GestureDetector>
   );

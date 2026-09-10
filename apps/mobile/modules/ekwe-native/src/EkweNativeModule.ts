@@ -40,11 +40,6 @@ declare class EkweNativeModule extends NativeModule<{
   // so the share overlay never shows a stale Appearance cache. Returns "light" | "dark".
   getSystemTheme(): string;
 
-  // --- Device ABI (Android only) ---
-  // Primary CPU ABI (e.g. "arm64-v8a" | "armeabi-v7a") used to pick the
-  // matching per-ABI APK from the update manifest.
-  getDeviceAbi(): string;
-
   // --- Audio Effects ---
   attachEffects(audioSessionId: number): Promise<AudioEffectsResult>;
   releaseEffects(): Promise<void>;

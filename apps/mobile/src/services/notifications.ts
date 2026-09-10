@@ -185,3 +185,36 @@ Notifications.addPushTokenListener(async (token) => {
     logger.warn("[Notifications] Token refresh re-register failed:", error);
   }
 });
+
+/**
+ * Handle notification taps (user interacting with a notification from the tray).
+ *
+ * Without this listener, tapping a notification opens the app but silently
+ * discards the payload — there is no way to deep-link or react to it.
+ *
+ * Returns a cleanup function that removes the subscription — call it in your
+ * root layout's useEffect teardown.
+ *
+ * TODO: Once deep-link routes are defined, replace the logger.info with
+ * router.push() calls keyed on notification.data.type (or similar).
+ */
+export function setupNotificationTapListener(): () => void {
+  const subscription = Notifications.addNotificationResponseReceivedListener(
+    (response) => {
+      const { notification } = response;
+      const data = notification.request.content.data;
+
+      logger.info("[Notifications] Notification tapped:", JSON.stringify(data));
+
+      // ── Deep-link dispatch stub ──
+      // When you're ready to route, match on `data.type` (or whatever key
+      // your Worker sets in the push payload) and call router.push().
+      // Example:
+      //   if (data.type === "new_translation") {
+      //     router.push({ pathname: "/result", params: { id: data.id } });
+      //   }
+    },
+  );
+
+  return () => subscription.remove();
+}

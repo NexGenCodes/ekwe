@@ -46,9 +46,25 @@ const updateJson = (filePath, updater) => {
   fs.writeFileSync(resolved, JSON.stringify(json, null, 2) + '\n');
 };
 
-updateJson('./apps/mobile/app.json', j => { j.expo.version = NEXT; j.expo.android.versionCode = VC; });
 updateJson('./apps/mobile/package.json', k => { k.version = NEXT; });
 updateJson('./package.json', rk => { rk.version = NEXT; });
 updateJson('./apps/web/config.json', w => { if (w.app) w.app.version = NEXT; });
+updateJson('./apps/web/package.json', w => { w.version = NEXT; });
+
+// Update shared version constant (single source of truth)
+const versionTsPath = path.resolve('./packages/shared/version.ts');
+const versionTs = [
+  '/** Single source of truth for the Ekwe app version. */',
+  `export const APP_VERSION = "${NEXT}" as const;`,
+  '',
+  '/**',
+  ' * Numeric version code derived from the semver string.',
+  ' * Formula: MAJOR * 10000 + MINOR * 100 + PATCH',
+  ' * Must stay < 1_000_000 (each segment < 100).',
+  ' */',
+  `export const APP_VERSION_CODE = ${VC} as const;`,
+  '',
+].join('\n');
+fs.writeFileSync(versionTsPath, versionTs);
 
 fs.writeFileSync(path.resolve(nextVersionOutFile), `NEXT=${NEXT}\nVC=${VC}\nTAG=v${NEXT}\n`);

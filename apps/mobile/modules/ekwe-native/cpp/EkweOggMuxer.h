@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <string>
 #include <vector>
+#include <array>
 #include <cstdio>
 
 namespace ekwe {
@@ -44,7 +45,7 @@ private:
 
     bool write_page(const OggPage& page);
     OggPage make_page(const uint8_t* data, size_t size, int64_t granule_position, bool bos, bool eos);
-    std::vector<uint8_t> calculate_checksum(const OggPage& page);
+    std::array<uint8_t, 4> calculate_checksum(const OggPage& page);
 };
 
 } // namespace ekwe

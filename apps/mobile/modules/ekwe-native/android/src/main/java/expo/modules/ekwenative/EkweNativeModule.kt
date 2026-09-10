@@ -12,8 +12,6 @@ import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
 import android.provider.OpenableColumns
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.webkit.MimeTypeMap
 import expo.modules.kotlin.modules.Module
@@ -54,9 +52,8 @@ class EkweNativeModule : Module() {
       Log.w("EkweAudio", "Audio focus lost ($focusChange), stopping recording")
       // performStop is idempotent and safe from any thread
       performStop()
-      // Must dispatch to main thread — emitVadSilenceFromNative runs on the
-      // AudioRecord thread; module.sendEvent must be called from main/JS.
-      Handler(Looper.getMainLooper()).post { emitVadSilenceFromNative() }
+      // Notify JS to update UI state
+      nativeDispatchVadSilence()
     }
   }
 
@@ -103,42 +100,8 @@ class EkweNativeModule : Module() {
     private fun sanitizeMaxAudioBytes(maxAudioBytes: Long): Long {
       return if (maxAudioBytes > 0) maxAudioBytes else DEFAULT_MAX_AUDIO_BYTES
     }
-
-    // ── Emitters consumed by the C++ capture controller (nativeInitCapture) ──
-    // The C++ side resolves these static methods to push live opus packets and
-    // VAD-silence events to JS (AudioCapture.ts live mode). Must keep signatures
-    // in sync with EkweNativeModuleJNI.cpp.
-
-    @JvmStatic fun emitOpusPacketFromNative(packetData: ByteArray, rms: Float) {
-      instance?.let { module ->
-        val base64Data = android.util.Base64.encodeToString(packetData, android.util.Base64.NO_WRAP)
-        module.sendEvent("onOpusPacket", mapOf(
-          "packet" to base64Data,
-          "rms" to rms
-        ))
-      }
-    }
-
-    @JvmStatic fun emitVadSilenceFromNative() {
-      instance?.let { module ->
-        // Full teardown. The C++ controller only emits the event — it keeps
-        // capturing until nativeStopCapture() is called — so the VAD path must
-        // release AudioRecord, effects and the capture controller itself,
-        // otherwise the mic stays reserved, the Ogg is never finalized and the
-        // JS-side stopAudioRecording() (called from the onAutoStop callback)
-        // early-returns "Not recording" and never cleans up.
-        //
-        // Deliberately does NOT read nativeGetLastWaveform() here: that call
-        // clears the native waveform buffer, so the JS stopAudioRecording()
-        // that follows (which builds the RecordingResult) must be its single
-        // reader.
-        module.performStop()
-        module.sendEvent("onVadSilence", emptyMap<String, Any>())
-      }
-    }
-
-    // --- JSI bindings: access C++ RMS from JS thread via host function ---
-    @JvmStatic external fun nativeInstallJsi(jsContextPointer: Long)
+    // --- JNI hooks ---
+    @JvmStatic external fun nativeDispatchVadSilence()
 
     // --- Native Audio Processing (JNI) ---
     @JvmStatic external fun transcodeToOpusWithWaveformJNI(inputPath: String, outputPath: String, maxAudioBytes: Long): Array<Any?>
@@ -161,16 +124,11 @@ class EkweNativeModule : Module() {
 
     OnCreate {
       instance = this@EkweNativeModule
-      installJsiBindings()
     }
 
     OnDestroy {
       instance = null
     }
-
-    // onOpusPacket/onVadSilence are still consumed by the live capture path in
-    // JS (AudioCapture.ts); keep them registered so addListener stays valid.
-    Events("onOpusPacket", "onVadSilence")
 
     // --- Echo (Share Intent) Methods ---
     // Echo runs inside the translucent ShareActivity overlay. dismissNativeLoader
@@ -199,11 +157,8 @@ class EkweNativeModule : Module() {
       if (nightActive) "dark" else "light"
     }
 
-    // Primary device CPU ABI — used to pick the matching per-ABI update APK
-    // (arm64-v8a vs armeabi-v7a) from the update manifest.
-    Function("getDeviceAbi") {
-      Build.SUPPORTED_ABIS.firstOrNull() ?: ""
-    }
+    // Release pipelines publish a single universal APK, so there is no
+    // per-ABI download anymore and no need to expose the device ABI to JS.
 
     AsyncFunction("dismissNativeLoader") { ->
       val activity = appContext.currentActivity
@@ -697,18 +652,6 @@ class EkweNativeModule : Module() {
     noiseSuppressor = null
     echoCanceler = null
     gainControl = null
-  }
-
-  /**
-   * Installs the ekweNativeGetAmplitude JSI host function on the JS runtime,
-   * giving the JS thread direct synchronous access to the capture controller's
-   * current RMS value without bridge overhead.
-   */
-  private fun installJsiBindings() {
-    val reactContext = appContext.reactContext as? com.facebook.react.bridge.ReactContext ?: return
-    val holder = reactContext.javaScriptContextHolder ?: return
-    nativeInstallJsi(holder.get())
-    Log.d("EkweNative", "JSI bindings installed")
   }
 
   /**

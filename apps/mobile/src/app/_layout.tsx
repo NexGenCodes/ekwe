@@ -194,6 +194,7 @@ function RootLayout(): React.ReactElement {
     const { silentUpdateCheck } = require("@/services/otaUpdates");
     const {
       registerForPushNotifications,
+      setupNotificationTapListener,
     } = require("@/services/notifications"); // eslint-disable-line @typescript-eslint/no-require-imports
 
     // Seed the network store + TanStack onlineManager as early as possible so
@@ -203,6 +204,9 @@ function RootLayout(): React.ReactElement {
     // Silent OTA update — downloads in background, applies on next cold start.
     // Never blocks the app, never shows a modal, never shows a prompt.
     silentUpdateCheck();
+
+    // Handle user interacting with a push notification from the tray.
+    const removeNotificationListener = setupNotificationTapListener();
 
     // Register for push notifications — used for APK update alerts.
     // APK updates themselves are handled natively, so the app never opens.
@@ -231,6 +235,7 @@ function RootLayout(): React.ReactElement {
       SyncService.stop();
       stopNetworkMonitoring();
       cleanupAuth();
+      removeNotificationListener();
     };
   }, []);
 

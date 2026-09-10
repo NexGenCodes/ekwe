@@ -21,11 +21,11 @@ import { logger } from "../core/logger";
 const TEST_SECRET_PREFIX = "FLWSECK_TEST-";
 const TEST_PUBLIC_PREFIX = "FLWPUBK_TEST-";
 
-export function isTestSecretKey(key: string | undefined): boolean {
+function isTestSecretKey(key: string | undefined): boolean {
   return !!key?.startsWith(TEST_SECRET_PREFIX);
 }
 
-export function isTestPublicKey(key: string | undefined): boolean {
+function isTestPublicKey(key: string | undefined): boolean {
   return !!key?.startsWith(TEST_PUBLIC_PREFIX);
 }
 

@@ -30,17 +30,19 @@ const IDEMPOTENCY_TTL = 86400; // 24 hours
 // Extract a stable, unique identifier from the event for idempotency.
 // Falls back to body hash when no provider-specific ID is available.
 
-function extractIdempotencyKey(
-  event: Record<string, unknown>,
-  bodyHash: string,
-): string {
-  // Flutterwave: event.id is the transaction ID (unique per event)
+function extractIdempotencyKey(event: Record<string, unknown>): string | null {
+  // Flutterwave: event.id or event.data.id is the transaction ID (unique per event)
   if (event.id && typeof event.id === "number") {
     return `webhook:fw:${event.id}`;
   }
 
-  // Unknown provider: fall back to body hash
-  return `webhook:hash:${bodyHash}`;
+  const data = event.data as Record<string, unknown> | undefined;
+  if (data && data.id && typeof data.id === "number") {
+    return `webhook:fw:${data.id}`;
+  }
+
+  // Unknown provider: no stable ID available
+  return null;
 }
 
 // ─── Main Handler ────────────────────────────────────────────────
@@ -80,9 +82,6 @@ export async function handleWebhook(
       { status: 400 },
     );
   }
-
-  // Compute body hash for fallback idempotency (still needed for unknown providers)
-  const bodyHash = await hashKey(rawBody);
 
   // ── Signature Verification ──
   const verification = await verifyWebhook(request, rawBody, env);
@@ -126,7 +125,8 @@ export async function handleWebhook(
   // the rest see `changes === 0` and are dropped. If processing fails to apply
   // fully, the claim is released so the provider's re-delivery can reclaim and
   // retry rather than being permanently deduped.
-  const idempotencyKey = extractIdempotencyKey(event, bodyHash);
+  const idempotencyKey =
+    extractIdempotencyKey(event) ?? `webhook:hash:${await hashKey(rawBody)}`;
 
   const claimed = await claimIdempotency(
     env.EKWE_D1,

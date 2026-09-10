@@ -285,10 +285,14 @@ export async function handleVerifyTransaction(
 
   const expectedAmount =
     plan === "ekwe_pro_annual" ? prices.annual : prices.monthly;
-  if (fwData.data.amount !== expectedAmount) {
+  const actualCents = Math.round(Number(fwData.data.amount) * 100);
+  const expectedCents = Math.round(Number(expectedAmount) * 100);
+  if (actualCents !== expectedCents) {
     logger.error("[billing/verify] Amount mismatch", {
       expected: expectedAmount,
       actual: fwData.data.amount,
+      expectedCents,
+      actualCents,
       tx_ref: fwData.data.tx_ref,
       currency: fwData.data.currency,
     });

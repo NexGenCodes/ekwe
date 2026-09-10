@@ -90,13 +90,6 @@ class ApkDownloadService : Service() {
         return
       }
 
-      if (!canRequestPackageInstalls()) {
-        showPermissionNotification()
-        return
-      }
-
-      showInstallingNotification(version)
-
       val contentUri = FileProvider.getUriForFile(
         this,
         "$packageName.fileprovider",
@@ -107,7 +100,27 @@ class ApkDownloadService : Service() {
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       }
-      startActivity(installIntent)
+
+      // Android 10+ blocks starting activities from the background.
+      // If the download takes more than a few seconds, the exemption from the
+      // notification click expires, and startActivity() is silently blocked.
+      // The correct UX is to post a "Ready to install" notification.
+      val pendingInstall = PendingIntent.getActivity(
+        this,
+        0,
+        installIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+      )
+
+      val readyNotification = NotificationCompat.Builder(this, UpdateNotifier.CHANNEL_ID)
+        .setSmallIcon(UpdateNotifier.notificationIcon(this))
+        .setContentTitle("EKWE $version downloaded")
+        .setContentText("Tap to install the update")
+        .setContentIntent(pendingInstall)
+        .setAutoCancel(true)
+        .build()
+
+      NotificationManagerCompat.from(this).notify(UpdateNotifier.NOTIFICATION_ID, readyNotification)
     } catch (e: Exception) {
       Log.e(TAG, "Update failed", e)
       showResultNotification("Download failed", "Could not download the update.")
@@ -207,8 +220,6 @@ class ApkDownloadService : Service() {
     }
   }
 
-  private fun canRequestPackageInstalls(): Boolean =
-    Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()
 
   private fun updateProgress(version: String, percent: Int, indeterminate: Boolean) {
     val notification = NotificationCompat.Builder(this, UpdateNotifier.CHANNEL_ID)
@@ -234,16 +245,6 @@ class ApkDownloadService : Service() {
       .setOngoing(true)
       .build()
 
-  private fun showInstallingNotification(version: String) {
-    val notification = NotificationCompat.Builder(this, UpdateNotifier.CHANNEL_ID)
-      .setSmallIcon(UpdateNotifier.notificationIcon(this))
-      .setContentTitle("Installing EKWE $version…")
-      .setContentText("Preparing to install")
-      .setProgress(0, 0, true)
-      .setOngoing(true)
-      .build()
-    NotificationManagerCompat.from(this).notify(PROGRESS_ID, notification)
-  }
 
   private fun showResultNotification(title: String, text: String) {
     val notification = NotificationCompat.Builder(this, UpdateNotifier.CHANNEL_ID)
@@ -255,28 +256,5 @@ class ApkDownloadService : Service() {
     NotificationManagerCompat.from(this).notify(PROGRESS_ID, notification)
   }
 
-  private fun showPermissionNotification() {
-    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      Intent(
-        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-        Uri.parse("package:$packageName"),
-      )
-    } else {
-      Intent(Settings.ACTION_SECURITY_SETTINGS)
-    }
-    val pending = PendingIntent.getActivity(
-      this,
-      0,
-      intent,
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-    val notification = NotificationCompat.Builder(this, UpdateNotifier.CHANNEL_ID)
-      .setSmallIcon(UpdateNotifier.notificationIcon(this))
-      .setContentTitle("Allow app installs")
-      .setContentText("Tap to allow installing EKWE updates")
-      .setContentIntent(pending)
-      .setAutoCancel(true)
-      .build()
-    NotificationManagerCompat.from(this).notify(PROGRESS_ID, notification)
-  }
+
 }

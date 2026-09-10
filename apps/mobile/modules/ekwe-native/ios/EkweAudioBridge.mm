@@ -1,14 +1,24 @@
 #import "EkweAudioBridge.h"
 #import "../cpp/EkweAudioDecoder.h"
 #import "../cpp/EkweCaptureController.h"
+#include "../cpp/HybridEkweAudio.hpp"
 #include <string>
 #include <mutex>
+#include <atomic>
 
 static std::mutex g_mutex;
+static std::atomic<float> g_current_rms{0.0f};
 static ekwe::CaptureController* g_capture = nullptr;
 static OpusPacketCallback g_opusPacketBlock = nil;
 static VadSilenceCallback g_vadSilenceBlock = nil;
 static std::vector<float> g_last_waveform;
+
+// Accessor for HybridEkweAudio — reads the platform's g_current_rms atomic
+namespace ekwe {
+    float get_current_rms() {
+        return g_current_rms.load(std::memory_order_relaxed);
+    }
+}
 
 @implementation EkweAudioBridge
 
@@ -110,6 +120,12 @@ static std::vector<float> g_last_waveform;
         capture->set_callback([packetBlock, silenceBlock](const ekwe::CaptureEventData& event) {
             switch (event.event) {
                 case ekwe::CaptureEvent::AUDIO_DATA:
+                    // Nitro path — zero-copy ArrayBuffer dispatch
+                    if (!event.data.empty()) {
+                        margelo::nitro::ekwe::HybridEkweAudio::dispatchOpusPacket(
+                            event.data.data(), event.data.size(), event.rms);
+                    }
+                    // Legacy Expo event path (backward compat)
                     if (packetBlock && !event.data.empty()) {
                         NSData *packet = [NSData dataWithBytes:event.data.data()
                                                         length:event.data.size()];
@@ -117,6 +133,9 @@ static std::vector<float> g_last_waveform;
                     }
                     break;
                 case ekwe::CaptureEvent::VAD_SILENCE:
+                    // Nitro path
+                    margelo::nitro::ekwe::HybridEkweAudio::dispatchVadSilence();
+                    // Legacy Expo event path (backward compat)
                     if (silenceBlock) {
                         silenceBlock();
                     }
@@ -133,6 +152,7 @@ static std::vector<float> g_last_waveform;
         g_capture = capture;
         g_opusPacketBlock = packetBlock;
         g_vadSilenceBlock = silenceBlock;
+        g_current_rms.store(0.0f, std::memory_order_relaxed);
         return YES;
     }
 
@@ -143,7 +163,17 @@ static std::vector<float> g_last_waveform;
 + (BOOL)feedPcm:(int16_t *)pcmData numSamples:(int32_t)numSamples {
     std::lock_guard<std::mutex> lock(g_mutex);
     if (!g_capture) return NO;
-    return g_capture->feed_pcm(pcmData, static_cast<size_t>(numSamples)) ? YES : NO;
+    bool ok = g_capture->feed_pcm(pcmData, static_cast<size_t>(numSamples));
+    g_current_rms.store(g_capture->rms(), std::memory_order_relaxed);
+    return ok ? YES : NO;
+}
+
++ (BOOL)feedPcmFloat:(float *)pcmData numSamples:(int32_t)numSamples {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (!g_capture) return NO;
+    bool ok = g_capture->feed_pcm_float(pcmData, static_cast<size_t>(numSamples));
+    g_current_rms.store(g_capture->rms(), std::memory_order_relaxed);
+    return ok ? YES : NO;
 }
 
 + (BOOL)stopCapture {
@@ -162,6 +192,7 @@ static std::vector<float> g_last_waveform;
         capture->stop();
         g_last_waveform = capture->get_waveform(60);
         delete capture;
+        g_current_rms.store(0.0f, std::memory_order_relaxed);
     }
     return YES;
 }
@@ -177,9 +208,7 @@ static std::vector<float> g_last_waveform;
 }
 
 + (float)getAmplitude {
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (!g_capture) return 0.0f;
-    return g_capture->rms();
+    return g_current_rms.load(std::memory_order_relaxed);
 }
 
 @end

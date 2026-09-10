@@ -83,7 +83,7 @@ const DEFAULT_CONFIG: SubscriptionConfig = {
  * `unreachable` the same (bundled defaults), but the webhook's grant path
  * only ever trusts `loaded` prices.
  */
-export type ConfigLoad =
+type ConfigLoad =
   | { kind: "loaded"; config: SubscriptionConfig }
   | { kind: "missing" }
   | { kind: "unreachable" };
@@ -105,7 +105,7 @@ function toFinite(value: unknown, fallback: number): number {
  * dropping malformed entries. Accepts the wire format directly (numbers or
  * numeric strings).
  */
-export function parseLocalPrices(raw: unknown): Record<string, LocalPrice> {
+function parseLocalPrices(raw: unknown): Record<string, LocalPrice> {
   const parsed: Record<string, LocalPrice> = {};
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return parsed;
 
@@ -186,9 +186,7 @@ async function loadSubscriptionConfig(
  * Supabase is unreachable or the row is missing, so GET /pricing and checkout
  * stay offline-capable.
  */
-export async function getSubscriptionConfig(
-  env: Env,
-): Promise<SubscriptionConfig> {
+async function getSubscriptionConfig(env: Env): Promise<SubscriptionConfig> {
   const load = await loadSubscriptionConfig(env);
   return load.kind === "loaded" ? load.config : DEFAULT_CONFIG;
 }
@@ -199,7 +197,7 @@ export async function getSubscriptionConfig(
  * charges is always identical to the price the pricing endpoint reported.
  * DB `local_prices` wins; the shared map is the fallback.
  */
-export async function getLocalPlanPrices(
+async function getLocalPlanPrices(
   env: Env,
   currency: string,
 ): Promise<LocalPlanPrices> {

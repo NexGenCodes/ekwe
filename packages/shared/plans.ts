@@ -90,6 +90,9 @@ export const PREMIUM_LIMITS: PlanLimits = {
   streamingAllowed: true,
   transliterationAllowed: true,
   customAvatarIcons: true,
+  // Intentionally the same as FREE (5). Premium differentiation is via
+  // streaming, auto-detect, TTS quality, and higher daily limits — not
+  // language count. Increase here if the product decision changes.
   maxLanguages: 5,
   ttsQuality: "premium",
   cooldownSeconds: 1,

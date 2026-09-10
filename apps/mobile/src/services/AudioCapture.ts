@@ -15,7 +15,7 @@ import { AppAlert } from "@/utils/alert";
 import { validateSharedAudio } from "@/utils/fileValidation";
 import logger from "@/utils/logger";
 
-import EkweNative from "../../modules/ekwe-native";
+import EkweNative, { ekweAudio } from "../../modules/ekwe-native";
 
 export type CaptureMode = "file" | "live";
 
@@ -43,8 +43,6 @@ class AudioCaptureClass {
   private amplitudeRafId: number | null = null;
   private isStartingParams = false;
   private currentMode: CaptureMode = "file";
-  private opusPacketSub: { remove: () => void } | null = null;
-  private vadSilenceSub: { remove: () => void } | null = null;
 
   async requestPermission(): Promise<Result<boolean, EkweError>> {
     try {
@@ -177,34 +175,19 @@ class AudioCaptureClass {
         this.currentRecordingPath = outputPath;
       }
 
-      // Subscribe to native Opus packets (live mode) and VAD silence (both modes).
-      // Check the native listener API BEFORE starting to subscribe: calling a
-      // missing addListener throws, which would otherwise leave the recording
-      // already started (line 158/130) running forever.
-      if (typeof EkweNative.addListener !== "function") {
-        logger.error(
-          "[AudioCapture] EkweNative.addListener is not a function — native module broken?",
-        );
-        this.isStartingParams = false;
-        releaseRecordingFocus();
-        return err(EkweError.AUDIO_RECORD_FAIL);
-      }
-
+      // Wire up Nitro HybridObject callbacks for Opus packets (live mode)
+      // and VAD silence (both modes). Zero-copy ArrayBuffer — no Base64.
       if (mode === "live") {
-        this.opusPacketSub = EkweNative.addListener(
-          "onOpusPacket",
-          (event: { packet: string; rms: number }) => {
-            const binaryString = atob(event.packet);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-            const opusPacket: OpusPacket = { data: bytes.buffer, sessionId };
-            this.opusPacketListeners.forEach((l) => l(opusPacket));
-          },
-        );
+        const sid = sessionId;
+        ekweAudio.onOpusPacket = (
+          packet: ArrayBuffer,
+          _amplitude: number,
+        ): void => {
+          const opusPacket: OpusPacket = { data: packet, sessionId: sid };
+          this.opusPacketListeners.forEach((l) => l(opusPacket));
+        };
       }
-      this.vadSilenceSub = EkweNative.addListener("onVadSilence", () => {
+      ekweAudio.onVadSilence = (): void => {
         try {
           if (this.onAutoStopCallback) {
             this.onAutoStopCallback();
@@ -212,21 +195,16 @@ class AudioCaptureClass {
         } catch (e) {
           logger.error("[AudioCapture] VAD silence callback error:", e);
         }
-      });
+      };
 
       this.notifyStatusListeners("started");
 
       if (this.amplitudeRafId) cancelAnimationFrame(this.amplitudeRafId);
 
       const pollAmplitude = (): void => {
-        const globalObj = globalThis as unknown as {
-          ekweNativeGetAmplitude?: () => number;
-        };
-        if (typeof globalObj.ekweNativeGetAmplitude === "function") {
-          const val = globalObj.ekweNativeGetAmplitude();
-          this.currentMeteringData.push(val);
-          this.notifyListeners(val);
-        }
+        const val = ekweAudio.getAmplitude();
+        this.currentMeteringData.push(val);
+        this.notifyListeners(val);
         this.amplitudeRafId = requestAnimationFrame(pollAmplitude);
       };
       this.amplitudeRafId = requestAnimationFrame(pollAmplitude);
@@ -236,10 +214,9 @@ class AudioCaptureClass {
       this.isStartingParams = false;
       return ok(undefined);
     } catch {
-      this.opusPacketSub?.remove();
-      this.opusPacketSub = null;
-      this.vadSilenceSub?.remove();
-      this.vadSilenceSub = null;
+      // Clear Nitro callbacks on error
+      ekweAudio.onOpusPacket = (): void => {};
+      ekweAudio.onVadSilence = (): void => {};
       if (this.currentRecordingPath) {
         // Native recording already started — stop it so the mic isn't held and
         // the state isn't stuck "recording" after a mid-setup failure.
@@ -266,10 +243,9 @@ class AudioCaptureClass {
       return err(EkweError.AUDIO_RECORD_FAIL);
     }
 
-    this.opusPacketSub?.remove();
-    this.opusPacketSub = null;
-    this.vadSilenceSub?.remove();
-    this.vadSilenceSub = null;
+    // Clear Nitro callbacks
+    ekweAudio.onOpusPacket = (): void => {};
+    ekweAudio.onVadSilence = (): void => {};
     this.onAutoStopCallback = null;
 
     if (this.amplitudeRafId) {
@@ -325,10 +301,9 @@ class AudioCaptureClass {
     const path: string | null = this.currentRecordingPath;
     this.onAutoStopCallback = null;
 
-    this.opusPacketSub?.remove();
-    this.opusPacketSub = null;
-    this.vadSilenceSub?.remove();
-    this.vadSilenceSub = null;
+    // Clear Nitro callbacks
+    ekweAudio.onOpusPacket = (): void => {};
+    ekweAudio.onVadSilence = (): void => {};
 
     if (this.amplitudeRafId) {
       cancelAnimationFrame(this.amplitudeRafId);

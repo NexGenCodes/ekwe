@@ -3,6 +3,18 @@ name: Deploy
 on:
   push:
     branches: [master]
+    # The release bot's version-bump commit touches exactly these files. Ignoring
+    # them means its push never creates a run here — which is what breaks the
+    # release loop AND prevents cancel-in-progress from killing the still-running
+    # release job right after the push. Real code changes still trigger normally.
+    paths-ignore:
+      - 'apps/mobile/app.json'
+      - 'apps/mobile/package.json'
+      - 'package.json'
+      - 'apps/web/config.json'
+      - 'apps/web/package.json'
+      - 'packages/shared/version.ts'
+      - 'CHANGELOG.md'
   workflow_dispatch:
 
 permissions:
@@ -15,7 +27,7 @@ concurrency:
 jobs:
   detect:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
     outputs:
       worker: ${{ steps.outcome.outputs.worker }}
       pages: ${{ steps.outcome.outputs.pages }}
@@ -60,6 +72,20 @@ jobs:
             echo "worker=true" >> "$GITHUB_OUTPUT"
             echo "pages=false" >> "$GITHUB_OUTPUT"
           else
+            # A release job commits the version bump and pushes it; that push
+            # must not re-trigger itself or we'd bump versions forever
+            # (1.0.1 -> push -> 1.0.2 -> push -> ...). paths-ignore on the push
+            # event already prevents that run from being created; this guard is
+            # defense-in-depth in case the ignore list ever goes stale.
+            AUTHOR=$(git log -1 --format='%an')
+            MSG=$(git log -1 --format='%s')
+            if [ "$AUTHOR" = "github-actions[bot]" ] && [[ "$MSG" == "chore: release v"* ]]; then
+              echo "ota=false" >> "$GITHUB_OUTPUT"
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              echo "worker=false" >> "$GITHUB_OUTPUT"
+              echo "pages=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             if [ "${{ steps.changes.outputs.native }}" == "true" ]; then
               echo "ota=false" >> "$GITHUB_OUTPUT"
               echo "release=true" >> "$GITHUB_OUTPUT"
@@ -158,9 +184,14 @@ jobs:
     needs: detect
     if: needs.detect.outputs.release == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Headroom for R8 minify + resource shrinking + bundle compression, which
+    # are enabled on top of the C++/Hermes build of a universal APK.
+    timeout-minutes: 90
     env:
       EXPO_PUBLIC_ENV: production
+      # app.config.js keys off APP_ENV (not EXPO_PUBLIC_ENV) to enable the
+      # production reactNativeArchitectures / build properties during prebuild.
+      APP_ENV: production
     steps:
       - uses: actions/checkout@v7
         with:
@@ -201,8 +232,8 @@ jobs:
       - name: Read current version
         id: version
         run: |
-          VERSION=$(node -p "require('./apps/mobile/app.json').expo.version")
-          VERSION_CODE=$(node -p "require('./apps/mobile/app.json').expo.android.versionCode")
+          VERSION=$(node -e "console.log(require('fs').readFileSync('packages/shared/version.ts','utf8').match(/APP_VERSION\s*=\s*\"([^\"]+)\"/)[1])")
+          VERSION_CODE=$(node -e "console.log(require('fs').readFileSync('packages/shared/version.ts','utf8').match(/APP_VERSION_CODE\s*=\s*(\d+)/)[1])")
           TAG="v${VERSION}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
@@ -221,50 +252,45 @@ jobs:
         working-directory: apps/mobile
         run: pnpm run prebuild:android
 
-      - name: Build Release APKs
+      - name: Build Release APK
         working-directory: apps/mobile/android
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dorg.gradle.caching=true"
         run: |
           chmod +x gradlew
-          # ABI splits are enabled via the ekwe-native config plugin, so a single
-          # gradle run compiles both ABIs once and emits per-ABI APKs
-          # (app-arm64-v8a-release.apk / app-armeabi-v7a-release.apk) that the
-          # asset staging step below matches. reactNativeArchitectures defaults
-          # to armeabi-v7a,arm64-v8a in gradle.properties.
+          # One universal APK is built containing both ABIs (arm64-v8a +
+          # armeabi-v7a per reactNativeArchitectures in gradle.properties), so
+          # every device gets the same file.
           ./gradlew assembleRelease --no-daemon -x lintVitalAnalyzeRelease
 
-      - name: Stage release assets
+      - name: Stage release asset
         id: assets
         run: |
           mkdir -p dist
-          for ABI in arm64-v8a armeabi-v7a; do
-            APK=$(find apps/mobile/android/app/build/outputs/apk -name "*${ABI}*" ! -name "*androidTest*" | head -1)
-            if [ -z "$APK" ]; then
-              echo "::error::No APK found for ABI $ABI"
-              exit 1
-            fi
-            cp "$APK" "dist/app-${ABI}-release.apk"
-            sha256sum "dist/app-${ABI}-release.apk" | awk '{print $1}' > "dist/app-${ABI}.sha256"
-            echo "${ABI}_size=$(stat -c%s "dist/app-${ABI}-release.apk")" >> "$GITHUB_OUTPUT"
-            echo "${ABI}_sha256=$(cat "dist/app-${ABI}.sha256")" >> "$GITHUB_OUTPUT"
-          done
+          APK=$(find apps/mobile/android/app/build/outputs/apk -name "*release*.apk" ! -name "*androidTest*" ! -name "*universal*" | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::No release APK found"
+            exit 1
+          fi
+          cp "$APK" "dist/app-release.apk"
+          sha256sum "dist/app-release.apk" | awk '{print $1}' > "dist/app-release.sha256"
+          echo "sha256=$(cat "dist/app-release.sha256")" >> "$GITHUB_OUTPUT"
+          echo "size=$(stat -c%s "dist/app-release.apk")" >> "$GITHUB_OUTPUT"
 
       - name: Write version manifest
         run: |
           node scripts/generate-update-manifest.mjs \
             "${{ steps.bump.outputs.next_version }}" \
             "${{ steps.bump.outputs.next_version_code }}" \
-            "${{ steps.assets.outputs.arm64-v8a_sha256 }}" \
-            "${{ steps.assets.outputs.arm64-v8a_size }}" \
-            "${{ steps.assets.outputs.armeabi-v7a_sha256 }}" \
-            "${{ steps.assets.outputs.armeabi-v7a_size }}"
+            "${{ steps.assets.outputs.sha256 }}" \
+            "${{ steps.assets.outputs.size }}"
 
-      - name: Commit version bump
+      - name: Commit + push version bump
+        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apps/mobile/app.json apps/mobile/package.json package.json apps/web/config.json CHANGELOG.md
+          git add apps/mobile/app.json apps/mobile/package.json package.json apps/web/config.json apps/web/package.json packages/shared/version.ts CHANGELOG.md
           # Skip the commit when the bump produced no changes (releasing exactly
           # v1.2.0 when files are already at 1.2.0). Skip pre-commit hooks too,
           # since lint-staged's prettier re-staging makes its own emptiness guard
@@ -272,6 +298,9 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit --no-verify -m "chore: release ${{ steps.bump.outputs.next_tag }}"
           fi
+          echo "next_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          # Safe to push mid-run: paths-ignore on this push event means this
+          # commit does NOT create a new run, so cancel-in-progress can't kill us.
           git push
 
       - name: Create GitHub Release
@@ -279,33 +308,28 @@ jobs:
         with:
           tag_name: ${{ steps.bump.outputs.next_tag }}
           name: ${{ steps.bump.outputs.next_tag }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ steps.commit.outputs.next_sha }}
           files: |
-            dist/app-arm64-v8a-release.apk
-            dist/app-arm64-v8a.sha256
-            dist/app-armeabi-v7a-release.apk
-            dist/app-armeabi-v7a.sha256
+            dist/app-release.apk
+            dist/app-release.sha256
             dist/version.json
           generate_release_notes: true
 
-      - name: Upload APKs to Cloudflare R2
+      - name: Upload APK to Cloudflare R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
         run: |
-          pip install --quiet awscli
-          # Remove legacy universal APKs — the old per-ABI-less build can't
-          # install on 64-bit-only phones and must never be served as latest.
-          for stale in app-release.apk app-universal-release.apk; do
+          # Remove legacy per-ABI APKs — replaced by the single universal APK,
+          # and the old builds must never be served as latest.
+          for stale in app-release.apk app-arm64-v8a-release.apk app-armeabi-v7a-release.apk app-universal-release.apk; do
             aws s3 rm "s3://${{ secrets.R2_BUCKET_NAME }}/$stale" \
               --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" || true
           done
-          for ABI in arm64-v8a armeabi-v7a; do
-            aws s3 cp "dist/app-${ABI}-release.apk" "s3://${{ secrets.R2_BUCKET_NAME }}/app-${ABI}-release.apk" \
-              --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-              --content-type "application/vnd.android.package-archive"
-          done
+          aws s3 cp "dist/app-release.apk" "s3://${{ secrets.R2_BUCKET_NAME }}/app-release.apk" \
+            --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+            --content-type "application/vnd.android.package-archive"
           aws s3 cp dist/version.json "s3://${{ secrets.R2_BUCKET_NAME }}/version.json" \
             --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
             --content-type "application/json"
@@ -315,6 +339,9 @@ jobs:
           WORKER_URL: ${{ secrets.WORKER_URL }}
           PUSH_NOTIFY_SECRET: ${{ secrets.PUSH_NOTIFY_SECRET }}
         run: |
+          # Download URL comes from apps/web/config.json (single source of
+          # truth); the bumped config.json is already on disk at this point.
+          DOWNLOAD_URL=$(node -p "require('./apps/web/config.json').links.download")
           curl -fsS -X POST "$WORKER_URL/update/manifest" \
             -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
             -H "Content-Type: application/json" \
@@ -322,19 +349,12 @@ jobs:
           curl -fsS -X POST "$WORKER_URL/push-notify" \
             -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
             -H "Content-Type: application/json" \
-            -d '{
-              "version": "${{ steps.bump.outputs.next_version }}",
-              "versionCode": ${{ steps.bump.outputs.next_version_code }},
-              "downloadUrl": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-armeabi-v7a-release.apk",
-              "downloadUrls": {
-                "arm64-v8a": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-arm64-v8a-release.apk",
-                "armeabi-v7a": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-armeabi-v7a-release.apk"
-              },
-              "checksums": {
-                "arm64-v8a": "${{ steps.assets.outputs.arm64-v8a_sha256 }}",
-                "armeabi-v7a": "${{ steps.assets.outputs.armeabi-v7a_sha256 }}"
-              }
-            }'
+            -d "{
+              \"version\": \"${{ steps.bump.outputs.next_version }}\",
+              \"versionCode\": ${{ steps.bump.outputs.next_version_code }},
+              \"downloadUrl\": \"$DOWNLOAD_URL\",
+              \"checksumSha256\": \"${{ steps.assets.outputs.sha256 }}\"
+            }"
 
       - name: Rebuild landing site
         run: node apps/web/build.mjs

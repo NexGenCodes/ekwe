@@ -6,11 +6,7 @@
     "version": "1.2.5"
   },
   "links": {
-    "download": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-arm64-v8a-release.apk",
-    "downloadUrls": {
-      "arm64-v8a": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-arm64-v8a-release.apk",
-      "armeabi-v7a": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-armeabi-v7a-release.apk"
-    }
+    "download": "https://pub-dcd31dbfad344d278cc48d4601c658fc.r2.dev/app-release.apk"
   },
   "contact": {
     "email": "support@ekwe.pages.dev",
@@ -39,7 +35,7 @@
     },
     {
       "title": "Share Extension",
-      "description": "Translate audio from any app directly via the system share sheet.",
+      "description": "Translate audio from any messaging app — WhatsApp, Telegram, Signal, and more — via the system share sheet.",
       "icon": "share"
     },
     {

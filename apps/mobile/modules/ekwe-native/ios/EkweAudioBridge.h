@@ -44,6 +44,7 @@ typedef void (^VadSilenceCallback)(void);
     opusPacketBlock:(OpusPacketCallback _Nullable)opusPacketBlock
     vadSilenceBlock:(VadSilenceCallback _Nullable)vadSilenceBlock;
 + (BOOL)feedPcm:(int16_t *)pcmData numSamples:(int32_t)numSamples;
++ (BOOL)feedPcmFloat:(float *)pcmData numSamples:(int32_t)numSamples;
 + (BOOL)stopCapture;
 + (float)getAmplitude;
 + (NSArray<NSNumber *> *)lastWaveform;

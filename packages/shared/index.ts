@@ -1,3 +1,4 @@
+export { APP_VERSION, APP_VERSION_CODE } from "./version";
 export * from "./token";
 export { type Logger, makeLogEntry, scrubSentryEvent } from "./observability";
 export { LANGUAGES, languageName, getLanguageFlag } from "./languages";
