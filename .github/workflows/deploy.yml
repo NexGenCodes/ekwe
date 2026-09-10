@@ -8,13 +8,13 @@ on:
     # release loop AND prevents cancel-in-progress from killing the still-running
     # release job right after the push. Real code changes still trigger normally.
     paths-ignore:
-      - 'apps/mobile/app.json'
-      - 'apps/mobile/package.json'
-      - 'package.json'
-      - 'apps/web/config.json'
-      - 'apps/web/package.json'
-      - 'packages/shared/version.ts'
-      - 'CHANGELOG.md'
+      - "apps/mobile/app.json"
+      - "apps/mobile/package.json"
+      - "package.json"
+      - "apps/web/config.json"
+      - "apps/web/package.json"
+      - "packages/shared/version.ts"
+      - "CHANGELOG.md"
   workflow_dispatch:
 
 permissions:
@@ -256,6 +256,10 @@ jobs:
         working-directory: apps/mobile/android
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dorg.gradle.caching=true"
+          # sentry.gradle can't resolve @sentry/cli via pnpm in CI (the
+          # fallback $reactRoot/node_modules/@sentry/cli doesn't exist).
+          # Skip the source-map upload task — the build itself is unaffected.
+          SENTRY_DISABLE_AUTO_UPLOAD: "true"
         run: |
           chmod +x gradlew
           # One universal APK is built containing both ABIs (arm64-v8a +
