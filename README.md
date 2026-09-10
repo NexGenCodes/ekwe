@@ -58,7 +58,8 @@ Visit the official landing page for app info, changelog, and download:
 
 ### Local (GitHub)
 
-For developers and sideloading, both APKs are also available on GitHub Releases with checksums:
+For developers and sideloading, the APK and its checksum are also available
+on GitHub Releases:
 
 **[GitHub Releases](https://github.com/NexGenCodes/ekwe/releases/latest)**
 

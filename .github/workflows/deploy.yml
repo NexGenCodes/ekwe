@@ -16,6 +16,15 @@ on:
       - "packages/shared/version.ts"
       - "CHANGELOG.md"
   workflow_dispatch:
+    inputs:
+      release_notes:
+        description: |
+          Curated release notes for this release (optional). Written to
+          CHANGELOG.md and used as the GitHub release body. When omitted, the
+          workflow falls back to GitHub's auto-generated notes.
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -248,6 +257,17 @@ jobs:
           echo "next_version_code=$VC" >> "$GITHUB_OUTPUT"
           echo "next_tag=$TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Write release notes to changelog
+        # Only manual dispatches carry curated notes; the release commit then
+        # includes CHANGELOG.md, and the landing-site rebuild below renders it.
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.release_notes != ''
+        env:
+          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+        run: |
+          mkdir -p dist
+          printf '%s' "$RELEASE_NOTES" > dist/release-notes.md
+          node scripts/append-changelog.mjs "${{ steps.bump.outputs.next_version }}" dist/release-notes.md
+
       - name: Run prebuild
         working-directory: apps/mobile
         run: pnpm run prebuild:android
@@ -317,7 +337,8 @@ jobs:
             dist/app-release.apk
             dist/app-release.sha256
             dist/version.json
-          generate_release_notes: true
+          body: ${{ github.event.inputs.release_notes }}
+          generate_release_notes: ${{ github.event.inputs.release_notes == '' }}
 
       - name: Upload APK to Cloudflare R2
         env:

@@ -1027,6 +1027,15 @@ html.js [data-reveal].is-visible {
   margin-bottom: 16px;
 }
 
+.changelog-entry h3 {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 20px 0 6px;
+}
+
 .changelog-entry ul {
   list-style: none;
 }

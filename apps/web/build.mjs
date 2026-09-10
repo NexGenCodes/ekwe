@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, readdirSync, copyFileSync, mkdirSync, existsSync, watch } from "node:fs";
 import { join, dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseChangelog, escapeHtml } from "../../scripts/changelog-lib.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const src = join(__dirname, "src");
@@ -57,6 +58,47 @@ function renderTemplate(html, config) {
     .replace(/\{\{YEAR\}\}/g, year);
 }
 
+// Renders the landing-site changelog page from CHANGELOG.md, which is the
+// single source of truth. Entries are drawn newest-first; [Unreleased] is
+// dropped; the newest release is tagged "Latest" and versions below 2.x get
+// the "Legacy" tag.
+function renderChangelogList(changelogPath) {
+  const markdown = existsSync(changelogPath) ? readFileSync(changelogPath, "utf8") : "";
+  const released = parseChangelog(markdown).filter((e) => !/^unreleased$/i.test(e.version));
+
+  if (released.length === 0) return "";
+
+  return released
+    .map((entry, index) => {
+      const isLatest = index === 0;
+      const legacy = /^1\.[01]/.test(entry.version);
+      const tags = [];
+      if (isLatest) tags.push(`<span class="tag">Latest</span>`);
+      if (legacy) tags.push(`<span class="tag legacy">Legacy</span>`);
+
+      const sections = entry.sections
+        .map((section) => {
+          const items = section.items.map((i) => `<li>${escapeHtml(i)}</li>`).join("");
+          return `<h3>${escapeHtml(section.name)}</h3>\n<ul>\n${items}\n</ul>`;
+        })
+        .join("\n");
+
+      return [
+        `<div class="changelog-entry">`,
+        `  <div class="changelog-version">`,
+        `    <h2>v${escapeHtml(entry.version)}</h2>`,
+        tags.map((t) => `    ${t}`).join("\n"),
+        `  </div>`,
+        `  <p class="changelog-date">${escapeHtml(entry.date)}</p>`,
+        sections,
+        `</div>`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
+}
+
 function build() {
   const config = readConfig();
   ensureDir(dist);
@@ -77,9 +119,16 @@ function build() {
   // Render HTML pages
   const pages = readdirSync(src).filter((f) => f.endsWith(".html"));
 
-  for (const page of pages) {
-    const html = readFileSync(join(src, page), "utf-8");
-    const rendered = renderTemplate(html, config);
+for (const page of pages) {
+    let html = readFileSync(join(src, page), "utf8");
+    let rendered = renderTemplate(html, config);
+
+    if (page === "changelog.html") {
+      const list = renderChangelogList(join(__dirname, "../../CHANGELOG.md"));
+      if (list) {
+        rendered = rendered.replace('<div class="changelog-list" data-changelog></div>', `<div class="changelog-list">\n${list}\n        </div>`);
+      }
+    }
 
     if (page === "index.html") {
       writeFileSync(join(dist, page), rendered);
