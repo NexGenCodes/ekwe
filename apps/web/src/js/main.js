@@ -151,27 +151,15 @@
   }
 
   function renderDynamicContent(config) {
-    // A single universal APK is served for every device architecture.
+    // A single APK is served for every device architecture.
     const downloadUrl = config.links.download;
 
     document.querySelectorAll("[data-download-primary]").forEach((el) => {
       el.href = downloadUrl;
     });
 
-    document.querySelectorAll("[data-download-fallback]").forEach((el) => {
-      el.href = downloadUrl;
-    });
-
     document.querySelectorAll("[data-download]").forEach((el) => {
       el.href = downloadUrl;
-    });
-
-    document.querySelectorAll("[data-download-arch]").forEach((el) => {
-      el.textContent = "universal";
-    });
-
-    document.querySelectorAll("[data-download-abi-label]").forEach((el) => {
-      el.textContent = "universal";
     });
 
     document.querySelectorAll("[data-version]").forEach((el) => {

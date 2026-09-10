@@ -419,6 +419,13 @@ body > * {
   color: var(--text-primary);
 }
 
+.btn-pending {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
 .btn i {
   width: 18px;
   height: 18px;
