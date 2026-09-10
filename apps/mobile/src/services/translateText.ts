@@ -128,7 +128,7 @@ export async function translateText(
       if (e.name === "AbortError") {
         throw e;
       }
-      logger.error("[translateText] FAIL:", e.message);
+      logger.warn("[translateText] FAIL:", e.message);
     }
     return err(EkweError.NETWORK_LOST);
   }

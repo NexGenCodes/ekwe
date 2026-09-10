@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import Copy from "lucide-react-native/icons/copy";
 import Languages from "lucide-react-native/icons/languages";
 import ShareIcon from "lucide-react-native/icons/share";
-import Trash2 from "lucide-react-native/icons/trash-2";
+import Trash2 from "lucide-react-native/icons/trash";
 import React, { useCallback, useState } from "react";
 import { Share, StyleSheet, ViewStyle } from "react-native";
 

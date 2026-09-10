@@ -638,7 +638,7 @@ export const useEchoFlow = (
         return;
       }
       const message = e instanceof Error ? e.message : "Unknown error";
-      logger.error("Translate Error:", message);
+      logger.warn("Translate Error:", message);
       dispatch({ type: "FAIL", payload: { error: message } });
       return; // Stop flow on translation error
     } finally {

@@ -1,5 +1,5 @@
 {
-  "name": "ekwe",
+  "name": "@ekwe/mobile",
   "version": "1.2.5",
   "main": "index.js",
   "scripts": {

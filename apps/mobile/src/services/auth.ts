@@ -310,7 +310,7 @@ export const sendOtp = async (email: string): Promise<AuthResult> => {
           error: "The request timed out. Please try again.",
         };
       }
-      logger.error("[Auth] sendOtp (worker) error:", err);
+      logger.warn("[Auth] sendOtp (worker) error:", err);
       track(AnalyticsEvents.AUTH_OTP_FAILED, {
         method: "otp",
         error: "unexpected_error",
@@ -343,7 +343,7 @@ const sendOtpDirect = async (email: string): Promise<AuthResult> => {
     track(AnalyticsEvents.AUTH_OTP_SENT, { method: "otp" });
     return { ok: true, needsOtp: true };
   } catch (err) {
-    logger.error("[Auth] sendOtp error:", err);
+    logger.warn("[Auth] sendOtp error:", err);
     track(AnalyticsEvents.AUTH_OTP_FAILED, {
       method: "otp",
       error: "unexpected_error",
@@ -507,7 +507,7 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
 
     return { ok: true };
   } catch (err: unknown) {
-    logger.error("[Auth] Google sign-in error:", err);
+    logger.warn("[Auth] Google sign-in error:", err);
     return { ok: false, error: "Google Sign In failed. Please try again." };
   }
 };

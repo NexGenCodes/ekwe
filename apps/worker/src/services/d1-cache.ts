@@ -94,7 +94,14 @@ export async function d1Cleanup(
       .run();
     return meta.changes ?? 0;
   } catch (e) {
-    logger.error("[d1-cache] cleanup failed", { error: String(e) });
+    // A missing table (SQLITE_ERROR) means the schema hasn't been applied
+    // yet or the table was dropped — skip silently instead of polluting Sentry.
+    const msg = String(e);
+    if (msg.includes("SQLITE_ERROR") || msg.includes("no such table")) {
+      logger.warn(`[d1-cache] cleanup skipped (table ${table} missing)`);
+    } else {
+      logger.error("[d1-cache] cleanup failed", { error: msg });
+    }
     return 0;
   }
 }

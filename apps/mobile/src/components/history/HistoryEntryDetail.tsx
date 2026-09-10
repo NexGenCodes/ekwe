@@ -3,7 +3,7 @@ import AppWindow from "lucide-react-native/icons/app-window";
 import Clock from "lucide-react-native/icons/clock";
 import ShareIcon from "lucide-react-native/icons/share";
 import Timer from "lucide-react-native/icons/timer";
-import Trash2 from "lucide-react-native/icons/trash-2";
+import Trash2 from "lucide-react-native/icons/trash";
 import React, { useCallback, useMemo } from "react";
 import { Share, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

@@ -210,12 +210,22 @@ export async function handleSendOtp(
       const upstreamBody = res
         ? (await res.text().catch(() => "")).slice(0, 300)
         : "";
-      // Include status + upstream body in the message: the Sentry server SDK
-      // drops the `extra` hint, so without them the issue is unactionable.
+      // Include status + upstream body in the message for debugging.
       const status = res?.status ?? 0;
-      logger.error(
-        `[otp] Supabase OTP error (status ${status}): ${upstreamBody}`,
-      );
+      // Rate limits are expected operational state (Supabase per-IP buckets
+      // trip frequently because the Worker funnels all traffic through one
+      // egress IP). Warn only — don't flood Sentry with these.
+      const isTransient =
+        status === 429 || status === 422 || (status >= 500 && status < 600);
+      if (isTransient) {
+        logger.warn(
+          `[otp] Supabase OTP transient error (status ${status}): ${upstreamBody}`,
+        );
+      } else {
+        logger.error(
+          `[otp] Supabase OTP error (status ${status}): ${upstreamBody}`,
+        );
+      }
 
       // Upstream rate-limit / verification-code flood guard: Supabase returns
       // 429 (or 422 with over_email_send_rate_limit) when its per-IP / per-email

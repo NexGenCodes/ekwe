@@ -3,7 +3,7 @@ import { BlurView } from "expo-blur";
 import AlertCircle from "lucide-react-native/icons/circle-alert";
 import CheckCircle from "lucide-react-native/icons/circle-check-big";
 import Info from "lucide-react-native/icons/info";
-import Trash2 from "lucide-react-native/icons/trash-2";
+import Trash2 from "lucide-react-native/icons/trash";
 import React from "react";
 import { Modal, useWindowDimensions } from "react-native";
 import Animated, {

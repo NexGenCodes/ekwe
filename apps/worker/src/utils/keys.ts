@@ -130,7 +130,8 @@ export async function rotateKeysDetailed(
       res = await execute(key);
     } catch (err) {
       // A single key failing must not abort rotation for the remaining keys.
-      logger.error("[keys] Rotation attempt failed", {
+      // Expected during provider failover (timeouts, aborts) — warn only.
+      logger.warn("[keys] Rotation attempt failed", {
         error: err instanceof Error ? err.message : String(err),
       });
       continue;

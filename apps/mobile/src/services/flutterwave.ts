@@ -233,7 +233,7 @@ export async function openFlutterwaveCheckout(
       session,
     };
   } catch (err) {
-    logger.error("[Flutterwave] Checkout failed", err);
+    logger.warn("[Flutterwave] Checkout failed", err);
     throw new Error(
       "Payment could not be started. Please check your connection.",
     );

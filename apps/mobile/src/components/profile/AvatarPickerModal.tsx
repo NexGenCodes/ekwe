@@ -1,4 +1,4 @@
-import Smile from "lucide-react-native/icons/smile";
+import Smile from "lucide-react-native/icons/face-slightly-smiling";
 import Ghost from "lucide-react-native/icons/ghost";
 import Sparkles from "lucide-react-native/icons/sparkles";
 import Heart from "lucide-react-native/icons/heart";

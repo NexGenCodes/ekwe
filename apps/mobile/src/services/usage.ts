@@ -57,7 +57,7 @@ export async function fetchUsage(): Promise<
       logger.info("[fetchUsage] Timed out waiting for usage snapshot");
       return { ok: false, error: "Timed out" };
     }
-    logger.error(
+    logger.warn(
       "[fetchUsage] Failed:",
       err instanceof Error ? err.message : String(err),
     );

@@ -62,13 +62,10 @@ export const AppAlert = {
     const message =
       sanitizeErrorMessage(error) ?? "An unexpected error occurred.";
 
-    // User is already shown the alert; don't spam Sentry with error-level
-    // events for every handled failure. Log the readable message at warn and
-    // only surface a genuine Error object to Sentry as an error.
+    // User is already shown the alert — don't flood Sentry with error-level
+    // events for every handled failure. Warn-level keeps them searchable
+    // without creating Sentry issues for expected network / user errors.
     logger.warn(`[AppAlert Error] ${title} - ${message}`);
-    if (error instanceof Error) {
-      logger.error(`[AppAlert] ${title}`, error);
-    }
 
     if (options?.haptics !== false) {
       triggerHaptic(Haptics.NotificationFeedbackType.Error);

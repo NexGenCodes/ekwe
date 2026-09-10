@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import * as StoreReview from "expo-store-review";
 import LogOut from "lucide-react-native/icons/log-out";
 import CreditCard from "lucide-react-native/icons/credit-card";
-import Trash2 from "lucide-react-native/icons/trash-2";
+import Trash2 from "lucide-react-native/icons/trash";
 import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Mail from "lucide-react-native/icons/mail";
 import Shield from "lucide-react-native/icons/shield";
