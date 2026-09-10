@@ -4,7 +4,7 @@ import * as Haptics from "expo-haptics";
 import { triggerHaptic } from "@/utils/haptics";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { useEffect, useCallback, useReducer, useRef, useState } from "react";
-import { AppState, Linking } from "react-native";
+import { Linking } from "react-native";
 
 import { useEchoAudioResolver } from "./useEchoAudioResolver";
 
@@ -741,24 +741,6 @@ export const useEchoFlow = (
     setStep,
     resolveRetryable,
   ]);
-
-  // Clean up and dismiss if the user backgrounds the app
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (nextAppState) => {
-      // "inactive" is transient (system dialogs, app switcher) — only dismiss
-      // when the app is fully backgrounded to avoid killing the flow mid-step.
-      if (nextAppState === "background") {
-        logger.info(
-          "[EchoFlow] App state changed to background, dismissing echo...",
-        );
-        onDismiss();
-      }
-    });
-
-    return (): void => {
-      subscription.remove();
-    };
-  }, [onDismiss]);
 
   return {
     step: state.step,

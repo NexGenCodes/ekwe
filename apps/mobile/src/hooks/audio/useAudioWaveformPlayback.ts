@@ -58,13 +58,6 @@ export const useAudioWaveformPlayback = (
     }
   }, [active]);
 
-  // Free the native player exactly once, on unmount.
-  useEffect(() => {
-    return (): void => {
-      playerRef.current.release();
-    };
-  }, []);
-
   // Memoize the merged controller so identity only churns when the underlying
   // player controller or `peaks` actually change. Without this the per-render
   // `{ ...player, peaks }` spread below would hand memoized step components a

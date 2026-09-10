@@ -330,6 +330,9 @@ class SyncServiceClass {
 
   private async pushToCloud(id: string, userId: string): Promise<void> {
     try {
+      const online = await checkIsOnline();
+      if (!online) return;
+
       const rows = Db.getPendingOutbox(userId);
       const row = rows.find((r) => r.id === id);
       if (!row) return;
