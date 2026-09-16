@@ -1,55 +1,42 @@
-import { open } from "@op-engineering/op-sqlite";
-import type { DB, QueryResult } from "@op-engineering/op-sqlite";
+import { drizzle } from "drizzle-orm/expo-sqlite";
+import { openDatabaseSync } from "expo-sqlite";
+import { eq, and, desc, sql, or } from "drizzle-orm";
+import { history, outbox } from "@ekwe/db/local-schema";
 
 import logger from "@/utils/logger";
 
 /** Minimum gap between outbox push attempts to avoid burning all retries on a flaky network. */
 const OUTBOX_RETRY_BACKOFF_MS = 60_000;
 
-let db: DB;
+const expoDb = openDatabaseSync("ekwe.db");
+const db = drizzle(expoDb);
 
-export interface HistoryRow {
-  id: string;
-  user_id: string;
-  source_lang: string;
-  target_lang: string;
-  transcript: string;
-  translation_text: string | null;
-  transliteration_text: string | null;
-  duration: number;
-  source_app: string;
-  provider: string;
-  created_at: string;
-  /** Producing operation: "transcription" | "translation". */
-  entry_type: "transcription" | "translation";
+// ─── SQLite performance PRAGMAs ─────────────────────────────────
+// WAL mode allows concurrent reads during writes and improves write
+// throughput 2-5×. NORMAL synchronous is safe in WAL mode (data is
+// durable on process crash; only an OS crash can lose a transaction).
+// These are session-level; they run once at DB open.
+try {
+  expoDb.execSync(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA cache_size = -16000;
+    PRAGMA busy_timeout = 5000;
+    PRAGMA mmap_size = 268435456;
+    PRAGMA temp_store = MEMORY;
+    PRAGMA foreign_keys = ON;
+  `);
+} catch (err) {
+  logger.error("Failed to set SQLite PRAGMAs", err);
 }
 
-export interface OutboxRow {
-  id: string;
-  payload: string;
-  user_id: string;
-  retries: number;
-  last_attempt: number | null;
-  created_at: string;
-  status: "pending" | "in_flight" | "dead";
-}
-
-function migrate(): void {
-  const res = db.executeSync("PRAGMA user_version") as QueryResult;
-  const currentVersion = (res.rows?.[0]?.user_version as number) ?? 0;
-
-  if (currentVersion < 1) {
-    db.executeSync("PRAGMA journal_mode=WAL");
-    db.executeSync("PRAGMA auto_vacuum=INCREMENTAL");
-
-    db.executeSync(`
-      CREATE TABLE IF NOT EXISTS store (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      )
-    `);
-
-    db.executeSync(`
+// We need to run migrations. Since we are moving from op-sqlite, the ekwe.db file
+// already exists. We can use Drizzle's migration, but for now we'll just ensure the tables
+// exist if they don't, to preserve compatibility with existing databases.
+// The raw SQL schema is identical, so existing data works fine.
+function ensureTables(): void {
+  try {
+    expoDb.execSync(`
       CREATE TABLE IF NOT EXISTS history (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -61,51 +48,13 @@ function migrate(): void {
         duration REAL NOT NULL DEFAULT 0,
         source_app TEXT NOT NULL DEFAULT '',
         provider TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL
-      )
-    `);
-    db.executeSync(
-      "CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at DESC)",
-    );
-    db.executeSync(
-      "CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id)",
-    );
+        created_at TEXT NOT NULL,
+        entry_type TEXT NOT NULL DEFAULT 'transcription'
+      );
+      CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id);
+      CREATE INDEX IF NOT EXISTS idx_history_user_created ON history(user_id, created_at DESC);
 
-    try {
-      db.executeSync(`
-        CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(
-          transcript, translation_text,
-          content='history',
-          content_rowid='rowid',
-          tokenize='unicode61'
-        )
-      `);
-
-      db.executeSync(`
-        CREATE TRIGGER IF NOT EXISTS history_ai AFTER INSERT ON history BEGIN
-          INSERT INTO history_fts(rowid, transcript, translation_text)
-          VALUES (new.rowid, new.transcript, new.translation_text);
-        END
-      `);
-      db.executeSync(`
-        CREATE TRIGGER IF NOT EXISTS history_ad AFTER DELETE ON history BEGIN
-          INSERT INTO history_fts(history_fts, rowid, transcript, translation_text)
-          VALUES ('delete', old.rowid, old.transcript, old.translation_text);
-        END
-      `);
-      db.executeSync(`
-        CREATE TRIGGER IF NOT EXISTS history_au AFTER UPDATE ON history BEGIN
-          INSERT INTO history_fts(history_fts, rowid, transcript, translation_text)
-          VALUES ('delete', old.rowid, old.transcript, old.translation_text);
-          INSERT INTO history_fts(rowid, transcript, translation_text)
-          VALUES (new.rowid, new.transcript, new.translation_text);
-        END
-      `);
-    } catch {
-      logger.warn("[db] FTS5 not available, full-text search disabled");
-    }
-
-    db.executeSync(`
       CREATE TABLE IF NOT EXISTS outbox (
         id TEXT PRIMARY KEY,
         payload TEXT NOT NULL,
@@ -115,107 +64,105 @@ function migrate(): void {
         created_at TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending'
           CHECK(status IN ('pending', 'in_flight', 'dead'))
-      )
+      );
+      CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status);
+
+      CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(
+        id UNINDEXED,
+        transcript,
+        translation_text
+      );
     `);
-    db.executeSync(
-      "CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status)",
-    );
 
-    db.executeSync("PRAGMA user_version = 1");
-  }
-
-  if (currentVersion < 2) {
-    db.executeSync("DROP TABLE IF EXISTS store");
-    db.executeSync("PRAGMA user_version = 2");
-  }
-
-  if (currentVersion < 3) {
-    const cols = db.executeSync("PRAGMA table_info(history)") as QueryResult;
-    const hasDeleted = (cols.rows ?? []).some((c) => c.name === "deleted");
-    if (hasDeleted) {
-      db.executeSync("DROP INDEX IF EXISTS idx_history_deleted");
-      db.executeSync("ALTER TABLE history DROP COLUMN deleted");
-    }
-    db.executeSync("PRAGMA user_version = 3");
-  }
-
-  if (currentVersion < 4) {
-    const cols = db.executeSync("PRAGMA table_info(history)") as QueryResult;
-    if (!(cols.rows ?? []).some((c) => c.name === "entry_type")) {
-      db.executeSync(
-        "ALTER TABLE history ADD COLUMN entry_type TEXT NOT NULL DEFAULT 'transcription'",
-      );
-      // Backfill: existing rows with a distinct translation and no audio were
-      // pure text translations; everything else originated from audio.
-      db.executeSync(
-        `UPDATE history
-         SET entry_type = 'translation'
-         WHERE translation_text IS NOT NULL
-           AND translation_text != ''
-           AND translation_text != transcript
-           AND duration = 0`,
-      );
-    }
-    db.executeSync("PRAGMA user_version = 4");
+    repairFtsTriggers();
+  } catch (err) {
+    logger.error("Error migrating local database", err);
   }
 }
 
-function getDb(): DB {
-  if (!db) {
-    db = open({ name: "ekwe.db" });
-    migrate();
-  }
-  return db;
+/**
+ * Keep the FTS index in sync with the `history` table.
+ *
+ * The FTS5 special write command
+ *   INSERT INTO history_fts(history_fts, ...) VALUES('delete', ...)
+ * is ONLY valid for contentless (`content=''`) or external-content
+ * (`content='tablename'`) tables. On a plain contentful table it raises
+ * `SQL logic error`, which surfaced as the intermittent
+ * `Pull from cloud failed` (ERR_INTERNAL_SQLITE_ERROR) once a history row
+ * existed and the cloud sync switched to the ON CONFLICT UPDATE path.
+ *
+ * New databases get a contentful table, so maintain it with a plain
+ * DELETE-by-id. Any legacy op-sqlite install may still carry the older
+ * external-content (`content='history'` + rowid) table, where the `'delete'`
+ * command IS valid — detect the shape and install matching triggers. The
+ * triggers are dropped and recreated unconditionally so databases created by
+ * earlier buggy builds are repaired in place.
+ */
+function repairFtsTriggers(): void {
+  const ftsRow = expoDb.getFirstSync<{ sql: string | null }>(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'history_fts'",
+  );
+  const isExternalContent =
+    ftsRow?.sql != null && /content\s*=\s*['"]/.test(ftsRow.sql);
+
+  const ai = isExternalContent
+    ? `INSERT INTO history_fts(rowid, transcript, translation_text)
+        VALUES (new.rowid, new.transcript, new.translation_text);`
+    : `INSERT INTO history_fts(id, transcript, translation_text)
+        VALUES (new.id, new.transcript, new.translation_text);`;
+  const ad = isExternalContent
+    ? `INSERT INTO history_fts(history_fts, rowid, transcript, translation_text)
+        VALUES('delete', old.rowid, old.transcript, old.translation_text);`
+    : `DELETE FROM history_fts WHERE id = old.id;`;
+
+  expoDb.execSync(`
+    DROP TRIGGER IF EXISTS history_ai;
+    DROP TRIGGER IF EXISTS history_ad;
+    DROP TRIGGER IF EXISTS history_au;
+    CREATE TRIGGER history_ai AFTER INSERT ON history BEGIN
+      ${ai}
+    END;
+    CREATE TRIGGER history_ad AFTER DELETE ON history BEGIN
+      ${ad}
+    END;
+    CREATE TRIGGER history_au AFTER UPDATE ON history BEGIN
+      ${ad}
+      ${ai}
+    END;
+  `);
 }
+
+ensureTables();
+
+export type HistoryRow = typeof history.$inferSelect;
+export type OutboxRow = typeof outbox.$inferSelect;
 
 export const Db = {
   transaction: (fn: () => void): void => {
-    getDb().executeSync("BEGIN TRANSACTION");
+    expoDb.execSync("BEGIN EXCLUSIVE TRANSACTION");
     try {
       fn();
-      getDb().executeSync("COMMIT");
+      expoDb.execSync("COMMIT");
     } catch (e) {
-      getDb().executeSync("ROLLBACK");
+      expoDb.execSync("ROLLBACK");
       throw e;
     }
   },
 
-  insertHistory: (row: HistoryRow): void => {
-    getDb().executeSync(
-      `INSERT OR REPLACE INTO history (id, user_id, source_lang, target_lang, transcript, translation_text,
-        transliteration_text, duration, source_app, provider, created_at, entry_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        row.id,
-        row.user_id,
-        row.source_lang,
-        row.target_lang,
-        row.transcript,
-        row.translation_text,
-        row.transliteration_text,
-        row.duration,
-        row.source_app,
-        row.provider,
-        row.created_at,
-        row.entry_type ?? "transcription",
-      ],
-    );
+  insertHistory: (row: typeof history.$inferInsert): void => {
+    db.insert(history)
+      .values(row)
+      .onConflictDoUpdate({
+        target: history.id,
+        set: row,
+      })
+      .run();
   },
 
   deleteHistory: (id: string): void => {
-    getDb().executeSync("DELETE FROM history WHERE id = ?", [id]);
+    db.delete(history).where(eq(history.id, id)).run();
   },
 
-  /**
-   * Finds the existing translation row for the same user, language pair and
-   * source text. Used by SyncService.writeHistory to de-duplicate repeated
-   * translations of the same text into the same target language: instead of
-   * inserting a fresh row, the existing one is updated in place (reusing its
-   * id keeps the row's position in history and makes the cloud upsert
-   * idempotent). Only text translations (`entry_type = 'translation'`) are
-   * considered; re-recording the same audio phrase still creates a new
-   * transcription row each time.
-   */
   findTranslationByDedupKey: (
     userId: string,
     sourceLang: string,
@@ -223,23 +170,24 @@ export const Db = {
     transcript: string,
   ): HistoryRow | null => {
     if (!userId) return null;
-    const res = getDb().executeSync(
-      `SELECT * FROM history
-       WHERE user_id = ?
-         AND entry_type = 'translation'
-         AND source_lang = ?
-         AND target_lang = ?
-         AND transcript = ?
-       ORDER BY created_at DESC LIMIT 1`,
-      [userId, sourceLang, targetLang, transcript],
-    ) as QueryResult;
-    return (res.rows?.[0] as unknown as HistoryRow) ?? null;
+    const results = db
+      .select()
+      .from(history)
+      .where(
+        and(
+          eq(history.userId, userId),
+          eq(history.entryType, "translation"),
+          eq(history.sourceLang, sourceLang),
+          eq(history.targetLang, targetLang),
+          eq(history.transcript, transcript),
+        ),
+      )
+      .orderBy(desc(history.createdAt))
+      .limit(1)
+      .all();
+    return results[0] ?? null;
   },
 
-  /**
-   * Updates a translation row in place, keeping its original id and created_at
-   * (so the entry doesn't jump to the top of history when it's re-translated).
-   */
   updateTranslationRow: (
     id: string,
     row: {
@@ -250,29 +198,27 @@ export const Db = {
       provider: string;
     },
   ): void => {
-    getDb().executeSync(
-      `UPDATE history
-       SET translation_text = ?, transliteration_text = ?, duration = ?,
-           source_app = ?, provider = ?
-       WHERE id = ?`,
-      [
-        row.translation_text,
-        row.transliteration_text,
-        row.duration,
-        row.source_app,
-        row.provider,
-        id,
-      ],
-    );
+    db.update(history)
+      .set({
+        translationText: row.translation_text,
+        transliterationText: row.transliteration_text,
+        duration: row.duration,
+        sourceApp: row.source_app,
+        provider: row.provider,
+      })
+      .where(eq(history.id, id))
+      .run();
   },
 
   getRecentHistory: (userId: string, limit: number = 200): HistoryRow[] => {
     if (!userId) return [];
-    const res = getDb().executeSync(
-      "SELECT * FROM history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-      [userId, limit],
-    ) as QueryResult;
-    return (res.rows ?? []) as unknown as HistoryRow[];
+    return db
+      .select()
+      .from(history)
+      .where(eq(history.userId, userId))
+      .orderBy(desc(history.createdAt))
+      .limit(limit)
+      .all();
   },
 
   getHistoryPage: (
@@ -281,21 +227,32 @@ export const Db = {
     before: { created_at: string; id: string } | null,
   ): HistoryRow[] => {
     if (!userId) return [];
-    // Cursor-based (created_at, id) paging instead of OFFSET. Cloud pulls
-    // insert rows into SQLite, which would shift offsets and cause
-    // skipped/duplicated rows in the caller's list.
-    const res = before
-      ? getDb().executeSync(
-          `SELECT * FROM history WHERE user_id = ?
-             AND (created_at < ? OR (created_at = ? AND id < ?))
-           ORDER BY created_at DESC LIMIT ?`,
-          [userId, before.created_at, before.created_at, before.id, limit],
-        )
-      : getDb().executeSync(
-          "SELECT * FROM history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-          [userId, limit],
-        );
-    return (res.rows ?? []) as unknown as HistoryRow[];
+
+    let condition = eq(history.userId, userId);
+    if (before) {
+      condition = and(
+        eq(history.userId, userId),
+        or(
+          sql`${history.createdAt} < ${before.created_at}`,
+          and(
+            eq(history.createdAt, before.created_at),
+            sql`${history.id} < ${before.id}`,
+          ),
+        ),
+      ) as typeof condition;
+    }
+
+    return (
+      db
+        .select()
+        .from(history)
+        .where(condition)
+        // Keyset order must use BOTH cursor keys (id breaks ties on identical
+        // created_at) or shared-timestamp rows straddle page boundaries.
+        .orderBy(desc(history.createdAt), desc(history.id))
+        .limit(limit)
+        .all()
+    );
   },
 
   searchHistory: (
@@ -303,135 +260,171 @@ export const Db = {
     query: string,
     limit: number = 100,
   ): HistoryRow[] => {
-    if (!userId) return [];
-    const ftsQuery = query
-      .replace(/['"]/g, "")
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((w) => `"${w}"`)
-      .join(" AND ");
-    if (!ftsQuery) return [];
-    try {
-      const res = getDb().executeSync(
-        `SELECT h.* FROM history h
-         INNER JOIN history_fts fts ON h.rowid = fts.rowid
-         WHERE h.user_id = ? AND history_fts MATCH ?
-         ORDER BY h.created_at DESC
-         LIMIT ?`,
-        [userId, ftsQuery, limit],
-      ) as QueryResult;
-      return (res.rows ?? []) as unknown as HistoryRow[];
-    } catch {
-      const likeQuery = `%${query.replace(/['"]/g, "")}%`;
-      const res = getDb().executeSync(
-        `SELECT * FROM history WHERE user_id = ? AND (transcript LIKE ? OR translation_text LIKE ?)
-         ORDER BY created_at DESC LIMIT ?`,
-        [userId, likeQuery, likeQuery, limit],
-      ) as QueryResult;
-      return (res.rows ?? []) as unknown as HistoryRow[];
-    }
+    if (!userId || !query) return [];
+
+    // Basic sanitization for FTS5 syntax
+    const sanitized = query.replace(/['"]/g, "").trim();
+    if (!sanitized) return [];
+
+    // For substring matching in FTS5 without trigram, we append wildcard
+    const ftsQuery = `"${sanitized}"*`;
+
+    return db
+      .select()
+      .from(history)
+      .where(
+        and(
+          eq(history.userId, userId),
+          sql`${history.id} IN (SELECT id FROM history_fts WHERE history_fts MATCH ${ftsQuery})`,
+        ),
+      )
+      .orderBy(desc(history.createdAt))
+      .limit(limit)
+      .all();
   },
 
-  cleanupExpiredHistory: (ttlDays: number): number => {
-    // julianday() parses both ISO-8601 ('T' separator, as stored) and
-    // SQLite space-separated timestamps, so the comparison is format-agnostic
-    // — a lexicographic compare against datetime("now", ...) would skew rows
-    // created on the boundary day.
-    const res = getDb().executeSync(
-      "DELETE FROM history WHERE julianday(created_at) < julianday('now', ?)",
-      [`-${ttlDays} days`],
-    ) as QueryResult;
-    return res.rowsAffected ?? 0;
-  },
-
-  insertOutbox: (
-    row: Omit<OutboxRow, "retries" | "last_attempt" | "status">,
-  ): void => {
-    getDb().executeSync(
-      `INSERT OR REPLACE INTO outbox (id, payload, user_id, retries, last_attempt, created_at, status)
-       VALUES (?, ?, ?, 0, NULL, ?, 'pending')`,
-      [row.id, row.payload, row.user_id, row.created_at],
+  cleanupExpiredHistory: (ttlDays: number, userId?: string): number => {
+    const cutoff = new Date(
+      Date.now() - ttlDays * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    // Scope the purge to the active user (shared-device safety) and skip rows
+    // whose outbox entry hasn't synced yet — those unsynced rows are the
+    // user's only copy until a drain succeeds. Once the outbox row is cleared,
+    // the history row becomes eligible on the next cleanup pass.
+    const conditions = [sql`${history.createdAt} < ${cutoff}`];
+    if (userId) conditions.push(eq(history.userId, userId));
+    conditions.push(
+      sql`NOT EXISTS (SELECT 1 FROM ${outbox} WHERE ${outbox.id} = ${history.id})`,
     );
+    const deleted = db
+      .delete(history)
+      .where(and(...conditions))
+      .run();
+    return deleted.changes ?? 0;
+  },
+
+  insertOutbox: (row: typeof outbox.$inferInsert): void => {
+    db.insert(outbox)
+      .values({
+        id: row.id,
+        payload: row.payload,
+        userId: row.userId,
+        retries: 0,
+        lastAttempt: null,
+        createdAt: row.createdAt,
+        status: "pending",
+      })
+      .onConflictDoUpdate({
+        target: outbox.id,
+        set: {
+          payload: row.payload,
+          userId: row.userId,
+          createdAt: row.createdAt,
+        },
+      })
+      .run();
   },
 
   deleteOutbox: (id: string): void => {
-    getDb().executeSync("DELETE FROM outbox WHERE id = ?", [id]);
+    db.delete(outbox).where(eq(outbox.id, id)).run();
   },
 
-  /** Removes all outbox rows that reference a history entry (by outbox id or payload id). */
   deleteOutboxForHistory: (id: string): void => {
-    getDb().executeSync(
-      `DELETE FROM outbox WHERE id = ? OR payload LIKE '%"id":"' || ? || '"%'`,
-      [id, id],
-    );
+    db.delete(outbox)
+      .where(
+        or(
+          eq(outbox.id, id),
+          sql`${outbox.payload} LIKE '%"id":"' || ${id} || '"%'`,
+        ),
+      )
+      .run();
   },
 
-  /**
-   * Pending outbox rows for a single user that are due for a retry. Scoping by
-   * user_id prevents one account's session from draining another account's
-   * unsynced rows (which RLS blocks server-side anyway, stranding them until
-   * they go dead). Rows whose last attempt was < OUTBOX_RETRY_BACKOFF_MS ago
-   * are skipped so a flaky network can't burn all 5 retries in seconds.
-   */
   getPendingOutbox: (userId: string): OutboxRow[] => {
     if (!userId) return [];
-    const res = getDb().executeSync(
-      "SELECT * FROM outbox WHERE user_id = ? AND status = 'pending' AND retries < 5 AND (last_attempt IS NULL OR last_attempt <= ?) ORDER BY created_at ASC",
-      [userId, Date.now() - OUTBOX_RETRY_BACKOFF_MS],
-    ) as QueryResult;
-    return (res.rows ?? []) as unknown as OutboxRow[];
+    return db
+      .select()
+      .from(outbox)
+      .where(
+        and(
+          eq(outbox.userId, userId),
+          eq(outbox.status, "pending"),
+          sql`${outbox.retries} < 5`,
+          or(
+            sql`${outbox.lastAttempt} IS NULL`,
+            sql`${outbox.lastAttempt} <= ${Date.now() - OUTBOX_RETRY_BACKOFF_MS}`,
+          ),
+        ),
+      )
+      .orderBy(outbox.createdAt)
+      .all();
   },
 
-  /** Number of outbox rows that exhausted their retries for a user. */
   countDeadOutbox: (userId: string): number => {
     if (!userId) return 0;
-    const res = getDb().executeSync(
-      "SELECT COUNT(*) AS count FROM outbox WHERE user_id = ? AND status = 'dead'",
-      [userId],
-    ) as QueryResult;
-    return (res.rows?.[0]?.count as number) ?? 0;
+    const result = db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(outbox)
+      .where(and(eq(outbox.userId, userId), eq(outbox.status, "dead")))
+      .all();
+    return result[0]?.count ?? 0;
   },
 
   incrementOutboxRetry: (id: string): void => {
-    getDb().executeSync(
-      "UPDATE outbox SET retries = retries + 1, last_attempt = ?, status = CASE WHEN retries + 1 >= 5 THEN ? ELSE ? END WHERE id = ?",
-      [Date.now(), "dead", "pending", id],
-    );
+    const MAX_RETRIES = 5;
+    db.update(outbox)
+      .set({
+        retries: sql`${outbox.retries} + 1`,
+        lastAttempt: Date.now(),
+        status: sql`CASE WHEN ${outbox.retries} + 1 >= ${MAX_RETRIES} THEN 'dead' ELSE 'pending' END`,
+      })
+      .where(eq(outbox.id, id))
+      .run();
   },
 
   markOutboxInFlight: (id: string): void => {
-    getDb().executeSync("UPDATE outbox SET status = 'in_flight' WHERE id = ?", [
-      id,
-    ]);
+    db.update(outbox)
+      .set({ status: "in_flight" })
+      .where(eq(outbox.id, id))
+      .run();
   },
 
   /**
-   * Resurrects outbox rows stuck in a terminal-ish state so they get retried
-   * instead of being lost forever:
-   *   * `dead`     — hit 5 failed pushes; previously purged after 7 days, which
-   *                 silently deleted the user's unsynced history row.
-   *   * `in_flight`— the app died between marking the row in-flight and the
-   *                 push completing; without revival it would never retry.
-   * Upserts are idempotent, so retrying a stale row is always safe.
+   * Crash recovery: reset rows stuck in `in_flight` back to `pending`.
+   * Called at startup — if the app crashed mid-push, these rows need a retry.
+   * Does NOT touch `dead` rows (those exhausted their retries deliberately).
    */
-  reviveOutbox: (): number => {
-    const res = getDb().executeSync(
-      "UPDATE outbox SET status = 'pending', retries = 0 WHERE status IN ('dead', 'in_flight')",
-    ) as QueryResult;
-    return res.rowsAffected ?? 0;
+  reviveInFlight: (): number => {
+    const res = db
+      .update(outbox)
+      .set({ status: "pending" })
+      .where(eq(outbox.status, "in_flight"))
+      .run();
+    return res.changes ?? 0;
   },
 
-  /** Removes every history row for a user (used when the account is deleted or cleared). */
+  /**
+   * Explicitly resurrect `dead` rows for a user-triggered retry.
+   * Resets retries to 0 so they get a fresh 5-attempt budget.
+   */
+  reviveDeadOutbox: (): number => {
+    const res = db
+      .update(outbox)
+      .set({ status: "pending", retries: 0 })
+      .where(eq(outbox.status, "dead"))
+      .run();
+    return res.changes ?? 0;
+  },
+
   purgeUserHistory: (userId: string): void => {
-    getDb().executeSync("DELETE FROM history WHERE user_id = ?", [userId]);
+    db.delete(history).where(eq(history.userId, userId)).run();
   },
 
-  /** Removes every outbox row for a user (used when the account is deleted or cleared). */
   purgeUserOutbox: (userId: string): void => {
-    getDb().executeSync("DELETE FROM outbox WHERE user_id = ?", [userId]);
+    db.delete(outbox).where(eq(outbox.userId, userId)).run();
   },
 
   vacuum: (): void => {
-    getDb().executeSync("PRAGMA incremental_vacuum");
+    expoDb.execSync("PRAGMA incremental_vacuum");
   },
 };

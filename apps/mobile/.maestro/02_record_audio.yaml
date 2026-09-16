@@ -1,0 +1,9 @@
+appId: com.ekwe.app
+---
+- launchApp
+- tapOn:
+    id: "record-button"
+- assertVisible: "Recording..."
+- tapOn:
+    id: "stop-button"
+- assertVisible: "Translating..."

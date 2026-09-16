@@ -51,6 +51,7 @@ import { auth$, authActions, settings$, settingsActions } from "@/store";
 import { isIOS } from "@/utils";
 
 import { AppAlert } from "@/utils/alert";
+import { AnalyticsEvents, track } from "@/utils/analytics";
 import { triggerHaptic } from "@/utils/haptics";
 import logger from "@/utils/logger";
 import { pushOnce } from "@/utils/navigation";
@@ -494,6 +495,7 @@ export default function ProfileScreen(): React.JSX.Element {
               hasDivider
               onPress={async () => {
                 await triggerHaptic();
+                track(AnalyticsEvents.RATE_PROMPT_SHOWN);
                 let hasNativeAction = false;
                 try {
                   hasNativeAction = await StoreReview.hasAction();
@@ -506,6 +508,9 @@ export default function ProfileScreen(): React.JSX.Element {
                 if (hasNativeAction) {
                   try {
                     await StoreReview.requestReview();
+                    track(AnalyticsEvents.RATE_PROMPT_RATED, {
+                      method: "native",
+                    });
                     return;
                   } catch {
                     logger.warn(
@@ -538,9 +543,15 @@ export default function ProfileScreen(): React.JSX.Element {
                 const url = isIOS
                   ? `itms-apps://itunes.apple.com/app/viewContentsUserReviews?id=${ITUNES_ITEM_ID}&action=write-review`
                   : `market://details?id=${ANDROID_PACKAGE_NAME}`;
-                Linking.openURL(url).catch(() => {
-                  AppAlert.error("Error", "Could not open the app store.");
-                });
+                Linking.openURL(url)
+                  .then(() => {
+                    track(AnalyticsEvents.RATE_PROMPT_RATED, {
+                      method: "store_link",
+                    });
+                  })
+                  .catch(() => {
+                    AppAlert.error("Error", "Could not open the app store.");
+                  });
               }}
             />
             <ProfileRow

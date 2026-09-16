@@ -26,7 +26,7 @@ function loadEnvFile() {
 }
 
 function readSharedVersion() {
-  const versionTsPath = join(__dirname, "../../packages/shared/version.ts");
+  const versionTsPath = join(__dirname, "../../packages/shared/src/version.ts");
   if (!existsSync(versionTsPath)) return null;
   const content = readFileSync(versionTsPath, "utf-8");
   const match = content.match(/APP_VERSION\s*=\s*"([^"]+)"/);
@@ -51,6 +51,7 @@ function renderTemplate(html, config) {
     .replace(/\{\{APP_DESCRIPTION\}\}/g, config.app.description)
     .replace(/\{\{APP_VERSION\}\}/g, config.app.version)
     .replace(/\{\{DOWNLOAD_URL\}\}/g, config.links.download)
+    .replace(/\{\{SITE_URL\}\}/g, config.links.siteUrl)
 
     .replace(/\{\{CONTACT_EMAIL\}\}/g, config.contact.email)
     .replace(/\{\{COMPANY_NAME\}\}/g, config.legal.companyName)
@@ -99,6 +100,34 @@ function renderChangelogList(changelogPath) {
     .join("\n\n");
 }
 
+// Static site URLs for the sitemap. The landing page and changelog are
+// indexable; legal pages stay noindex (they also carry meta robots=noindex).
+function renderSitemap(config) {
+  const site = config.links.siteUrl.replace(/\/$/, "");
+  const today = new Date().toISOString().slice(0, 10);
+  const pages = [
+    { loc: "/", priority: "1.0", changefreq: "weekly" },
+    { loc: "/pages/changelog.html", priority: "0.4", changefreq: "monthly" },
+  ];
+  const urls = pages
+    .map(
+      (p) =>
+        `  <url>\n    <loc>${site}${p.loc}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>`,
+    )
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
+}
+
+function renderRobots(siteUrl) {
+  const site = siteUrl.replace(/\/$/, "");
+  return (
+    readFileSync(join(__dirname, "src/robots.txt"), "utf8").replace(
+      /\{\{SITE_URL\}\}/g,
+      site,
+    ) + "\n"
+  );
+}
+
 function build() {
   const config = readConfig();
   ensureDir(dist);
@@ -112,6 +141,11 @@ function build() {
   copyFileSync(join(__dirname, "src/favicon.svg"), join(dist, "favicon.svg"));
   copyFileSync(join(__dirname, "src/og-image.png"), join(dist, "og-image.png"));
   copyFileSync(join(__dirname, "src/logo.png"), join(dist, "logo.png"));
+
+  // Security headers + SEO files
+  copyFileSync(join(__dirname, "src/_headers"), join(dist, "_headers"));
+  writeFileSync(join(dist, "robots.txt"), renderRobots(config.links.siteUrl));
+  writeFileSync(join(dist, "sitemap.xml"), renderSitemap(config));
 
   // Copy config.json for JS to read
   writeFileSync(join(dist, "config.json"), JSON.stringify(config, null, 2));

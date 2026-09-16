@@ -1,7 +1,8 @@
 import { Env, TranscribeResult } from "../core/types";
 import { rotateKeys } from "../utils/keys";
 import { isHallucination } from "../utils/prompts";
-import { fetchWithTimeout, TIMEOUT_FAST, abortableDelay } from "../utils/fetch";
+import { fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
+import { pollForJobResult } from "../utils/jobPoll";
 import {
   rotateWsKeys,
   createOpusDecodingInterceptor,
@@ -10,8 +11,6 @@ import { logger } from "../core/logger";
 
 const ASSEMBLYAI_UPLOAD = "https://api.assemblyai.com/v2/upload";
 const ASSEMBLYAI_TRANSCRIPT = "https://api.assemblyai.com/v2/transcript";
-const POLL_INTERVAL = 2000;
-const MAX_POLLS = 4; // 8s max wait
 
 /**
  * AssemblyAI — async upload → poll pattern.
@@ -111,34 +110,38 @@ export async function transcribe(
       const { id } = await createRes.json<{ id: string }>();
 
       // Step 3: Poll for result
-      for (let i = 0; i < MAX_POLLS; i++) {
-        await abortableDelay(POLL_INTERVAL, signal);
+      const polled = await pollForJobResult<AssemblyResult>({
+        url: `${ASSEMBLYAI_TRANSCRIPT}/${id}`,
+        headers: { Authorization: key },
+        signal,
+        isError: (data) => {
+          const d = data as AssemblyResult;
+          if (d.status === "error") {
+            logger.error("[assemblyai] Processing error", {
+              error: d.error,
+            });
+            return new Response(null, { status: 500 });
+          }
+          return null;
+        },
+        parse: (data) => {
+          const d = data as AssemblyResult;
+          if (d.status === "completed" && d.text) return d;
+          return null;
+        },
+      });
 
-        const poll = await fetchWithTimeout(
-          `${ASSEMBLYAI_TRANSCRIPT}/${id}`,
-          { headers: { Authorization: key }, signal },
-          TIMEOUT_FAST,
-          signal,
+      if (polled.ok && polled.value) {
+        return new Response(
+          JSON.stringify({
+            text: polled.value.text,
+            duration: polled.value.audio_duration,
+            language: polled.value.language_code,
+          }),
+          { status: 200 },
         );
-
-        const data = await poll.json<AssemblyResult>();
-
-        if (data.status === "completed" && data.text) {
-          return new Response(
-            JSON.stringify({
-              text: data.text,
-              duration: data.audio_duration,
-              language: data.language_code,
-            }),
-            { status: 200 },
-          );
-        }
-        if (data.status === "error") {
-          logger.error("[assemblyai] Processing error", { error: data.error });
-          return new Response(null, { status: 500 });
-        }
       }
-      return new Response(null, { status: 504 });
+      return polled.response ?? new Response(null, { status: 504 });
     },
     signal,
   );

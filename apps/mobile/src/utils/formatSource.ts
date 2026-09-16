@@ -58,7 +58,8 @@ export const formatSourceApp = (source: string | null | undefined): string => {
 
   // Native-resolved display labels (e.g. "WhatsApp Business") pass through
   // untouched — no splitting, no truncation.
-  if (value.includes(" ") || /[A-Z]/.test(value)) return value;
+  if (value.includes(" ") || (/[A-Z]/.test(value) && !value.includes(".")))
+    return value;
 
   // Exact known-package match.
   if (KNOWN_APPS[value]) return KNOWN_APPS[value];

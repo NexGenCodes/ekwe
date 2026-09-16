@@ -15,6 +15,7 @@ import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 import { HistoryEntry } from "@/store";
+import { AnalyticsEvents, track } from "@/utils/analytics";
 import { withAlpha } from "@/utils/color";
 import { triggerHaptic } from "@/utils/haptics";
 import { AppToast, logger } from "@/utils";
@@ -126,6 +127,7 @@ export const HistoryEntryRow = React.memo(
         entry.translation?.trim(),
       ].filter((part): part is string => !!part);
       setSheetVisible(false);
+      track(AnalyticsEvents.RESULT_SHARED, { source: "history" });
       Share.share({ message: parts.join("\n\n") }).catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
         if (!message.includes("dismissed")) {

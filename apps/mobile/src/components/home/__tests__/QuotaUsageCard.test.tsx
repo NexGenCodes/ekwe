@@ -1,180 +1,205 @@
-import { render, screen } from "@testing-library/react-native";
+// @vitest-environment jsdom
+import { render, screen } from "@testing-library/react";
 import React from "react";
+import { describe, expect, it, vi } from "vitest";
 
 import { QuotaUsageCard } from "../QuotaUsageCard";
 
-jest.mock("@/hooks", () => ({
-  useTheme: () => mockTheme(),
+const color = {
+  foreground: "#111111",
+  muted: "#6b7280",
+  brand: "#2563eb",
+  warning: "#d97706",
+  error: "#dc2626",
+  success: "#16a34a",
+  shadow: "#000000",
+} as const;
+
+const usage = vi.hoisted(() => ({ query: vi.fn() }));
+
+vi.mock("@/hooks", () => ({
+  useTheme: () => ({ color, isDark: false }),
 }));
 
-jest.mock("@/hooks/ui/useTheme", () => ({
-  useTheme: () => mockTheme(),
+vi.mock("@/hooks/queries/useUsageQuery", () => ({
+  useUsageQuery: () => usage.query(),
 }));
 
-jest.mock("@/hooks/queries/useUsageQuery", () => ({
-  useUsageQuery: () => mockUsageQuery,
-  invalidateUsage: jest.fn(),
-  usageQueryKey: ["usage"],
+vi.mock("@/components/ui", () => {
+  const View = ({
+    children,
+    accessibilityLabel,
+    accessibilityRole,
+    accessibilityValue,
+    style: _style,
+    ...rest
+  }: {
+    children?: React.ReactNode;
+    style?: unknown;
+    accessibilityLabel?: string;
+    accessibilityRole?: string;
+    accessibilityValue?: { min: number; max: number; now: number };
+  }) => (
+    <div
+      role={accessibilityRole}
+      aria-label={accessibilityLabel ? String(accessibilityLabel) : undefined}
+      aria-valuemin={accessibilityValue?.min}
+      aria-valuemax={accessibilityValue?.max}
+      aria-valuenow={accessibilityValue?.now}
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+  const Text = ({
+    children,
+    style: _style,
+    ...rest
+  }: {
+    children?: React.ReactNode;
+    style?: unknown;
+  }) => <span {...rest}>{children}</span>;
+  const Spinner = () => <span role="status" aria-label="Loading" />;
+  return { Box: View, Text, Spinner };
+});
+
+vi.mock("@/components/Card", () => ({
+  Card: ({ children, ...rest }: { children?: React.ReactNode }) => (
+    <div {...rest}>{children}</div>
+  ),
 }));
 
-import { lightColors } from "@ekwe/shared";
+vi.mock("lucide-react-native/icons/activity", () => ({
+  default: () => null,
+}));
 
-import type { UsageSnapshot } from "@/services/usage";
+const fiveHoursAhead = Date.now() + 5 * 3600 * 1000;
 
-function mockTheme() {
-  const color = { ...lightColors } as typeof lightColors;
+function healthyData() {
   return {
-    colorScheme: "light",
-    setColorScheme: jest.fn(),
-    isDark: false,
-    color: {
-      ...color,
-      bubble: {
-        idle: color.foreground,
-        recording: color.error,
-        processing: color.warning,
-        done: color.success,
-        error: color.error,
-      },
-    },
-    shadow: {
-      overlay: {
-        shadowColor: color.shadow,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
-        elevation: 8,
-      },
-    },
+    day: "2026-09-12",
+    resetsAt: fiveHoursAhead,
+    translate: { used: 3, total: 25, remaining: 22 },
+    transcribe: { used: 10, total: 25, remaining: 15 },
+    tts: { used: 40, total: 5000, remaining: 4960 },
   };
 }
 
-let mockUsageQuery: {
-  data: UsageSnapshot | null;
-  isLoading: boolean;
-  isError: boolean;
-};
-
-const healthySnapshot: UsageSnapshot = {
-  day: "2026-08-12",
-  resetsAt: Date.now() + 5 * 3_600_000,
-  translate: { used: 10, total: 25, remaining: 15 },
-  transcribe: { used: 5, total: 25, remaining: 20 },
-  tts: { used: 40, total: 5000, remaining: 4960 },
-};
-
-const nearLimitSnapshot: UsageSnapshot = {
-  day: "2026-08-12",
-  resetsAt: Date.now() + 5 * 3_600_000,
-  translate: { used: 24, total: 25, remaining: 1 },
-  transcribe: { used: 0, total: 25, remaining: 25 },
-  tts: { used: 100, total: 5000, remaining: 4900 },
-};
-
-const exhaustedSnapshot: UsageSnapshot = {
-  day: "2026-08-12",
-  resetsAt: Date.now() + 5 * 3_600_000,
-  translate: { used: 25, total: 25, remaining: 0 },
-  transcribe: { used: 25, total: 25, remaining: 0 },
-  tts: { used: 5000, total: 5000, remaining: 0 },
-};
-
-const unlimitedSnapshot: UsageSnapshot = {
-  day: "2026-08-12",
-  resetsAt: Date.now() + 5 * 3_600_000,
-  translate: { used: 10, total: 0, remaining: 0 },
-  transcribe: { used: 5, total: 0, remaining: 0 },
-  tts: { used: 0, total: 0, remaining: 0 },
-};
+function renderCard() {
+  return render(<QuotaUsageCard />);
+}
 
 describe("QuotaUsageCard", () => {
-  beforeEach(() => {
-    mockUsageQuery = {
-      data: healthySnapshot,
-      isLoading: false,
+  it("shows the header and a spinner while loading", () => {
+    usage.query.mockReturnValue({
+      isLoading: true,
       isError: false,
-    };
+      data: undefined,
+    });
+
+    renderCard();
+
+    expect(screen.getByText("Today's usage")).toBeTruthy();
+    expect(screen.getByRole("status")).toBeTruthy();
   });
 
-  it("renders the daily usage title and both pool meters", async () => {
-    await render(<QuotaUsageCard />);
-
-    expect(screen.getByText("Today's usage")).toBeOnTheScreen();
-    expect(screen.getByText("Translations")).toBeOnTheScreen();
-    expect(screen.getByText("Transcriptions")).toBeOnTheScreen();
-    expect(screen.getByText("10 / 25 used · 15 left")).toBeOnTheScreen();
-    expect(screen.getByText("5 / 25 used · 20 left")).toBeOnTheScreen();
-  });
-
-  it("exposes accessible progressbar roles with used/total values", async () => {
-    await render(<QuotaUsageCard />);
-
-    expect(
-      screen.getByLabelText("Translations: 10 of 25 used today"),
-    ).toHaveAccessibleName("Translations: 10 of 25 used today");
-    expect(
-      screen.getByLabelText("Transcriptions: 5 of 25 used today"),
-    ).toHaveAccessibleName("Transcriptions: 5 of 25 used today");
-  });
-
-  it("shows a reset countdown when pools are healthy", async () => {
-    await render(<QuotaUsageCard />);
-
-    expect(screen.getByText("Resets in 5h")).toBeOnTheScreen();
-  });
-
-  it("shows a warning headline when a pool is almost exhausted", async () => {
-    mockUsageQuery = {
-      data: nearLimitSnapshot,
+  it("surfaces the error state when the usage query fails", () => {
+    usage.query.mockReturnValue({
       isLoading: false,
-      isError: false,
-    };
+      isError: true,
+      data: undefined,
+    });
 
-    await render(<QuotaUsageCard />);
-
-    expect(screen.getByText("Almost out for today")).toBeOnTheScreen();
-  });
-
-  it("shows an error headline when a pool is fully exhausted", async () => {
-    mockUsageQuery = {
-      data: exhaustedSnapshot,
-      isLoading: false,
-      isError: false,
-    };
-
-    await render(<QuotaUsageCard />);
-
-    expect(screen.getByText("Daily limit reached")).toBeOnTheScreen();
-  });
-
-  it("renders 'Unlimited' rows when a plan has no cap", async () => {
-    mockUsageQuery = {
-      data: unlimitedSnapshot,
-      isLoading: false,
-      isError: false,
-    };
-
-    await render(<QuotaUsageCard />);
-
-    expect(screen.getAllByText("Unlimited")).toHaveLength(2);
-    expect(screen.queryByText("Daily limit reached")).not.toBeOnTheScreen();
-  });
-
-  it("degrades gracefully on load error", async () => {
-    mockUsageQuery = { data: null, isLoading: false, isError: true };
-
-    await render(<QuotaUsageCard />);
+    renderCard();
 
     expect(
       screen.getByText("Usage could not be loaded right now."),
-    ).toBeOnTheScreen();
+    ).toBeTruthy();
   });
 
-  it("renders without crashing while loading", async () => {
-    mockUsageQuery = { data: null, isLoading: true, isError: false };
+  it("renders both pools with remaining counts and the reset label", () => {
+    usage.query.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: healthyData(),
+    });
 
-    await render(<QuotaUsageCard />);
+    renderCard();
 
-    expect(screen.getByText("Today's usage")).toBeOnTheScreen();
+    expect(screen.getByText("Translations")).toBeTruthy();
+    expect(screen.getByText("3 / 25 used · 22 left")).toBeTruthy();
+    expect(screen.getByText("Transcriptions")).toBeTruthy();
+    expect(screen.getByText("10 / 25 used · 15 left")).toBeTruthy();
+    expect(screen.getByText("Resets in 5h")).toBeTruthy();
+    expect(
+      screen.getByRole("progressbar", {
+        name: "Translations: 3 of 25 used today",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("progressbar", {
+        name: "Transcriptions: 10 of 25 used today",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("flags the headline when a pool is fully exhausted", () => {
+    usage.query.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        ...healthyData(),
+        translate: { used: 25, total: 25, remaining: 0 },
+      },
+    });
+
+    renderCard();
+
+    expect(screen.getByText("Daily limit reached")).toBeTruthy();
+    expect(screen.getByText("25 / 25 used · 0 left")).toBeTruthy();
+  });
+
+  it("flags the headline when a pool is nearly exhausted", () => {
+    usage.query.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        ...healthyData(),
+        translate: { used: 24, total: 25, remaining: 1 },
+      },
+    });
+
+    renderCard();
+
+    expect(screen.getByText("Almost out for today")).toBeTruthy();
+  });
+
+  it("renders unlimited pools without a remainder meter", () => {
+    usage.query.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        ...healthyData(),
+        translate: { used: 0, total: 0, remaining: 0 },
+        transcribe: { used: 0, total: 0, remaining: 0 },
+      },
+    });
+
+    renderCard();
+
+    expect(screen.getAllByText("Unlimited")).toHaveLength(2);
+    expect(screen.queryAllByRole("progressbar")).toHaveLength(0);
+  });
+
+  it("falls back to the midnight label when the reset time has passed", () => {
+    usage.query.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: { ...healthyData(), resetsAt: Date.now() - 1000 },
+    });
+
+    renderCard();
+
+    expect(screen.getByText("Resets at midnight")).toBeTruthy();
   });
 });

@@ -6,15 +6,49 @@
     <title>{{APP_NAME}} — {{APP_TAGLINE}}</title>
     <meta name="description" content="{{APP_DESCRIPTION}}" />
     <meta name="theme-color" content="#09090B" />
+    <link rel="canonical" href="{{SITE_URL}}/" />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="{{APP_NAME}}" />
     <meta property="og:title" content="{{APP_NAME}} — {{APP_TAGLINE}}" />
     <meta property="og:description" content="{{APP_DESCRIPTION}}" />
-    <meta property="og:image" content="/og-image.png" />
-    <meta property="og:url" content="https://ekwe.pages.dev" />
+    <meta property="og:image" content="{{SITE_URL}}/og-image.png" />
+    <meta property="og:url" content="{{SITE_URL}}/" />
+    <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="{{APP_NAME}} — {{APP_TAGLINE}}" />
     <meta name="twitter:description" content="{{APP_DESCRIPTION}}" />
-    <meta name="twitter:image" content="/og-image.png" />
+    <meta name="twitter:image" content="{{SITE_URL}}/og-image.png" />
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "{{SITE_URL}}/#website",
+          "url": "{{SITE_URL}}/",
+          "name": "{{APP_NAME}}",
+          "inLanguage": "en",
+          "publisher": { "@id": "{{SITE_URL}}/#org" }
+        },
+        {
+          "@type": "Organization",
+          "@id": "{{SITE_URL}}/#org",
+          "name": "{{COMPANY_NAME}}",
+          "url": "{{SITE_URL}}/",
+          "logo": "{{SITE_URL}}/logo.png"
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "{{SITE_URL}}/#software",
+          "name": "{{APP_NAME}}",
+          "applicationCategory": "UtilitiesApplication",
+          "operatingSystem": "Android",
+          "description": "{{APP_DESCRIPTION}}",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+        }
+      ]
+    }
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

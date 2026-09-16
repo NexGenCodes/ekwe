@@ -35,11 +35,11 @@ export default defineConfig({
           alias: [
             {
               find: /^\.\/libopus\.wasm$/,
-              replacement: resolve(dir, "./tests/mocks/libopus-wasm-mock.ts"),
+              replacement: resolve(dir, "./__mocks__/libopus-wasm-mock.ts"),
             },
             {
               find: "cloudflare:workers",
-              replacement: resolve(dir, "./tests/mocks/cloudflare-workers.ts"),
+              replacement: resolve(dir, "./__mocks__/cloudflare-workers.ts"),
             },
           ],
         },
@@ -48,16 +48,16 @@ export default defineConfig({
           environment: "node",
           // Positive include + test.exclude: negated (`!`) include patterns get
           // appended to coverage.exclude and break all coverage (vitest #10164).
-          include: ["tests/**/*.test.ts"],
-          exclude: ["tests/durable/**/*.test.ts"],
-          setupFiles: ["tests/setup.ts"],
+          include: ["src/__tests__/**/*.test.ts"],
+          exclude: ["src/__tests__/durable/**/*.test.ts"],
+          setupFiles: ["src/__tests__/setup.ts"],
         },
       },
       {
         extends: true,
         plugins: [
           cloudflareTest({
-            wrangler: { configPath: "./tests/durable/wrangler.tests.toml" },
+            wrangler: { configPath: "./src/__tests__/durable/wrangler.tests.toml" },
           }),
         ],
         test: {
@@ -69,8 +69,8 @@ export default defineConfig({
           // Always invoke coverage as `vitest run --project unit --coverage`.
           // @ts-expect-error `coverage` does not exist in Vitest's ProjectConfig type
           coverage: { enabled: false },
-          include: ["tests/durable/**/*.test.ts"],
-          setupFiles: ["tests/durable/setup.ts"],
+          include: ["src/__tests__/durable/**/*.test.ts"],
+          setupFiles: ["src/__tests__/durable/setup.ts"],
         },
       },
     ],

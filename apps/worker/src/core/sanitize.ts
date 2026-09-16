@@ -10,7 +10,7 @@ const INJECTION_PATTERNS: RegExp[] = [
   /disregard\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/gi,
   /forget\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/gi,
   /disregard\s+your\s+(instructions?|prompts?|rules?)/gi,
-  /you\s+are\s+(now|a|an)\s+/gi,
+  /you\s+are\s+(?:now\s+)?(?:a|an)\s+/gi,
   /act\s+as\s+(a|an)\s+/gi,
   /pretend\s+(you('re|\s+are)\s+)/gi,
   /system\s*prompt/gi,

@@ -13,6 +13,7 @@ import { settings$, auth$, HistoryEntry, history$ } from "@/store";
 import { AppToast } from "@/utils/toast";
 import { EkweError, ErrorMessages } from "@/constants/errors";
 import { default as logger } from "@/utils/logger";
+import { getDefaultSourceLang } from "@/utils/languageUtils";
 
 export interface UseResultPipelineProps {
   uri?: string;
@@ -65,7 +66,10 @@ export const useResultPipeline = ({
     foundEntry?.translation || null,
   );
   const [sourceLang, setSourceLang] = useState(
-    foundEntry?.sourceLang || initialSourceLang || defaultSourceLang || "en",
+    foundEntry?.sourceLang ||
+      initialSourceLang ||
+      defaultSourceLang ||
+      getDefaultSourceLang(true),
   );
   const [targetLang, setTargetLang] = useState(
     foundEntry?.targetLang || initialTargetLang || defaultTargetLang || "es",
@@ -83,7 +87,7 @@ export const useResultPipeline = ({
     appliedEntryIdRef.current = entryId;
     setTranscript(foundEntry.transcript);
     setTranslation(foundEntry.translation);
-    setSourceLang(foundEntry.sourceLang || "en");
+    setSourceLang(foundEntry.sourceLang || getDefaultSourceLang(true));
     setTargetLang(foundEntry.targetLang || "es");
   }, [foundEntry, entryId]);
 

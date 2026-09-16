@@ -1,15 +1,24 @@
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  type Mock,
+} from "vitest";
 import { pushOnce, resetNavigationGuard } from "../navigation";
 
 describe("pushOnce", () => {
-  const makeRouter = (): { push: jest.Mock } => ({ push: jest.fn() });
+  const makeRouter = (): { push: Mock } => ({ push: vi.fn() });
 
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     resetNavigationGuard();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it("pushes the href on first call", () => {
@@ -29,7 +38,7 @@ describe("pushOnce", () => {
   it("allows a push again after the cooldown elapses", () => {
     const router = makeRouter();
     pushOnce(router as never, "/billing");
-    jest.advanceTimersByTime(600);
+    vi.advanceTimersByTime(600);
     pushOnce(router as never, "/billing");
     expect(router.push).toHaveBeenCalledTimes(2);
   });

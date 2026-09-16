@@ -4,7 +4,6 @@ import Crown from "lucide-react-native/icons/crown";
 import Lock from "lucide-react-native/icons/lock";
 import Edit3 from "lucide-react-native/icons/pen-line";
 import React from "react";
-import { Image } from "react-native";
 
 import { Badge } from "@/components/Badge";
 import { Box, Text, Pressable } from "@/components/ui";
@@ -81,9 +80,12 @@ export function ProfileIdentity({
               })}
             </Box>
           ) : user?.user_metadata?.avatar_url ? (
-            <Image
+            <ExpoImage
               source={{ uri: user.user_metadata.avatar_url }}
-              style={{ width: "100%", height: "100%", resizeMode: "cover" }}
+              contentFit="cover"
+              transition={300}
+              cachePolicy="memory-disk"
+              style={{ width: "100%", height: "100%" }}
             />
           ) : (
             <Box

@@ -140,3 +140,25 @@ export const settingsActions = {
     settings$.analyticsConsentVersion.set(CONSENT_VERSION);
   },
 };
+
+/**
+ * Reset personal preferences to defaults.
+ *
+ * Called when a different user signs in or the user signs out, so account
+ * choices (language grid, voice, currency, auto-copy, live transcription)
+ * never leak onto another user on a shared device. Device-level prefs
+ * (appearance, haptics, volume behavior, onboarding) are intentionally kept.
+ */
+export function resetPersonalSettings(): void {
+  settings$.selectedLanguages.set(initialSettings.selectedLanguages);
+  settings$.targetLanguage.set(initialSettings.targetLanguage);
+  settings$.autoCopy.set(initialSettings.autoCopy);
+  settings$.currency.set(initialSettings.currency);
+  settings$.ttsVoice.set(initialSettings.ttsVoice);
+  settings$.liveTranscriptionEnabled.set(
+    initialSettings.liveTranscriptionEnabled,
+  );
+
+  // Mirror the reset to the iOS share extension's shared container.
+  mirrorSettingsToShared(buildSettingsSharedPrefs());
+}

@@ -24,6 +24,7 @@ import { ECHO_SHARE_SIGNATURE } from "@/constants/echo";
 import {
   resolveDetectedLanguage,
   getDefaultSourceLang,
+  isAutoDetectPermitted,
 } from "@/utils/languageUtils";
 import { checkIsOnline } from "@/utils/netInfo";
 import { AppAlert } from "@/utils/alert";
@@ -134,7 +135,7 @@ export const useEchoFlow = (
   // State Machine via Reducer
   const [state, dispatch] = useReducer(echoReducer, {
     step: "PickLanguage",
-    selectedLang: getDefaultSourceLang(permissions.autoLanguageDetect),
+    selectedLang: getDefaultSourceLang(isAutoDetectPermitted()),
     detectedLang: null,
     targetLang: "",
     transcription: null,
@@ -264,7 +265,9 @@ export const useEchoFlow = (
       savedRef.current = true;
       HistoryService.recordTranslation(
         {
-          sourceLang: detectedLangRef.current || "en",
+          sourceLang:
+            detectedLangRef.current ||
+            getDefaultSourceLang(isAutoDetectPermitted()),
           targetLang:
             targetLangRef.current || settings$.targetLanguage.get() || "en",
           transcript: transcriptRef.current,
@@ -303,7 +306,9 @@ export const useEchoFlow = (
       savedRef.current = true;
       HistoryService.recordTranslation(
         {
-          sourceLang: detectedLangRef.current || "en",
+          sourceLang:
+            detectedLangRef.current ||
+            getDefaultSourceLang(isAutoDetectPermitted()),
           targetLang:
             targetLangRef.current || settings$.targetLanguage.get() || "en",
           transcript: transcriptRef.current,
@@ -415,9 +420,6 @@ export const useEchoFlow = (
         return;
       }
 
-      const controller = new AbortController();
-      processingAbortRef.current = controller;
-
       const isOnline = await checkIsOnline();
       if (!isOnline) {
         dispatch({
@@ -428,6 +430,9 @@ export const useEchoFlow = (
         });
         return;
       }
+
+      const controller = new AbortController();
+      processingAbortRef.current = controller;
 
       // A request is now actually being submitted — only now stamp the throttle so
       // validation/cancel/offline rejections don't consume the user's cooldown.
@@ -565,9 +570,6 @@ export const useEchoFlow = (
     // Set up-front so an offline rejection still lands on a retryable Error step.
     lastOpRef.current = "translate";
 
-    const controller = new AbortController();
-    processingAbortRef.current = controller;
-
     const isOnline = await checkIsOnline();
     if (!isOnline) {
       dispatch({
@@ -578,6 +580,9 @@ export const useEchoFlow = (
       });
       return;
     }
+
+    const controller = new AbortController();
+    processingAbortRef.current = controller;
 
     triggerHaptic("selection");
     // Clear old translation immediately to prevent "brief text flash"
@@ -673,6 +678,7 @@ export const useEchoFlow = (
         },
         session,
       );
+      if (isGone()) return;
       await HistoryService.recordTranslation(
         {
           sourceLang: sourceLang,

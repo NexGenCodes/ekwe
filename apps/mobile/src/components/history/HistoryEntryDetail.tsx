@@ -6,6 +6,7 @@ import Timer from "lucide-react-native/icons/timer";
 import Trash2 from "lucide-react-native/icons/trash";
 import React, { useCallback, useMemo } from "react";
 import { Share, StyleSheet } from "react-native";
+import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AnimatedCopyButton } from "@/components/AnimatedCopyButton";
@@ -18,6 +19,7 @@ import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useClipboard, useTheme } from "@/hooks";
 import type { HistoryEntry } from "@/store";
+import { AnalyticsEvents, track } from "@/utils/analytics";
 import { withAlpha } from "@/utils/color";
 import { formatDuration } from "@/utils/formatDuration";
 import { formatSourceApp } from "@/utils/formatSource";
@@ -60,6 +62,8 @@ interface DetailBlockProps {
   variant?: "default" | "accent";
   transliteration?: string | null;
   flag?: string;
+  /** Shared element tag for the history → result coordinate morph. */
+  sharedTag?: string;
 }
 function DetailBlock({
   title,
@@ -67,6 +71,7 @@ function DetailBlock({
   variant = "default",
   transliteration,
   flag,
+  sharedTag,
 }: DetailBlockProps): React.ReactElement {
   const { color } = useTheme();
 
@@ -103,10 +108,12 @@ function DetailBlock({
           />
         </Box>
         <Box style={[styles.blockDivider, { backgroundColor: color.border }]} />
-        <Text variant="bodyLarge" style={{ color: color.foreground }}>
-          {text}
-        </Text>
-        {transliteration ? <Transliteration text={transliteration} /> : null}
+        <Animated.View sharedTransitionTag={sharedTag}>
+          <Text variant="bodyLarge" style={{ color: color.foreground }}>
+            {text}
+          </Text>
+          {transliteration ? <Transliteration text={transliteration} /> : null}
+        </Animated.View>
       </Card>
     </Box>
   );
@@ -124,6 +131,10 @@ export const HistoryEntryDetail = React.memo(
     const { color } = useTheme();
     const insets = useSafeAreaInsets();
     const { copied, copy } = useClipboard();
+
+    // Matches HistoryItem's `history-snippet-${id}` tag so opening an entry
+    // morphs the row snippet into the ORIGINAL block.
+    const sharedTag = `history-snippet-${entry.id}`;
 
     const hasTranslation = useMemo(
       () =>
@@ -153,6 +164,7 @@ export const HistoryEntryDetail = React.memo(
         entry.transcript?.trim(),
         entry.translation?.trim(),
       ].filter((part): part is string => !!part);
+      track(AnalyticsEvents.RESULT_SHARED, { source: "history" });
       Share.share({ message: parts.join("\n\n") }).catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
         if (!message.includes("dismissed")) {
@@ -183,6 +195,7 @@ export const HistoryEntryDetail = React.memo(
             flag={sourceFlag}
             title={`ORIGINAL · ${sourceName}`}
             text={entry.transcript}
+            sharedTag={sharedTag}
           />
           {hasTranslation && (
             <DetailBlock

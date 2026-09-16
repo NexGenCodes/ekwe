@@ -1,8 +1,10 @@
-import { act, renderHook } from "@testing-library/react-native";
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { act, renderHook } from "@testing-library/react";
 
 import { useBilling } from "@/hooks/billing/useBilling";
 
-jest.mock("@/hooks/billing/useActivePricing", () => ({
+vi.mock("@/hooks/billing/useActivePricing", () => ({
   useActivePricing: () => ({
     pricing: {
       currency: "USD",
@@ -16,7 +18,7 @@ jest.mock("@/hooks/billing/useActivePricing", () => ({
   }),
 }));
 
-jest.mock("@/hooks/billing/usePaymentProvider", () => ({
+vi.mock("@/hooks/billing/usePaymentProvider", () => ({
   usePaymentProvider: () => ({
     provider: "flutterwave",
     availableProviders: ["flutterwave"],
@@ -29,40 +31,40 @@ jest.mock("@/hooks/billing/usePaymentProvider", () => ({
   }),
 }));
 
-jest.mock("@/services/flutterwave", () => ({
-  openFlutterwaveCheckout: jest.fn(),
-  reconcileFlutterwaveStatus: jest.fn(),
-  isFlutterwaveAvailable: jest.fn(),
-  getFlutterwavePlanId: jest.fn((isAnnual: boolean) =>
+vi.mock("@/services/flutterwave", () => ({
+  openFlutterwaveCheckout: vi.fn(),
+  reconcileFlutterwaveStatus: vi.fn(),
+  isFlutterwaveAvailable: vi.fn(),
+  getFlutterwavePlanId: vi.fn((isAnnual: boolean) =>
     isAnnual ? "ekwe_pro_annual" : "ekwe_pro_monthly",
   ),
 }));
 
-jest.mock("@/services/supabase", () => ({
-  supabase: { auth: { refreshSession: jest.fn() } },
+vi.mock("@/services/supabase", () => ({
+  supabase: { auth: { refreshSession: vi.fn() } },
 }));
 
-jest.mock("@/services/mmkv", () => ({
-  mmkv: { getString: jest.fn(), set: jest.fn(), getBoolean: jest.fn() },
+vi.mock("@/services/mmkv", () => ({
+  mmkv: { getString: vi.fn(), set: vi.fn(), getBoolean: vi.fn() },
 }));
 
-jest.mock("@/utils/alert", () => ({
-  AppAlert: { info: jest.fn(), success: jest.fn(), error: jest.fn() },
+vi.mock("@/utils/alert", () => ({
+  AppAlert: { info: vi.fn(), success: vi.fn(), error: vi.fn() },
 }));
 
-jest.mock("@/utils/analytics", () => ({
+vi.mock("@/utils/analytics", () => ({
   AnalyticsEvents: { PURCHASE_SUCCESS: "purchase_success" },
-  track: jest.fn(),
+  track: vi.fn(),
 }));
 
-jest.mock("@/store", () => {
-  const session = { get: jest.fn(() => null) };
-  const isPro = { get: jest.fn(() => false) };
+vi.mock("@/store", () => {
+  const session = { get: vi.fn(() => null) };
+  const isPro = { get: vi.fn(() => false) };
   const authActions = {
-    setSession: jest.fn(),
-    setIsPro: jest.fn(),
-    setEntitlementSynced: jest.fn(),
-    resetEntitlementForProviderSwitch: jest.fn(),
+    setSession: vi.fn(),
+    setIsPro: vi.fn(),
+    setEntitlementSynced: vi.fn(),
+    resetEntitlementForProviderSwitch: vi.fn(),
   };
   return { auth$: { session, isPro }, authActions };
 });
@@ -76,12 +78,12 @@ import { supabase } from "@/services/supabase";
 import { AppAlert } from "@/utils/alert";
 import { auth$, authActions } from "@/store";
 
-const mockSession = auth$.session.get as jest.Mock;
-const mockIsPro = auth$.isPro.get as jest.Mock;
-const mockRefreshSession = supabase.auth.refreshSession as jest.Mock;
-const mockOpenCheckout = openFlutterwaveCheckout as jest.Mock;
-const mockReconcile = reconcileFlutterwaveStatus as jest.Mock;
-const mockIsAvailable = isFlutterwaveAvailable as jest.Mock;
+const mockSession = auth$.session.get as Mock;
+const mockIsPro = auth$.isPro.get as Mock;
+const mockRefreshSession = supabase.auth.refreshSession as Mock;
+const mockOpenCheckout = openFlutterwaveCheckout as Mock;
+const mockReconcile = reconcileFlutterwaveStatus as Mock;
+const mockIsAvailable = isFlutterwaveAvailable as Mock;
 
 const PRO_SESSION = {
   user: { app_metadata: { is_pro: true } },
@@ -92,7 +94,7 @@ const FREE_SESSION = {
 
 describe("useBilling", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockSession.mockReturnValue({ user: {} });
     mockIsPro.mockReturnValue(false);
     mockIsAvailable.mockReturnValue(true);
@@ -101,7 +103,7 @@ describe("useBilling", () => {
       error: null,
     });
     mockReconcile.mockResolvedValue(false);
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   describe("handleUpgrade", () => {

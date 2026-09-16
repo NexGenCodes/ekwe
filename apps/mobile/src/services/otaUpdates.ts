@@ -2,6 +2,7 @@ import * as Updates from "expo-updates";
 import Constants from "expo-constants";
 
 import logger from "@/utils/logger";
+import { isIOS } from "@/utils/platform";
 
 const WORKER_URL = process.env.EXPO_PUBLIC_WORKER_URL || "";
 
@@ -61,6 +62,13 @@ export function resolveApkDownloadUrl(manifest: UpdateManifest): string {
  */
 export async function checkForApkUpdate(): Promise<UpdateManifest | null> {
   if (__DEV__) {
+    return null;
+  }
+
+  // The manifest describes a universal Android APK. iOS has no APK to install —
+  // OTA updates there run through expo-updates (silentUpdateCheck), so an APK
+  // version-code comparison would falsely report an update every time.
+  if (isIOS) {
     return null;
   }
 

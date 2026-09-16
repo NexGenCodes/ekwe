@@ -3,7 +3,7 @@ import { triggerHaptic } from "@/utils/haptics";
 import { Stack } from "expo-router";
 import Crown from "lucide-react-native/icons/crown";
 import Sparkles from "lucide-react-native/icons/sparkles";
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import Animated, {
   FadeInDown,
   ZoomIn,
@@ -20,6 +20,7 @@ import { Box, Text, Pressable, ScrollArea, Spinner } from "@/components/ui";
 import { useTheme, useTokens } from "@/hooks";
 import { useBilling } from "@/hooks/billing/useBilling";
 import { auth$ } from "@/store";
+import { AnalyticsEvents, track } from "@/utils/analytics";
 
 export default function BillingScreen(): React.ReactElement {
   const { color, isDark } = useTheme();
@@ -46,6 +47,15 @@ export default function BillingScreen(): React.ReactElement {
     handleCheckoutComplete,
     handleCheckoutDismiss,
   } = useBilling();
+
+  // Fire exactly once per screen visit (guarded in case isPro flips while the
+  // checkout sheet is open after an upgrade).
+  const hasTrackedViewRef = useRef(false);
+  useEffect(() => {
+    if (hasTrackedViewRef.current) return;
+    hasTrackedViewRef.current = true;
+    track(AnalyticsEvents.BILLING_PAGE_VIEWED, { isPro });
+  }, [isPro]);
 
   const styles = useMemo(
     () => ({
@@ -176,6 +186,9 @@ export default function BillingScreen(): React.ReactElement {
                 isAnnual={isAnnual}
                 onToggle={async (annual) => {
                   await triggerHaptic("selection");
+                  track(AnalyticsEvents.BILLING_TOGGLED, {
+                    cycle: annual ? "annual" : "monthly",
+                  });
                   setIsAnnual(annual);
                 }}
                 color={color}

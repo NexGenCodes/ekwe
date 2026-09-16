@@ -15,16 +15,20 @@ ON CONFLICT (id) DO NOTHING;
 
 SET session_replication_role = origin;
 
--- ─── Subscription Config ─────────────────────────────────────────────
--- Single-row pricing config the worker /pricing endpoint reads. Discount is
--- display-only: the store still charges the product list price. Annual price
--- is monthly × 12 with annual_discount_percent applied on top.
+-- ─── App Config (pricing) ────────────────────────────────────────────
+-- Single-row app_config the worker /pricing endpoint reads (subscription_config
+-- and payment_config were merged into it by 20260912030000_merge_app_config.sql).
+-- Discount is display-only: the store still charges the product list price.
+-- Annual price is monthly × 12 with annual_discount_percent applied on top.
 -- `local_prices` holds the per-currency monthly/annual amounts (NGN anchor
 -- ₦3,000/mo, equivalents for every other Flutterwave-billable currency); it is
 -- authoritative for BOTH display and charge. Keep in sync with
--- `LOCAL_PRICES` in packages/shared/plans.ts.
-INSERT INTO public.subscription_config (
+-- `LOCAL_PRICES` in packages/shared/src/plans.ts.
+INSERT INTO public.app_config (
   id,
+  revenuecat_enabled,
+  flutterwave_enabled,
+  default_provider,
   base_price_usd,
   discount_percent,
   annual_discount_percent,
@@ -32,6 +36,9 @@ INSERT INTO public.subscription_config (
 )
 VALUES (
   1,
+  true,
+  false,
+  'revenuecat',
   2.23,
   0,
   20,
@@ -52,7 +59,15 @@ VALUES (
     "CAD": { "monthly": 3.09,  "annual": 29.66 }
   }'::jsonb
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+  revenuecat_enabled      = EXCLUDED.revenuecat_enabled,
+  flutterwave_enabled     = EXCLUDED.flutterwave_enabled,
+  default_provider        = EXCLUDED.default_provider,
+  base_price_usd          = EXCLUDED.base_price_usd,
+  discount_percent        = EXCLUDED.discount_percent,
+  annual_discount_percent = EXCLUDED.annual_discount_percent,
+  local_prices            = EXCLUDED.local_prices,
+  updated_at              = now();
 
 -- ─── Identities (required for email+password sign-in) ───────────────
 

@@ -18,6 +18,8 @@ import { HISTORY_LOCAL_TTL_DAYS } from "@/constants/retention";
 
 const INITIAL_HISTORY_SIZE = 20;
 const MAX_HISTORY_CACHE = 1000;
+/** How often to re-run local TTL cleanup while the app session stays alive. */
+const LOCAL_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 const CLOUD_COLUMNS =
   "id, user_id, source_lang, target_lang, transcript, translation_text, transliteration_text, duration, source_app, provider, created_at, type";
@@ -40,6 +42,8 @@ type CloudRow = {
 class SyncServiceClass {
   private unsubscribeNetInfo: (() => void) | null = null;
   private isDraining = false;
+  private drainTimeout: NodeJS.Timeout | null = null;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   /** Set when the last cloud pull failed; cleared on the next successful one. */
   pullError = observable<string | null>(null);
@@ -56,7 +60,7 @@ class SyncServiceClass {
    * Upserts are idempotent, so retrying is always safe.
    */
   retryDeadOutbox(): Promise<void> {
-    const revived = Db.reviveOutbox();
+    const revived = Db.reviveDeadOutbox();
     if (revived > 0) {
       logger.info("[Sync] Retrying", revived, "dead outbox rows");
     }
@@ -77,11 +81,6 @@ class SyncServiceClass {
     },
     userId: string,
   ): Promise<string> {
-    // Dedup text translations: translating the same text into the same target
-    // language again updates the existing row instead of inserting a duplicate.
-    // Reusing the row's id + created_at keeps its position in history and makes
-    // the cloud upsert idempotent. Transcriptions are never deduped — recording
-    // the same audio phrase again is a legitimate new entry.
     if (payload.type === "translation") {
       const existing = Db.findTranslationByDedupKey(
         userId,
@@ -112,10 +111,10 @@ class SyncServiceClass {
                 sourceApp: payload.sourceApp,
                 provider: payload.provider,
               },
-              existing.created_at,
+              existing.createdAt,
             ),
-            user_id: userId,
-            created_at: existing.created_at,
+            userId: userId,
+            createdAt: existing.createdAt,
           });
         });
 
@@ -129,7 +128,7 @@ class SyncServiceClass {
           duration: payload.duration,
           sourceApp: payload.sourceApp,
           provider: payload.provider,
-          timestamp: Date.parse(existing.created_at),
+          timestamp: Date.parse(existing.createdAt),
           type: "translation",
         });
 
@@ -151,17 +150,17 @@ class SyncServiceClass {
     Db.transaction(() => {
       Db.insertHistory({
         id,
-        user_id: userId,
-        source_lang: payload.sourceLang,
-        target_lang: payload.targetLang,
+        userId: userId,
+        sourceLang: payload.sourceLang,
+        targetLang: payload.targetLang,
         transcript: payload.transcript,
-        translation_text: payload.translation || null,
-        transliteration_text: payload.transliteration || null,
+        translationText: payload.translation || null,
+        transliterationText: payload.transliteration || null,
         duration: payload.duration,
-        source_app: payload.sourceApp,
+        sourceApp: payload.sourceApp,
         provider: payload.provider,
-        created_at,
-        entry_type: payload.type,
+        createdAt: created_at,
+        entryType: payload.type,
       });
 
       Db.insertOutbox({
@@ -180,8 +179,8 @@ class SyncServiceClass {
           },
           created_at,
         ),
-        user_id: userId,
-        created_at,
+        userId: userId,
+        createdAt: created_at,
       });
     });
 
@@ -201,9 +200,7 @@ class SyncServiceClass {
     history$[id].set(entry);
     this.trimHistoryWindow();
 
-    this.pushToCloud(id, userId).catch((err) =>
-      logger.error("[Sync] pushToCloud failed", id, err),
-    );
+    this.scheduleDrain();
 
     return id;
   }
@@ -215,16 +212,14 @@ class SyncServiceClass {
       Db.insertOutbox({
         id: Crypto.randomUUID(),
         payload: buildDeleteOutboxPayload(id),
-        user_id: userId,
-        created_at,
+        userId: userId,
+        createdAt: created_at,
       });
     });
 
     history$[id].delete();
 
-    this.drain().catch((err) =>
-      logger.error("[Sync] drain after delete failed", err),
-    );
+    this.scheduleDrain();
   }
 
   async restoreHistory(entry: HistoryEntry, userId: string): Promise<void> {
@@ -235,17 +230,17 @@ class SyncServiceClass {
       Db.deleteOutboxForHistory(entry.id);
       Db.insertHistory({
         id: entry.id,
-        user_id: userId,
-        source_lang: entry.sourceLang,
-        target_lang: entry.targetLang,
+        userId: userId,
+        sourceLang: entry.sourceLang,
+        targetLang: entry.targetLang,
         transcript: entry.transcript,
-        translation_text: entry.translation ?? null,
-        transliteration_text: entry.transliteration ?? null,
+        translationText: entry.translation ?? null,
+        transliterationText: entry.transliteration ?? null,
         duration: entry.duration,
-        source_app: entry.sourceApp ?? "",
+        sourceApp: entry.sourceApp ?? "",
         provider: entry.provider ?? "",
-        created_at,
-        entry_type: type,
+        createdAt: created_at,
+        entryType: type,
       });
       Db.insertOutbox({
         id: entry.id,
@@ -263,8 +258,8 @@ class SyncServiceClass {
           },
           created_at,
         ),
-        user_id: userId,
-        created_at,
+        userId: userId,
+        createdAt: created_at,
       });
     });
 
@@ -275,11 +270,6 @@ class SyncServiceClass {
     );
   }
 
-  /**
-   * Purges local history + outbox rows for a user and clears the in-memory cache.
-   * Does not touch the cloud — used by account deletion, where the cloud is
-   * already wiped via the delete_user cascade.
-   */
   purgeLocalHistory(userId: string): void {
     try {
       Db.transaction(() => {
@@ -293,19 +283,10 @@ class SyncServiceClass {
     }
   }
 
-  /**
-   * Clears the incremental pull cursor for a user, forcing a full cloud pull
-   * on their next sign-in (used after sign-out drains the outbox and purges
-   * the local cache).
-   */
   clearSyncCursor(userId: string): void {
     storage.remove(`last-sync-${userId}`);
   }
 
-  /**
-   * Clears ALL of the user's history — local SQLite, in-memory cache, and
-   * cloud (via a queued "delete_all" outbox row, so it also works offline).
-   */
   async clearAllHistory(userId: string): Promise<void> {
     try {
       Db.transaction(() => {
@@ -314,21 +295,30 @@ class SyncServiceClass {
         Db.insertOutbox({
           id: Crypto.randomUUID(),
           payload: buildDeleteAllOutboxPayload(),
-          user_id: userId,
-          created_at: new Date().toISOString(),
+          userId: userId,
+          createdAt: new Date().toISOString(),
         });
       });
       history$.set({});
-      this.drain().catch((err) =>
-        logger.error("[Sync] drain after clear all failed", err),
-      );
+      this.scheduleDrain();
     } catch (err) {
       logger.error("[Sync] clearAllHistory failed", err);
       throw err;
     }
   }
 
+  scheduleDrain(): void {
+    if (this.drainTimeout) clearTimeout(this.drainTimeout);
+    this.drainTimeout = setTimeout(() => {
+      this.drainTimeout = null;
+      this.drain().catch((err) =>
+        logger.error("[Sync] Scheduled drain failed", err),
+      );
+    }, 500);
+  }
+
   private async pushToCloud(id: string, userId: string): Promise<void> {
+    // Legacy single-row push method. Kept for dedup updates and restore.
     try {
       const online = await checkIsOnline();
       if (!online) return;
@@ -352,12 +342,12 @@ class SyncServiceClass {
         const { error } = await supabase
           .from("history")
           .delete()
-          .eq("user_id", row.user_id);
+          .eq("user_id", row.userId);
         if (error) throw error;
       } else {
         const { error } = await supabase.from("history").upsert({
           id: row.id,
-          user_id: row.user_id,
+          user_id: row.userId,
           type: payload.type ?? "transcription",
           source_lang: payload.source_lang,
           target_lang: payload.target_lang,
@@ -395,10 +385,86 @@ class SyncServiceClass {
       const entries = Db.getPendingOutbox(userId);
       if (entries.length === 0) return;
 
-      logger.info("[Sync] Draining", entries.length, "pending entries");
+      logger.info(
+        "[Sync] Draining",
+        entries.length,
+        "pending entries (batching)",
+      );
+
+      const toUpsert = [];
+      const toDelete = [];
+      let deleteAll = false;
 
       for (const entry of entries) {
-        await this.pushToCloud(entry.id, userId);
+        Db.markOutboxInFlight(entry.id);
+        try {
+          const payload = JSON.parse(entry.payload);
+          if (payload.action === "delete_all") {
+            deleteAll = true;
+          } else if (payload.action === "delete") {
+            toDelete.push(payload.id || entry.id);
+          } else {
+            toUpsert.push({
+              id: entry.id,
+              user_id: entry.userId,
+              type: payload.type ?? "transcription",
+              source_lang: payload.source_lang,
+              target_lang: payload.target_lang,
+              transcript: payload.transcript,
+              translation_text: payload.translation_text,
+              transliteration_text: payload.transliteration_text,
+              duration: payload.duration,
+              source_app: payload.source_app,
+              provider: payload.provider,
+              created_at: payload.created_at,
+            });
+          }
+        } catch (e) {
+          logger.error("[Sync] Invalid payload in outbox", entry.id, e);
+          Db.incrementOutboxRetry(entry.id);
+        }
+      }
+
+      // Execute batch operations
+      if (deleteAll) {
+        const { error } = await supabase
+          .from("history")
+          .delete()
+          .eq("user_id", userId);
+        if (error) throw error;
+      }
+
+      if (toDelete.length > 0) {
+        const { error } = await supabase
+          .from("history")
+          .delete()
+          .in("id", toDelete);
+        if (error) throw error;
+      }
+
+      if (toUpsert.length > 0) {
+        const { error } = await supabase.from("history").upsert(toUpsert);
+        if (error) throw error;
+      }
+
+      // Clean up successfully synced entries
+      for (const entry of entries) {
+        Db.deleteOutbox(entry.id);
+      }
+      logger.info(
+        "[Sync] Batch pushed",
+        toUpsert.length,
+        "upserts,",
+        toDelete.length,
+        "deletes.",
+      );
+    } catch (err) {
+      logger.error("[Sync] Batch drain failed", err);
+      const entries = Db.getPendingOutbox(auth$.user.get()?.id ?? "");
+      for (const entry of entries) {
+        if (entry.status === "in_flight") {
+          Db.incrementOutboxRetry(entry.id);
+        }
       }
     } finally {
       this.isDraining = false;
@@ -412,17 +478,7 @@ class SyncServiceClass {
       const lastSyncKey = `last-sync-${userId}`;
       const stored = storage.getString(lastSyncKey);
 
-      // Composite (created_at, id) cursor. created_at is ISO-8601 and ids are
-      // UUIDs, so lexicographic ordering is consistent. A composite cursor
-      // means rows that share a created_at value are never skipped at a page
-      // boundary (a bare created_at cursor could drop a same-millisecond row).
       let cursor = parseSyncCursor(stored);
-
-      // Pull in ascending (created_at, id) order, bounded by the cursor, one
-      // page at a time. Without pagination a user with >200 cloud rows would
-      // only ever sync the 200 newest: the old code set the cursor to the
-      // newest row and later pulls asked for rows newer than that, so older
-      // rows were silently never fetched on a fresh device.
       const rows: CloudRow[] = [];
 
       for (;;) {
@@ -453,20 +509,31 @@ class SyncServiceClass {
 
       if (rows.length === 0) return;
 
+      // Only cache the local retention window to SQLite/observables. Older
+      // rows remain cloud-only and are paged in on demand via
+      // fetchOlderHistory, so a fresh install doesn't bulk-load years of
+      // history into the device DB.
+      const ttlCutoff =
+        Date.now() - HISTORY_LOCAL_TTL_DAYS * 24 * 60 * 60 * 1000;
+
       for (const row of rows) {
+        if (new Date(row.created_at).getTime() < ttlCutoff) {
+          continue;
+        }
+
         Db.insertHistory({
           id: row.id,
-          user_id: row.user_id,
-          source_lang: row.source_lang,
-          target_lang: row.target_lang,
+          userId: row.user_id,
+          sourceLang: row.source_lang,
+          targetLang: row.target_lang,
           transcript: row.transcript,
-          translation_text: row.translation_text,
-          transliteration_text: row.transliteration_text,
+          translationText: row.translation_text,
+          transliterationText: row.transliteration_text,
           duration: row.duration || 0,
-          source_app: row.source_app || "",
+          sourceApp: row.source_app || "",
           provider: row.provider || "",
-          created_at: row.created_at,
-          entry_type: row.type || "transcription",
+          createdAt: row.created_at,
+          entryType: row.type || "transcription",
         });
 
         if (!history$[row.id].get()) {
@@ -483,10 +550,28 @@ class SyncServiceClass {
             timestamp: new Date(row.created_at).getTime(),
             type: row.type || "transcription",
           });
+        } else {
+          // Conflict detection: only overwrite if local has no un-synced edits
+          const pending = Db.getPendingOutbox(userId).find(
+            (r) => r.id === row.id,
+          );
+          if (!pending) {
+            history$[row.id].set({
+              ...history$[row.id].get(),
+              translation: row.translation_text,
+              transliteration: row.transliteration_text,
+            });
+            Db.updateTranslationRow(row.id, {
+              translation_text: row.translation_text,
+              transliteration_text: row.transliteration_text,
+              duration: row.duration || 0,
+              source_app: row.source_app || "",
+              provider: row.provider || "",
+            });
+          }
         }
       }
 
-      // Persist the newest synced row as the incremental cursor for next time.
       const newest = rows[rows.length - 1];
       storage.set(
         lastSyncKey,
@@ -496,8 +581,6 @@ class SyncServiceClass {
       this.trimHistoryWindow();
       logger.info("[Sync] Pulled", rows.length, "entries from cloud");
     } catch (err) {
-      // Surface the failure so the history screen can show a sync banner
-      // instead of silently degrading (e.g. a missing remote column).
       this.pullError.set(err instanceof Error ? err.message : String(err));
       logger.error(
         "[Sync] Pull from cloud failed",
@@ -506,28 +589,30 @@ class SyncServiceClass {
     }
   }
 
-  /**
-   * Hybrid-history backward paging: fetches a page of cloud rows OLDER than
-   * the current oldest loaded entry. Used when the local 7-day window is
-   * exhausted and the user keeps scrolling back. Rows are returned for display
-   * only — they are NOT cached into SQLite (the local TTL prune would delete
-   * them on next launch anyway). On any error we return an empty page so the
-   * caller just stops paging instead of failing loudly mid-scroll.
-   */
   async fetchOlderHistory(
     userId: string,
-    before: { created_at: string; id: string },
+    before: { created_at: string; id: string } | null,
     limit: number,
   ): Promise<HistoryEntry[]> {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("history")
         .select(CLOUD_COLUMNS)
-        .eq("user_id", userId)
-        .or(
+        .eq("user_id", userId);
+
+      // A null cursor means "newest page" (fresh-install cold start with an
+      // empty local window) — only keyset-filter when we're paging older.
+      if (before) {
+        query = query.or(
           `created_at.lt.${before.created_at},and(created_at.eq.${before.created_at},id.lt.${before.id})`,
-        )
+        );
+      }
+
+      const { data, error } = await query
+        // Keyset order must use BOTH cursor keys (id breaks ties on identical
+        // created_at) so the composite cursor matches the cloud row order.
         .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
         .limit(limit);
 
       if (error) throw error;
@@ -551,7 +636,6 @@ class SyncServiceClass {
     }
   }
 
-  /** Removes observable entries that are older than `days` (mirrors the SQLite TTL). */
   private pruneObservableExpired(days: number): void {
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
     const record = history$.get() || {};
@@ -559,6 +643,21 @@ class SyncServiceClass {
       if (record[key].timestamp < cutoff) {
         history$[key].delete();
       }
+    }
+  }
+
+  /**
+   * Purge rows that aged past the local TTL (scoped to the active user so a
+   * shared device never deletes another user's rows). Skips rows that still
+   * have an un-synced outbox entry — those are the user's only local copy
+   * until a drain succeeds. Keeps SQLite + observable in sync.
+   */
+  private runLocalCleanup(): void {
+    const userId = auth$.user.get()?.id;
+    const expired = Db.cleanupExpiredHistory(HISTORY_LOCAL_TTL_DAYS, userId);
+    if (expired > 0) {
+      logger.info("[Sync] Cleaned up", expired, "expired local history rows");
+      this.pruneObservableExpired(HISTORY_LOCAL_TTL_DAYS);
     }
   }
 
@@ -582,16 +681,16 @@ class SyncServiceClass {
     for (const row of rows) {
       history$[row.id].set({
         id: row.id,
-        sourceLang: row.source_lang,
-        targetLang: row.target_lang,
+        sourceLang: row.sourceLang,
+        targetLang: row.targetLang,
         transcript: row.transcript,
-        translation: row.translation_text,
-        transliteration: row.transliteration_text,
+        translation: row.translationText,
+        transliteration: row.transliterationText,
         duration: row.duration,
-        sourceApp: row.source_app,
+        sourceApp: row.sourceApp,
         provider: row.provider,
-        timestamp: new Date(row.created_at).getTime(),
-        type: row.entry_type ?? "transcription",
+        timestamp: new Date(row.createdAt).getTime(),
+        type: (row.entryType as EntryType) ?? "transcription",
       });
     }
   }
@@ -599,40 +698,35 @@ class SyncServiceClass {
   async start(): Promise<void> {
     this.unsubscribeNetInfo?.();
     this.unsubscribeNetInfo = null;
+    this.clearCleanupTimer();
 
-    // Clean up BEFORE seeding the observable so the UI never shows rows that
-    // no longer exist on disk.
-    const expired = Db.cleanupExpiredHistory(HISTORY_LOCAL_TTL_DAYS);
-    if (expired > 0) {
-      logger.info("[Sync] Cleaned up", expired, "expired local history rows");
-      this.pruneObservableExpired(HISTORY_LOCAL_TTL_DAYS);
-    }
+    this.runLocalCleanup();
+
     const currentUserId = auth$.user.get()?.id;
     this.loadInitialHistory(currentUserId);
 
-    // Never silently discard unsynced work: resurrect rows stuck in `dead`
-    // (hit 5 failed pushes) or `in_flight` (app died mid-push) so they drain
-    // on the next network availability. Upserts are idempotent, so retries
-    // are safe.
-    const revived = Db.reviveOutbox();
+    const revived = Db.reviveInFlight();
     this.refreshDeadCount();
     if (revived > 0) {
-      logger.info("[Sync] Revived", revived, "stuck outbox rows");
-      this.drain().catch((err) =>
-        logger.error("[Sync] drain after revive failed", err),
+      logger.info(
+        "[Sync] Revived",
+        revived,
+        "in-flight outbox rows (crash recovery)",
       );
+      this.scheduleDrain();
     }
 
     this.unsubscribeNetInfo = subscribeToNetwork((isOnline) => {
       if (isOnline) {
-        this.drain().catch((err) =>
-          logger.error("[Sync] drain on network change failed", err),
-        );
+        this.scheduleDrain();
       }
     });
 
-    // initAuth() already recovers the session from SecureStore and notifies
-    // SyncService via onUserSignedIn on SIGNED_IN — no duplicate subscription needed
+    // Local retention is TTL-based; enforce it periodically so rows that age
+    // past 7 days get purged in long-running sessions too (not just at launch).
+    this.cleanupTimer = setInterval(() => {
+      this.runLocalCleanup();
+    }, LOCAL_CLEANUP_INTERVAL_MS);
   }
 
   onUserSignedIn(userId: string): void {
@@ -646,8 +740,16 @@ class SyncServiceClass {
   }
 
   stop(): void {
+    this.clearCleanupTimer();
     this.unsubscribeNetInfo?.();
     this.unsubscribeNetInfo = null;
+  }
+
+  private clearCleanupTimer(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
   }
 }
 

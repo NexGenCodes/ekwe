@@ -24,31 +24,21 @@ export function getEntryType(entry: HistoryEntry): EntryType {
   return hasDistinctTranslation ? "translation" : "transcription";
 }
 
-function rowToEntry(row: {
-  id: string;
-  source_lang: string;
-  target_lang: string;
-  transcript: string;
-  translation_text: string | null;
-  transliteration_text: string | null;
-  duration: number;
-  source_app: string;
-  provider: string;
-  created_at: string;
-  entry_type?: EntryType;
-}): HistoryEntry {
+import type { HistoryRow } from "../services/db";
+
+function rowToEntry(row: HistoryRow): HistoryEntry {
   return {
     id: row.id,
-    sourceLang: row.source_lang,
-    targetLang: row.target_lang,
+    sourceLang: row.sourceLang,
+    targetLang: row.targetLang,
     transcript: row.transcript,
-    translation: row.translation_text,
-    transliteration: row.transliteration_text,
+    translation: row.translationText,
+    transliteration: row.transliterationText,
     duration: row.duration,
-    sourceApp: row.source_app,
-    provider: row.provider,
-    timestamp: new Date(row.created_at).getTime(),
-    type: row.entry_type,
+    sourceApp: row.sourceApp,
+    provider: row.provider ?? "",
+    timestamp: new Date(row.createdAt).getTime(),
+    type: (row.entryType as EntryType) ?? "transcription",
   };
 }
 

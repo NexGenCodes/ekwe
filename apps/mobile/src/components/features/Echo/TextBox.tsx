@@ -24,6 +24,7 @@ import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks/ui";
 import { settings$ } from "@/store";
+import { AnalyticsEvents, track } from "@/utils/analytics";
 import { withAlpha } from "@/utils/color";
 import {
   loadDeviceVoices,
@@ -166,6 +167,8 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
         logger.warn("Speech.stop failed", err);
       }
 
+      track(AnalyticsEvents.TTS_PLAYED, { source: "echo", lang });
+
       setIsTTSLoading(true);
       claimTtsFocus(() => {
         Speech.stop().catch(() => {});
@@ -252,6 +255,7 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
       if (!signedText) return;
       triggerHaptic("selection");
       try {
+        track(AnalyticsEvents.RESULT_SHARED, { source: "echo" });
         await Share.share({ message: signedText });
       } catch (err) {
         logger.warn("[TextBox] Share failed", err);

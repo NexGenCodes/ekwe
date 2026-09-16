@@ -1,15 +1,14 @@
 import { Env, TranscribeResult } from "../core/types";
 import { rotateKeys } from "../utils/keys";
 import { isHallucination } from "../utils/prompts";
-import { fetchWithTimeout, TIMEOUT_FAST, abortableDelay } from "../utils/fetch";
+import { fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
+import { pollForJobResult } from "../utils/jobPoll";
 import { mimeToExt } from "../utils/mime";
 import { rotateWsKeys, createStreamInterceptor } from "../utils/websocket";
 import { logger } from "../core/logger";
 
 const GLADIA_UPLOAD = "https://api.gladia.io/v2/upload";
 const GLADIA_TRANSCRIPTION = "https://api.gladia.io/v2/pre-recorded";
-const POLL_INTERVAL = 2000;
-const MAX_POLLS = 4; // 8s max wait
 
 /**
  * Gladia pre-recorded transcription — async upload → poll pattern.
@@ -98,39 +97,42 @@ async function attemptTranscription(
   const { result_url } = await submitRes.json<{ result_url: string }>();
 
   // Step 3: Poll for result
-  for (let i = 0; i < MAX_POLLS; i++) {
-    await abortableDelay(POLL_INTERVAL, signal);
+  const polled = await pollForJobResult<GladiaResult>({
+    url: result_url,
+    headers: { "x-gladia-key": apiKey },
+    signal,
+    onPoll: (attempt, data) => {
+      logger.info("[gladia] Polling for results...", {
+        attempt,
+        status: (data as GladiaResult).status,
+      });
+    },
+    isError: (data) => {
+      const d = data as GladiaResult;
+      if (d.status === "error") {
+        logger.error("[gladia] Transcription job failed", { data: d });
+        return Response.json({ error: "gladia_error" }, { status: 502 });
+      }
+      return null;
+    },
+    parse: (data) => {
+      const d = data as GladiaResult;
+      if (d.status === "done") return d;
+      return null;
+    },
+  });
 
-    const poll = await fetchWithTimeout(
-      result_url,
-      {
-        headers: { "x-gladia-key": apiKey },
-        signal,
-      },
-      TIMEOUT_FAST,
-      signal,
-    );
-
-    const data = await poll.json<GladiaResult>();
-
-    if (data.status === "done") {
-      const text = data.result?.transcription?.full_transcript || "";
-      const language = data.result?.transcription?.languages?.[0]?.language;
-      logger.info("[gladia] Transcription completed", { language });
-      return Response.json({ text, language }, { status: 200 });
-    }
-    if (data.status === "error") {
-      logger.error("[gladia] Transcription job failed", { data });
-      return Response.json({ error: "gladia_error" }, { status: 502 });
-    }
-
-    logger.info("[gladia] Polling for results...", {
-      attempt: i + 1,
-      status: data.status,
-    });
+  if (polled.ok && polled.value) {
+    const text = polled.value.result?.transcription?.full_transcript || "";
+    const language =
+      polled.value.result?.transcription?.languages?.[0]?.language;
+    logger.info("[gladia] Transcription completed", { language });
+    return Response.json({ text, language }, { status: 200 });
   }
-
-  return Response.json({ error: "gladia_timeout" }, { status: 504 });
+  return (
+    polled.response ??
+    Response.json({ error: "gladia_timeout" }, { status: 504 })
+  );
 }
 
 interface GladiaResult {

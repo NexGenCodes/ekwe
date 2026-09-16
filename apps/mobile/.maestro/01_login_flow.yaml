@@ -1,0 +1,5 @@
+appId: com.ekwe.app
+---
+- launchApp
+- assertVisible: "Welcome to Ekwe"
+- tapOn: "Continue with Google"

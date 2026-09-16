@@ -10,6 +10,13 @@ interface Env {
   // wrangler.jsonc (so absent from the generated types). Declared manually.
   TURNSTILE_SECRET: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
+  // Firebase App Check: project number from google-services.json, used to
+  // verify the `aud` claim in App Check JWTs. Set via wrangler vars.
+  FIREBASE_PROJECT_NUMBER?: string;
+  // Gradual rollout flag: when "true", the OTP route rejects requests that
+  // lack a valid App Check token in production. Leave unset or "false" to
+  // allow unauthenticated requests while users upgrade to the new app build.
+  REQUIRE_APP_CHECK?: string;
   // Opaque `sb_secret_...` API key. When set, the OTP route sends this on the
   // `apikey` header plus the end-user IP in `Sb-Forwarded-For` so Supabase Auth
   // rate-limits each client's real IP instead of the worker's egress IP.

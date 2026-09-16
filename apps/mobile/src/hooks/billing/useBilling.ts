@@ -123,6 +123,10 @@ export function useBilling(): UseBillingReturn {
       setCheckoutPlan(getFlutterwavePlanId(isAnnual));
       checkoutSessionRef.current = outcome.session;
       checkoutPlanRef.current = getFlutterwavePlanId(isAnnual);
+      track(AnalyticsEvents.CHECKOUT_INITIATED, {
+        plan: getFlutterwavePlanId(isAnnual),
+        cycle: isAnnual ? "annual" : "monthly",
+      });
       setShowCheckout(true);
     } catch (err) {
       AppAlert.error("Upgrade Failed", err);

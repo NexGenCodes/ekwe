@@ -3,7 +3,7 @@ import React, { useCallback } from "react";
 import { StyleSheet } from "react-native";
 
 import { HistoryEntryRow } from "@/components";
-import { Box, Text } from "@/components/ui";
+import { Box, Text, Spinner } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks/ui";
@@ -18,6 +18,7 @@ export interface HistoryListSectionProps {
   onRefresh: () => Promise<void>;
   isSearching: boolean;
   hasMore: boolean;
+  isFetchingNextPage: boolean;
   onLoadMore?: () => void;
   handleEntryPress: (entry: HistoryEntry) => void;
   onDeleteEntry: (entryId: string) => void;
@@ -34,6 +35,7 @@ export const HistoryListSection = React.memo(function HistoryListSection({
   onRefresh,
   isSearching,
   hasMore,
+  isFetchingNextPage,
   onLoadMore,
   handleEntryPress,
   onDeleteEntry,
@@ -90,18 +92,33 @@ export const HistoryListSection = React.memo(function HistoryListSection({
     ],
   );
 
-  const listFooter = useCallback(
-    () => (
-      <Box style={styles.listFooter}>
-        {!isSearching && !hasMore && listData.length > 0 ? (
+  const listFooter = useCallback(() => {
+    if (isSearching) return null;
+
+    // On-demand paging is in flight — surface it instead of a static label.
+    if (isFetchingNextPage) {
+      return (
+        <Box style={styles.listFooter}>
+          <Spinner size="sm" color={color.muted} />
+          <Text variant="caption" style={{ color: color.muted }}>
+            Loading older entries…
+          </Text>
+        </Box>
+      );
+    }
+
+    if (!hasMore && listData.length > 0) {
+      return (
+        <Box style={styles.listFooter}>
           <Text variant="caption" style={{ color: color.muted }}>
             You&apos;re all caught up
           </Text>
-        ) : null}
-      </Box>
-    ),
-    [isSearching, hasMore, listData.length, color.muted],
-  );
+        </Box>
+      );
+    }
+
+    return null;
+  }, [isSearching, isFetchingNextPage, hasMore, listData.length, color.muted]);
 
   return (
     <Box style={styles.listContainer}>
@@ -164,5 +181,8 @@ const styles = StyleSheet.create({
   listFooter: {
     paddingVertical: spacing.xl,
     alignItems: "center",
+    gap: spacing.sm,
+    flexDirection: "row",
+    justifyContent: "center",
   },
 });

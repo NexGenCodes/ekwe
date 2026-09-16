@@ -8,6 +8,7 @@ import type { TranslateRequest, TranslateResponse } from "@ekwe/shared";
 import { EkweError } from "@/constants/errors";
 import { supabase } from "@/services/supabase";
 import { Result, ok, err } from "@/types/Result";
+import { AnalyticsEvents, track } from "@/utils/analytics";
 import logger from "@/utils/logger";
 import {
   fetchWithRetry,
@@ -83,10 +84,13 @@ export async function translateText(
         // and the daily quota (EKWE_QUOTA_EXCEEDED) — surface them distinctly
         // so the UI can explain "limit reached" instead of "busy, retry".
         if (errorCode === WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED) {
+          trackTranslationFailed(sourceLang, targetLang, "quota_exceeded");
           return err(EkweError.QUOTA_EXCEEDED);
         }
+        trackTranslationFailed(sourceLang, targetLang, "rate_limited");
         return err(EkweError.RATE_LIMITED);
       }
+      trackTranslationFailed(sourceLang, targetLang, "worker_error");
       return err(mapWorkerError(errorCode, EkweError.TRANSLATION_FAIL));
     }
 
@@ -97,14 +101,23 @@ export async function translateText(
         "[translateText] Response validation failed:",
         parsed.error.message,
       );
+      trackTranslationFailed(sourceLang, targetLang, "invalid_response");
       return err(EkweError.TRANSLATION_FAIL);
     }
 
     const data = parsed.data;
 
     if (data.translation.trim().length === 0) {
+      trackTranslationFailed(sourceLang, targetLang, "empty_translation");
       return err(EkweError.TRANSLATION_FAIL);
     }
+
+    track(AnalyticsEvents.TRANSLATION_COMPLETED, {
+      sourceLang,
+      targetLang,
+      provider: data.provider,
+      chars: trimmedText.length,
+    });
 
     return ok({
       translation: data.translation.trim(),
@@ -118,10 +131,12 @@ export async function translateText(
     // A definitive offline signal short-circuits the request before any fetch
     // (fail-fast in fetchWithRetry) — map it quietly, no error log needed.
     if (isOfflineNetworkError(e)) {
+      trackTranslationFailed(sourceLang, targetLang, "offline");
       return err(EkweError.NETWORK_LOST);
     }
     if (isTimeoutError(e)) {
       logger.info("[translateText] Request timed out");
+      trackTranslationFailed(sourceLang, targetLang, "timeout");
       return err(EkweError.TRANSLATION_FAIL);
     }
     if (e instanceof Error) {
@@ -130,6 +145,19 @@ export async function translateText(
       }
       logger.warn("[translateText] FAIL:", e.message);
     }
+    trackTranslationFailed(sourceLang, targetLang, "network_error");
     return err(EkweError.NETWORK_LOST);
   }
+}
+
+function trackTranslationFailed(
+  sourceLang: string,
+  targetLang: string,
+  reason: string,
+): void {
+  track(AnalyticsEvents.TRANSLATION_FAILED, {
+    sourceLang,
+    targetLang,
+    reason,
+  });
 }

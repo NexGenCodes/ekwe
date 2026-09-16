@@ -43,6 +43,8 @@
   "vars": {
     "SUPABASE_URL": "https://zsjcgebczzbmaarfcdny.supabase.co",
     "ALLOWED_ORIGINS": "https://ekwe.pages.dev",
+    "FIREBASE_PROJECT_NUMBER": "239869950724",
+    "REQUIRE_APP_CHECK": "false",
     // Frontend hostnames Turnstile siteverify must return for /auth/otp.
     // The Turnstile widget must be registered for these domains (add localhost for
     // local dev via .dev.vars — never in this production default).

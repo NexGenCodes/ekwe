@@ -1,24 +1,34 @@
-import { act, renderHook } from "@testing-library/react-native";
+// @vitest-environment jsdom
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  type Mock,
+} from "vitest";
+import { act, renderHook } from "@testing-library/react";
 
 import { useHistorySearch } from "../useHistorySearch";
 
 import type { HistoryEntry } from "@/store";
 
-jest.mock("@/store", () => ({
+vi.mock("@/store", () => ({
   auth$: {
     user: { get: () => ({ id: "user-1" }) },
   },
 }));
 
-jest.mock("@/services/db", () => ({
+vi.mock("@/services/db", () => ({
   Db: {
-    searchHistory: jest.fn(() => []),
+    searchHistory: vi.fn(() => []),
   },
 }));
 
 import { Db } from "@/services/db";
 
-const mockSearchHistory = Db.searchHistory as jest.Mock;
+const mockSearchHistory = Db.searchHistory as Mock;
 
 function entry(overrides: Partial<HistoryEntry>): HistoryEntry {
   return {
@@ -37,12 +47,12 @@ function entry(overrides: Partial<HistoryEntry>): HistoryEntry {
 
 describe("useHistorySearch", () => {
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     mockSearchHistory.mockClear();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it("starts with no filter, empty query, and all entries", async () => {
@@ -104,7 +114,7 @@ describe("useHistorySearch", () => {
     expect(result.current.debouncedQuery).toBe("");
     expect(mockSearchHistory).not.toHaveBeenCalled();
 
-    await act(() => jest.advanceTimersByTime(301));
+    await act(() => vi.advanceTimersByTime(301));
 
     expect(result.current.debouncedQuery).toBe("hola");
     expect(result.current.isSearching).toBe(true);
@@ -116,13 +126,13 @@ describe("useHistorySearch", () => {
 
   it("does not search the DB without an authenticated user", async () => {
     (
-      jest.requireMock("@/store") as { auth$: { user: { get: () => unknown } } }
+      await vi.importMock<{ auth$: { user: { get: unknown } } }>("@/store")
     ).auth$.user.get = () => null;
 
     const { result } = await renderHook(() => useHistorySearch([]));
 
     await act(() => result.current.setQuery("hola"));
-    await act(() => jest.advanceTimersByTime(301));
+    await act(() => vi.advanceTimersByTime(301));
 
     expect(mockSearchHistory).not.toHaveBeenCalled();
     expect(result.current.isSearching).toBe(true);
@@ -150,7 +160,7 @@ describe("useHistorySearch", () => {
 
     await act(() => result.current.setQuery("hello"));
     await act(() => result.current.setFilter("translation"));
-    await act(() => jest.advanceTimersByTime(301));
+    await act(() => vi.advanceTimersByTime(301));
 
     expect(result.current.filteredEntries).toEqual([]);
   });

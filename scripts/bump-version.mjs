@@ -52,7 +52,7 @@ updateJson('./apps/web/config.json', w => { if (w.app) w.app.version = NEXT; });
 updateJson('./apps/web/package.json', w => { w.version = NEXT; });
 
 // Update shared version constant (single source of truth)
-const versionTsPath = path.resolve('./packages/shared/version.ts');
+const versionTsPath = path.resolve('./packages/shared/src/version.ts');
 const versionTs = [
   '/** Single source of truth for the Ekwe app version. */',
   `export const APP_VERSION = "${NEXT}" as const;`,

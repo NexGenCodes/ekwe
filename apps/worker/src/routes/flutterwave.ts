@@ -128,6 +128,7 @@ async function setProStatus(
   isPro: boolean,
   expiresAt?: string | null,
   provider: string = "flutterwave",
+  paymentRef?: string | null,
 ): Promise<ProStatusResult> {
   try {
     const res = await supabasePost(
@@ -139,6 +140,7 @@ async function setProStatus(
         p_is_pro: isPro,
         p_expires_at: expiresAt ?? null,
         p_provider: provider,
+        p_payment_ref: paymentRef ?? null,
       },
       SUPABASE_TIMEOUT_MS,
     );
@@ -211,19 +213,19 @@ function planFromMeta(plan?: string): "monthly" | "annual" | null {
  * Verifies the charged amount/currency against the price the server would have
  * authorized for this plan+currency. The worker is server-authoritative for
  * pricing: GET /pricing and POST /billing/checkout both price from the same
- * source (subscription_config / LOCAL_PRICES), and the mobile SDK embeds the
+ * source (app_config / LOCAL_PRICES), and the mobile SDK embeds the
  * authorized amount/currency when it creates the Flutterwave payment. The
  * webhook must NOT trust the client-echoed `meta` — a modified client could
  * set `meta.amount` to whatever it actually pays (e.g. 100 NGN) to make the
  * echo "match". Instead we re-derive the expected amount server-side from the
  * plan (parsed from tx_ref) and the charged currency.
  *
- * The expected price is read strictly from the Supabase `subscription_config`
+ * The expected price is read strictly from the Supabase `app_config`
  * row via getAuthoritativePlanPrices — never from the bundled map (which the
  * mobile app also embeds, display-only). If Supabase can't confirm the price
  * (unreachable / no row / no price for the currency) we return "retry" so the
  * event is not acked as applied: the grant happens only against a price
- * confirmed from Supabase. `subscription_config` is REVOKE ALL + RLS-locked
+ * confirmed from Supabase. `app_config` is REVOKE ALL + RLS-locked
  * to the service role, so a malicious user can neither change the price nor
  * read it through the public API.
  *
@@ -370,7 +372,14 @@ async function processFlutterwaveEvent(
       ? new Date(data.subscription.end_date).toISOString()
       : null;
 
-    const applied = await setProStatus(env, identifier, true, expiresAt);
+    const applied = await setProStatus(
+      env,
+      identifier,
+      true,
+      expiresAt,
+      "flutterwave",
+      data.flw_ref,
+    );
     logger.info("[flutterwave] Subscription activated", {
       email,
       tx_ref: txRef,
@@ -657,4 +666,52 @@ export async function handleFlutterwaveWebhook(
   }
 
   return response;
+}
+
+export async function processMissingTransaction(
+  env: Env,
+  data: FlutterwaveEvent["data"],
+): Promise<boolean> {
+  const email = data.customer?.email ?? null;
+  const txRef = data.tx_ref ?? null;
+  const identifier = resolveUser(env, email, txRef);
+
+  if (!identifier) {
+    logger.warn("[reconciliation] Could not resolve user from transaction", {
+      email,
+      tx_ref: txRef,
+    });
+    return false;
+  }
+
+  if (data.status !== "successful") return false;
+
+  const verification = await verifyChargeAmount(env, data);
+  if (verification.outcome !== "ok") {
+    logger.warn("[reconciliation] Transaction amount verification failed", {
+      tx_ref: txRef,
+      outcome: verification.outcome,
+    });
+    return false;
+  }
+
+  const expiresAt = data.subscription?.end_date
+    ? new Date(data.subscription.end_date).toISOString()
+    : null;
+
+  const applied = await setProStatus(
+    env,
+    identifier,
+    true,
+    expiresAt,
+    "flutterwave",
+    data.flw_ref,
+  );
+  if (applied.ok && identifier.userId && data.amount) {
+    logger.info("[reconciliation] Successfully processed missing transaction", {
+      email,
+      tx_ref: txRef,
+    });
+  }
+  return applied.ok;
 }

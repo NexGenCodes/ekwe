@@ -1,0 +1,438 @@
+{
+  "catalog_title": "Ekwe · Money funnel & activation metrics (PostHog)",
+  "events": {
+    "dictation_started": {
+      "description": "User began a voice dictation recording.",
+      "properties": ["sourceLang", "maxDurationMs", "isLive"],
+      "fired_at": "apps/mobile/src/store/dictationStore.ts"
+    },
+    "transcribing_started": {
+      "description": "Batch transcription request dispatched to the worker.",
+      "properties": ["sourceLang", "durationMs"],
+      "fired_at": "apps/mobile/src/store/dictationStore.ts"
+    },
+    "transcription_failed": {
+      "description": "Transcription failed (worker/provider error).",
+      "properties": ["sourceLang", "durationMs", "error"],
+      "fired_at": "apps/mobile/src/store/dictationStore.ts"
+    },
+    "transcribing_completed": {
+      "description": "A usable transcript was returned. Core value moment.",
+      "properties": ["sourceLang", "durationMs", "detectedLang"],
+      "fired_at": "apps/mobile/src/store/dictationStore.ts"
+    },
+    "translation_completed": {
+      "description": "A text translation succeeded (single choke point in the service).",
+      "properties": ["sourceLang", "targetLang", "provider", "chars"],
+      "fired_at": "apps/mobile/src/services/translateText.ts"
+    },
+    "translation_failed": {
+      "description": "Translation failed; reason covers quota/rate/worker/offline/timeout.",
+      "properties": ["sourceLang", "targetLang", "reason"],
+      "fired_at": "apps/mobile/src/services/translateText.ts"
+    },
+    "tts_played": {
+      "description": "User pressed Listen (cloud or device TTS).",
+      "properties": ["source", "targetLang", "lang"],
+      "fired_at": "apps/mobile/src/components/home/ExpressiveOutput.tsx, apps/mobile/src/components/features/Echo/TextBox.tsx"
+    },
+    "result_copied": {
+      "description": "Transcript/translation copied to clipboard.",
+      "properties": ["chars"],
+      "fired_at": "apps/mobile/src/components/AnimatedCopyButton.tsx"
+    },
+    "result_shared": {
+      "description": "Result shared via the system share sheet.",
+      "properties": ["source"],
+      "fired_at": "apps/mobile/src/components/home/ExpressiveOutput.tsx, apps/mobile/src/components/features/Echo/TextBox.tsx, apps/mobile/src/components/history/HistoryEntryRow.tsx, apps/mobile/src/components/history/HistoryEntryDetail.tsx"
+    },
+    "sign_up": {
+      "description": "Account created (PostHog identify with user id).",
+      "properties": ["method"],
+      "fired_at": "apps/mobile/src/services/auth.ts"
+    },
+    "billing_page_viewed": {
+      "description": "Billing screen visit (once per mount).",
+      "properties": ["isPro"],
+      "fired_at": "apps/mobile/src/app/billing.tsx"
+    },
+    "billing_toggled": {
+      "description": "User flipped annual/monthly on the billing screen.",
+      "properties": ["cycle"],
+      "fired_at": "apps/mobile/src/app/billing.tsx"
+    },
+    "checkout_initiated": {
+      "description": "Checkout sheet opened with a Flutterwave session.",
+      "properties": ["plan", "cycle"],
+      "fired_at": "apps/mobile/src/hooks/billing/useBilling.ts"
+    },
+    "purchase_success": {
+      "description": "Pro entitlement granted after verified payment/status poll.",
+      "properties": ["plan", "amount", "currency"],
+      "fired_at": "apps/mobile/src/hooks/billing/useBilling.ts"
+    }
+  },
+  "dashboards": [
+    {
+      "name": "Ekwe — Money Funnel",
+      "description": "Conversion from first transcription to paid Pro, plus daily volume.",
+      "insights": [
+        {
+          "name": "Conversion funnel: first transcript → Pro (14d window)",
+          "query": {
+            "kind": "FunnelsQuery",
+            "dateRange": { "date_from": "-90d" },
+            "interval": "day",
+            "series": [
+              {
+                "kind": "EventsNode",
+                "event": "transcribing_started",
+                "name": "Started transcription"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "transcribing_completed",
+                "name": "Got a transcript"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "translation_completed",
+                "name": "Translated"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "billing_page_viewed",
+                "name": "Viewed billing"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "checkout_initiated",
+                "name": "Started checkout"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "purchase_success",
+                "name": "Paid → Pro"
+              }
+            ],
+            "funnelsFilter": {
+              "funnelOrderType": "strict",
+              "funnelVizType": "steps",
+              "funnelWindowInterval": 14,
+              "funnelWindowIntervalUnit": "day"
+            }
+          }
+        },
+        {
+          "name": "Billing flow: page → checkout → purchase (14d window)",
+          "query": {
+            "kind": "FunnelsQuery",
+            "dateRange": { "date_from": "-90d" },
+            "interval": "day",
+            "series": [
+              {
+                "kind": "EventsNode",
+                "event": "billing_page_viewed",
+                "name": "Viewed billing"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "checkout_initiated",
+                "name": "Started checkout"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "purchase_success",
+                "name": "Paid → Pro"
+              }
+            ],
+            "funnelsFilter": {
+              "funnelOrderType": "strict",
+              "funnelVizType": "steps",
+              "funnelWindowInterval": 14,
+              "funnelWindowIntervalUnit": "day"
+            }
+          }
+        },
+        {
+          "name": "Engagement: result copied → shared (7d window)",
+          "query": {
+            "kind": "FunnelsQuery",
+            "dateRange": { "date_from": "-90d" },
+            "interval": "day",
+            "series": [
+              {
+                "kind": "EventsNode",
+                "event": "transcribing_completed",
+                "name": "Got a transcript"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "result_copied",
+                "name": "Copied result"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "result_shared",
+                "name": "Shared result"
+              }
+            ],
+            "funnelsFilter": {
+              "funnelOrderType": "strict",
+              "funnelVizType": "steps",
+              "funnelWindowInterval": 7,
+              "funnelWindowIntervalUnit": "day"
+            }
+          }
+        },
+        {
+          "name": "Daily completions (transcribe / translate / paid)",
+          "query": {
+            "kind": "TrendsQuery",
+            "dateRange": { "date_from": "-90d" },
+            "interval": "day",
+            "series": [
+              {
+                "kind": "EventsNode",
+                "event": "transcribing_completed",
+                "name": "Transcribed",
+                "math": "dau"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "translation_completed",
+                "name": "Translated",
+                "math": "dau"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "purchase_success",
+                "name": "Paid",
+                "math": "dau"
+              }
+            ],
+            "trendsFilter": { "display": "ActionsLineGraph" }
+          }
+        },
+        {
+          "name": "Payments by plan",
+          "query": {
+            "kind": "TrendsQuery",
+            "dateRange": { "date_from": "-90d" },
+            "interval": "day",
+            "series": [
+              {
+                "kind": "EventsNode",
+                "event": "purchase_success",
+                "name": "Purchases",
+                "math": "dau"
+              }
+            ],
+            "trendsFilter": { "display": "ActionsLineGraph" },
+            "breakdownFilter": {
+              "breakdown_type": "event",
+              "breakdown": "plan"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ekwe — Activation & Retention",
+      "description": "Do new sign-ups get to a first transcript, and do they come back?",
+      "insights": [
+        {
+          "name": "Activation funnel: sign-up → first transcript (7d window)",
+          "query": {
+            "kind": "FunnelsQuery",
+            "dateRange": { "date_from": "-90d" },
+            "interval": "day",
+            "series": [
+              { "kind": "EventsNode", "event": "sign_up", "name": "Signed up" },
+              {
+                "kind": "EventsNode",
+                "event": "transcribing_started",
+                "name": "First dictation"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "transcribing_completed",
+                "name": "First transcript"
+              }
+            ],
+            "funnelsFilter": {
+              "funnelOrderType": "strict",
+              "funnelVizType": "steps",
+              "funnelWindowInterval": 7,
+              "funnelWindowIntervalUnit": "day"
+            }
+          }
+        },
+        {
+          "name": "Retention: users returning after a first transcript",
+          "query": {
+            "kind": "RetentionQuery",
+            "dateRange": { "date_from": "-180d" },
+            "retentionFilter": {
+              "retentionType": "retention_first_time",
+              "period": "Day",
+              "totalIntervals": 14,
+              "targetEntity": {
+                "type": "events",
+                "id": "transcribing_completed",
+                "name": "Got a transcript"
+              },
+              "returningEntity": {
+                "type": "events",
+                "id": "transcribing_completed",
+                "name": "Got a transcript"
+              }
+            }
+          }
+        },
+        {
+          "name": "Sign-ups vs failure events (daily)",
+          "query": {
+            "kind": "TrendsQuery",
+            "dateRange": { "date_from": "-90d" },
+            "interval": "day",
+            "series": [
+              {
+                "kind": "EventsNode",
+                "event": "sign_up",
+                "name": "Sign-ups",
+                "math": "dau"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "transcription_failed",
+                "name": "Transcription failed",
+                "math": "dau"
+              },
+              {
+                "kind": "EventsNode",
+                "event": "translation_failed",
+                "name": "Translation failed",
+                "math": "dau"
+              }
+            ],
+            "trendsFilter": { "display": "ActionsLineGraph" }
+          }
+        },
+        {
+          "name": "Listen volume by surface (home vs echo)",
+          "query": {
+            "kind": "TrendsQuery",
+            "dateRange": { "date_from": "-90d" },
+            "interval": "day",
+            "series": [
+              {
+                "kind": "EventsNode",
+                "event": "tts_played",
+                "name": "TTS plays",
+                "math": "dau"
+              }
+            ],
+            "trendsFilter": { "display": "ActionsLineGraph" },
+            "breakdownFilter": {
+              "breakdown_type": "event",
+              "breakdown": "source"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "cohorts": [
+    {
+      "name": "Paid — Flutterwave subscribers",
+      "description": "Users who ever completed a Pro purchase.",
+      "is_static": false,
+      "filters": {
+        "properties": {
+          "type": "OR",
+          "values": [
+            {
+              "type": "behavioral",
+              "value": "performed_event",
+              "key": "purchase_success",
+              "event_type": "events",
+              "time_interval": "all",
+              "time_value": 0,
+              "operator": "gte",
+              "operator_value": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Engaged free users (28d)",
+      "description": "Power-users: ≥3 transcripts in 28 days, never paid. Primary upsell target.",
+      "is_static": false,
+      "filters": {
+        "properties": {
+          "type": "AND",
+          "values": [
+            {
+              "type": "behavioral",
+              "value": "performed_event",
+              "key": "transcribing_completed",
+              "event_type": "events",
+              "time_interval": "day",
+              "time_value": 28,
+              "operator": "gte",
+              "operator_value": 3,
+              "negation": false
+            },
+            {
+              "type": "behavioral",
+              "value": "performed_event",
+              "key": "purchase_success",
+              "event_type": "events",
+              "time_interval": "all",
+              "time_value": 0,
+              "operator": "gte",
+              "operator_value": 1,
+              "negation": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Lapsed Pro (14d)",
+      "description": "Paid before, but no transcription in the last 14 days. Win-back target.",
+      "is_static": false,
+      "filters": {
+        "properties": {
+          "type": "AND",
+          "values": [
+            {
+              "type": "behavioral",
+              "value": "performed_event",
+              "key": "purchase_success",
+              "event_type": "events",
+              "time_interval": "all",
+              "time_value": 0,
+              "operator": "gte",
+              "operator_value": 1,
+              "negation": false
+            },
+            {
+              "type": "behavioral",
+              "value": "performed_event",
+              "key": "transcribing_completed",
+              "event_type": "events",
+              "time_interval": "day",
+              "time_value": 14,
+              "operator": "gte",
+              "operator_value": 1,
+              "negation": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -3,15 +3,18 @@
  *
  * Entry point for all payment provider webhooks. Verifies the signature,
  * identifies the provider, delegates to the registered processor, and
- * manages idempotency via Cloudflare KV.
+ * manages idempotency via D1 (`EKWE_D1`; `claimIdempotency` /
+ * `releaseIdempotency`).
  *
  * Idempotency strategy:
  *   - Flutterwave: Use event.id (transaction ID) as the idempotency key.
  *   - Fall back to body hash only when no stable ID is available.
  *
- * The idempotency key is stored in KV only AFTER the event is fully applied
- * (including the Supabase set_pro_status call). If the status change fails,
- * the key is skipped so a re-delivery can retry.
+ * The key is claimed ATOMICALLY up-front (D1 INSERT ... ON CONFLICT DO
+ * NOTHING), so concurrent duplicate deliveries collapse to one processor.
+ * If the event is not fully applied (e.g. the Supabase set_pro_status call
+ * fails), the claim is released and the provider's re-delivery can reclaim
+ * and retry instead of being permanently deduped.
  */
 
 import { Env } from "../core/types";

@@ -275,6 +275,16 @@ async function runMaintenance(env: Env): Promise<void> {
       error: err instanceof Error ? err.message : String(err),
     });
   }
+
+  // Enqueue Flutterwave Reconciliation
+  try {
+    await env.MAINTENANCE_QUEUE.send({ type: "reconcile_flutterwave" });
+    logger.info("[scheduled] Enqueued reconcile_flutterwave");
+  } catch (err) {
+    logger.error("[scheduled] Failed to enqueue reconcile_flutterwave", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 export function createWorker() {
@@ -343,6 +353,10 @@ export function createWorker() {
             unknown
           >;
           logger.info("[queue] cleanup_expired_history completed", result);
+        } else if (body?.type === "reconcile_flutterwave") {
+          const { reconcileFlutterwaveTransactions } =
+            await import("./services/flutterwave_reconciliation");
+          await reconcileFlutterwaveTransactions(env);
         }
       }
     },

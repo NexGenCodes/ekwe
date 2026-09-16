@@ -6,6 +6,7 @@ import {
 } from "expo-router/react-navigation";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router/stack";
+import { useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { setBackgroundColorAsync } from "expo-system-ui";
@@ -29,7 +30,7 @@ import { Box } from "@/components/ui";
 import { useTheme } from "@/hooks/ui/useTheme";
 import { queryClient } from "@/hooks/queries/queryClient";
 import { auth$ } from "@/store/auth";
-import logger from "@/utils/logger";
+import logger, { setSentryTag } from "@/utils/logger";
 import {
   initNetworkMonitoring,
   stopNetworkMonitoring,
@@ -57,6 +58,14 @@ function InnerLayout(): React.ReactElement {
 
   const isInitialized = useSelector(() => auth$.isInitialized.get());
   const sessionLoaded = useSelector(() => auth$.sessionLoaded.get());
+  const isAuthenticated = useSelector(() => auth$.session.get() !== null);
+
+  // Tag every Sentry event with the active screen so errors from shared
+  // services (transcription, sync, billing) can be blamed to a route.
+  const segments = useSegments();
+  useEffect(() => {
+    setSentryTag("screen", segments.join("/") || "/");
+  }, [segments]);
 
   // First committed React frame — the splash can hide here (the router and
   // theme are mounted), so the user sees the themed window, not a void. The
@@ -128,46 +137,52 @@ function InnerLayout(): React.ReactElement {
                   options={{ animation: "fade" }}
                 />
                 <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
-                <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
-                <Stack.Screen
-                  name="result"
-                  options={{
-                    presentation: "transparentModal",
-                    headerShown: false,
-                    contentStyle: { backgroundColor: "transparent" },
-                  }}
-                />
-                <Stack.Screen
-                  name="share"
-                  options={{
-                    presentation: "transparentModal",
-                    headerShown: false,
-                    contentStyle: { backgroundColor: "transparent" },
-                  }}
-                />
-                <Stack.Screen
-                  name="translate"
-                  options={{
-                    presentation: "formSheet",
-                    sheetGrabberVisible: true,
-                    headerShown: true,
-                    title: "Translate",
-                    contentStyle: { backgroundColor: "transparent" },
-                  }}
-                />
+                {/* Auth-gated routes: hard-excluded from the navigator when
+                    signed out, so deep links / back-stack cannot reach tabs,
+                    history holders, or Pro purchase flows. */}
+                <Stack.Protected guard={isAuthenticated}>
+                  <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
+                  <Stack.Screen
+                    name="result"
+                    options={{
+                      presentation: "transparentModal",
+                      headerShown: false,
+                      contentStyle: { backgroundColor: "transparent" },
+                    }}
+                  />
+                  <Stack.Screen
+                    name="share"
+                    options={{
+                      presentation: "transparentModal",
+                      headerShown: false,
+                      contentStyle: { backgroundColor: "transparent" },
+                    }}
+                  />
+                  <Stack.Screen
+                    name="translate"
+                    options={{
+                      presentation: "formSheet",
+                      sheetGrabberVisible: true,
+                      headerShown: true,
+                      title: "Translate",
+                      contentStyle: { backgroundColor: "transparent" },
+                    }}
+                  />
+                  <Stack.Screen
+                    name="billing"
+                    options={{
+                      headerShown: true,
+                      title: "Ekwe Pro",
+                      headerBackTitle: "Back",
+                      animation: "slide_from_right",
+                    }}
+                  />
+                  <Stack.Screen name="edit-languages" />
+                </Stack.Protected>
                 <Stack.Screen
                   name="legal"
                   options={{
                     headerShown: false,
-                    animation: "slide_from_right",
-                  }}
-                />
-                <Stack.Screen
-                  name="billing"
-                  options={{
-                    headerShown: true,
-                    title: "Ekwe Pro",
-                    headerBackTitle: "Back",
                     animation: "slide_from_right",
                   }}
                 />

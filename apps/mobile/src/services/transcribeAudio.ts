@@ -18,6 +18,7 @@ import {
   TimeoutError,
   isTimeoutError,
 } from "@/utils/networkUtils";
+import { VOICE_NOTE_EXTENSION_TO_MIME } from "@/utils/fileValidation";
 
 export interface TranscriptionResult {
   transcript: string;
@@ -252,14 +253,7 @@ async function uploadAudioFile(
 }
 
 function getMimeType(extension: string): string {
-  const map: Record<string, string> = {
-    ogg: "audio/ogg",
-    m4a: "audio/m4a",
-    mp4: "audio/mp4",
-    wav: "audio/wav",
-    mp3: "audio/mpeg",
-  };
-  return map[extension] || "audio/ogg";
+  return VOICE_NOTE_EXTENSION_TO_MIME[extension] || "audio/ogg";
 }
 
 function processTranscript(

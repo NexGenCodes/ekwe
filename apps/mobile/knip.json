@@ -4,7 +4,6 @@
     "modules/ekwe-native/app.plugin.js",
     "targets/share/expo-target.config.js"
   ],
-  "ignoreDependencies": ["babel-jest", "@expo/vector-icons"],
   "ignoreBinaries": ["adb"],
   "ignoreExportsUsedInFile": true
 }

@@ -13,7 +13,7 @@ on:
       - "package.json"
       - "apps/web/config.json"
       - "apps/web/package.json"
-      - "packages/shared/version.ts"
+      - "packages/shared/src/version.ts"
       - "CHANGELOG.md"
   workflow_dispatch:
     inputs:
@@ -27,7 +27,7 @@ on:
         default: ""
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -42,6 +42,7 @@ jobs:
       pages: ${{ steps.outcome.outputs.pages }}
       ota: ${{ steps.outcome.outputs.ota }}
       release: ${{ steps.outcome.outputs.release }}
+      db: ${{ steps.outcome.outputs.db }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -68,6 +69,8 @@ jobs:
               - 'apps/mobile/eas.json'
               - 'pnpm-lock.yaml'
               - 'package.json'
+            db:
+              - 'supabase/migrations/**'
 
       - name: Classify change
         id: outcome
@@ -80,6 +83,7 @@ jobs:
             echo "release=true" >> "$GITHUB_OUTPUT"
             echo "worker=true" >> "$GITHUB_OUTPUT"
             echo "pages=false" >> "$GITHUB_OUTPUT"
+            echo "db=false" >> "$GITHUB_OUTPUT"
           else
             # A release job commits the version bump and pushes it; that push
             # must not re-trigger itself or we'd bump versions forever
@@ -93,8 +97,10 @@ jobs:
               echo "release=false" >> "$GITHUB_OUTPUT"
               echo "worker=false" >> "$GITHUB_OUTPUT"
               echo "pages=false" >> "$GITHUB_OUTPUT"
+              echo "db=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
+            echo "db=${{ steps.changes.outputs.db }}" >> "$GITHUB_OUTPUT"
             if [ "${{ steps.changes.outputs.native }}" == "true" ]; then
               echo "ota=false" >> "$GITHUB_OUTPUT"
               echo "release=true" >> "$GITHUB_OUTPUT"
@@ -109,9 +115,81 @@ jobs:
             fi
           fi
 
+  verify-ci:
+    name: Gate on green CI
+    needs: detect
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      green: ${{ steps.ci.outputs.green }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wait for the CI run on this commit
+        id: ci
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          # Poll the ci.yml run for the exact commit being deployed. Fails (and
+          # therefore blocks any release) if CI is red or never finishes. For
+          # PR-merged commits CI is already conclusively green, so this returns
+          # in one iteration.
+          for _ in $(seq 1 120); do
+            RUN=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SHA" \
+              --jq '[.workflow_runs[] | select(.name == "CI")][-1]' 2>/dev/null)
+            if [ -n "$RUN" ]; then
+              STATUS=$(printf '%s' "$RUN" | jq -r '.status')
+              CONCL=$(printf '%s' "$RUN" | jq -r '.conclusion')
+              case "$CONCL" in
+                success)
+                  echo "green=true" >> "$GITHUB_OUTPUT"
+                  exit 0
+                  ;;
+                failure|cancelled|timed_out|action_required)
+                  echo "::error::CI concluded '$CONCL' for $SHA; refusing to release"
+                  echo "green=false" >> "$GITHUB_OUTPUT"
+                  exit 1
+                  ;;
+              esac
+              if [ "$STATUS" = "completed" ]; then
+                echo "::error::CI completed with '$CONCL' for $SHA; refusing to release"
+                echo "green=false" >> "$GITHUB_OUTPUT"
+                exit 1
+              fi
+            fi
+            sleep 5
+          done
+          echo "::error::Timed out waiting for CI on $SHA"
+          echo "green=false" >> "$GITHUB_OUTPUT"
+          exit 1
+
+  migrate:
+    name: Apply DB migrations
+    needs: detect
+    if: needs.detect.outputs.db == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Link project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
+      - name: Apply pending migrations
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        # --include-all also inserts migrations that predate the remote journal
+        # (e.g. the no-op 0000_baseline.sql); without it, first apply fails.
+        run: supabase db push --linked --include-all
+
   worker:
     name: Deploy Worker
-    needs: detect
+    needs: [detect, migrate]
     if: needs.detect.outputs.worker == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -190,9 +268,11 @@ jobs:
 
   release:
     name: Build APK + Release
-    needs: detect
-    if: needs.detect.outputs.release == 'true'
+    needs: [detect, verify-ci, migrate]
+    if: needs.detect.outputs.release == 'true' && needs.verify-ci.outputs.green == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     # Headroom for R8 minify + resource shrinking + bundle compression, which
     # are enabled on top of the C++/Hermes build of a universal APK.
     timeout-minutes: 90
@@ -241,8 +321,8 @@ jobs:
       - name: Read current version
         id: version
         run: |
-          VERSION=$(node -e "console.log(require('fs').readFileSync('packages/shared/version.ts','utf8').match(/APP_VERSION\s*=\s*\"([^\"]+)\"/)[1])")
-          VERSION_CODE=$(node -e "console.log(require('fs').readFileSync('packages/shared/version.ts','utf8').match(/APP_VERSION_CODE\s*=\s*(\d+)/)[1])")
+          VERSION=$(node -e "console.log(require('fs').readFileSync('packages/shared/src/version.ts','utf8').match(/APP_VERSION\s*=\s*\"([^\"]+)\"/)[1])")
+          VERSION_CODE=$(node -e "console.log(require('fs').readFileSync('packages/shared/src/version.ts','utf8').match(/APP_VERSION_CODE\s*=\s*(\d+)/)[1])")
           TAG="v${VERSION}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
@@ -271,6 +351,28 @@ jobs:
       - name: Run prebuild
         working-directory: apps/mobile
         run: pnpm run prebuild:android
+
+      - name: Configure release signing
+        # Decodes the production keystore from a repo secret and writes the
+        # gitignored keystore.properties that the app.config.js build-gradle
+        # plugin reads. When the secret is absent (e.g. first rollout before
+        # secrets are set) the gradle plugin falls back to debug signing.
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_B64" ]; then
+            mkdir -p "$RUNNER_TEMP/keys"
+            echo "$ANDROID_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/keys/ekwe-release.keystore"
+            printf '%s\n' \
+              "storeFile=$RUNNER_TEMP/keys/ekwe-release.keystore" \
+              "storePassword=$KEYSTORE_PASSWORD" \
+              "keyAlias=$KEY_ALIAS" \
+              "keyPassword=$KEY_PASSWORD" \
+              > apps/mobile/android/keystore.properties
+          fi
 
       - name: Build Release APK
         working-directory: apps/mobile/android
@@ -309,18 +411,46 @@ jobs:
             "${{ steps.assets.outputs.sha256 }}" \
             "${{ steps.assets.outputs.size }}"
 
+      - name: Prepare release body
+        # Curated notes win (workflow_dispatch); push-triggered releases fall
+        # back to the git log since the previous tag so the bump commit and the
+        # GitHub release carry a real description instead of a bare version line.
+        env:
+          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+        run: |
+          mkdir -p dist
+          if [ -n "$RELEASE_NOTES" ]; then
+            printf '%s\n' "$RELEASE_NOTES" > dist/release-body.md
+          else
+            FROM="${{ steps.version.outputs.tag }}"
+            if ! git rev-parse --verify -q "refs/tags/$FROM" >/dev/null 2>&1; then
+              # Releasing a version that has no tag yet (first run / manual
+              # release before any tag exists): fall back to the latest commits
+              # instead of failing the range lookup.
+              FROM="$(git log --format=%H -n 20 | tail -1)"
+            fi
+            {
+              echo "**Changes since ${FROM}**"
+              echo ""
+              git log "${FROM}..HEAD" \
+                --pretty=format:'- %s' --no-merges \
+                | grep -vE '^[- ]*chore: release v' || true
+            } > dist/release-body.md
+          fi
+
       - name: Commit + push version bump
         id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apps/mobile/app.json apps/mobile/package.json package.json apps/web/config.json apps/web/package.json packages/shared/version.ts CHANGELOG.md
+          git add apps/mobile/app.json apps/mobile/package.json package.json apps/web/config.json apps/web/package.json packages/shared/src/version.ts CHANGELOG.md
           # Skip the commit when the bump produced no changes (releasing exactly
           # v1.2.0 when files are already at 1.2.0). Skip pre-commit hooks too,
           # since lint-staged's prettier re-staging makes its own emptiness guard
           # reject these scripted release commits.
           if ! git diff --cached --quiet; then
-            git commit --no-verify -m "chore: release ${{ steps.bump.outputs.next_tag }}"
+            { printf 'chore: release %s\n\n' "${{ steps.bump.outputs.next_tag }}"; cat dist/release-body.md; } > /tmp/release-commit-msg
+            git commit --no-verify -F /tmp/release-commit-msg
           fi
           echo "next_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           # Safe to push mid-run: paths-ignore on this push event means this
@@ -337,8 +467,7 @@ jobs:
             dist/app-release.apk
             dist/app-release.sha256
             dist/version.json
-          body: ${{ github.event.inputs.release_notes }}
-          generate_release_notes: ${{ github.event.inputs.release_notes == '' }}
+          body_path: dist/release-body.md
 
       - name: Upload APK to Cloudflare R2
         env:

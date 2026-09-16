@@ -2,7 +2,7 @@
   "expo": {
     "name": "EKWE",
     "slug": "ekwe",
-    "version": "1.2.5",
+    "version": "1.2.6",
     "scheme": "ekwe",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -12,6 +12,7 @@
       "bundleIdentifier": "com.ekwe.app",
       "userInterfaceStyle": "automatic",
       "appleTeamId": "REPLACE_WITH_YOUR_APPLE_TEAM_ID",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Ekwe uses your microphone to capture your voice for real-time translation.",
         "NSSpeechRecognitionUsageDescription": "Ekwe uses speech recognition to convert your spoken words into text for translation.",
@@ -20,7 +21,7 @@
       "privacyManifests": {}
     },
     "android": {
-      "versionCode": 10205,
+      "versionCode": 10206,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -92,6 +93,7 @@
       "expo-apple-authentication",
       "expo-secure-store",
       "@bacons/apple-targets",
+      "@react-native-firebase/app",
       [
         "expo-notifications",
         {
@@ -114,7 +116,11 @@
       "policy": "appVersion"
     },
     "extra": {
-      "router": {},
+      "router": {
+        "experiments": {
+          "typedRoutes": true
+        }
+      },
       "eas": {
         "build": {
           "experimental": {

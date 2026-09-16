@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Design-token codegen: reads packages/shared/token/*.ts, writes the committed
+ * Design-token codegen: reads packages/shared/src/token/*.ts, writes the committed
  * JSON snapshot `apps/mobile/modules/ekwe-native/native-tokens.json`, and
  * renders the native asset files from it:
  *   - apps/mobile/targets/share/DesignTokens.swift            (iOS share ext)
@@ -21,7 +21,7 @@ const { renderDesignTokensSwift, renderEchoDesignTokensKotlin } =
   require("./native-tokens.cjs");
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const TOKENS_DIR = resolve(__dirname, "../../packages/shared/token");
+const TOKENS_DIR = resolve(__dirname, "../../packages/shared/src/token");
 const OUT_DIR = resolve(__dirname, "../../apps/mobile/targets/share");
 const OUT_FILE = resolve(OUT_DIR, "DesignTokens.swift");
 const SNAPSHOT_FILE = resolve(

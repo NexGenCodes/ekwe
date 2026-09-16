@@ -4,6 +4,7 @@ const {
   withAndroidManifest,
   withMainActivity,
   withAndroidStyles,
+  withAppBuildGradle,
   withDangerousMod,
   withEntitlementsPlist,
   AndroidConfig,
@@ -295,7 +296,7 @@ const withAutofillHighlightFix = (config) => {
  * committed. Expo injects `.env` into `process.env` before plugins evaluate, so
  * `EXPO_PUBLIC_*` reads straight off the environment; MAX_AUDIO_BYTES comes from
  * the committed `native-cap.json` snapshot written by scripts/tokens/gen-tokens.mjs
- * (its source of truth is packages/shared/plans.ts). No JS runtime needs to exist.
+ * (its source of truth is packages/shared/src/plans.ts). No JS runtime needs to exist.
  */
 const withEchoEnvironment = (config) => {
   return withDangerousMod(config, [
@@ -331,7 +332,7 @@ const withEchoEnvironment = (config) => {
  * IOS + Android: Regenerates the native design-token files during prebuild —
  * `targets/share/DesignTokens.swift` (iOS share ext) and the Android
  * `EchoDesignTokens.kt` — from the committed `native-tokens.json` snapshot
- * (written by scripts/tokens/gen-tokens.mjs from packages/shared/token/*.ts).
+ * (written by scripts/tokens/gen-tokens.mjs from packages/shared/src/token/*.ts).
  * Rendering is shared with the CLI via scripts/tokens/native-tokens.cjs, so
  * prebuild and `pnpm gen:tokens` stay byte-identical and EAS/CI never see
  * stale committed Swift/Kotlin.
@@ -501,6 +502,30 @@ const withApkFileProviderPaths = (config) => {
 };
 
 /**
+ * Android: Enables R8 optimization passes.
+ *
+ * The Expo template ships `getDefaultProguardFile("proguard-android.txt")`,
+ * which contains `-dontoptimize` — R8 then only shrinks and obfuscates.
+ * `proguard-android-optimize.txt` drops that flag (adding
+ * `-optimizationpasses 5` + `-allowaccessmodification`), and AGP 9 removes the
+ * old file entirely. AGP 8.12 (R8 full mode) is already enabled.
+ */
+const withOptimizedProguardRules = (config) => {
+  return withAppBuildGradle(config, (config) => {
+    const contents = config.modResults.contents;
+    const legacy = 'getDefaultProguardFile("proguard-android.txt")';
+    if (contents.includes(legacy)) {
+      config.modResults.contents = contents.replace(
+        legacy,
+        'getDefaultProguardFile("proguard-android-optimize.txt")',
+      );
+      console.log('[EkwePlugin] Using proguard-android-optimize.txt (R8 optimization enabled)');
+    }
+    return config;
+  });
+};
+
+/**
  * Combined plugin for managing all custom native Ekwe logic.
  */
 const withEkweNativePermissionsAndServices = (config) => {
@@ -541,6 +566,7 @@ const withEkweNativePermissionsAndServices = (config) => {
     updatedConfig = withIosAppGroup(updatedConfig);
   }
   updatedConfig = withAutofillHighlightFix(updatedConfig);
+  updatedConfig = withOptimizedProguardRules(updatedConfig);
   return updatedConfig;
 };
 

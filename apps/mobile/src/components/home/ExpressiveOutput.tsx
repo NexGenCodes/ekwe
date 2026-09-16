@@ -38,6 +38,7 @@ import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 import { synthesizeSpeech } from "@/services/tts";
 import { auth$, settings$ } from "@/store";
+import { AnalyticsEvents, track } from "@/utils/analytics";
 import { cleanEchoCache } from "@/utils/echo";
 import { withAlpha } from "@/utils/color";
 import { AppToast } from "@/utils/toast";
@@ -253,6 +254,8 @@ export const ExpressiveOutput = React.memo(
       }
 
       if (!translation || !targetLang) return;
+
+      track(AnalyticsEvents.TTS_PLAYED, { source: "home", targetLang });
 
       // Stop any in-flight/playing audio before starting (idempotent).
       stopPlayback();
@@ -507,6 +510,9 @@ export const ExpressiveOutput = React.memo(
                     onPress={onCopy}
                     onLongPress={async () => {
                       if (translation) {
+                        track(AnalyticsEvents.RESULT_SHARED, {
+                          source: "home",
+                        });
                         await Share.share({ message: translation });
                       }
                     }}

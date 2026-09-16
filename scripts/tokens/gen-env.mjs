@@ -4,7 +4,7 @@
  *
  * Renders `apps/mobile/targets/share/EchoEnvironment.swift` from the PUBLIC
  * `EXPO_PUBLIC_*` keys in `apps/mobile/.env` plus the canonical
- * `MAX_AUDIO_BYTES` from `packages/shared/plans.ts`. Shared logic lives in
+ * `MAX_AUDIO_BYTES` from `packages/shared/src/plans.ts`. Shared logic lives in
  * `scripts/tokens/native-env.cjs`.
  *
  * Prebuild note: `expo prebuild` regenerates this file itself via
@@ -25,7 +25,7 @@ const ROOT = resolve(__dirname, "../../");
 const ENV_PATH = resolve(ROOT, "apps/mobile/.env");
 const OUT_DIR = resolve(ROOT, "apps/mobile/targets/share");
 const OUT_FILE = resolve(OUT_DIR, "EchoEnvironment.swift");
-const PLANS_URL = pathToFileURL(resolve(ROOT, "packages/shared/plans.ts")).href;
+const PLANS_URL = pathToFileURL(resolve(ROOT, "packages/shared/src/plans.ts")).href;
 
 /** Keys the share extension *requires* — the build fails without them. */
 const REQUIRED = [

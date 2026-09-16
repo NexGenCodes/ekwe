@@ -3,9 +3,10 @@
  *
  * The mobile app never calls Supabase's auth endpoint directly for OTP send.
  * Requests land here first so we can:
- *   1. Verify the Cloudflare Turnstile token (siteverify — fail closed).
- *   2. Throttle per IP and per email (Durable Object counters).
- *   3. Proxy to Supabase's OTP endpoint with the secret API key and the
+ *   1. Verify a Firebase App Check token (device attestation — fail closed).
+ *   2. Optionally verify a Cloudflare Turnstile token (for future web login).
+ *   3. Throttle per IP and per email (Durable Object counters).
+ *   4. Proxy to Supabase's OTP endpoint with the secret API key and the
  *      end-user IP in `Sb-Forwarded-For`, so Supabase rate-limits each
  *      client's real IP instead of the worker's single egress IP.
  *
@@ -17,13 +18,53 @@ import { Env } from "../core/types";
 import { safeParseJSON, tooManyRequests } from "../core/guards";
 import { supabaseOtpHeaders, supabasePost } from "../services/supabase";
 import { otpRequestSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
-const TURNSTILE_ACTION = "send_otp";
+// ─── Firebase App Check verification ─────────────────────────────
+// Verifies the App Check JWT against Google's public JWKS. The token
+// is signed by Firebase and contains the project number in the `aud`
+// claim. This proves the request came from an unmodified copy of the
+// real app running on a real device (Play Integrity / DeviceCheck).
 
-// ─── Turnstile siteverify (canonical) ─────────────────────────────
+const FIREBASE_APPCHECK_ISSUER = "https://firebaseappcheck.googleapis.com/";
+const FIREBASE_JWKS_URL = new URL(
+  "https://firebaseappcheck.googleapis.com/v1/jwks",
+);
+
+// Cache the JWKS fetcher at module level so key rotations are handled
+// automatically by jose without re-fetching on every request.
+const appCheckJWKS = createRemoteJWKSet(FIREBASE_JWKS_URL);
+
+async function verifyAppCheck(token: string, env: Env): Promise<boolean> {
+  const projectNumber = env.FIREBASE_PROJECT_NUMBER;
+  if (!projectNumber) {
+    logger.warn(
+      "[otp] FIREBASE_PROJECT_NUMBER not set, cannot verify App Check",
+    );
+    return false;
+  }
+
+  try {
+    const expectedAud = [`projects/${projectNumber}`];
+    await jwtVerify(token, appCheckJWKS, {
+      issuer: FIREBASE_APPCHECK_ISSUER,
+      audience: expectedAud,
+    });
+    return true;
+  } catch (e) {
+    logger.warn("[otp] App Check verification failed", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return false;
+  }
+}
+
+// ─── Turnstile siteverify (kept for future web login) ─────────────
 // Returns:
 //   true  = token valid, or Turnstile unavailable (fail open)
 //   false = token explicitly invalid (bad token, wrong action/hostname)
+
+const TURNSTILE_ACTION = "send_otp";
 
 async function verifyTurnstile(
   token: string,
@@ -31,9 +72,12 @@ async function verifyTurnstile(
   clientIp: string,
 ): Promise<boolean> {
   const secret = env.TURNSTILE_SECRET;
-  // No secret configured (local dev) → skip verification, allow through
+  // No secret configured
   if (!secret) {
-    return true;
+    if (env.APP_ENV === "development") {
+      return true; // Skip verification in local dev
+    }
+    return false; // Fail closed if secret missing in prod/staging
   }
 
   const expectedHostnames = (env.TURNSTILE_HOSTNAMES ?? "")
@@ -144,7 +188,7 @@ export async function handleSendOtp(
   env: Env,
 ): Promise<Response> {
   // Parse the JSON body with a streaming byte cap. The body is consumed before
-  // Turnstile and rate limiting, so an unbounded read here would let a
+  // verification and rate limiting, so an unbounded read here would let a
   // malicious client hold an execution slot open with a huge payload.
   const parsed = await safeParseJSON<unknown>(request);
   if (!parsed.ok) return parsed.response;
@@ -164,25 +208,49 @@ export async function handleSendOtp(
     );
   }
 
-  const { email, turnstileToken: token } = body.data;
+  const { email, turnstileToken, appCheckToken } = body.data;
   const clientIp = request.headers.get("CF-Connecting-IP") || "unknown";
 
-  // Only verify Turnstile if token was provided and secret is configured
-  if (token && env.TURNSTILE_SECRET) {
-    if (!(await verifyTurnstile(token, env, clientIp))) {
+  // ─── Bot protection: App Check (mobile) or Turnstile (future web) ───
+  // Accept either token type. If enforcement is on (REQUIRE_APP_CHECK=true)
+  // and neither token is present, reject the request in production.
+  const headerAppCheck = request.headers.get("X-Firebase-AppCheck");
+  const appToken = appCheckToken || headerAppCheck;
+
+  if (appToken) {
+    // Mobile path: verify Firebase App Check JWT
+    const verified = await verifyAppCheck(appToken, env);
+    if (!verified) {
       return Response.json(
         { error: WORKER_ERROR_CODES.TURNSTILE_INVALID },
         { status: 403 },
       );
     }
+  } else if (turnstileToken) {
+    // Future web path: verify Turnstile token
+    const verified = await verifyTurnstile(turnstileToken, env, clientIp);
+    if (!verified) {
+      return Response.json(
+        { error: WORKER_ERROR_CODES.TURNSTILE_INVALID },
+        { status: 403 },
+      );
+    }
+  } else if (
+    env.REQUIRE_APP_CHECK === "true" &&
+    env.APP_ENV !== "development"
+  ) {
+    // Enforcement is on and no token was provided → reject
+    return Response.json(
+      { error: WORKER_ERROR_CODES.TURNSTILE_REQUIRED },
+      { status: 403 },
+    );
   }
-  // If no token or no secret, skip Turnstile and rely on rate limiting
+  // else: enforcement off or local dev → allow through, rely on rate limiting
 
   // Per-user (email) and per-IP sends. The per-email bucket is the real
   // per-user abuse gate; the per-IP bucket is only a coarse burst guard and is
   // set high enough that a NAT/office/event where ~50-100 people sign up from
-  // one public IP never trips it. Turnstile (when a token is supplied)
-  // handles the bot traffic these backstops used to carry.
+  // one public IP never trips it.
   if (!(await throttled(env, `ip:${clientIp}`, 20, 60))) {
     return tooManyRequests("Please wait a moment.", 60);
   }

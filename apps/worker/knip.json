@@ -1,10 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignore": [
-    "tests/durable/main.ts",
-    "tests/helpers/check-providers.d.mts",
-    "tests/mocks/cloudflare-workers.ts",
-    "tests/mocks/libopus-wasm-mock.ts"
+    "src/__tests__/durable/main.ts",
+    "src/__tests__/helpers/check-providers.d.mts",
+    "__mocks__/cloudflare-workers.ts",
+    "__mocks__/libopus-wasm-mock.ts"
   ],
   "ignoreDependencies": ["cloudflare"]
 }

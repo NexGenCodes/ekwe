@@ -8,18 +8,19 @@ import {
   TimeoutError,
   isTimeoutError,
 } from "../networkUtils";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   getNetworkStatus,
   isDefinitelyOffline,
   networkActions,
 } from "@/store/network";
 
-jest.mock("@/services/mmkv", () => ({
-  mmkv: { getString: jest.fn(), set: jest.fn(), getBoolean: jest.fn() },
+vi.mock("@/services/mmkv", () => ({
+  mmkv: { getString: vi.fn(), set: vi.fn(), getBoolean: vi.fn() },
 }));
 
-jest.mock("@/services/supabase", () => ({
-  supabase: { auth: { refreshSession: jest.fn() } },
+vi.mock("@/services/supabase", () => ({
+  supabase: { auth: { refreshSession: vi.fn() } },
 }));
 
 afterEach(() => {
@@ -105,7 +106,7 @@ describe("tri-state network store", () => {
 
 describe("fetchWithRetry offline fail-fast", () => {
   it("rejects with OfflineNetworkError without calling fetch when offline", async () => {
-    const fetchSpy = jest.spyOn(globalThis, "fetch");
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
     networkActions.set({ isConnected: false, isInternetReachable: false });
 
     await expect(fetchWithRetry("https://example.com")).rejects.toBeInstanceOf(
@@ -122,13 +123,13 @@ describe("fetchWithRetry offline fail-fast", () => {
 
 describe("fetchWithRetry timeout", () => {
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   it("throws TimeoutError when a request exceeds the timeout", async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
 
-    const fetchSpy = jest.spyOn(globalThis, "fetch").mockImplementation(
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
       (_url, opts) =>
         new Promise<Response>((_resolve, reject) => {
           const signal = opts?.signal as AbortSignal;
@@ -146,7 +147,7 @@ describe("fetchWithRetry timeout", () => {
       backoff: 1,
     });
 
-    jest.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1000);
 
     const error = await promise.catch((e: unknown) => e);
     expect(error).toBeInstanceOf(TimeoutError);
@@ -156,9 +157,9 @@ describe("fetchWithRetry timeout", () => {
   });
 
   it("does not retry a timed-out request", async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
 
-    const fetchSpy = jest.spyOn(globalThis, "fetch").mockImplementation(
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
       (_url, opts) =>
         new Promise<Response>((_resolve, reject) => {
           const signal = opts?.signal as AbortSignal;
@@ -176,7 +177,7 @@ describe("fetchWithRetry timeout", () => {
       backoff: 1,
     });
 
-    jest.advanceTimersByTime(5000);
+    vi.advanceTimersByTime(5000);
 
     await promise.catch(() => undefined);
     expect(fetchSpy).toHaveBeenCalledTimes(1);

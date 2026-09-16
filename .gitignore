@@ -1,5 +1,5 @@
 # dependencies
-/node_modules/
+**/node_modules/
 /apps/mobile/node_modules/
 /apps/web/node_modules/
 /apps/worker/node_modules/
@@ -66,6 +66,8 @@ mcp_config.json
 .env.keys
 .env.local
 .env.*.local
+supabase/.env
+**/keystore.properties
 
 # Embedded git repos (thirdparty)
 apps/mobile/modules/ekwe-native/cpp/thirdparty/flac/
@@ -83,6 +85,8 @@ expo-env.d.ts
 .env.production
 .env*.local
 *.hprof
+# Drizzle introspection output (read-only dump from `db:pull`), not committed.
+packages/db/dumps/
 # Generated at expo prebuild (app.plugin.js), not committed.
 apps/mobile/targets/share/EchoEnvironment.swift
 apps/mobile/targets/share/DesignTokens.swift

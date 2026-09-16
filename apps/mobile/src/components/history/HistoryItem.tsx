@@ -3,6 +3,7 @@ import Captions from "lucide-react-native/icons/captions";
 import Languages from "lucide-react-native/icons/languages";
 import React, { useCallback, useMemo } from "react";
 import { AccessibilityActionEvent, ViewStyle, StyleSheet } from "react-native";
+import Animated from "react-native-reanimated";
 
 import { Card } from "../Card";
 
@@ -215,6 +216,11 @@ export const HistoryItem = React.memo(
 
     const captionStyle = useMemo(() => ({ color: color.muted }), [color.muted]);
 
+    // Shared element tag: `history-snippet-${id}` links this row to the detail
+    // sheet's ORIGINAL block, producing a coordinate morph on history → result
+    // navigation (result.tsx mounts HistoryEntryDetail with the same tag).
+    const sharedTag = useMemo(() => `history-snippet-${entry.id}`, [entry.id]);
+
     return (
       <Card padding="none" style={cardStyle}>
         <Pressable
@@ -237,7 +243,11 @@ export const HistoryItem = React.memo(
 
           <Box style={styles.contentBody}>
             {/* Hero content */}
-            <Box style={styles.snippetBody}>{snippetBody}</Box>
+            <Box style={styles.snippetBody}>
+              <Animated.View sharedTransitionTag={sharedTag}>
+                {snippetBody}
+              </Animated.View>
+            </Box>
 
             {/* Metadata — producing origin + language pair + relative time */}
             <Box style={styles.metaRow}>

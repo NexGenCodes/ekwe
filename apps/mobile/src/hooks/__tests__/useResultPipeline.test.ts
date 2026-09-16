@@ -1,4 +1,6 @@
-import { act, renderHook, waitFor } from "@testing-library/react-native";
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
 
 import { useResultPipeline } from "../useResultPipeline";
 import { history$ } from "@/store";
@@ -11,40 +13,43 @@ import { AppToast } from "@/utils/toast";
 import { triggerHaptic } from "@/utils/haptics";
 import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 
-jest.mock("@/hooks/queries/useUsageQuery", () => ({
-  invalidateUsage: jest.fn(),
-  useUsageQuery: jest.fn(() => ({ data: undefined, isFetching: false })),
+vi.mock("@/hooks/queries/useUsageQuery", () => ({
+  invalidateUsage: vi.fn(),
+  useUsageQuery: vi.fn(() => ({ data: undefined, isFetching: false })),
   usageQueryKey: ["usage"],
 }));
 
-const mockTranslate = jest.fn();
-jest.mock("../useTranslation", () => ({
+const mockTranslate = vi.fn();
+vi.mock("../useTranslation", () => ({
   useTranslation: () => ({ translate: mockTranslate }),
 }));
 
-jest.mock("@/services/BatchTranscriber", () => ({
-  batchTranscriber: { transcribe: jest.fn() },
+vi.mock("@/services/BatchTranscriber", () => ({
+  batchTranscriber: { transcribe: vi.fn() },
 }));
 
-jest.mock("@/services/HistoryService", () => ({
-  HistoryService: { recordTranslation: jest.fn() },
+vi.mock("@/services/HistoryService", () => ({
+  HistoryService: { recordTranslation: vi.fn() },
 }));
 
-jest.mock("@/utils/toast", () => ({
+vi.mock("@/utils/toast", () => ({
   AppToast: {
-    error: jest.fn(),
-    info: jest.fn(),
-    success: jest.fn(),
-    warning: jest.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
   },
 }));
 
-jest.mock("@/utils/haptics", () => ({
-  triggerHaptic: jest.fn(),
+vi.mock("@/utils/haptics", () => ({
+  triggerHaptic: vi.fn(),
 }));
 
-jest.mock("@/store", () => {
-  const { observable } = jest.requireActual("@legendapp/state");
+vi.mock("@/store", async () => {
+  const { observable } =
+    await vi.importActual<typeof import("@legendapp/state")>(
+      "@legendapp/state",
+    );
   return {
     auth$: observable({
       session: null,
@@ -61,7 +66,7 @@ jest.mock("@/store", () => {
   };
 });
 
-jest.mock("expo-file-system", () => {
+vi.mock("expo-file-system", () => {
   return {
     File: class {
       constructor(mockUri: string) {
@@ -74,7 +79,7 @@ jest.mock("expo-file-system", () => {
   };
 });
 
-jest.mock("expo-haptics", () => ({
+vi.mock("expo-haptics", () => ({
   NotificationFeedbackType: { Success: 0 },
 }));
 
@@ -89,17 +94,17 @@ const transcription: TranscriptionResult = {
   isLowQuality: false,
 };
 
-const mockTranscribe = jest.mocked(batchTranscriber.transcribe);
-const mockRecord = jest.mocked(HistoryService.recordTranslation);
-const mockToastError = jest.mocked(AppToast.error);
-const mockInvalidate = jest.mocked(invalidateUsage);
+const mockTranscribe = vi.mocked(batchTranscriber.transcribe);
+const mockRecord = vi.mocked(HistoryService.recordTranslation);
+const mockToastError = vi.mocked(AppToast.error);
+const mockInvalidate = vi.mocked(invalidateUsage);
 
 describe("useResultPipeline", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     mockTranscribe.mockResolvedValue(ok(transcription));
     mockRecord.mockResolvedValue(undefined);
-    (jest.mocked(triggerHaptic) as jest.Mock).mockResolvedValue(undefined);
+    vi.mocked(triggerHaptic).mockResolvedValue(undefined);
     mockTranslate.mockResolvedValue(ok({ translation: "" }));
   });
 

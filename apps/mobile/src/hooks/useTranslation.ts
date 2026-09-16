@@ -16,6 +16,7 @@ import { triggerHaptic } from "@/utils/haptics";
 import { default as logger } from "@/utils/logger";
 import {
   getDefaultSourceLang,
+  isAutoDetectPermitted,
   resolveDetectedLanguage,
 } from "@/utils/languageUtils";
 
@@ -104,7 +105,9 @@ export const useTranslation = (): UseTranslationReturn => {
       currentSessionId !== null
     ) {
       audioActions.setSaved(true);
-      const detectedSource = audio$.sourceLang.get() || "en";
+      const detectedSource =
+        audio$.sourceLang.get() ||
+        getDefaultSourceLang(isAutoDetectPermitted());
       const resolvedSource =
         resolveDetectedLanguage(detectedSource, sourceLangRef.current, "en") ??
         (targetLangRef.current || "en");

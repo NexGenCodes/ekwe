@@ -2,10 +2,13 @@ packages:
   - apps/*
   - packages/*
 allowBuilds:
+  '@firebase/util': true
   '@sentry/cli': true
   dtrace-provider: false
+  es5-ext: true
   esbuild: true
   msw: false
+  protobufjs: true
   workerd: true
 minimumReleaseAgeExclude:
   - expo-updates@57.0.14

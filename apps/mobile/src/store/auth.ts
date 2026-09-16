@@ -1,6 +1,7 @@
 import { observable } from "@legendapp/state";
 import { Session, User } from "@supabase/supabase-js";
 import type { PaymentProvider } from "@ekwe/shared";
+import { setSentryUser } from "@/utils/logger";
 
 interface AuthState {
   session: Session | null;
@@ -61,6 +62,10 @@ export const authActions = {
       // Track sync state per user: reset when the user changes or signs out.
       isProEntitlementSynced: sameUser ? entitlementSynced : false,
     });
+
+    // Sentry scope identity follows the session (id only — the scrub policy +
+    // anonymous fallback keep PII off the event entirely).
+    setSentryUser(session?.user ? { id: session.user.id } : null);
   },
   setUser: (user: User | null): void => {
     auth$.user.set(user);

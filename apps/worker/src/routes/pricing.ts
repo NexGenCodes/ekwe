@@ -15,7 +15,7 @@ import { supabaseGet } from "../services/supabase";
 /**
  * ─── GET /pricing?currency=NGN ─────────────────────────────────────
  *
- * Store-ready, display-only pricing. Reads the single `subscription_config`
+ * Store-ready, display-only pricing. Reads the single `app_config`
  * row (base price + `local_prices` per currency) from Supabase and resolves
  * unsupported or unknown currencies to USD. Omit/invalidate `currency` to get
  * USD pricing.
@@ -58,8 +58,8 @@ interface SubscriptionConfig {
 }
 
 /** Path selecting every pricing field the worker needs from the config row. */
-const SUBSCRIPTION_CONFIG_PATH =
-  "/rest/v1/subscription_config?id=eq.1&select=base_price_usd,discount_percent,annual_discount_percent,local_prices";
+const APP_CONFIG_PATH =
+  "/rest/v1/app_config?id=eq.1&select=base_price_usd,discount_percent,annual_discount_percent,local_prices";
 
 /** How long a loaded config is reused before re-reading Supabase (10s). */
 const CONFIG_CACHE_TTL_MS = 10_000;
@@ -134,9 +134,9 @@ async function loadSubscriptionConfig(
 
   let load: ConfigLoad;
   try {
-    const res = await supabaseGet(env, SUBSCRIPTION_CONFIG_PATH);
+    const res = await supabaseGet(env, APP_CONFIG_PATH);
     if (!res || !res.ok) {
-      logger.warn("[pricing] Subscription config unavailable", {
+      logger.warn("[pricing] App config unavailable", {
         status: res?.status ?? "unconfigured",
       });
       load = { kind: "unreachable" };
@@ -144,7 +144,7 @@ async function loadSubscriptionConfig(
       const rows: SubscriptionConfigRow[] = await res.json();
       const row = rows[0];
       if (!row) {
-        logger.warn("[pricing] No subscription_config row");
+        logger.warn("[pricing] No app_config row");
         load = { kind: "missing" };
       } else {
         load = {
@@ -218,7 +218,7 @@ async function getLocalPlanPrices(
 
 /**
  * The monthly + annual price for a currency, read strictly from the Supabase
- * `subscription_config` row — never from the bundled map. Returns null when
+ * `app_config` row — never from the bundled map. Returns null when
  * Supabase cannot confirm it (unreachable, no row, or the currency has no
  * price in the row). The webhook uses this so a Pro grant only ever happens
  * against a price read from Supabase; the bundled `LOCAL_PRICES` mirror (also

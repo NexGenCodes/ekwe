@@ -40,7 +40,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['tests/**/*.ts', 'vitest.config.mts'],
+    files: ['tests/**/*.ts', 'src/__tests__/**/*.ts', 'vitest.config.mts'],
     rules: {
       'no-console': 'off',
       'no-empty': 'off',
@@ -57,7 +57,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['tests/**/*.mjs'],
+    files: ['tests/**/*.mjs', 'src/__tests__/**/*.mjs'],
     languageOptions: {
       globals: {
         fetch: 'readonly',

@@ -43,13 +43,11 @@ export default function HistoryScreen(): React.JSX.Element {
   const router = useRouter();
   const {
     entries,
-    todayEntries,
-    yesterdayEntries,
-    thisWeekEntries,
-    earlierEntries,
     loadMore,
     hasMore,
+    isFetchingNextPage,
     deleteEntry,
+    refetch: refetchHistory,
   } = useHistory();
   const { query, setQuery, filter, setFilter, filteredEntries, isSearching } =
     useHistorySearch(entries);
@@ -84,24 +82,24 @@ export default function HistoryScreen(): React.JSX.Element {
           SyncService.pullFromCloud(userId),
           SyncService.drain(),
         ]);
+        // Re-resolve the highest page boundary and local > cloud tier switch
+        // after new rows land.
+        await refetchHistory();
       } catch (err) {
         logger.error("[history] Pull to refresh failed:", err);
       }
     }
 
     setIsRefreshing(false);
-  }, []);
+  }, [refetchHistory]);
 
   // When searching/filtering, use filteredEntries flat.
-  // When browsing, use the date-grouped buckets from useHistory.
+  // When browsing, use the date-grouped list from useHistoryListData.
   const isGrouped = !isSearching && filter === "all" && query.length === 0;
 
   const listData = useHistoryListData({
     isGrouped,
-    todayEntries,
-    yesterdayEntries,
-    thisWeekEntries,
-    earlierEntries,
+    entries,
     filteredEntries,
   });
 
@@ -130,7 +128,7 @@ export default function HistoryScreen(): React.JSX.Element {
           paddingHorizontal: spacing.md,
         }}
       >
-        {/* Header — title + count */}
+        {/* Header — title only (count pills live per group in the list) */}
         <Box style={styles.headerRow}>
           <Box style={styles.headerTitle}>
             <IconContainer
@@ -141,27 +139,7 @@ export default function HistoryScreen(): React.JSX.Element {
               <EkweLogo size={iconSize.xl} color={color.brand} />
             </IconContainer>
             <Box>
-              <Box style={styles.titleRow}>
-                <Text variant="display">History</Text>
-                <Box
-                  style={[
-                    styles.countPill,
-                    {
-                      backgroundColor: withAlpha(color.foreground, 0.06),
-                    },
-                  ]}
-                >
-                  <Text
-                    variant="caption"
-                    style={{
-                      color: color.muted,
-                      fontVariant: ["tabular-nums"],
-                    }}
-                  >
-                    {entries.length}
-                  </Text>
-                </Box>
-              </Box>
+              <Text variant="display">History</Text>
             </Box>
           </Box>
         </Box>
@@ -360,6 +338,7 @@ export default function HistoryScreen(): React.JSX.Element {
           onRefresh={onRefresh}
           isSearching={isSearching}
           hasMore={hasMore}
+          isFetchingNextPage={isFetchingNextPage}
           onLoadMore={loadMore}
           handleEntryPress={handleEntryPress}
           onDeleteEntry={deleteEntry}
@@ -381,19 +360,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  countPill: {
-    minWidth: 26,
-    height: 20,
-    borderRadius: borderRadius.full,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: spacing.xs,
   },
   syncErrorBanner: {
     flexDirection: "row",

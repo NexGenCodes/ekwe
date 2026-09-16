@@ -1,3 +1,4 @@
+import { describe, test, expect } from "vitest";
 import { AudioProcessor } from "../AudioProcessor";
 import { EkweError } from "@/constants/errors";
 

@@ -69,9 +69,9 @@ export const dictation$ = observable<MachineState>({ ...INITIAL_STATE });
 
 // ─── Module-level mutable refs ───────────────────────────────────
 let abortController: AbortController | null = null;
-export let timerInterval: ReturnType<typeof setInterval> | null = null;
-let maxDurationTimer: ReturnType<typeof setTimeout> | null = null;
-let startTimeout: ReturnType<typeof setTimeout> | null = null;
+export let timerInterval: NodeJS.Timeout | null = null;
+let maxDurationTimer: NodeJS.Timeout | null = null;
+let startTimeout: NodeJS.Timeout | null = null;
 let streamUnsub: (() => void) | null = null;
 
 // Guards against re-entrant `stopDictation` calls (double-tap the stop button,
@@ -96,7 +96,7 @@ export function clearTimers(): void {
   }
 }
 
-export function setTimerInterval(id: ReturnType<typeof setInterval>): void {
+export function setTimerInterval(id: NodeJS.Timeout): void {
   timerInterval = id;
 }
 

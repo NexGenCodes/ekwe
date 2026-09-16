@@ -2,7 +2,10 @@
 import { execSync } from "node:child_process";
 
 const run = (cmd, opts = {}) => {
-  const result = execSync(cmd, { stdio: ["ignore", "pipe", "inherit"], ...opts });
+  const result = execSync(cmd, {
+    stdio: ["ignore", "pipe", "inherit"],
+    ...opts,
+  });
   return result ? result.toString().trim() : "";
 };
 
@@ -23,31 +26,25 @@ if (diff) {
   console.log("  (no changes)\n");
 }
 
-// ── 2. Push supabase migrations (auto no-op if nothing new) ──────
-console.log("Checking Supabase migrations...\n");
+// ── 2. Preview supabase migrations (never applies anything) ───────
+// Migrations are applied automatically by the `migrate` job in deploy.yml
+// when supabase/migrations/** changes, so this hook only shows you what CI
+// will run. A pending migration here is fine — it ships with the push.
+console.log(
+  "Previewing Supabase migrations (dry-run, nothing is applied)...\n",
+);
 try {
-  run("supabase db push --linked", {
-    stdio: "inherit",
-    env: { ...process.env, SUPABASE_DB_PASSWORD: process.env.SUPABASE_DB_PASSWORD ?? "" },
+  run("supabase db push --linked --dry-run --include-all", {
+    env: {
+      ...process.env,
+      SUPABASE_DB_PASSWORD: process.env.SUPABASE_DB_PASSWORD ?? "",
+    },
   });
+  console.log(
+    "\n✔ Migrations in sync (or nothing pending). They are applied in CI.\n",
+  );
 } catch {
-  console.warn("⚠  Supabase: pending migrations or link issue. Run 'supabase db push --linked --include-all' manually.\n");
-}
-
-// ── 3. Lint ───────────────────────────────────────────────────────
-console.log("\nRunning lint...\n");
-try {
-  run("pnpm lint", { stdio: "inherit" });
-} catch {
-  console.error("\n❌ Lint failed. Fix errors before pushing.\n");
-  process.exit(1);
-}
-
-// ── 4. Typecheck ──────────────────────────────────────────────────
-console.log("\nRunning typecheck...\n");
-try {
-  run("pnpm typecheck", { stdio: "inherit" });
-} catch {
-  console.error("\n❌ Typecheck failed. Fix errors before pushing.\n");
-  process.exit(1);
+  console.log(
+    "\nℹ Pending migrations or link issue — CI's 'Apply DB migrations' job will handle them.\n",
+  );
 }

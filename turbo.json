@@ -1,6 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": [".env"],
+  "globalEnv": ["CI", "NODE_ENV", "APP_ENV"],
   "tasks": {
     "typecheck": {
       "dependsOn": ["^typecheck"],
@@ -12,6 +13,11 @@
     },
     "test": {
       "dependsOn": ["^typecheck"],
+      "outputs": []
+    },
+    "test:ci": {
+      "dependsOn": ["^typecheck"],
+      "env": ["COVERAGE"],
       "outputs": []
     },
     "build": {
@@ -36,7 +42,8 @@
     },
     "deploy": {
       "dependsOn": ["build"],
-      "cache": false
+      "cache": false,
+      "env": ["APP_ENV", "SENTRY_ORG", "SENTRY_PROJECT"]
     },
     "//#gen:tokens": {
       "cache": false

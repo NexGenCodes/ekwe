@@ -32,6 +32,18 @@ const VOICE_NOTE_MIME_TYPES = [
   "audio/x-wav",
 ];
 
+export const VOICE_NOTE_EXTENSION_TO_MIME: Record<string, string> = {
+  ogg: "audio/ogg",
+  opus: "audio/opus",
+  m4a: "audio/m4a",
+  aac: "audio/aac",
+  amr: "audio/amr",
+  "3gp": "audio/3gpp",
+  wav: "audio/wav",
+  mp3: "audio/mpeg",
+  mp4: "audio/mp4",
+};
+
 /**
  * Validates if the given URI has a valid voice-note extension or MIME type.
  * WhatsApp often provides "audio/ogg; codecs=opus".

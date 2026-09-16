@@ -275,11 +275,14 @@ export function connectWithTimeout(
       if (ws) {
         ws.removeEventListener("open", onOpen);
         ws.removeEventListener("error", onError);
+        ws.removeEventListener("close", onClose);
       }
       resolve(result);
     };
     const onOpen = (): void => cleanup(ws);
     const onError = (): void => cleanup(null);
+    // A close before open is also a connection failure (e.g. server refused).
+    const onClose = (): void => cleanup(null);
 
     try {
       ws = new WebSocket(url, protocols);
@@ -295,6 +298,7 @@ export function connectWithTimeout(
       }, 5000);
       ws.addEventListener("open", onOpen);
       ws.addEventListener("error", onError);
+      ws.addEventListener("close", onClose);
     } catch {
       cleanup(null);
     }

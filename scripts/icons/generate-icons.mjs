@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Icon codegen: reads the single logo source (apps/mobile/assets/ekwe-logo.svg)
- * and the brand colors from packages/shared/token/colors.ts, then
+ * and the brand colors from packages/shared/src/token/colors.ts, then
  * renders every icon PNG variant used by app.json.
  *
  * Run with `pnpm gen:icons`.
@@ -32,7 +32,7 @@ const SIZE = 1024;
 
 // -- Brand colors from the shared design tokens (single source of truth) ---
 const { lightColors } = await import(
-  pathToFileURL(path.resolve(ROOT, "packages/shared/token/colors.ts")).href
+  pathToFileURL(path.resolve(ROOT, "packages/shared/src/token/colors.ts")).href
 );
 const BRAND = lightColors.brand;
 const LIGHT_BG = lightColors.background;

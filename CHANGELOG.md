@@ -11,7 +11,7 @@ All notable changes to the Ekwe Android app are documented here.
 - Auto-bump releases (triggered by native pushes) have no curated entry here
   and rely on the GitHub auto-generated release notes.
 - Version numbers mirror Git tags (`v1.2.6` → `1.2.6`) and the `versionCode`
-  in `packages/shared/version.ts` (single source of truth).
+  in `packages/shared/src/version.ts` (single source of truth).
 
 ## [Unreleased]
 

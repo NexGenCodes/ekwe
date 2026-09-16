@@ -1,11 +1,14 @@
-import { renderHook } from "@testing-library/react-native";
+// @vitest-environment jsdom
+import { cleanup } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderHook } from "@testing-library/react";
 
 import { getEntryType } from "../useHistorySearch";
 import { useHistoryListData } from "../useHistoryListData";
 
 import type { HistoryEntry } from "@/store";
 
-jest.mock("@/store", () => ({
+vi.mock("@/store", () => ({
   auth$: {
     user: { get: () => null },
   },
@@ -25,6 +28,15 @@ function entry(overrides: Partial<HistoryEntry>): HistoryEntry {
     ...overrides,
   };
 }
+
+// Fixed "today": Tue Sep 15, 2026, midday UTC.
+const NOW = Date.UTC(2026, 8, 15, 12, 0, 0);
+const DAY = 24 * 60 * 60 * 1000;
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("getEntryType", () => {
   it("respects an explicit persisted type", () => {
@@ -57,63 +69,90 @@ describe("getEntryType", () => {
 
 describe("useHistoryListData", () => {
   it("returns empty list for an empty grouped view", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
     const { result } = await renderHook(() =>
       useHistoryListData({
         isGrouped: true,
-        todayEntries: [],
-        yesterdayEntries: [],
-        thisWeekEntries: [],
-        earlierEntries: [],
+        entries: [],
         filteredEntries: [],
       }),
     );
     expect(result.current).toEqual([]);
   });
 
-  it("interleaves date headers before each non-empty bucket", async () => {
-    const today = entry({ id: "t1" });
-    const earlier = entry({ id: "e1", type: "translation" });
+  it("labels today, yesterday, and recent dates with day headers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const todayEntry = entry({ id: "t1", timestamp: NOW });
+    const yesterdayEntry = entry({ id: "y1", timestamp: NOW - DAY });
+    const threeDaysAgo = entry({ id: "d1", timestamp: NOW - 3 * DAY });
     const { result } = await renderHook(() =>
       useHistoryListData({
         isGrouped: true,
-        todayEntries: [today],
-        yesterdayEntries: [],
-        thisWeekEntries: [],
-        earlierEntries: [earlier],
+        entries: [todayEntry, yesterdayEntry, threeDaysAgo],
         filteredEntries: [],
       }),
     );
     expect(result.current).toEqual([
       { type: "header", title: "Today", count: 1 },
-      { type: "entry", entry: today },
-      { type: "header", title: "Earlier", count: 1 },
-      { type: "entry", entry: earlier },
+      { type: "entry", entry: todayEntry },
+      { type: "header", title: "Yesterday", count: 1 },
+      { type: "entry", entry: yesterdayEntry },
+      { type: "header", title: "Sat, Sep 12", count: 1 },
+      { type: "entry", entry: threeDaysAgo },
     ]);
   });
 
-  it("skips buckets with no entries", async () => {
+  it("collapses entries older than ~6 months into month headers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const oldJan = entry({ id: "j1", timestamp: Date.UTC(2026, 0, 10, 9, 0) });
+    const olderJan = entry({
+      id: "j2",
+      timestamp: Date.UTC(2026, 0, 4, 18, 0),
+    });
     const { result } = await renderHook(() =>
       useHistoryListData({
         isGrouped: true,
-        todayEntries: [],
-        yesterdayEntries: [],
-        thisWeekEntries: [],
-        earlierEntries: [],
+        entries: [oldJan, olderJan],
         filteredEntries: [],
       }),
     );
-    expect(result.current).toEqual([]);
+    expect(result.current).toEqual([
+      { type: "header", title: "January 2026", count: 2 },
+      { type: "entry", entry: oldJan },
+      { type: "entry", entry: olderJan },
+    ]);
+  });
+
+  it("emits a separate header only when the day changes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const first = entry({ id: "a", timestamp: NOW });
+    const second = entry({ id: "b", timestamp: NOW - 2 * 60 * 60 * 1000 });
+    const { result } = await renderHook(() =>
+      useHistoryListData({
+        isGrouped: true,
+        entries: [first, second],
+        filteredEntries: [],
+      }),
+    );
+    expect(result.current).toEqual([
+      { type: "header", title: "Today", count: 2 },
+      { type: "entry", entry: first },
+      { type: "entry", entry: second },
+    ]);
   });
 
   it("returns flat entries (no headers) when not grouped", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
     const filtered = [entry({ id: "a" }), entry({ id: "b" })];
     const { result } = await renderHook(() =>
       useHistoryListData({
         isGrouped: false,
-        todayEntries: [entry({ id: "ignored" })],
-        yesterdayEntries: [],
-        thisWeekEntries: [],
-        earlierEntries: [],
+        entries: [entry({ id: "ignored" })],
         filteredEntries: filtered,
       }),
     );

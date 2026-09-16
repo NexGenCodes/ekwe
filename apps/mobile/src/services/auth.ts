@@ -22,8 +22,9 @@ import {
 } from "@/store";
 import { isIOS } from "@/utils";
 import { track, identify, AnalyticsEvents } from "@/utils/analytics";
-import logger from "@/utils/logger";
+import logger, { captureSentryMessage } from "@/utils/logger";
 import { getWorkerUrl } from "@/utils/networkUtils";
+import { getAppCheckToken } from "@/services/appCheck";
 
 const SESSION_CACHE_KEY = "hasSession";
 const OTP_REQUEST_TIMEOUT_MS = 15_000;
@@ -125,7 +126,17 @@ export const initAuth = async (): Promise<void> => {
     data: { subscription },
   } = supabase.auth.onAuthStateChange((event, session) => {
     logger.info(`Auth state changed: ${event}`, session?.user?.id);
+    // setSession tags the Sentry user scope first so the captures below are
+    // attributed to the correct identity (id only — scrub policy + anonymous
+    // fallback keep PII off the event).
     authActions.setSession(session);
+    // Non-fatal lifecycle events worth monitoring in Sentry (SIGNED_IN during
+    // INITIAL_SESSION is a cold start, not a fresh login).
+    if (event === "SIGNED_IN") {
+      captureSentryMessage("auth.sign_in");
+    } else if (event === "SIGNED_OUT") {
+      captureSentryMessage("auth.sign_out");
+    }
     mmkv.set(SESSION_CACHE_KEY, session !== null);
 
     // Mirror the session into the shared App Group container so the native iOS
@@ -139,12 +150,12 @@ export const initAuth = async (): Promise<void> => {
       // Cold start with a persisted session emits INITIAL_SESSION (not
       // SIGNED_IN); without handling it, cloud history is never pulled until
       // a fresh sign-in. Both paths are idempotent (cursor-based pull).
-      if (event === "SIGNED_IN") {
-        identify(session.user.id, {
-          email: session.user.email ?? "",
-          is_pro: session.user.app_metadata?.is_pro === true,
-        });
+      identify(session.user.id, {
+        email: session.user.email ?? "",
+        is_pro: session.user.app_metadata?.is_pro === true,
+      });
 
+      if (event === "SIGNED_IN") {
         // Push token re-registration: link the existing push token to this user
         // in the Worker now that we have an active session (and JWT).
         import("./notifications").then(({ registerForPushNotifications }) => {
@@ -257,6 +268,8 @@ export const sendOtp = async (email: string): Promise<AuthResult> => {
         return { ok: false, error: OFFLINE_MESSAGE };
       }
 
+      const appCheckToken = await getAppCheckToken();
+
       const controller = new AbortController();
       const timeoutId = setTimeout(
         () => controller.abort(),
@@ -267,7 +280,7 @@ export const sendOtp = async (email: string): Promise<AuthResult> => {
         res = await fetch(`${workerUrl}/auth/otp`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email.trim() }),
+          body: JSON.stringify({ email: email.trim(), appCheckToken }),
           signal: controller.signal,
         });
       } finally {

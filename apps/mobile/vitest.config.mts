@@ -1,0 +1,59 @@
+import { defineConfig } from "vitest/config";
+import { resolve } from "node:path";
+
+const dir = import.meta.dirname;
+
+export default defineConfig({
+  resolve: {
+    alias: [
+      { find: "@", replacement: resolve(dir, "./src") },
+      { find: "react-native", replacement: resolve(dir, "./__mocks__/react-native-mock.js") },
+      { find: "@react-native-community/netinfo", replacement: resolve(dir, "./__mocks__/rn-netinfo-mock.js") },
+      { find: "react-native-nitro-modules", replacement: resolve(dir, "./__mocks__/rn-nitro-mock.js") },
+      { find: "posthog-react-native", replacement: resolve(dir, "./__mocks__/posthog-mock.js") },
+    ],
+  },
+  test: {
+    globals: true,
+    environment: "node",
+    setupFiles: ["./vitest.setup.ts"],
+    include: ["src/**/__tests__/**/*.test.{ts,tsx}"],
+    server: {
+      deps: {
+        inline: ["@ekwe/shared", "@ekwe/db", /^expo-/],
+      },
+    },
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov", "clover"],
+      include: ["src/**/*.ts"],
+      exclude: ["src/components/**", "src/**/__tests__/**"],
+      thresholds: {
+        // Floor while the test migration is in progress (whole-app report is
+        // mostly uncovered service/screen code). Raise these as suites land.
+        lines: 20,
+        functions: 20,
+        branches: 20,
+        statements: 20,
+        // Real gate: suites exist for these files, so regressing their
+        // coverage fails CI.
+        "src/utils/formatSource.ts": {
+          lines: 95, statements: 90, functions: 90, branches: 80,
+        },
+        "src/utils/languageUtils.ts": {
+          lines: 85, statements: 85, functions: 85, branches: 75,
+        },
+        "src/store/dictationStore.ts": {
+          lines: 60, statements: 55, functions: 30, branches: 45,
+        },
+        "src/hooks/echo/useEchoFlow.ts": {
+          lines: 60, statements: 55, functions: 50, branches: 40,
+        },
+      },
+    },
+  },
+  define: {
+    __DEV__: "true",
+    "process.env.EXPO_OS": "\"ios\"",
+  },
+});

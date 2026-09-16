@@ -1,5 +1,6 @@
 import * as Clipboard from "expo-clipboard";
 import { triggerHaptic } from "@/utils/haptics";
+import { AnalyticsEvents, track } from "@/utils/analytics";
 import Copy from "lucide-react-native/icons/copy";
 import CheckCircle2 from "lucide-react-native/icons/circle-check";
 import React, { useState } from "react";
@@ -46,6 +47,7 @@ export const AnimatedCopyButton: React.FC<Props> = ({
 
     triggerHaptic("selection");
     await Clipboard.setStringAsync(textToCopy);
+    track(AnalyticsEvents.RESULT_COPIED, { chars: textToCopy.length });
     setCopiedByPress(true);
 
     // Reset after 3 seconds

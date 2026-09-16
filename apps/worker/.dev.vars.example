@@ -203,7 +203,7 @@ WIT_KEY_ZH=
 WIT_KEY_ZU=
 
 # ─── Payments ──────────────────────────────────────────────────────────
-# Required for /checkout/initialize and /webhook to work.
+# Required for /billing/checkout and /webhook to work.
 # FLUTTERWAVE_SECRET: API secret key (FLWSECK_...) for checkout/payment calls.
 FLUTTERWAVE_SECRET=
 PUSH_NOTIFY_SECRET=

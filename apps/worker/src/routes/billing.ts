@@ -23,7 +23,7 @@
  *
  *   GET /billing/flags
  *     Returns payment provider feature flags. Requires JWT auth.
- *     Reads from the payment_config table.
+ *     Reads from the app_config table.
  */
 
 import {
@@ -306,6 +306,7 @@ export async function handleVerifyTransaction(
     p_is_pro: true,
     p_expires_at: null,
     p_provider: "flutterwave",
+    p_payment_ref: fwData.data.flw_ref,
   });
 
   if (!rpcResult) {
@@ -350,7 +351,7 @@ export async function handleBillingFlags(
   try {
     const res = await supabaseGet(
       env,
-      "/rest/v1/payment_config?id=eq.1&select=flutterwave_enabled,default_provider",
+      "/rest/v1/app_config?id=eq.1&select=flutterwave_enabled,default_provider",
     );
 
     if (!res) {
@@ -362,7 +363,7 @@ export async function handleBillingFlags(
     }
 
     if (!res.ok) {
-      logger.warn("[billing] Failed to fetch payment_config", {
+      logger.warn("[billing] Failed to fetch app_config", {
         status: res.status,
       });
       // Return defaults on error
@@ -386,7 +387,7 @@ export async function handleBillingFlags(
       default_provider: config.default_provider,
     });
   } catch (err) {
-    logger.error("[billing] Failed to read payment_config", {
+    logger.error("[billing] Failed to read app_config", {
       error: err instanceof Error ? err.message : String(err),
     });
     return Response.json({

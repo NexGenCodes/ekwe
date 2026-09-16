@@ -1,4 +1,6 @@
+import { PLAN_LIMITS } from "@/constants/billing";
 import { LANGUAGES } from "@/constants/languages";
+import { auth$ } from "@/store";
 
 export const DEFAULT_LANGUAGES: string[] = LANGUAGES.filter(
   (l) => l.defaultSelected,
@@ -6,6 +8,14 @@ export const DEFAULT_LANGUAGES: string[] = LANGUAGES.filter(
 
 export function getDefaultSourceLang(autoDetectAllowed: boolean): string {
   return autoDetectAllowed ? "auto" : "en";
+}
+
+/**
+ * Non-reactive read of whether auto-detect-source is permitted, for use inside
+ * effects/callbacks that must read the current plan without re-running.
+ */
+export function isAutoDetectPermitted(): boolean {
+  return PLAN_LIMITS[auth$.isPro.peek() ? "pro" : "free"].autoDetectAllowed;
 }
 
 /**
