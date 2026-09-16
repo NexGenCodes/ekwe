@@ -191,7 +191,7 @@ jobs:
   worker:
     name: Deploy Worker
     needs: [detect, migrate]
-    if: needs.detect.outputs.worker == 'true'
+    if: "!cancelled() && needs.detect.outputs.worker == 'true'"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: production
@@ -270,7 +270,7 @@ jobs:
   release:
     name: Build APK + Release
     needs: [detect, verify-ci, migrate]
-    if: needs.detect.outputs.release == 'true' && needs.verify-ci.outputs.green == 'true'
+    if: "!cancelled() && needs.detect.outputs.release == 'true' && needs.verify-ci.outputs.green == 'true'"
     runs-on: ubuntu-latest
     permissions:
       contents: write
