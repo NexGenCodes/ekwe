@@ -307,6 +307,12 @@ jobs:
 
       - name: Accept Android SDK licenses
         uses: android-actions/setup-android@v4
+        # The default `tools platform-tools` package list references the
+        # deprecated `tools` package, which is no longer in the SDK repo and
+        # makes sdkmanager exit non-zero. Hosted runners ship pre-accepted
+        # licenses; we only need the license acceptance side of the action.
+        with:
+          packages: ""
 
       - name: Install NDK + CMake
         run: sdkmanager --install "ndk;27.1.12297006" "cmake;3.22.1" > /dev/null 2>&1
