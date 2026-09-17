@@ -76,7 +76,19 @@ describe("handleTts", () => {
     );
   });
 
-  test("FREE tier is rejected with 403", async () => {
+  test("FREE tier is served within its daily char pool", async () => {
+    server.use(
+      http.post(PROVIDER_URLS.geminiTtsGenerate, geminiInlineResponse),
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+        jsonResponse({
+          allowed: true,
+          tier_active: "FREE",
+          quota_total: 2500,
+          quota_remaining: 2500,
+        }),
+      ),
+    );
+
     const res = await handleTts(
       makeRequest(),
       mockEnv(),
@@ -84,9 +96,33 @@ describe("handleTts", () => {
       new AbortController().signal,
       gate(),
     );
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-TTS-Provider")).toBe("gemini");
+  });
+
+  test("FREE tier is 429'd when its daily char pool is exhausted", async () => {
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+        jsonResponse({
+          allowed: true,
+          tier_active: "FREE",
+          quota_total: 2500,
+          quota_remaining: 5,
+        }),
+      ),
+    );
+
+    // "Hello world" is 11 chars > 5 remaining → rejected by the in-route check.
+    const res = await handleTts(
+      makeRequest(),
+      mockEnv(),
+      "FREE",
+      new AbortController().signal,
+      gate(),
+    );
+    expect(res.status).toBe(429);
     const body = (await res.json()) as any;
-    expect(body.error).toBe("PREMIUM_FEATURE_REQUIRED");
+    expect(body.error).toBe("EKWE_QUOTA_EXCEEDED");
   });
 
   test("returns 400 when language is missing or auto", async () => {
@@ -446,10 +482,16 @@ describe("handleTts", () => {
     expect(body.quota_total).toBe(5000);
   });
 
-  test("rejects with 403 when the JWT says PREMIUM but the DB tier is FREE", async () => {
+  test("serves PREMIUM JWT at the FREE pool when the DB tier is FREE", async () => {
     server.use(
+      http.post(PROVIDER_URLS.geminiTtsGenerate, geminiInlineResponse),
       http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
-        jsonResponse({ allowed: true, tier_active: "FREE" }),
+        jsonResponse({
+          allowed: true,
+          tier_active: "FREE",
+          quota_total: 2500,
+          quota_remaining: 2500,
+        }),
       ),
     );
 
@@ -460,9 +502,8 @@ describe("handleTts", () => {
       new AbortController().signal,
       gate(),
     );
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as any;
-    expect(body.error).toBe("PREMIUM_FEATURE_REQUIRED");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-TTS-Provider")).toBe("gemini");
   });
 
   test("rejects when the request text exceeds the remaining speech pool", async () => {

@@ -16,17 +16,16 @@ import { runPreflightGate, nextUtcMidnightMs } from "../services/preflight";
 import { trackBillableSuccess } from "../services/usage";
 
 /**
- * Premium text-to-speech.
+ * Text-to-speech.
  *
- * Gate model: `/tts` is PREMIUM-only. FREE tier (including a throttled
- * PREMIUM user downgraded for the day) gets a 403 and the app falls back to
- * on-device speech. The route is not wired to the pipeline preflight because
- * the quota charge depends on the parsed text length, so the same atomic gate
+ * Gate model: `/tts` is open to every tier, each drawing down its own daily
+ * CHARACTER pool (`dailyTtsCharsLimit` — FREE gets a small pool, PREMIUM a
+ * larger one). The route is not wired to the pipeline preflight because the
+ * quota charge depends on the parsed text length, so the same atomic gate
  * runs here instead — after the KV cache lookup (cached replays were already
- * paid for and stay free). PREMIUM users draw down a daily CHARACTER pool
- * (`dailyTtsCharsLimit`, a hard cap) so scripting unlimited TTS is impossible.
- * The DB-backed `tier_active` is authoritative: a lapsed subscription is
- * rejected even if the JWT still says PREMIUM.
+ * paid for and stay free). Both tiers are hard-capped so scripting unlimited
+ * TTS is impossible. The DB-backed `tier_active` is authoritative: a lapsed
+ * subscription is served the FREE pool even if the JWT still says PREMIUM.
  *
  * Voice selection: the client sends `gender: "male" | "female"`. The worker
  * tries the 3 curated best voices for that gender under the current provider.
@@ -250,16 +249,6 @@ export async function handleTts(
   signal: AbortSignal,
   gate: TtsGateContext,
 ): Promise<Response> {
-  if (tier !== "PREMIUM") {
-    return Response.json(
-      {
-        error: WORKER_ERROR_CODES.PREMIUM_FEATURE_REQUIRED,
-        message: "Premium text-to-speech requires an active Premium plan.",
-      },
-      { status: 403 },
-    );
-  }
-
   const parsedJson = await safeParseJSON<unknown>(request);
   if (!parsedJson.ok) return parsedJson.response;
   const parsed = ttsRequestSchema.safeParse(parsedJson.data);
@@ -348,17 +337,8 @@ export async function handleTts(
   );
   if (!gateResult.ok) return gateResult.response;
 
-  // The DB-backed tier is authoritative: FREE (or a lapsed subscription) is a
-  // 403 so the app falls back to on-device speech instead of a quota error.
-  if (gateResult.preflight.tier_active !== "PREMIUM") {
-    return Response.json(
-      {
-        error: WORKER_ERROR_CODES.PREMIUM_FEATURE_REQUIRED,
-        message: "Premium text-to-speech requires an active Premium plan.",
-      },
-      { status: 403 },
-    );
-  }
+  // The DB-backed tier is authoritative and the gate already applied ITS pool:
+  // a lapsed subscription or FREE JWT is served the FREE char pool, not 403'd.
 
   const quotaTotal = gateResult.preflight.quota_total ?? 0;
   const quotaRemaining =

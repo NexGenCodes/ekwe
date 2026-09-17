@@ -65,7 +65,9 @@ describe("handleCheckout", () => {
 
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
-    expect(data.tx_ref).toMatch(/^ekwe_test-user-123_monthly_\d+_[a-z0-9]+$/);
+    expect(data.tx_ref).toMatch(
+      /^ekwe_test-user-123_monthly_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
     expect(data.amount).toBe(2.23); // $2.23/mo from subscription_config
     expect(data.currency).toBe("USD");
     expect(data).not.toHaveProperty("checkout_url");

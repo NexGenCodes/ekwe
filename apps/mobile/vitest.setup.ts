@@ -30,6 +30,12 @@ vi.mock("expo-file-system", () => ({
   readAsStringAsync: vi.fn(),
   deleteAsync: vi.fn(),
   getInfoAsync: vi.fn(() => ({ exists: true })),
+  // sharedContainer calls these when the app-group container is missing
+  // (iOS-only); simulate that state so the unit tests hit the null path.
+  File: class File {},
+  Paths: {
+    appleSharedContainers: undefined,
+  },
 }));
 
 // Mock Expo Speech

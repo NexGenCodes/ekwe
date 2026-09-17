@@ -261,3 +261,112 @@ export const registerPushTokenRequestSchema = z.object({
 export type RegisterPushTokenRequest = z.infer<
   typeof registerPushTokenRequestSchema
 >;
+
+// ─── iOS Share-Extension History Record ─────────────────────────
+// Shape of a record the native share extension
+// (targets/share/EchoHistoryStore.swift) writes into the shared App Group
+// container. It crosses a native→JS boundary as tool-provided input, so the
+// app validates it with zod on import instead of trusting the JSON blindly.
+// `translation`/`transliteration` are nullish because Swift's synthesized
+// Codable encodes a nil optional by omitting the key. The remaining optional
+// fields tolerate quirky writers; HistoryService's mapper applies the same
+// defaults the in-app flow relies on (duration 0, sourceApp "ios", provider
+// "unknown"). Core identity fields are required so a garbage record fails
+// loudly instead of being silently imported.
+export const sharedHistoryRecordSchema = z.object({
+  sessionKey: z.string().min(1),
+  sourceLang: z.string().min(1),
+  targetLang: z.string().min(1),
+  transcript: z.string(),
+  translation: z.string().nullish(),
+  transliteration: z.string().nullish(),
+  duration: z.number().optional(),
+  sourceApp: z.string().optional(),
+  provider: z.string().optional(),
+  createdAt: z.string().optional(),
+});
+export type SharedHistoryRecord = z.infer<typeof sharedHistoryRecordSchema>;
+
+// ─── /transcribe/stream WebSocket (server → mobile) ─────────────
+// Outbound frames from the streaming Durable Object (durable/stream-do.ts)
+// and its provider adapters. The client validates every frame so a shape
+// change in any provider fails loudly instead of being forwarded blind to
+// transcribe callbacks. `error` envelopes carry a machine code + human message.
+export const streamTranscriptEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("interim"),
+    text: z.string(),
+    provider: z.string(),
+  }),
+  z.object({
+    type: z.literal("final"),
+    text: z.string(),
+    provider: z.string(),
+  }),
+]);
+export type StreamTranscriptEvent = z.infer<typeof streamTranscriptEventSchema>;
+
+export const streamControlMessageSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("ping") }),
+  z.object({ type: z.literal("config_ack"), status: z.string() }),
+  z.object({
+    type: z.literal("config_request"),
+    codec: z.string(),
+    sampleRate: z.number(),
+    frameSizeMs: z.number(),
+  }),
+]);
+export type StreamControlMessage = z.infer<typeof streamControlMessageSchema>;
+
+export const streamErrorSchema = z.object({
+  error: z.string(),
+  message: z.string(),
+});
+export type StreamError = z.infer<typeof streamErrorSchema>;
+
+export const streamServerMessageSchema = z.union([
+  streamTranscriptEventSchema,
+  streamControlMessageSchema,
+  streamErrorSchema,
+]);
+export type StreamServerMessage = z.infer<typeof streamServerMessageSchema>;
+
+// ─── History sync outbox payload + incremental-sync cursor ──────
+// Contract stored in the SQLite outbox and later upserted into the cloud
+// history table. `outboxPayload.ts` stringifies these shapes; SyncService
+// re-parses them with zod so a corrupt or version-stale row fails loudly in
+// drain instead of silently upserting garbage.
+export const historyOutboxUpsertPayloadSchema = z.object({
+  action: z.literal("upsert"),
+  type: z.enum(["transcription", "translation"]),
+  source_lang: z.string(),
+  target_lang: z.string(),
+  transcript: z.string(),
+  translation_text: z.string().nullable(),
+  transliteration_text: z.string().nullable(),
+  duration: z.number(),
+  source_app: z.string(),
+  provider: z.string(),
+  created_at: z.string(),
+});
+export const historyOutboxDeletePayloadSchema = z.object({
+  action: z.literal("delete"),
+  id: z.string(),
+});
+export const historyOutboxDeleteAllPayloadSchema = z.object({
+  action: z.literal("delete_all"),
+});
+export const historyOutboxPayloadSchema = z.discriminatedUnion("action", [
+  historyOutboxUpsertPayloadSchema,
+  historyOutboxDeletePayloadSchema,
+  historyOutboxDeleteAllPayloadSchema,
+]);
+export type HistoryOutboxPayload = z.infer<typeof historyOutboxPayloadSchema>;
+
+// Incremental-sync keyset cursor persisted per user. A bare ISO `created_at`
+// string is the legacy format and is rejected here (forces a full pull).
+export const syncCursorSchema = z.object({
+  created_at: z.string(),
+  id: z.string(),
+});
+export type SyncCursor = z.infer<typeof syncCursorSchema>;

@@ -286,6 +286,19 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: npx eas update --platform android --channel production --message "OTA update from ${{ github.sha }}" --non-interactive
 
+      - name: Upload OTA sourcemaps to Sentry
+        # EAS Update bundles into dist/ but (unlike native builds) does NOT
+        # auto-upload sourcemaps; the @sentry/react-native/expo plugin + Metro
+        # plugin already assigned Debug IDs, so errors from this update are
+        # symbolicated once the maps land in Sentry (see docs.sentry.io
+        # "Manually upload source maps for EAS Updates").
+        working-directory: apps/mobile
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: public-benefit-nonprofit
+          SENTRY_PROJECT: react-native
+        run: npx sentry-expo-upload-sourcemaps dist
+
   release:
     name: Build APK + Release
     needs: [detect, verify-ci, migrate]
@@ -394,6 +407,11 @@ jobs:
 
       - name: Run prebuild
         working-directory: apps/mobile
+        env:
+          # Included in the compiled native config by the Sentry Expo plugin
+          # (@sentry/react-native/expo reads these in app.config.js).
+          SENTRY_ORG: public-benefit-nonprofit
+          SENTRY_PROJECT: react-native
         run: pnpm run prebuild:android
 
       - name: Configure release signing
@@ -422,10 +440,12 @@ jobs:
         working-directory: apps/mobile/android
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dorg.gradle.caching=true"
-          # sentry.gradle can't resolve @sentry/cli via pnpm in CI (the
-          # fallback $reactRoot/node_modules/@sentry/cli doesn't exist).
-          # Skip the source-map upload task — the build itself is unaffected.
-          SENTRY_DISABLE_AUTO_UPLOAD: "true"
+          # Upload JS source maps + the R8/ProGuard mapping.txt to Sentry during
+          # assembleRelease (SDK >= 8 wires @sentry/cli into the gradle build;
+          # the token secret drives the upload).
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: public-benefit-nonprofit
+          SENTRY_PROJECT: react-native
         run: |
           chmod +x gradlew
           # One universal APK is built containing both ABIs (arm64-v8a +

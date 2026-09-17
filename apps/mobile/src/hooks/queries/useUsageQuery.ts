@@ -5,21 +5,25 @@ import { auth$ } from "@/store";
 import { fetchUsage, type UsageSnapshot } from "@/services/usage";
 import { queryClient } from "./queryClient";
 
-const usageQueryKey = ["usage"] as const;
+const usageQueryKey = (userId: string) => ["usage", userId] as const;
 
 /**
  * Marks the cached usage snapshot stale so the next visible meter refetches.
  * Called after a billable translate/transcribe completes (or fails with 429).
  */
 export function invalidateUsage(): void {
-  void queryClient.invalidateQueries({ queryKey: usageQueryKey });
+  const userId = auth$.user.get()?.id;
+  if (!userId) return;
+  void queryClient.invalidateQueries({ queryKey: usageQueryKey(userId) });
 }
 
 export function useUsageQuery(): UseQueryResult<UsageSnapshot> {
   const isPro = useSelector(() => auth$.isPro.get());
+  const userId = useSelector(() => auth$.user.get()?.id ?? "anonymous");
 
   return useQuery<UsageSnapshot>({
-    queryKey: usageQueryKey,
+    // Scoped per user so a sign-out/switch cannot leak another account's meter.
+    queryKey: usageQueryKey(userId),
     queryFn: async () => {
       const result = await fetchUsage();
       if (!result.ok) throw new Error(result.error);

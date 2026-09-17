@@ -108,7 +108,7 @@ describe("checkPreflight (cooldown + quota gate)", () => {
 
     expect(body).toMatchObject({
       p_type: "tts",
-      p_free_daily_limit: 0,
+      p_free_daily_limit: 2500,
       p_premium_tts_chars_limit: 5000,
       p_charge_chars: 42,
       p_premium_throttle_threshold: 0,

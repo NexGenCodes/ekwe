@@ -19,9 +19,10 @@ export interface PlanLimits {
   dailyTranscribeLimit: number;
   /**
    * Daily character cap for /tts, per user — measured in generated characters,
-   * not requests (0 = unavailable — FREE gets no worker TTS, on-device only).
-   * Premium TTS is the most expensive provider call per user, so unlike the
-   * translate/transcribe pools this one is a hard cap even for PREMIUM.
+   * not requests (0 = unavailable — on-device speech only). TTS is the most
+   * expensive provider call per user, so unlike the translate/transcribe pools
+   * this one is a hard cap for BOTH tiers. The client silently falls back to
+   * on-device speech when the pool is exhausted.
    */
   dailyTtsCharsLimit: number;
   /**
@@ -75,7 +76,11 @@ export const FREE_LIMITS: PlanLimits = {
   cooldownSeconds: 3,
   dailyTranslateLimit: 25,
   dailyTranscribeLimit: 25,
-  dailyTtsCharsLimit: 0,
+  // FREE gets a modest daily speech pool — enough for a few short voice notes
+  // a day, mirroring the 25/day inbound cap philosophy. Kept deliberately
+  // small (TTS is the most expensive provider call per user); the client
+  // falls back to on-device speech once it's spent.
+  dailyTtsCharsLimit: 2500,
   throttleTranslateThreshold: 0,
   throttleTranscribeThreshold: 0,
 };

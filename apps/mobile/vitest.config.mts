@@ -25,6 +25,20 @@ export default defineConfig({
       },
     ],
   },
+  plugins: [
+    {
+      name: "sql-as-raw-string",
+      transform(_code, id) {
+        // Mirrors babel-plugin-inline-import (used by Metro) for vitest: turn
+        // .sql imports into plain strings so db.ts can run the Drizzle
+        // migration artifact synchronously in tests too.
+        if (id.endsWith(".sql")) {
+          return { code: "export default '';", map: null };
+        }
+        return undefined;
+      },
+    },
+  ],
   test: {
     globals: true,
     environment: "node",

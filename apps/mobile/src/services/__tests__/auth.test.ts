@@ -769,9 +769,7 @@ describe("signOut", () => {
     expect(authMock.signOut).toHaveBeenCalled();
     expect(googleSigninMock.signOut).toHaveBeenCalled();
     expect(mmkvMock.set).toHaveBeenCalledWith("hasSession", false);
-    expect(queryClientMock.removeQueries).toHaveBeenCalledWith({
-      queryKey: ["plan"],
-    });
+    expect(queryClientMock.clear).toHaveBeenCalled();
     expect(posthogClientMock.reset).toHaveBeenCalled();
     expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.SIGN_OUT);
   });
@@ -796,7 +794,7 @@ describe("signOut", () => {
       ok: false,
       error: "That didn't work. Please try again.",
     });
-    expect(queryClientMock.removeQueries).toHaveBeenCalled();
+    expect(queryClientMock.clear).toHaveBeenCalled();
   });
 });
 

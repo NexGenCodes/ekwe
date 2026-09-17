@@ -609,7 +609,9 @@ export const signOut = async (): Promise<AuthResult> => {
     authActions.setSession(null);
     mmkv.set(SESSION_CACHE_KEY, false);
     mirrorSessionToSharedContainer(null, buildSettingsSharedPrefs());
-    queryClient.removeQueries({ queryKey: ["plan"] });
+    // Every query cache is per-user (usage, plan, pricing, translate) — clear
+    // all of it so no account data survives sign-out on a shared device.
+    queryClient.clear();
     getPosthogClient()?.reset();
     track(AnalyticsEvents.SIGN_OUT);
 

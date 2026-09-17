@@ -548,6 +548,9 @@ export class StreamDurableObject extends DurableObject<Env> {
     state: SessionState,
     conn: StreamConnection,
   ): Promise<void> {
+    // Captured once so a language-change relaunch (which swaps the controller)
+    // still releases THIS pipeline via the aborted signal, not the new one.
+    const signal = conn.abortController.signal;
     let providerFound = false;
 
     for (const entry of STREAMING_PIPELINE) {
@@ -574,7 +577,7 @@ export class StreamDurableObject extends DurableObject<Env> {
           this.env,
           state.lang,
           conn.adapter as unknown as WebSocket,
-          conn.abortController.signal,
+          signal,
         );
         if (handled) {
           providerFound = true;
@@ -606,7 +609,30 @@ export class StreamDurableObject extends DurableObject<Env> {
         }),
       );
       this.closeSession(ws, WS_CLOSE.NO_PROVIDER, "No provider");
+      return;
     }
+
+    // A provider owns the session. Keep this pipeline's promise pending for
+    // the whole session so the per-frame guard in startProviderPipeline can't
+    // spawn a duplicate upstream. Previously the handlers resolved as soon as
+    // they wired their socket, so pipelinePromise was cleared immediately and
+    // every subsequent audio frame opened a fresh provider WebSocket — handing
+    // Deepgram/AssemblyAI/Gladia/Wit.ai each a new socket per frame (duplicate
+    // transcripts and N× billing).
+    //
+    // The promise settles only when this session's socket closes (disconnect,
+    // stop, duration/file-size cap) or the current abort trips (language
+    // change relaunches with a fresh controller). Whichever fires, the cached
+    // `signal` above is the one the phase staked, so cleanup is precise.
+    await new Promise<void>((resolve) => {
+      const done = (): void => resolve();
+      if (signal.aborted) {
+        done();
+        return;
+      }
+      ws.addEventListener("close", done);
+      signal.addEventListener("abort", done, { once: true });
+    });
   }
 
   private safeSend(ws: WebSocket, data: string): void {

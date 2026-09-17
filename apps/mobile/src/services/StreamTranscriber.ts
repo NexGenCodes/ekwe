@@ -1,3 +1,9 @@
+import {
+  streamServerMessageSchema,
+  type StreamError,
+  type StreamTranscriptEvent,
+} from "@ekwe/shared";
+
 import { PLAN_LIMITS } from "@/constants/billing";
 import logger from "@/utils/logger";
 
@@ -8,23 +14,7 @@ export interface StreamConfig {
   getToken?: () => string | null;
 }
 
-export interface TranscriptEvent {
-  type: "interim" | "final";
-  text: string;
-  provider: string;
-}
-
-export interface StreamError {
-  error: string;
-  message: string;
-}
-
-interface ServerMessage {
-  type: string;
-  [key: string]: unknown;
-}
-
-type StreamCallback = (event: TranscriptEvent | StreamError) => void;
+type StreamCallback = (event: StreamTranscriptEvent | StreamError) => void;
 type StreamStatusCallback = (
   status: "connecting" | "connected" | "disconnected" | "error",
 ) => void;
@@ -100,30 +90,49 @@ class StreamTranscriberClass {
 
       this.ws.onmessage = (event: MessageEvent): void => {
         try {
-          const data = JSON.parse(event.data as string) as ServerMessage;
-
-          if (data.type === "ping") {
-            this.sendJson({ type: "pong" });
-            return;
-          }
-
-          if (data.type === "config_ack" || data.type === "config_request") {
-            logger.info("[StreamTranscriber] Config negotiated", data);
-            if (data.type === "config_request") {
-              this.sendJson({
-                type: "config",
-                lang: this.config?.lang,
-                codec: "opus",
-                sampleRate: 16000,
-                frameSizeMs: 20,
-              });
-            }
-            return;
-          }
-
-          this.notifyCallbacks(
-            data as unknown as TranscriptEvent | StreamError,
+          const parsed = streamServerMessageSchema.safeParse(
+            JSON.parse(event.data as string),
           );
+          if (!parsed.success) {
+            logger.warn(
+              "[StreamTranscriber] Dropping unparseable server message",
+              parsed.error.issues,
+            );
+            return;
+          }
+
+          const msg = parsed.data;
+
+          if ("type" in msg) {
+            if (msg.type === "ping") {
+              this.sendJson({ type: "pong" });
+              return;
+            }
+
+            if (msg.type === "config_ack" || msg.type === "config_request") {
+              logger.info("[StreamTranscriber] Config negotiated", msg);
+              if (msg.type === "config_request") {
+                this.sendJson({
+                  type: "config",
+                  lang: this.config?.lang,
+                  codec: "opus",
+                  sampleRate: 16000,
+                  frameSizeMs: 20,
+                });
+              }
+              return;
+            }
+
+            if (msg.type === "interim" || msg.type === "final") {
+              this.notifyCallbacks(msg);
+              return;
+            }
+
+            // Any future typed server frame is not consumed here.
+            return;
+          }
+
+          this.notifyCallbacks(msg);
         } catch {
           // Non-JSON message, ignore
         }
@@ -221,7 +230,7 @@ class StreamTranscriberClass {
     }
   }
 
-  private notifyCallbacks(event: TranscriptEvent | StreamError): void {
+  private notifyCallbacks(event: StreamTranscriptEvent | StreamError): void {
     this.callbacks.forEach((cb) => cb(event));
   }
 

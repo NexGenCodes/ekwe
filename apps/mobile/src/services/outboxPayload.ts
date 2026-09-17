@@ -1,3 +1,5 @@
+import { syncCursorSchema, type SyncCursor } from "@ekwe/shared";
+
 import type { EntryType } from "@/store";
 
 /**
@@ -52,11 +54,6 @@ export function buildDeleteAllOutboxPayload(): string {
   return JSON.stringify({ action: "delete_all" });
 }
 
-export interface SyncCursor {
-  created_at: string;
-  id: string;
-}
-
 /**
  * Parses the persisted incremental-sync cursor. Returns null when there is
  * nothing stored, when the value is corrupt, or when it predates the composite
@@ -68,13 +65,8 @@ export function parseSyncCursor(
 ): SyncCursor | null {
   if (!stored) return null;
   try {
-    const parsed = JSON.parse(stored) as { created_at?: unknown; id?: unknown };
-    if (
-      typeof parsed?.created_at === "string" &&
-      typeof parsed?.id === "string"
-    ) {
-      return { created_at: parsed.created_at, id: parsed.id };
-    }
+    const parsed = syncCursorSchema.safeParse(JSON.parse(stored));
+    if (parsed.success) return parsed.data;
   } catch {
     // Bare ISO string or corrupt value: treat as no cursor.
   }

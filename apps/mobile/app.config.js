@@ -152,18 +152,21 @@ module.exports = ({ config }) => {
 
   plugins.push("expo-asset");
 
+  plugins.push("expo-sharing");
+
   plugins.push(withReleaseSigning);
 
   const sentryIndex = plugins.findIndex(
     (p) =>
-      p === "@sentry/react-native" ||
-      (Array.isArray(p) && p[0] === "@sentry/react-native"),
+      p === "@sentry/react-native/expo" ||
+      (Array.isArray(p) && p[0] === "@sentry/react-native/expo"),
   );
 
   if (sentryIndex !== -1) {
     plugins[sentryIndex] = [
-      "@sentry/react-native",
+      "@sentry/react-native/expo",
       {
+        url: "https://sentry.io/",
         organization: process.env.SENTRY_ORG,
         project: process.env.SENTRY_PROJECT,
         // Wires the Sentry Android Gradle Plugin into prebuild so the R8/ProGuard

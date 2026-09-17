@@ -450,4 +450,44 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     await waitForClose(closes, 1000);
     await settle();
   });
+
+  it("does not open a second provider socket per audio frame", async () => {
+    let connections = 0;
+    const link = ws.link(DEEPGRAM_LINK);
+    network.use(
+      link.addEventListener("connection", ({ client }: any) => {
+        connections++;
+        client.addEventListener("message", () => {
+          client.send(deepgramResult("frame transcript", false));
+        });
+      }),
+    );
+
+    withDeepgramKey();
+    const {
+      ws: clientWs,
+      messages,
+      closes,
+    } = await openSession("no-duplicate-conn", "?tier=PREMIUM&lang=en");
+    clientWs.send(
+      JSON.stringify({ type: "config", codec: "opus", lang: "en" }),
+    );
+    await waitFor(messages, (m) => m.includes("config_ack"));
+    await waitForFlag(() => connections === 1);
+
+    // Send three audio frames — the old code would open a new Deepgram socket
+    // per frame (pipelinePromise was cleared on handleStream's immediate return).
+    clientWs.send(new ArrayBuffer(8));
+    clientWs.send(new ArrayBuffer(8));
+    clientWs.send(new ArrayBuffer(8));
+    await waitFor(messages, (m) => m.includes("frame transcript"));
+
+    // Allow the test env to settle; any additional connections would be flagged.
+    await new Promise((r) => setTimeout(r, 100));
+    expect(connections).toBe(1);
+
+    clientWs.send(JSON.stringify({ type: "stop" }));
+    await waitForClose(closes, 1000);
+    await settle();
+  });
 });

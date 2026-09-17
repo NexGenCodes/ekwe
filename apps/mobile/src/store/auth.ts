@@ -1,6 +1,7 @@
 import { observable } from "@legendapp/state";
 import { Session, User } from "@supabase/supabase-js";
 import type { PaymentProvider } from "@ekwe/shared";
+import { resetPersonalSettings } from "@/store/settings";
 import { setSentryUser } from "@/utils/logger";
 
 interface AuthState {
@@ -66,6 +67,16 @@ export const authActions = {
     // Sentry scope identity follows the session (id only — the scrub policy +
     // anonymous fallback keep PII off the event entirely).
     setSentryUser(session?.user ? { id: session.user.id } : null);
+
+    // Personal account preferences (languages, voice, currency, auto-copy)
+    // must never leak onto a different user on a shared device. Reset them
+    // whenever the signed-in user changes or signs out. Guarded on
+    // `previousUser` so the first-ever session restore on app launch (where
+    // previous is null) does not wipe a returning user's choices. Device-level
+    // prefs (appearance, haptics, volume behavior) are intentionally kept.
+    if (previousUser && !sameUser) {
+      resetPersonalSettings();
+    }
   },
   setUser: (user: User | null): void => {
     auth$.user.set(user);

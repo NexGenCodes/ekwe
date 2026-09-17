@@ -1,5 +1,7 @@
 import type { EntryType } from "@/store";
 
+import type { SharedHistoryRecord } from "@ekwe/shared";
+
 /**
  * Pure mapping/decision logic for the native iOS share-extension bridge.
  *
@@ -10,18 +12,7 @@ import type { EntryType } from "@/store";
  * record a transcription or a translation? — is unit-testable in isolation.
  */
 
-export interface SharedHistoryRecord {
-  sessionKey: string;
-  sourceLang: string;
-  targetLang: string;
-  transcript: string;
-  translation: string | null;
-  transliteration: string | null;
-  duration: number;
-  sourceApp: string;
-  provider: string;
-  createdAt: string;
-}
+export type { SharedHistoryRecord };
 
 export interface SharedHistoryEntryDraft {
   sourceLang: string;
@@ -67,8 +58,8 @@ export function mapSharedRecordToEntry(
     // translation equals the transcript (or is blank) is classified as a
     // transcription, and storing its redundant translation would make the row
     // look translated.
-    translation: isTranslation ? record.translation : null,
-    transliteration: isTranslation ? record.transliteration : null,
+    translation: isTranslation ? (record.translation ?? null) : null,
+    transliteration: isTranslation ? (record.transliteration ?? null) : null,
     duration: record.duration ?? 0,
     sourceApp: record.sourceApp || "ios",
     provider: record.provider || "unknown",

@@ -116,12 +116,12 @@ export async function handleCheckout(
 
   // tx_ref must be unique per transaction (Flutterwave rejects duplicates).
   // It keeps the `ekwe_<userId>_` prefix the webhook's resolveUser parses, and
-  // appends the plan + a timestamp/random suffix so the same user+plan can
-  // checkout again without colliding.
+  // appends the plan + a cryptographically random UUID so the same user+plan
+  // can checkout again without colliding.
   const txRef = `ekwe_${auth.userId}_${body.plan.replace(
     "ekwe_pro_",
     "",
-  )}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  )}_${crypto.randomUUID()}`;
 
   const responseBody = {
     tx_ref: txRef,

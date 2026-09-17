@@ -28,16 +28,6 @@ function createClient(): PostHog | undefined {
     disableGeoip: true,
     // Privacy: only create person profiles for identified users.
     personProfiles: "identified_only",
-    // Session replay only runs while this client exists, which is gated on
-    // analytics consent (see getPosthogClient). Mask text/images so
-    // transcription content never leaks into replays.
-    enableSessionReplay: true,
-    sessionReplayConfig: {
-      maskAllTextInputs: true,
-      maskAllImages: true,
-      maskAllSandboxedViews: true,
-      captureNetworkTelemetry: false,
-    },
   });
 }
 

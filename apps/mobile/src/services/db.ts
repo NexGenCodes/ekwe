@@ -3,6 +3,8 @@ import { openDatabaseSync } from "expo-sqlite";
 import { eq, and, desc, sql, or } from "drizzle-orm";
 import { history, outbox } from "@ekwe/db/local-schema";
 
+import migrations from "../../drizzle/migrations";
+
 import logger from "@/utils/logger";
 
 /** Minimum gap between outbox push attempts to avoid burning all retries on a flaky network. */
@@ -30,49 +32,25 @@ try {
   logger.error("Failed to set SQLite PRAGMAs", err);
 }
 
-// We need to run migrations. Since we are moving from op-sqlite, the ekwe.db file
-// already exists. We can use Drizzle's migration, but for now we'll just ensure the tables
-// exist if they don't, to preserve compatibility with existing databases.
-// The raw SQL schema is identical, so existing data works fine.
+// The schema used to live as a hand-written DDL string here, which could drift
+// from packages/db/local-schema.ts. DDL now comes from the Drizzle-migrated
+// artifact (apps/mobile/drizzle/migrations.js, generated off local-schema.ts),
+// so this file and the schema can't diverge. The statements are idempotent
+// (IF NOT EXISTS) and run synchronously via execSync — mirroring how drizzle
+// run them — so a pre-existing ekwe.db written by the legacy op-sqlite layer
+// migrates in place without data loss, and there's no async race with the
+// synchronous Db.* queries used across the app.
 function ensureTables(): void {
   try {
-    expoDb.execSync(`
-      CREATE TABLE IF NOT EXISTS history (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        source_lang TEXT NOT NULL,
-        target_lang TEXT NOT NULL,
-        transcript TEXT NOT NULL,
-        translation_text TEXT,
-        transliteration_text TEXT,
-        duration REAL NOT NULL DEFAULT 0,
-        source_app TEXT NOT NULL DEFAULT '',
-        provider TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL,
-        entry_type TEXT NOT NULL DEFAULT 'transcription'
-      );
-      CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_history_user ON history(user_id);
-      CREATE INDEX IF NOT EXISTS idx_history_user_created ON history(user_id, created_at DESC);
-
-      CREATE TABLE IF NOT EXISTS outbox (
-        id TEXT PRIMARY KEY,
-        payload TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        retries INTEGER NOT NULL DEFAULT 0,
-        last_attempt INTEGER,
-        created_at TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending'
-          CHECK(status IN ('pending', 'in_flight', 'dead'))
-      );
-      CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status);
-
-      CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(
-        id UNINDEXED,
-        transcript,
-        translation_text
-      );
-    `);
+    for (const entry of migrations.journal.entries) {
+      const key = `m${String(entry.idx).padStart(4, "0")}`;
+      const sql = migrations.migrations[key];
+      if (!sql) {
+        logger.warn(`Local migration ${entry.tag} produced no SQL`);
+        continue;
+      }
+      expoDb.execSync(sql);
+    }
 
     repairFtsTriggers();
   } catch (err) {

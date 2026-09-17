@@ -89,7 +89,7 @@
       "expo-router",
       "expo-audio",
       "expo-image",
-      "@sentry/react-native",
+      "@sentry/react-native/expo",
       "expo-apple-authentication",
       "expo-secure-store",
       "@bacons/apple-targets",

@@ -1,5 +1,10 @@
 import { SyncService } from "./SyncService";
-import { mapSharedRecordToEntry, SharedHistoryRecord } from "./sharedHistory";
+import { mapSharedRecordToEntry } from "./sharedHistory";
+
+import {
+  sharedHistoryRecordSchema,
+  type SharedHistoryRecord,
+} from "@ekwe/shared";
 
 import { File, Paths } from "expo-file-system";
 
@@ -60,8 +65,31 @@ export const HistoryService = {
       const file = new File(dir, SHARED_HISTORY_FILE);
       if (!file.exists) return;
 
-      const records = JSON.parse(file.textSync()) as SharedHistoryRecord[];
-      if (!Array.isArray(records) || records.length === 0) {
+      const raw: unknown = JSON.parse(file.textSync());
+      if (!Array.isArray(raw) || raw.length === 0) {
+        file.delete();
+        return;
+      }
+
+      // The file is tool-provided input, so validate every record with the
+      // shared schema rather than trusting the cast. Malformed records are
+      // skipped (fail-loud, logged) while valid ones still import.
+      const records: SharedHistoryRecord[] = [];
+      let invalid = 0;
+      for (const item of raw) {
+        const parsed = sharedHistoryRecordSchema.safeParse(item);
+        if (parsed.success) {
+          records.push(parsed.data);
+        } else {
+          invalid++;
+        }
+      }
+      if (invalid > 0) {
+        logger.warn(
+          `[HistoryService] Skipped ${invalid} malformed shared echo record(s).`,
+        );
+      }
+      if (records.length === 0) {
         file.delete();
         return;
       }

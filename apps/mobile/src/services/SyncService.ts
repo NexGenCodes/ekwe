@@ -1,7 +1,7 @@
-import { observable } from "@legendapp/state";
+import { batch, observable } from "@legendapp/state";
 import * as Crypto from "expo-crypto";
 
-import { Db } from "./db";
+import { Db, type OutboxRow } from "./db";
 import { mmkv as storage } from "./mmkv";
 import {
   buildDeleteAllOutboxPayload,
@@ -9,6 +9,8 @@ import {
   buildUpsertOutboxPayload,
   parseSyncCursor,
 } from "./outboxPayload";
+
+import { historyOutboxPayloadSchema } from "@ekwe/shared";
 
 import { supabase } from "@/services/supabase";
 import { EntryType, HistoryEntry, history$, auth$ } from "@/store";
@@ -329,7 +331,17 @@ class SyncServiceClass {
 
       Db.markOutboxInFlight(id);
 
-      const payload = JSON.parse(row.payload);
+      const parsed = historyOutboxPayloadSchema.safeParse(
+        JSON.parse(row.payload),
+      );
+      if (!parsed.success) {
+        throw new Error(
+          `Invalid outbox payload: ${
+            parsed.error.issues[0]?.message ?? "unknown validation error"
+          }`,
+        );
+      }
+      const payload = parsed.data;
 
       if (payload.action === "delete") {
         const targetId = payload.id || row.id;
@@ -348,7 +360,7 @@ class SyncServiceClass {
         const { error } = await supabase.from("history").upsert({
           id: row.id,
           user_id: row.userId,
-          type: payload.type ?? "transcription",
+          type: payload.type,
           source_lang: payload.source_lang,
           target_lang: payload.target_lang,
           transcript: payload.transcript,
@@ -375,6 +387,12 @@ class SyncServiceClass {
     if (this.isDraining) return;
     this.isDraining = true;
 
+    // Hoisted so the failure path can retry the rows THIS run marked
+    // in_flight (the original bug re-queried pending rows, which no longer
+    // match after the status flip — stranding the outbox until the next
+    // app-start revive).
+    let entries: OutboxRow[] = [];
+
     try {
       const userId = auth$.user.get()?.id;
       if (!userId) return;
@@ -382,7 +400,7 @@ class SyncServiceClass {
       const online = await checkIsOnline();
       if (!online) return;
 
-      const entries = Db.getPendingOutbox(userId);
+      entries = Db.getPendingOutbox(userId);
       if (entries.length === 0) return;
 
       logger.info(
@@ -398,7 +416,17 @@ class SyncServiceClass {
       for (const entry of entries) {
         Db.markOutboxInFlight(entry.id);
         try {
-          const payload = JSON.parse(entry.payload);
+          const parsed = historyOutboxPayloadSchema.safeParse(
+            JSON.parse(entry.payload),
+          );
+          if (!parsed.success) {
+            throw new Error(
+              `Invalid outbox payload: ${
+                parsed.error.issues[0]?.message ?? "unknown validation error"
+              }`,
+            );
+          }
+          const payload = parsed.data;
           if (payload.action === "delete_all") {
             deleteAll = true;
           } else if (payload.action === "delete") {
@@ -407,7 +435,7 @@ class SyncServiceClass {
             toUpsert.push({
               id: entry.id,
               user_id: entry.userId,
-              type: payload.type ?? "transcription",
+              type: payload.type,
               source_lang: payload.source_lang,
               target_lang: payload.target_lang,
               transcript: payload.transcript,
@@ -460,7 +488,10 @@ class SyncServiceClass {
       );
     } catch (err) {
       logger.error("[Sync] Batch drain failed", err);
-      const entries = Db.getPendingOutbox(auth$.user.get()?.id ?? "");
+      // Retry every row this run marked in_flight (the batch ops above are
+      // executed after all rows are marked, so a mid-batch failure leaves
+      // them all in_flight). incrementOutboxRetry flips them back to pending
+      // (or dead after 5 attempts), so the next drain/schedule can push them.
       for (const entry of entries) {
         if (entry.status === "in_flight") {
           Db.incrementOutboxRetry(entry.id);
@@ -516,61 +547,66 @@ class SyncServiceClass {
       const ttlCutoff =
         Date.now() - HISTORY_LOCAL_TTL_DAYS * 24 * 60 * 60 * 1000;
 
-      for (const row of rows) {
-        if (new Date(row.created_at).getTime() < ttlCutoff) {
-          continue;
-        }
+      // Batch the observable writes so a large pull fires ONE history-store
+      // notification instead of one per row (Legend State default) — keeps
+      // the 200-row cold-start pull from thrashing every subscribed screen.
+      batch(() => {
+        for (const row of rows) {
+          if (new Date(row.created_at).getTime() < ttlCutoff) {
+            continue;
+          }
 
-        Db.insertHistory({
-          id: row.id,
-          userId: row.user_id,
-          sourceLang: row.source_lang,
-          targetLang: row.target_lang,
-          transcript: row.transcript,
-          translationText: row.translation_text,
-          transliterationText: row.transliteration_text,
-          duration: row.duration || 0,
-          sourceApp: row.source_app || "",
-          provider: row.provider || "",
-          createdAt: row.created_at,
-          entryType: row.type || "transcription",
-        });
-
-        if (!history$[row.id].get()) {
-          history$[row.id].set({
+          Db.insertHistory({
             id: row.id,
+            userId: row.user_id,
             sourceLang: row.source_lang,
             targetLang: row.target_lang,
             transcript: row.transcript,
-            translation: row.translation_text,
-            transliteration: row.transliteration_text,
+            translationText: row.translation_text,
+            transliterationText: row.transliteration_text,
             duration: row.duration || 0,
             sourceApp: row.source_app || "",
             provider: row.provider || "",
-            timestamp: new Date(row.created_at).getTime(),
-            type: row.type || "transcription",
+            createdAt: row.created_at,
+            entryType: row.type || "transcription",
           });
-        } else {
-          // Conflict detection: only overwrite if local has no un-synced edits
-          const pending = Db.getPendingOutbox(userId).find(
-            (r) => r.id === row.id,
-          );
-          if (!pending) {
+
+          if (!history$[row.id].get()) {
             history$[row.id].set({
-              ...history$[row.id].get(),
+              id: row.id,
+              sourceLang: row.source_lang,
+              targetLang: row.target_lang,
+              transcript: row.transcript,
               translation: row.translation_text,
               transliteration: row.transliteration_text,
-            });
-            Db.updateTranslationRow(row.id, {
-              translation_text: row.translation_text,
-              transliteration_text: row.transliteration_text,
               duration: row.duration || 0,
-              source_app: row.source_app || "",
+              sourceApp: row.source_app || "",
               provider: row.provider || "",
+              timestamp: new Date(row.created_at).getTime(),
+              type: row.type || "transcription",
             });
+          } else {
+            // Conflict detection: only overwrite if local has no un-synced edits
+            const pending = Db.getPendingOutbox(userId).find(
+              (r) => r.id === row.id,
+            );
+            if (!pending) {
+              history$[row.id].set({
+                ...history$[row.id].get(),
+                translation: row.translation_text,
+                transliteration: row.transliteration_text,
+              });
+              Db.updateTranslationRow(row.id, {
+                translation_text: row.translation_text,
+                transliteration_text: row.transliteration_text,
+                duration: row.duration || 0,
+                source_app: row.source_app || "",
+                provider: row.provider || "",
+              });
+            }
           }
         }
-      }
+      });
 
       const newest = rows[rows.length - 1];
       storage.set(
