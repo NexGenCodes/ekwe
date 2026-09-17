@@ -8,7 +8,7 @@ import React, { useEffect } from "react";
 import { CustomTabBar } from "@/components/CustomTabBar";
 import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks";
-import { settings$ } from "@/store";
+import { settings$, update$ } from "@/store";
 
 export default function TabLayout(): React.ReactElement | null {
   const { color } = useTheme();
@@ -17,6 +17,8 @@ export default function TabLayout(): React.ReactElement | null {
   const onboardingCompleted = useSelector(() =>
     settings$.onboardingCompleted.get(),
   );
+
+  const hasUpdate = useSelector(() => update$.manifest.get() != null);
 
   useEffect(() => {
     if (!onboardingCompleted) {
@@ -67,6 +69,7 @@ export default function TabLayout(): React.ReactElement | null {
             title: "Profile",
             headerShown: true,
             tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
+            tabBarBadge: hasUpdate ? 1 : undefined,
           }}
         />
       </Tabs>

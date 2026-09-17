@@ -46,10 +46,25 @@ async function verifyAppCheck(token: string, env: Env): Promise<boolean> {
 
   try {
     const expectedAud = [`projects/${projectNumber}`];
-    await jwtVerify(token, appCheckJWKS, {
-      issuer: FIREBASE_APPCHECK_ISSUER,
+    const { payload } = await jwtVerify(token, appCheckJWKS, {
       audience: expectedAud,
     });
+
+    // App Check tokens carry the project *number* as a path segment on the
+    // issuer (e.g. https://firebaseappcheck.googleapis.com/239869950724).
+    // jose's `issuer` option only supports exact matches, so validate the
+    // prefix like the Firebase Admin SDK does instead.
+    if (
+      typeof payload.iss !== "string" ||
+      !payload.iss.startsWith(FIREBASE_APPCHECK_ISSUER) ||
+      !payload.sub
+    ) {
+      logger.warn("[otp] App Check token has invalid issuer or subject", {
+        iss: payload.iss,
+      });
+      return false;
+    }
+
     return true;
   } catch (e) {
     logger.warn("[otp] App Check verification failed", {

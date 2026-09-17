@@ -4,6 +4,12 @@ import { execSync } from 'node:child_process';
 
 const currentVersion = process.argv[2];
 const nextVersionOutFile = process.argv[3];
+const bumpType = (process.argv[4] || 'patch').toLowerCase();
+
+if (!['patch', 'minor', 'major'].includes(bumpType)) {
+  console.error('Unknown bump type "' + bumpType + '" (expected patch, minor or major).');
+  process.exit(1);
+}
 
 let last = [0, 0, 0];
 try {
@@ -20,10 +26,20 @@ const c = cmp(cur, last);
 
 let NEXT;
 if (c > 0) {
+  // Version already set ahead of the last tag (e.g. hand-edited) — respect it.
   NEXT = cur.join('.');
 } else if (c < 0) {
   console.error('app.json version (' + cur.join('.') + ') is lower than the last release (' + last.join('.') + '). Set it higher.');
   process.exit(1);
+} else if (bumpType === 'major') {
+  cur[0] += 1;
+  cur[1] = 0;
+  cur[2] = 0;
+  NEXT = cur.join('.');
+} else if (bumpType === 'minor') {
+  cur[1] += 1;
+  cur[2] = 0;
+  NEXT = cur.join('.');
 } else {
   cur[2] += 1;
   NEXT = cur.join('.');

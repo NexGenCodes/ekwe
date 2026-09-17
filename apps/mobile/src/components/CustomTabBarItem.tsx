@@ -9,7 +9,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-import { Pressable, Text } from "@/components/ui";
+import { Box, Pressable, Text } from "@/components/ui";
 import { duration, spring } from "@/constants";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
@@ -26,6 +26,7 @@ interface TabBarItemOptions {
   tabBarIcon?: (props: TabBarIconProps) => React.ReactNode;
   tabBarAccessibilityLabel?: string;
   tabBarTestID?: string;
+  tabBarBadge?: number | string;
 }
 
 interface CustomTabBarItemProps {
@@ -34,6 +35,8 @@ interface CustomTabBarItemProps {
   onPress: () => void;
   onLongPress: () => void;
   label: string;
+  /** Show the update-available dot (an APK newer than the installed build). */
+  showBadge?: boolean;
 }
 
 export function CustomTabBarItem({
@@ -42,6 +45,7 @@ export function CustomTabBarItem({
   onPress,
   onLongPress,
   label,
+  showBadge = false,
 }: CustomTabBarItemProps): React.ReactElement {
   const { color } = useTheme();
 
@@ -141,6 +145,20 @@ export function CustomTabBarItem({
           <Animated.View style={iconStyle}>
             {Icon ? (
               <Icon size={22} color={iconColor} focused={isFocused} />
+            ) : null}
+            {showBadge ? (
+              <Box
+                accessibilityLabel="Update available"
+                style={{
+                  position: "absolute",
+                  top: -2,
+                  right: -4,
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: color.error,
+                }}
+              />
             ) : null}
           </Animated.View>
 

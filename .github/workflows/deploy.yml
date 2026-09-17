@@ -17,6 +17,25 @@ on:
       - "CHANGELOG.md"
   workflow_dispatch:
     inputs:
+      notify:
+        description: |
+          Force a push notification even for a patch release (hotfixes). Minor
+          and major releases push automatically; routine patch releases are
+          surfaced in-app via the update badge on the Profile tab instead.
+        required: false
+        type: boolean
+        default: false
+      release_type:
+        description: |
+          Semver component to bump. Patch releases are badge-only; minor and
+          major releases also push a notification to existing Android users.
+        required: false
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
       release_notes:
         description: |
           Curated release notes for this release (optional). Written to
@@ -335,14 +354,32 @@ jobs:
           echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Auto-bump patch version
+      - name: Auto-bump version
         id: bump
         run: |
-          node scripts/bump-version.mjs "${{ steps.version.outputs.version }}" .bump.env
+          node scripts/bump-version.mjs \
+            "${{ steps.version.outputs.version }}" \
+            .bump.env \
+            "${{ github.event.inputs.release_type || 'patch' }}"
           source .bump.env
           echo "next_version=$NEXT" >> "$GITHUB_OUTPUT"
           echo "next_version_code=$VC" >> "$GITHUB_OUTPUT"
           echo "next_tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to notify users
+        id: notify
+        # Rule: minor/major releases notify automatically; patch releases are
+        # badge-only unless explicitly forced via the `notify` dispatch input.
+        run: |
+          TYPE="${{ github.event.inputs.release_type || 'patch' }}"
+          FORCE="${{ github.event.inputs.notify || 'false' }}"
+          if [ "$TYPE" != "patch" ] || [ "$FORCE" = "true" ]; then
+            echo "Sending push notification (release_type=$TYPE, forced=$FORCE)"
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Badge-only release (release_type=$TYPE) — no push"
+            echo "value=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Write release notes to changelog
         # Only manual dispatches carry curated notes; the release commit then
@@ -490,10 +527,12 @@ jobs:
           done
           aws s3 cp "dist/app-release.apk" "s3://${{ secrets.R2_BUCKET_NAME }}/app-release.apk" \
             --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-            --content-type "application/vnd.android.package-archive"
+            --content-type "application/vnd.android.package-archive" \
+            --cache-control "public, max-age=0, must-revalidate"
           aws s3 cp dist/version.json "s3://${{ secrets.R2_BUCKET_NAME }}/version.json" \
             --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-            --content-type "application/json"
+            --content-type "application/json" \
+            --cache-control "no-store"
 
       - name: Publish manifest + notify devices
         env:
@@ -507,15 +546,21 @@ jobs:
             -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
             -H "Content-Type: application/json" \
             --data @dist/version.json
-          curl -fsS -X POST "$WORKER_URL/push-notify" \
-            -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"version\": \"${{ steps.bump.outputs.next_version }}\",
-              \"versionCode\": ${{ steps.bump.outputs.next_version_code }},
-              \"downloadUrl\": \"$DOWNLOAD_URL\",
-              \"checksumSha256\": \"${{ steps.assets.outputs.sha256 }}\"
-            }"
+          # Push decision comes from the "Decide whether to notify users" step
+          # (minor/major releases, or an explicitly forced patch).
+          if [[ "${{ steps.notify.outputs.value }}" == "true" ]]; then
+            curl -fsS -X POST "$WORKER_URL/push-notify" \
+              -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"version\": \"${{ steps.bump.outputs.next_version }}\",
+                \"versionCode\": ${{ steps.bump.outputs.next_version_code }},
+                \"downloadUrl\": \"$DOWNLOAD_URL\",
+                \"checksumSha256\": \"${{ steps.assets.outputs.sha256 }}\"
+              }"
+          else
+            echo "Skipping push-notify: patch release (users see the in-app update badge)"
+          fi
 
       - name: Rebuild landing site
         run: node apps/web/build.mjs

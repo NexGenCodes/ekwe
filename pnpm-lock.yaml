@@ -165,10 +165,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      libopus-wasm:
-        specifier: ^0.2.0
-        version: 0.2.0
     devDependencies:
       '@eslint/js':
         specifier: ^9.39.5
@@ -299,9 +295,6 @@ importers:
       expo-linear-gradient:
         specifier: ~57.0.1
         version: 57.0.1(expo@57.0.21)(react-native@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/jest-preset@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)
-      expo-linking:
-        specifier: ~57.0.9
-        version: 57.0.9(expo@57.0.21)(react-native@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/jest-preset@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2)
       expo-notifications:
         specifier: ^57.0.17
         version: 57.0.17(expo@57.0.21)(react-native@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/jest-preset@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2)(typescript@6.0.3)
@@ -402,9 +395,6 @@ importers:
       '@testing-library/react':
         specifier: ^16.3.3
         version: 16.3.3(@testing-library/dom@10.4.1)(@types/react@19.2.18)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
-      '@testing-library/react-native':
-        specifier: ^14.0.1
-        version: 14.0.1(jest@29.7.0(@types/node@20.19.43)(supports-color@10.2.2))(react-native@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/jest-preset@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2))(@react-native/metro-config@0.86.3(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)(test-renderer@1.2.0(@types/react@19.2.18)(react@19.2.3))
       '@types/node':
         specifier: ^20.0.0
         version: 20.19.43
@@ -414,9 +404,6 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.6
         version: 4.1.11(vitest@4.1.11)
-      ajv:
-        specifier: ^8.20.0
-        version: 8.20.0
       babel-plugin-inline-import:
         specifier: ^3.0.0
         version: 3.0.0
@@ -10210,7 +10197,8 @@ snapshots:
       '@jest/types': 29.6.3
     optional: true
 
-  '@jest/diff-sequences@30.5.0': {}
+  '@jest/diff-sequences@30.5.0':
+    optional: true
 
   '@jest/environment@29.7.0':
     dependencies:
@@ -10243,7 +10231,8 @@ snapshots:
       jest-util: 29.7.0
     optional: true
 
-  '@jest/get-type@30.5.0': {}
+  '@jest/get-type@30.5.0':
+    optional: true
 
   '@jest/globals@29.7.0(supports-color@10.2.2)':
     dependencies:
@@ -10292,6 +10281,7 @@ snapshots:
   '@jest/schemas@30.5.0':
     dependencies:
       '@sinclair/typebox': 0.34.52
+    optional: true
 
   '@jest/source-map@29.6.3':
     dependencies:
@@ -11142,7 +11132,8 @@ snapshots:
 
   '@sinclair/typebox@0.27.12': {}
 
-  '@sinclair/typebox@0.34.52': {}
+  '@sinclair/typebox@0.34.52':
+    optional: true
 
   '@sindresorhus/is@7.2.0': {}
 
@@ -11225,6 +11216,7 @@ snapshots:
       test-renderer: 1.2.0(@types/react@19.2.18)(react@19.2.3)
     optionalDependencies:
       jest: 29.7.0(@types/node@20.19.43)(supports-color@10.2.2)
+    optional: true
 
   '@testing-library/react@16.3.3(@testing-library/dom@10.4.1)(@types/react@19.2.18)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)':
     dependencies:
@@ -11333,6 +11325,7 @@ snapshots:
   '@types/react-reconciler@0.33.0(@types/react@19.2.18)':
     dependencies:
       '@types/react': 19.2.18
+    optional: true
 
   '@types/react-test-renderer@19.1.0':
     dependencies:
@@ -11629,6 +11622,7 @@ snapshots:
       fast-uri: 3.1.7
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
+    optional: true
 
   anser@1.4.10: {}
 
@@ -13253,7 +13247,8 @@ snapshots:
     dependencies:
       fast-string-truncated-width: 3.0.3
 
-  fast-uri@3.1.7: {}
+  fast-uri@3.1.7:
+    optional: true
 
   fast-wrap-ansi@0.2.2:
     dependencies:
@@ -13663,7 +13658,8 @@ snapshots:
 
   imurmurhash@0.1.4: {}
 
-  indent-string@4.0.0: {}
+  indent-string@4.0.0:
+    optional: true
 
   inflight@1.0.6:
     dependencies:
@@ -14011,6 +14007,7 @@ snapshots:
       '@jest/get-type': 30.5.0
       chalk: 4.1.2
       pretty-format: 30.5.1
+    optional: true
 
   jest-docblock@29.7.0:
     dependencies:
@@ -14075,6 +14072,7 @@ snapshots:
       chalk: 4.1.2
       jest-diff: 30.5.1
       pretty-format: 30.5.1
+    optional: true
 
   jest-message-util@29.7.0:
     dependencies:
@@ -14347,7 +14345,8 @@ snapshots:
 
   json-schema-traverse@0.4.1: {}
 
-  json-schema-traverse@1.0.0: {}
+  json-schema-traverse@1.0.0:
+    optional: true
 
   json-stable-stringify-without-jsonify@1.0.1: {}
 
@@ -14905,7 +14904,8 @@ snapshots:
   mimic-fn@2.1.0:
     optional: true
 
-  min-indent@1.0.1: {}
+  min-indent@1.0.1:
+    optional: true
 
   miniflare@5.20260730.0-alpha:
     dependencies:
@@ -15396,6 +15396,7 @@ snapshots:
       '@jest/react-is-19': react-is@19.2.8
       '@jest/schemas': 30.5.0
       ansi-styles: 5.2.0
+    optional: true
 
   proc-log@4.2.0: {}
 
@@ -15638,6 +15639,7 @@ snapshots:
     dependencies:
       react: 19.2.3
       scheduler: 0.27.0
+    optional: true
 
   react-refresh@0.14.2: {}
 
@@ -15676,6 +15678,7 @@ snapshots:
     dependencies:
       indent-string: 4.0.0
       strip-indent: 3.0.0
+    optional: true
 
   reflect.getprototypeof@1.0.10:
     dependencies:
@@ -16136,6 +16139,7 @@ snapshots:
   strip-indent@3.0.0:
     dependencies:
       min-indent: 1.0.1
+    optional: true
 
   strip-json-comments@3.1.1: {}
 
@@ -16194,6 +16198,7 @@ snapshots:
       react-reconciler: 0.33.0(react@19.2.3)
     transitivePeerDependencies:
       - '@types/react'
+    optional: true
 
   throat@5.0.0: {}
 

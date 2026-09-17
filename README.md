@@ -21,7 +21,7 @@ Ekwe is a voice note translation application built specifically for Android and 
 - **State Management:** `@legendapp/state` + `react-native-mmkv`
 - **Animations:** `react-native-reanimated`
 - **Audio:** `expo-audio`
-- **Database:** `@op-engineering/op-sqlite`
+- **Database:** `expo-sqlite` + `drizzle-orm`
 - **Backend:** Cloudflare Workers + Supabase (PostgreSQL)
 - **Payments:** Flutterwave
 - **Error Tracking:** Sentry

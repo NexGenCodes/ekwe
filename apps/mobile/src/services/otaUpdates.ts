@@ -42,10 +42,16 @@ export async function silentUpdateCheck(): Promise<void> {
   }
 }
 
-interface UpdateManifest {
+export interface UpdateManifest {
   latest_version: string;
   latest_version_code: number;
   download_url: string;
+  /**
+   * Present only for critical releases that require an upgrade. The app
+   * surfaces these via push notification (see the deploy workflow's notify
+   * gate); normal releases rely on the in-app update badge instead.
+   */
+  force_update?: boolean;
 }
 
 /**

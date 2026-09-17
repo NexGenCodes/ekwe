@@ -53,6 +53,7 @@ export function CustomTabBar({
               : route.name;
 
         const isFocused = state.index === index;
+        const hasBadge = descriptors[route.key].options.tabBarBadge != null;
 
         const onPress = (): void => {
           const event = navigation.emit({
@@ -81,6 +82,7 @@ export function CustomTabBar({
             onPress={onPress}
             onLongPress={onLongPress}
             label={label as string}
+            showBadge={hasBadge}
           />
         );
       })}

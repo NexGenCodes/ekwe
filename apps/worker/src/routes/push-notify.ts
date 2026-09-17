@@ -1,6 +1,7 @@
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { Env } from "../core/types";
 import { safeParseJSON } from "../core/guards";
+import { logger } from "../core/logger";
 import { supabasePost } from "../services/supabase";
 
 /**
@@ -154,12 +155,14 @@ export async function handlePushNotify(
 
   // Expo reports dead tokens per message; prune them so future pushes stay lean.
   let deactivated = 0;
+  let failed = 0;
+  const failureReasons: string[] = [];
   for (let i = 0; i < tickets.length && i < androidTokens.length; i++) {
     const ticket = tickets[i];
-    if (
-      ticket.status === "error" &&
-      ticket.details?.error === "DeviceNotRegistered"
-    ) {
+    if (ticket.status !== "error") continue;
+
+    const reason = ticket.details?.error ?? "Unknown";
+    if (reason === "DeviceNotRegistered") {
       const token = androidTokens[i];
       try {
         await supabasePost(env, "/rest/v1/rpc/deactivate_push_token", {
@@ -169,8 +172,32 @@ export async function handlePushNotify(
       } catch {
         // best-effort cleanup
       }
+    } else {
+      // Any other Expo-side rejection is a real delivery failure (e.g. missing
+      // FCM credentials, malformed recipient, oversized payload). These were
+      // silently dropped before, which made pushes appear to work while never
+      // arriving — surface them.
+      failed += 1;
+      if (failureReasons.length < 5) failureReasons.push(reason);
     }
   }
 
-  return Response.json({ ok: true, sent: androidTokens.length, deactivated });
+  if (failed > 0) {
+    logger.error(
+      `[push-notify] ${failed}/${tickets.length} Expo push ticket(s) failed`,
+      { failures: failureReasons, sent: androidTokens.length },
+    );
+  } else {
+    logger.info(`[push-notify] sent`, {
+      sent: androidTokens.length,
+      deactivated,
+    });
+  }
+
+  return Response.json({
+    ok: true,
+    sent: androidTokens.length,
+    deactivated,
+    errors: failed,
+  });
 }

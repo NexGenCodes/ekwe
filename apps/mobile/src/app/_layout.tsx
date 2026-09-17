@@ -31,6 +31,7 @@ import { useTheme } from "@/hooks/ui/useTheme";
 import { queryClient } from "@/hooks/queries/queryClient";
 import { auth$ } from "@/store/auth";
 import logger, { setSentryTag } from "@/utils/logger";
+import type { UpdateManifest } from "@/services/otaUpdates";
 import {
   initNetworkMonitoring,
   stopNetworkMonitoring,
@@ -205,8 +206,16 @@ function RootLayout(): React.ReactElement {
     const { initializeMMKV } = require("@/services/mmkv");
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { SyncService } = require("@/services/SyncService");
+    const {
+      silentUpdateCheck,
+      checkForApkUpdate,
+    } = require("@/services/otaUpdates"); // eslint-disable-line @typescript-eslint/no-require-imports
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { silentUpdateCheck } = require("@/services/otaUpdates");
+    const { update$ } = require("@/store/update");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { AppAlert } = require("@/utils/alert");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Linking } = require("react-native");
     const {
       registerForPushNotifications,
       setupNotificationTapListener,
@@ -219,6 +228,29 @@ function RootLayout(): React.ReactElement {
     // Silent OTA update — downloads in background, applies on next cold start.
     // Never blocks the app, never shows a modal, never shows a prompt.
     silentUpdateCheck();
+
+    // Startup APK version probe (Android): feeds the Profile-tab update badge
+    // and a one-shot prompt. Non-blocking — critical releases are additionally
+    // pushed natively by the deploy workflow.
+    checkForApkUpdate().then((manifest: UpdateManifest | null): void => {
+      if (!manifest) return;
+      update$.manifest.set(manifest);
+      setTimeout(() => {
+        AppAlert.info(
+          "Update available",
+          `Version ${manifest.latest_version} is ready to install.`,
+          [
+            { text: "Later", style: "cancel" },
+            {
+              text: "Download",
+              onPress: (): void => {
+                void Linking.openURL(manifest.download_url);
+              },
+            },
+          ],
+        );
+      }, 500);
+    });
 
     // Handle user interacting with a push notification from the tray.
     const removeNotificationListener = setupNotificationTapListener();

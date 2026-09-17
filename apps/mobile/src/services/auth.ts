@@ -167,11 +167,13 @@ export const initAuth = async (): Promise<void> => {
       SyncService.onUserSignedIn(session.user.id);
       // Drain any share-extension work the native share sheet completed while
       // the user was signed out (the file stays in the App Group until then).
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { HistoryService } = require("@/services/HistoryService");
-      HistoryService.importSharedEchoHistory(session).catch((err: unknown) =>
-        logger.error("[Auth] importSharedEchoHistory on sign-in failed", err),
-      );
+      import("@/services/HistoryService")
+        .then(({ HistoryService }) =>
+          HistoryService.importSharedEchoHistory(session),
+        )
+        .catch((err: unknown) =>
+          logger.error("[Auth] importSharedEchoHistory on sign-in failed", err),
+        );
     }
 
     if (event === "SIGNED_OUT") {

@@ -22,8 +22,12 @@ function withReleaseSigning(config) {
 
       const loaderSrc = `
 
-// Load keystore.properties (relative to android/) if present; see app.config.js.
-def keystorePropertiesFile = rootProject.file("keystore.properties")
+// Load keystore.properties from apps/mobile/secrets/ (survives prebuild, which
+// wipes android/), falling back to the legacy android/ location; see app.config.js.
+def secretsKeystorePropertiesFile = rootProject.file("../secrets/keystore.properties")
+def keystorePropertiesFile = secretsKeystorePropertiesFile.exists()
+    ? secretsKeystorePropertiesFile
+    : rootProject.file("keystore.properties")
 def keystoreProperties = new Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))

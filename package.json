@@ -26,9 +26,6 @@
     "db:link": "bash -c 'set -a; source supabase/.env; set +a; supabase link --project-ref $SUPABASE_PROJECT_REF'",
     "prepare": "husky"
   },
-  "dependencies": {
-    "libopus-wasm": "^0.2.0"
-  },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "eslint": "^9.39.5",

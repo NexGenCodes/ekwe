@@ -4,3 +4,4 @@ export * from "./settings";
 export * from "./appAlert";
 export * from "./auth";
 export * from "./network";
+export * from "./update";

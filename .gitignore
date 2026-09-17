@@ -68,6 +68,10 @@ mcp_config.json
 .env.*.local
 supabase/.env
 **/keystore.properties
+apps/mobile/secrets/
+
+# Secrets
+**/firebase-adminsdk-*.json
 
 # Embedded git repos (thirdparty)
 apps/mobile/modules/ekwe-native/cpp/thirdparty/flac/
