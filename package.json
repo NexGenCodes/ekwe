@@ -15,7 +15,7 @@
     "gen:tokens": "node scripts/tokens/gen-tokens.mjs",
     "gen:env": "node scripts/tokens/gen-env.mjs",
     "gen:icons": "node scripts/icons/generate-icons.mjs",
-    "analytics:sync": "node --env-file-if-exists=.env scripts/analytics/sync-posthog.mjs",
+    "analytics:sync": "node --env-file-if-exists=apps/mobile/.env scripts/analytics/sync-posthog.mjs",
     "db:generate": "pnpm --filter @ekwe/db generate",
     "db:migrate": "pnpm --filter @ekwe/db migrate",
     "db:push": "pnpm --filter @ekwe/db push",
