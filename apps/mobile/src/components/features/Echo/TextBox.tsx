@@ -1,7 +1,5 @@
 import { triggerHaptic } from "@/utils/haptics";
-import { useSelector } from "@legendapp/state/react";
-import * as Speech from "expo-speech";
-import type { Voice } from "expo-speech";
+
 import CheckCircle2 from "lucide-react-native/icons/circle-check";
 import ShareIcon from "lucide-react-native/icons/share-2";
 import Volume2 from "lucide-react-native/icons/volume-2";
@@ -9,13 +7,15 @@ import VolumeX from "lucide-react-native/icons/volume-x";
 import React, { useCallback, useEffect, useState } from "react";
 import { Share, type StyleProp, type TextStyle } from "react-native";
 
-import { ScrollableTextBox } from "../../ScrollableTextBox";
-import { AnimatedCopyButton } from "../../AnimatedCopyButton";
-import { IconButton } from "../../IconButton";
+import { ScrollableTextBox } from "@/components/ScrollableTextBox";
+import { AnimatedCopyButton } from "@/components/AnimatedCopyButton";
+import { IconButton } from "@/components/IconButton";
 
+import { useSharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
 import type { WaveformPlaybackController } from "@/hooks/audio/useAudioWaveformPlayback";
+import { synthesizeSpeech } from "@/services/speech";
 
-import { claimTtsFocus, releaseTtsFocus } from "@/hooks/audio/audioFocus";
+import { claimSpeechFocus, releaseSpeechFocus } from "@/hooks/audio/audioFocus";
 
 import { Box, Text, Pressable, Spinner } from "@/components/ui";
 import { ECHO_SHARE_SIGNATURE } from "@/constants/echo";
@@ -23,14 +23,9 @@ import { LANGUAGES, getLanguageFlag } from "@/constants/languages";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks/ui";
-import { settings$ } from "@/store";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 import { withAlpha } from "@/utils/color";
-import {
-  loadDeviceVoices,
-  pickDeviceVoice,
-  isMissingVoiceError,
-} from "@/utils/deviceVoice";
+
 import logger from "@/utils/logger";
 import { AppToast } from "@/utils/toast";
 
@@ -39,43 +34,24 @@ interface TextBoxProps {
   height?: number;
   variant?: "default" | "accent" | "outlined";
   textStyle?: StyleProp<TextStyle>;
-  /**
-   * Muted descriptor that leads the label, e.g. "Translation" or "Transcription".
-   * Pair it with `lang` so the natural read is "Translation · Zulu".
-   */
+
   lead: string;
-  /** Language code used for the language name, the flag, and TTS voice. */
+
   lang?: string | null;
-  /** Render the flag after the language name (used where there is no tab bar). */
+
   showFlag?: boolean;
-  /** Prefix the label with a success check (the Translated result). */
+
   withCheck?: boolean;
-  /** Expose a native Share sheet for the text. */
+
   showShare?: boolean;
-  /**
-   * When provided, the "speaker" button plays the real source audio through this
-   * player (owned by the caller) instead of text-to-speech. Used for the
-   * Original/Transcription result, where the original recording still exists.
-   */
+
   audioPlayer?: WaveformPlaybackController | null;
-  /**
-   * Brand footer appended to the text when copied or shared (the "Ekwe
-   * signature"). Pass an empty string to omit it.
-   */
+
   signature?: string;
-  /**
-   * External "copied" signal (e.g. from an auto-copy) that forces the copy
-   * button's check state without a press. Consumed transiently by the parent.
-   */
+
   copied?: boolean;
 }
 
-/**
- * Reusable audio-result text card: a "Speech ⇄ text" box with a compact header
- * row (language label left, actions right) and a scrollable body. It owns its
- * own text-to-speech state so the same Listen/Copy/Share controls can appear on
- * both the Final Result and Transcribe Result steps without duplicating logic.
- */
 export const TextBox: React.FC<TextBoxProps> = React.memo(
   ({
     text,
@@ -93,27 +69,39 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
   }) => {
     const { color } = useTheme();
 
-    // Source-audio mode: the speaker button controls the caller-owned player for
-    // the original recording instead of text-to-speech.
     const isSourceMode = !!audioPlayer;
 
     const [isSpeaking, setIsSpeaking] = useState(false);
-    const [isTTSLoading, setIsTTSLoading] = useState(false);
-    const [availableVoices, setAvailableVoices] = useState<Voice[]>([]);
-    const ttsVoice = useSelector(() => settings$.ttsVoice.get());
+    const [isSpeechLoading, setIsSpeechLoading] = useState(false);
+    const [speechAudioUri, setSpeechAudioUri] = useState<string | null>(null);
+    const speechPlayer = useSharedAudioPlayer(speechAudioUri);
 
     useEffect(() => {
-      let active = true;
-      loadDeviceVoices().then((voices) => {
-        if (active) setAvailableVoices(voices);
-      });
-      return (): void => {
-        active = false;
-      };
-    }, []);
+      if (
+        isSpeechLoading &&
+        speechAudioUri &&
+        speechPlayer.isLoaded &&
+        !speechPlayer.isDecoding
+      ) {
+        setIsSpeechLoading(false);
+        setIsSpeaking(true);
+        void speechPlayer.playFromStart();
+      }
+    }, [
+      isSpeechLoading,
+      speechAudioUri,
+      speechPlayer.isLoaded,
+      speechPlayer.isDecoding,
+      speechPlayer,
+    ]);
 
-    // Text with the brand signature appended, used for both copy and share so a
-    // pasted result always carries the Ekwe call-to-action.
+    useEffect(() => {
+      if (isSpeaking && speechPlayer.isEnded) {
+        setIsSpeaking(false);
+        releaseSpeechFocus();
+      }
+    }, [isSpeaking, speechPlayer.isEnded]);
+
     const signedText = text ? `${text}${signature}` : "";
 
     const langName = lang
@@ -121,25 +109,24 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
       : null;
     const flag = lang ? getLanguageFlag(lang) : null;
 
-    // Stop TTS if the text (tab switch, new result) or target language changes.
     useEffect(() => {
       if (isSourceMode) return;
-      if (isSpeaking || isTTSLoading) {
-        Speech.stop().catch(() => {});
-        releaseTtsFocus();
+      if (isSpeaking || isSpeechLoading) {
+        speechPlayer.pause();
+        releaseSpeechFocus();
         setIsSpeaking(false);
-        setIsTTSLoading(false);
+        setIsSpeechLoading(false);
       }
-      // Only react to content changes, not the transient speaking flags.
+
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isSourceMode, text, lang]);
 
-    // Stop TTS on unmount / sheet close.
     useEffect(() => {
       return (): void => {
-        Speech.stop().catch(() => {});
-        releaseTtsFocus();
+        speechPlayer.pause();
+        releaseSpeechFocus();
       };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleSpeakToggle = useCallback(async (): Promise<void> => {
@@ -148,107 +135,59 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
         if (audioPlayer.isPlaying) {
           audioPlayer.pause();
         } else {
-          // The results speaker plays the original recording clean: from the
-          // start at normal speed, independent of any preview scrub position.
           await audioPlayer.playFromStart();
         }
         return;
       }
-      if (isTTSLoading || isSpeaking) return;
+      if (isSpeechLoading || isSpeaking) return;
       if (!text || !lang) {
-        logger.warn("[TextBox] TTS skipped: no text or language");
+        logger.warn("[TextBox] Speech skipped: no text or language");
         return;
       }
 
       try {
-        await Speech.stop();
-        releaseTtsFocus();
+        speechPlayer.pause();
+        releaseSpeechFocus();
       } catch (err) {
-        logger.warn("Speech.stop failed", err);
+        logger.warn("speechPlayer.pause failed", err);
       }
 
-      track(AnalyticsEvents.TTS_PLAYED, { source: "echo", lang });
+      track(AnalyticsEvents.SPEECH_PLAYED, { source: "echo", lang });
 
-      setIsTTSLoading(true);
-      claimTtsFocus(() => {
-        Speech.stop().catch(() => {});
+      setIsSpeechLoading(true);
+      claimSpeechFocus(() => {
+        speechPlayer.pause();
       });
 
-      // Honor the selected narrator gender on device speech. Falls back to the
-      // platform default when no matching voice exists so Listen still works.
-      const deviceVoice = pickDeviceVoice(availableVoices, lang, ttsVoice);
-
       try {
-        Speech.speak(text, {
-          language: lang,
-          ...(deviceVoice ? { voice: deviceVoice.identifier } : {}),
-          onStart: (): void => {
-            setIsTTSLoading(false);
-            setIsSpeaking(true);
-          },
-          onDone: (): void => {
-            setIsSpeaking(false);
-            setIsTTSLoading(false);
-            releaseTtsFocus();
-          },
-          onStopped: (): void => {
-            setIsSpeaking(false);
-            setIsTTSLoading(false);
-            releaseTtsFocus();
-          },
-          onError: (e): void => {
-            setIsSpeaking(false);
-            setIsTTSLoading(false);
-            releaseTtsFocus();
-
-            const errorMsg = e instanceof Error ? e.message : String(e);
-            logger.warn("[TextBox] TTS error:", errorMsg);
-
-            if (
-              errorMsg.includes("interrupted") ||
-              errorMsg.includes("stopped")
-            ) {
-              return;
-            }
-
-            AppToast.error(
-              isMissingVoiceError(errorMsg)
-                ? "Voice Not Installed"
-                : "Speech Unavailable",
-              {
-                description: isMissingVoiceError(errorMsg)
-                  ? "Add the voice for this language in your device Settings, then try again."
-                  : "Your device does not support text-to-speech for this language, or the voice is not downloaded.",
-              },
-            );
-          },
-        });
+        const result = await synthesizeSpeech(text, lang);
+        if (result.ok) {
+          setSpeechAudioUri(result.value.uri);
+        } else {
+          setIsSpeechLoading(false);
+          releaseSpeechFocus();
+          AppToast.error("Speech Unavailable", {
+            description: "Failed to generate speech for this language.",
+          });
+        }
       } catch (err) {
-        setIsSpeaking(false);
-        setIsTTSLoading(false);
-        releaseTtsFocus();
+        setIsSpeechLoading(false);
+        releaseSpeechFocus();
         const errorMsg = err instanceof Error ? err.message : String(err);
-        logger.warn("[TextBox] TTS threw exception:", errorMsg);
-        AppToast.error(
-          isMissingVoiceError(errorMsg)
-            ? "Voice Not Installed"
-            : "Speech Unavailable",
-          {
-            description: isMissingVoiceError(errorMsg)
-              ? "Add the voice for this language in your device Settings, then try again."
-              : "Your device does not support text-to-speech for this language.",
-          },
-        );
+        logger.warn("[TextBox] Speech threw exception:", errorMsg);
+        AppToast.error("Speech Unavailable", {
+          description:
+            "Your device does not support text-to-speech for this language.",
+        });
       }
     }, [
       isSourceMode,
-      isTTSLoading,
+      isSpeechLoading,
       isSpeaking,
       text,
       lang,
-      ttsVoice,
-      availableVoices,
       audioPlayer,
+      speechPlayer,
     ]);
 
     const handleShare = useCallback(async (): Promise<void> => {
@@ -270,15 +209,11 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
         return;
       }
       if (!isSpeaking) return;
-      try {
-        await Speech.stop();
-      } catch (err) {
-        logger.warn("Speech.stop failed", err);
-      }
-      releaseTtsFocus();
+      speechPlayer.pause();
+      releaseSpeechFocus();
       setIsSpeaking(false);
-      setIsTTSLoading(false);
-    }, [isSourceMode, isSpeaking, audioPlayer]);
+      setIsSpeechLoading(false);
+    }, [isSourceMode, isSpeaking, audioPlayer, speechPlayer]);
 
     return (
       <ScrollableTextBox
@@ -379,7 +314,7 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
                       ) : (
                         <Volume2 size={18} color={color.foreground} />
                       )
-                    ) : isTTSLoading ? (
+                    ) : isSpeechLoading ? (
                       <Spinner size="sm" color={color.brand} />
                     ) : isSpeaking ? (
                       <VolumeX size={18} color={color.onBrand} />

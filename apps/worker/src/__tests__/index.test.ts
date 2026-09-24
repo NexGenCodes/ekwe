@@ -1,13 +1,19 @@
 import { describe, test, expect, beforeEach, vi } from "vitest";
-import app from "../index";
-import { mockEnv, jsonResponse } from "./setup";
+import app from "@/index";
+import { createWorker } from "@/worker";
+import { mockEnv, jsonResponse } from "@/__tests__/setup";
 import { http } from "msw";
-import { server } from "./msw/server";
-import { PROVIDER_URLS } from "./msw/handlers";
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 vi.mock("jose", () => ({
   jwtVerify: vi.fn(),
   createRemoteJWKSet: vi.fn(() => vi.fn()),
+}));
+
+vi.mock("@/providers/edge", () => ({
+  tts: vi.fn(async () => ({ result: null, status: null })),
+  voice: () => [],
 }));
 
 import { jwtVerify } from "jose";
@@ -212,7 +218,6 @@ describe("Worker Router (index.ts)", () => {
       } as any);
       expect(second.status).toBe(200);
 
-      // Replay served from the result cache must not draw down quota again.
       expect(consumeCalls.length).toBe(1);
     });
 
@@ -253,17 +258,12 @@ describe("Worker Router (index.ts)", () => {
         passThroughOnException: () => {},
       } as any);
 
-      // Not blocked (200 / 429 quota) — the request is served as FREE, so the
-      // Pro-only auto-detect guard rejects it as FREE tier.
       expect(res.status).toBe(403);
       const json = (await res.json()) as any;
       expect(json).toHaveProperty("error", "AUTO_DETECT_UNAVAILABLE");
     });
 
     test("honors the authoritative DB tier over a stale FREE JWT", async () => {
-      // JWT was minted before the purchase webhook landed (is_pro false), but
-      // user_subscriptions now says PRO. The RPC's tier_active must win so the
-      // Pro-only auto-detect guard passes.
       (jwtVerify as any).mockResolvedValue({
         payload: {
           sub: "db-pro-user",
@@ -303,14 +303,10 @@ describe("Worker Router (index.ts)", () => {
         passThroughOnException: () => {},
       } as any);
 
-      // Auto-detect is a Pro feature: with tier_active=PREMIUM it must NOT be
-      // rejected as FREE.
       expect(res.status).toBe(200);
     });
 
     test("downgrades a stale PREMIUM JWT to FREE when the DB says free", async () => {
-      // JWT still claims Pro but the subscription lapsed (webhook set
-      // status=inactive / expired). tier_active=FREE must degrade the request.
       (jwtVerify as any).mockResolvedValue({
         payload: {
           sub: "expired-pro",
@@ -350,7 +346,6 @@ describe("Worker Router (index.ts)", () => {
         passThroughOnException: () => {},
       } as any);
 
-      // Pro-only auto-detect is rejected: the request is served as FREE.
       expect(res.status).toBe(403);
       const json = (await res.json()) as any;
       expect(json).toHaveProperty("error", "AUTO_DETECT_UNAVAILABLE");
@@ -368,6 +363,50 @@ describe("Worker Router (index.ts)", () => {
       expect(res.status).toBe(200);
       const json = (await res.json()) as any;
       expect(json).toHaveProperty("status", "ok");
+      expect(json).toHaveProperty("degradedProviders");
+      expect(json.degradedProviders).toEqual([]);
+      expect(json.bindings).toEqual({ d1: "ok", kv: "ok" });
+    });
+
+    test("records a request-level analytics event for matched routes", async () => {
+      (jwtVerify as any).mockResolvedValue({
+        payload: {
+          sub: "metric-user",
+          email: "metric@example.com",
+          app_metadata: { is_pro: false },
+        },
+      });
+      server.use(
+        http.post(PROVIDER_URLS.supabaseGetDailyUsage, () =>
+          jsonResponse({ day: "2026-08-13", translate: 2, transcribe: 0 }),
+        ),
+      );
+
+      const res = await app.fetch(
+        new Request("http://localhost/usage", {
+          headers: { Authorization: "Bearer metric-jwt" },
+        }),
+        env,
+        { waitUntil: vi.fn(), passThroughOnException: () => {} } as any,
+      );
+      expect(res.status).toBe(200);
+
+      const calls = vi
+        .mocked(env.EKWE_ANALYTICS!.writeDataPoint)
+        .mock.calls.map(
+          ([event]) =>
+            event as {
+              blobs?: (string | number | null)[];
+              indexes?: string[];
+            },
+        );
+      const requestEvent = calls.find(
+        (event) => event?.blobs?.[1] === "request",
+      );
+      expect(requestEvent).toBeDefined();
+      expect(requestEvent!.indexes).toEqual(["/usage:/usage"]);
+      expect(requestEvent!.blobs?.[4]).toBe("FREE");
+      expect(requestEvent!.blobs?.[10]).toBe("200");
     });
 
     test("returns 404 for an unknown path without requiring auth or running preflight", async () => {
@@ -414,7 +453,7 @@ describe("Worker Router (index.ts)", () => {
       server.use(
         http.post(PROVIDER_URLS.supabaseCheckPreflight, () => {
           preflightCalls += 1;
-          // Would 429 if the gate ran — proving /usage bypasses it.
+
           return jsonResponse({ allowed: false, reason: "QUOTA_EXCEEDED" });
         }),
         http.post(PROVIDER_URLS.supabaseGetDailyUsage, () =>
@@ -435,6 +474,53 @@ describe("Worker Router (index.ts)", () => {
       expect(preflightCalls).toBe(0);
       const json = (await res.json()) as any;
       expect(json).toMatchObject({ day: "2026-08-13" });
+    });
+  });
+
+  describe("Queue handler", () => {
+    test("acks DLQ messages after reporting them to Sentry", async () => {
+      const ack = vi.fn();
+      const batch = {
+        queue: "ekwe-maintenance-dlq",
+        messages: [
+          {
+            id: "dlq-1",
+            timestamp: new Date(0),
+            attempts: 5,
+            body: { type: "cleanup_expired_history" },
+            ack,
+          },
+        ],
+        ackAll: vi.fn(),
+        retryAll: vi.fn(),
+      } as unknown as MessageBatch<unknown>;
+
+      await createWorker().queue(batch, env, {
+        waitUntil: vi.fn(),
+        passThroughOnException: () => {},
+      } as unknown as ExecutionContext);
+
+      expect(ack).toHaveBeenCalledTimes(1);
+      expect((batch as any).retryAll).not.toHaveBeenCalled();
+    });
+
+    test("does not ack maintenance tasks dispatched on the main queue", async () => {
+      const ack = vi.fn();
+      const batch = {
+        queue: "ekwe-maintenance",
+        messages: [
+          { id: "m-1", timestamp: new Date(0), attempts: 1, body: null, ack },
+        ],
+        ackAll: vi.fn(),
+        retryAll: vi.fn(),
+      } as unknown as MessageBatch<unknown>;
+
+      await createWorker().queue(batch, env, {
+        waitUntil: vi.fn(),
+        passThroughOnException: () => {},
+      } as unknown as ExecutionContext);
+
+      expect(ack).not.toHaveBeenCalled();
     });
   });
 });

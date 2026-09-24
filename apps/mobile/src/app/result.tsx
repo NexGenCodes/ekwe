@@ -10,12 +10,12 @@ import { Box, Pressable } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useResultPipeline, useClipboard, useTheme } from "@/hooks";
-import { SyncService } from "@/services/SyncService";
+import { SyncService } from "@/services/syncService";
 import { auth$, history$, settings$, HistoryEntry } from "@/store";
 import { triggerHaptic } from "@/utils/haptics";
 import logger from "@/utils/logger";
 import { AppToast } from "@/utils/toast";
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 
 export default function ResultScreen(): React.JSX.Element {
   const router = useRouter();
@@ -42,19 +42,16 @@ export default function ResultScreen(): React.JSX.Element {
     sourceApp: params.sourceApp as string | undefined,
   });
 
-  const entry = useSelector(() =>
+  const entry = useValue(() =>
     entryId ? (history$[entryId].get() as HistoryEntry | null) : null,
   );
 
   const { color } = useTheme();
 
   const { copy } = useClipboard();
-  const autoCopy = useSelector(() => settings$.autoCopy.get());
+  const autoCopy = useValue(() => settings$.autoCopy.get());
   const lastAutoCopiedRef = useRef<string | null>(null);
 
-  // Auto-copy completed translations when the profile toggle is on. Fires once
-  // per unique translation value (reset whenever the result clears). Skipped
-  // for history replays so opening a saved entry never re-copies stale text.
   useEffect(() => {
     if (isHistoryReplay || isTranslating || !translation) {
       if (!translation) lastAutoCopiedRef.current = null;
@@ -105,8 +102,6 @@ export default function ResultScreen(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript, isHistoryReplay]);
 
-  // Fall back to the routed params if the store entry is unavailable (e.g.
-  // the entry was deleted while the sheet was open).
   const detailEntry: HistoryEntry | null = entry ?? {
     id: entryId ?? "",
     sourceLang,

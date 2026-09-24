@@ -1,19 +1,22 @@
 import Check from "lucide-react-native/icons/check";
+import Sparkles from "lucide-react-native/icons/sparkles";
 import Zap from "lucide-react-native/icons/zap";
 import React from "react";
 import Animated, { FadeIn } from "react-native-reanimated";
 
-import { FeatureRow } from "./FeatureRow";
+import { FeatureRow } from "@/components/billing/FeatureRow";
 
 import { Button } from "@/components/Button";
+import { SkeletonBox } from "@/components/SkeletonBox";
 import { Box, Text } from "@/components/ui";
 import type { BILLING_PLANS, PlanFeature } from "@/constants/billing";
+import { duration } from "@/constants";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { duration } from "@/constants";
 import { useActivePricing } from "@/hooks/billing/useActivePricing";
 import { formatAmount } from "@ekwe/shared/money";
 import type { ThemeTokens } from "@/hooks/ui/useTheme";
+import { withAlpha } from "@/utils/color";
 
 export interface ProPlanCardProps {
   isPro: boolean;
@@ -38,7 +41,7 @@ export function ProPlanCard({
 }: ProPlanCardProps): React.JSX.Element {
   const glassBg = isDark ? color.card : color.background;
   const dividerBg = color.border;
-  const { pricing } = useActivePricing();
+  const { pricing, isPending } = useActivePricing();
 
   const displayAmount = isAnnual
     ? pricing.annualMonthlyCost
@@ -53,95 +56,174 @@ export function ProPlanCard({
         {
           backgroundColor: glassBg,
           borderColor: color.brand,
-          borderWidth: 1,
+          borderWidth: 1.5,
           shadowColor: color.brand,
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.08,
-          shadowRadius: 12,
-          elevation: 2,
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: isDark ? 0.18 : 0.1,
+          shadowRadius: 20,
+          elevation: isDark ? 4 : 3,
         },
       ]}
     >
-      {isPro && (
+      {}
+      <Box
+        pointerEvents="none"
+        style={[
+          styles.fill,
+          { backgroundColor: withAlpha(color.brand, isDark ? 0.05 : 0.035) },
+        ]}
+      />
+      <Box
+        style={[
+          styles.topBadge,
+          {
+            backgroundColor: color.brand,
+            shadowColor: color.brand,
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.18,
+            shadowRadius: 6,
+            elevation: 2,
+          },
+        ]}
+      >
+        <Box
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: spacing.xs,
+          }}
+        >
+          {isPro ? (
+            <Check size={12} color={color.onBrand} strokeWidth={3} />
+          ) : (
+            <Sparkles size={12} color={color.onBrand} strokeWidth={2.5} />
+          )}
+          <Text
+            variant="caption"
+            style={{ color: color.onBrand, fontWeight: "700" }}
+          >
+            {isPro ? "Active Plan" : "Recommended"}
+          </Text>
+        </Box>
+      </Box>
+
+      <Box style={styles.proHeader}>
         <Box
           style={[
-            styles.currentBadge,
-            {
-              backgroundColor: color.brand,
-              shadowColor: color.brand,
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.12,
-              shadowRadius: 3,
-              elevation: 1,
-            },
+            styles.planIcon,
+            { backgroundColor: withAlpha(color.brand, 0.12) },
           ]}
         >
-          <Box style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
-            <Check size={12} color={color.background} strokeWidth={2} />
-            <Text
-              variant="caption"
-              style={{ color: color.background, fontWeight: "600" }}
-            >
-              Active Plan
-            </Text>
-          </Box>
+          <Zap size={18} color={color.brand} fill={color.brand} />
         </Box>
-      )}
-      <Box style={styles.proHeader}>
-        <Text variant="heading2" style={{ color: color.foreground }}>
-          {proPlan.name}
-        </Text>
-        <Zap size={20} color={color.brand} fill={color.brand} />
+        <Box style={styles.proTitleBlock}>
+          <Text variant="heading2" style={{ color: color.foreground }}>
+            {proPlan.name}
+          </Text>
+          <Text variant="bodySmall" style={{ color: color.muted }}>
+            {proPlan.tagline}
+          </Text>
+        </Box>
       </Box>
 
-      <Box style={styles.priceRow}>
-        {isAnnual && (
-          <Text
-            variant="body"
-            style={[
-              styles.strikethrough,
-              { color: color.muted, textDecorationLine: "line-through" },
-            ]}
+      <Box style={styles.priceBlock}>
+        {isPending ? (
+          <Box
+            accessibilityRole="progressbar"
+            accessibilityLabel="Loading prices"
           >
-            {pricing.symbol}
-            {formatAmount(pricing.monthlyAmount, pricing.currency)}
-          </Text>
-        )}
-        <Text variant="body" style={{ color: color.brand }}>
-          {pricing.symbol}
-        </Text>
-        <Animated.View
-          key={priceKey}
-          entering={FadeIn.duration(duration.normal)}
-        >
-          <Text variant="heading1" style={{ color: color.foreground }}>
-            {formatAmount(displayAmount, pricing.currency)}
-          </Text>
-        </Animated.View>
-        <Text variant="body" style={{ color: color.muted }}>
-          / month
-        </Text>
-      </Box>
-
-      {isAnnual && (
-        <Box style={styles.annualRow}>
-          <Box style={[styles.savingChip, { backgroundColor: color.success }]}>
+            {isAnnual && (
+              <Box style={styles.annualNoteRow}>
+                <SkeletonBox
+                  width={96}
+                  height={14}
+                  borderRadius={borderRadius.md}
+                />
+                <SkeletonBox
+                  width={64}
+                  height={22}
+                  borderRadius={borderRadius.full}
+                />
+              </Box>
+            )}
+            <SkeletonBox
+              width={188}
+              height={34}
+              borderRadius={borderRadius.md}
+              style={styles.priceSkeleton}
+            />
+            {isAnnual && (
+              <SkeletonBox
+                width={168}
+                height={14}
+                borderRadius={borderRadius.md}
+              />
+            )}
+          </Box>
+        ) : (
+          <>
+            {isAnnual && (
+              <Box style={styles.annualNoteRow}>
+                <Text
+                  variant="bodySmall"
+                  style={[
+                    styles.strikethrough,
+                    { color: color.muted, textDecorationLine: "line-through" },
+                  ]}
+                >
+                  {pricing.symbol}
+                  {formatAmount(pricing.monthlyAmount, pricing.currency)}/mo
+                </Text>
+                <Box
+                  style={[
+                    styles.savingChip,
+                    { backgroundColor: color.success },
+                  ]}
+                >
+                  <Text
+                    variant="caption"
+                    style={{ color: color.onBrand, fontWeight: "800" }}
+                  >
+                    Save {pricing.annualSavingPercent}%
+                  </Text>
+                </Box>
+              </Box>
+            )}
+            <Box style={styles.priceRow}>
+              <Text variant="heading1" style={{ color: color.brand }}>
+                {pricing.symbol}
+              </Text>
+              <Animated.View
+                key={priceKey}
+                entering={FadeIn.duration(duration.normal)}
+              >
+                <Text variant="heading1" style={{ color: color.foreground }}>
+                  {formatAmount(displayAmount, pricing.currency)}
+                </Text>
+              </Animated.View>
+              <Text
+                variant="body"
+                style={[styles.priceSuffix, { color: color.muted }]}
+              >
+                / month
+              </Text>
+            </Box>
+            {isAnnual && (
+              <Text variant="bodySmall" style={{ color: color.brand }}>
+                Billed {pricing.symbol}
+                {formatAmount(pricing.annualAmount, pricing.currency)} once a
+                year
+              </Text>
+            )}
             <Text
               variant="caption"
-              style={{ color: color.background, fontWeight: "800" }}
+              style={{ color: color.muted, letterSpacing: 0.3 }}
             >
-              Save {pricing.annualSavingPercent}%
+              Prices shown in {pricing.currency}
             </Text>
-          </Box>
-          <Text variant="body" style={{ color: color.brand }}>
-            {`Billed ${pricing.symbol}${formatAmount(pricing.annualAmount, pricing.currency)} annually`}
-          </Text>
-        </Box>
-      )}
-
-      <Text variant="bodySmall" style={{ color: color.foreground }}>
-        {proPlan.tagline}
-      </Text>
+          </>
+        )}
+      </Box>
 
       <Box style={[styles.divider, { backgroundColor: dividerBg }]} />
       {proPlan.features.map((f: PlanFeature) => (
@@ -158,11 +240,11 @@ export function ProPlanCard({
       <Box style={styles.ctaContainer}>
         <Button
           label={isPro ? "Manage Subscription" : "Go Pro"}
-          variant="outline"
+          variant={isPro ? "outline" : "primary"}
           onPress={isPro ? handleManage : handleUpgrade}
           size="large"
           loading={loading}
-          disabled={loading}
+          disabled={loading || isPending}
         />
       </Box>
     </Box>
@@ -176,51 +258,75 @@ const styles = {
     position: "relative",
     overflow: "hidden",
   } as const,
+  fill: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  } as const,
   proCard: {
     paddingVertical: spacing.xl,
   } as const,
-  currentBadge: {
+  topBadge: {
     position: "absolute",
     top: 0,
     right: 0,
-    borderBottomLeftRadius: 16,
+    borderBottomLeftRadius: borderRadius.xl,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   } as const,
   proHeader: {
     flexDirection: "row",
     alignItems: "center",
+    gap: spacing.md,
+  } as const,
+  planIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.xl,
+    alignItems: "center",
+    justifyContent: "center",
+  } as const,
+  proTitleBlock: {
+    gap: spacing.hairline,
+  } as const,
+  priceBlock: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  } as const,
+  annualNoteRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.sm,
   } as const,
   priceRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
+    alignItems: "flex-end",
     gap: spacing.xs,
   } as const,
+  priceSuffix: {
+    marginBottom: spacing.xs,
+  } as const,
+  priceSkeleton: {
+    marginTop: spacing.sm,
+  } as const,
   strikethrough: {
-    fontSize: 16,
-    lineHeight: 28,
+    fontSize: 14,
+    lineHeight: 20,
     textDecorationLine: "line-through",
-  } as const,
-  divider: {
-    height: 1,
-    marginVertical: spacing.lg,
-  } as const,
-  ctaContainer: {
-    marginTop: spacing.xl,
   } as const,
   savingChip: {
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.sm,
-    transform: [{ rotate: "-6deg" }],
   } as const,
-  annualRow: {
-    marginTop: spacing.xs,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
+  divider: {
+    height: 1,
+    marginVertical: spacing.md,
+  } as const,
+  ctaContainer: {
+    marginTop: spacing.lg,
   } as const,
 };

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { useTheme, type ThemeTokens } from "./useTheme";
+import { useTheme, type ThemeTokens } from "@/hooks/ui/useTheme";
 
 import { duration, spring, scale } from "@/constants/motion";
 import { shadows } from "@/constants/shadows";

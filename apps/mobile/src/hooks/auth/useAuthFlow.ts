@@ -1,9 +1,3 @@
-/**
- * useAuthFlow — Shared auth handler for social sign-in + success routing.
- *
- * Eliminates copy-pasted handleApple/handleGoogle/handleAuthSuccess
- * across every auth screen. Screens call `run()` or the social helpers.
- */
 import { useRouter } from "expo-router";
 import { useState, useCallback } from "react";
 

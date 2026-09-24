@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/wrangler/config-schema.json",
   "name": "ekwe-proxy",
   "main": "src/index.ts",
-  "compatibility_date": "2026-06-01",
+  "compatibility_date": "2026-09-24",
   "compatibility_flags": ["nodejs_compat"],
 
   // WASM module bundling
@@ -30,9 +30,9 @@
   // - FLUTTERWAVE_WEBHOOK_SECRET: webhook secret hash from the Flutterwave
   //   dashboard (Settings → Webhooks); used to verify inbound webhooks
   //   (`verif-hash` plain equality and/or `flutterwave-signature` HMAC-SHA256).
-  // - PUSH_NOTIFY_SECRET: shared secret (Authorization: Bearer) for the release
-  //   workflow's POST /push-notify and POST /update/manifest endpoints.
-  // Must be identical to the GitHub Actions secret `PUSH_NOTIFY_SECRET`.
+  // - UPDATE_NOTIFY_SECRET: shared secret (Authorization: Bearer) for the release
+  //   workflow's POST /admin/update/notify and POST /admin/update/manifest endpoints.
+  // Must be identical to the GitHub Actions secret `UPDATE_NOTIFY_SECRET`.
   // Never commit secrets to this file — use `.dev.vars` for local development.
 
   "dev": {
@@ -58,6 +58,21 @@
     "APP_ENV": "production"
   },
 
+  // Wit.ai keys stored as pooled JSON maps in the account Secrets Store
+  // (store "ekwe-secrets"). Each pool holds ~17 languages ({"AF": "..."}).
+  // Read via `await env.WIT_POOL_<N>.get()` (see src/utils/wit-pools.ts).
+  // Names/IDs only — the secret values live in the store, never here.
+  "secrets_store_secrets": [
+    { "binding": "WIT_POOL_01", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_01" },
+    { "binding": "WIT_POOL_02", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_02" },
+    { "binding": "WIT_POOL_03", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_03" },
+    { "binding": "WIT_POOL_04", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_04" },
+    { "binding": "WIT_POOL_05", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_05" },
+    { "binding": "WIT_POOL_06", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_06" },
+    { "binding": "WIT_POOL_07", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_07" },
+    { "binding": "WIT_POOL_08", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_08" }
+  ],
+
   "observability": {
     "enabled": true,
     "logs": { "head_sampling_rate": 1 },
@@ -79,6 +94,28 @@
       "binding": "EKWE_D1",
       "database_name": "ekwe-cache",
       "database_id": "1af43324-74dd-40c5-9bb8-e2e70588e16f"
+    }
+  ],
+
+  // R2 large speech-audio cache. Small clips stay in KV (hot, low latency);
+  // audio above SPEECH_KV_CACHE_MAX_BYTES is stored here so long-form TTS output
+  // is never re-generated. Create the bucket before deploying:
+  //   wrangler r2 bucket create ekwe-speech-cache
+  "r2_buckets": [
+    {
+      "binding": "SPEECH_CACHE",
+      "bucket_name": "ekwe-speech-cache"
+    }
+  ],
+
+  // Analytics Engine dataset for provider-pipeline telemetry (per-attempt
+  // outcomes, latency, error class, preflight/usage events). The dataset is
+  // created automatically on the first write from a deployed Worker — no
+  // out-of-band setup needed. Query via `wrangler insights` or the SQL HTTP API.
+  "analytics_engine_datasets": [
+    {
+      "binding": "EKWE_ANALYTICS",
+      "dataset": "ekwe_provider"
     }
   ],
 
@@ -121,7 +158,11 @@
     ]
   },
 
-  // Queue: maintenance tasks (cleanup_expired_history RPC)
+  // Queue: maintenance tasks (cleanup_expired_history RPC). The DLQ
+  // (ekwe-maintenance-dlq) is consumed by this same script: messages that
+  // exhausted ekwe-maintenance's retries are reported to Sentry via the
+  // queue handler and acked, so they never linger (DLQ messages auto-delete
+  // after 4 days even without a consumer).
   "queues": {
     "producers": [
       {
@@ -134,6 +175,12 @@
         "queue": "ekwe-maintenance",
         "max_retries": 3,
         "dead_letter_queue": "ekwe-maintenance-dlq"
+      },
+      {
+        "queue": "ekwe-maintenance-dlq",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_retries": 2
       }
     ]
   },

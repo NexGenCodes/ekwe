@@ -1,10 +1,3 @@
-/**
- * ─── Prompt Injection Sanitization ──────────────────────────────
- * Strips common prompt injection markers that attempt to override LLM
- * system prompts. These are stripped silently — the user still gets a
- * translation, just without the injected payload.
- */
-
 const INJECTION_PATTERNS: RegExp[] = [
   /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/gi,
   /disregard\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/gi,
@@ -29,7 +22,6 @@ const INJECTION_PATTERNS: RegExp[] = [
 ];
 
 export function sanitizeTranslationText(text: string): string {
-  // Strip Unicode bidi control characters (can be used to spoof/hide injected text).
   let sanitized = text.replace(/[\u202A-\u202E\u2066-\u2069\u200E\u200F]/g, "");
   for (const pattern of INJECTION_PATTERNS) {
     sanitized = sanitized.replace(pattern, "");

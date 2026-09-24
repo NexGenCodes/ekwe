@@ -5,19 +5,21 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button, LanguageSelectionGrid } from "@/components";
 import { Box, ScreenContainer, Text } from "@/components/ui";
+import { usePermissions } from "@/hooks";
 import { useTokens } from "@/hooks/ui";
 import { useLanguageSelection } from "@/hooks/useLanguageSelection";
 import { settingsActions, auth$ } from "@/store";
 import { track, AnalyticsEvents } from "@/utils/analytics";
 
 const HEADING = "Pick your languages";
-const SUBTITLE =
-  "Choose exactly 5 languages you work with. Tap to select, tap again to remove. You can always change these later.";
+const subtitleFor = (max: number): string =>
+  `Choose exactly ${max} languages you work with. Tap to select, tap again to remove. You can always change these later.`;
 
 export default function OnboardingLanguagesScreen(): React.ReactElement {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { color, spacing, borderRadius } = useTokens();
+  const { maxSelectedLanguages } = usePermissions();
   const { selected, toggleLanguage, isComplete, isMaxed } =
     useLanguageSelection();
 
@@ -71,7 +73,7 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
               lineHeight: 26,
             }}
           >
-            {SUBTITLE}
+            {subtitleFor(maxSelectedLanguages)}
           </Text>
           <Box
             style={{
@@ -90,7 +92,7 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
               }}
             />
             <Text variant="caption" style={{ color: countColor }}>
-              {selected.length} of 5 selected
+              {selected.length} of {maxSelectedLanguages} selected
             </Text>
           </Box>
         </Box>

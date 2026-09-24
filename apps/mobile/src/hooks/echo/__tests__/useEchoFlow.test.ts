@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ECHO_SHARE_SIGNATURE } from "@/constants/echo";
 import type { EchoProps } from "@/types/echo";
-import { useEchoFlow } from "../useEchoFlow";
+import { useEchoFlow } from "@/hooks/echo/useEchoFlow";
 
 interface TestObservable<T> {
   get(): T;
@@ -108,13 +108,13 @@ vi.mock("@/hooks/useTranslation", () => ({
 vi.mock("@/hooks/queries/useUsageQuery", () => ({
   invalidateUsage: impl.invalidateUsage,
 }));
-vi.mock("@/services/BatchTranscriber", () => ({
+vi.mock("@/services/batchTranscriber", () => ({
   batchTranscriber: { transcribe: impl.transcribe },
 }));
-vi.mock("@/services/HistoryService", () => ({
+vi.mock("@/services/historyService", () => ({
   HistoryService: { recordTranslation: impl.recordTranslation },
 }));
-vi.mock("@/services/IntentService", () => ({
+vi.mock("@/services/intentService", () => ({
   IntentService: {
     dismissEcho: impl.dismissEcho,
     presentEcho: vi.fn(),
@@ -124,8 +124,8 @@ vi.mock("@/utils/haptics", () => ({ triggerHaptic: impl.triggerHaptic }));
 vi.mock("@/utils/alert", () => ({
   AppAlert: { info: impl.alertInfo, alert: vi.fn() },
 }));
-vi.mock("@/utils/echo", () => ({ cleanEchoCache: impl.cleanEchoCache }));
-vi.mock("@/utils/netInfo", () => ({
+vi.mock("@/utils/audioCache", () => ({ cleanEchoCache: impl.cleanEchoCache }));
+vi.mock("@/utils/connectivity", () => ({
   checkIsOnline: impl.checkIsOnline,
   subscribeToNetwork: vi.fn(),
 }));
@@ -367,7 +367,6 @@ describe("onDismiss", () => {
       "file:///shared/audio.m4a",
     );
 
-    // A late completion must never resurrect the flow.
     await act(async () => {
       await result.current.handleTranscribe(2, []);
     });

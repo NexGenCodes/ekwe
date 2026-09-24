@@ -1,9 +1,9 @@
 import { describe, test, expect, vi } from "vitest";
-import { handleTranscribe } from "../../routes/transcribe";
-import { mockEnv, makeAudioBlob, jsonResponse } from "../setup";
+import { handleTranscribe } from "@/routes/transcribe";
+import { mockEnv, makeAudioBlob, jsonResponse } from "@/__tests__/setup";
 import { http } from "msw";
-import { server } from "../msw/server";
-import { PROVIDER_URLS } from "../msw/handlers";
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 const MOCK_GLADIA_POLL = "https://mock.gladia/result";
 
@@ -124,7 +124,7 @@ describe("handleTranscribe pipeline", () => {
     } as any);
 
     const res = await handleTranscribe(
-      makeRequest("ig"), // not in cohere's supportedLanguages
+      makeRequest("ig"),
       env,
       "FREE",
       new AbortController().signal,
@@ -144,7 +144,7 @@ describe("handleTranscribe pipeline", () => {
     );
 
     const env = mockEnv({
-      WIT_KEY_ES: "", // witai skipped - no key for Spanish
+      WIT_KEY_ES: "",
       AI: {
         run: async () => {
           return {};
@@ -153,7 +153,7 @@ describe("handleTranscribe pipeline", () => {
     } as any);
 
     const res = await handleTranscribe(
-      makeRequest("es"), // in cohere's supportedLanguages
+      makeRequest("es"),
       env,
       "FREE",
       new AbortController().signal,
@@ -166,7 +166,7 @@ describe("handleTranscribe pipeline", () => {
 
   test("returns 503 when all providers fail", async () => {
     const env = mockEnv({
-      WIT_KEY_EN: "", // witai skipped - no key
+      WIT_KEY_EN: "",
       AI: { run: vi.fn().mockRejectedValue(new Error("fail")) },
     } as any);
 

@@ -3,26 +3,14 @@ import {
   Env,
   TranscribeResult,
   TranslateResult,
-  TtsAttempt,
-} from "../core/types";
-import {
-  isHallucination,
-  buildTranslatePrompt,
-  parseTranslateOutput,
-} from "../utils/prompts";
-import { logger } from "../core/logger";
-import { toWhisperCode } from "../services/languages";
-import { bytesToBase64 } from "../utils/base64";
-import { runAiTtsRaw } from "../utils/ai";
+} from "@/core/types";
+import { buildTranslatePrompt, parseTranslateOutput } from "@/utils/prompts";
+import { isHallucination } from "@/utils/hallucination";
+import { logger } from "@/core/logger";
+import { toWhisperCode } from "@/core/languages";
+import { bytesToBase64 } from "@/utils/base64";
 
-/**
- * Cloudflare Workers AI — zero-key safety net.
- * Uses AI binding directly, no API keys needed.
- */
-
-// ─── Transcription (@cf/openai/whisper) ───────────────────────────
-
-export async function transcribe(
+export async function stt(
   blob: Blob,
   lang: string,
   env: Env,
@@ -37,8 +25,6 @@ export async function transcribe(
         : { audio };
     const result = await env.AI.run(
       "@cf/openai/whisper",
-      // The workers-types schema types `audio` as number[]; the API also
-      // accepts a base64 string, which we send here.
       input as unknown as Ai_Cf_Openai_Whisper_Input,
     );
     if (signal.aborted) throw new Error(CLIENT_ABORTED);
@@ -56,8 +42,6 @@ export async function transcribe(
 
   return null;
 }
-
-// ─── Translation (@cf/zai-org/glm-4.7-flash) ─────────────────────
 
 export async function translate(
   text: string,
@@ -84,8 +68,6 @@ export async function translate(
     });
     if (signal.aborted) throw new Error(CLIENT_ABORTED);
 
-    // GLM returns OpenAI-style chat completions; read the first choice's
-    // assistant text content.
     const response = result?.choices?.[0]?.message?.content ?? "";
     if (response) {
       const { translation, transliteration: romanized } = parseTranslateOutput(
@@ -108,21 +90,4 @@ export async function translate(
   return null;
 }
 
-export { ALL_LANGUAGES as supportedLanguages } from "../services/languages";
-
-// ─── Text-to-Speech (@cf/myshell-ai/melotts) ──────────────────────
-// MeloTTS is a Cloudflare-hosted voice; the model's `lang` field is a base
-// language code (en/fr/es/zh/ja/ko) matching the worker's own codes.
-
-export async function melotts(
-  text: string,
-  lang: string,
-  env: Env,
-): Promise<TtsAttempt> {
-  return runAiTtsRaw(
-    env,
-    "@cf/myshell-ai/melotts",
-    { prompt: text, lang },
-    "melotts",
-  );
-}
+export { ALL_LANGUAGES as supportedLanguages } from "@/core/languages";

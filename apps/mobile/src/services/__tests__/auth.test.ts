@@ -14,7 +14,7 @@ import {
   signInWithGoogle,
   signOut,
   verifyOtp,
-} from "../auth";
+} from "@/services/auth";
 
 const authMock = vi.hoisted(() => ({
   onAuthStateChange: vi.fn(),
@@ -58,12 +58,6 @@ const dbMock = vi.hoisted(() => ({
 
 const posthogClientMock = vi.hoisted(() => ({ reset: vi.fn() }));
 
-const queryClientMock = vi.hoisted(() => ({
-  invalidateQueries: vi.fn(),
-  removeQueries: vi.fn(),
-  clear: vi.fn(),
-}));
-
 const historyServiceMock = vi.hoisted(() => ({
   importSharedEchoHistory: vi.fn(async () => undefined),
 }));
@@ -96,7 +90,7 @@ vi.mock("expo-apple-authentication", () => ({
 
 vi.mock("@/services/mmkv", () => ({ mmkv: mmkvMock }));
 
-vi.mock("@/services/SyncService", () => ({ SyncService: syncMock }));
+vi.mock("@/services/syncService", () => ({ SyncService: syncMock }));
 
 vi.mock("@/services/db", () => ({ Db: dbMock }));
 
@@ -117,12 +111,8 @@ vi.mock("@/services/notifications", () => ({
   registerForPushNotifications: registerPushMock,
 }));
 
-vi.mock("@/services/HistoryService", () => ({
+vi.mock("@/services/historyService", () => ({
   HistoryService: historyServiceMock,
-}));
-
-vi.mock("@/hooks/queries/queryClient", () => ({
-  queryClient: queryClientMock,
 }));
 
 vi.mock("@/utils/logger", () => ({
@@ -131,7 +121,7 @@ vi.mock("@/utils/logger", () => ({
   setSentryUser: vi.fn(),
 }));
 
-vi.mock("@/utils/networkUtils", () => ({
+vi.mock("@/utils/http", () => ({
   getWorkerUrl: vi.fn(() => "https://worker.test"),
 }));
 
@@ -148,7 +138,7 @@ vi.mock("@/utils", () => ({
 
 import { AnalyticsEvents } from "@/utils/analytics";
 import { setupAppStateListener } from "@/services/supabase";
-import { getWorkerUrl } from "@/utils/networkUtils";
+import { getWorkerUrl } from "@/utils/http";
 
 function makeSession(
   userId = "user-1",
@@ -222,7 +212,6 @@ beforeEach(async () => {
     },
   );
 
-  // Consume any pending social-identity link left from a previous test.
   await linkSocialIdentity();
 });
 
@@ -257,7 +246,7 @@ describe("initAuth", () => {
     mmkvMock.getString.mockReturnValue(
       JSON.stringify(makeSession("cached-user")),
     );
-    // Keep the background refresh pending so the sync restore stays observable.
+
     authMock.getSession.mockImplementation(() => new Promise(() => {}));
     vi.stubEnv("EXPO_PUBLIC_SUPABASE_URL", "https://abc.supabase.co");
 
@@ -319,12 +308,6 @@ describe("auth state change handler", () => {
     listenerCb?.("SIGNED_OUT", null);
     await flushMicrotasks();
 
-    expect(queryClientMock.invalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["translate"],
-    });
-    expect(queryClientMock.invalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["transcribe"],
-    });
     expect(syncMock.loadInitialHistory).toHaveBeenCalled();
     expect(mmkvMock.set).toHaveBeenCalledWith("hasSession", false);
     expect(syncMock.onUserSignedIn).not.toHaveBeenCalled();
@@ -414,7 +397,7 @@ describe("sendOtp", () => {
         }),
     );
     const promise = sendOtp("user@example.com");
-    // Let sendOtp reach the internal setTimeout (it awaits getAppCheckToken first).
+
     await Promise.resolve();
     vi.advanceTimersByTime(16_000);
     const result = await promise;
@@ -769,7 +752,6 @@ describe("signOut", () => {
     expect(authMock.signOut).toHaveBeenCalled();
     expect(googleSigninMock.signOut).toHaveBeenCalled();
     expect(mmkvMock.set).toHaveBeenCalledWith("hasSession", false);
-    expect(queryClientMock.clear).toHaveBeenCalled();
     expect(posthogClientMock.reset).toHaveBeenCalled();
     expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.SIGN_OUT);
   });
@@ -794,7 +776,6 @@ describe("signOut", () => {
       ok: false,
       error: "That didn't work. Please try again.",
     });
-    expect(queryClientMock.clear).toHaveBeenCalled();
   });
 });
 
@@ -819,7 +800,6 @@ describe("deleteAccount", () => {
     expect(result).toEqual({ ok: true });
     expect(authMock.rpc).toHaveBeenCalledWith("delete_user");
     expect(syncMock.purgeLocalHistory).toHaveBeenCalledWith("u1");
-    expect(queryClientMock.clear).toHaveBeenCalled();
     expect(posthogClientMock.reset).toHaveBeenCalled();
     expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.DELETE_ACCOUNT);
   });

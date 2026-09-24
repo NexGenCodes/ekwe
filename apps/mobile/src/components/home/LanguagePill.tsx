@@ -10,7 +10,10 @@ import Animated, {
 
 import { LanguageFlag } from "@/components/language";
 import { Text, Pressable } from "@/components/ui";
-import { getLanguageAbbreviation } from "@/constants/languages";
+import {
+  getLanguageAbbreviation,
+  getLanguageName,
+} from "@/constants/languages";
 import { triggerHaptic } from "@/utils";
 import { useTokens } from "@/hooks/ui";
 
@@ -21,7 +24,7 @@ export interface LanguagePillProps {
   style?: StyleProp<ViewStyle>;
 }
 
-export function LanguagePill({
+function LanguagePillComponent({
   langCode,
   detectedLanguage,
   onPress,
@@ -58,10 +61,10 @@ export function LanguagePill({
         feedback="scale"
         accessibilityLabel={
           langCode === "auto" && detectedLanguage
-            ? `Source language detected as ${getLanguageAbbreviation(detectedLanguage)}. Tap to change.`
+            ? `Source language detected as ${getLanguageName(detectedLanguage)}. Tap to change.`
             : langCode === "auto"
               ? "Auto-detect source language. Tap to change."
-              : `${getLanguageAbbreviation(langCode)}. Tap to change.`
+              : `${getLanguageName(langCode)}. Tap to change.`
         }
         style={[
           {
@@ -98,3 +101,6 @@ export function LanguagePill({
     </Animated.View>
   );
 }
+
+export const LanguagePill = React.memo(LanguagePillComponent);
+LanguagePill.displayName = "LanguagePill";

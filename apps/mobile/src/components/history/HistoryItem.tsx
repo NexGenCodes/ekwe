@@ -5,7 +5,7 @@ import React, { useCallback, useMemo } from "react";
 import { AccessibilityActionEvent, ViewStyle, StyleSheet } from "react-native";
 import Animated from "react-native-reanimated";
 
-import { Card } from "../Card";
+import { Card } from "@/components/Card";
 
 import { Box, Text, Pressable } from "@/components/ui";
 import { getLanguageName } from "@/constants/languages";
@@ -21,9 +21,7 @@ import { getRelativeTime } from "@/utils/relativeTime";
 export interface HistoryItemProps {
   entry: HistoryEntry;
   onPress: (entry: HistoryEntry) => void;
-  /** Deletes the entry (used by the accessibility "delete" action). */
   onDelete: (entry: HistoryEntry) => void;
-  /** Optional long-press handler (e.g. to open a context sheet). */
   onLongPress?: (entry: HistoryEntry) => void;
   style?: ViewStyle;
 }
@@ -58,13 +56,9 @@ export const HistoryItem = React.memo(
       [entry, onDelete],
     );
 
-    // Semantic type from the persisted producing operation (audio or text).
-    // A transcribed entry may carry a derived translation, but its type stays
-    // "transcription" — a user either transcribes or translates, never both.
     const entryType = useMemo(() => getEntryType(entry), [entry]);
     const isTranslation = entryType === "translation";
 
-    // Hero content: transcript (foreground) with distinct translation (brand) below.
     const snippetBody = useMemo((): React.ReactNode => {
       const hasTranscript = !!entry.transcript?.trim();
       const hasTranslation = !!entry.translation?.trim();
@@ -79,9 +73,6 @@ export const HistoryItem = React.memo(
         );
       }
 
-      // Entries with both a transcript AND a distinct translation (whether the
-      // entry was transcribed or is a pure translation): transcript is the hero,
-      // translation is the accented secondary.
       if (hasTranslation && hasTranscript && areDifferent) {
         return (
           <Box style={{ gap: spacing.xs }}>
@@ -112,7 +103,6 @@ export const HistoryItem = React.memo(
         );
       }
 
-      // Single-content entry (transcription or shared text): plain hero text.
       const textToShow = entry.transcript?.trim() || entry.translation?.trim();
       return (
         <Text
@@ -126,8 +116,6 @@ export const HistoryItem = React.memo(
       );
     }, [entry.transcript, entry.translation, color]);
 
-    // Format duration nicely — audio metadata belongs to transcriptions only
-    // (translations are text → text and carry no recording).
     const formattedDuration = useMemo(() => {
       if (!entry.duration) return null;
       const seconds = Math.round(entry.duration);
@@ -146,10 +134,6 @@ export const HistoryItem = React.memo(
         : `${hours}h`;
     }, [entry.duration]);
 
-    // Quiet metadata line — the producing operation ("type"), the audio
-    // metadata for transcriptions (duration · source language), and the compact
-    // language pair for translations. The circular type-icon badge on the left
-    // already signals the kind of entry, so the origin stays off-screen.
     const metadataLabel = useMemo(() => {
       const langStr = isTranslation
         ? `${entry.sourceLang.toUpperCase()} → ${entry.targetLang.toUpperCase()}`
@@ -170,10 +154,6 @@ export const HistoryItem = React.memo(
       formattedDuration,
     ]);
 
-    // Signature element — the entry-type icon in a circular badge.
-    // Either you transcribe or you translate: the left circle is the type icon
-    // (captions for transcription, languages for translation), and the compact
-    // language pair moves into the metadata line.
     const typeIconTile = useMemo(
       (): React.ReactElement => (
         <Box
@@ -216,9 +196,6 @@ export const HistoryItem = React.memo(
 
     const captionStyle = useMemo(() => ({ color: color.muted }), [color.muted]);
 
-    // Shared element tag: `history-snippet-${id}` links this row to the detail
-    // sheet's ORIGINAL block, producing a coordinate morph on history → result
-    // navigation (result.tsx mounts HistoryEntryDetail with the same tag).
     const sharedTag = useMemo(() => `history-snippet-${entry.id}`, [entry.id]);
 
     return (
@@ -242,14 +219,12 @@ export const HistoryItem = React.memo(
           {typeIconTile}
 
           <Box style={styles.contentBody}>
-            {/* Hero content */}
             <Box style={styles.snippetBody}>
               <Animated.View sharedTransitionTag={sharedTag}>
                 {snippetBody}
               </Animated.View>
             </Box>
 
-            {/* Metadata — producing origin + language pair + relative time */}
             <Box style={styles.metaRow}>
               <Box style={styles.metaLeft}>
                 <Text
@@ -304,7 +279,6 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.sm,
   },
-  // Circular entry-type icon badge (replaces the old language chip).
   typeIconTile: {
     width: 40,
     height: 40,
@@ -316,7 +290,6 @@ const styles = StyleSheet.create({
   snippetBody: {
     gap: spacing.xs,
   },
-  // Left-accent border block for translated text (design system spec)
   translationBlock: {
     borderLeftWidth: 3,
     paddingLeft: spacing.sm,

@@ -5,7 +5,7 @@ import { EkweError } from "@/constants/errors";
 import { err } from "@/types/Result";
 import { AnalyticsEvents } from "@/utils/analytics";
 
-import { translateText } from "../translateText";
+import { translateText } from "@/services/translateText";
 
 const getSessionMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
@@ -14,7 +14,7 @@ vi.mock("@/services/supabase", () => ({
   supabase: { auth: { getSession: getSessionMock } },
 }));
 
-vi.mock("@/utils/networkUtils", () => ({
+vi.mock("@/utils/http", () => ({
   getWorkerUrl: vi.fn(() => "https://worker.test"),
   fetchWithRetry: vi.fn(),
   mapWorkerError: vi.fn((_code: string, fallback: string) => fallback),
@@ -32,7 +32,7 @@ import {
   getWorkerUrl,
   isOfflineNetworkError,
   isTimeoutError,
-} from "@/utils/networkUtils";
+} from "@/utils/http";
 
 const jsonResponse = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), {

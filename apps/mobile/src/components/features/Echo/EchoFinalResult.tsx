@@ -3,7 +3,7 @@ import Zap from "lucide-react-native/icons/zap";
 import CheckCircle2 from "lucide-react-native/icons/circle-check";
 import React from "react";
 
-import { TextBox } from "./TextBox";
+import { TextBox } from "@/components/features/Echo/TextBox";
 
 import type { WaveformPlaybackController } from "@/hooks/audio/useAudioWaveformPlayback";
 
@@ -24,7 +24,7 @@ interface EchoFinalResultProps {
   activeTab: ResultTab;
   onTabChange: (tab: ResultTab) => void;
   audioPlayer: WaveformPlaybackController | null;
-  /** External "copied" signal from auto-copy; shows the check on the Translated box. */
+
   copied?: boolean;
 }
 
@@ -44,11 +44,6 @@ const langLabel = (
   return { flag: code ? getLanguageFlag(code) : "🌐", name: upper || "—" };
 };
 
-/**
- * Compact segmented control for the two result views. Controlled — the parent
- * owns the active tab (single source of truth) so the Listen/Copy/Share actions
- * always target the visible tab. Original sits first, Translated is the default.
- */
 const ResultTabs: React.FC<ResultTabsProps> = React.memo(
   ({ sourceLang, targetLang, activeTab, onTabChange }) => {
     const { color } = useTheme();

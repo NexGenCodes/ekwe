@@ -1,14 +1,14 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { File as ExpoFile } from "expo-file-system";
 import * as Haptics from "expo-haptics";
 import { triggerHaptic } from "@/utils/haptics";
 import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 import { useState, useCallback, useEffect, useRef } from "react";
 
-import { useTranslation } from "./useTranslation";
+import { useTranslation } from "@/hooks/useTranslation";
 
-import { batchTranscriber } from "@/services/BatchTranscriber";
-import { HistoryService } from "@/services/HistoryService";
+import { batchTranscriber } from "@/services/batchTranscriber";
+import { HistoryService } from "@/services/historyService";
 import { settings$, auth$, HistoryEntry, history$ } from "@/store";
 import { AppToast } from "@/utils/toast";
 import { EkweError, ErrorMessages } from "@/constants/errors";
@@ -46,17 +46,16 @@ export const useResultPipeline = ({
   isHistoryReplay = false,
   sourceApp,
 }: UseResultPipelineProps): UseResultPipelineReturn => {
-  const userSession = useSelector(() => auth$.session.get());
+  const userSession = useValue(() => auth$.session.get());
 
-  // Watch for the specific entry if entryId exists
-  const foundEntry = useSelector(() =>
+  const foundEntry = useValue(() =>
     entryId ? history$[entryId].get() : null,
   ) as HistoryEntry | null;
 
-  const defaultSourceLang = useSelector(() =>
+  const defaultSourceLang = useValue(() =>
     settings$.selectedLanguages[0].get(),
   );
-  const defaultTargetLang = useSelector(() => settings$.targetLanguage.get());
+  const defaultTargetLang = useValue(() => settings$.targetLanguage.get());
   const isReplay = !!foundEntry || isHistoryReplay;
 
   const [transcript, setTranscript] = useState(
@@ -75,11 +74,6 @@ export const useResultPipeline = ({
     foundEntry?.targetLang || initialTargetLang || defaultTargetLang || "es",
   );
 
-  // history$[entryId] may hydrate asynchronously (e.g. during a background
-  // sync) AFTER the initial useState values above were captured. Once the
-  // entry arrives, sync the state so a replay doesn't show a stale transcript.
-  // Applied once per entryId so it never clobbers live transcription/translation
-  // state for the same entry.
   const appliedEntryIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!foundEntry) return;
@@ -95,13 +89,8 @@ export const useResultPipeline = ({
   const [hasPolished, setHasPolished] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
 
-  // Guards the shared-audio effect below so a given URI is attempted exactly
-  // once. Without it, a failed attempt flips isProcessing back to false and the
-  // effect re-fires, producing an infinite retry loop with a toast per attempt.
   const attemptedUriRef = useRef<string | null>(null);
 
-  // Guards against setState after unmount in the async callbacks below
-  // (transcribe/translate can settle after the tree is torn down).
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -110,7 +99,6 @@ export const useResultPipeline = ({
     };
   }, []);
 
-  // Saved-once refs (transcription-only semantics on unmount/dismiss)
   const savedRef = useRef(false);
   const transcriptRef = useRef(transcript);
   const sourceLangRef = useRef(sourceLang);
@@ -146,7 +134,6 @@ export const useResultPipeline = ({
         if (!mountedRef.current) return;
         setTranscript(txResult.transcript);
 
-        // Clean up file system
         try {
           new ExpoFile(audioUri).delete();
         } catch {
@@ -174,7 +161,6 @@ export const useResultPipeline = ({
     }
   }, [uri, isProcessing, isReplay, processSharedAudio]);
 
-  // Save transcription on unmount if it wasn't saved yet
   useEffect(() => {
     return (): void => {
       if (!savedRef.current && transcriptRef.current.trim() && !isReplay) {
@@ -245,10 +231,6 @@ export const useResultPipeline = ({
             >[1],
           );
         } catch (saveErr) {
-          // The save failed (not the translate call). Revert the saved-once
-          // flag so the unmount fallback can still persist the transcription
-          // instead of silently dropping the session. Re-throw so the outer
-          // catch surfaces the failure to the user.
           savedRef.current = false;
           throw saveErr;
         }

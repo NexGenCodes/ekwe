@@ -18,7 +18,7 @@ export type DecodeToWavResult = {
   waveform: number[];
 };
 
-export type DecodeToCafResult = {
+export type RemuxToCafResult = {
   success: boolean;
   error: string;
   durationMs: number;

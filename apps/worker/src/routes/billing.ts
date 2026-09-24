@@ -1,31 +1,3 @@
-/**
- * ─── Billing Routes ──────────────────────────────────────────────
- *
- * Endpoints for the mobile billing flow:
- *
- *   POST /billing/checkout
- *     Authorizes a checkout session. Requires JWT auth. Accepts an optional
- *     ISO-4217 `currency` (defaults to USD). Unsupported currencies resolve to
- *     USD server-side so the charged amount always matches GET /pricing.
- *     Returns { tx_ref, amount, currency }.
- *
- *     The worker is server-authoritative for pricing and the unique tx_ref.
- *     The mobile app initializes the actual Flutterwave payment client-side
- *     with the flutterwave-react-native-sdk (public key + these session
- *     params). The webhook still verifies the charged amount/currency against
- *     the `meta` echo before granting Pro.
- *
- *   POST /billing/verify-transaction
- *     Client-side verification endpoint. Requires JWT auth. Accepts a
- *     Flutterwave transaction_id, verifies it with the Flutterwave API,
- *     and calls set_pro_status RPC. Used when the webhook doesn't fire
- *     (e.g. test mode).
- *
- *   GET /billing/flags
- *     Returns payment provider feature flags. Requires JWT auth.
- *     Reads from the app_config table.
- */
-
 import {
   WORKER_ERROR_CODES,
   checkoutRequestSchema,
@@ -33,41 +5,38 @@ import {
   verifyTransactionRequestSchema,
   verifyTransactionResponseSchema,
 } from "@ekwe/shared";
-import { Env } from "../core/types";
-import { logger } from "../core/logger";
-import { supabaseGet, supabasePost } from "../services/supabase";
-import { guardFlutterwaveKeys } from "../services/flutterwaveKeys";
-import { AuthResult } from "../core/auth";
-import { getAuthoritativePlanPrices, resolveRequestCurrency } from "./pricing";
-
-// ─── Types ───────────────────────────────────────────────────────
+import { Env } from "@/core/types";
+import { logger } from "@/core/logger";
+import { supabaseGet, supabasePost } from "@/services/supabase";
+import { guardFlutterwaveKeys, computeProExpiry } from "@/services/flutterwave";
+import { AuthResult } from "@/core/auth";
+import {
+  getAuthoritativePlanPrices,
+  resolveRequestCurrency,
+} from "@/routes/pricing";
+import {
+  guardJsonSize,
+  MAX_JSON_BODY_BYTES,
+  safeParseJSON,
+} from "@/core/guards";
 
 interface PaymentConfigRow {
   flutterwave_enabled: boolean;
   default_provider: string;
 }
 
-// ─── POST /billing/checkout ──────────────────────────────────────
-
 export async function handleCheckout(
   request: Request,
   env: Env,
   auth: AuthResult,
 ): Promise<Response> {
-  // Parse and validate the body against the shared checkout schema. The
-  // schema binds `plan` to the shared PRO_PRODUCT_IDS so the client, the
-  // webhook, and this route can never drift apart.
-  let raw: unknown;
-  try {
-    raw = await request.json();
-  } catch {
-    return Response.json(
-      { error: WORKER_ERROR_CODES.INVALID_JSON },
-      { status: 400 },
-    );
-  }
+  const sizeGuard = guardJsonSize(request, MAX_JSON_BODY_BYTES);
+  if (!sizeGuard.allowed) return sizeGuard.response;
 
-  const parsed = checkoutRequestSchema.safeParse(raw);
+  const parsedBody = await safeParseJSON<unknown>(request);
+  if (!parsedBody.ok) return parsedBody.response;
+
+  const parsed = checkoutRequestSchema.safeParse(parsedBody.data);
   if (!parsed.success) {
     return Response.json(
       { error: WORKER_ERROR_CODES.INVALID_BODY, message: "Invalid request" },
@@ -76,28 +45,11 @@ export async function handleCheckout(
   }
   const body = parsed.data;
 
-  // Currency is optional. An explicit client currency wins; otherwise the
-  // worker resolves it from the request's geo country (Cloudflare
-  // `CF-IPCountry`→billable code) and falls back to USD. Unsupported codes
-  // resolve to USD so the charge is always in a currency Flutterwave bills
-  // and always matches GET /pricing.
   const currency = resolveRequestCurrency(body.currency, request);
 
-  // Fail closed in production if the configured Flutterwave keys are missing
-  // or the test-mode keys (a free-Pro bypass vector). Test keys stay usable in
-  // development/test deployments for the full checkout→grant flow.
   const keyGuard = guardFlutterwaveKeys(env);
   if (!keyGuard.allowed) return keyGuard.response;
 
-  // Price the plan from the AUTHORITATIVE source (the subscription_config row
-  // in Supabase) — the same source verify-transaction and the webhook grant
-  // path use. Minting from getLocalPlanPrices (which falls back to bundled
-  // LOCAL_PRICES when Supabase is unreachable) would let a checkout created
-  // during a blip mint a price that verify-transaction later rejects (verify
-  // fails closed on an unconfirmed price). Failing checkout closed here keeps
-  // the amount minted always equal to what the grant path expects. The amount
-  // the SDK will charge is exactly what GET /pricing reported when the row is
-  // reachable, and it is echoed back in `meta` for the webhook to verify.
   const prices = await getAuthoritativePlanPrices(env, currency);
   if (!prices) {
     logger.warn("[billing/checkout] Cannot confirm price from Supabase", {
@@ -114,10 +66,6 @@ export async function handleCheckout(
   const amount =
     body.plan === "ekwe_pro_annual" ? prices.annual : prices.monthly;
 
-  // tx_ref must be unique per transaction (Flutterwave rejects duplicates).
-  // It keeps the `ekwe_<userId>_` prefix the webhook's resolveUser parses, and
-  // appends the plan + a cryptographically random UUID so the same user+plan
-  // can checkout again without colliding.
   const txRef = `ekwe_${auth.userId}_${body.plan.replace(
     "ekwe_pro_",
     "",
@@ -127,9 +75,6 @@ export async function handleCheckout(
     tx_ref: txRef,
     amount,
     currency,
-    // Server-authoritative public key so the client always initializes the
-    // SDK with the key matching the configured secret's environment — the
-    // mobile never picks its own (possibly test) key.
     public_key: env.FLUTTERWAVE_PUBLIC ?? "",
   };
   logger.info("[billing] Checkout session authorized", {
@@ -139,8 +84,6 @@ export async function handleCheckout(
   });
   return Response.json(checkoutResponseSchema.parse(responseBody));
 }
-
-// ─── POST /billing/verify-transaction ────────────────────────────
 
 const VERIFY_TRANSACTION_PATH =
   "https://api.flutterwave.com/v3/transactions/{id}/verify";
@@ -164,19 +107,13 @@ export async function handleVerifyTransaction(
   env: Env,
   auth: AuthResult,
 ): Promise<Response> {
-  // Parse body — must include transaction_id (shared schema, one source
-  // of truth with the mobile client).
-  let raw: unknown;
-  try {
-    raw = await request.json();
-  } catch {
-    return Response.json(
-      { error: WORKER_ERROR_CODES.INVALID_JSON },
-      { status: 400 },
-    );
-  }
+  const sizeGuard = guardJsonSize(request, MAX_JSON_BODY_BYTES);
+  if (!sizeGuard.allowed) return sizeGuard.response;
 
-  const parsed = verifyTransactionRequestSchema.safeParse(raw);
+  const parsedBody = await safeParseJSON<unknown>(request);
+  if (!parsedBody.ok) return parsedBody.response;
+
+  const parsed = verifyTransactionRequestSchema.safeParse(parsedBody.data);
   if (!parsed.success) {
     return Response.json(
       {
@@ -188,8 +125,6 @@ export async function handleVerifyTransaction(
   }
   const { transaction_id } = parsed.data;
 
-  // Fail closed in production if the configured Flutterwave keys are missing
-  // or the test-mode keys (a free-Pro bypass vector).
   const keyGuard = guardFlutterwaveKeys(env);
   if (!keyGuard.allowed) return keyGuard.response;
 
@@ -201,7 +136,6 @@ export async function handleVerifyTransaction(
     );
   }
 
-  // Verify with Flutterwave API.
   const verifyUrl = VERIFY_TRANSACTION_PATH.replace(
     "{id}",
     String(transaction_id),
@@ -241,7 +175,6 @@ export async function handleVerifyTransaction(
 
   const fwData: FlutterwaveVerifyResponse = await fwRes.json();
 
-  // Must be successful.
   if (fwData.data.status !== "successful") {
     logger.info("[billing/verify] Transaction not successful", {
       tx_ref: fwData.data.tx_ref,
@@ -250,7 +183,6 @@ export async function handleVerifyTransaction(
     return Response.json({ error: "Payment not completed" }, { status: 400 });
   }
 
-  // Extract userId and plan from tx_ref (format: ekwe_<userId>_<plan>_<ts>_<rand>).
   const txRefMatch = fwData.data.tx_ref.match(
     /ekwe_([a-f0-9-]+)_(monthly|annual)_/,
   );
@@ -268,10 +200,8 @@ export async function handleVerifyTransaction(
     );
   }
 
-  // Determine plan from tx_ref.
   const plan = planPart === "annual" ? "ekwe_pro_annual" : "ekwe_pro_monthly";
 
-  // Verify amount and currency against authoritative pricing
   const prices = await getAuthoritativePlanPrices(env, fwData.data.currency);
   if (!prices) {
     logger.warn("[billing/verify] Cannot confirm price from Supabase", {
@@ -299,12 +229,14 @@ export async function handleVerifyTransaction(
     return Response.json({ error: "Payment amount mismatch" }, { status: 400 });
   }
 
-  // Grant Pro via set_pro_status RPC.
+  const expiresAt = computeProExpiry(
+    planPart === "annual" ? "annual" : "monthly",
+  );
   const rpcResult = await supabasePost(env, "/rest/v1/rpc/set_pro_status", {
     p_email: auth.userEmail,
     p_user_id: auth.userId,
     p_is_pro: true,
-    p_expires_at: null,
+    p_expires_at: expiresAt,
     p_provider: "flutterwave",
     p_payment_ref: fwData.data.flw_ref,
   });
@@ -342,8 +274,6 @@ export async function handleVerifyTransaction(
   );
 }
 
-// ─── GET /billing/flags ──────────────────────────────────────────
-
 export async function handleBillingFlags(
   _request: Request,
   env: Env,
@@ -366,7 +296,6 @@ export async function handleBillingFlags(
       logger.warn("[billing] Failed to fetch app_config", {
         status: res.status,
       });
-      // Return defaults on error
       return Response.json({
         flutterwave_enabled: true,
         default_provider: "flutterwave",

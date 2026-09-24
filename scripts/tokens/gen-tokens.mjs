@@ -1,16 +1,5 @@
 #!/usr/bin/env node
-/**
- * Design-token codegen: reads packages/shared/src/token/*.ts, writes the committed
- * JSON snapshot `apps/mobile/modules/ekwe-native/native-tokens.json`, and
- * renders the native asset files from it:
- *   - apps/mobile/targets/share/DesignTokens.swift            (iOS share ext)
- *   - .../echonative/EchoDesignTokens.kt                      (Android overlay)
- *
- * Rendering lives in scripts/tokens/native-tokens.cjs, which the config plugin
- * (app.plugin.js) also uses, so `expo prebuild` and `pnpm gen:tokens` produce
- * byte-identical output and native files never drift from the TS source of
- * truth. Run with `pnpm gen:tokens` (Node >= 23.6 strips TS types natively).
- */
+
 import { mkdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -44,8 +33,6 @@ const { borderRadius, iconSize, touchTarget, opacity, zIndex } =
 const { typography } = await importTs("typography");
 const { duration } = await importTs("motion");
 
-// Snapshot consumed by the app.plugin.js config plugin at `expo prebuild`.
-// Committed so EAS/CI builds have the source without a TS-importing Node step.
 const snapshot = {
   colors: { lightColors, darkColors },
   spacing,

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   registerForPushNotifications,
   setupNotificationTapListener,
-} from "../notifications";
+} from "@/services/notifications";
 
 const constState = vi.hoisted(() => ({
   projectId: "eas-proj-123",
@@ -49,8 +49,9 @@ vi.mock("expo-device", () => ({
   },
 }));
 
-vi.mock("@/utils/networkUtils", () => ({
+vi.mock("@/utils/http", () => ({
   getWorkerUrl: getWorkerUrlMock,
+  fetchWithRetry: vi.fn(),
 }));
 
 vi.mock("@/utils/logger", () => ({
@@ -66,6 +67,7 @@ vi.mock("@/store/auth", () => ({
 import * as Notifications from "expo-notifications";
 
 import logger from "@/utils/logger";
+import { fetchWithRetry } from "@/utils/http";
 
 beforeEach(() => {
   devState.isDevice = true;
@@ -74,6 +76,7 @@ beforeEach(() => {
   getWorkerUrlMock.mockReturnValue("https://worker.test");
   getTokenMock.mockReturnValue("auth-token");
   vi.clearAllMocks();
+  vi.mocked(fetchWithRetry).mockReset();
   vi.mocked(Notifications.getPermissionsAsync).mockResolvedValue({
     status: "granted",
   } as never);
@@ -98,25 +101,30 @@ describe("registerForPushNotifications", () => {
   });
 
   it("registers a push token and stores it in the worker", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(null, { status: 200 }));
+    vi.mocked(fetchWithRetry).mockResolvedValue(
+      new Response(null, { status: 200 }),
+    );
 
     const result = await registerForPushNotifications();
 
     expect(result).toBe("ExpoPushToken[test]");
-    expect(fetchSpy).toHaveBeenCalledWith("https://worker.test/push-tokens", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer auth-token",
-      },
-      body: JSON.stringify({
-        push_token: "ExpoPushToken[test]",
-        platform: "ios",
-        app_version: "1.0.0",
+    expect(fetchWithRetry).toHaveBeenCalledWith(
+      "https://worker.test/devices/token",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer auth-token",
+        },
+        body: JSON.stringify({
+          push_token: "ExpoPushToken[test]",
+          platform: "ios",
+          app_version: "1.0.0",
+        }),
+        retryOnHttpResponse: false,
+        timeout: 10_000,
       }),
-    });
+    );
   });
 
   it("requests permissions when they are not granted yet", async () => {
@@ -126,14 +134,14 @@ describe("registerForPushNotifications", () => {
     vi.mocked(Notifications.requestPermissionsAsync).mockResolvedValue({
       status: "granted",
     } as never);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(null, { status: 200 }));
+    vi.mocked(fetchWithRetry).mockResolvedValue(
+      new Response(null, { status: 200 }),
+    );
 
     await registerForPushNotifications();
 
     expect(Notifications.requestPermissionsAsync).toHaveBeenCalledTimes(1);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchWithRetry).toHaveBeenCalledTimes(1);
   });
 
   it("returns null when permission is denied", async () => {
@@ -151,11 +159,10 @@ describe("registerForPushNotifications", () => {
 
   it("returns null when no EAS project id is configured", async () => {
     constState.projectId = "YOUR_PROJECT_ID";
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
     const result = await registerForPushNotifications();
     expect(result).toBeNull();
     expect(Notifications.getExpoPushTokenAsync).not.toHaveBeenCalled();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchWithRetry).not.toHaveBeenCalled();
   });
 
   it("never throws when token generation fails", async () => {
@@ -168,24 +175,37 @@ describe("registerForPushNotifications", () => {
 
   it("skips storing the token when no worker URL is configured", async () => {
     getWorkerUrlMock.mockReturnValue("");
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
     await registerForPushNotifications();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchWithRetry).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       "[Notifications] No worker URL — push token not stored",
     );
   });
 
   it("logs when storing the token fails at the server", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response("nope", { status: 500 }));
+    vi.mocked(fetchWithRetry).mockResolvedValue(
+      new Response("nope", { status: 500 }),
+    );
     await registerForPushNotifications();
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchWithRetry).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledWith(
       "[Notifications] Failed to store push token:",
       expect.any(Number),
       expect.any(String),
+    );
+  });
+
+  it("is non-blocking when storing the token hits a network error", async () => {
+    vi.mocked(fetchWithRetry).mockRejectedValue(
+      new Error(
+        "fetch failed: java.net.UnknownHostException: Unable to resolve host",
+      ),
+    );
+    const result = await registerForPushNotifications();
+    expect(result).toBe("ExpoPushToken[test]");
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[Notifications] Failed to store push token (non-blocking):",
+      expect.any(Error),
     );
   });
 });

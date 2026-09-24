@@ -52,7 +52,12 @@ desktop.ini
 .bump.env
 
 # Cloudflare Workers
-.dev.vars
+# .dev.vars holds the REAL worker secrets (source of truth). Never commit it —
+# only the placeholder template apps/worker/.dev.vars.example is committed.
+# .dev.vars.wit is the dedicated Wit-keys file (mirrored into .dev.vars).
+**/.dev.vars
+**/.dev.vars.local
+**/.dev.vars.wit
 .wrangler/
 **/.wrangler/
 skills-lock.json

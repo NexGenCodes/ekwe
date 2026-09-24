@@ -1,4 +1,4 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { useMemo } from "react";
 
 import { PLAN_FEATURES, PLAN_LIMITS } from "@/constants/billing";
@@ -18,7 +18,7 @@ interface PlanLimits {
 }
 
 export function usePermissions(): PlanLimits {
-  const isPro = useSelector(() => auth$.isPro.get());
+  const isPro = useValue(() => auth$.isPro.get());
 
   const limits = isPro ? PLAN_LIMITS.pro : PLAN_LIMITS.free;
 

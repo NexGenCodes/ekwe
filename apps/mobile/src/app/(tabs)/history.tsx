@@ -2,7 +2,7 @@ import { triggerHaptic } from "@/utils/haptics";
 import { pushOnce } from "@/utils/navigation";
 import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import AudioLines from "lucide-react-native/icons/audio-lines";
 import Search from "lucide-react-native/icons/search";
 import X from "lucide-react-native/icons/x";
@@ -28,7 +28,7 @@ import {
 } from "@/hooks";
 import type { ListItem } from "@/hooks/useHistoryListData";
 import { HistoryFilterOption } from "@/hooks/useHistorySearch";
-import { SyncService } from "@/services/SyncService";
+import { SyncService } from "@/services/syncService";
 import { HistoryEntry, auth$ } from "@/store";
 import { withAlpha } from "@/utils/color";
 import { isIOS, logger } from "@/utils";
@@ -59,11 +59,9 @@ export default function HistoryScreen(): React.JSX.Element {
   const listRef = useRef<FlashListRef<ListItem>>(null!);
   const insets = useSafeAreaInsets();
 
-  // Visible cloud-sync failures (set by SyncService.pullFromCloud on error).
-  const pullError = useSelector(() => SyncService.pullError.get());
+  const pullError = useValue(() => SyncService.pullError.get());
 
-  // History rows that exhausted their outbox retries and never synced.
-  const deadCount = useSelector(() => SyncService.deadCount.get());
+  const deadCount = useValue(() => SyncService.deadCount.get());
 
   const retryDead = useCallback(() => {
     SyncService.retryDeadOutbox().catch((err) =>
@@ -82,8 +80,7 @@ export default function HistoryScreen(): React.JSX.Element {
           SyncService.pullFromCloud(userId),
           SyncService.drain(),
         ]);
-        // Re-resolve the highest page boundary and local > cloud tier switch
-        // after new rows land.
+
         await refetchHistory();
       } catch (err) {
         logger.error("[history] Pull to refresh failed:", err);
@@ -93,8 +90,6 @@ export default function HistoryScreen(): React.JSX.Element {
     setIsRefreshing(false);
   }, [refetchHistory]);
 
-  // When searching/filtering, use filteredEntries flat.
-  // When browsing, use the date-grouped list from useHistoryListData.
   const isGrouped = !isSearching && filter === "all" && query.length === 0;
 
   const listData = useHistoryListData({
@@ -128,7 +123,7 @@ export default function HistoryScreen(): React.JSX.Element {
           paddingHorizontal: spacing.md,
         }}
       >
-        {/* Header — title only (count pills live per group in the list) */}
+        {}
         <Box style={styles.headerRow}>
           <Box style={styles.headerTitle}>
             <IconContainer
@@ -144,7 +139,7 @@ export default function HistoryScreen(): React.JSX.Element {
           </Box>
         </Box>
 
-        {/* Cloud-sync failure banner */}
+        {}
         {pullError ? (
           <Box
             style={[
@@ -177,7 +172,7 @@ export default function HistoryScreen(): React.JSX.Element {
           </Box>
         ) : null}
 
-        {/* Unsynced-history banner (outbox rows that exhausted their retries) */}
+        {}
         {deadCount > 0 ? (
           <Box
             style={[
@@ -210,7 +205,7 @@ export default function HistoryScreen(): React.JSX.Element {
           </Box>
         ) : null}
 
-        {/* Search row */}
+        {}
         <Box style={styles.searchRow}>
           <Box
             style={[
@@ -253,7 +248,7 @@ export default function HistoryScreen(): React.JSX.Element {
           </Box>
         </Box>
 
-        {/* Filter chips */}
+        {}
         <Box style={styles.chipsContainer}>
           <Box style={styles.chipsContent}>
             {FILTER_OPTIONS.map((option) => (

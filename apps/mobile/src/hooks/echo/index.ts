@@ -1,1 +1,1 @@
-export { useEchoFlow } from "./useEchoFlow";
+export { useEchoFlow } from "@/hooks/echo/useEchoFlow";

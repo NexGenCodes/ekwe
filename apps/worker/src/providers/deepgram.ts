@@ -1,18 +1,18 @@
-import { Env, TranscribeResult, TtsAttempt } from "../core/types";
-import { rotateKeys } from "../utils/keys";
-import { isHallucination } from "../utils/prompts";
-import { fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
-import { runAiTtsRaw } from "../utils/ai";
-import { rotateWsKeys, createStreamInterceptor } from "../utils/websocket";
-import { logger } from "../core/logger";
+import {
+  Env,
+  CLIENT_ABORTED,
+  TranscribeResult,
+  SpeechAttempt,
+} from "@/core/types";
+import { rotateKeys, rotateKeysDetailed } from "@/utils/keys";
+import { isHallucination } from "@/utils/hallucination";
+import { fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
+import { rotateWsKeys, createStreamInterceptor } from "@/utils/stream";
+import { logger } from "@/core/logger";
 
 const DEEPGRAM_URL = "https://api.deepgram.com/v1/listen";
 
-/**
- * Deepgram Nova-2 — fast single-POST transcription.
- * Supports auto-detection when language param is omitted.
- */
-export async function transcribe(
+export async function stt(
   blob: Blob,
   lang: string,
   env: Env,
@@ -85,64 +85,156 @@ interface DeepgramResponse {
   metadata?: { duration?: number };
 }
 
-export { DEEPGRAM_LANGUAGES as supportedLanguages } from "../services/languages";
+const DEEPGRAM_LANGUAGES = new Set([
+  "bg",
+  "ca",
+  "zh",
+  "cs",
+  "da",
+  "nl",
+  "en",
+  "et",
+  "fi",
+  "fr",
+  "de",
+  "el",
+  "hi",
+  "hu",
+  "id",
+  "it",
+  "ja",
+  "ko",
+  "lv",
+  "lt",
+  "ms",
+  "no",
+  "pl",
+  "pt",
+  "ro",
+  "ru",
+  "sk",
+  "es",
+  "sv",
+  "th",
+  "tr",
+  "uk",
+  "vi",
+]);
+export { DEEPGRAM_LANGUAGES as supportedLanguages };
 
-// ─── Text-to-Speech (Aura models) ─────────────────────────────────
-// Aura 1/2 are Deepgram voices. They're served through the zero-key Workers
-// AI binding (as MP3), so `/tts` uses `env.AI.run` rather than the Deepgram
-// REST API and needs no DEEPGRAM_KEY_*.
+const DEEPGRAM_SPEAK_URL = "https://api.deepgram.com/v1/speak";
 
-const AURA_MODELS = {
-  "aura-2-en": "@cf/deepgram/aura-2-en",
-  "aura-2-es": "@cf/deepgram/aura-2-es",
-  "aura-1": "@cf/deepgram/aura-1",
-} as const;
+const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 
-async function runSpeechModel(
-  model: (typeof AURA_MODELS)[keyof typeof AURA_MODELS],
-  input: Record<string, unknown>,
-  provider: string,
-  env: Env,
-): Promise<TtsAttempt> {
-  return runAiTtsRaw(env, model, input, provider);
+function resolveModelName(voice: string | undefined, lang: string): string {
+  const langCode = lang.split("-")[0].toLowerCase() || "en";
+  if (voice && voice.startsWith("aura-2-")) return voice;
+  return `aura-2-${voice ?? "luna"}-${langCode}`;
 }
 
-/** Aura 2 (en/es) — higher-fidelity MP3 voices. */
-export function aura2(
+type VoiceGender = "male" | "female";
+
+const DEEPGRAM_FEMALE: Record<string, string[]> = {
+  default: ["luna"],
+  es: ["selena"],
+  de: ["viktoria"],
+  fr: ["agathe"],
+  nl: ["beatrix"],
+  it: ["livia"],
+  ja: ["izanami"],
+};
+
+const DEEPGRAM_MALE: Record<string, string[]> = {
+  default: ["orion"],
+  es: ["javier"],
+  de: ["julius"],
+  fr: ["hector"],
+  nl: ["sander"],
+  it: ["dionisio"],
+  ja: ["fujin"],
+};
+
+export function voice(
+  voiceId: string | undefined,
+  langCode: string,
+  gender: VoiceGender,
+): string[] {
+  if (voiceId && voiceId.startsWith("aura-2-")) return [voiceId];
+  const set = gender === "male" ? DEEPGRAM_MALE : DEEPGRAM_FEMALE;
+  return set[langCode] ?? set.default;
+}
+
+export async function tts(
   text: string,
-  lang: "en" | "es",
+  lang: string,
   env: Env,
-  speaker?: string,
-): Promise<TtsAttempt> {
-  const model =
-    lang === "es" ? AURA_MODELS["aura-2-es"] : AURA_MODELS["aura-2-en"];
-  return runSpeechModel(
-    model,
-    { text, speaker: speaker ?? env.TTS_AURA2_SPEAKER ?? "luna" },
-    "aura2",
-    env,
-  );
+  signal: AbortSignal,
+  voice?: string,
+): Promise<SpeechAttempt> {
+  if (signal.aborted || !text || !text.trim()) {
+    return { result: null, status: null };
+  }
+
+  const model = resolveModelName(voice, lang);
+  logger.info("[deepgram] Requesting speech", { model, chars: text.length });
+
+  let response: Response | null;
+  let lastStatus: number | null;
+  try {
+    const rotation = await rotateKeysDetailed(
+      env,
+      "DEEPGRAM_KEY_",
+      (key) =>
+        fetchWithTimeout(
+          `${DEEPGRAM_SPEAK_URL}?model=${encodeURIComponent(model)}`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Token ${key}`,
+              "Content-Type": "application/json",
+              Accept: "audio/mpeg",
+            },
+            body: JSON.stringify({ text }),
+          },
+          TIMEOUT_FAST,
+          signal,
+        ),
+      signal,
+    );
+    response = rotation.response;
+    lastStatus = rotation.lastStatus;
+  } catch (e) {
+    if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
+    logger.error("[deepgram] Speech exception", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return { result: null, status: null };
+  }
+
+  if (!response) {
+    logger.warn("[deepgram] Speak failed", { status: lastStatus });
+    return { result: null, status: lastStatus };
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_SPEECH_BYTES) {
+    logger.warn("[deepgram] Speech output over hard cap", {
+      bytes: bytes.byteLength,
+    });
+    return { result: null, status: 502 };
+  }
+
+  return {
+    result: {
+      audio: bytes,
+      mime: "audio/mpeg",
+      provider: "deepgram",
+    },
+    status: null,
+  };
 }
 
-/** Aura 1 (en) — fallback MP3 voice. */
-export function aura1(
-  text: string,
-  env: Env,
-  speaker?: string,
-): Promise<TtsAttempt> {
-  return runSpeechModel(
-    AURA_MODELS["aura-1"],
-    { text, speaker: speaker ?? "angus" },
-    "aura1",
-    env,
-  );
-}
-
-/**
- * Handles a real-time streaming session via Deepgram WebSocket.
- * Returns true if the session was handled, false if the provider could not connect.
- */
-export async function handleStream(
+export async function sttStream(
   env: Env,
   lang: string,
   clientWs: WebSocket,

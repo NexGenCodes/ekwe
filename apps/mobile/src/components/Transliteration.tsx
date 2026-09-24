@@ -1,7 +1,7 @@
 import CaseSensitive from "lucide-react-native/icons/case-sensitive";
 import React from "react";
 import { StyleSheet } from "react-native";
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 
 import { Box, Text } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
@@ -11,29 +11,17 @@ import { withAlpha } from "@/utils/color";
 
 export interface TransliterationProps {
   text: string;
-  /**
-   * "brand" renders for cards on the brand background (home output), "default"
-   * for standard cards (history detail, translate sheet).
-   */
+
   tone?: "brand" | "default";
 }
 
-/**
- * Transliteration — a labeled romanization row shown beneath a translation.
- * A hairline divider, a small "Aa" icon + "Romanized" caption, and the
- * romanized text make the pronunciation guide read as a deliberate element
- * instead of an orphan italic line.
- */
 export const Transliteration = React.memo(function Transliteration({
   text,
   tone = "default",
 }: TransliterationProps): React.ReactElement | null {
   const { color } = useTheme();
-  const isPro = useSelector(() => auth$.isPro.get());
+  const isPro = useValue(() => auth$.isPro.get());
 
-  // Transliteration is a premium-only extra — the worker never returns it to
-  // free users, and this guards against stale/historical entries that still
-  // carry one (e.g. after a Pro → Free downgrade).
   if (!isPro) return null;
   if (!text.trim()) return null;
 

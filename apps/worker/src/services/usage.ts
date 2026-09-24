@@ -1,21 +1,12 @@
-import { Env, Tier, UsageType } from "../core/types";
-import { getLimits } from "../core/limits";
-import { logger } from "../core/logger";
-import { preflightCacheKey, nextUtcMidnightMs } from "./preflight";
-import { supabasePost } from "./supabase";
-import { usageSnapshotSchema } from "@ekwe/shared";
-import type { UsageSnapshot } from "@ekwe/shared";
+import { Env, Tier, UsageType } from "@/core/types";
+import { getLimits } from "@/core/limits";
+import { logger } from "@/core/logger";
+import { recordUserEvent } from "@/utils/analytics";
+import { preflightCacheKey, nextUtcMidnightMs } from "@/services/preflight";
+import { supabasePost } from "@/services/supabase";
+import { USAGE_METER_META, usageSnapshotSchema } from "@ekwe/shared";
+import type { UsageMeterId, UsageSnapshot, PlanLimits } from "@ekwe/shared";
 
-/**
- * Marks a request as having drawn down quota (billable provider success).
- *
- * Deliberately fire-and-forget:
- *   * Runs via `context.waitUntil` so response latency is unchanged.
- *   * Invalidation of the preflight KV cache keeps the 2s gate from serving a
- *     stale "allowed" decision right after a consume — the next request re-runs
- *     the RPC and sees the fresh remaining count.
- *   * Both steps are best-effort and never throw into the request path.
- */
 export function trackBillableSuccess(
   env: Env,
   userId: string,
@@ -36,12 +27,6 @@ export function trackBillableSuccess(
   );
 }
 
-/**
- * Atomic increment against today's counter for the given request type —
- * translate/transcribe add one request, tts adds `charCount` characters. On
- * failure we log and move on (fail-open): quota is a fairness/abuse backstop,
- * not a billing system, and the per-request gate still caps concurrency.
- */
 async function consumeUsage(
   env: Env,
   userId: string,
@@ -58,6 +43,13 @@ async function consumeUsage(
     if (res && !res.ok) {
       logger.error("[usage] consume_usage RPC failed", { status: res.status });
     }
+    await recordUserEvent(
+      env,
+      "usage",
+      userId,
+      res ? (res.ok ? "ok" : "fail") : "unconfigured",
+      type,
+    );
   } catch (err) {
     logger.error("[usage] consume_usage error", {
       error: err instanceof Error ? err.message : String(err),
@@ -65,15 +57,6 @@ async function consumeUsage(
   }
 }
 
-// ─── Snapshot read (GET /usage) ────────────────────────────────────
-
-/**
- * Full daily-usage snapshot for the mobile quota UI. Limits come from
- * `getLimits(tier)` (the plans SSOT), raw used counts come from the
- * read-only `get_daily_usage` RPC, and `resetsAt` is computed here.
- * Returns null (fails closed) if the RPC is unreachable so callers can
- * degrade to hiding the meter rather than showing garbage.
- */
 export async function fetchUsageSnapshot(
   env: Env,
   userId: string,
@@ -95,35 +78,36 @@ export async function fetchUsageSnapshot(
       day: string;
       translate: number;
       transcribe: number;
-      tts: number;
+      speech: number;
     } = await res.json();
 
     const limits = getLimits(tier);
 
+    const meterLimitField: Record<UsageMeterId, keyof PlanLimits> = {
+      translate: "dailyTranslateLimit",
+      transcribe: "dailyTranscribeLimit",
+      speech: "dailySpeechCharsLimit",
+    };
+
+    const meters = USAGE_METER_META.map(({ id, label, unit }) => {
+      const total = limits[meterLimitField[id]] as number;
+      const used = data[id] ?? 0;
+      return {
+        id,
+        label,
+        unit,
+        used,
+        total,
+        remaining: Math.max(total - used, 0),
+      };
+    });
+
     const snapshot = {
       day: data.day,
       resetsAt: nextUtcMidnightMs(),
-      translate: {
-        used: data.translate,
-        total: limits.dailyTranslateLimit,
-        remaining: Math.max(limits.dailyTranslateLimit - data.translate, 0),
-      },
-      transcribe: {
-        used: data.transcribe,
-        total: limits.dailyTranscribeLimit,
-        remaining: Math.max(limits.dailyTranscribeLimit - data.transcribe, 0),
-      },
-      tts: {
-        // `data.tts` can be absent when talking to a pre-migration database;
-        // treat a missing column as zero used rather than failing the schema.
-        used: data.tts ?? 0,
-        total: limits.dailyTtsCharsLimit,
-        remaining: Math.max(limits.dailyTtsCharsLimit - (data.tts ?? 0), 0),
-      },
+      meters,
     };
 
-    // The shared schema is the contract the mobile app validates against;
-    // fail closed here if we would ever emit a malformed snapshot.
     const parsed = usageSnapshotSchema.safeParse(snapshot);
     if (!parsed.success) {
       logger.error("[usage] snapshot failed shared schema validation", {

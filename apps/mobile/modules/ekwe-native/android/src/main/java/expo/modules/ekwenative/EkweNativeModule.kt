@@ -104,7 +104,7 @@ class EkweNativeModule : Module() {
     @JvmStatic external fun nativeDispatchVadSilence()
 
     // --- Native Audio Processing (JNI) ---
-    @JvmStatic external fun transcodeToOpusWithWaveformJNI(inputPath: String, outputPath: String, maxAudioBytes: Long): Array<Any?>
+    @JvmStatic external fun transcodeToOpusWithWaveformJNI(inputPath: String, outputPath: String, maxAudioBytes: Long, frameMs: Int): Array<Any?>
     @JvmStatic external fun encodePcmToOpusJNI(pcmData: ShortArray, sampleRate: Int, channels: Int, outputPath: String): Array<Any?>
 
     // New: memory-based decode (no temp file for content:// → FLAC)
@@ -155,6 +155,62 @@ class EkweNativeModule : Module() {
         uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
           android.content.res.Configuration.UI_MODE_NIGHT_YES
       if (nightActive) "dark" else "light"
+    }
+
+    // Who installed Ekwe on this device. This is the *forward-compat* gate for
+    // the in-app "New version" update badge:
+    //
+    //   store     → app came from a real distribution store (Play, Amazon,
+    //               Galaxy, AppGallery, Xiaomi…). The store manages the native
+    //               binary itself, so offering an APK download here is wrong —
+    //               the badge auto-hides the day we publish, no code change.
+    //   sideload → no recognized installer (adb install / direct APK). The
+    //               binary can't self-update, so the badge + APK download are
+    //               exactly right.
+    //
+    // Reads the OS installer package via the version-aware API (installSourceInfo
+    // on API 30+, the deprecated installerPackageName on older). We never treat
+    // "adb" as a store, and any unrecognized installer falls back to sideload so
+    // the badge stays honest until we publish.
+    Function("getInstallerSource") {
+      val context = appContext.reactContext ?: return@Function "sideload"
+      val installer =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+          try {
+            context.packageManager
+              .getInstallSourceInfo(context.packageName)
+              .installingPackageName
+          } catch (e: Exception) {
+            null
+          }
+        } else {
+          @Suppress("DEPRECATION")
+          context.packageManager.getInstallerPackageName(context.packageName)
+        }
+
+      when (installer) {
+        null,
+        "",
+        "adb",
+        "com.android.shell",
+        -> "sideload"
+        "com.android.vending", // Google Play
+        "com.google.android.feedback", // Play beta
+        "com.amazon.venezia", // Amazon Appstore
+        "com.amazon.amazonapp", // Amazon
+        "com.sec.android.app.samsungapps", // Galaxy Store
+        "com.huawei.appmarket", // AppGallery
+        "com.xiaomi.market", // Xiaomi / GetApps
+        "com.bbk.launcher2", // Vivo
+        "com.heytap.market", // OPPO
+        "com.hihonor.appmarket", // Honor
+        "com.oneplus.store", // OnePlus
+        "com.fdroid", // F-Droid (its own signed build — treat as store,
+        // though we won't publish there; keeping it means a hypothetical
+        // future F-Droid build never shows a bogus sideload badge)
+        -> "store"
+        else -> "sideload"
+      }
     }
 
     // Release pipelines publish a single universal APK, so there is no
@@ -477,8 +533,9 @@ class EkweNativeModule : Module() {
     }
 
     // --- Audio Conversion Methods ---
-    AsyncFunction("transcodeToOpusWithWaveform") { inputPath: String, outputPath: String, maxAudioBytes: Long ->
-      val result = transcodeToOpusWithWaveformJNI(resolvePath(inputPath), resolvePath(outputPath), sanitizeMaxAudioBytes(maxAudioBytes))
+    AsyncFunction("transcodeToOpusWithWaveform") { inputPath: String, outputPath: String, maxAudioBytes: Long, options: Map<String, Any>? ->
+      val frameMs = (options?.get("frameMs") as? Double)?.toInt() ?: 20
+      val result = transcodeToOpusWithWaveformJNI(resolvePath(inputPath), resolvePath(outputPath), sanitizeMaxAudioBytes(maxAudioBytes), frameMs)
       val success = result[0] as Boolean
       val error = result[1] as String
       val durationMs = result[2] as Int

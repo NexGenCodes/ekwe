@@ -29,7 +29,6 @@ describe("auth store", () => {
       authActions.setIsPro(true);
       authActions.setEntitlementSynced(true);
 
-      // A session refresh with stale (false) metadata must not downgrade.
       authActions.setSession(makeSession("u1", false) as never);
       expect(auth$.isPro.peek()).toBe(true);
     });
@@ -39,10 +38,8 @@ describe("auth store", () => {
       authActions.setIsPro(true);
       authActions.setEntitlementSynced(true);
 
-      // The entitlement listener reports the lapse (cancel/expiry/refund)…
       authActions.setIsPro(false);
 
-      // …then a session refresh mints stale true metadata. It must not win.
       authActions.setSession(makeSession("u1", true) as never);
       expect(auth$.isPro.peek()).toBe(false);
     });

@@ -6,6 +6,7 @@ import { Box, Text } from "@/components/ui";
 import type { PlanFeature } from "@/constants/billing";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
+import { withAlpha } from "@/utils/color";
 
 export interface FeatureRowProps {
   feature: PlanFeature;
@@ -31,7 +32,7 @@ export function FeatureRow({
           style={[
             compact ? styles.featureIconCompact : styles.featureIcon,
             {
-              backgroundColor: isPro ? `${accentColor}25` : `${accentColor}15`,
+              backgroundColor: withAlpha(accentColor, isPro ? 0.125 : 0.08),
             },
           ]}
         >
@@ -45,7 +46,7 @@ export function FeatureRow({
         <Box
           style={[
             compact ? styles.featureIconCompact : styles.featureIcon,
-            { backgroundColor: `${mutedColor}15` },
+            { backgroundColor: withAlpha(mutedColor, 0.08) },
           ]}
         >
           <X size={compact ? 12 : 14} color={mutedColor} strokeWidth={2.5} />
@@ -53,7 +54,11 @@ export function FeatureRow({
       )}
       <Text
         variant="bodySmall"
-        style={{ color: feature.included ? textColor : mutedColor, flex: 1 }}
+        style={{
+          color: feature.included ? textColor : mutedColor,
+          flex: 1,
+          lineHeight: 22,
+        }}
       >
         {feature.title}
       </Text>
@@ -70,7 +75,7 @@ const styles = {
   featureRowCompact: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.sm - spacing.hairline,
   } as const,
   featureIcon: {
     width: 28,

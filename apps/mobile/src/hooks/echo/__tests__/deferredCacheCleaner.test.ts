@@ -1,4 +1,4 @@
-import { createDeferredCacheCleaner } from "../deferredCacheCleaner";
+import { createDeferredCacheCleaner } from "@/hooks/echo/deferredCacheCleaner";
 
 describe("createDeferredCacheCleaner (deferred file teardown)", () => {
   it("does not delete anything until cleanup() is called", () => {
@@ -37,8 +37,7 @@ describe("createDeferredCacheCleaner (deferred file teardown)", () => {
     const deleted: string[] = [];
     const cleaner = createDeferredCacheCleaner((uri) => deleted.push(uri));
     cleaner.remember("old-active.ogg", "old-converted.ogg");
-    // New intent arrives before the previous resolution completed — the
-    // captured set is replaced, so only the newest previous files are cleaned.
+
     cleaner.remember("newer-active.ogg", "newer-converted.ogg");
     cleaner.cleanup();
     expect(deleted).toEqual(["newer-active.ogg", "newer-converted.ogg"]);
@@ -48,9 +47,7 @@ describe("createDeferredCacheCleaner (deferred file teardown)", () => {
     const deleted: string[] = [];
     const cleaner = createDeferredCacheCleaner((uri) => deleted.push(uri));
     cleaner.remember("a", "b");
-    // Simulate an abort: no cleanup() ran. A later successful intent calls
-    // remember again then cleanup — old captured values are overwritten so
-    // nothing stale is double-deleted unexpectedly.
+
     cleaner.remember("c", "d");
     cleaner.cleanup();
     expect(deleted).toEqual(["c", "d"]);

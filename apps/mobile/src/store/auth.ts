@@ -1,16 +1,13 @@
 import { observable } from "@legendapp/state";
 import { Session, User } from "@supabase/supabase-js";
 import type { PaymentProvider } from "@ekwe/shared";
-import { resetPersonalSettings } from "@/store/settings";
+import { resetPersonalSettings, registerIsProProvider } from "@/store/settings";
 import { setSentryUser } from "@/utils/logger";
 
 interface AuthState {
   session: Session | null;
   user: User | null;
   isPro: boolean;
-  /** True once the payment provider has reported for the current user
-   * (status reconciled). While true, isPro is owned by the entitlement and
-   * session refreshes must not override it. */
   isProEntitlementSynced: boolean;
   isInitialized: boolean;
   sessionLoaded: boolean;
@@ -27,28 +24,19 @@ const initialAuth: AuthState = {
 
 export const auth$ = observable<AuthState>(initialAuth);
 
+registerIsProProvider(() => auth$.isPro.peek());
+
 export function getToken(): string | null {
   const session = auth$.session.peek();
   return session?.access_token ?? null;
 }
 
-// Actions
 export const authActions = {
   setSession: (session: Session | null): void => {
     const metadataIsPro = session?.user?.app_metadata?.is_pro === true;
     const previousUser = auth$.user.peek();
     const sameUser = !!previousUser && session?.user?.id === previousUser.id;
 
-    // The payment provider's status reconciliation (useBilling) is the
-    // real-time source of truth for isPro. app_metadata.is_pro is minted by
-    // the access-token hook only after the purchase webhook lands, so a
-    // session refresh during that window still reports false — never downgrade
-    // a same-user session based on that stale metadata.
-    //
-    // Once the entitlement has synced, isPro is owned by the entitlement and
-    // session refreshes must never touch it: stale metadata can otherwise
-    // re-upgrade a cancelled/expired/refunded user back to Pro. Only fall back
-    // to metadata before the first entitlement sync (or on a different user).
     const entitlementSynced = auth$.isProEntitlementSynced.peek();
     const isPro = session
       ? sameUser && entitlementSynced
@@ -60,20 +48,11 @@ export const authActions = {
       session,
       user: session?.user || null,
       isPro,
-      // Track sync state per user: reset when the user changes or signs out.
       isProEntitlementSynced: sameUser ? entitlementSynced : false,
     });
 
-    // Sentry scope identity follows the session (id only — the scrub policy +
-    // anonymous fallback keep PII off the event entirely).
     setSentryUser(session?.user ? { id: session.user.id } : null);
 
-    // Personal account preferences (languages, voice, currency, auto-copy)
-    // must never leak onto a different user on a shared device. Reset them
-    // whenever the signed-in user changes or signs out. Guarded on
-    // `previousUser` so the first-ever session restore on app launch (where
-    // previous is null) does not wipe a returning user's choices. Device-level
-    // prefs (appearance, haptics, volume behavior) are intentionally kept.
     if (previousUser && !sameUser) {
       resetPersonalSettings();
     }
@@ -90,10 +69,6 @@ export const authActions = {
   ): void => {
     auth$.isProEntitlementSynced.set(synced);
   },
-  /** Clears the entitlement-synced flag when the active payment provider
-   * changes, so the newly active provider can take ownership of the Pro state
-   * (its own reconcile/entitlement must re-report before stale session
-   * metadata can be trusted again). */
   resetEntitlementForProviderSwitch: (): void => {
     auth$.isProEntitlementSynced.set(false);
   },

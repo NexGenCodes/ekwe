@@ -1,14 +1,15 @@
 import { Image as ExpoImage } from "expo-image";
 import ChevronRight from "lucide-react-native/icons/chevron-right";
-import Lock from "lucide-react-native/icons/lock";
 import type { LucideIcon } from "lucide-react-native";
 import React from "react";
 
-import { Box, Text, Pressable } from "@/components/ui";
+import { LockedPressable } from "@/components/LockedPressable";
+import { Box, Text } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 import { isIOS } from "@/utils";
+import { withAlpha } from "@/utils/color";
 
 export interface ProfileRowProps {
   icon: LucideIcon;
@@ -21,6 +22,8 @@ export interface ProfileRowProps {
   trailing?: React.ReactNode;
   accentColor?: string;
   locked?: boolean;
+
+  navigateToBilling?: boolean;
 }
 
 export function ProfileRow({
@@ -34,12 +37,19 @@ export function ProfileRow({
   trailing,
   accentColor,
   locked = false,
+  navigateToBilling = false,
 }: ProfileRowProps): React.JSX.Element {
   const { color } = useTheme();
-  const bgTint = `${accentColor ?? iconColor}1A`;
+
+  const iconBg = withAlpha(accentColor ?? iconColor, 0.1);
+
+  const pressBg = withAlpha(accentColor ?? iconColor, 0.15);
 
   return (
-    <Pressable
+    <LockedPressable
+      locked={locked}
+      label={title}
+      navigateToBilling={navigateToBilling}
       onPress={onPress}
       style={({ pressed }) => [
         {
@@ -50,16 +60,28 @@ export function ProfileRow({
         },
         hasDivider && {
           borderBottomColor: color.border,
-          borderBottomWidth: 0.5,
+          borderBottomWidth: 1,
         },
-        pressed && { backgroundColor: bgTint, transform: [{ scale: 0.98 }] },
+        pressed && { backgroundColor: pressBg, transform: [{ scale: 0.98 }] },
       ]}
       accessibilityLabel={subtitle ? `${title}, ${subtitle}` : title}
-      accessibilityValue={
-        locked ? { text: "Locked, Ekwe Pro feature" } : undefined
-      }
+      contentStyle={{
+        flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+      }}
+      hitSlop={12}
     >
-      <Box style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+      <Box
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          flex: 1,
+          minWidth: 0,
+          marginRight: spacing.sm,
+        }}
+      >
         <Box
           style={{
             width: 44,
@@ -67,7 +89,7 @@ export function ProfileRow({
             borderRadius: borderRadius["2xl"],
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: bgTint,
+            backgroundColor: iconBg,
           }}
         >
           {isIOS && sfIcon ? (
@@ -103,18 +125,8 @@ export function ProfileRow({
           )}
         </Box>
       </Box>
-      {locked ? (
-        isIOS ? (
-          <ExpoImage
-            source="sf:lock.fill"
-            style={{ width: 14, height: 14, marginRight: spacing.xs }}
-            tintColor={color.muted}
-          />
-        ) : (
-          <Lock size={16} color={color.muted} />
-        )
-      ) : trailing ? (
-        trailing
+      {locked ? null : trailing ? (
+        <Box style={{ flexShrink: 1 }}>{trailing}</Box>
       ) : isIOS ? (
         <ExpoImage
           source="sf:chevron.right"
@@ -124,6 +136,6 @@ export function ProfileRow({
       ) : (
         <ChevronRight size={20} color={color.muted} />
       )}
-    </Pressable>
+    </LockedPressable>
   );
 }

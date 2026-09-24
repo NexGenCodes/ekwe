@@ -1,12 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { observable } from "@legendapp/state";
-import { SyncService } from "../SyncService";
-import { Db } from "../db";
+import { SyncService } from "@/services/syncService";
+import { Db } from "@/services/db";
 
-// The real "@/store" barrel pulls in the native bridge chain (settings ->
-// sharedContainer -> ekwe-native -> react-native-nitro-modules -> react-native),
-// whose Flow index.js breaks pure-Node parsing. This test only touches the
-// sync service, so stub the store observables instead of loading the graph.
 vi.mock("@/store", () => ({
   history$: observable([]),
   auth$: observable({
@@ -34,7 +30,7 @@ vi.mock("../db", () => ({
   },
 }));
 
-vi.mock("@/utils/netInfo", () => ({
+vi.mock("@/utils/connectivity", () => ({
   checkIsOnline: vi.fn(() => Promise.resolve(true)),
   subscribeToNetwork: vi.fn(() => vi.fn()),
 }));
@@ -57,7 +53,7 @@ vi.mock("../supabase", () => ({
   },
 }));
 
-describe("SyncService", () => {
+describe("syncService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });

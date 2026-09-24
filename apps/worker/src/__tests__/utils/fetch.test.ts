@@ -3,12 +3,10 @@ import {
   getClientHeaders,
   fetchWithTimeout,
   abortableDelay,
-} from "../../utils/fetch";
-import { jsonResponse } from "../setup";
+} from "@/utils/fetch";
+import { jsonResponse } from "@/__tests__/setup";
 import { http } from "msw";
-import { server } from "../msw/server";
-
-// ─── getClientHeaders ─────────────────────────────────────────────
+import { server } from "@/__tests__/msw/server";
 
 describe("getClientHeaders", () => {
   test("returns Accept-Language and never client-controlled IP headers", () => {
@@ -19,8 +17,6 @@ describe("getClientHeaders", () => {
     expect(h["X-Real-IP"]).toBeFalsy();
   });
 });
-
-// ─── fetchWithTimeout ──────────────────────────────────────────────
 
 describe("fetchWithTimeout", () => {
   test("resolves on success before timeout", async () => {
@@ -49,8 +45,6 @@ describe("fetchWithTimeout", () => {
     ).rejects.toThrow();
   });
 });
-
-// ─── abortableDelay ────────────────────────────────────────────────
 
 describe("abortableDelay", () => {
   test("resolves after delay", async () => {

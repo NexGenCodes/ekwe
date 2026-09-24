@@ -3,28 +3,40 @@ import {
   Env,
   TranscribeResult,
   TranslateResult,
-} from "../core/types";
-import { rotateKeys } from "../utils/keys";
-import { buildTranslatePrompt, parseTranslateOutput } from "../utils/prompts";
+} from "@/core/types";
+import { rotateKeys } from "@/utils/keys";
+import { buildTranslatePrompt, parseTranslateOutput } from "@/utils/prompts";
 import {
   fetchWithTimeout,
   getClientHeaders,
   TIMEOUT_FAST,
-} from "../utils/fetch";
-import { mimeToExt } from "../utils/mime";
-import { logger } from "../core/logger";
-import { COHERE_LANGUAGES } from "../services/languages";
+} from "@/utils/fetch";
+import { mimeToExt } from "@/utils/mime";
+import { logger } from "@/core/logger";
 
 const COHERE_CHAT = "https://api.cohere.ai/v2/chat";
 const COHERE_TRANSCRIBE = "https://api.cohere.com/v2/audio/transcriptions";
 const COHERE_MODEL = "cohere-transcribe-03-2026";
 
+const COHERE_LANGUAGES = new Set([
+  "en",
+  "fr",
+  "de",
+  "it",
+  "es",
+  "pt",
+  "el",
+  "nl",
+  "pl",
+  "zh",
+  "ja",
+  "ko",
+  "vi",
+  "ar",
+]);
+
 export const supportedLanguages = COHERE_LANGUAGES;
 
-/**
- * Cohere Command-R — trial key, 1000 calls/mo per key.
- * Excellent multilingual model. Multi-key rotation to multiply capacity.
- */
 export async function translate(
   text: string,
   targetLang: string,
@@ -102,7 +114,7 @@ export async function translate(
   }
 }
 
-export async function transcribe(
+export async function stt(
   blob: Blob,
   lang: string,
   env: Env,

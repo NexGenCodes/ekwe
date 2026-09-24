@@ -1,7 +1,6 @@
 import { getPosthogClient } from "@/services/posthog";
 
 export const AnalyticsEvents = {
-  // Onboarding & Auth
   ONBOARDING_COMPLETED: "onboarding_completed",
   AUTH_OTP_SENT: "auth_otp_sent",
   AUTH_OTP_FAILED: "auth_otp_failed",
@@ -15,27 +14,22 @@ export const AnalyticsEvents = {
   SIGN_OUT: "sign_out",
   DELETE_ACCOUNT: "delete_account",
 
-  // Dictation
   DICTATION_STARTED: "dictation_started",
   DICTATION_CANCELLED: "dictation_cancelled",
 
-  // Transcribing
   TRANSCRIBING_STARTED: "transcribing_started",
   TRANSCRIBING_COMPLETED: "transcribing_completed",
   TRANSCRIPTION_FAILED: "transcription_failed",
 
-  // Translation
   TRANSLATION_COMPLETED: "translation_completed",
   TRANSLATION_FAILED: "translation_failed",
 
-  // Billing
   BILLING_PAGE_VIEWED: "billing_page_viewed",
   BILLING_TOGGLED: "billing_toggled",
   CHECKOUT_INITIATED: "checkout_initiated",
   PURCHASE_SUCCESS: "purchase_success",
 
-  // Engagement
-  TTS_PLAYED: "tts_played",
+  SPEECH_PLAYED: "tts_played",
   RESULT_COPIED: "result_copied",
   RESULT_SHARED: "result_shared",
   RATE_PROMPT_SHOWN: "rate_prompt_shown",

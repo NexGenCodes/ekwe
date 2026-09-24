@@ -1,9 +1,6 @@
-/**
- * SocialAuthGroup — Apple + Google buttons composed together.
- */
 import React from "react";
 
-import { SocialButton } from "./SocialButton";
+import { SocialButton } from "@/components/SocialButton";
 
 import { Box, Text } from "@/components/ui";
 import { spacing } from "@/constants/spacing";

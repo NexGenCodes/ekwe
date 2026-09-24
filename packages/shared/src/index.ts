@@ -1,8 +1,22 @@
 export { APP_VERSION, APP_VERSION_CODE } from "./version";
 export * from "./token";
 export { type Logger, makeLogEntry, scrubSentryEvent } from "./observability";
-export { LANGUAGES, languageName, getLanguageFlag } from "./languages";
+export {
+  LANGUAGES,
+  languageName,
+  getLanguageName,
+  getLanguageFlag,
+} from "./languages";
 export type { Language } from "./languages";
+export {
+  VOICES,
+  VOICE_IDS,
+  STANDARD_VOICE_ID,
+  VOICE_PREVIEW_TEXT,
+  getVoicesByGender,
+  getVoiceById,
+} from "./voices";
+export type { Voice, VoiceGender, VoiceTier, VoiceOrigin } from "./voices";
 export {
   FREE_LIMITS,
   PREMIUM_LIMITS,
@@ -13,7 +27,8 @@ export {
   LOCAL_PRICES,
   MAX_AUDIO_BYTES,
   PRO_PRODUCT_IDS,
-  TTS_MAX_TEXT_CHARS,
+  SPEECH_MAX_TEXT_CHARS,
+  TRANSLATE_EXPANSION_CUSHION,
 } from "./plans";
 export type {
   PlanLimits,
@@ -36,6 +51,8 @@ export {
 } from "./money";
 export type { FlutterwaveCurrency } from "./money";
 export * from "./schemas";
+export { USAGE_METER_META, USAGE_METER_IDS } from "./usageMeters";
+export type { UsageMeterId, UsageMeterMeta } from "./usageMeters";
 export { WORKER_ERROR_CODES, isWorkerErrorCode } from "./errors";
 export type { WorkerErrorCode, Tier, UsageType } from "./errors";
 export {

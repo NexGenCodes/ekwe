@@ -1,8 +1,3 @@
-/**
- * Pro-Level Logger Utility
- * Centralized logging control to satisfy the 'no-console' ESLint rule.
- */
-
 import type { Logger } from "@ekwe/shared";
 import { scrubSentryEvent } from "@ekwe/shared";
 
@@ -11,7 +6,6 @@ const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN;
 
 const noop = (): void => {};
 
-// Initialize Sentry in production if DSN is configured
 let sentryCaptureException: ((err: unknown) => void) | null = null;
 let sentryAddBreadcrumb:
   | ((breadcrumb: {
@@ -36,8 +30,7 @@ if (!IS_DEV && SENTRY_DSN && SENTRY_DSN.startsWith("https://")) {
       environment: process.env.EXPO_PUBLIC_ENV || "production",
       tracesSampleRate: 0.1,
       integrations: [Sentry.reactNativeTracingIntegration()],
-      // Scrub potentially sensitive user content before sending to Sentry.
-      // Policy is shared with the worker via @ekwe/shared.
+
       beforeSend: scrubSentryEvent,
     });
     Sentry.setUser({ id: "anonymous" });
@@ -52,17 +45,14 @@ if (!IS_DEV && SENTRY_DSN && SENTRY_DSN.startsWith("https://")) {
   }
 }
 
-/** Tag the current user on the Sentry scope (id only — no PII). */
 export function setSentryUser(user: { id: string } | null): void {
   sentrySetUser?.(user ?? { id: "anonymous" });
 }
 
-/** Tag the Sentry scope with a custom key/value (e.g. current screen). */
 export function setSentryTag(key: string, value: string): void {
   sentrySetTag?.(key, value);
 }
 
-/** Attach a structured context blob (e.g. provider/device/version). */
 export function setSentryContext(
   key: string,
   data: Record<string, unknown>,
@@ -70,7 +60,6 @@ export function setSentryContext(
   sentrySetContext?.(key, data);
 }
 
-/** Report a handled, non-fatal event (info/warn) for monitoring. */
 export function captureSentryMessage(message: string, level?: string): void {
   sentryCaptureMessage?.(message, level ?? "info");
 }

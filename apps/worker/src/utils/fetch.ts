@@ -1,4 +1,4 @@
-import { CLIENT_ABORTED } from "../core/types";
+import { CLIENT_ABORTED } from "@/core/types";
 
 export const TIMEOUT_FAST = 15_000;
 export const TIMEOUT_SLOW = 25_000;
@@ -29,12 +29,6 @@ export async function fetchWithTimeout(
   }
 }
 
-/**
- * Like fetchWithTimeout, but the timeout is an inactivity timeout rather than
- * a total wall-clock one: it aborts only when no bytes flow (neither headers
- * nor body chunks) for `idleTimeoutMs`. Long-lived streaming sessions (e.g.
- * live dictation) keep running as long as data keeps arriving.
- */
 export async function fetchWithIdleTimeout(
   url: string | URL,
   init: RequestInit,
@@ -132,9 +126,6 @@ export async function abortableDelay(
   });
 }
 
-// Neutral, honest UA. Impersonating real iPhone/Android browser UAs to third
-// party providers risks ToS violations and bulk key bans; a descriptive UA is
-// sufficient and defensible.
 const USER_AGENT =
   "Ekwe/1.0 (voice-translation-app; https://ekwe.pages.dev; Android/iOS)";
 

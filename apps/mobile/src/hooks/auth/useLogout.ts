@@ -6,9 +6,8 @@ import { AppAlert } from "@/utils/alert";
 import logger from "@/utils/logger";
 
 interface UseLogoutReturn {
-  /** Signs out immediately (no confirmation). */
   logout: () => Promise<void>;
-  /** Shows a destructive confirmation dialog before signing out. */
+
   confirmLogout: () => void;
 }
 

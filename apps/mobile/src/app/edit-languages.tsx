@@ -6,6 +6,7 @@ import Animated from "react-native-reanimated";
 
 import { Button, LanguageSelectionGrid } from "@/components";
 import { Box, ScrollArea, Text } from "@/components/ui";
+import { usePermissions } from "@/hooks";
 import { useStyles, useTokens } from "@/hooks/ui";
 import type { Tokens } from "@/hooks/ui";
 import { useFadeIn } from "@/hooks/useAnimation";
@@ -18,6 +19,7 @@ export default function EditLanguagesScreen(): React.ReactElement {
   const { color, spacing, typography, borderRadius } = useTokens();
   const { selected, toggleLanguage, isComplete, remaining, isMaxed } =
     useLanguageSelection();
+  const { maxSelectedLanguages } = usePermissions();
 
   const headerStyle = useFadeIn({ duration: 400 });
 
@@ -75,8 +77,8 @@ export default function EditLanguagesScreen(): React.ReactElement {
 
       <Animated.View style={[styles.header, headerStyle]}>
         <Text variant="bodySmall" style={styles.subtitle}>
-          Select exactly 5 languages you work with. Tap to select, tap again to
-          remove.
+          Select exactly {maxSelectedLanguages} languages you work with. Tap to
+          select, tap again to remove.
         </Text>
       </Animated.View>
 
@@ -111,8 +113,8 @@ export default function EditLanguagesScreen(): React.ReactElement {
           />
           <Text variant="caption" style={{ color: countColor }}>
             {isMaxed
-              ? `${selected.length}/${5} selected`
-              : `${selected.length}/${5} selected — ${remaining} more needed`}
+              ? `${selected.length}/${maxSelectedLanguages} selected`
+              : `${selected.length}/${maxSelectedLanguages} selected — ${remaining} more needed`}
           </Text>
         </Box>
 

@@ -8,11 +8,9 @@ import {
   guardContentType,
   guardWebSocketUpgrade,
   safeParseJSON,
-} from "../../core/guards";
-import { sanitizeTranslationText } from "../../core/sanitize";
-import { getLanguageName } from "../../services/languages";
-
-// ─── guardAudioSize ────────────────────────────────────────────────
+} from "@/core/guards";
+import { sanitizeTranslationText } from "@/core/sanitize";
+import { getLanguageName } from "@ekwe/shared";
 
 describe("guardAudioSize", () => {
   test("FREE: 4MB limit", () => {
@@ -25,8 +23,6 @@ describe("guardAudioSize", () => {
     expect(guardAudioSize(27_000_000, "PREMIUM").allowed).toBe(false);
   });
 });
-
-// ─── guardAudioDuration ───────────────────────────────────────────
 
 describe("guardAudioDuration", () => {
   test("unknown or missing duration passes through", () => {
@@ -54,21 +50,17 @@ describe("guardAudioDuration", () => {
   });
 });
 
-// ─── guardTextLength ──────────────────────────────────────────────
-
 describe("guardTextLength", () => {
-  test("FREE: 3000 chars", () => {
-    expect(guardTextLength("x".repeat(2000), "FREE").allowed).toBe(true);
-    expect(guardTextLength("x".repeat(4000), "FREE").allowed).toBe(false);
+  test("FREE: 1500 char limit", () => {
+    expect(guardTextLength("x".repeat(600), "FREE").allowed).toBe(true);
+    expect(guardTextLength("x".repeat(1501), "FREE").allowed).toBe(false);
   });
 
-  test("PREMIUM: 10000 chars", () => {
-    expect(guardTextLength("x".repeat(8000), "PREMIUM").allowed).toBe(true);
-    expect(guardTextLength("x".repeat(15000), "PREMIUM").allowed).toBe(false);
+  test("PREMIUM: 2400 char limit", () => {
+    expect(guardTextLength("x".repeat(600), "PREMIUM").allowed).toBe(true);
+    expect(guardTextLength("x".repeat(2401), "PREMIUM").allowed).toBe(false);
   });
 });
-
-// ─── guardAutoDetect ──────────────────────────────────────────────
 
 describe("guardAutoDetect", () => {
   test("FREE: auto-detect blocked (PRO-only feature)", () => {
@@ -86,8 +78,6 @@ describe("guardAutoDetect", () => {
     expect(guardAutoDetect("fr", "FREE").allowed).toBe(true);
   });
 });
-
-// ─── guardLanguageCode ─────────────────────────────────────────────
 
 describe("guardLanguageCode", () => {
   test("valid codes pass", () => {
@@ -107,8 +97,6 @@ describe("guardLanguageCode", () => {
     expect(guardLanguageCode(undefined, "lang").allowed).toBe(true);
   });
 });
-
-// ─── guardContentType ─────────────────────────────────────────────
 
 describe("guardContentType", () => {
   function makeRequest(contentType: string): Request {
@@ -135,8 +123,6 @@ describe("guardContentType", () => {
     expect(guardContentType(new Request("http://test")).allowed).toBe(false);
   });
 });
-
-// ─── safeParseJSON ────────────────────────────────────────────────
 
 describe("safeParseJSON", () => {
   test("parses valid JSON", async () => {
@@ -197,8 +183,6 @@ describe("safeParseJSON", () => {
   });
 });
 
-// ─── sanitizeTranslationText ─────────────────────────────────────
-
 describe("sanitizeTranslationText", () => {
   test("strips ignore all previous instructions", () => {
     expect(
@@ -236,8 +220,6 @@ describe("sanitizeTranslationText", () => {
   });
 });
 
-// ─── getLanguageName ──────────────────────────────────────────────
-
 describe("getLanguageName", () => {
   test("returns name for known code", () => {
     expect(getLanguageName("en")).toBe("English");
@@ -255,8 +237,6 @@ describe("getLanguageName", () => {
     expect(getLanguageName("xx")).toBe("xx");
   });
 });
-
-// ─── guardContentType ─────────────────────────────────────────────
 
 describe("guardContentType", () => {
   const jsonReq = new Request("http://test", {
@@ -292,8 +272,6 @@ describe("guardContentType", () => {
     expect(guardContentType(jsonReq, "multipart").allowed).toBe(false);
   });
 });
-
-// ─── guardWebSocketUpgrade ────────────────────────────────────────
 
 describe("guardWebSocketUpgrade", () => {
   test("accepts a websocket upgrade", () => {

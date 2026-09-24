@@ -1,11 +1,11 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 import {
   HomeHeader,
-  TranslationInterface,
+  VoiceStudioInterface,
   BackgroundFlair,
 } from "@/components/home";
 import { Box, SafeArea, ScrollArea } from "@/components/ui";
@@ -15,7 +15,7 @@ import { isIOS } from "@/utils";
 
 export default function HomeScreen(): React.ReactElement {
   const router = useRouter();
-  const onboardingCompleted = useSelector(() =>
+  const onboardingCompleted = useValue(() =>
     settings$.onboardingCompleted.get(),
   );
 
@@ -41,10 +41,10 @@ export default function HomeScreen(): React.ReactElement {
           automaticallyAdjustKeyboardInsets
           nestedScrollEnabled
         >
-          {/* Main content */}
+          {}
           <Box style={{ gap: spacing.md }}>
             <HomeHeader />
-            <TranslationInterface />
+            <VoiceStudioInterface />
           </Box>
         </ScrollArea>
       </KeyboardAvoidingView>

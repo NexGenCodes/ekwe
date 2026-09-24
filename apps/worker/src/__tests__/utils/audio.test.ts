@@ -1,6 +1,6 @@
 import { describe, test, expect } from "vitest";
-import { mergePcmFrames } from "../../utils/pcm";
-import { pcmToWav } from "../../utils/wav";
+import { mergePcmFrames } from "@/utils/pcm";
+import { pcmToWav } from "@/utils/wav";
 
 function readStr(wav: Uint8Array, offset: number, length: number): string {
   return String.fromCharCode(...Array.from(wav.slice(offset, offset + length)));
@@ -38,12 +38,12 @@ describe("pcmToWav", () => {
     expect(readStr(wav, 8, 4)).toBe("WAVE");
     expect(readStr(wav, 12, 4)).toBe("fmt ");
     expect(dv.getUint32(16, true)).toBe(16);
-    expect(dv.getUint16(20, true)).toBe(1); // PCM format
-    expect(dv.getUint16(22, true)).toBe(1); // mono
-    expect(dv.getUint32(24, true)).toBe(16000); // sample rate
-    expect(dv.getUint32(28, true)).toBe(32000); // byte rate = rate * ch * 2
-    expect(dv.getUint16(32, true)).toBe(2); // block align
-    expect(dv.getUint16(34, true)).toBe(16); // bits per sample
+    expect(dv.getUint16(20, true)).toBe(1);
+    expect(dv.getUint16(22, true)).toBe(1);
+    expect(dv.getUint32(24, true)).toBe(16000);
+    expect(dv.getUint32(28, true)).toBe(32000);
+    expect(dv.getUint16(32, true)).toBe(2);
+    expect(dv.getUint16(34, true)).toBe(16);
     expect(readStr(wav, 36, 4)).toBe("data");
     expect(dv.getUint32(40, true)).toBe(pcm.byteLength);
 

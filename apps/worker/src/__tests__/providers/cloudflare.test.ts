@@ -1,12 +1,12 @@
 import { describe, test, expect } from "vitest";
-import * as cloudflare from "../../providers/cloudflare";
-import { mockEnv, makeAudioBlob, mockSignal } from "../setup";
+import * as cloudflare from "@/providers/cloudflare";
+import { mockEnv, makeAudioBlob, mockSignal } from "@/__tests__/setup";
 
 describe("Cloudflare provider", () => {
   describe("transcribe", () => {
     test("returns result on success", async () => {
       const env = mockEnv();
-      const result = await cloudflare.transcribe(
+      const result = await cloudflare.stt(
         makeAudioBlob(),
         "en",
         env,
@@ -20,7 +20,7 @@ describe("Cloudflare provider", () => {
     test("returns null when AI returns empty text", async () => {
       const env = mockEnv();
       env.AI.run = (async () => ({ text: "" })) as unknown as typeof env.AI.run;
-      const result = await cloudflare.transcribe(
+      const result = await cloudflare.stt(
         makeAudioBlob(),
         "en",
         env,
@@ -34,7 +34,7 @@ describe("Cloudflare provider", () => {
       env.AI.run = (async () => ({
         text: "Thanks for watching",
       })) as unknown as typeof env.AI.run;
-      const result = await cloudflare.transcribe(
+      const result = await cloudflare.stt(
         makeAudioBlob(),
         "en",
         env,
@@ -48,7 +48,7 @@ describe("Cloudflare provider", () => {
       env.AI.run = async () => {
         throw new Error("AI model error");
       };
-      const result = await cloudflare.transcribe(
+      const result = await cloudflare.stt(
         makeAudioBlob(),
         "en",
         env,

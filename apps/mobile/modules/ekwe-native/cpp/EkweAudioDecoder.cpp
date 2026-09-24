@@ -161,7 +161,7 @@ static std::vector<float> compute_waveform(const std::vector<int16_t>& pcm_data)
 }
 
 static bool encode_opus(const std::vector<int16_t>& pcm_data, uint32_t sample_rate,
-                        uint16_t channels, const std::string& output_path) {
+                        uint16_t channels, const std::string& output_path, int frame_ms) {
     OpusStreamEncoder encoder(sample_rate, channels, 5);
     if (!encoder.is_ok()) return false;
 
@@ -177,7 +177,7 @@ static bool encode_opus(const std::vector<int16_t>& pcm_data, uint32_t sample_ra
     if (!muxer.write_opus_header(channels, pre_skip_48k, sample_rate)) return false;
     if (!muxer.write_opus_comment()) return false;
 
-    size_t frame_size = sample_rate / 50;
+    size_t frame_size = static_cast<size_t>(sample_rate * frame_ms / 1000);
     size_t total_samples = pcm_data.size();
     // RFC 7845 requires Ogg granule positions to always be expressed in units
     // of 48 kHz samples, regardless of the Opus encoder's input sample rate.
@@ -220,7 +220,7 @@ static bool encode_opus(const std::vector<int16_t>& pcm_data, uint32_t sample_ra
 }
 
 DecodeResult transcode_audio_to_opus(const std::string& input_path, const std::string& output_path,
-                                     size_t max_audio_bytes) {
+                                     size_t max_audio_bytes, int frame_ms) {
     DecodeResult result;
     result.success = false;
 
@@ -331,7 +331,7 @@ DecodeResult transcode_audio_to_opus(const std::string& input_path, const std::s
             return result;
         }
     } else {
-        if (!encode_opus(pcm_data, out_sample_rate, out_channels, output_path)) {
+        if (!encode_opus(pcm_data, out_sample_rate, out_channels, output_path, frame_ms)) {
             result.error_message = "Failed to encode Ogg Opus output.";
             return result;
         }
@@ -669,7 +669,7 @@ static bool encode_pcm_to_caf(const std::vector<int16_t>& pcm_data,
     return true;
 }
 
-DecodeResult decode_audio_to_caf(const std::string& input_path, const std::string& output_path,
+DecodeResult remux_audio_to_caf(const std::string& input_path, const std::string& output_path,
                                  size_t max_audio_bytes) {
     DecodeResult result;
     result.success = false;
@@ -825,7 +825,7 @@ static int mem_close(void* stream) {
 }
 
 DecodeResult transcode_audio_to_opus_from_memory(
-    const uint8_t* data, size_t data_size, const std::string& output_path, size_t max_audio_bytes) {
+    const uint8_t* data, size_t data_size, const std::string& output_path, size_t max_audio_bytes, int frame_ms) {
     DecodeResult result;
     result.success = false;
 
@@ -931,7 +931,7 @@ DecodeResult transcode_audio_to_opus_from_memory(
             return result;
         }
     } else {
-        if (!encode_opus(pcm_data, out_sample_rate, out_channels, output_path)) {
+        if (!encode_opus(pcm_data, out_sample_rate, out_channels, output_path, frame_ms)) {
             result.error_message = "Failed to encode Ogg Opus from memory-decoded audio.";
             return result;
         }
@@ -945,7 +945,7 @@ DecodeResult transcode_audio_to_opus_from_memory(
 
 DecodeResult encode_pcm_to_opus(const int16_t* pcm_data, size_t num_samples,
                                 uint32_t sample_rate, uint16_t channels,
-                                const std::string& output_path) {
+                                const std::string& output_path, int frame_ms) {
     DecodeResult result;
     result.success = false;
 
@@ -956,7 +956,7 @@ DecodeResult encode_pcm_to_opus(const int16_t* pcm_data, size_t num_samples,
 
     std::vector<int16_t> pcm_vec(pcm_data, pcm_data + num_samples);
 
-    if (!encode_opus(pcm_vec, sample_rate, channels, output_path)) {
+    if (!encode_opus(pcm_vec, sample_rate, channels, output_path, frame_ms)) {
         result.error_message = "Failed to encode Ogg Opus from PCM data.";
         return result;
     }

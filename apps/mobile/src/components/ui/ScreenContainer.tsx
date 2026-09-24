@@ -1,9 +1,9 @@
 import React from "react";
 import type { ViewStyle } from "react-native";
 
-import { Box } from "./Box";
-import { SafeArea } from "./SafeArea";
-import { ScrollArea, type ScrollAreaProps } from "./ScrollArea";
+import { Box } from "@/components/ui/Box";
+import { SafeArea } from "@/components/ui/SafeArea";
+import { ScrollArea, type ScrollAreaProps } from "@/components/ui/ScrollArea";
 
 export interface ScreenContainerProps extends ScrollAreaProps {
   children: React.ReactNode;

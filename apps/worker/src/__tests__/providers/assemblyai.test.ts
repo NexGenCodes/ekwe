@@ -1,9 +1,14 @@
 import { describe, test, expect } from "vitest";
-import * as assemblyai from "../../providers/assemblyai";
-import { mockEnv, makeAudioBlob, jsonResponse, mockSignal } from "../setup";
+import * as assemblyai from "@/providers/assemblyai";
+import {
+  mockEnv,
+  makeAudioBlob,
+  jsonResponse,
+  mockSignal,
+} from "@/__tests__/setup";
 import { http } from "msw";
-import { server } from "../msw/server";
-import { PROVIDER_URLS } from "../msw/handlers";
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 const transcript = () =>
   http.post(PROVIDER_URLS.assemblyaiTranscript, () =>
@@ -27,7 +32,7 @@ describe("AssemblyAI provider", () => {
       ),
     );
 
-    const result = await assemblyai.transcribe(
+    const result = await assemblyai.stt(
       makeAudioBlob(),
       "en",
       mockEnv(),
@@ -46,7 +51,7 @@ describe("AssemblyAI provider", () => {
         jsonResponse({ error: "bad key" }, 401),
       ),
     );
-    const result = await assemblyai.transcribe(
+    const result = await assemblyai.stt(
       makeAudioBlob(),
       "en",
       mockEnv(),
@@ -66,7 +71,7 @@ describe("AssemblyAI provider", () => {
       ),
     );
 
-    const result = await assemblyai.transcribe(
+    const result = await assemblyai.stt(
       makeAudioBlob(),
       "en",
       mockEnv({ ASSEMBLYAI_KEY_2: "" }),

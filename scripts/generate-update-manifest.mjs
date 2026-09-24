@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// Single source of truth for the downloadable APK: apps/web/config.json.
-// The download link there is the full URL to app-release.apk; the bucket base
-// is derived from it so the manifest can never drift from the landing page.
+
+
+
 const webConfig = JSON.parse(fs.readFileSync(path.resolve('apps/web/config.json'), 'utf8'));
 const downloadLink = webConfig.links?.download;
 if (typeof downloadLink !== 'string' || !downloadLink.startsWith('https://')) {

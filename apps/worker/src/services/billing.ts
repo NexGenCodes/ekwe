@@ -1,16 +1,6 @@
-/**
- * ─── Billing Provider Registry ───────────────────────────────────
- *
- * Maps each payment provider to its webhook handler, configuration, and
- * verification logic. New providers are added here — the router in index.ts
- * stays unchanged.
- */
-
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
-import { Env } from "../core/types";
-import { logger } from "../core/logger";
-
-// ─── Types ───────────────────────────────────────────────────────
+import { Env } from "@/core/types";
+import { logger } from "@/core/logger";
 
 export interface ProviderResult {
   response: Response;
@@ -23,13 +13,9 @@ export type ProviderProcessor = (
 ) => Promise<ProviderResult>;
 
 export interface ProviderConfig {
-  /** Whether this provider is enabled via environment secrets. */
   enabled: (env: Env) => boolean;
-  /** The webhook event processor. */
   process: ProviderProcessor;
 }
-
-// ─── Registry ────────────────────────────────────────────────────
 
 const registry = new Map<string, ProviderConfig>();
 
@@ -45,9 +31,6 @@ export function hasProvider(name: string): boolean {
   return registry.has(name);
 }
 
-// ─── Unknown Provider Fallback ───────────────────────────────────
-// Always available — catches anything that doesn't match a registered provider.
-
 export const unknownProvider: ProviderProcessor = () =>
   Promise.resolve({
     response: Response.json(
@@ -57,11 +40,6 @@ export const unknownProvider: ProviderProcessor = () =>
     fullyApplied: true,
   });
 
-/**
- * Processes a webhook event by looking up the registered provider and
- * delegating to its processor. Falls back to the unknown provider handler
- * if no matching provider is found.
- */
 export async function processWebhookEvent(
   providerName: string,
   event: Record<string, unknown>,

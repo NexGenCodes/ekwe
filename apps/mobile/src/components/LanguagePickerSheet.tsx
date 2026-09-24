@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { SectionList } from "react-native";
 
-import { Button } from "./Button";
-import { Sheet } from "./ui/Sheet";
+import { Button } from "@/components/Button";
+import { Sheet } from "@/components/ui/Sheet";
 
 import { LanguageRow, LanguageSearchBar } from "@/components/language";
 import { Box, Text } from "@/components/ui";

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { matchPath, matchRoute, RouteLike } from "../../core/router";
+import { matchPath, matchRoute, RouteLike } from "@/core/router";
 
 describe("matchPath", () => {
   test("matches an exact path with no params", () => {
@@ -34,7 +34,6 @@ describe("matchPath", () => {
   });
 
   test("requires a valid param identifier", () => {
-    // `:1x` is not a valid param name, so it is treated as a literal.
     expect(matchPath("/:1x", "/value")).toBeNull();
   });
 

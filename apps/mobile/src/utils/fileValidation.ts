@@ -44,10 +44,6 @@ export const VOICE_NOTE_EXTENSION_TO_MIME: Record<string, string> = {
   mp4: "audio/mp4",
 };
 
-/**
- * Validates if the given URI has a valid voice-note extension or MIME type.
- * WhatsApp often provides "audio/ogg; codecs=opus".
- */
 const validateVoiceNoteFormat = (uri: string, mimeType?: string): boolean => {
   const lowerUri = uri.toLowerCase();
   const hasExt = VOICE_NOTE_EXTENSIONS.some((ext) => lowerUri.endsWith(ext));
@@ -61,9 +57,6 @@ const validateVoiceNoteFormat = (uri: string, mimeType?: string): boolean => {
   return false;
 };
 
-/**
- * Checks if the file exists and is within the size limit using the modern JSI File API.
- */
 const validateFileSize = async (
   uri: string,
   maxSize: number,
@@ -71,7 +64,6 @@ const validateFileSize = async (
   try {
     const file = new ExpoFile(uri);
 
-    // Synchronous JSI property access
     if (!file.exists) {
       return err(EkweError.SHARE_COPY_FAIL);
     }
@@ -85,14 +77,8 @@ const validateFileSize = async (
   }
 };
 
-/**
- * PRO-LEVEL: Magic Bytes Sniffing.
- * Verifies if the file actually contains audio headers.
- * Updated for better OggOpus and modern M4A support.
- */
 const sniffAudioHeader = async (uri: string): Promise<boolean> => {
   try {
-    // Read only the first 12 bytes using FileHandle to avoid out-of-memory crashes on large files.
     const file = new ExpoFile(uri);
     if (!file.exists) return false;
     const handle = file.open(FileMode.ReadOnly);
@@ -106,32 +92,20 @@ const sniffAudioHeader = async (uri: string): Promise<boolean> => {
     const header = btoa(binary);
     if (!header) return false;
 
-    const signatures = [
-      "T2dnUw", // "OggS"
-      "OpusHead",
-      "ZnR5c", // "ftyp" (MP4/M4A)
-      "I0FNUg", // "#!AMR"
-      "UklGR", // "RIFF" (WAV)
-    ];
+    const signatures = ["T2dnUw", "OpusHead", "ZnR5c", "I0FNUg", "UklGR"];
 
-    // Also check for raw "OpusHead" text if base64 decoding isn't yielding exact match
     return signatures.some((sig) => header.includes(sig));
   } catch {
     return false;
   }
 };
 
-/**
- * Combined validation pipeline for shared audio files.
- */
 export const validateSharedAudio = async (
   uri: string,
   mimeType?: string,
 ): Promise<Result<{ uri: string }, EkweError>> => {
   if (uri.length === 0) return err(EkweError.SHARE_COPY_FAIL);
 
-  // PRO-LEVEL: If mimeType is the generic 'application/octet-stream' (common for WhatsApp),
-  // we proceed directly to sniffing rather than failing early.
   const isGeneric = mimeType?.toLowerCase() === "application/octet-stream";
 
   if (!isGeneric && !validateVoiceNoteFormat(uri, mimeType)) {
@@ -149,7 +123,6 @@ export const validateSharedAudio = async (
 
   const isSniffed = await sniffAudioHeader(uri);
   if (!isSniffed) {
-    // If it's a generic stream and sniffing fails, it's definitely not one of ours.
     return err(EkweError.BAD_FORMAT);
   }
 

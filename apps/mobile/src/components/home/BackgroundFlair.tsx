@@ -46,8 +46,6 @@ export const BackgroundFlair = (): React.ReactElement => {
       blob1Y.value = 0;
     };
 
-    // Only animate while the app is actively foregrounded so the decorative
-    // blob doesn't consume UI-thread work in the background.
     const sub = AppState.addEventListener("change", (next) => {
       if (next === "active") run();
       else stop();
@@ -69,7 +67,7 @@ export const BackgroundFlair = (): React.ReactElement => {
 
   return (
     <Animated.View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {/* Top-Right Ambient Blob (Subtle Brand Blue) */}
+      {}
       <Animated.View
         style={[
           styles.blob,

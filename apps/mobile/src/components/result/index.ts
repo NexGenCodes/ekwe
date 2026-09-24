@@ -1,1 +1,1 @@
-export * from "./ResultProcessingIndicator";
+export * from "@/components/result/ResultProcessingIndicator";

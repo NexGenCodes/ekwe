@@ -44,12 +44,12 @@ export function SwapButton({
 
   const handlePress = async (): Promise<void> => {
     if (isSwapDisabled) {
-      triggerHaptic(Haptics.NotificationFeedbackType.Warning);
-      const message =
-        sourceLang === "auto" || targetLang === "auto"
-          ? "Cannot swap when source is set to Auto Detect"
-          : "Source and target languages must be different";
-      AppToast.info(message);
+      await triggerHaptic(Haptics.NotificationFeedbackType.Warning);
+      if (sourceLang === "auto" || targetLang === "auto") {
+        AppToast.info("Cannot swap when source is set to Auto Detect");
+      } else if (sourceLang === targetLang) {
+        AppToast.info("Input and output are already the same language");
+      }
       return;
     }
     swapRotation.value = withTiming(swapRotation.value + 180, {
@@ -62,6 +62,7 @@ export function SwapButton({
   return (
     <Pressable
       accessibilityLabel="Swap languages"
+      accessibilityState={{ disabled: isSwapDisabled }}
       onPress={handlePress}
       style={({ pressed }) => [
         {

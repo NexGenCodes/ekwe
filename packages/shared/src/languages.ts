@@ -9,17 +9,15 @@ export interface Language {
   nativeName: string;
 }
 
-/**
- * Returns the English name for a language code, or the code itself when
- * unknown. "auto" is passed through so callers can decide their own label.
- */
 export function languageName(code: string): string {
-  const lang = LANGUAGES.find((l) => l.code === code);
-  return lang?.englishName ?? code;
+  return LANGUAGE_BY_CODE.get(code)?.englishName ?? code;
 }
 
-// Codes whose ISO 639-1 name is misleading for the variant we ship, or that
-// countries-list doesn't cover (haw/ci/ck/yue are not ISO 639-1).
+export function getLanguageName(code: string | undefined | null): string {
+  if (!code || code === "auto") return "auto-detected language";
+  return languageName(code);
+}
+
 const NAME_OVERRIDES: Record<
   string,
   { englishName: string; nativeName: string }
@@ -31,7 +29,6 @@ const NAME_OVERRIDES: Record<
   yue: { englishName: "Cantonese", nativeName: "粵語" },
 };
 
-// Provider-supported subset (curated — providers gate which codes they accept).
 const LANGUAGE_CODES = [
   "en",
   "es",
@@ -174,9 +171,6 @@ const LANGUAGE_CODES = [
   "wo",
 ] as const;
 
-// Names come from the ISO 639-1 dataset (maintained by countries-list), not
-// hand-typed. englishName/nativeName fall back to the code itself if a code
-// is ever removed upstream.
 export const LANGUAGES: Language[] = LANGUAGE_CODES.map((code) => {
   const lib = countryLanguages[code as keyof typeof countryLanguages];
   const override = NAME_OVERRIDES[code];
@@ -187,10 +181,10 @@ export const LANGUAGES: Language[] = LANGUAGE_CODES.map((code) => {
   };
 });
 
-// Representative country (ISO 3166-1 alpha-2) per language, for flag display.
-// Curated: the country most users associate with each language. Languages
-// with no meaningful country (constructed/historical) or a sub-national flag
-// live in FLAG_OVERRIDES instead.
+export const LANGUAGE_BY_CODE: ReadonlyMap<string, Language> = new Map(
+  LANGUAGES.map((l): [string, Language] => [l.code, l]),
+);
+
 const LANG_TO_COUNTRY: Record<string, TCountryCode> = {
   en: "GB",
   es: "ES",
@@ -337,14 +331,12 @@ const FLAG_OVERRIDES: Record<string, string> = {
   gd: "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
 };
 
-/** Returns a flag emoji for a language code, or a neutral flag when unknown. */
 export function getLanguageFlag(code: string): string {
   if (FLAG_OVERRIDES[code]) return FLAG_OVERRIDES[code];
   const country = LANG_TO_COUNTRY[code];
   return country ? flagEmoji(country) : "🏳️";
 }
 
-/** Builds a regional-indicator flag from an ISO 3166-1 alpha-2 code. */
 function flagEmoji(country: string): string {
   return String.fromCodePoint(
     ...Array.from(country).map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 0x41),

@@ -1,8 +1,6 @@
 import { describe, test, expect, vi } from "vitest";
-import { sanitizeKey } from "../../utils/keys";
-import { mockEnv, jsonResponse } from "../setup";
-
-// ─── sanitizeKey ───────────────────────────────────────────────────
+import { sanitizeKey } from "@/utils/keys";
+import { mockEnv, jsonResponse } from "@/__tests__/setup";
 
 describe("sanitizeKey", () => {
   test("passes valid key through", () => {
@@ -30,11 +28,9 @@ describe("sanitizeKey", () => {
   });
 });
 
-// ─── getRandomInt ─────────────────────────────────────────────────
-
 describe("getRandomInt", () => {
   test("returns a value in [0, max)", async () => {
-    const { getRandomInt } = await import("../../utils/keys");
+    const { getRandomInt } = await import("@/utils/keys");
     for (let i = 0; i < 100; i++) {
       const value = getRandomInt(100);
       expect(value).toBeGreaterThanOrEqual(0);
@@ -43,7 +39,7 @@ describe("getRandomInt", () => {
   });
 
   test("does not loop forever for max <= 0", async () => {
-    const { getRandomInt } = await import("../../utils/keys");
+    const { getRandomInt } = await import("@/utils/keys");
     expect(getRandomInt(0)).toBeNaN();
     expect(getRandomInt(-5)).toBeNaN();
     expect(getRandomInt(1.5)).toBeNaN();
@@ -51,11 +47,9 @@ describe("getRandomInt", () => {
   });
 });
 
-// ─── rotateKeys (integration with mock) ────────────────────────────
-
 describe("rotateKeys", () => {
   test("returns first 2xx response", async () => {
-    const { rotateKeys } = await import("../../utils/keys");
+    const { rotateKeys } = await import("@/utils/keys");
     const env = mockEnv({
       GROQ_KEY_1: "valid-key-1-abcde",
       GROQ_KEY_2: "valid-key-2-abcde",
@@ -78,7 +72,7 @@ describe("rotateKeys", () => {
   });
 
   test("skips blacklisted keys", async () => {
-    const { rotateKeys, hashKey } = await import("../../utils/keys");
+    const { rotateKeys, hashKey } = await import("@/utils/keys");
     const env = mockEnv({
       GROQ_KEY_1: "blacklisted-key-abc",
       GROQ_KEY_2: "valid-key-2-abcde",
@@ -105,7 +99,7 @@ describe("rotateKeys", () => {
   });
 
   test("blacklists 429 keys", async () => {
-    const { rotateKeys } = await import("../../utils/keys");
+    const { rotateKeys } = await import("@/utils/keys");
     const env = mockEnv({
       GROQ_KEY_1: "rate-limited-key-abc",
     });
@@ -127,7 +121,7 @@ describe("rotateKeys", () => {
   });
 
   test("blacklists 401 keys with a 24h TTL", async () => {
-    const { rotateKeys, hashKey } = await import("../../utils/keys");
+    const { rotateKeys, hashKey } = await import("@/utils/keys");
     const env = mockEnv({
       GROQ_KEY_1: "unauthorized-key-abc",
     });
@@ -148,7 +142,7 @@ describe("rotateKeys", () => {
   });
 
   test("blacklists 402 keys with a 24h TTL", async () => {
-    const { rotateKeys, hashKey } = await import("../../utils/keys");
+    const { rotateKeys, hashKey } = await import("@/utils/keys");
     const env = mockEnv({
       GROQ_KEY_1: "payment-required-key",
     });
@@ -169,7 +163,7 @@ describe("rotateKeys", () => {
   });
 
   test("blacklists 403 keys with a 24h TTL", async () => {
-    const { rotateKeys, hashKey } = await import("../../utils/keys");
+    const { rotateKeys, hashKey } = await import("@/utils/keys");
     const env = mockEnv({
       GROQ_KEY_1: "forbidden-key-abc",
     });
@@ -190,7 +184,7 @@ describe("rotateKeys", () => {
   });
 
   test("does not blacklist other 4xx statuses", async () => {
-    const { rotateKeys } = await import("../../utils/keys");
+    const { rotateKeys } = await import("@/utils/keys");
     const env = mockEnv({
       GROQ_KEY_1: "bad-request-key",
     });
@@ -206,7 +200,7 @@ describe("rotateKeys", () => {
   });
 
   test("shuffles keys deterministically when the RNG is stubbed", async () => {
-    const { rotateKeys } = await import("../../utils/keys");
+    const { rotateKeys } = await import("@/utils/keys");
     const env = mockEnv({
       GROQ_KEY_1: "healthy-key-abcde",
       GROQ_KEY_2: "sick-key-abcde",
@@ -238,7 +232,7 @@ describe("rotateKeys", () => {
   });
 
   test("skips 4xx and 5xx errors", async () => {
-    const { rotateKeys } = await import("../../utils/keys");
+    const { rotateKeys } = await import("@/utils/keys");
     const env = mockEnv({
       GROQ_KEY_1: "fail-key-1-abcde",
       GROQ_KEY_2: "valid-key-2-abcde",
@@ -263,7 +257,7 @@ describe("rotateKeys", () => {
   });
 
   test("returns null when all keys fail", async () => {
-    const { rotateKeys } = await import("../../utils/keys");
+    const { rotateKeys } = await import("@/utils/keys");
     const env = mockEnv({
       GROQ_KEY_1: "fail-key-1-abcde",
       GROQ_KEY_2: "fail-key-2-abcde",
@@ -279,7 +273,7 @@ describe("rotateKeys", () => {
   });
 
   test("fails fast on 5xx without trying remaining keys", async () => {
-    const { rotateKeys } = await import("../../utils/keys");
+    const { rotateKeys } = await import("@/utils/keys");
     const env = mockEnv({
       GROQ_KEY_1: "fail-key-1-abcde",
       GROQ_KEY_2: "fail-key-2-abcde",
@@ -302,7 +296,7 @@ describe("rotateKeys", () => {
   });
 
   test("throws on abort", async () => {
-    const { rotateKeys } = await import("../../utils/keys");
+    const { rotateKeys } = await import("@/utils/keys");
     const env = mockEnv({ GROQ_KEY_1: "valid-key-1-abcde" });
     const controller = new AbortController();
     controller.abort();
@@ -315,5 +309,26 @@ describe("rotateKeys", () => {
         controller.signal,
       ),
     ).rejects.toThrow("CLIENT_ABORTED");
+  });
+});
+
+describe("timingSafeEqual", () => {
+  test("matches identical strings", async () => {
+    const { timingSafeEqual } = await import("@/utils/keys");
+    await expect(
+      timingSafeEqual("Bearer abc123", "Bearer abc123"),
+    ).resolves.toBe(true);
+  });
+
+  test("rejects differing strings of equal length", async () => {
+    const { timingSafeEqual } = await import("@/utils/keys");
+    await expect(
+      timingSafeEqual("Bearer abc123", "Bearer abc124"),
+    ).resolves.toBe(false);
+  });
+
+  test("rejects differing lengths", async () => {
+    const { timingSafeEqual } = await import("@/utils/keys");
+    await expect(timingSafeEqual("a", "abc")).resolves.toBe(false);
   });
 });

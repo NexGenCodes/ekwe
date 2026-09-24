@@ -1,15 +1,4 @@
-/**
- * ─── useBilling Hook ─────────────────────────────────────────────
- *
- * Client-side billing orchestrator. Delegates to the Flutterwave SDK
- * in-app modal checkout flow.
- *
- * The purchase flow writes to the `user_subscriptions` table in
- * Supabase via the `set_pro_status` RPC, so the tier resolution is
- * provider-agnostic.
- */
-
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { useState, useEffect, useRef, useCallback } from "react";
 
 import { useActivePricing } from "@/hooks/billing/useActivePricing";
@@ -40,36 +29,32 @@ export interface UseBillingReturn {
   proPlan: typeof BILLING_PLANS.pro;
   annualSavingPercent: number;
   loading: boolean;
-  /** The currently active payment provider. */
+
   provider: "flutterwave" | null;
-  /** Available providers for this platform. */
+
   availableProviders: "flutterwave"[];
-  /** Whether the checkout sheet is visible. */
+
   showCheckout: boolean;
-  /** The worker-authorized checkout session to feed the SDK. */
+
   checkoutSession: CheckoutSession | null;
-  /** The plan id attached to the active checkout session. */
+
   checkoutPlan: string | null;
-  /** Called when the SDK checkout completes (payment or redirect). */
+
   handleCheckoutComplete: (data: {
     status: string | null;
     tx_ref: string | null;
     transaction_id: string | null;
   }) => void;
-  /** Called when the user dismisses the checkout sheet. */
+
   handleCheckoutDismiss: () => void;
 }
-
-// ─── Error Messages ──────────────────────────────────────────────
 
 const FLUTTERWAVE_UNAVAILABLE_TITLE = "Payment Unavailable";
 const FLUTTERWAVE_UNAVAILABLE_MESSAGE =
   "Online payments are not available. Please try again later.";
 
-// ─── Hook ────────────────────────────────────────────────────────
-
 export function useBilling(): UseBillingReturn {
-  const isPro = useSelector(() => auth$.isPro.get());
+  const isPro = useValue(() => auth$.isPro.get());
   const [isAnnual, setIsAnnual] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
@@ -79,23 +64,16 @@ export function useBilling(): UseBillingReturn {
   const { pricing } = useActivePricing();
   const { provider, availableProviders } = usePaymentProvider();
 
-  // Refs mirroring the checkout state so the memoized completion callback can
-  // attach revenue metadata to the success event without stale closures.
   const checkoutSessionRef = useRef<CheckoutSession | null>(null);
   const checkoutPlanRef = useRef<string | null>(null);
 
-  // Track previous provider to detect switches
   const prevProviderRef = useRef(provider);
   useEffect(() => {
     if (prevProviderRef.current !== provider) {
-      // Provider switched: reset entitlement sync so the new provider
-      // can take ownership of the Pro state.
       authActions.resetEntitlementForProviderSwitch();
       prevProviderRef.current = provider;
     }
   }, [provider]);
-
-  // ── Upgrade Handler ──────────────────────────────────────────
 
   const handleUpgrade = async (): Promise<void> => {
     const session = auth$.session.get();
@@ -135,8 +113,6 @@ export function useBilling(): UseBillingReturn {
     }
   };
 
-  // ── Checkout Complete ────────────────────────────────────────
-
   const handleCheckoutComplete = useCallback(
     async (data: {
       status: string | null;
@@ -149,9 +125,6 @@ export function useBilling(): UseBillingReturn {
 
       const session = checkoutSessionRef.current;
 
-      // Primary path: SDK reports successful payment with a transaction_id.
-      // Call the verify endpoint which verifies with Flutterwave API and
-      // calls set_pro_status RPC. Works in both test and live modes.
       if (data.status === "successful" && data.transaction_id) {
         try {
           const txId = Number(data.transaction_id);
@@ -177,7 +150,6 @@ export function useBilling(): UseBillingReturn {
         }
       }
 
-      // Fallback: poll for Pro status (webhook processes asynchronously on live).
       const upgraded = await reconcileFlutterwaveStatus();
       if (upgraded) {
         authActions.setIsPro(true);
@@ -196,8 +168,6 @@ export function useBilling(): UseBillingReturn {
     [],
   );
 
-  // ── Checkout Dismiss ─────────────────────────────────────────
-
   const handleCheckoutDismiss = useCallback(() => {
     setShowCheckout(false);
     setCheckoutSession(null);
@@ -206,8 +176,6 @@ export function useBilling(): UseBillingReturn {
     checkoutPlanRef.current = null;
   }, []);
 
-  // ── Manage Handler ──────────────────────────────────────────
-
   const handleManage = async (): Promise<void> => {
     AppAlert.info(
       "Manage Subscription",
@@ -215,11 +183,8 @@ export function useBilling(): UseBillingReturn {
     );
   };
 
-  // ── Restore Handler ──────────────────────────────────────────
-
   const handleRestore = async (): Promise<void> => {
     try {
-      // Flutterwave doesn't have a restore concept — check session directly
       const { data: sessionData, error } = await supabase.auth.refreshSession();
       if (error) throw error;
 

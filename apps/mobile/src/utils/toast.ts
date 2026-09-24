@@ -1,25 +1,20 @@
 import * as Haptics from "expo-haptics";
 import { toast } from "sonner-native";
 
-import { triggerHaptic } from "./haptics";
-import { sanitizeErrorMessage } from "./errorSafe";
-import logger from "./logger";
+import { triggerHaptic } from "@/utils/haptics";
+import { sanitizeErrorMessage } from "@/utils/errorSafe";
+import logger from "@/utils/logger";
 
 export interface AppToastOptions {
-  /** Description text to show below the title */
   description?: string;
-  /** Duration in milliseconds */
+
   duration?: number;
-  /** Play haptics? Defaults to true */
+
   haptics?: boolean | Haptics.NotificationFeedbackType;
-  /** Optional action button rendered on the toast */
+
   action?: { label: string; onClick: () => void };
 }
 
-/**
- * Reusable Toast system wrapping sonner-native.
- * Automatically adds Haptics and standardized durations.
- */
 export const AppToast = {
   info: (title: string, options?: AppToastOptions): void => {
     if (options?.haptics !== false) {
@@ -64,8 +59,6 @@ export const AppToast = {
     let description = options?.description;
     const error = options?.error;
 
-    // Raw errors are logged verbatim for diagnosis but the UI only ever sees
-    // sanitized plain text (URLs/project refs collapse to fallback copy).
     if (error) {
       const safe = sanitizeErrorMessage(error);
       if (safe !== null) description = safe;
@@ -73,9 +66,6 @@ export const AppToast = {
     }
 
     if (description || error) {
-      // User is already shown the toast; don't spam Sentry with error-level
-      // events for every handled failure. Log the readable message at warn and
-      // only surface a genuine Error object to Sentry as an error.
       logger.warn(
         `[AppToast Error] ${title} - ${description || "Unknown error"}`,
       );

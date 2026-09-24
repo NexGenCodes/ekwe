@@ -34,20 +34,14 @@ const fmtMinutes = (ms: number): string => `${Math.round(ms / 60_000)} min`;
 const fmtHistory = (days: number): string =>
   days % 365 === 0 ? `${days / 365}-year` : `${days}-day`;
 
-/** Combined daily caps: "25 translations & 25 transcriptions per day". */
 const dailyCaps = (translate: number, transcribe: number): string =>
   translate === 0 && transcribe === 0
     ? "Unlimited translations & transcriptions"
     : `${fmtInt(translate)} translations & ${fmtInt(transcribe)} transcriptions per day`;
 
-/**
- * Premium speech feature line. The daily ceiling is intentionally not shown to
- * users — the client silently falls back to on-device speech when it's hit.
- */
 const speechCap = (chars: number): string =>
   chars === 0 ? "No text-to-speech" : "Premium natural text-to-speech";
 
-/** Combined content limits: "3,000-char texts & voice notes up to 2 min". */
 const contentLimits = (textChars: number, durationMs: number): string =>
   `${fmtInt(textChars)}-char texts & voice notes up to ${fmtMinutes(durationMs)}`;
 
@@ -101,7 +95,7 @@ export const BILLING_PLANS = {
       { title: "Live dictation with auto-detect", included: true },
       { title: "Ad-free experience", included: true },
       {
-        title: speechCap(PLAN_LIMITS.pro.dailyTtsCharsLimit),
+        title: speechCap(PLAN_LIMITS.pro.dailySpeechCharsLimit),
         included: true,
       },
       {

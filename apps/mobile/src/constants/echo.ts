@@ -7,8 +7,6 @@ export const ECHO_CONSTANTS = {
   },
 };
 
-// Brand signature appended to text copied or shared from an Echo result, so a
-// pasted translation always carries the Ekwe call-to-action back to the app.
 export const ECHO_SHARE_SIGNATURE =
   "\n\n— Shared with Ekwe · Speak, we'll handle the rest";
 

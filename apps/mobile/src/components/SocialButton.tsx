@@ -1,9 +1,3 @@
-/**
- * SocialButton — Apple / Google sign-in button.
- *
- * Apple is disabled (not hidden) on Android — it stays visible but
- * non-interactive so the layout reads the same across platforms.
- */
 import React from "react";
 import Svg, { Path, G, ClipPath, Defs } from "react-native-svg";
 
@@ -20,7 +14,6 @@ interface SocialButtonProps {
   disabled?: boolean;
 }
 
-/** Official multicolour Google "G" logo */
 const GoogleLogo = (): React.ReactElement => (
   <Svg width={20} height={20} viewBox="0 0 48 48">
     <Defs>
@@ -37,7 +30,6 @@ const GoogleLogo = (): React.ReactElement => (
   </Svg>
 );
 
-/** Apple logo — official SVG path */
 const AppleLogo = ({ color }: { color: string }): React.ReactElement => (
   <Svg width={20} height={20} viewBox="0 0 814 1000">
     <Path

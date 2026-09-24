@@ -1,25 +1,8 @@
-/**
- * ─── Worker Pricing Service ──────────────────────────────────────
- *
- * Reads the worker's public GET /pricing endpoint (no auth required). The
- * worker prices from the single source of truth — the `subscription_config`
- * row's `local_prices` (per-currency monthly/annual amounts, NGN anchor), the
- * shared LOCAL_PRICES map as fallback — which is exactly the price
- * /billing/checkout will charge, so the billing screen can show the same
- * amount the Flutterwave flow will collect.
- */
-
+import { storePricingResponseSchema } from "@ekwe/shared";
 import type { StorePricingResponse } from "@ekwe/shared";
 
-import { getWorkerUrl } from "@/utils/networkUtils";
+import { getWorkerUrl } from "@/utils/http";
 
-/**
- * Fetch local monthly/annual prices from the worker. `currency` is optional:
- * when omitted the worker resolves the currency authoritatively from the
- * request geo (Cloudflare CF-IPCountry→billable code, falling back to USD),
- * so "auto" pricing matches the currency the checkout will actually charge.
- * Throws on network/HTTP failure so callers can fall back to store pricing.
- */
 export async function fetchWorkerPricing(
   currency?: string,
 ): Promise<StorePricingResponse> {
@@ -35,5 +18,10 @@ export async function fetchWorkerPricing(
   if (!res.ok) {
     throw new Error(`Pricing request failed with status ${res.status}`);
   }
-  return (await res.json()) as StorePricingResponse;
+  const data: unknown = await res.json();
+  const parsed = storePricingResponseSchema.safeParse(data);
+  if (!parsed.success) {
+    throw new Error("Pricing response failed schema validation");
+  }
+  return parsed.data;
 }

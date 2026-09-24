@@ -11,13 +11,6 @@ import {
 import { sql } from "drizzle-orm";
 import { usersInAuth } from "./history";
 
-/**
- * Daily per-type usage counters (translate / transcribe / tts_chars).
- * Keyed by (user_id, day) where day is a UTC date string like "2026-09-12".
- *
- * Writes happen only via service_role RPCs (consume_usage, check_preflight).
- * Users can SELECT their own rows to power the "X of Y used today" UI.
- */
 export const userDailyUsage = pgTable(
   "user_daily_usage",
   {
@@ -25,7 +18,7 @@ export const userDailyUsage = pgTable(
     day: text("day").notNull(),
     translateCount: integer("translate_count").notNull().default(0),
     transcribeCount: integer("transcribe_count").notNull().default(0),
-    ttsChars: integer("tts_chars").notNull().default(0),
+    speechChars: integer("speech_chars").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .default(sql`timezone('utc'::text, now())`)
       .notNull(),

@@ -1,6 +1,3 @@
-/**
- * Formats a timestamp into a relative time string (e.g., "2h ago", "Yesterday").
- */
 export const getRelativeTime = (timestamp: number): string => {
   const diff = Date.now() - timestamp;
   const minutes = Math.floor(diff / 60000);

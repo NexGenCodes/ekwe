@@ -6,14 +6,6 @@ import { auth$, EntryType, HistoryEntry } from "@/store";
 const DEBOUNCE_DELAY_MS = 300;
 export type HistoryFilterOption = "all" | "transcription" | "translation";
 
-/**
- * Returns the producing operation of a history entry: the persisted `type`
- * when set, falling back to a content-derived estimate for legacy rows.
- *
- * A user either transcribes or translates — never both at once. An entry that
- * was transcribed and then translated keeps type "transcription"; the presence
- * of a distinct translation is a derived "translated" state, not a third type.
- */
 export function getEntryType(entry: HistoryEntry): EntryType {
   if (entry.type === "transcription" || entry.type === "translation") {
     return entry.type;
@@ -24,7 +16,7 @@ export function getEntryType(entry: HistoryEntry): EntryType {
   return hasDistinctTranslation ? "translation" : "transcription";
 }
 
-import type { HistoryRow } from "../services/db";
+import type { HistoryRow } from "@/services/db";
 
 function rowToEntry(row: HistoryRow): HistoryEntry {
   return {
@@ -73,10 +65,8 @@ export function useHistorySearch(entries: HistoryEntry[]): HistorySearchState {
     }
 
     if (filter === "transcription") {
-      // Producing operation was transcription (audio → text)
       list = list.filter((e) => getEntryType(e) === "transcription");
     } else if (filter === "translation") {
-      // Producing operation was translation (text → text)
       list = list.filter((e) => getEntryType(e) === "translation");
     }
 

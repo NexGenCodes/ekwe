@@ -1,34 +1,19 @@
 import * as Haptics from "expo-haptics";
 import { AlertButton } from "react-native";
 
-import { triggerHaptic } from "./haptics";
-import { sanitizeErrorMessage } from "./errorSafe";
-import logger from "./logger";
+import { triggerHaptic } from "@/utils/haptics";
+import { sanitizeErrorMessage } from "@/utils/errorSafe";
+import logger from "@/utils/logger";
 
 import { appAlertActions } from "@/store/appAlert";
 
 export interface AppAlertOptions {
-  /**
-   * Automatically play haptic feedback when the alert is shown.
-   * Defaults to true for Success/Error, false for generic info.
-   */
   haptics?: boolean | Haptics.NotificationFeedbackType;
-  /**
-   * Is the alert cancelable?
-   * On Android, this determines if clicking outside the alert closes it.
-   */
+
   cancelable?: boolean;
 }
 
-/**
- * Reusable Alert system for standardizing native prompts across Ekwe.
- * Wraps React Native's `Alert` with built-in styling patterns, logging,
- * and intelligent Haptics to keep the codebase clean.
- */
 export const AppAlert = {
-  /**
-   * Display a standard informational alert.
-   */
   info: (
     title: string,
     message?: string,
@@ -48,23 +33,15 @@ export const AppAlert = {
     });
   },
 
-  /**
-   * Display an Error alert. Extracts error message automatically if an Error object is passed.
-   */
   error: (
     title: string,
     error?: unknown,
     buttons?: AlertButton[],
     options?: AppAlertOptions,
   ): void => {
-    // Raw error internals (Supabase URLs/project refs, provider details) are
-    // logged for diagnostics but the user only ever sees sanitized plain text.
     const message =
       sanitizeErrorMessage(error) ?? "An unexpected error occurred.";
 
-    // User is already shown the alert — don't flood Sentry with error-level
-    // events for every handled failure. Warn-level keeps them searchable
-    // without creating Sentry issues for expected network / user errors.
     logger.warn(`[AppAlert Error] ${title} - ${message}`);
 
     if (options?.haptics !== false) {
@@ -80,9 +57,6 @@ export const AppAlert = {
     });
   },
 
-  /**
-   * Display a Success alert.
-   */
   success: (
     title: string,
     message?: string,
@@ -102,9 +76,6 @@ export const AppAlert = {
     });
   },
 
-  /**
-   * Standardized confirmation dialog for destructive or critical actions.
-   */
   confirm: (
     title: string,
     message: string,

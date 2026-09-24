@@ -1,20 +1,22 @@
-import { useSelector } from "@legendapp/state/react";
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useValue } from "@legendapp/state/react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   useSharedValue,
   withTiming,
   SharedValue,
 } from "react-native-reanimated";
 
+import { usePermissions } from "@/hooks/usePermissions";
 import { settings$ } from "@/store";
-import { DEFAULT_LANGUAGES } from "@/utils/languageUtils";
+import {
+  DEFAULT_LANGUAGES,
+  sanitizeLanguageCodes,
+} from "@/utils/languageUtils";
 import { triggerHaptic } from "@/utils/haptics";
 
 export type DropdownType = "source" | "target" | null;
 
 interface UseLanguageSwitcherProps {
-  sourceLang: string;
-  targetLang: string;
   onSourceChange: (code: string) => void;
   onTargetChange: (code: string) => void;
 }
@@ -30,24 +32,19 @@ interface LanguageSwitcherReturn {
   closeDropdown: () => void;
 }
 
-function findReplacement(myLanguages: string[], exclude: string): string {
-  return myLanguages.find((l) => l !== exclude) || "";
-}
-
 export function useLanguageSwitcher({
-  sourceLang,
-  targetLang,
   onSourceChange,
   onTargetChange,
 }: UseLanguageSwitcherProps): LanguageSwitcherReturn {
-  const storedLanguages =
-    useSelector(() => settings$.selectedLanguages.get()) || [];
-  const myLanguages = (
-    storedLanguages.length > 0 ? storedLanguages : DEFAULT_LANGUAGES
-  ) as string[];
-
-  const myLanguagesRef = useRef(myLanguages);
-  myLanguagesRef.current = myLanguages;
+  const { maxSelectedLanguages } = usePermissions();
+  const storedLanguages = useValue(() => settings$.selectedLanguages.get());
+  const myLanguages = useMemo(() => {
+    const codes =
+      storedLanguages && storedLanguages.length > 0
+        ? storedLanguages
+        : DEFAULT_LANGUAGES;
+    return sanitizeLanguageCodes(codes, maxSelectedLanguages);
+  }, [storedLanguages, maxSelectedLanguages]);
 
   const [activeDropdown, setActiveDropdown] = useState<DropdownType>(null);
 
@@ -68,40 +65,15 @@ export function useLanguageSwitcher({
   const handleSelect = useCallback(
     (code: string) => {
       triggerHaptic();
-      const langs = myLanguagesRef.current;
 
       if (activeDropdown === "source") {
         onSourceChange(code);
-
-        // Handle Collision: Source picked a language that is already Target
-        if (code !== "auto" && code === targetLang) {
-          // Can we swap the old source to target?
-          // Only if old source wasn't 'auto' and wasn't blank.
-          if (sourceLang !== "auto" && sourceLang !== "") {
-            onTargetChange(sourceLang);
-          } else {
-            // Pick the next available language from the user's list
-            onTargetChange(findReplacement(langs, code));
-          }
-        }
       } else {
         onTargetChange(code);
-
-        // Handle Collision: Target picked a language that is already Source
-        if (code === sourceLang) {
-          // Can we swap the old target to source?
-          // Target is never 'auto', so yes, as long as it's not blank.
-          if (targetLang !== "") {
-            onSourceChange(targetLang);
-          } else {
-            // Pick the next available language from the user's list
-            onSourceChange(findReplacement(langs, code));
-          }
-        }
       }
       setActiveDropdown(null);
     },
-    [activeDropdown, sourceLang, targetLang, onSourceChange, onTargetChange],
+    [activeDropdown, onSourceChange, onTargetChange],
   );
 
   const openDropdown = useCallback((type: DropdownType): void => {

@@ -4,7 +4,7 @@ import {
   buildDeleteOutboxPayload,
   buildUpsertOutboxPayload,
   parseSyncCursor,
-} from "../outboxPayload";
+} from "@/services/outboxPayload";
 
 describe("buildUpsertOutboxPayload", () => {
   test("produces the snake_case shape pushToCloud depends on", () => {

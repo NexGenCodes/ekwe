@@ -1,6 +1,9 @@
-// Barrel re-exports only what consumers import via "@/constants".
-// Everything else is imported directly from its module (e.g. "@/constants/sizes").
-export { duration, spring } from "./motion";
-export { spacing } from "./spacing";
-export { borderRadius, iconSize, opacity, spinnerSize } from "./sizes";
-export { shadows } from "./shadows";
+export { duration, spring } from "@/constants/motion";
+export { spacing } from "@/constants/spacing";
+export {
+  borderRadius,
+  iconSize,
+  opacity,
+  spinnerSize,
+} from "@/constants/sizes";
+export { shadows } from "@/constants/shadows";

@@ -390,8 +390,8 @@
           "notNull": true,
           "default": 0
         },
-        "tts_chars": {
-          "name": "tts_chars",
+        "speech_chars": {
+          "name": "speech_chars",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

@@ -6,11 +6,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CATALOG_PATH = path.resolve(HERE, 'money-funnel.json');
 const catalog = JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf8'));
 
-// Credentials come from the environment (never committed):
-//   POSTHOG_PROJECT_API_KEY  personal API key (starts with "phx_").
-//                            Project secret keys ("phs_") return 401 on these endpoints.
-//   POSTHOG_PROJECT_ID       numeric PostHog project id
-//   POSTHOG_HOST             default https://us.i.posthog.com (EU: https://eu.i.posthog.com)
+
+
+
+
+
 const API_KEY = process.env.POSTHOG_PROJECT_API_KEY;
 const PROJECT_ID = process.env.POSTHOG_PROJECT_ID;
 const HOST = process.env.POSTHOG_HOST || 'https://us.i.posthog.com';
@@ -68,7 +68,6 @@ async function sync() {
 
   const created = { dashboards: 0, insights: 0, cohorts: 0 };
 
-  // Dashboards + their insights
   for (const dashboardDef of catalog.dashboards) {
     let dashboard = await findByName('dashboards', dashboardDef.name);
     if (!dashboard) {
@@ -96,7 +95,6 @@ async function sync() {
     }
   }
 
-  // Cohorts
   for (const cohortDef of catalog.cohorts) {
     const existing = await findByName('cohorts', cohortDef.name);
     if (existing) {

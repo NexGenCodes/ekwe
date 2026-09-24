@@ -2,8 +2,6 @@ import { registerRootComponent } from "expo";
 import { AppRegistry } from "react-native";
 import { useEffect, useState } from "react";
 
-import { QueryClientProvider } from "@tanstack/react-query";
-
 import { preventAutoHideAsync } from "expo-splash-screen";
 
 if (typeof globalThis !== "undefined") {
@@ -40,9 +38,8 @@ if (typeof ErrorUtils !== "undefined") {
 // EVERY launcher cold start to parse the whole share graph before the main
 // app's first frame. Everything share-related is required lazily below, so a
 // plain app cold start never evaluates it.
-const loadShareGate = () => require("./src/components/features/Echo").ShareGate;
-const loadQueryClient = () =>
-  require("./src/hooks/queries/queryClient").queryClient;
+const loadShareGate = () => require( "@/components/features/Echo").ShareGate;
+
 
 // The share-extension root is hosted by the native ShareActivity — a
 // translucent ReactActivity that renders the share gate OVER the source app (no
@@ -60,20 +57,18 @@ const ShareExtensionRoot = (props) => {
 
   const { GestureHandlerRootView } = require("react-native-gesture-handler");
   const { SafeAreaProvider } = require("react-native-safe-area-context");
-  const { ErrorBoundary } = require("./src/components/ErrorBoundary");
-  const { AppAlertModal } = require("./src/components/AppAlertModal");
+  const { ErrorBoundary } = require( "@/components/ErrorBoundary");
+  const { AppAlertModal } = require( "@/components/AppAlertModal");
   const ShareGate = loadShareGate();
-  const queryClient = loadQueryClient();
+
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: "transparent" }}>
       <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
           <ErrorBoundary>
             <ShareGate {...props} />
             <AppAlertModal />
           </ErrorBoundary>
-        </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -85,7 +80,7 @@ AppRegistry.registerComponent("share-extension", () => ShareExtensionRoot);
 // (ShareActivity / ShareViewController) and deep-link into the app's `/share`
 // route, which hosts the Echo sheet.
 const MainAppWrapper = (props) => {
-  const App = require("./src/app/AppEntry").default;
+  const App = require( "@/app/AppEntry").default;
   return <App {...props} />;
 };
 

@@ -1,22 +1,22 @@
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { DurableObject } from "cloudflare:workers";
-import { logger } from "../core/logger";
-import * as assemblyai from "../providers/assemblyai";
-import * as deepgram from "../providers/deepgram";
-import * as gladia from "../providers/gladia";
-import * as witai from "../providers/witai";
-import { STREAM_STT_LANGUAGES } from "../services/languages";
-import { getStreamingProviderNames } from "../core/config";
-import { getLimits } from "../core/limits";
+import { logger } from "@/core/logger";
+import {
+  getProviderModule,
+  getProviderNamesFor,
+  providerSupportsLanguage,
+} from "@/providers";
+import { getLimits } from "@/core/limits";
+import { runPreflightGate } from "@/services/preflight";
+import { trackBillableSuccess } from "@/services/usage";
 import {
   guardLanguageCode,
   guardStreamDuration,
   guardWebSocketUpgrade,
-} from "../core/guards";
-import { initOpusDecoder } from "../utils/opus";
-import { Env, Tier } from "../core/types";
+} from "@/core/guards";
+import { initOpusDecoder } from "@/utils/opus";
+import { Env, SttStreamFn, Tier } from "@/core/types";
 
-// WebSocket close codes
 const WS_CLOSE = {
   NORMAL: 1000,
   IDLE_TIMEOUT: 4002,
@@ -28,45 +28,13 @@ const MAX_CONCURRENT_STREAMS = 3;
 const IDLE_TIMEOUT_MS = 60_000;
 const CONFIG_NEGOTIATION_TIMEOUT_MS = 5_000;
 const CONFIG_NEGOTIATION_TOTAL_MS = CONFIG_NEGOTIATION_TIMEOUT_MS * 3;
-// Reset the idle alarm at most this often to avoid a storage write per frame.
 const IDLE_RESET_INTERVAL_MS = 15_000;
 
 interface StreamPipelineEntry {
   name: string;
   skipOnAuto: boolean;
-  supportedLanguages: ReadonlySet<string>;
-  handleStream: (
-    env: Env,
-    lang: string,
-    clientWs: WebSocket,
-    signal: AbortSignal,
-  ) => Promise<boolean>;
+  sttStream: SttStreamFn;
 }
-
-const STREAMING_PROVIDER_MODULES: Record<
-  string,
-  {
-    supportedLanguages: ReadonlySet<string>;
-    handleStream: StreamPipelineEntry["handleStream"];
-  }
-> = {
-  deepgram: {
-    supportedLanguages: STREAM_STT_LANGUAGES.deepgram,
-    handleStream: deepgram.handleStream,
-  },
-  witai: {
-    supportedLanguages: STREAM_STT_LANGUAGES.witai,
-    handleStream: witai.handleStream,
-  },
-  assemblyai: {
-    supportedLanguages: STREAM_STT_LANGUAGES.assemblyai,
-    handleStream: assemblyai.handleStream,
-  },
-  gladia: {
-    supportedLanguages: STREAM_STT_LANGUAGES.gladia,
-    handleStream: gladia.handleStream,
-  },
-};
 
 const STREAMING_SKIP_AUTO: Record<string, boolean> = {
   deepgram: false,
@@ -75,21 +43,16 @@ const STREAMING_SKIP_AUTO: Record<string, boolean> = {
   gladia: false,
 };
 
-const STREAMING_PIPELINE: StreamPipelineEntry[] =
-  getStreamingProviderNames().map((name) => ({
-    name,
-    skipOnAuto: STREAMING_SKIP_AUTO[name] ?? false,
-    supportedLanguages:
-      STREAMING_PROVIDER_MODULES[name]?.supportedLanguages ?? new Set(),
-    handleStream:
-      STREAMING_PROVIDER_MODULES[name]?.handleStream ??
-      (() => Promise.resolve(false)),
-  }));
+const STREAMING_PIPELINE: StreamPipelineEntry[] = getProviderNamesFor(
+  "sttStream",
+  "PREMIUM",
+).map((name) => ({
+  name,
+  skipOnAuto: STREAMING_SKIP_AUTO[name] ?? false,
+  sttStream:
+    getProviderModule(name)?.sttStream ?? (() => Promise.resolve(false)),
+}));
 
-/**
- * Session state is persisted per-connection via serializeAttachment so it
- * survives DO hibernation (in-memory fields are reset when a DO is evicted).
- */
 interface SessionState {
   startTime: number;
   cumulativeBytes: number;
@@ -101,31 +64,22 @@ interface SessionState {
   tier: Tier;
   maxAudioBytes: number;
   lastIdleResetAt: number;
+  billed: boolean;
 }
 
 interface StreamConnection {
   adapter: ClientWsAdapter;
   abortController: AbortController;
   pipelinePromise: Promise<void> | undefined;
-  /** True when this entry was rehydrated after DO hibernation (in-memory state was lost). */
   resumed: boolean;
 }
 
-/**
- * Minimal WebSocket-compatible facade over the accepted server socket.
- *
- * The streaming providers (`handleStream` implementations) forward client
- * audio via `addEventListener("message", ...)` on the client socket. The
- * Hibernation API delivers client messages through `webSocketMessage`
- * instead, and attaching event listeners to an accepted socket would defeat
- * hibernation. This adapter bridges the two: the DO routes messages in via
- * `emit()`, while providers keep working against the familiar listener API.
- * Early messages are buffered until a provider attaches its handler.
- */
 class ClientWsAdapter {
   private handlers = new Map<string, Set<(...args: unknown[]) => void>>();
   private buffered: unknown[] = [];
   private readonly realWs: WebSocket;
+
+  onFinalTranscript?: (ws: WebSocket, text: string) => void;
 
   constructor(realWs: WebSocket) {
     this.realWs = realWs;
@@ -165,6 +119,23 @@ class ClientWsAdapter {
 
   send(data: string | ArrayBuffer | ArrayBufferView): void {
     if (this.realWs.readyState === WebSocket.OPEN) {
+      if (typeof data === "string") {
+        try {
+          const parsed = JSON.parse(data) as {
+            type?: string;
+            text?: string;
+          };
+          if (
+            parsed?.type === "final" &&
+            typeof parsed.text === "string" &&
+            parsed.text.trim().length > 0
+          ) {
+            this.onFinalTranscript?.(this.realWs, parsed.text);
+          }
+        } catch {
+          /* not JSON — already forwarded below */
+        }
+      }
       this.realWs.send(data as string | ArrayBuffer);
     }
   }
@@ -182,22 +153,8 @@ class ClientWsAdapter {
   }
 }
 
-/**
- * One Durable Object instance per user (routed via getByName(userId)).
- *
- * Moving streaming out of the stateless Worker gives us:
- *  - stable per-user session identity (the module-level `activeStreams` map
- *    in the old handler was per-isolate and could not enforce limits)
- *  - WebSocket Hibernation so idle connections don't accrue duration charges
- *  - alarms for idle / config-negotiation timeouts instead of setInterval
- *  - a hard per-user concurrent-stream cap via getWebSockets()
- */
 export class StreamDurableObject extends DurableObject<Env> {
   private readonly connections = new Map<WebSocket, StreamConnection>();
-  // Monotonic per-socket byte counters (see webSocketMessage): the persisted
-  // attachment only snapshots cumulativeBytes every IDLE_RESET_INTERVAL_MS,
-  // so without this in-isolate record the limit could be under-counted after
-  // a hibernation restart.
   private readonly sessionBytes = new Map<WebSocket, number>();
 
   async fetch(request: Request): Promise<Response> {
@@ -207,7 +164,9 @@ export class StreamDurableObject extends DurableObject<Env> {
     const url = new URL(request.url);
     const tier = (url.searchParams.get("tier") as Tier | null) ?? "FREE";
     const lang = url.searchParams.get("lang") || "en";
+    const sessionId = url.searchParams.get("sid");
     const limits = getLimits(tier);
+    const userId = this.ctx.id.name ?? "";
 
     if (this.ctx.getWebSockets().length >= MAX_CONCURRENT_STREAMS) {
       logger.warn("[stream-do] Concurrent stream cap reached", { tier });
@@ -218,6 +177,22 @@ export class StreamDurableObject extends DurableObject<Env> {
         }),
         { status: 429, headers: { "Content-Type": "application/json" } },
       );
+    }
+
+    const gate = await runPreflightGate(
+      this.env,
+      this.ctx as unknown as ExecutionContext,
+      userId,
+      tier,
+      "stream",
+      sessionId,
+    );
+    if (!gate.ok) {
+      logger.warn("[stream-do] Stream quota gate denied", {
+        tier,
+        status: gate.response.status,
+      });
+      return gate.response;
     }
 
     const [client, server] = Object.values(new WebSocketPair());
@@ -233,10 +208,14 @@ export class StreamDurableObject extends DurableObject<Env> {
       tier,
       maxAudioBytes: limits.maxAudioBytes,
       lastIdleResetAt: Date.now(),
+      billed: false,
     };
     server.serializeAttachment(state);
 
     const adapter = new ClientWsAdapter(server);
+    adapter.onFinalTranscript = (sock) => {
+      this.billSessionIfNeeded(sock);
+    };
     this.connections.set(server, {
       adapter,
       abortController: new AbortController(),
@@ -246,19 +225,11 @@ export class StreamDurableObject extends DurableObject<Env> {
 
     this.ctx.acceptWebSocket(server);
 
-    // Warm the Opus decoder for the streaming providers without blocking the
-    // WebSocket handshake. This DO isolate is where the decoder actually runs
-    // (the stateless worker isolate never needs it).
     void initOpusDecoder();
 
-    // Start the config-negotiation timer (client usually sends config on open).
     await this.ctx.storage.setAlarm(Date.now() + CONFIG_NEGOTIATION_TIMEOUT_MS);
 
     const headers: Record<string, string> = {};
-    // The client authenticates via the Sec-WebSocket-Protocol subprotocol
-    // (keeps the JWT out of the query string). RFC 6455 requires the server
-    // to select one of the requested protocols, so echo it back or the
-    // client will fail the handshake.
     const subprotocol = request.headers.get("Sec-WebSocket-Protocol");
     if (subprotocol) headers["Sec-WebSocket-Protocol"] = subprotocol;
 
@@ -305,10 +276,6 @@ export class StreamDurableObject extends DurableObject<Env> {
           JSON.stringify({ type: "config_ack", status: "ready" }),
         );
 
-        // If a provider is already running with a stale language (audio
-        // arrived before config, or language changed mid-stream), abort the
-        // current pipeline so startProviderPipeline can relaunch with the
-        // correct language.
         if (state.providerStarted && langChanged) {
           const conn = this.connections.get(ws);
           if (conn) {
@@ -320,9 +287,6 @@ export class StreamDurableObject extends DurableObject<Env> {
           }
         }
 
-        // The session is now active. `force` replaces the config-negotiation
-        // alarm armed in fetch() (now + 5s) with the idle timeout, otherwise a
-        // healthy session would be torn down at +5s while audio is streaming.
         await this.resetIdleAlarm(ws, state, now, true);
         this.startProviderPipeline(ws, state);
         return;
@@ -338,20 +302,13 @@ export class StreamDurableObject extends DurableObject<Env> {
         return;
       }
 
-      // Other strings (e.g. non-config negotiation) — hand to the interceptor.
       this.forwardToAdapter(ws, message);
       await this.resetIdleAlarm(ws, state, now);
       return;
     }
 
-    // Binary audio frame.
     if (state.limitExceeded) return;
 
-    // The persisted attachment resets on hibernation and is re-serialized at
-    // most every IDLE_RESET_INTERVAL_MS, so increments made between
-    // serializations would be lost after a restart and under-count the byte
-    // limit. Seed the in-isolate counter from the last persisted baseline and
-    // keep it monotonic for the socket's lifetime.
     state.cumulativeBytes =
       (this.sessionBytes.get(ws) ?? state.cumulativeBytes) + message.byteLength;
     this.sessionBytes.set(ws, state.cumulativeBytes);
@@ -379,14 +336,11 @@ export class StreamDurableObject extends DurableObject<Env> {
       return;
     }
 
-    // Persist session state at most every IDLE_RESET_INTERVAL_MS to avoid a
-    // storage write per audio frame (resetIdleAlarm keeps the alarm fresh).
     if (now - state.lastIdleResetAt >= IDLE_RESET_INTERVAL_MS) {
       ws.serializeAttachment(state);
     }
     this.forwardToAdapter(ws, message);
     await this.resetIdleAlarm(ws, state, now);
-    // Providers may start on the first audio frame even without a config msg.
     this.startProviderPipeline(ws, state);
   }
 
@@ -399,7 +353,6 @@ export class StreamDurableObject extends DurableObject<Env> {
     logger.info("[stream-do] Client disconnected", { code, reason, wasClean });
     const conn = this.connections.get(ws);
     if (conn) {
-      // Lets interceptors flush buffered PCM and close the provider socket.
       conn.adapter.emit("close", { code, reason, wasClean });
       try {
         conn.abortController.abort();
@@ -408,6 +361,8 @@ export class StreamDurableObject extends DurableObject<Env> {
       }
       this.connections.delete(ws);
     }
+    this.sessionBytes.delete(ws);
+    this.billSessionIfNeeded(ws);
     if (this.ctx.getWebSockets().length === 0) {
       await this.ctx.storage.deleteAlarm();
     }
@@ -425,6 +380,8 @@ export class StreamDurableObject extends DurableObject<Env> {
       }
       this.connections.delete(ws);
     }
+    this.sessionBytes.delete(ws);
+    this.billSessionIfNeeded(ws);
   }
 
   async alarm(): Promise<void> {
@@ -440,7 +397,6 @@ export class StreamDurableObject extends DurableObject<Env> {
 
       if (!state.configReceived) {
         if (!state.configRequested) {
-          // Prod the client for its config message.
           state.configRequested = true;
           ws.serializeAttachment(state);
           this.safeSend(
@@ -457,7 +413,6 @@ export class StreamDurableObject extends DurableObject<Env> {
           needsReschedule =
             needsReschedule === null ? next : Math.min(needsReschedule, next);
         } else {
-          // Config never arrived.
           this.safeSend(
             ws,
             JSON.stringify({
@@ -467,8 +422,17 @@ export class StreamDurableObject extends DurableObject<Env> {
           );
           this.closeSession(ws, WS_CLOSE.NORMAL, "Config timeout");
         }
-      } else {
+        continue;
+      }
+
+      const idleDeadline = state.lastIdleResetAt + IDLE_TIMEOUT_MS;
+      if (now >= idleDeadline) {
         this.closeSession(ws, WS_CLOSE.IDLE_TIMEOUT, "Idle timeout");
+      } else {
+        needsReschedule =
+          needsReschedule === null
+            ? idleDeadline
+            : Math.min(needsReschedule, idleDeadline);
       }
     }
 
@@ -483,22 +447,12 @@ export class StreamDurableObject extends DurableObject<Env> {
     now: number,
     force = false,
   ): Promise<void> {
-    // Rate-limit alarm re-arms: setAlarm persists to DO storage, so avoid a
-    // write per audio frame. `force` skips the throttle for the one-time
-    // config→active transition where the idle alarm must replace the
-    // config-negotiation alarm regardless of the elapsed window.
     if (!force && now - state.lastIdleResetAt < IDLE_RESET_INTERVAL_MS) return;
     state.lastIdleResetAt = now;
     ws.serializeAttachment(state);
     await this.ctx.storage.setAlarm(now + IDLE_TIMEOUT_MS);
   }
 
-  /**
-   * Returns the in-memory connection entry for a socket, rehydrating it lazily
-   * after DO hibernation. When a DO is evicted, the `connections` Map is lost
-   * but the accepted client socket (and its persisted attachment) survives, so
-   * a new adapter/abort controller must be rebuilt on the next message.
-   */
   private getOrCreateConnection(ws: WebSocket): StreamConnection {
     let conn = this.connections.get(ws);
     if (!conn) {
@@ -508,9 +462,39 @@ export class StreamDurableObject extends DurableObject<Env> {
         pipelinePromise: undefined,
         resumed: true,
       };
+      conn.adapter.onFinalTranscript = (sock, _text) => {
+        this.billSessionIfNeeded(sock);
+      };
       this.connections.set(ws, conn);
     }
     return conn;
+  }
+
+  private billSessionIfNeeded(ws: WebSocket): void {
+    try {
+      const state = ws.deserializeAttachment() as SessionState | null;
+      if (!state || state.billed) return;
+
+      if (state.cumulativeBytes === 0 && !state.providerStarted) return;
+
+      const elapsedMs = Date.now() - state.startTime;
+      const billedMinutes = Math.max(1, Math.ceil(elapsedMs / 60000));
+
+      state.billed = true;
+      ws.serializeAttachment(state);
+      logger.info("[stream-do] Billing stream session", { billedMinutes });
+      trackBillableSuccess(
+        this.env,
+        this.ctx.id.name ?? "",
+        "stream",
+        this.ctx as unknown as ExecutionContext,
+        billedMinutes,
+      );
+    } catch (err) {
+      logger.error("[stream-do] Stream billing failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   private forwardToAdapter(ws: WebSocket, data: string | ArrayBuffer): void {
@@ -521,10 +505,6 @@ export class StreamDurableObject extends DurableObject<Env> {
     const conn = this.getOrCreateConnection(ws);
     if (conn.pipelinePromise) return;
 
-    // After hibernation the in-memory provider pipeline — and the provider
-    // WebSocket it owned — is gone, even though `providerStarted` was persisted
-    // in the attachment. Restart the pipeline from the rehydrated connection;
-    // skipping this would leave the session silently muted.
     if (conn.resumed && state.providerStarted) {
       state.providerStarted = false;
       ws.serializeAttachment(state);
@@ -532,10 +512,6 @@ export class StreamDurableObject extends DurableObject<Env> {
     conn.resumed = false;
 
     const pipeline = this.runProviderPipeline(ws, state, conn).finally(() => {
-      // Only clear the slot if this pipeline is still the one installed. A new
-      // pipeline may have been installed during an abort/relaunch (language
-      // change) before this one settled; blindly clearing would let the next
-      // frame start a third concurrent upstream.
       if (conn.pipelinePromise === pipeline) {
         conn.pipelinePromise = undefined;
       }
@@ -548,8 +524,6 @@ export class StreamDurableObject extends DurableObject<Env> {
     state: SessionState,
     conn: StreamConnection,
   ): Promise<void> {
-    // Captured once so a language-change relaunch (which swaps the controller)
-    // still releases THIS pipeline via the aborted signal, not the new one.
     const signal = conn.abortController.signal;
     let providerFound = false;
 
@@ -560,7 +534,10 @@ export class StreamDurableObject extends DurableObject<Env> {
         });
         continue;
       }
-      if (state.lang !== "auto" && !entry.supportedLanguages.has(state.lang)) {
+      if (
+        state.lang !== "auto" &&
+        !providerSupportsLanguage(entry.name, "sttStream", state.lang)
+      ) {
         logger.info("[stream-do] Skipping provider (unsupported language)", {
           name: entry.name,
           lang: state.lang,
@@ -573,7 +550,7 @@ export class StreamDurableObject extends DurableObject<Env> {
         lang: state.lang,
       });
       try {
-        const handled = await entry.handleStream(
+        const handled = await entry.sttStream(
           this.env,
           state.lang,
           conn.adapter as unknown as WebSocket,
@@ -612,22 +589,14 @@ export class StreamDurableObject extends DurableObject<Env> {
       return;
     }
 
-    // A provider owns the session. Keep this pipeline's promise pending for
-    // the whole session so the per-frame guard in startProviderPipeline can't
-    // spawn a duplicate upstream. Previously the handlers resolved as soon as
-    // they wired their socket, so pipelinePromise was cleared immediately and
-    // every subsequent audio frame opened a fresh provider WebSocket — handing
-    // Deepgram/AssemblyAI/Gladia/Wit.ai each a new socket per frame (duplicate
-    // transcripts and N× billing).
-    //
-    // The promise settles only when this session's socket closes (disconnect,
-    // stop, duration/file-size cap) or the current abort trips (language
-    // change relaunches with a fresh controller). Whichever fires, the cached
-    // `signal` above is the one the phase staked, so cleanup is precise.
     await new Promise<void>((resolve) => {
-      const done = (): void => resolve();
+      const done = (): void => {
+        ws.removeEventListener("close", done);
+        signal.removeEventListener("abort", done);
+        resolve();
+      };
       if (signal.aborted) {
-        done();
+        resolve();
         return;
       }
       ws.addEventListener("close", done);

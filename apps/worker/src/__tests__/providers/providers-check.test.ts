@@ -3,7 +3,7 @@ import {
   loadEnv,
   testTranslateProviders,
   testTranscribeProviders,
-} from "../helpers/check-providers.mjs";
+} from "@/__tests__/helpers/check-providers.mjs";
 
 const RUN_INTEGRATION = process.env.RUN_INTEGRATION_TESTS === "true";
 
@@ -39,7 +39,6 @@ describe.runIf(RUN_INTEGRATION)("Provider key validation", () => {
     );
     for (const l of s.lines) console.log(l);
     expect(results.length).toBeGreaterThan(0);
-    // At least some transcribe keys should work
     expect(s.passed).toBeGreaterThan(0);
   }, 60_000);
 });

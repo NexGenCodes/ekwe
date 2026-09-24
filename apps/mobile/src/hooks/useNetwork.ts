@@ -1,4 +1,4 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 
 import { network$ } from "@/store/network";
 
@@ -10,16 +10,9 @@ export interface NetworkHook {
   isInternetReachable: boolean | null;
 }
 
-/**
- * Reactive tri-state network hook backed by the shared `network$` store
- * (seeded by the single subscription in services/networkMonitor.ts).
- *
- * `isOffline` is true ONLY on a definitive disconnect — a `null` (first
- * probe / transient gap) is reported as `isUnknown`, never as offline.
- */
 export const useNetwork = (): NetworkHook => {
-  const isConnected = useSelector(() => network$.isConnected.get());
-  const isInternetReachable = useSelector(() =>
+  const isConnected = useValue(() => network$.isConnected.get());
+  const isInternetReachable = useValue(() =>
     network$.isInternetReachable.get(),
   );
 

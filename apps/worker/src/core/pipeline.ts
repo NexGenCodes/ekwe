@@ -1,30 +1,13 @@
 import { WORKER_ERROR_CODES, type UsageType } from "@ekwe/shared";
-import { authenticate, type AuthResult } from "./auth";
-import { addCorsHeaders, getCorsHeaders } from "./cors";
-import { HttpError, error } from "./http";
-import { logger, setDebugEnabled } from "./logger";
-import { tooManyRequests } from "./guards";
-import { matchRoute, type RouteLike } from "./router";
-import { runPreflightGate } from "../services/preflight";
-import { CLIENT_ABORTED, type Env } from "./types";
-
-/**
- * ─── Request pipeline ───────────────────────────────────────────
- *
- * Linear request lifecycle shared by every route:
- *
- *   1. CORS headers (OPTIONS shortcut)
- *   2. Route match → 404 before auth/RPC so garbage paths can neither
- *      probe for routes nor trigger paid backend calls
- *   3. Public routes pass straight through (signature/Turnstile checks
- *      happen in-handler)
- *   4. JWT auth (header, or Sec-WebSocket-Protocol for streams)
- *   5. Cloudflare Rate Limiter (user+IP keyed)
- *   6. Streaming route → handler directly (101 cannot be CORS-wrapped)
- *   7. Preflight gate for billable routes (atomic cooldown + quota,
- *      DB-backed tier override)
- *   8. Execution with uniform error handling
- */
+import { authenticate, isAdminAuthorized, type AuthResult } from "@/core/auth";
+import { addCorsHeaders, getCorsHeaders } from "@/core/cors";
+import { HttpError, error } from "@/core/http";
+import { logger, setDebugEnabled } from "@/core/logger";
+import { tooManyRequests } from "@/core/guards";
+import { matchRoute, type RouteLike } from "@/core/router";
+import { runPreflightGate } from "@/services/preflight";
+import { CLIENT_ABORTED, type Env } from "@/core/types";
+import { recordRequestEvent } from "@/utils/analytics";
 
 interface RouteContext {
   request: Request;
@@ -46,7 +29,6 @@ interface PublicRoute extends RouteLike {
 
 interface ProtectedRoute extends RouteLike {
   auth: "jwt" | "jwt-subprotocol";
-  /** Daily usage pool the preflight gate draws down for billable routes. */
   preflight?: UsageType;
   handler: AuthedRouteHandler;
 }
@@ -60,7 +42,13 @@ interface OptionalAuthRoute extends RouteLike {
   handler: OptionalAuthedRouteHandler;
 }
 
-export type AppRoute = PublicRoute | ProtectedRoute | OptionalAuthRoute;
+interface AdminRoute extends RouteLike {
+  auth: "admin";
+  handler: RouteHandler;
+}
+
+export type AppRoute =
+  PublicRoute | ProtectedRoute | OptionalAuthRoute | AdminRoute;
 
 type UnauthorizedReason = "missing" | "invalid";
 
@@ -70,7 +58,6 @@ function unauthorizedResponse(
   corsHeaders: Record<string, string>,
 ): Response {
   if (isStream) {
-    // WebSocket responses are plain text and carry no CORS headers.
     return new Response(
       reason === "missing" ? "Missing token" : "Invalid token",
       { status: 401 },
@@ -82,12 +69,6 @@ function unauthorizedResponse(
   );
 }
 
-/**
- * Extracts the JWT from the request. For WebSocket upgrades the credentials
- * ride in Sec-WebSocket-Protocol — NOT the query string — so the JWT never
- * lands in access logs, referrers, or proxies. Regular requests use the
- * standard `Authorization: Bearer <token>` header.
- */
 function extractToken(request: Request, isStream: boolean): string | null {
   if (isStream) {
     const protocols = request.headers.get("Sec-WebSocket-Protocol");
@@ -113,7 +94,6 @@ export async function runPipeline(
   const url = new URL(request.url);
   const matched = matchRoute(routes, request.method, url.pathname);
 
-  // Unknown path: return 404 before auth or the preflight RPC.
   if (!matched) {
     logger.info("[auth] Unknown path probed", { path: url.pathname });
     return addCorsHeaders(
@@ -124,12 +104,28 @@ export async function runPipeline(
   const { route, params } = matched;
   const isStream = route.auth === "jwt-subprotocol";
 
-  // ─── Public routes (no JWT — signature/Turnstile verified in-handler) ───
-  if (route.auth === "none") {
-    return addCorsHeaders(
-      await route.handler({ request, env, ctx, params }),
-      corsHeaders,
+  const startTime = Date.now();
+  const emit = (response: Response, tier = ""): Response => {
+    recordRequestEvent(
+      env,
+      url.pathname,
+      response.status,
+      Date.now() - startTime,
+      tier,
     );
+    return addCorsHeaders(response, corsHeaders);
+  };
+
+  if (route.auth === "none") {
+    return emit(await route.handler({ request, env, ctx, params }));
+  }
+
+  if (route.auth === "admin") {
+    if (!(await isAdminAuthorized(env, request))) {
+      logger.warn("[auth] Admin secret rejected", { path: url.pathname });
+      return emit(error(WORKER_ERROR_CODES.UNAUTHORIZED, 401));
+    }
+    return emit(await route.handler({ request, env, ctx, params }));
   }
 
   const token = extractToken(request, isStream);
@@ -139,13 +135,12 @@ export async function runPipeline(
     if (token) {
       auth = await authenticate(token, env);
     }
-    return addCorsHeaders(
+    return emit(
       await route.handler({ request, env, ctx, params, auth }),
-      corsHeaders,
+      auth?.tier ?? "",
     );
   }
 
-  // ─── Auth: Strict JWT Only ───
   if (!token) {
     logger.info("[auth] Missing token", { path: url.pathname });
     return unauthorizedResponse(isStream, "missing", corsHeaders);
@@ -156,7 +151,6 @@ export async function runPipeline(
     return unauthorizedResponse(isStream, "invalid", corsHeaders);
   }
 
-  // ─── SECURITY GATING: Cloudflare Rate Limiting ───
   if (env.RATE_LIMITER) {
     const clientIp = request.headers.get("CF-Connecting-IP") || "";
     const rateLimitKey = clientIp ? `${auth.userId}::${clientIp}` : auth.userId;
@@ -185,16 +179,10 @@ export async function runPipeline(
     auth,
   };
 
-  // ─── Streaming WebSocket route ───
-  // Returns directly: a 101 upgrade Response cannot be rebuilt by the CORS
-  // wrapper, and its failure modes are plain-text WebSocket close semantics.
   if (isStream) {
     return route.handler(rctx);
   }
 
-  // ─── PRE-FLIGHT CHECK (ATOMIC COOLDOWN + QUOTA + CACHED) ───
-  // Applied only to billable routes. `/usage` deliberately skips the gate:
-  // reading your own quota must never consume a cooldown or extend a lock.
   if (route.preflight) {
     const gate = await runPreflightGate(
       env,
@@ -205,21 +193,14 @@ export async function runPipeline(
       auth.sessionId,
     );
     if (!gate.ok) return addCorsHeaders(gate.response, corsHeaders);
-    // The RPC derives the authoritative tier from user_subscriptions (the
-    // webhook's write target), so a stale JWT tier is corrected here: every
-    // downstream guard/pipeline/cache decision uses the DB-backed tier. A
-    // throttled PREMIUM user is never blocked — the request is served with
-    // FREE-tier limits (slower cooldown, no premium features) until UTC
-    // midnight, so throttling also degrades the effective tier to FREE.
     rctx.auth.tier = gate.preflight.throttled
       ? "FREE"
       : gate.preflight.tier_active;
   }
 
-  // ─── EXECUTION ───
   try {
     const response = await route.handler(rctx);
-    return addCorsHeaders(response, corsHeaders);
+    return emit(response, rctx.auth.tier);
   } catch (e: unknown) {
     const errorMsg = e instanceof Error ? e.message : String(e);
     if (errorMsg === CLIENT_ABORTED) {
@@ -227,22 +208,22 @@ export async function runPipeline(
     }
     if (e instanceof HttpError) {
       logger.error("[pipeline] HttpError", { code: e.code, error: errorMsg });
-      return addCorsHeaders(
+      return emit(
         error(e.code, e.status, e.message, {
           extra: e.extra,
           headers: e.headers,
         }),
-        corsHeaders,
+        rctx.auth.tier,
       );
     }
     logger.error("[pipeline] Execution error", { error: errorMsg });
-    return addCorsHeaders(
+    return emit(
       error(
         WORKER_ERROR_CODES.EKWE_SERVER_ERROR,
         500,
         "An unexpected error occurred.",
       ),
-      corsHeaders,
+      rctx.auth.tier,
     );
   }
 }

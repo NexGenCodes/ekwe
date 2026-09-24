@@ -1,10 +1,10 @@
 import { describe, test, expect, vi } from "vitest";
-import { handleTranslate } from "../../routes/translate";
-import { mockEnv, jsonResponse } from "../setup";
-import { hashKey } from "../../utils/keys";
+import { handleTranslate } from "@/routes/translate";
+import { mockEnv, jsonResponse } from "@/__tests__/setup";
+import { hashKey } from "@/utils/keys";
 import { http } from "msw";
-import { server } from "../msw/server";
-import { PROVIDER_URLS } from "../msw/handlers";
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 function makeRequest(
   text = "Hello world",
@@ -61,7 +61,6 @@ describe("handleTranslate pipeline", () => {
   });
 
   test("returns 400 on a malformed body instead of throwing (shape gate)", async () => {
-    // Non-string `text` used to reach `body.text?.trim()` → TypeError → 500.
     const res = await handleTranslate(
       makeRawRequest({ text: 123, targetLang: "es" }),
       mockEnv(),
@@ -226,9 +225,7 @@ describe("handleTranslate pipeline", () => {
     );
 
     const env = mockEnv();
-    // Prime the PREMIUM cache with a premium-only `language` field. If the tier
-    // were missing from the key, the FREE request below would reuse this entry
-    // and the provider would never be called.
+
     const textHash = await hashKey("Hello world_en_es");
     await env.EKWE_KV.put(
       `trans:test-user:PREMIUM:${textHash}`,
@@ -250,7 +247,6 @@ describe("handleTranslate pipeline", () => {
 
     expect(body.translation).toBe("Hola mundo");
     expect(body.language).toBeUndefined();
-    // Had the premium cache leaked, calls would be 0.
     expect(calls).toBe(1);
   });
 
@@ -282,7 +278,6 @@ describe("handleTranslate pipeline", () => {
     const body = (await res.json()) as any;
 
     expect(body.translation).toBe("Hola");
-    // The FREE cache entry must not short-circuit the premium pipeline.
     expect(calls).toBe(1);
   });
 });

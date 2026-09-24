@@ -14,15 +14,14 @@ export interface SharedFile {
 }
 
 export interface EchoProps {
-  // IOS Share Intent Data
   value?: SharedFile[];
   type?: string;
-  // Android Share Intent Data
+
   audioUri?: string;
   mimeType?: string;
   fileName?: string;
   sourceApp?: string;
-  // Called when the user dismisses Echo (iOS share route pops the modal)
+
   onClose?: () => void;
 }
 
@@ -50,17 +49,16 @@ export interface UseEchoFlowResult {
   handleTranslate: () => Promise<void>;
   cancelProcessing: () => void;
   retryOperation: () => Promise<void>;
-  /** False when the last resolution error is terminal (e.g. FILE_TOO_LARGE),
-   *  so the Error step must not offer "Try Again". */
+
   resolveRetryable: boolean;
   audioDuration: number;
   uploadProgress: number | null;
   error: string | null;
-  /** Transient "copied" signal set when the flow auto-copies the translation. */
+
   autoCopied: boolean;
   onDismiss: () => void;
-  /** Whether the user's plan allows language auto-detection. */
+
   autoLanguageDetect: boolean;
-  /** Live connectivity from the shared network store (true on any `null` probe). */
+
   isOnline: boolean;
 }

@@ -1,15 +1,9 @@
-/**
- * Auth Service — Single source of truth for all Supabase auth operations.
- *
- * Every auth screen calls these functions instead of touching supabase.auth directly.
- * This keeps screens thin and auth logic testable + swappable.
- */
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { AuthApiError } from "@supabase/supabase-js";
 import * as AppleAuthentication from "expo-apple-authentication";
-import { queryClient } from "@/hooks/queries/queryClient";
+
 import { getPosthogClient } from "@/services/posthog";
-import { SyncService } from "@/services/SyncService";
+import { SyncService } from "@/services/syncService";
 import { Db } from "@/services/db";
 import { mmkv } from "@/services/mmkv";
 import { mirrorSessionToSharedContainer } from "@/services/sharedContainer";
@@ -23,21 +17,17 @@ import {
 import { isIOS } from "@/utils";
 import { track, identify, AnalyticsEvents } from "@/utils/analytics";
 import logger, { captureSentryMessage } from "@/utils/logger";
-import { getWorkerUrl } from "@/utils/networkUtils";
+import { getWorkerUrl } from "@/utils/http";
 import { getAppCheckToken } from "@/services/appCheck";
 
 const SESSION_CACHE_KEY = "hasSession";
 const OTP_REQUEST_TIMEOUT_MS = 15_000;
 const OFFLINE_MESSAGE = "No internet connection. Please connect and try again.";
 
-// ── Types ────────────────────────────────────────────────────────
-
 export interface AuthResult {
   ok: boolean;
   error?: string;
   needsOtp?: boolean;
-  /** Sign-in hit an existing account under a different provider — the user
-   * must verify their email (OTP) so the new identity can be linked. */
   needsLink?: {
     provider: "apple" | "google";
     email: string;
@@ -51,8 +41,6 @@ interface PendingLink {
   idToken: string;
 }
 
-// Identity tokens are short-lived (5-10 min) — keep them in memory only,
-// never persisted, and clear them after a successful link.
 let pendingLink: PendingLink | null = null;
 
 export const getPendingLinkProvider = (): LinkProvider | null =>
@@ -66,14 +54,6 @@ function isIdentityLinkError(error: unknown): boolean {
   );
 }
 
-/**
- * Maps a Supabase auth error to user-safe plain text.
- *
- * Raw AuthApiError messages can leak implementation details (database
- * constraint names, provider internals, project-specific wording) straight to
- * the UI. Never surface `error.message` verbatim — translate recognizable
- * codes/messages to friendly copy and fall back to a neutral line otherwise.
- */
 function safeAuthErrorMessage(error: unknown): string {
   if (error instanceof AuthApiError) {
     switch (error.code) {
@@ -103,8 +83,6 @@ function safeAuthErrorMessage(error: unknown): string {
   return "That didn't work. Please try again.";
 }
 
-// ── Initialization ─────────────────────────────────────────────────
-
 let _authSubscription: { unsubscribe: () => void } | null = null;
 
 export const initAuth = async (): Promise<void> => {
@@ -121,17 +99,11 @@ export const initAuth = async (): Promise<void> => {
     logger.error("[Auth] GoogleSignin configure error:", err);
   }
 
-  // Set up listener first — catches events during session recovery too
   const {
     data: { subscription },
   } = supabase.auth.onAuthStateChange((event, session) => {
     logger.info(`Auth state changed: ${event}`, session?.user?.id);
-    // setSession tags the Sentry user scope first so the captures below are
-    // attributed to the correct identity (id only — scrub policy + anonymous
-    // fallback keep PII off the event).
     authActions.setSession(session);
-    // Non-fatal lifecycle events worth monitoring in Sentry (SIGNED_IN during
-    // INITIAL_SESSION is a cold start, not a fresh login).
     if (event === "SIGNED_IN") {
       captureSentryMessage("auth.sign_in");
     } else if (event === "SIGNED_OUT") {
@@ -139,25 +111,18 @@ export const initAuth = async (): Promise<void> => {
     }
     mmkv.set(SESSION_CACHE_KEY, session !== null);
 
-    // Mirror the session into the shared App Group container so the native iOS
-    // share extension can authenticate without a deep-link handoff.
     mirrorSessionToSharedContainer(session, buildSettingsSharedPrefs());
 
     if (
       (event === "SIGNED_IN" || event === "INITIAL_SESSION") &&
       session?.user
     ) {
-      // Cold start with a persisted session emits INITIAL_SESSION (not
-      // SIGNED_IN); without handling it, cloud history is never pulled until
-      // a fresh sign-in. Both paths are idempotent (cursor-based pull).
       identify(session.user.id, {
         email: session.user.email ?? "",
         is_pro: session.user.app_metadata?.is_pro === true,
       });
 
       if (event === "SIGNED_IN") {
-        // Push token re-registration: link the existing push token to this user
-        // in the Worker now that we have an active session (and JWT).
         import("./notifications").then(({ registerForPushNotifications }) => {
           registerForPushNotifications().catch((err) =>
             logger.error("Failed to sync push token post-login:", err),
@@ -165,9 +130,7 @@ export const initAuth = async (): Promise<void> => {
         });
       }
       SyncService.onUserSignedIn(session.user.id);
-      // Drain any share-extension work the native share sheet completed while
-      // the user was signed out (the file stays in the App Group until then).
-      import("@/services/HistoryService")
+      import("@/services/historyService")
         .then(({ HistoryService }) =>
           HistoryService.importSharedEchoHistory(session),
         )
@@ -177,22 +140,17 @@ export const initAuth = async (): Promise<void> => {
     }
 
     if (event === "SIGNED_OUT") {
-      queryClient.invalidateQueries({ queryKey: ["translate"] });
-      queryClient.invalidateQueries({ queryKey: ["transcribe"] });
       SyncService.loadInitialHistory();
     }
   });
   _authSubscription = subscription;
 
-  // Mark initialized immediately so the UI can render past the splash
   authActions.setInitialized(true);
 
-  // Sync read from MMKV — tells us if we need to hit SecureStore
   const cachedSession = mmkv.getBoolean(SESSION_CACHE_KEY);
 
   if (cachedSession) {
     try {
-      // 1. Sync read directly from mmkv to instantly populate the UI
       const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "";
       const projectRef = supabaseUrl.match(
         /https:\/\/(.*?)\.supabase\.co/,
@@ -207,8 +165,6 @@ export const initAuth = async (): Promise<void> => {
         authActions.setSession(parsed);
       }
 
-      // 2. Fire the async fetch in the background to refresh tokens
-      // without blocking the splash screen!
       supabase.auth
         .getSession()
         .then(({ data: { session } }) => {
@@ -230,7 +186,6 @@ export const initAuth = async (): Promise<void> => {
 
   authActions.setSessionLoaded(true);
 
-  // Telemetry: measure app startup to auth ready
   const globalObj = globalThis as Record<string, unknown>;
   if (typeof globalObj.appStartTime === "number") {
     const timeToAuthInit = Date.now() - globalObj.appStartTime;
@@ -248,15 +203,6 @@ export const cleanupAuth = (): void => {
   authActions.setInitialized(false);
 };
 
-// ── OTP (Passwordless) ──────────────────────────────────────────
-
-/**
- * Send a one-time code to the given email.
- *
- * Requests are routed through the Worker which throttles per IP + email
- * before dispatching the code. Without worker URL (local dev), it falls
- * back to calling Supabase directly.
- */
 export const sendOtp = async (email: string): Promise<AuthResult> => {
   const workerUrl = getWorkerUrl();
 
@@ -418,8 +364,6 @@ export const verifyOtp = async (
   }
 };
 
-// ── Social: Apple ───────────────────────────────────────────────
-
 export const signInWithApple = async (): Promise<AuthResult> => {
   if (!isIOS) {
     return { ok: false, error: "Apple Sign In is available on iOS only." };
@@ -444,8 +388,6 @@ export const signInWithApple = async (): Promise<AuthResult> => {
     });
 
     if (error) {
-      // Apple only returns the email on the first authorization, so if it's
-      // missing we can't run the link flow — surface the raw error instead.
       const email = credential.email ?? undefined;
       if (isIdentityLinkError(error) && email) {
         pendingLink = { provider: "apple", idToken };
@@ -483,8 +425,6 @@ export const signInWithApple = async (): Promise<AuthResult> => {
     return { ok: false, error: "Apple Sign In failed. Please try again." };
   }
 };
-
-// ── Social: Google ──────────────────────────────────────────────
 
 export const signInWithGoogle = async (): Promise<AuthResult> => {
   try {
@@ -527,16 +467,6 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
   }
 };
 
-// ── Account Management ──────────────────────────────────────────
-
-/**
- * Link the pending social identity (Apple/Google) to the currently signed-in
- * user. Called after email-OTP verification in the "link" flow: the user
- * first proved ownership of the email, and is now signed in as the existing
- * account, so we can attach the new identity.
- *
- * Requires "multiple identities" to be enabled for the Supabase project.
- */
 export const linkSocialIdentity = async (): Promise<AuthResult> => {
   const link = pendingLink;
   pendingLink = null;
@@ -580,10 +510,6 @@ export const signOut = async (): Promise<AuthResult> => {
   try {
     const userId = auth$.user.get()?.id;
 
-    // Best-effort: push every unsynced row to the cloud BEFORE leaving, so a
-    // re-login (same or new device) restores it. Only when the outbox is fully
-    // drained do we purge local data and clear the pull cursor; if we're
-    // offline or a row can't be pushed we KEEP local data so nothing is lost.
     if (userId) {
       await SyncService.drain();
       const remaining = Db.getPendingOutbox(userId).length;
@@ -609,9 +535,6 @@ export const signOut = async (): Promise<AuthResult> => {
     authActions.setSession(null);
     mmkv.set(SESSION_CACHE_KEY, false);
     mirrorSessionToSharedContainer(null, buildSettingsSharedPrefs());
-    // Every query cache is per-user (usage, plan, pricing, translate) — clear
-    // all of it so no account data survives sign-out on a shared device.
-    queryClient.clear();
     getPosthogClient()?.reset();
     track(AnalyticsEvents.SIGN_OUT);
 
@@ -648,15 +571,12 @@ export const deleteAccount = async (): Promise<AuthResult> => {
     } catch {
       /* ignore */
     }
-    queryClient.clear();
     authActions.setSession(null);
     mmkv.set(SESSION_CACHE_KEY, false);
     mirrorSessionToSharedContainer(null, buildSettingsSharedPrefs());
     getPosthogClient()?.reset();
     track(AnalyticsEvents.DELETE_ACCOUNT);
 
-    // The cloud rows are gone via delete_user cascade — purge the local
-    // device cache so nothing of the account survives on this device.
     if (userId) {
       SyncService.purgeLocalHistory(userId);
     }

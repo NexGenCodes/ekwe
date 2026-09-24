@@ -1,4 +1,4 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import Constants from "expo-constants";
 import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
@@ -30,11 +30,12 @@ import {
   ProfileSection,
   ProfileIdentity,
   ThemePickerModal,
-  VoicePickerModal,
+  VoicePickerSheet,
   CurrencyPickerModal,
   QuotaUsageCard,
 } from "@/components";
-import { Box, Text, Pressable, ScrollArea } from "@/components/ui";
+import { Box, Text, Pressable, ScrollArea, Spinner } from "@/components/ui";
+import { APP_VERSION, VOICE_PREVIEW_TEXT, type Voice } from "@ekwe/shared";
 import { getCurrencySymbol } from "@ekwe/shared/money";
 import { duration, borderRadius, opacity, spacing } from "@/constants";
 import { PLAN_LIMITS } from "@/constants/billing";
@@ -45,22 +46,30 @@ import {
   checkForApkUpdate,
   resolveApkDownloadUrl,
 } from "@/services/otaUpdates";
-import { SyncService } from "@/services/SyncService";
+import { SyncService } from "@/services/syncService";
 import { supabase } from "@/services/supabase";
-import { auth$, authActions, settings$, settingsActions } from "@/store";
-import { isIOS } from "@/utils";
+import {
+  auth$,
+  authActions,
+  settings$,
+  settingsActions,
+  update$,
+} from "@/store";
+import { AppAlert, isIOS } from "@/utils";
 
-import { AppAlert } from "@/utils/alert";
+import { resolveActiveVoice, resolveVoiceGender } from "@/utils/voices";
+
+import { synthesizeSpeech } from "@/services/speech";
+import { useSharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
+import { AppToast } from "@/utils/toast";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 import { triggerHaptic } from "@/utils/haptics";
 import logger from "@/utils/logger";
 import { pushOnce } from "@/utils/navigation";
 
-// ─── ProfileScreen ────────────────────────────────────────────────────────────
-
 export default function ProfileScreen(): React.JSX.Element {
-  const user = useSelector(() => auth$.user.get());
-  const isPro = useSelector(() => auth$.isPro.get());
+  const user = useValue(() => auth$.user.get());
+  const isPro = useValue(() => auth$.isPro.get());
   const router = useRouter();
   const { color, colorScheme, setColorScheme } = useTheme();
   const permissions = usePermissions();
@@ -73,26 +82,25 @@ export default function ProfileScreen(): React.JSX.Element {
       ? undefined
       : FadeInDown.duration(duration.normal).delay(delay);
 
-  const hapticsEnabled = useSelector(() => settings$.hapticsEnabled.get());
+  const hapticsEnabled = useValue(() => settings$.hapticsEnabled.get());
   const {
     setHapticsEnabled,
     setAutoCopy,
     setLiveTranscriptionEnabled,
-    setTtsVoice,
+    setVoiceGender,
+    setVoiceId,
     setCurrency,
   } = settingsActions;
-  const selectedLanguages = useSelector(() =>
-    settings$.selectedLanguages.get(),
-  );
-  const autoCopy = useSelector(() => settings$.autoCopy.get());
-  const liveTranscriptionEnabled = useSelector(() =>
+  const selectedLanguages = useValue(() => settings$.selectedLanguages.get());
+  const autoCopy = useValue(() => settings$.autoCopy.get());
+  const liveTranscriptionEnabled = useValue(() =>
     settings$.liveTranscriptionEnabled.get(),
   );
-  const ttsVoice = useSelector(() => settings$.ttsVoice.get());
-  const currency = useSelector(() => settings$.currency.get());
-  // Server-resolved currency: manual selection wins, otherwise the worker's
-  // geo resolution (CF-IPCountry → billable set → USD). Users see the actual
-  // currency they'll be billed in, never an opaque "Auto" placeholder.
+  const voiceGender = useValue(() => settings$.voiceGender.get());
+  const voiceId = useValue(() => settings$.voiceId.get());
+  const activeVoice = resolveActiveVoice(voiceId, voiceGender);
+  const currency = useValue(() => settings$.currency.get());
+
   const { pricing } = useActivePricing();
   const effectiveCurrency = currency ?? pricing.currency;
   const currencyLabel = `${getCurrencySymbol(effectiveCurrency)} ${effectiveCurrency}`;
@@ -102,11 +110,47 @@ export default function ProfileScreen(): React.JSX.Element {
   const [isCurrencyModalVisible, setIsCurrencyModalVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+  const availableUpdate = useValue(() =>
+    update$.channel.get() === "apk-sideload" ? update$.manifest.get() : null,
+  );
+  const currentVersion =
+    APP_VERSION || Constants.expoConfig?.version || "1.0.0";
+
+  const handleCheckForUpdate = useCallback(async (): Promise<void> => {
+    if (isCheckingUpdate) return;
+    await triggerHaptic();
+    setIsCheckingUpdate(true);
+    try {
+      const manifest = await checkForApkUpdate();
+      update$.manifest.set(manifest);
+      if (manifest) {
+        AppAlert.info(
+          "Update available",
+          `Version ${manifest.latest_version} is available.`,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Download",
+              onPress: (): void => {
+                Linking.openURL(resolveApkDownloadUrl(manifest));
+              },
+            },
+          ],
+        );
+      } else {
+        AppAlert.info("Up to date", "You're running the latest version.");
+      }
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  }, [isCheckingUpdate]);
 
   const rawName =
     user?.user_metadata?.full_name || user?.user_metadata?.name || "";
   const userEmail = user?.email || "";
-  // Fallback to the first part of their email if name is completely empty
+
   const fallbackName = userEmail.split("@")[0] || "User";
   const userName = rawName ? rawName.split(" ")[0] : fallbackName;
 
@@ -139,6 +183,7 @@ export default function ProfileScreen(): React.JSX.Element {
   };
 
   const confirmDeleteAccount = useCallback(async (): Promise<void> => {
+    await triggerHaptic();
     setShowDeleteModal(false);
     const result = await deleteAccount();
     if (!result.ok) {
@@ -151,6 +196,55 @@ export default function ProfileScreen(): React.JSX.Element {
     }
   }, [router]);
 
+  const previewLang = selectedLanguages[0] ?? "en";
+
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const previewPlayer = useSharedAudioPlayer(previewUri);
+
+  React.useEffect(() => {
+    if (
+      isPreviewLoading &&
+      previewUri &&
+      previewPlayer.isLoaded &&
+      !previewPlayer.isDecoding
+    ) {
+      setIsPreviewLoading(false);
+      void previewPlayer.playFromStart();
+    }
+  }, [
+    isPreviewLoading,
+    previewUri,
+    previewPlayer.isLoaded,
+    previewPlayer.isDecoding,
+    previewPlayer,
+  ]);
+
+  const handlePreviewVoice = useCallback(
+    async (previewed: Voice): Promise<void> => {
+      await triggerHaptic();
+      try {
+        previewPlayer.pause();
+        setIsPreviewLoading(true);
+        const result = await synthesizeSpeech(VOICE_PREVIEW_TEXT, previewLang, {
+          voiceId: previewed.id,
+          gender: previewed.gender,
+        });
+        if (result.ok) {
+          setPreviewUri(result.value.uri);
+        } else {
+          setIsPreviewLoading(false);
+          AppToast.error("Preview Unavailable", {
+            description: "Failed to load voice preview.",
+          });
+        }
+      } catch {
+        setIsPreviewLoading(false);
+      }
+    },
+    [previewLang, previewPlayer],
+  );
+
   return (
     <Box style={[styles.flex1, { backgroundColor: color.background }]}>
       <ScrollArea
@@ -159,43 +253,41 @@ export default function ProfileScreen(): React.JSX.Element {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{
           paddingHorizontal: spacing.lg,
-          paddingBottom: spacing.xl,
+          paddingBottom: spacing["6xl"],
         }}
       >
+        {}
         <Animated.View entering={sectionEnter(0)}>
           <ProfileIdentity
-            user={user}
+            user={user!}
             isPro={isPro}
             currentIconData={currentIconData}
             userName={userName}
             userEmail={userEmail}
             rawName={rawName}
             avatarLocked={!permissions.customAvatarIcons}
-            onEditAvatar={() => {
-              if (permissions.customAvatarIcons) {
-                setIsIconModalVisible(true);
-              } else {
-                AppAlert.info(
-                  "Ekwe Pro",
-                  "Custom avatar icons are a premium feature. Upgrade to Pro to customize your profile.",
-                );
-              }
+            onEditAvatar={async () => {
+              await triggerHaptic();
+              setIsIconModalVisible(true);
             }}
           />
         </Animated.View>
 
-        {/* Account & Subscription */}
-        <Animated.View entering={sectionEnter(100)}>
-          <ProfileSection title="Account & Subscription">
+        {}
+        <Animated.View entering={sectionEnter(80)}>
+          <ProfileSection
+            title="Account & Subscription"
+            tierBar={isPro ? "pro" : "free"}
+          >
             <ProfileRow
               icon={CreditCard}
               sfIcon="creditcard.fill"
-              iconColor={color.foreground}
+              iconColor={isPro ? color.brand : color.foreground}
               title={isPro ? "Ekwe Pro" : "Plan & Billing"}
               subtitle={
                 isPro
                   ? PLAN_LIMITS.pro.dailyTranslateLimit === 0
-                    ? "Unlimited translations"
+                    ? "Unlimited translations · Premium voices · No ads"
                     : `${PLAN_LIMITS.pro.dailyTranslateLimit.toLocaleString(
                         "en-US",
                       )} translations per day`
@@ -205,6 +297,7 @@ export default function ProfileScreen(): React.JSX.Element {
                 await triggerHaptic();
                 pushOnce(router, "/billing");
               }}
+              accentColor={isPro ? color.brand : undefined}
               trailing={
                 isPro ? (
                   isIOS ? (
@@ -233,7 +326,7 @@ export default function ProfileScreen(): React.JSX.Element {
           </ProfileSection>
         </Animated.View>
 
-        {/* Daily usage quota */}
+        {}
         {!isPro && (
           <Animated.View
             entering={
@@ -247,15 +340,15 @@ export default function ProfileScreen(): React.JSX.Element {
           </Animated.View>
         )}
 
-        {/* App Preferences */}
-        <Animated.View entering={sectionEnter(150)}>
+        {}
+        <Animated.View entering={sectionEnter(120)}>
           <ProfileSection title="App Preferences">
             <ProfileRow
               icon={Globe}
               sfIcon="globe"
               iconColor={color.foreground}
               title="Edit Language Grid"
-              subtitle={`${selectedLanguages.length}/5 active languages`}
+              subtitle={`${selectedLanguages.length}/${permissions.maxSelectedLanguages} active languages`}
               hasDivider
               onPress={async () => {
                 await triggerHaptic();
@@ -277,7 +370,12 @@ export default function ProfileScreen(): React.JSX.Element {
                 <Box style={{ flexDirection: "row", alignItems: "center" }}>
                   <Text
                     variant="body"
-                    style={{ color: color.muted, marginRight: spacing.sm }}
+                    numberOfLines={1}
+                    style={{
+                      color: color.muted,
+                      marginRight: spacing.sm,
+                      flexShrink: 1,
+                    }}
                   >
                     {currencyLabel}
                   </Text>
@@ -291,11 +389,11 @@ export default function ProfileScreen(): React.JSX.Element {
               iconColor={color.foreground}
               title="Haptic Feedback"
               subtitle="Vibrate on user actions"
+              hasDivider
               onPress={async () => {
                 await triggerHaptic();
                 setHapticsEnabled(!hapticsEnabled);
               }}
-              hasDivider
               trailing={
                 <Switch
                   value={hapticsEnabled}
@@ -303,7 +401,7 @@ export default function ProfileScreen(): React.JSX.Element {
                     setHapticsEnabled(val);
                   }}
                   trackColor={{
-                    true: color.foreground,
+                    true: color.brand,
                     false: color.border,
                   }}
                   thumbColor={color.card}
@@ -324,7 +422,12 @@ export default function ProfileScreen(): React.JSX.Element {
                 <Box style={{ flexDirection: "row", alignItems: "center" }}>
                   <Text
                     variant="body"
-                    style={{ color: color.muted, marginRight: spacing.sm }}
+                    numberOfLines={1}
+                    style={{
+                      color: color.muted,
+                      marginRight: spacing.sm,
+                      flexShrink: 1,
+                    }}
                   >
                     {colorScheme === "light"
                       ? "Light"
@@ -339,27 +442,25 @@ export default function ProfileScreen(): React.JSX.Element {
           </ProfileSection>
         </Animated.View>
 
-        {/* Smart Features */}
-        <Animated.View entering={sectionEnter(200)}>
-          <ProfileSection title="Smart Features">
+        {}
+        <Animated.View entering={sectionEnter(160)}>
+          <ProfileSection
+            title="Smart Features"
+            tierBar={isPro ? "pro" : "free"}
+          >
             <ProfileRow
               icon={Radio}
               sfIcon="waveform"
               iconColor={color.foreground}
               title="Live Transcription"
-              subtitle="See transcription appear in real time during recording"
+              subtitle="See transcription live while recording"
               locked={!isPro}
+              navigateToBilling
               onPress={async () => {
-                if (!isPro) {
+                if (isPro) {
                   await triggerHaptic();
-                  AppAlert.info(
-                    "Ekwe Pro Required",
-                    "Live Transcription is a premium feature. Upgrade to Pro to enable it.",
-                  );
-                  return;
+                  setLiveTranscriptionEnabled(!liveTranscriptionEnabled);
                 }
-                await triggerHaptic();
-                setLiveTranscriptionEnabled(!liveTranscriptionEnabled);
               }}
               hasDivider
               trailing={
@@ -370,7 +471,7 @@ export default function ProfileScreen(): React.JSX.Element {
                       setLiveTranscriptionEnabled(val);
                     }}
                     trackColor={{
-                      true: color.foreground,
+                      true: color.brand,
                       false: color.border,
                     }}
                     thumbColor={color.card}
@@ -383,18 +484,9 @@ export default function ProfileScreen(): React.JSX.Element {
               sfIcon="speaker.wave.2.fill"
               iconColor={color.foreground}
               title="Voice"
-              subtitle="Applied to spoken translations; the device uses the closest matching installed voice"
+              subtitle="Your default voice for voice notes"
               hasDivider
-              locked={!isPro}
               onPress={async () => {
-                if (!isPro) {
-                  await triggerHaptic();
-                  AppAlert.info(
-                    "Ekwe Pro Required",
-                    "Voice selection is a premium feature. Upgrade to Pro to choose a voice.",
-                  );
-                  return;
-                }
                 await triggerHaptic();
                 setIsVoiceModalVisible(true);
               }}
@@ -402,13 +494,14 @@ export default function ProfileScreen(): React.JSX.Element {
                 <Box style={{ flexDirection: "row", alignItems: "center" }}>
                   <Text
                     variant="body"
-                    style={{ color: color.muted, marginRight: spacing.sm }}
+                    numberOfLines={1}
+                    style={{
+                      color: color.muted,
+                      marginRight: spacing.sm,
+                      flexShrink: 1,
+                    }}
                   >
-                    {ttsVoice === "male"
-                      ? "Male"
-                      : ttsVoice === "female"
-                        ? "Female"
-                        : "Default"}
+                    {activeVoice.name}
                   </Text>
                   <ChevronRight size={16} color={color.muted} />
                 </Box>
@@ -424,7 +517,6 @@ export default function ProfileScreen(): React.JSX.Element {
                 await triggerHaptic();
                 setAutoCopy(!autoCopy);
               }}
-              hasDivider
               trailing={
                 <Switch
                   value={autoCopy}
@@ -432,7 +524,7 @@ export default function ProfileScreen(): React.JSX.Element {
                     setAutoCopy(val);
                   }}
                   trackColor={{
-                    true: color.foreground,
+                    true: color.brand,
                     false: color.border,
                   }}
                   thumbColor={color.card}
@@ -442,8 +534,8 @@ export default function ProfileScreen(): React.JSX.Element {
           </ProfileSection>
         </Animated.View>
 
-        {/* Help & Legal */}
-        <Animated.View entering={sectionEnter(250)}>
+        {}
+        <Animated.View entering={sectionEnter(200)}>
           <ProfileSection title="Help & Legal">
             <ProfileRow
               icon={Mail}
@@ -460,32 +552,39 @@ export default function ProfileScreen(): React.JSX.Element {
               icon={RefreshCw}
               sfIcon="arrow.triangle.2.circlepath"
               iconColor={color.foreground}
-              title="Check for update"
+              title="Check for Updates"
+              subtitle={
+                availableUpdate
+                  ? `Current version ${currentVersion} · ${availableUpdate.latest_version} available`
+                  : `Current version ${currentVersion}`
+              }
               hasDivider
-              onPress={async () => {
-                await triggerHaptic();
-                const manifest = await checkForApkUpdate();
-                if (manifest) {
-                  AppAlert.info(
-                    "Update available",
-                    `Version ${manifest.latest_version} is available.`,
-                    [
-                      { text: "Cancel", style: "cancel" },
-                      {
-                        text: "Download",
-                        onPress: (): void => {
-                          Linking.openURL(resolveApkDownloadUrl(manifest));
-                        },
-                      },
-                    ],
-                  );
-                } else {
-                  AppAlert.info(
-                    "Up to date",
-                    "You're running the latest version.",
-                  );
-                }
-              }}
+              onPress={handleCheckForUpdate}
+              trailing={
+                isCheckingUpdate ? (
+                  <Spinner size="sm" color={color.muted} />
+                ) : availableUpdate ? (
+                  <Box
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: spacing.sm,
+                    }}
+                  >
+                    <Box
+                      style={[
+                        styles.updateBadge,
+                        { backgroundColor: color.brand },
+                      ]}
+                    >
+                      <Text variant="caption" style={{ color: color.onBrand }}>
+                        New
+                      </Text>
+                    </Box>
+                    <ChevronRight size={20} color={color.muted} />
+                  </Box>
+                ) : undefined
+              }
             />
             <ProfileRow
               icon={Star}
@@ -519,8 +618,6 @@ export default function ProfileScreen(): React.JSX.Element {
                   }
                 }
 
-                // Fallback to deep link
-                // Get from .env EXPO_PUBLIC_ITUNES_ITEM_ID
                 const ITUNES_ITEM_ID =
                   process.env.EXPO_PUBLIC_ITUNES_ITEM_ID || "";
                 if (!ITUNES_ITEM_ID || ITUNES_ITEM_ID === "123456789") {
@@ -578,8 +675,8 @@ export default function ProfileScreen(): React.JSX.Element {
           </ProfileSection>
         </Animated.View>
 
-        {/* Account */}
-        <Animated.View entering={sectionEnter(300)}>
+        {}
+        <Animated.View entering={sectionEnter(240)}>
           <ProfileSection title="Account" titleColor={color.error}>
             <ProfileRow
               icon={LogOut}
@@ -606,8 +703,8 @@ export default function ProfileScreen(): React.JSX.Element {
           </ProfileSection>
         </Animated.View>
 
-        {/* Data */}
-        <Animated.View entering={sectionEnter(350)}>
+        {}
+        <Animated.View entering={sectionEnter(280)}>
           <ProfileSection title="Data">
             <ProfileRow
               icon={Trash2}
@@ -640,24 +737,14 @@ export default function ProfileScreen(): React.JSX.Element {
           </ProfileSection>
         </Animated.View>
 
-        {/* Footer */}
-        <Animated.View entering={sectionEnter(400)}>
+        {}
+        <Animated.View entering={sectionEnter(320)}>
           <Box style={styles.footer}>
             <Text
               variant="caption"
               style={{ opacity: opacity.inactive, color: color.muted }}
             >
               Made by the Ekwe team
-            </Text>
-            <Text
-              variant="caption"
-              style={{
-                opacity: opacity.scrim,
-                marginTop: spacing.xs,
-                color: color.muted,
-              }}
-            >
-              v{Constants.expoConfig?.version ?? "1.0.0"}
             </Text>
           </Box>
         </Animated.View>
@@ -681,16 +768,19 @@ export default function ProfileScreen(): React.JSX.Element {
         currentTheme={colorScheme}
       />
 
-      <VoicePickerModal
+      <VoicePickerSheet
         visible={isVoiceModalVisible}
         onClose={() => setIsVoiceModalVisible(false)}
-        onSelect={async (value) => {
+        title="Default Voice"
+        currentVoiceId={activeVoice.id}
+        currentGender={resolveVoiceGender(voiceGender)}
+        onSelect={async (voice) => {
           await triggerHaptic();
-          setTtsVoice(value);
+          setVoiceId(voice.id);
+          setVoiceGender(voice.gender);
           setIsVoiceModalVisible(false);
         }}
-        currentVoice={ttsVoice}
-        isPro={isPro}
+        onPreview={handlePreviewVoice}
       />
 
       <CurrencyPickerModal
@@ -705,7 +795,7 @@ export default function ProfileScreen(): React.JSX.Element {
         resolvedCurrency={effectiveCurrency}
       />
 
-      {/* ── Delete Account Confirmation Modal ── */}
+      {}
       <Modal
         visible={showDeleteModal}
         transparent
@@ -824,13 +914,15 @@ export default function ProfileScreen(): React.JSX.Element {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = {
   flex1: { flex: 1 },
   scrollView: { flex: 1 },
   upgradeBadge: {
-    marginLeft: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+  },
+  updateBadge: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,
@@ -840,4 +932,3 @@ const styles = {
     paddingVertical: spacing.xl,
   },
 };
-// test

@@ -3,12 +3,6 @@ import { FREE_LIMITS, PREMIUM_LIMITS, WORKER_ERROR_CODES } from "@ekwe/shared";
 const FREE_MAX_MIN = Math.round(FREE_LIMITS.dictationDurationMs / 60000);
 const PRO_MAX_MIN = Math.round(PREMIUM_LIMITS.dictationDurationMs / 60000);
 
-/**
- * App-level error taxonomy. Members that correspond to codes the worker can
- * emit on the wire derive their string from @ekwe/shared's WORKER_ERROR_CODES
- * so the two sides can never drift; everything else is client-only (produced
- * by the app, the share extension, or the native module) and stays local.
- */
 export const EkweError = {
   NO_SPEECH: "EKWE_NO_SPEECH",
   TOO_SHORT: "EKWE_TOO_SHORT",
@@ -34,7 +28,7 @@ export const EkweError = {
   AUDIO_EMPTY: "EKWE_AUDIO_EMPTY",
   FILE_TOO_LARGE: WORKER_ERROR_CODES.FILE_TOO_LARGE,
   AUDIO_TOO_LONG: WORKER_ERROR_CODES.AUDIO_TOO_LONG,
-  TTS_FAIL: "EKWE_TTS_FAIL",
+  SPEECH_FAIL: "EKWE_SPEECH_FAIL",
   SERVER_ERROR: WORKER_ERROR_CODES.EKWE_SERVER_ERROR,
   REQUEST_CANCELLED: "EKWE_REQUEST_CANCELLED",
 } as const;
@@ -79,7 +73,7 @@ export const ErrorMessages: Record<EkweError, string> = {
   [EkweError.FILE_TOO_LARGE]:
     "This file is too large to process. Maximum size is 25MB.",
   [EkweError.AUDIO_TOO_LONG]: `This audio is too long for your plan. Free: ${FREE_MAX_MIN} min per file · Pro: ${PRO_MAX_MIN} min.`,
-  [EkweError.TTS_FAIL]: "Text-to-speech failed. Please try again.",
+  [EkweError.SPEECH_FAIL]: "Speech failed. Please try again.",
   [EkweError.SERVER_ERROR]: "Server error. Please try again.",
   [EkweError.REQUEST_CANCELLED]: "Request was cancelled.",
 };

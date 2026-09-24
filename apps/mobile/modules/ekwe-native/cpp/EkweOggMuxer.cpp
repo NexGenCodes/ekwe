@@ -100,11 +100,25 @@ bool OggMuxer::write_opus_comment(const std::string& vendor) {
     comment.push_back(static_cast<uint8_t>((vendor_len >> 16) & 0xFF));
     comment.push_back(static_cast<uint8_t>((vendor_len >> 24) & 0xFF));
     comment.insert(comment.end(), vendor.begin(), vendor.end());
-    // User comment list length (32-bit LE) — 0 comments
+
+    // One user comment: ENCODER=<vendor>. libopus/opusenc-derived muxers all
+    // emit an ENCODER tag; omitting it is legal but makes our files differ from
+    // every real-world Opus export (WhatsApp included).
+    const std::string encoder = "ENCODER=" + vendor;
+
+    // User comment list length (32-bit LE) — 1 comment
+    comment.push_back(1);
     comment.push_back(0);
     comment.push_back(0);
     comment.push_back(0);
-    comment.push_back(0);
+
+    // Comment string length (32-bit LE) + bytes
+    uint32_t encoder_len = static_cast<uint32_t>(encoder.size());
+    comment.push_back(static_cast<uint8_t>(encoder_len & 0xFF));
+    comment.push_back(static_cast<uint8_t>((encoder_len >> 8) & 0xFF));
+    comment.push_back(static_cast<uint8_t>((encoder_len >> 16) & 0xFF));
+    comment.push_back(static_cast<uint8_t>((encoder_len >> 24) & 0xFF));
+    comment.insert(comment.end(), encoder.begin(), encoder.end());
 
     OggPage page = make_page(comment.data(), comment.size(), 0, false, false);
     return write_page(page);

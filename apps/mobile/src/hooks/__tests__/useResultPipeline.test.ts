@@ -2,11 +2,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 
-import { useResultPipeline } from "../useResultPipeline";
+import { useResultPipeline } from "@/hooks/useResultPipeline";
 import { history$ } from "@/store";
 
-import { batchTranscriber } from "@/services/BatchTranscriber";
-import { HistoryService } from "@/services/HistoryService";
+import { batchTranscriber } from "@/services/batchTranscriber";
+import { HistoryService } from "@/services/historyService";
 import type { TranscriptionResult } from "@/services/transcribeAudio";
 import { EkweError } from "@/constants/errors";
 import { AppToast } from "@/utils/toast";
@@ -15,8 +15,11 @@ import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 
 vi.mock("@/hooks/queries/useUsageQuery", () => ({
   invalidateUsage: vi.fn(),
-  useUsageQuery: vi.fn(() => ({ data: undefined, isFetching: false })),
-  usageQueryKey: ["usage"],
+  useUsageQuery: vi.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+  })),
 }));
 
 const mockTranslate = vi.fn();
@@ -24,11 +27,11 @@ vi.mock("../useTranslation", () => ({
   useTranslation: () => ({ translate: mockTranslate }),
 }));
 
-vi.mock("@/services/BatchTranscriber", () => ({
+vi.mock("@/services/batchTranscriber", () => ({
   batchTranscriber: { transcribe: vi.fn() },
 }));
 
-vi.mock("@/services/HistoryService", () => ({
+vi.mock("@/services/historyService", () => ({
   HistoryService: { recordTranslation: vi.fn() },
 }));
 
@@ -133,7 +136,6 @@ describe("useResultPipeline", () => {
     expect(mockToastError).toHaveBeenCalled();
     expect(result.current.hasPolished).toBe(false);
 
-    // Re-render with the same URI (e.g. parent state churn) must NOT re-fire.
     await rerender({ uri: "file:///tmp/a.m4a" });
     expect(mockTranscribe).toHaveBeenCalledTimes(1);
   });
@@ -165,7 +167,6 @@ describe("useResultPipeline", () => {
       }),
     );
 
-    // Entry not yet hydrated: state is the mount-time default.
     expect(result.current.transcript).toBe("");
     expect(result.current.isHistoryReplay).toBe(false);
 
@@ -182,7 +183,6 @@ describe("useResultPipeline", () => {
       });
     });
 
-    // The late-resolving entry must populate the state, not stay stale.
     expect(result.current.transcript).toBe("delayed transcript");
     expect(result.current.translation).toBe("delayed translation");
     expect(result.current.isHistoryReplay).toBe(true);

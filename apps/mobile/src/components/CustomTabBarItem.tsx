@@ -35,7 +35,7 @@ interface CustomTabBarItemProps {
   onPress: () => void;
   onLongPress: () => void;
   label: string;
-  /** Show the update-available dot (an APK newer than the installed build). */
+
   showBadge?: boolean;
 }
 
@@ -49,7 +49,6 @@ export function CustomTabBarItem({
 }: CustomTabBarItemProps): React.ReactElement {
   const { color } = useTheme();
 
-  // Single source of truth: 0 = inactive, 1 = active
   const progress = useSharedValue(isFocused ? 1 : 0);
   const pressScale = useSharedValue(1);
 
@@ -65,13 +64,11 @@ export function CustomTabBarItem({
     pressScale.value = withSpring(1, spring.snappy);
   };
 
-  // Outer container: flex expands to reveal label space
   const containerStyle = useAnimatedStyle(() => ({
     flex: interpolate(progress.value, [0, 1], [1, 1.6]),
     transform: [{ scale: pressScale.value }],
   }));
 
-  // Pill background fades in using primary color at low opacity
   const brandPill = withAlpha(color.brand, 0.133);
   const pillStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
@@ -82,12 +79,10 @@ export function CustomTabBarItem({
     paddingHorizontal: interpolate(progress.value, [0, 1], [12, 18]),
   }));
 
-  // Icon gently scales up when active
   const iconStyle = useAnimatedStyle(() => ({
     transform: [{ scale: interpolate(progress.value, [0, 1], [1, 1.1]) }],
   }));
 
-  // Label slides in from left with a fade — delayed via 0.5 midpoint
   const labelStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 0.5, 1], [0, 0, 1]),
     maxWidth: interpolate(progress.value, [0, 1], [0, 100]),

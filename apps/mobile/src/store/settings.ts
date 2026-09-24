@@ -1,14 +1,22 @@
 import { observable } from "@legendapp/state";
-import { persistObservable } from "@legendapp/state/persist";
-import type { TtsRequest } from "@ekwe/shared";
+import { syncObservable } from "@legendapp/state/sync";
+import { internal } from "@legendapp/state";
 
+import { VoiceGender } from "@ekwe/shared";
 import { PLAN_LIMITS } from "@/constants/billing";
 import {
   mirrorSettingsToShared,
   SharedPreferences,
 } from "@/services/sharedContainer";
-import { auth$ } from "@/store/auth";
-import { ObservablePersistMMKV } from "@/store/mmkvPlugin";
+import { mmkvPlugin } from "@/store/mmkvPlugin";
+import { initializeMMKV, mmkv } from "@/services/mmkv";
+
+type IsProProvider = () => boolean;
+let isProProvider: IsProProvider = () => false;
+
+export function registerIsProProvider(provider: IsProProvider): void {
+  isProProvider = provider;
+}
 
 export enum ThemePreference {
   Light = "light",
@@ -16,14 +24,9 @@ export enum ThemePreference {
   System = "system",
 }
 
-/** Version of the analytics-consent copy. Bump when the wording changes so
- * returning users are prompted to re-confirm. */
 const CONSENT_VERSION = 1;
 
-/** User's TTS voice-gender preference. The gender values mirror the TTS wire
- * enum (`ttsRequestSchema`); "default" is a UI-only state meaning the
- * platform picks, and is stripped before the request. */
-export type TtsVoice = NonNullable<TtsRequest["gender"]> | "default";
+export type VoiceGenderSetting = NonNullable<VoiceGender> | "default";
 
 export interface SettingsState {
   themePreference: ThemePreference;
@@ -37,13 +40,11 @@ export interface SettingsState {
   autoCopy: boolean;
   hapticsEnabled: boolean;
   liveTranscriptionEnabled: boolean;
-  ttsVoice: TtsVoice;
-  /** ISO 4217 code the user manually picked; null = auto-detect from device. */
+  voiceGender: VoiceGenderSetting;
+  voiceId: string | null;
   currency: string | null;
   analyticsConsent: boolean;
-  /** ISO timestamp of the last analytics consent decision. */
   analyticsConsentUpdatedAt: string | null;
-  /** Version of the consent copy the user agreed to. */
   analyticsConsentVersion: number | null;
 }
 
@@ -59,7 +60,8 @@ const initialSettings: SettingsState = {
   autoCopy: true,
   hapticsEnabled: true,
   liveTranscriptionEnabled: false,
-  ttsVoice: "default",
+  voiceGender: "default",
+  voiceId: null,
   currency: null,
   analyticsConsent: false,
   analyticsConsentUpdatedAt: null,
@@ -68,8 +70,6 @@ const initialSettings: SettingsState = {
 
 export const settings$ = observable<SettingsState>(initialSettings);
 
-// Build the prefs object for the native share extension's shared container.
-// Read here rather than in sharedContainer to avoid `store -> services` cycle.
 export function buildSettingsSharedPrefs(
   overrides?: Partial<
     Pick<SharedPreferences, "selectedLanguages" | "autoCopy">
@@ -80,16 +80,38 @@ export function buildSettingsSharedPrefs(
       overrides?.selectedLanguages ?? settings$.selectedLanguages.peek(),
     autoCopy: overrides?.autoCopy ?? settings$.autoCopy.peek(),
     autoDetectAllowed:
-      PLAN_LIMITS[auth$.isPro.peek() ? "pro" : "free"].autoDetectAllowed,
+      PLAN_LIMITS[isProProvider() ? "pro" : "free"].autoDetectAllowed,
   };
 }
 
-// Persist settings to MMKV
-persistObservable(settings$, {
-  local: "ekwe-settings",
-  pluginLocal: ObservablePersistMMKV,
+void (async (): Promise<void> => {
+  try {
+    await initializeMMKV();
+    const raw = mmkv.getString("ekwe-settings");
+    if (raw) {
+      const parsed = internal.safeParse(raw) as Record<string, unknown> | null;
+      if (parsed && "ttsVoice" in parsed && !("voiceGender" in parsed)) {
+        parsed.voiceGender = parsed.ttsVoice;
+        delete parsed.ttsVoice;
+        mmkv.set("ekwe-settings", internal.safeStringify(parsed));
+      }
+      if (parsed && parsed.voiceGender === "neutral") {
+        parsed.voiceGender = "default";
+        mmkv.set("ekwe-settings", internal.safeStringify(parsed));
+      }
+    }
+  } catch {
+    // Non-fatal: the next session retries or the user starts from
+    // defaults if the old value is unrecoverable.
+  }
+})();
+
+syncObservable(settings$, {
+  persist: {
+    name: "ekwe-settings",
+    plugin: mmkvPlugin,
+  },
 });
-// Actions
 export const settingsActions = {
   setThemePreference: (val: ThemePreference): void => {
     settings$.themePreference.set(val);
@@ -128,8 +150,11 @@ export const settingsActions = {
   setLiveTranscriptionEnabled: (val: boolean): void => {
     settings$.liveTranscriptionEnabled.set(val);
   },
-  setTtsVoice: (val: TtsVoice): void => {
-    settings$.ttsVoice.set(val);
+  setVoiceGender: (val: VoiceGenderSetting): void => {
+    settings$.voiceGender.set(val);
+  },
+  setVoiceId: (val: string | null): void => {
+    settings$.voiceId.set(val);
   },
   setCurrency: (val: string | null): void => {
     settings$.currency.set(val);
@@ -141,24 +166,16 @@ export const settingsActions = {
   },
 };
 
-/**
- * Reset personal preferences to defaults.
- *
- * Called when a different user signs in or the user signs out, so account
- * choices (language grid, voice, currency, auto-copy, live transcription)
- * never leak onto another user on a shared device. Device-level prefs
- * (appearance, haptics, volume behavior, onboarding) are intentionally kept.
- */
 export function resetPersonalSettings(): void {
   settings$.selectedLanguages.set(initialSettings.selectedLanguages);
   settings$.targetLanguage.set(initialSettings.targetLanguage);
   settings$.autoCopy.set(initialSettings.autoCopy);
   settings$.currency.set(initialSettings.currency);
-  settings$.ttsVoice.set(initialSettings.ttsVoice);
+  settings$.voiceGender.set(initialSettings.voiceGender);
+  settings$.voiceId.set(initialSettings.voiceId);
   settings$.liveTranscriptionEnabled.set(
     initialSettings.liveTranscriptionEnabled,
   );
 
-  // Mirror the reset to the iOS share extension's shared container.
   mirrorSettingsToShared(buildSettingsSharedPrefs());
 }

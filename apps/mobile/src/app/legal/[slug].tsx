@@ -129,8 +129,6 @@ export default function LegalScreen(): React.JSX.Element {
 
   const doc = LEGAL_DOCUMENTS[slug || ""];
 
-  // Plain JS handler — Reanimated 4's useAnimatedScrollHandler returns an event
-  // object for Animated.ScrollView only; a regular function is required here.
   const handleScroll = (
     event: NativeSyntheticEvent<NativeScrollEvent>,
   ): void => {
@@ -215,7 +213,7 @@ export default function LegalScreen(): React.JSX.Element {
         onScroll={handleScroll}
         scrollEventThrottle={16}
       >
-        {/* Reading progress */}
+        {}
         <Box style={styles.progressTrack}>
           <Animated.View
             style={[
@@ -248,7 +246,7 @@ export default function LegalScreen(): React.JSX.Element {
           </Box>
         </Animated.View>
 
-        {/* Table of contents */}
+        {}
         <Animated.View
           entering={FadeInDown.delay(130).duration(400).springify()}
         >
@@ -290,7 +288,7 @@ export default function LegalScreen(): React.JSX.Element {
           </Box>
         </Animated.View>
 
-        {/* Sections */}
+        {}
         {doc.sections.map((section, index) => (
           <LegalSectionCard
             key={section.title}
@@ -305,7 +303,7 @@ export default function LegalScreen(): React.JSX.Element {
           />
         ))}
 
-        {/* Contact */}
+        {}
         <Animated.View
           entering={FadeInDown.delay(520).duration(400).springify()}
         >
@@ -350,7 +348,7 @@ export default function LegalScreen(): React.JSX.Element {
           </Box>
         </Animated.View>
 
-        {/* Footer */}
+        {}
         <Animated.View entering={FadeInDown.delay(580).duration(400)}>
           <Box style={styles.footer}>
             <Text

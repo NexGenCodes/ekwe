@@ -19,12 +19,12 @@ interface EchoProcessingStepProps {
   title: string;
   uploadingLabel: string;
   processingLabel: string;
-  /** Real upload fraction 0–1, or null when the request is in flight (indeterminate). */
+
   uploadProgress: number | null;
   durationLabel?: string | null;
-  /** Shown briefly (when indeterminate) before `processingLabel`, e.g. "Sending request…". */
+
   briefPhaseLabel?: string;
-  /** Overrides the default "still working" reassurance message. */
+
   reassuranceLabel?: string;
   onCancel?: () => void;
 }

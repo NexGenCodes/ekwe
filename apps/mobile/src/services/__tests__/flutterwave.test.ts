@@ -12,7 +12,7 @@ import {
   openFlutterwaveCheckout,
   reconcileFlutterwaveStatus,
   verifyTransaction,
-} from "../flutterwave";
+} from "@/services/flutterwave";
 
 const refreshSessionMock = vi.hoisted(() => vi.fn());
 
@@ -20,11 +20,11 @@ vi.mock("@/services/supabase", () => ({
   supabase: { auth: { refreshSession: refreshSessionMock } },
 }));
 
-vi.mock("@/utils/networkUtils", () => ({
+vi.mock("@/utils/http", () => ({
   getWorkerUrl: vi.fn(() => "https://worker.test"),
 }));
 
-import { getWorkerUrl } from "@/utils/networkUtils";
+import { getWorkerUrl } from "@/utils/http";
 
 function makeSession(): Record<string, unknown> {
   return {

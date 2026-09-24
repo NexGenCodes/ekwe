@@ -1,9 +1,14 @@
 import { describe, test, expect } from "vitest";
-import * as deepgram from "../../providers/deepgram";
-import { mockEnv, makeAudioBlob, jsonResponse, mockSignal } from "../setup";
+import * as deepgram from "@/providers/deepgram";
+import {
+  mockEnv,
+  makeAudioBlob,
+  jsonResponse,
+  mockSignal,
+} from "@/__tests__/setup";
 import { http } from "msw";
-import { server } from "../msw/server";
-import { PROVIDER_URLS } from "../msw/handlers";
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 const listen = () =>
   http.post(PROVIDER_URLS.deepgram, () =>
@@ -24,7 +29,7 @@ describe("Deepgram provider", () => {
   test("returns result on success", async () => {
     server.use(listen());
 
-    const result = await deepgram.transcribe(
+    const result = await deepgram.stt(
       makeAudioBlob(),
       "en",
       mockEnv(),
@@ -45,7 +50,7 @@ describe("Deepgram provider", () => {
         }),
       ),
     );
-    const result = await deepgram.transcribe(
+    const result = await deepgram.stt(
       makeAudioBlob(),
       "en",
       mockEnv(),
@@ -58,7 +63,7 @@ describe("Deepgram provider", () => {
     server.use(
       http.post(PROVIDER_URLS.deepgram, () => jsonResponse({ results: {} })),
     );
-    const result = await deepgram.transcribe(
+    const result = await deepgram.stt(
       makeAudioBlob(),
       "en",
       mockEnv(),
@@ -83,7 +88,7 @@ describe("Deepgram provider", () => {
         }),
       ),
     );
-    const result = await deepgram.transcribe(
+    const result = await deepgram.stt(
       makeAudioBlob(),
       "en",
       mockEnv(),
@@ -98,7 +103,7 @@ describe("Deepgram provider", () => {
         jsonResponse({ error: "credit exhausted" }, 403),
       ),
     );
-    const result = await deepgram.transcribe(
+    const result = await deepgram.stt(
       makeAudioBlob(),
       "en",
       mockEnv(),

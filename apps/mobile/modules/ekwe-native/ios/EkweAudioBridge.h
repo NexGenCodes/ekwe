@@ -32,7 +32,7 @@ typedef void (^VadSilenceCallback)(void);
 // Remuxes Ogg Opus into Opus-in-CAF (remux path, lossless) or re-encodes
 // non-Opus sources to Opus CAF so AVPlayer/expo-audio can play them without a
 // WAV round-trip. `maxAudioBytes` caps the source file size.
-+ (NSArray *)decodeToCafWithSourcePath:(NSString *)sourcePath
++ (NSArray *)remuxToCafWithSourcePath:(NSString *)sourcePath
                             outputPath:(NSString *)outputPath
                          maxAudioBytes:(NSUInteger)maxAudioBytes;
 

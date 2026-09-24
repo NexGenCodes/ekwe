@@ -38,7 +38,6 @@ export function SkeletonBox({
   const { color } = useTheme();
   const shimmerProgress = useSharedValue(0);
 
-  // Defaults to a neutral translucent contrast based on the current theme foreground
   const safeBaseColor = baseColor || withAlpha(color.foreground, 0.071);
   const safeHighlightColor =
     highlightColor || withAlpha(color.foreground, 0.145);
@@ -55,8 +54,6 @@ export function SkeletonBox({
   }, [shimmerProgress]);
 
   const animatedStyle = useAnimatedStyle(() => {
-    // Animating across the entire screen width is significantly more performant
-    // than measuring every single box via onLayout, eliminating layout thrashing.
     const translateX = interpolate(
       shimmerProgress.value,
       [0, 1],

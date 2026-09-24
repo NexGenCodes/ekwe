@@ -4,9 +4,9 @@ import {
   decodeOpusFrame,
   isOpusDecoderReady,
   resetOpusDecoder,
-} from "../../utils/opus";
-import { createOpusDecodingInterceptor } from "../../utils/websocket";
-import { FakeWebSocket } from "../helpers/fake-websocket";
+} from "@/utils/opus";
+import { createOpusDecodingInterceptor } from "@/utils/stream";
+import { FakeWebSocket } from "@/__tests__/helpers/fake-websocket";
 
 afterEach(() => {
   vi.unstubAllGlobals();

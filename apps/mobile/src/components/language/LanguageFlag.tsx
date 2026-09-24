@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import React, { type JSX } from "react";
 
 import { Text } from "@/components/ui";
 import { getLanguageFlag } from "@/constants/languages";
@@ -8,7 +8,7 @@ export interface LanguageFlagProps {
   size?: "sm" | "md";
 }
 
-export function LanguageFlag({
+function LanguageFlagComponent({
   code,
   size = "md",
 }: LanguageFlagProps): JSX.Element {
@@ -25,3 +25,6 @@ export function LanguageFlag({
     </Text>
   );
 }
+
+export const LanguageFlag = React.memo(LanguageFlagComponent);
+LanguageFlag.displayName = "LanguageFlag";

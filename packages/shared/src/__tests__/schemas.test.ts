@@ -9,10 +9,14 @@ import {
   otpSchema,
   registerPushTokenRequestSchema,
   storePricingResponseSchema,
+  synthesizeRequestSchema,
+  synthesizeResponseSchema,
   transcribeResponseSchema,
   translateRequestSchema,
   translateResponseSchema,
-  ttsRequestSchema,
+  pushNotifyRequestSchema,
+  updateManifestSchema,
+  webhookEventSchema,
   translationSchema,
   usageSnapshotSchema,
   verifyTransactionRequestSchema,
@@ -256,15 +260,56 @@ describe("usageSnapshotSchema", () => {
     const parsed = usageSnapshotSchema.safeParse({
       day: "2026-08-13",
       resetsAt: 1784160000000,
-      translate: { used: 2, total: 25, remaining: 23 },
-      transcribe: { used: 0, total: 10, remaining: 10 },
-      tts: { used: 40, total: 5000, remaining: 4960 },
+      meters: [
+        {
+          id: "translate",
+          label: "Translations",
+          unit: "requests",
+          used: 2,
+          total: 25,
+          remaining: 23,
+        },
+        {
+          id: "transcribe",
+          label: "Transcriptions",
+          unit: "requests",
+          used: 0,
+          total: 10,
+          remaining: 10,
+        },
+        {
+          id: "speech",
+          label: "Speech",
+          unit: "characters",
+          used: 40,
+          total: 5000,
+          remaining: 4960,
+        },
+      ],
     });
     expect(parsed.success).toBe(true);
   });
 
-  test("rejects a snapshot missing quota pools", () => {
+  test("rejects a snapshot missing quota meters", () => {
     const parsed = usageSnapshotSchema.safeParse({ day: "2026-08-13" });
+    expect(parsed.success).toBe(false);
+  });
+
+  test("rejects a meter with an unknown id", () => {
+    const parsed = usageSnapshotSchema.safeParse({
+      day: "2026-08-13",
+      resetsAt: 1784160000000,
+      meters: [
+        {
+          id: "stream",
+          label: "Stream",
+          unit: "seconds",
+          used: 1,
+          total: 2,
+          remaining: 1,
+        },
+      ],
+    });
     expect(parsed.success).toBe(false);
   });
 });
@@ -331,35 +376,232 @@ describe("translationSchema", () => {
   });
 });
 
-describe("ttsRequestSchema", () => {
-  test("accepts a minimal TTS body", () => {
+describe("pushNotifyRequestSchema", () => {
+  test("accepts the release workflow payload", () => {
     expect(
-      ttsRequestSchema.safeParse({ text: "Hello", lang: "en" }).success,
-    ).toBe(true);
-  });
-
-  test("accepts an explicit gender", () => {
-    expect(
-      ttsRequestSchema.safeParse({
-        text: "Hello",
-        lang: "en",
-        gender: "male",
+      pushNotifyRequestSchema.safeParse({
+        version: "1.2.9",
+        versionCode: 10209,
+        downloadUrl: "https://cdn.example.com/app-release.apk",
+        checksumSha256: "ab".repeat(32),
       }).success,
     ).toBe(true);
   });
 
-  test("rejects a body missing text or lang", () => {
-    expect(ttsRequestSchema.safeParse({ lang: "en" }).success).toBe(false);
-    expect(ttsRequestSchema.safeParse({ text: "hi" }).success).toBe(false);
-    expect(ttsRequestSchema.safeParse({ text: "", lang: "en" }).success).toBe(
+  test("treats versionCode and checksumSha256 as optional", () => {
+    expect(
+      pushNotifyRequestSchema.safeParse({
+        version: "1.2.9",
+        downloadUrl: "https://cdn.example.com/app-release.apk",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects a non-https or missing downloadUrl", () => {
+    expect(
+      pushNotifyRequestSchema.safeParse({
+        version: "1.2.9",
+        downloadUrl: "http://insecure.example.com/app.apk",
+      }).success,
+    ).toBe(false);
+    expect(
+      pushNotifyRequestSchema.safeParse({
+        version: "1.2.9",
+        downloadUrl: "not-a-url",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("rejects a malformed checksum or non-positive versionCode", () => {
+    expect(
+      pushNotifyRequestSchema.safeParse({
+        version: "1.2.9",
+        versionCode: -1,
+        downloadUrl: "https://cdn.example.com/app-release.apk",
+      }).success,
+    ).toBe(false);
+    expect(
+      pushNotifyRequestSchema.safeParse({
+        version: "1.2.9",
+        downloadUrl: "https://cdn.example.com/app-release.apk",
+        checksumSha256: "zzz",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("updateManifestSchema", () => {
+  test("accepts the generated version.json and preserves extra keys", () => {
+    const result = updateManifestSchema.safeParse({
+      latest_version: "1.2.9",
+      latest_version_code: 10209,
+      min_supported_version_code: 1,
+      download_url: "https://cdn.example.com/app-release.apk",
+      checksum_sha256: "ab".repeat(32),
+      file_size: 42_000_000,
+      release_notes: "",
+      release_date: "2026-09-20",
+      force_update: false,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.release_date).toBe("2026-09-20");
+      expect(result.data.force_update).toBe(false);
+    }
+  });
+
+  test("rejects a body missing required fields or with a bad download_url", () => {
+    expect(
+      updateManifestSchema.safeParse({
+        latest_version_code: 10209,
+      }).success,
+    ).toBe(false);
+    expect(
+      updateManifestSchema.safeParse({
+        latest_version: "1.2.9",
+        latest_version_code: 10209,
+        min_supported_version_code: 1,
+        download_url: "ftp://cdn.example.com/apk",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("webhookEventSchema", () => {
+  test("accepts a Flutterwave-style event", () => {
+    expect(
+      webhookEventSchema.safeParse({
+        event: "charge.success",
+        data: {
+          id: 4711,
+          status: "successful",
+          tx_ref: "ekwe-pro-123",
+          customer: { email: "a@b.com" },
+        },
+        id: 4711,
+      }).success,
+    ).toBe(true);
+  });
+
+  test("accepts unknown extra keys (passthrough)", () => {
+    expect(
+      webhookEventSchema.safeParse({ event: "subscription.cancel", nope: {} })
+        .success,
+    ).toBe(true);
+  });
+
+  test("rejects a non-object payload", () => {
+    expect(webhookEventSchema.safeParse("not-an-object").success).toBe(false);
+    expect(webhookEventSchema.safeParse(42).success).toBe(false);
+    expect(webhookEventSchema.safeParse(null).success).toBe(false);
+  });
+});
+
+describe("synthesizeRequestSchema", () => {
+  test("accepts a text-only body with a targetLang", () => {
+    expect(
+      synthesizeRequestSchema.safeParse({
+        text: "Hello",
+        targetLang: "en",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("accepts an explicit sourceLang, gender, and voiceId", () => {
+    const parsed = synthesizeRequestSchema.safeParse({
+      text: "Hello",
+      sourceLang: "fr",
+      targetLang: "en",
+      gender: "female",
+      voiceId: "studio-female-1",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  test("accepts an auto sourceLang", () => {
+    expect(
+      synthesizeRequestSchema.safeParse({
+        text: "Hello",
+        sourceLang: "auto",
+        targetLang: "en",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects a body missing targetLang", () => {
+    expect(synthesizeRequestSchema.safeParse({ text: "Hello" }).success).toBe(
       false,
     );
   });
 
-  test("rejects an unknown gender", () => {
+  test("rejects an empty or overlong text", () => {
     expect(
-      ttsRequestSchema.safeParse({ text: "hi", lang: "en", gender: "other" })
-        .success,
+      synthesizeRequestSchema.safeParse({ text: "", targetLang: "en" }).success,
+    ).toBe(false);
+    expect(
+      synthesizeRequestSchema.safeParse({
+        text: "x".repeat(2401),
+        targetLang: "en",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("rejects an unknown voiceId", () => {
+    expect(
+      synthesizeRequestSchema.safeParse({
+        text: "Hello",
+        targetLang: "en",
+        voiceId: "not-a-voice",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("rejects an unknown language code", () => {
+    expect(
+      synthesizeRequestSchema.safeParse({
+        text: "Hello",
+        targetLang: "xx",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("synthesizeResponseSchema", () => {
+  test("accepts a minimal audio-base64 response", () => {
+    const parsed = synthesizeResponseSchema.safeParse({
+      audioBase64: "UklGRg==",
+      mime: "audio/wav",
+      sourceLang: "en",
+      targetLang: "en",
+      translated: false,
+      voiceId: "standard",
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  test("accepts a translated response with durationMs", () => {
+    expect(
+      synthesizeResponseSchema.safeParse({
+        audioBase64: "UklGRg==",
+        mime: "audio/wav",
+        sourceLang: "fr",
+        targetLang: "en",
+        translated: true,
+        voiceId: "studio-male-1",
+        durationMs: 1240,
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects a missing translated flag", () => {
+    expect(
+      synthesizeResponseSchema.safeParse({
+        audioBase64: "UklGRg==",
+        mime: "audio/wav",
+        sourceLang: "en",
+        targetLang: "en",
+        voiceId: "standard",
+      }).success,
     ).toBe(false);
   });
 });

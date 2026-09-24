@@ -1,23 +1,5 @@
 #!/usr/bin/env node
-/**
- * Icon codegen: reads the single logo source (apps/mobile/assets/ekwe-logo.svg)
- * and the brand colors from packages/shared/src/token/colors.ts, then
- * renders every icon PNG variant used by app.json.
- *
- * Run with `pnpm gen:icons`.
- *
- * - Variants (paths match apps/mobile/app.json):
- *   icon.png                   legacy app icon (light bg, brand glyph)
- *   adaptive-icon.png          Android adaptive FOREGROUND (transparent, safe zone)
- *   monochrome.png             Android 13+ themed icon (transparent, on-color glyph)
- *   notification-icon.png      Android notification small icon (white glyph, transparent)
- *   splash-icon.png              splash (brand glyph; bg color from app.json)
- *
- * Splash icons are transparent glyphs — the splash background color always
- * comes from app.json (`expo-splash-screen.backgroundColor` / `dark.backgroundColor`),
- * and the glyph + `imageWidth` config control how it renders. A single splash
- * glyph is used for both light and dark themes (the background color swaps).
- */
+
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -30,19 +12,19 @@ const ASSETS = path.resolve(ROOT, "apps/mobile/assets");
 const SVG_SRC = path.join(ASSETS, "ekwe-logo.svg");
 const SIZE = 1024;
 
-// -- Brand colors from the shared design tokens (single source of truth) ---
+
 const { lightColors } = await import(
   pathToFileURL(path.resolve(ROOT, "packages/shared/src/token/colors.ts")).href
 );
 const BRAND = lightColors.brand;
 const LIGHT_BG = lightColors.background;
 
-// Logo glyph content is centered around (50, 50) in a 100x100 viewBox.
+
 const GLYPH_CENTER = [50.5, 49.5];
 
-// Launcher icons are single variants (no light/dark). The splash uses a single
-// transparent glyph sized by the app.json `imageWidth`; the plugin composes it
-// onto the theme background color.
+
+
+
 const VARIANTS = [
   { file: "icon.png", background: LIGHT_BG, glyph: BRAND, scale: 9.7 },
   { file: "adaptive-icon.png", background: null, glyph: BRAND, scale: 6.7 },

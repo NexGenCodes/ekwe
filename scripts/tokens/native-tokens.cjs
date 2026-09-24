@@ -1,23 +1,10 @@
 "use strict";
-/**
- * Shared native design-token codegen for the Echo share Extension and the
- * Android Echo overlay (expo.modules.ekwenative).
- *
- * Both platforms render FROM a committed JSON snapshot
- * (`apps/mobile/modules/ekwe-native/native-tokens.json`) whose source of truth
- * is `packages/shared/src/token/*.ts`. Two callers share it:
- *   - scripts/tokens/gen-tokens.mjs   (writes snapshot + regenerates files)
- *   - modules/ekwe-native/app.plugin.js (every `expo prebuild`, incl. EAS/CI,
- *     via withDangerousMod — reads the committed snapshot)
- *
- * Keeping the renderers here guarantees the plugin and the CLI produce
- * byte-identical Swift/Kotlin.
- */
 
-/** Turns a TS object key into a valid Swift enum-case identifier. */
+
+
 function swiftKey(k) {
   const spaced = k
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2") // split camelCase boundaries
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2") 
     .replace(/[^a-zA-Z0-9]/g, " ")
     .trim()
     .split(/\s+/)
@@ -29,7 +16,7 @@ function swiftKey(k) {
   return /^[0-9]/.test(spaced) ? "_" + spaced : spaced;
 }
 
-/** Splits "#RRGGBB" and "rgba(r, g, b, a)" into { hex, alpha }. */
+
 function toColorParts(value) {
   const v = String(value).trim();
   const rgba = v.match(
@@ -61,7 +48,7 @@ function weightFor(raw) {
   return map[String(raw)] ?? ".regular";
 }
 
-/** Renders DesignTokens.swift from the committed JSON snapshot. */
+
 function renderDesignTokensSwift(snapshot) {
   const { lightColors, darkColors } = snapshot.colors;
   const { spacing, borderRadius, iconSize, touchTarget, opacity, zIndex, typography, duration } = snapshot;
@@ -204,7 +191,6 @@ ${motionLines}
 `;
 }
 
-/** Turns a TS key into a valid Kotlin identifier (camelCase property). */
 function kotlinKey(k) {
   const camel = k
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -217,7 +203,6 @@ function kotlinKey(k) {
   return /^[0-9]/.test(camel) ? "_" + camel : camel;
 }
 
-/** Renders EchoDesignTokens.kt from the committed JSON snapshot. */
 function renderEchoDesignTokensKotlin(snapshot) {
   const { lightColors, darkColors } = snapshot.colors;
   const { spacing, borderRadius, iconSize, touchTarget, opacity, zIndex, duration } = snapshot;

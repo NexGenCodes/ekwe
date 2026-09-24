@@ -1,17 +1,5 @@
-/**
- * Currency helpers built on Intl (ECMA-402) plus the ISO 4217 country →
- * currency dataset from `countries-list`. Decimals come from Unicode CLDR;
- * symbols come from CLDR too, EXCEPT for the billable set in
- * `FLUTTERWAVE_CURRENCIES`, which has an explicit override because CLDR's
- * `narrowSymbol` falls back to the ISO code for several of them (KES, UGX,
- * TZS) and emits an ambiguous `$` for CAD.
- */
 import { countries } from "countries-list";
 
-/**
- * Returns the number of minor units for a currency (USD → 2, JPY → 0, XOF → 0).
- * Unknown/invalid codes fall back to 2.
- */
 const decimalsCache = new Map<string, number>();
 
 export function getDecimals(code: string): number {
@@ -33,18 +21,11 @@ export function getDecimals(code: string): number {
   }
 }
 
-/**
- * Proper display symbols for the Flutterwave-billable currencies. Kept in sync
- * with `FLUTTERWAVE_CURRENCIES` below. CLDR's `narrowSymbol` is insufficient
- * here (it returns the bare ISO code for KES/UGX/TZS and `$` for CAD, which is
- * indistinguishable from USD), so the billable set is explicit and stable on
- * every runtime (Hermes, Workers, Node). Keys must match the billable list.
- */
 export const CURRENCY_SYMBOLS: Record<FlutterwaveCurrency, string> = {
   USD: "$",
   NGN: "₦",
-  GHS: "GH₵",
-  KES: "KSh",
+  GHS: "₵",
+  KES: "sh",
   ZAR: "R",
   ZMW: "ZK",
   UGX: "USh",
@@ -59,13 +40,8 @@ export const CURRENCY_SYMBOLS: Record<FlutterwaveCurrency, string> = {
 
 const symbolCache = new Map<string, string>();
 
-/**
- * Returns the currency symbol, preferring the explicit override for the
- * billable set (see `CURRENCY_SYMBOLS`), otherwise the device locale (the
- * currency is device-derived, so the locale matches the region and CLDR can
- * emit the local glyph, e.g. ₦ from en-NG). Falls back to the code or "$".
- */
 export function getCurrencySymbol(code: string): string {
+  if (!code) return "";
   const upper = code.toUpperCase();
   const explicit = CURRENCY_SYMBOLS[upper as FlutterwaveCurrency];
   if (explicit) {
@@ -108,7 +84,6 @@ export function formatAmount(amount: number, code: string): string {
   const upperCode = code.toUpperCase();
   const decimals = getDecimals(upperCode);
 
-  // Drop unnecessary zero decimal places only for these configured currencies
   const dropDecimals = ["NGN", "CAD", "USD", "GHS"].includes(upperCode);
   const minimumFractionDigits = dropDecimals && amount % 1 === 0 ? 0 : decimals;
 
@@ -123,30 +98,41 @@ export function formatMoney(amount: number, code: string): string {
   return `${symbol}${formatAmount(amount, code)}`;
 }
 
-/**
- * Maps an ISO 3166-1 alpha-2 country code (case-insensitive) to its primary
- * ISO 4217 currency, sourced from the `countries-list` dataset — the same
- * authoritative source `languages.ts` uses, so nothing here is hand-maintained.
- * Used to derive the billing currency from the device *region*:
- * `expo-localization` only reliably reports a region (`regionCode`), while
- * `currencyCode` follows the language tag on Android (e.g. an English-US
- * phone in Nigeria reports USD). Returns undefined for unknown countries so
- * callers can fall back to a platform currency code as a secondary signal.
- */
 export function countryToCurrency(countryCode: string): string | undefined {
   const country =
     countries[countryCode.toUpperCase() as keyof typeof countries];
   return country?.currency?.[0];
 }
 
-/**
- * Currencies we accept as a charge currency on Flutterwave. Flutterwave does
- * NOT auto-convert: the merchant must send the `amount` + `currency`, and the
- * customer's card is charged in that currency (Flutterwave converts the card's
- * own currency, not ours). We therefore only bill in currencies Flutterwave
- * supports, and we publish a hand-set static price for each in
- * `./plans.ts` (`LOCAL_PRICES`). Anything outside this set falls back to USD.
- */
+const currencyCountriesCache = new Map<string, string[]>();
+
+export function countryNamesForCurrency(code: string): string[] {
+  const upper = code.toUpperCase();
+  const cached = currencyCountriesCache.get(upper);
+  if (cached) {
+    return cached;
+  }
+  const result = Object.values(countries)
+    .filter((c) =>
+      (c.currency as readonly string[] | undefined)?.includes(upper),
+    )
+    .map((c) => c.name)
+    .sort();
+  currencyCountriesCache.set(upper, result);
+  return result;
+}
+
+export function countrySummaryForCurrency(
+  code: string,
+  max: number = 2,
+): string {
+  const names = countryNamesForCurrency(code);
+  if (names.length <= max) {
+    return names.join(", ");
+  }
+  return `${names.slice(0, max).join(", ")} & ${names.length - max} more`;
+}
+
 export const FLUTTERWAVE_CURRENCIES = [
   "USD",
   "NGN",
@@ -166,11 +152,6 @@ export const FLUTTERWAVE_CURRENCIES = [
 
 export type FlutterwaveCurrency = (typeof FLUTTERWAVE_CURRENCIES)[number];
 
-/**
- * Normalizes an ISO-4217 code to a Flutterwave-billable currency. Unsupported
- * or unknown codes resolve to USD (our global default) so pricing and checkout
- * are always deterministic — display == charge in the same currency.
- */
 export function resolvePaymentCurrency(code: string): FlutterwaveCurrency {
   const upper = code.toUpperCase();
   return (FLUTTERWAVE_CURRENCIES as readonly string[]).includes(upper)

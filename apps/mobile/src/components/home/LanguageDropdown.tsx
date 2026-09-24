@@ -1,6 +1,6 @@
-import React from "react";
-import { Modal, View, StyleSheet } from "react-native";
-import Animated from "react-native-reanimated";
+import React, { useCallback } from "react";
+import { Modal, StyleSheet, View, type ViewStyle } from "react-native";
+import Animated, { type AnimatedStyle } from "react-native-reanimated";
 
 import { LanguageRow } from "@/components/language";
 import { Box, Pressable, Text, ScrollArea } from "@/components/ui";
@@ -10,27 +10,59 @@ import { useTokens } from "@/hooks/ui";
 export interface LanguageDropdownProps {
   visible: boolean;
   onClose: () => void;
-  options: string[];
+  options: readonly string[];
   currentLang: string;
-  oppositeLang?: string;
   onSelect: (code: string) => void;
-  animatedStyle?: object;
-  gatedOptions?: Set<string>;
+  animatedStyle?: AnimatedStyle<ViewStyle>;
+  gatedOptions?: ReadonlySet<string>;
+
+  onPressGated?: (code: string) => void;
 }
+
+interface DropdownRowProps {
+  code: string;
+  isSelected: boolean;
+  isGated: boolean;
+  onSelect: (code: string) => void;
+  onPressGated?: (code: string) => void;
+}
+
+const DropdownRow = React.memo(function DropdownRow({
+  code,
+  isSelected,
+  isGated,
+  onSelect,
+  onPressGated,
+}: DropdownRowProps): React.ReactElement {
+  const handlePress = useCallback((): void => {
+    if (isGated) {
+      onPressGated?.(code);
+      return;
+    }
+    onSelect(code);
+  }, [onSelect, onPressGated, code, isGated]);
+  return (
+    <LanguageRow
+      code={code}
+      isSelected={isSelected}
+      showLock={isGated}
+      onPress={handlePress}
+    />
+  );
+});
+DropdownRow.displayName = "DropdownRow";
 
 export function LanguageDropdown({
   visible,
   onClose,
   options,
   currentLang,
-  oppositeLang,
   onSelect,
   animatedStyle,
   gatedOptions,
-}: LanguageDropdownProps): React.ReactElement | null {
+  onPressGated,
+}: LanguageDropdownProps): React.ReactElement {
   const { color, spacing, borderRadius } = useTokens();
-
-  if (!visible && !animatedStyle) return null;
 
   return (
     <Modal
@@ -43,6 +75,8 @@ export function LanguageDropdown({
         <Pressable
           onPress={onClose}
           feedback="none"
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
           style={StyleSheet.absoluteFill}
         >
           <View style={{ flex: 1, backgroundColor: color.overlay }} />
@@ -58,6 +92,7 @@ export function LanguageDropdown({
           pointerEvents="box-none"
         >
           <Animated.View
+            accessibilityViewIsModal
             style={[
               {
                 width: "100%",
@@ -93,21 +128,18 @@ export function LanguageDropdown({
             </Box>
 
             <ScrollArea bounces={false}>
-              {options.map((code) => {
-                const isSelected = currentLang === code;
-                const isOtherLang = code === oppositeLang && code !== "auto";
-
-                return (
-                  <LanguageRow
-                    key={code}
-                    code={code}
-                    isSelected={isSelected}
-                    disabled={isOtherLang || (gatedOptions?.has(code) ?? false)}
-                    showLock={gatedOptions?.has(code) ?? false}
-                    onPress={() => onSelect(code)}
-                  />
-                );
-              })}
+              {visible
+                ? options.map((code) => (
+                    <DropdownRow
+                      key={code}
+                      code={code}
+                      isSelected={currentLang === code}
+                      isGated={gatedOptions?.has(code) ?? false}
+                      onSelect={onSelect}
+                      onPressGated={onPressGated}
+                    />
+                  ))
+                : null}
             </ScrollArea>
           </Animated.View>
         </View>

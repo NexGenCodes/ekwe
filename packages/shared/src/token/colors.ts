@@ -1,17 +1,8 @@
-// Raw color palette — PRIVATE to this module. Nothing may import it; it is the
-// vocabulary the semantic tables below draw from (and the raw source consumed
-// by native/codegen tooling). Each hue family carries a lighter and a deeper
-// shade so themes can pick per-theme variants. Components read colors ONLY via
-// useTheme() -> color.<SemanticKey>.
-//
-// Naming rule: lighter = "X400", deeper = "X600/700/800" per family. The brand
-// blue is a single fixed color (blue600) shared by both themes; info uses the
-// lighter blue400 variant.
 const palette = {
   white: "#FFFFFF",
   neutral50: "#FAFAFA",
   neutral100: "#F4F4F5",
-  // Drag-handle grays used by the native share overlays (light/dark pair).
+
   neutral150: "#E4E4E7",
   neutral200: "#C8C8CE",
   neutral650: "#3F3F46",
@@ -24,31 +15,22 @@ const palette = {
   neutral900: "#18181B",
   neutral950: "#09090B",
 
-  // Brand / info — brand uses the deeper blue600, info the lighter blue400.
   blue400: "#2979FF",
   blue600: "#006FEE",
 
-  // Success
   green400: "#4ADE80",
   green700: "#15803D",
 
-  // Warning
   amber400: "#FBBF24",
   amber800: "#92400E",
 
-  // Error
   rose400: "#F87171",
   rose700: "#D01358",
 
-  // Overlays (scrims)
   overlayLight: "rgba(0, 0, 0, 0.4)",
   overlayDark: "rgba(0, 0, 0, 0.6)",
 } as const;
 
-// Flat semantic tokens (resolved per theme). Component code reads ONLY these —
-// via useTheme() -> color.<SemanticKey>. Per-family, the light theme uses the
-// deeper variants for contrast on light backgrounds, the dark theme the
-// lighter variants.
 export const lightColors = {
   foreground: palette.neutral950,
   background: palette.white,

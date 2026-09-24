@@ -1,21 +1,3 @@
-/**
- * ─── Shared Observability Contracts ─────────────────────────────
- *
- * Platform-agnostic pieces shared by the mobile app and the worker so the
- * PII policy and the structured-log shape live in ONE place. The actual SDK
- * init stays in each app (React Native uses @sentry/react-native +
- * posthog-react-native; the worker uses @sentry/cloudflare + Cloudflare
- * Observability) because the SDKs are incompatible — only the pure pieces
- * that operate on plain objects belong here.
- *
- * - `Logger`       — the method shape both apps implement.
- * - `makeLogEntry` — builds the JSON line the worker emits to stdout (which
- *                    Cloudflare Observability ingests).
- * - `scrubSentryEvent` — deletes PII from a Sentry event before it ships.
- *                    Runs in `beforeSend` on BOTH Sentry instances so the
- *                    scrub policy can never drift between platforms.
- */
-
 export interface Logger {
   debug: (...args: unknown[]) => void;
   info: (...args: unknown[]) => void;
@@ -23,12 +5,6 @@ export interface Logger {
   error: (...args: unknown[]) => void;
 }
 
-/**
- * Builds the structured JSON log line. `level` is the uppercase severity,
- * `message` the human-readable summary, and `data` any structured context
- * to correlate (request id, provider, status, ...). Optional keys must not
- * collide with `level`/`timestamp`/`message`.
- */
 export function makeLogEntry(
   level: string,
   message: string,
@@ -42,11 +18,6 @@ export function makeLogEntry(
   });
 }
 
-/**
- * Removes likely-PII from a Sentry event before it leaves the device/edge.
- * Handles the shared surface (user, request, tags, breadcrumbs) defensively
- * so a shape change in either SDK can never block error reporting.
- */
 export function scrubSentryEvent(
   event: Record<string, unknown>,
 ): Record<string, unknown> {

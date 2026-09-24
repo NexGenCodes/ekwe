@@ -1,19 +1,15 @@
-import { CLIENT_ABORTED, Env, TranslateResult } from "../core/types";
-import { rotateKeys } from "../utils/keys";
-import { buildTranslatePrompt, parseTranslateOutput } from "../utils/prompts";
+import { CLIENT_ABORTED, Env, TranslateResult } from "@/core/types";
+import { rotateKeys } from "@/utils/keys";
+import { buildTranslatePrompt, parseTranslateOutput } from "@/utils/prompts";
 import {
   fetchWithTimeout,
   getClientHeaders,
   TIMEOUT_FAST,
-} from "../utils/fetch";
-import { logger } from "../core/logger";
+} from "@/utils/fetch";
+import { logger } from "@/core/logger";
 
 const MISTRAL_CHAT = "https://api.mistral.ai/v1/chat/completions";
 
-/**
- * Mistral Small — Experiment Tier. Free forever, but 1 req/sec limit.
- * Multi-key rotation to bypass tight rate limits and multiply capacity.
- */
 export async function translate(
   text: string,
   targetLang: string,

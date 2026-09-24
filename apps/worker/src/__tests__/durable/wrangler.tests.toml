@@ -12,6 +12,18 @@ rules = [
   { type = "CompiledWasm", globs = ["**/*.wasm"], fallthrough = true }
 ]
 
+# Local in-memory KV so the stream quota preflight gate (`env.EKWE_KV`) can
+# run without dialing production storage.
+[[kv_namespaces]]
+binding = "EKWE_KV"
+id = "00000000000000000000000000000000"
+
+# Minimal vars so the stream quota gate's preflight path can build valid
+# Supabase auth headers and reach the mocked RPC endpoint (see setup.ts).
+[vars]
+SUPABASE_URL = "https://supabase.test"
+SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key"
+
 [[durable_objects.bindings]]
 name = "STREAM_DO"
 class_name = "StreamDurableObject"

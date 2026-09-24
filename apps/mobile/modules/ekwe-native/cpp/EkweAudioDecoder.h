@@ -39,7 +39,8 @@ struct DecodeResult {
 DecodeResult transcode_audio_to_opus(
     const std::string& input_path,
     const std::string& output_path,
-    size_t max_audio_bytes = kDefaultMaxAudioBytes);
+    size_t max_audio_bytes = kDefaultMaxAudioBytes,
+    int frame_ms = 20);
 
 // Memory-based audio decoder.
 // Reads audio from in-memory buffer — no temp file needed.
@@ -50,7 +51,8 @@ DecodeResult transcode_audio_to_opus_from_memory(
     const uint8_t* data,
     size_t data_size,
     const std::string& output_path,
-    size_t max_audio_bytes = kDefaultMaxAudioBytes);
+    size_t max_audio_bytes = kDefaultMaxAudioBytes,
+    int frame_ms = 20);
 
 // Decodes any audio file into a standalone PCM WAV file (no re-encode).
 // Ogg Opus is decoded via libopusfile at 48 kHz mono; everything else is
@@ -63,14 +65,14 @@ DecodeResult decode_audio_to_wav(
     const std::string& output_path,
     size_t max_audio_bytes = kDefaultMaxAudioBytes);
 
-// Decodes any audio file into an Opus-in-CAF file (no WAV re-encode).
+// Remuxes any audio file into an Opus-in-CAF file (no WAV re-encode).
 // Ogg Opus sources are remuxed packet-for-packet into the CAF container
 // (lossless container change — no decode/re-encode), everything else is
 // decoded via miniaudio then re-encoded to Opus. CAF is Apple's native
 // compressed container; Opus-in-CAF is supported by iOS AVPlayer/AVAudioPlayer
 // (iOS 11+) where the Ogg container is not.
 // `max_audio_bytes` caps the input file size (comes from @ekwe/shared/plans).
-DecodeResult decode_audio_to_caf(
+DecodeResult remux_audio_to_caf(
     const std::string& input_path,
     const std::string& output_path,
     size_t max_audio_bytes = kDefaultMaxAudioBytes);
@@ -84,6 +86,7 @@ DecodeResult encode_pcm_to_opus(
     size_t num_samples,
     uint32_t sample_rate,
     uint16_t channels,
-    const std::string& output_path);
+    const std::string& output_path,
+    int frame_ms = 20);
 
 } // namespace ekwe

@@ -17,11 +17,7 @@ interface Props {
   size?: number;
   children?: React.ReactNode;
   accessibilityLabel?: string;
-  /**
-   * External signal that forces the "copied" check state (used for auto-copy
-   * feedback). Purely additive — the internal state from a real press still
-   * applies when this is false.
-   */
+
   copied?: boolean;
 }
 
@@ -50,7 +46,6 @@ export const AnimatedCopyButton: React.FC<Props> = ({
     track(AnalyticsEvents.RESULT_COPIED, { chars: textToCopy.length });
     setCopiedByPress(true);
 
-    // Reset after 3 seconds
     setTimeout(() => {
       setCopiedByPress(false);
     }, 3000);

@@ -4,9 +4,9 @@ import {
   runInDurableObject,
 } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { StreamDurableObject } from "../../durable/stream-do";
+import { StreamDurableObject } from "@/durable/stream-do";
 import { ws } from "msw";
-import { network } from "../msw/network";
+import { network } from "@/__tests__/msw/network";
 
 interface CloseInfo {
   code: number;
@@ -114,7 +114,6 @@ describe("StreamDurableObject", () => {
     );
     expect(JSON.parse(err).error).toBe("NO_PROVIDER_AVAILABLE");
 
-    // With no provider keys in the test env, the session must close (4004).
     await waitForClose(closes, 4004);
   });
 
@@ -165,7 +164,6 @@ describe("StreamDurableObject", () => {
       "?tier=PREMIUM",
     );
 
-    // Rewind the session start time so it looks 200s old (> 120s PREMIUM cap).
     await runInDurableObject(stub, async (instance, state) => {
       expect(instance).toBeInstanceOf(StreamDurableObject);
       const [sock] = state.getWebSockets();
@@ -206,9 +204,6 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
   const DEEPGRAM_KEY = "mock-deepgram-key-stream-abc";
 
   function withDeepgramKey(): void {
-    // The DO's env comes from wrangler.tests.toml (no provider keys). Mutating
-    // the shared `env` object is visible inside the DO isolate, so the streaming
-    // pipeline can reach the mocked Deepgram WebSocket.
     (env as any).DEEPGRAM_KEY_1 = DEEPGRAM_KEY;
   }
 
@@ -241,9 +236,6 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     expect(flag()).toBe(true);
   }
 
-  // Give the mocked WebSocket pair and any in-flight DO RPCs a beat to settle
-  // before the workerd test environment tears down (avoids a pending-resolve
-  // teardown warning from the WS interception).
   async function settle(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -266,7 +258,6 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       closes,
     } = await openSession("idle-alarm-config", "?tier=PREMIUM&lang=en");
 
-    // Before config, the alarm is the 5s config-negotiation deadline.
     const alarmBefore = await runInDurableObject(stub, async (_i, state) =>
       state.storage.getAlarm(),
     );
@@ -279,8 +270,6 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     await waitFor(messages, (m) => m.includes("config_ack"));
     await waitForFlag(mock.connected);
 
-    // After config, the idle alarm must be armed ~60s out — NOT the stale
-    // +5s config deadline — so an active session survives well past 5s.
     const alarmAfter = await runInDurableObject(stub, async (_i, state) =>
       state.storage.getAlarm(),
     );
@@ -310,7 +299,6 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     );
     await waitFor(messages, (m) => m.includes("config_ack"));
 
-    // The DO connects to the mocked provider WebSocket only after config.
     await waitForFlag(mock.connected);
 
     clientWs.send(new ArrayBuffer(8));
@@ -377,9 +365,6 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     const link = ws.link(DEEPGRAM_LINK);
     network.use(
       link.addEventListener("connection", ({ client }: any) => {
-        // Close the client socket immediately so connectWithTimeout sees an
-        // error event and resolves null — without throwing, which MSW logs
-        // as an "unhandled exception" to stderr.
         client.close();
       }),
     );
@@ -395,7 +380,6 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     );
     await waitFor(messages, (m) => m.includes("config_ack"));
 
-    // Deepgram refused → the session ends with NO_PROVIDER_AVAILABLE.
     const err = await waitFor(messages, (m) =>
       m.includes("NO_PROVIDER_AVAILABLE"),
     );
@@ -428,8 +412,6 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     await waitFor(messages, (m) => m.includes("config_ack"));
     await waitForFlag(() => connections === 1);
 
-    // Simulate DO hibernation: the in-memory connection entry (and the provider
-    // pipeline it owned) is dropped, but the accepted client socket survives.
     await runInDurableObject(
       getStub("hibernation-restart"),
       async (instance) => {
@@ -439,8 +421,6 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       },
     );
 
-    // A fresh audio frame must rehydrate the connection and reconnect to the
-    // provider — not silently no-op like the pre-fix behavior.
     clientWs.send(new ArrayBuffer(8));
     await waitForFlag(() => connections === 2);
     const msg = await waitFor(messages, (m) => m.includes("post-hibernation"));
@@ -475,19 +455,88 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     await waitFor(messages, (m) => m.includes("config_ack"));
     await waitForFlag(() => connections === 1);
 
-    // Send three audio frames — the old code would open a new Deepgram socket
-    // per frame (pipelinePromise was cleared on handleStream's immediate return).
     clientWs.send(new ArrayBuffer(8));
     clientWs.send(new ArrayBuffer(8));
     clientWs.send(new ArrayBuffer(8));
     await waitFor(messages, (m) => m.includes("frame transcript"));
 
-    // Allow the test env to settle; any additional connections would be flagged.
     await new Promise((r) => setTimeout(r, 100));
     expect(connections).toBe(1);
 
     clientWs.send(JSON.stringify({ type: "stop" }));
     await waitForClose(closes, 1000);
+    await settle();
+  });
+
+  it("reschedules the idle alarm and keeps an active socket alive when its deadline is still ahead", async () => {
+    const deepgram = deepgramLink(() => {});
+    withDeepgramKey();
+    const {
+      stub,
+      ws: clientWs,
+      messages,
+      closes,
+    } = await openSession("idle-alarm-extend", "?tier=PREMIUM&lang=en");
+    clientWs.send(
+      JSON.stringify({ type: "config", codec: "opus", lang: "en" }),
+    );
+    await waitFor(messages, (m) => m.includes("config_ack"));
+    await waitForFlag(deepgram.connected);
+
+    const futureReset = Date.now() + 30_000;
+    await runInDurableObject(stub, async (_instance, state) => {
+      const [sock] = state.getWebSockets();
+      const attached = sock.deserializeAttachment() as {
+        lastIdleResetAt: number;
+      };
+      attached.lastIdleResetAt = futureReset;
+      sock.serializeAttachment(attached);
+    });
+
+    const ran = await runDurableObjectAlarm(stub);
+    expect(ran).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(closes.some((c) => c.code === 4002)).toBe(false);
+
+    const nextAlarm = await runInDurableObject(stub, async (_i, state) =>
+      state.storage.getAlarm(),
+    );
+    expect(nextAlarm).toBeGreaterThan(futureReset + 60_000 - 5_000);
+    expect(nextAlarm).toBeLessThan(futureReset + 60_000 + 5_000);
+
+    clientWs.send(JSON.stringify({ type: "stop" }));
+    await waitForClose(closes, 1000);
+    await settle();
+  });
+
+  it("closes an idle socket once its per-socket deadline has passed", async () => {
+    const deepgram = deepgramLink(() => {});
+    withDeepgramKey();
+    const {
+      stub,
+      ws: clientWs,
+      messages,
+      closes,
+    } = await openSession("idle-alarm-close", "?tier=PREMIUM&lang=en");
+    clientWs.send(
+      JSON.stringify({ type: "config", codec: "opus", lang: "en" }),
+    );
+    await waitFor(messages, (m) => m.includes("config_ack"));
+    await waitForFlag(deepgram.connected);
+
+    await runInDurableObject(stub, async (_instance, state) => {
+      const [sock] = state.getWebSockets();
+      const attached = sock.deserializeAttachment() as {
+        lastIdleResetAt: number;
+      };
+      attached.lastIdleResetAt = Date.now() - 70_000;
+      sock.serializeAttachment(attached);
+    });
+
+    const ran = await runDurableObjectAlarm(stub);
+    expect(ran).toBe(true);
+    await waitForClose(closes, 4002);
     await settle();
   });
 });

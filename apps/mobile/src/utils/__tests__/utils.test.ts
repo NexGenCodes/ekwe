@@ -1,9 +1,9 @@
-import { formatDuration } from "../formatDuration";
-import { removeFillerWords } from "../removeFiller";
+import { formatClock, formatDuration } from "@/utils/formatDuration";
+import { removeFillerWords } from "@/utils/removeFiller";
 import {
   isGenuineLanguageDetection,
   resolveDetectedLanguage,
-} from "../languageUtils";
+} from "@/utils/languageUtils";
 
 describe("formatDuration", () => {
   it("returns null for empty, undefined, or null durations", () => {
@@ -20,7 +20,28 @@ describe("formatDuration", () => {
   it("formats minutes and seconds correctly", () => {
     expect(formatDuration(60)).toBe("1:00");
     expect(formatDuration(125)).toBe("2:05");
-    expect(formatDuration(3605)).toBe("60:05");
+  });
+
+  it("rolls into hours once the duration passes an hour", () => {
+    expect(formatDuration(3599)).toBe("59:59");
+    expect(formatDuration(3600)).toBe("1:00:00");
+    expect(formatDuration(3605)).toBe("1:00:05");
+    expect(formatDuration(3661)).toBe("1:01:01");
+  });
+});
+
+describe("formatClock", () => {
+  it("always renders a clock, clamping zero and negatives to 0:00", () => {
+    expect(formatClock(0)).toBe("0:00");
+    expect(formatClock(-5)).toBe("0:00");
+    expect(formatClock(null)).toBe("0:00");
+    expect(formatClock(undefined)).toBe("0:00");
+  });
+
+  it("uses the same m:ss / h:mm:ss convention as formatDuration", () => {
+    expect(formatClock(7)).toBe("0:07");
+    expect(formatClock(125)).toBe("2:05");
+    expect(formatClock(3605)).toBe("1:00:05");
   });
 });
 

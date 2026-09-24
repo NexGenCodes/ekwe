@@ -1,6 +1,6 @@
 import Play from "lucide-react-native/icons/play";
 import Pause from "lucide-react-native/icons/pause";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -16,75 +16,82 @@ import Animated, {
 import { AudioWaveform } from "@/components/AudioWaveform";
 import { Box, Text, Pressable, Spinner } from "@/components/ui";
 import { shadows } from "@/constants";
-import { borderRadius } from "@/constants/sizes";
+import { borderRadius, opacity } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme, useSharedAudioPlayer } from "@/hooks";
+import type { SharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
 import type { DictationStatus } from "@/hooks/useVoiceDictation";
+import { formatClock } from "@/utils/formatDuration";
+import { resample } from "@/utils/waveform";
 
 const BARS = 40;
-
-const fmtTime = (seconds: number): string => {
-  "worklet";
-  if (!seconds || seconds < 0) return "0:00";
-  const s = Math.floor(seconds);
-  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
-};
-
-const resample = (data: number[], n: number): number[] => {
-  if (!data?.length) {
-    return Array.from(
-      { length: n },
-      (_, i) => 0.15 + Math.sin((i / (n - 1)) * Math.PI) * 0.4,
-    );
-  }
-  const out: number[] = [];
-  let mx = 0.001;
-  for (let i = 0; i < n; i++) {
-    const lo = Math.floor((i / n) * data.length);
-    const hi = Math.max(lo + 1, Math.floor(((i + 1) / n) * data.length));
-    let sum = 0;
-    let pk = 0;
-    for (let j = lo; j < hi; j++) {
-      const v = data[j] ?? 0;
-      sum += v;
-      if (v > pk) pk = v;
-    }
-    const blended = (pk + sum / (hi - lo)) / 2;
-    if (blended > mx) mx = blended;
-    out.push(blended);
-  }
-  return out.map((v) => Math.min(1, Math.max(0.02, v / mx)));
-};
 
 interface RecordingInlineProps {
   status: DictationStatus;
   amplitude: SharedValue<number>;
   elapsedMs: number;
+
+  capturedDurationMs?: number;
   capturedUri: string | null;
   meteringData: number[];
   isLive?: boolean;
   interimText?: string;
   finalText?: string;
+
+  onReadyChange?: (ready: boolean) => void;
+
+  externalPlayer?: SharedAudioPlayer;
+
+  dormant?: boolean;
 }
 
 export function RecordingInline({
   status,
   amplitude,
   elapsedMs,
+  capturedDurationMs,
   capturedUri,
   meteringData,
   isLive = false,
   interimText = "",
   finalText = "",
+  onReadyChange,
+  externalPlayer,
+  dormant = false,
 }: RecordingInlineProps): React.ReactElement {
   const { color } = useTheme();
   const isProcessing = status === "processing";
   const isPreview = status === "preview";
   const isRecording = status === "recording";
 
-  const player = useSharedAudioPlayer(isPreview ? capturedUri : null);
+  const internalPlayer = useSharedAudioPlayer(
+    externalPlayer ? null : isPreview ? capturedUri : null,
+    externalPlayer ? null : (capturedDurationMs ?? null),
+  );
+  const player = externalPlayer ?? internalPlayer;
 
-  // WhatsApp style: fill with 0, newest element pushes from the right side.
+  const { endScrub, beginScrub } = player;
+  const durationRef = useRef(player.duration);
+  durationRef.current = player.duration;
+  const handleSeek = useCallback(
+    (progress: number) => {
+      if (durationRef.current <= 0) return;
+      void endScrub(progress * durationRef.current);
+    },
+    [endScrub],
+  );
+  const handleScrubStateChange = useCallback(
+    (isScrubbing: boolean) => {
+      if (isScrubbing) beginScrub();
+    },
+    [beginScrub],
+  );
+
+  const previewReady = player.isLoaded && !player.isDecoding;
+  useEffect(() => {
+    onReadyChange?.(isPreview && previewReady);
+  }, [isPreview, previewReady, onReadyChange]);
+
   const history = useSharedValue<number[]>(new Array(BARS).fill(0));
 
   useAnimatedReaction(
@@ -114,12 +121,13 @@ export function RecordingInline({
 
   const widthSV = useSharedValue(200);
 
-  const previewPeaksSV = useSharedValue<number[]>(new Array(BARS).fill(0.02));
+  const previewPeaksSV = useSharedValue<number[]>([]);
+
+  const hasRealPeaks = isPreview && meteringData.length > 0;
 
   useEffect(() => {
-    if (isPreview && meteringData.length > 0) {
-      previewPeaksSV.value = resample(meteringData, BARS);
-    }
+    previewPeaksSV.value =
+      isPreview && meteringData.length > 0 ? resample(meteringData, BARS) : [];
   }, [isPreview, meteringData, previewPeaksSV]);
 
   const thumbStyle = useAnimatedStyle(() => {
@@ -128,12 +136,13 @@ export function RecordingInline({
     return { transform: [{ translateX: frac * widthSV.value }] };
   });
 
-  const [displayTime, setDisplayTime] = useState("0:00");
+  const [displaySeconds, setDisplaySeconds] = useState(0);
   useAnimatedReaction(
-    () => player.progressSV.value,
-    (ms) => {
-      runOnJS(setDisplayTime)(fmtTime(ms));
+    () => (dormant ? -1 : Math.floor(player.progressSV.value)),
+    (seconds) => {
+      if (seconds >= 0) runOnJS(setDisplaySeconds)(seconds);
     },
+    [player.progressSV, dormant],
   );
 
   const hasLiveText = isLive && isRecording && (interimText || finalText);
@@ -211,35 +220,54 @@ export function RecordingInline({
                 widthSV.value = e.nativeEvent.layout.width;
               }}
             >
-              <AudioWaveform
-                amplitudes={previewPeaksSV}
-                progressSV={player.progressSV}
-                duration={player.duration}
-                barCount={BARS}
-                height={40}
-                activeColor={color.brand}
-                inactiveColor={color.muted}
-                interactive
-                onSeek={(p) => void player.endScrub(p * player.duration)}
-                onScrubStateChange={(isScrubbing) => {
-                  if (isScrubbing) player.beginScrub();
-                }}
-              />
-              <Animated.View
-                style={[
-                  {
-                    position: "absolute",
-                    width: 12,
-                    height: 12,
-                    borderRadius: 6,
-                    backgroundColor: color.brand,
-                    left: -6,
-                    top: 14,
-                    boxShadow: shadows.soft,
-                  },
-                  thumbStyle,
-                ]}
-              />
+              {hasRealPeaks && !dormant ? (
+                <>
+                  <AudioWaveform
+                    amplitudes={previewPeaksSV}
+                    progressSV={player.progressSV}
+                    duration={player.duration}
+                    barCount={BARS}
+                    height={40}
+                    activeColor={color.brand}
+                    inactiveColor={color.muted}
+                    interactive
+                    onSeek={handleSeek}
+                    onScrubStateChange={handleScrubStateChange}
+                  />
+                  <Animated.View
+                    style={[
+                      {
+                        position: "absolute",
+                        width: 12,
+                        height: 12,
+                        borderRadius: 6,
+                        backgroundColor: color.brand,
+                        left: -6,
+                        top: 14,
+                        boxShadow: shadows.soft,
+                      },
+                      thumbStyle,
+                    ]}
+                  />
+                </>
+              ) : (
+                <Box
+                  style={{
+                    flex: 1,
+                    height: 40,
+                    justifyContent: "center",
+                  }}
+                >
+                  <Box
+                    style={{
+                      height: 2,
+                      borderRadius: 1,
+                      opacity: opacity.disabled,
+                      backgroundColor: color.muted,
+                    }}
+                  />
+                </Box>
+              )}
             </Box>
           </Box>
 
@@ -247,7 +275,9 @@ export function RecordingInline({
             variant="bodySmall"
             style={{ color: color.foreground, width: 40, textAlign: "right" }}
           >
-            {player.isPlaying ? displayTime : fmtTime(player.duration)}
+            {player.isPlaying
+              ? formatClock(displaySeconds)
+              : formatClock(player.duration)}
           </Text>
         </Box>
       ) : (
@@ -279,7 +309,7 @@ export function RecordingInline({
               ]}
             />
             <Text variant="heading3" style={{ color: color.foreground }}>
-              {fmtTime(elapsedMs / 1000)}
+              {formatClock(elapsedMs / 1000)}
             </Text>
           </Box>
 

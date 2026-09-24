@@ -1,8 +1,8 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { useCallback } from "react";
 
 import { useHistoryQuery } from "@/hooks/queries/useHistoryQuery";
-import { SyncService } from "@/services/SyncService";
+import { SyncService } from "@/services/syncService";
 import { HistoryEntry, history$, sortedHistory$, auth$ } from "@/store";
 import logger from "@/utils/logger";
 import { AppToast } from "@/utils/toast";
@@ -18,8 +18,8 @@ export interface UseHistoryReturn {
 }
 
 export const useHistory = (): UseHistoryReturn => {
-  const entries = useSelector(() => sortedHistory$.get());
-  const userId = useSelector(() => auth$.user.get()?.id);
+  const entries = useValue(() => sortedHistory$.get());
+  const userId = useValue(() => auth$.user.get()?.id);
   const { loadMore, hasMore, isFetchingNextPage, refetch } =
     useHistoryQuery(userId);
 

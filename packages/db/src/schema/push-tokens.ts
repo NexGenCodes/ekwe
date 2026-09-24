@@ -12,13 +12,6 @@ import {
 import { sql } from "drizzle-orm";
 import { usersInAuth } from "./history";
 
-/**
- * Stores Expo push tokens per device so the Worker can send APK
- * update notifications when a new version is built.
- *
- * user_id is nullable: tokens are registered at app launch before sign-in.
- * Security: RLS enabled, service_role only via bypass.
- */
 export const pushTokens = pgTable(
   "push_tokens",
   {

@@ -1,4 +1,4 @@
-import { Env } from "./types";
+import { Env } from "@/core/types";
 
 function isDevOrigin(origin: string): boolean {
   let url: URL;
@@ -8,7 +8,6 @@ function isDevOrigin(origin: string): boolean {
     return false;
   }
 
-  // Expo Go client (exp://<host>:<port>)
   if (url.protocol === "exp:") return true;
 
   const hostname = url.hostname.toLowerCase();
@@ -19,8 +18,6 @@ function isDevOrigin(origin: string): boolean {
   ) {
     return true;
   }
-  // Hostname-suffix match with a domain boundary — `evil.expo.dev.attacker.com`
-  // must NOT match.
   return (
     hostname === "expo.dev" ||
     hostname.endsWith(".expo.dev") ||

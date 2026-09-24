@@ -23,14 +23,21 @@ export const history = sqliteTable(
     entryType: text("entry_type").notNull().default("transcription"),
   },
   (table) => ({
-    /** Descending time index for ORDER BY created_at DESC queries. */
     createdIdx: index("idx_history_created").on(table.createdAt),
-    /** User filter index. */
+
     userIdx: index("idx_history_user").on(table.userId),
-    /** Composite covering index for the main query: WHERE user_id = ? ORDER BY created_at DESC. */
+
     userCreatedIdx: index("idx_history_user_created").on(
       table.userId,
       table.createdAt,
+      table.id,
+    ),
+    dedupIdx: index("idx_history_dedup").on(
+      table.userId,
+      table.entryType,
+      table.sourceLang,
+      table.targetLang,
+      table.transcript,
     ),
   }),
 );
@@ -49,7 +56,11 @@ export const outbox = sqliteTable(
       .default("pending"),
   },
   (table) => ({
-    /** Status filter index for getPendingOutbox queries. */
     statusIdx: index("idx_outbox_status").on(table.status),
+    pendingOutboxIdx: index("idx_outbox_pending").on(
+      table.userId,
+      table.status,
+      table.retries,
+    ),
   }),
 );

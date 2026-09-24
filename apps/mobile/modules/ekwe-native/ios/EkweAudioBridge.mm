@@ -60,13 +60,13 @@ namespace ekwe {
     return @[success, errorStr, duration, waveformArray];
 }
 
-+ (NSArray *)decodeToCafWithSourcePath:(NSString *)sourcePath
++ (NSArray *)remuxToCafWithSourcePath:(NSString *)sourcePath
                             outputPath:(NSString *)outputPath
                          maxAudioBytes:(NSUInteger)maxAudioBytes {
     std::string input([sourcePath UTF8String]);
     std::string output([outputPath UTF8String]);
 
-    ekwe::DecodeResult result = ekwe::decode_audio_to_caf(input, output, static_cast<size_t>(maxAudioBytes));
+    ekwe::DecodeResult result = ekwe::remux_audio_to_caf(input, output, static_cast<size_t>(maxAudioBytes));
 
     NSNumber *success = @(result.success);
     NSString *errorStr = [NSString stringWithUTF8String:result.error_message.c_str()];

@@ -3,22 +3,19 @@ import {
   handleCheckout,
   handleVerifyTransaction,
   handleBillingFlags,
-} from "../../routes/billing";
-import { resetPricingCache } from "../../routes/pricing";
-import { mockEnv, jsonResponse } from "../setup";
+} from "@/routes/billing";
+import { resetPricingCache } from "@/routes/pricing";
+import { mockEnv, jsonResponse } from "@/__tests__/setup";
 import { http } from "msw";
-import { server } from "../msw/server";
-import { PROVIDER_URLS } from "../msw/handlers";
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
-// ─── Shared mock auth ─────────────────────────────────────────────
 const mockAuth = {
   userId: "test-user-123",
   userEmail: "test@example.com",
   tier: "FREE" as const,
   sessionId: "session-abc",
 };
-
-// ─── Checkout Tests ───────────────────────────────────────────────
 
 describe("handleCheckout", () => {
   beforeEach(() => {
@@ -33,10 +30,6 @@ describe("handleCheckout", () => {
       body: JSON.stringify({ plan: "ekwe_pro_monthly" }),
     });
 
-  // Checkout prices are read authoritatively from the Supabase
-  // app_config row (matching the verify-transaction grant path). The
-  // seeded default matches the bundled LOCAL_PRICES so these tests assert the
-  // familiar amounts.
   const seedSubscriptionConfig = (
     localPrices: Record<string, { monthly: number; annual: number }> = {
       USD: { monthly: 2.23, annual: 21.41 },
@@ -68,15 +61,12 @@ describe("handleCheckout", () => {
     expect(data.tx_ref).toMatch(
       /^ekwe_test-user-123_monthly_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
-    expect(data.amount).toBe(2.23); // $2.23/mo from subscription_config
+    expect(data.amount).toBe(2.23);
     expect(data.currency).toBe("USD");
     expect(data).not.toHaveProperty("checkout_url");
   });
 
   test("fails closed when Supabase cannot confirm the price", async () => {
-    // No subscription_config handler → getAuthoritativePlanPrices returns
-    // null, so checkout must 503 rather than mint a price that the grant
-    // path would later reject.
     const env = mockEnv();
     const res = await handleCheckout(monthlyRequest(), env, mockAuth);
     expect(res.status).toBe(503);
@@ -108,7 +98,7 @@ describe("handleCheckout", () => {
     const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
-    expect(data.amount).toBe(21.41); // $21.41/yr from subscription_config
+    expect(data.amount).toBe(21.41);
     expect(data.currency).toBe("USD");
   });
 
@@ -119,7 +109,7 @@ describe("handleCheckout", () => {
 
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
-    expect(data.amount).toBe(2.23); // $2.23/mo from subscription_config
+    expect(data.amount).toBe(2.23);
     expect(data.currency).toBe("USD");
   });
 
@@ -138,7 +128,7 @@ describe("handleCheckout", () => {
     const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
-    expect(data.amount).toBe(3000); // static ₦3,000/mo from subscription_config
+    expect(data.amount).toBe(3000);
     expect(data.currency).toBe("NGN");
   });
 
@@ -220,7 +210,7 @@ describe("handleCheckout", () => {
     const dataB = (await resB.json()) as any;
 
     expect(dataA.tx_ref).not.toBe(dataB.tx_ref);
-    // The webhook's resolveUser parses the `ekwe_<userId>_` prefix.
+
     expect(dataA.tx_ref).toMatch(/^ekwe_test-user-123_/);
   });
 
@@ -297,8 +287,6 @@ describe("handleCheckout", () => {
   });
 });
 
-// ─── Verify Transaction Tests ─────────────────────────────────────
-
 describe("handleVerifyTransaction", () => {
   beforeEach(() => {
     server.resetHandlers();
@@ -337,8 +325,6 @@ describe("handleVerifyTransaction", () => {
     expect(data.error).toBe("INVALID_BODY");
   });
 });
-
-// ─── Billing Flags Tests ──────────────────────────────────────────
 
 describe("handleBillingFlags", () => {
   beforeEach(() => {
@@ -385,7 +371,6 @@ describe("handleBillingFlags", () => {
   });
 
   test("returns defaults when Supabase is unreachable", async () => {
-    // No handler registered for paymentConfig → MSW returns 404 → falls back to defaults
     const env = mockEnv();
     const req = new Request("http://test/billing/flags", { method: "GET" });
     const res = await handleBillingFlags(req, env);

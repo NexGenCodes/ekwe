@@ -57,7 +57,6 @@ export const Button = React.memo(function Button({
 }: ButtonProps): React.ReactElement {
   const { color } = useTheme();
 
-  // Reanimated shared values
   const scaleAnim = useSharedValue(1);
   const spinAnim = useSharedValue(0);
 
@@ -68,8 +67,8 @@ export const Button = React.memo(function Button({
           duration: 1000,
           easing: Easing.linear,
         }),
-        -1, // infinite
-        false, // no reverse
+        -1,
+        false,
       );
     } else {
       spinAnim.value = 0;

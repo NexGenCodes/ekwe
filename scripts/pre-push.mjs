@@ -9,7 +9,29 @@ const run = (cmd, opts = {}) => {
   return result ? result.toString().trim() : "";
 };
 
-// ── 1. Show what changed ──────────────────────────────────────────
+
+
+
+
+
+
+
+
+try {
+  run("git rev-parse --abbrev-ref --symbolic-full-name @{u}", {
+    stdio: "ignore",
+  });
+  console.log("↓ Rebase: pulling latest remote changes...\n");
+  run("git pull --rebase --autostash", { stdio: "inherit" });
+  console.log("✔ Rebased local commits onto the latest remote state.\n");
+} catch {
+  console.log(
+    "⚠ No upstream / rebase failed. If a conflict is in progress, resolve it\n" +
+      "  (or `git rebase --abort`) and push again.\n",
+  );
+}
+
+
 console.log("\nChanges vs origin/master:\n");
 
 try {
@@ -26,10 +48,6 @@ if (diff) {
   console.log("  (no changes)\n");
 }
 
-// ── 2. Preview supabase migrations (never applies anything) ───────
-// Migrations are applied automatically by the `migrate` job in deploy.yml
-// when supabase/migrations/** changes, so this hook only shows you what CI
-// will run. A pending migration here is fine — it ships with the push.
 console.log(
   "Previewing Supabase migrations (dry-run, nothing is applied)...\n",
 );

@@ -1,9 +1,14 @@
 import { describe, test, expect } from "vitest";
-import * as gladia from "../../providers/gladia";
-import { mockEnv, makeAudioBlob, jsonResponse, mockSignal } from "../setup";
+import * as gladia from "@/providers/gladia";
+import {
+  mockEnv,
+  makeAudioBlob,
+  jsonResponse,
+  mockSignal,
+} from "@/__tests__/setup";
 import { http } from "msw";
-import { server } from "../msw/server";
-import { PROVIDER_URLS } from "../msw/handlers";
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 const MOCK_UPLOAD_URL = "https://mock.audio/url";
 const MOCK_RESULT_URL = "https://mock.gladia/result";
@@ -34,7 +39,7 @@ describe("Gladia provider", () => {
   test("returns result on successful full flow", async () => {
     server.use(...fullFlowHandlers());
 
-    const result = await gladia.transcribe(
+    const result = await gladia.stt(
       makeAudioBlob(),
       "en",
       mockEnv(),
@@ -51,7 +56,7 @@ describe("Gladia provider", () => {
         jsonResponse({ error: "bad key" }, 401),
       ),
     );
-    const result = await gladia.transcribe(
+    const result = await gladia.stt(
       makeAudioBlob(),
       "en",
       mockEnv(),
@@ -71,7 +76,7 @@ describe("Gladia provider", () => {
       http.get(MOCK_RESULT_URL, () => jsonResponse({ status: "running" })),
     );
 
-    const result = await gladia.transcribe(
+    const result = await gladia.stt(
       makeAudioBlob(),
       "en",
       mockEnv({

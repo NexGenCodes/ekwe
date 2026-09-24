@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
-import { authenticate } from "../../core/auth";
-import { mockEnv } from "../setup";
+import { authenticate } from "@/core/auth";
+import { mockEnv } from "@/__tests__/setup";
 
 vi.mock("jose", () => ({
   jwtVerify: vi.fn(),

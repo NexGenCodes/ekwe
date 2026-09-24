@@ -167,7 +167,7 @@ describe("guardMultipartSize", () => {
   });
 
   it("rejects size over limit", () => {
-    const limit = FREE_LIMITS.maxAudioBytes + 256 * 1024; // with overhead
+    const limit = FREE_LIMITS.maxAudioBytes + 256 * 1024;
     const req = new Request("https://test.com", {
       headers: { "Content-Length": String(limit + 1) },
     });

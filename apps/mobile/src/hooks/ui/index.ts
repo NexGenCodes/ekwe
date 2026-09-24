@@ -1,6 +1,6 @@
-export { useTheme } from "./useTheme";
-export { useClipboard } from "./useClipboard";
-export { useTokens } from "./useTokens";
-export type { Tokens } from "./useTokens";
-export { useStyles } from "./useStyles";
-export { useReduceMotion } from "./useReduceMotion";
+export { useTheme } from "@/hooks/ui/useTheme";
+export { useClipboard } from "@/hooks/ui/useClipboard";
+export { useTokens } from "@/hooks/ui/useTokens";
+export type { Tokens } from "@/hooks/ui/useTokens";
+export { useStyles } from "@/hooks/ui/useStyles";
+export { useReduceMotion } from "@/hooks/ui/useReduceMotion";

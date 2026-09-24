@@ -1,6 +1,6 @@
 import React from "react";
 
-import { EkweLogo } from "./EkweLogo";
+import { EkweLogo } from "@/components/EkweLogo";
 
 import { Box, Text } from "@/components/ui";
 import { spacing } from "@/constants/spacing";

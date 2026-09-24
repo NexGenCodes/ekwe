@@ -1,6 +1,7 @@
 import { jwtVerify, createRemoteJWKSet } from "jose";
-import { logger } from "./logger";
-import { Env, Tier, JWTPayloadWithMeta } from "./types";
+import { logger } from "@/core/logger";
+import { Env, Tier, JWTPayloadWithMeta } from "@/core/types";
+import { timingSafeEqual } from "@/utils/keys";
 
 const jwksFetchers = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -18,7 +19,6 @@ export interface AuthResult {
   userId: string;
   userEmail: string;
   tier: Tier;
-  /** Supabase session UUID from the JWT's `session_id` claim, or null. */
   sessionId: string | null;
 }
 
@@ -32,10 +32,6 @@ function extractAuthResult(payload: JWTPayloadWithMeta): AuthResult | null {
   };
 }
 
-/**
- * Verifies a Supabase JWT and returns the user's ID, email, and tier.
- * `createRemoteJWKSet` natively handles key rotation by re-fetching if a `kid` is missing.
- */
 export async function authenticate(
   token: string,
   env: Env,
@@ -50,4 +46,20 @@ export async function authenticate(
     logger.warn("[auth] JWT verification failed", { error: String(err) });
     return null;
   }
+}
+
+function getUpdateNotifySecret(env: Env): string | undefined {
+  const value = env.UPDATE_NOTIFY_SECRET;
+  return typeof value === "string" ? value : undefined;
+}
+
+export async function isAdminAuthorized(
+  env: Env,
+  request: Request,
+): Promise<boolean> {
+  const secret = getUpdateNotifySecret(env);
+  if (!secret) return false;
+  const auth = request.headers.get("Authorization");
+  if (auth === null) return false;
+  return timingSafeEqual(auth, `Bearer ${secret}`);
 }

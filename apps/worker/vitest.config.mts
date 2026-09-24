@@ -41,6 +41,10 @@ export default defineConfig({
               find: "cloudflare:workers",
               replacement: resolve(dir, "./__mocks__/cloudflare-workers.ts"),
             },
+            {
+              find: "cloudflare:sockets",
+              replacement: resolve(dir, "./__mocks__/cloudflare-sockets.ts"),
+            },
           ],
         },
         test: {

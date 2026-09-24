@@ -3,24 +3,19 @@ import {
   Env,
   TranscribeResult,
   TranslateResult,
-} from "../core/types";
-import { rotateKeysDetailed } from "../utils/keys";
-import {
-  isHallucination,
-  buildTranslatePrompt,
-  parseTranslateOutput,
-} from "../utils/prompts";
-import { mimeToExt } from "../utils/mime";
-import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
-import { logger } from "../core/logger";
-import { toWhisperCode } from "../services/languages";
+} from "@/core/types";
+import { rotateKeysDetailed } from "@/utils/keys";
+import { buildTranslatePrompt, parseTranslateOutput } from "@/utils/prompts";
+import { isHallucination } from "@/utils/hallucination";
+import { mimeToExt } from "@/utils/mime";
+import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
+import { logger } from "@/core/logger";
+import { toWhisperCode } from "@/core/languages";
 
 const GROQ_TRANSCRIBE = "https://api.groq.com/openai/v1/audio/transcriptions";
 const GROQ_CHAT = "https://api.groq.com/openai/v1/chat/completions";
 
-// ─── Transcription (Whisper Large V3) ─────────────────────────────
-
-export async function transcribe(
+export async function stt(
   blob: Blob,
   lang: string,
   env: Env,
@@ -85,8 +80,6 @@ export async function transcribe(
   });
   return null;
 }
-
-// ─── Translation (OpenAI GPT-OSS 120B) ──────────────────────────
 
 export async function translate(
   text: string,
@@ -166,4 +159,4 @@ export async function translate(
   }
 }
 
-export { ALL_LANGUAGES as supportedLanguages } from "../services/languages";
+export { ALL_LANGUAGES as supportedLanguages } from "@/core/languages";

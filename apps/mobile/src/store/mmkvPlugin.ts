@@ -1,28 +1,28 @@
-import type {
-  Change,
-  ObservablePersistLocal,
-  PersistMetadata,
-  PersistOptionsLocal,
-} from "@legendapp/state";
+import type { Change } from "@legendapp/state";
 import { internal, setAtPath } from "@legendapp/state";
-import { configureObservablePersistence } from "@legendapp/state/persist";
+import type {
+  ObservablePersistPlugin,
+  PersistMetadata,
+  PersistOptions,
+} from "@legendapp/state/sync";
+import { configureObservableSync } from "@legendapp/state/sync";
 
 import { initializeMMKV, mmkv } from "@/services/mmkv";
 import logger from "@/utils/logger";
 
-const { safeParse, safeStringify } = internal;
+const { safeParse, safeStringify } = internal as unknown as {
+  safeParse: (value: string) => unknown;
+  safeStringify: (value: unknown) => string;
+};
 
 const MetadataSuffix = "__m";
 
-export class ObservablePersistMMKV implements ObservablePersistLocal {
+export class ObservablePersistMMKV implements ObservablePersistPlugin {
   private data: Record<string, unknown> = {};
 
-  // Async preload — legend-state awaits this before calling getTable. It blocks
-  // until the encrypted MMKV is ready so persisted values are loaded from the
-  // real store (never from the plaintext in-memory fallback).
-  loadTable(table: string, _config: PersistOptionsLocal): Promise<void> {
+  loadTable(table: string, _config: PersistOptions): Promise<void> | void {
     if (this.data[table] !== undefined) {
-      return Promise.resolve();
+      return;
     }
     return (async (): Promise<void> => {
       try {
@@ -35,22 +35,20 @@ export class ObservablePersistMMKV implements ObservablePersistLocal {
     })();
   }
 
-  // Gets
   getTable<T = unknown>(
     table: string,
-    _config: PersistOptionsLocal,
     init: object,
+    _config: PersistOptions,
   ): T {
     const value = this.data[table];
     return (value !== undefined ? value : init) as T;
   }
 
-  getMetadata(table: string, config: PersistOptionsLocal): PersistMetadata {
-    return this.getTable(table + MetadataSuffix, config, {});
+  getMetadata(table: string, config: PersistOptions): PersistMetadata {
+    return this.getTable(table + MetadataSuffix, {}, config) as PersistMetadata;
   }
 
-  // Sets
-  set(table: string, changes: Change[], _config: PersistOptionsLocal): void {
+  set(table: string, changes: Change[], _config: PersistOptions): void {
     if (!this.data[table]) {
       this.data[table] = {};
     }
@@ -69,22 +67,21 @@ export class ObservablePersistMMKV implements ObservablePersistLocal {
   async setMetadata(
     table: string,
     metadata: PersistMetadata,
-    _config: PersistOptionsLocal,
+    _config: PersistOptions,
   ): Promise<void> {
     this.data[table + MetadataSuffix] = metadata;
     this.save(table + MetadataSuffix);
   }
 
-  deleteTable(table: string, _config: PersistOptionsLocal): void {
+  deleteTable(table: string, _config: PersistOptions): void {
     delete this.data[table];
     mmkv.remove(table);
   }
 
-  deleteMetadata(table: string, config: PersistOptionsLocal): void {
+  deleteMetadata(table: string, config: PersistOptions): void {
     this.deleteTable(table + MetadataSuffix, config);
   }
 
-  // Private
   private save(table: string): void {
     const v = this.data[table];
     if (v !== undefined) {
@@ -99,9 +96,8 @@ export class ObservablePersistMMKV implements ObservablePersistLocal {
   }
 }
 
-/**
- * Configure Legend State to use our custom MMKV persistence plugin globally.
- */
-configureObservablePersistence({
-  pluginLocal: ObservablePersistMMKV,
+export const mmkvPlugin = new ObservablePersistMMKV();
+
+configureObservableSync({
+  persist: { plugin: mmkvPlugin },
 });

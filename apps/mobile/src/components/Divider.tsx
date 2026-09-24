@@ -1,6 +1,3 @@
-/**
- * Divider — Horizontal line with optional centered label.
- */
 import React from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 

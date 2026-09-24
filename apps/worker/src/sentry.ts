@@ -12,13 +12,6 @@ function beforeSend(
   ) as unknown as ReturnType<NonNullable<CloudflareOptions["beforeSend"]>>;
 }
 
-/**
- * Options for the `withSentry` worker handler wrapper. `undefined` skips SDK
- * init. Only production reports: `wrangler dev` bundles run the same committed
- * DSN (a `vars` value) and were flooding the project with half-resolved local
- * URLs and transient loopback failures, while the `.dev.vars` `APP_ENV` default
- * keeps local development out of the issue list entirely.
- */
 function optionsFor(env: Env): CloudflareOptions | undefined {
   const dsn = env.SENTRY_DSN;
   if (typeof dsn !== "string" || dsn.length === 0) {
@@ -35,7 +28,6 @@ function optionsFor(env: Env): CloudflareOptions | undefined {
   };
 }
 
-/** Same options but always defined — Durable Object instrumentation requires it. */
 function optionsForDo(env: Env): CloudflareOptions {
   return optionsFor(env) ?? {};
 }

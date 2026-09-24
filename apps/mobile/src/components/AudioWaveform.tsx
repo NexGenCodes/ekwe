@@ -52,16 +52,6 @@ interface BarItemProps {
   inactiveColor: string;
 }
 
-// Each bar is a memoized leaf: its props (shared values + primitives) stay
-// referentially stable across parent renders, so the 40 children never
-// re-render. All per-update math runs in a UI-thread worklet, so bar
-// height/width/color changes never round-trip through the JS bridge.
-//
-// Bars use the Skia layout model: every bar is absolutely positioned at
-// x = index * step (step = measuredWidth / barCount) so the strip spans the
-// full container width. This keeps the drawn bars, the seek thumb, and the
-// drag hit-target in the exact same coordinate space — progress = x / width
-// always lands on the visible bar underneath the finger.
 const BarItem = React.memo(function BarItem({
   index,
   barHeights,
@@ -148,10 +138,6 @@ export function AudioWaveform({
       const arr = new Array(barCount);
       const sourceCount = amps.length;
 
-      // Map every source bin evenly onto the visible bars. Using
-      // floor(i*n/m)..floor((i+1)*n/m) guarantees all bins are represented,
-      // unlike a fixed `chunk` stride which drops trailing bins when the
-      // source count isn't a multiple of barCount.
       for (let i = 0; i < barCount; i++) {
         const start = Math.floor((i * sourceCount) / barCount);
         const end = Math.max(
@@ -177,11 +163,6 @@ export function AudioWaveform({
     measuredWidth.value = event.nativeEvent.layout.width;
   };
 
-  // The gesture objects must keep a stable identity: GestureDetector re-attaches
-  // when its `gesture` prop identity changes, so rebuilding these each render
-  // (as would happen from a fast parent like PlaybackControl) churns the native
-  // gesture handler. Anchoring the composition on the values the handlers
-  // capture keeps it stable across renders.
   const gesture = useMemo(
     () =>
       Gesture.Pan()
@@ -245,8 +226,7 @@ export function AudioWaveform({
         .onFinalize(() => {
           if (onScrubStateChange) runOnJS(onScrubStateChange)(false);
         }),
-    // `measuredWidth` is a useSharedValue: the object is stable across renders
-    // and `.value` is read inside the gesture callback, not during render.
+
     [interactive, onScrubStateChange, measuredWidth, onSeek],
   );
 
@@ -268,16 +248,21 @@ export function AudioWaveform({
     (!amplitudes || (amplitudes as number[]).length === 0)
   ) {
     return (
-      <Box style={[{ height, flex: 1, justifyContent: "center" }, style]}>
-        <Box
-          style={{
-            height: 2,
-            borderRadius: 1,
-            opacity: opacity.disabled,
-            backgroundColor: color.muted,
-          }}
-        />
-      </Box>
+      <GestureDetector gesture={composed}>
+        <Animated.View
+          style={[{ height, flex: 1, justifyContent: "center" }, style]}
+          onLayout={handleLayout}
+        >
+          <Box
+            style={{
+              height: 2,
+              borderRadius: 1,
+              opacity: opacity.disabled,
+              backgroundColor: color.muted,
+            }}
+          />
+        </Animated.View>
+      </GestureDetector>
     );
   }
 

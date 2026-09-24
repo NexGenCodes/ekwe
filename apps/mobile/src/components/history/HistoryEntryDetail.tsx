@@ -62,7 +62,6 @@ interface DetailBlockProps {
   variant?: "default" | "accent";
   transliteration?: string | null;
   flag?: string;
-  /** Shared element tag for the history → result coordinate morph. */
   sharedTag?: string;
 }
 function DetailBlock({
@@ -119,10 +118,6 @@ function DetailBlock({
   );
 }
 
-/**
- * HistoryEntryDetail — the content of the history detail sheet. Owns its own
- * scroll area so the action bar stays pinned to the bottom of the sheet.
- */
 export const HistoryEntryDetail = React.memo(
   function HistoryEntryDetail({
     entry,
@@ -132,8 +127,6 @@ export const HistoryEntryDetail = React.memo(
     const insets = useSafeAreaInsets();
     const { copied, copy } = useClipboard();
 
-    // Matches HistoryItem's `history-snippet-${id}` tag so opening an entry
-    // morphs the row snippet into the ORIGINAL block.
     const sharedTag = `history-snippet-${entry.id}`;
 
     const hasTranslation = useMemo(
@@ -190,7 +183,6 @@ export const HistoryEntryDetail = React.memo(
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
         >
-          {/* Content blocks — flags live on their respective box */}
           <DetailBlock
             flag={sourceFlag}
             title={`ORIGINAL · ${sourceName}`}
@@ -207,7 +199,6 @@ export const HistoryEntryDetail = React.memo(
             />
           )}
 
-          {/* Footer metadata — time, duration, source */}
           <Box style={styles.footer}>
             <Box
               style={[styles.footerDivider, { backgroundColor: color.border }]}
@@ -233,7 +224,6 @@ export const HistoryEntryDetail = React.memo(
           </Box>
         </ScrollArea>
 
-        {/* Pinned action bar */}
         <Box
           style={[
             styles.actionBar,

@@ -1,9 +1,8 @@
-import { useMutation } from "@tanstack/react-query";
-
 import { EkweError } from "@/constants/errors";
 import { translateText, TranslationResult } from "@/services/translateText";
 import { Result } from "@/types/Result";
 import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
+import { useMutation } from "@/hooks/core/useMutation";
 
 interface TranslateVariables {
   text: string;
@@ -12,33 +11,40 @@ interface TranslateVariables {
   signal?: AbortSignal;
 }
 
-export function useTranslateMutation(): ReturnType<
-  typeof useMutation<
+export function useTranslateMutation(): {
+  mutateAsync: (
+    variables: TranslateVariables,
+  ) => Promise<Result<TranslationResult, EkweError>>;
+  isPending: boolean;
+} {
+  const mutation = useMutation<
     Result<TranslationResult, EkweError>,
-    Error,
     TranslateVariables
-  >
-> {
-  return useMutation<
-    Result<TranslationResult, EkweError>,
-    Error,
-    TranslateVariables
-  >({
-    mutationFn: async ({ text, sourceLang, targetLang, signal }) => {
-      return translateText(text, sourceLang, targetLang, signal);
-    },
-    mutationKey: ["translate"],
-    gcTime: 5 * 60 * 1000,
-    retry: (failureCount, error) => {
-      if (error.message === "AbortError") return false;
-      return failureCount < 2;
-    },
-    onSuccess: (result) => {
-      // A billable translate (or a quota-429) changes the user's daily count —
-      // refresh the meter so it never shows a stale pool on the next view.
-      if (result.ok || result.error === EkweError.QUOTA_EXCEEDED) {
-        invalidateUsage();
+  >(async ({ text, sourceLang, targetLang, signal }) => {
+    let attempt = 0;
+    let result: Result<TranslationResult, EkweError> | undefined;
+
+    while (true) {
+      try {
+        result = await translateText(text, sourceLang, targetLang, signal);
+        break;
+      } catch (e: unknown) {
+        if (e instanceof Error && (e.message === "AbortError" || attempt >= 2))
+          throw e;
+        if (attempt >= 2) throw e;
+        attempt++;
       }
-    },
+    }
+
+    if (result && (result.ok || result.error === EkweError.QUOTA_EXCEEDED)) {
+      invalidateUsage();
+    }
+
+    return result as Result<TranslationResult, EkweError>;
   });
+
+  return {
+    mutateAsync: mutation.mutate,
+    isPending: mutation.isLoading,
+  };
 }

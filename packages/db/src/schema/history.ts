@@ -13,11 +13,6 @@ import { sql } from "drizzle-orm";
 
 export const authSchema = pgSchema("auth");
 
-/**
- * Stub for the Supabase-managed `auth.users` table so the history FK can be
- * declared. Never modified by Drizzle migrations; the auth schema is owned by
- * Supabase Auth.
- */
 export const usersInAuth = authSchema.table("users", {
   id: uuid("id").primaryKey(),
 });

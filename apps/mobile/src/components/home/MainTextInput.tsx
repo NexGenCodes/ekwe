@@ -10,12 +10,20 @@ interface MainTextInputProps {
   value: string;
   onChangeText: (text: string) => void;
   maxChars: number;
+  editable?: boolean;
   onFocus?: () => void;
   onBlur?: () => void;
 }
 
 export const MainTextInput = React.memo(
-  ({ value, onChangeText, maxChars, onFocus, onBlur }: MainTextInputProps) => {
+  ({
+    value,
+    onChangeText,
+    maxChars,
+    editable = true,
+    onFocus,
+    onBlur,
+  }: MainTextInputProps) => {
     const { color } = useTheme();
 
     const inputStyle = useMemo(() => {
@@ -44,6 +52,7 @@ export const MainTextInput = React.memo(
           placeholderTextColor={color.muted}
           value={value}
           onChangeText={onChangeText}
+          editable={editable}
           multiline
           textAlignVertical="top"
           selectionColor={color.brand}

@@ -3,8 +3,8 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 
-import { getEntryType } from "../useHistorySearch";
-import { useHistoryListData } from "../useHistoryListData";
+import { getEntryType } from "@/hooks/useHistorySearch";
+import { useHistoryListData } from "@/hooks/useHistoryListData";
 
 import type { HistoryEntry } from "@/store";
 
@@ -29,7 +29,6 @@ function entry(overrides: Partial<HistoryEntry>): HistoryEntry {
   };
 }
 
-// Fixed "today": Tue Sep 15, 2026, midday UTC.
 const NOW = Date.UTC(2026, 8, 15, 12, 0, 0);
 const DAY = 24 * 60 * 60 * 1000;
 

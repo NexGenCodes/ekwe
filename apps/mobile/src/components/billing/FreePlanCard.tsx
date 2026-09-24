@@ -1,7 +1,8 @@
 import React from "react";
 
-import { FeatureRow } from "./FeatureRow";
+import { FeatureRow } from "@/components/billing/FeatureRow";
 
+import { Badge } from "@/components/Badge";
 import { Box, Text } from "@/components/ui";
 import type { BILLING_PLANS, PlanFeature } from "@/constants/billing";
 import { borderRadius } from "@/constants/sizes";
@@ -39,16 +40,16 @@ export function FreePlanCard({
         },
       ]}
     >
-      <Box style={styles.priceRow}>
-        <Text variant="heading1" style={{ color: color.foreground }}>
-          Free
+      <Box style={styles.cardHeader}>
+        <Text variant="heading2" style={{ color: color.foreground }}>
+          {freePlan.name}
         </Text>
+        <Badge label="Current Plan" variant="muted" size="sm" />
       </Box>
       <Text
         variant="bodySmall"
         style={{
-          marginTop: spacing.xs,
-          marginBottom: spacing.md,
+          marginTop: spacing.sm,
           color: color.muted,
         }}
       >
@@ -79,14 +80,13 @@ const styles = {
     position: "relative",
     overflow: "hidden",
   } as const,
-  priceRow: {
+  cardHeader: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
+    alignItems: "center",
+    justifyContent: "space-between",
   } as const,
   divider: {
     height: 1,
-    marginVertical: spacing.lg,
+    marginVertical: spacing.md,
   } as const,
 };

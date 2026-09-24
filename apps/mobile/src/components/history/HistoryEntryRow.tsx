@@ -7,7 +7,7 @@ import Trash2 from "lucide-react-native/icons/trash";
 import React, { useCallback, useState } from "react";
 import { Share, StyleSheet, ViewStyle } from "react-native";
 
-import { HistoryItem } from "./HistoryItem";
+import { HistoryItem } from "@/components/history/HistoryItem";
 import { Box, Pressable, Text } from "@/components/ui";
 import { Sheet } from "@/components/ui/Sheet";
 import { getLanguageName } from "@/constants/languages";
@@ -23,7 +23,7 @@ import { AppToast, logger } from "@/utils";
 export interface HistoryEntryRowProps {
   entry: HistoryEntry;
   onPress: (entry: HistoryEntry) => void;
-  /** Deletes the entry by id (local + cloud, with an Undo toast). */
+
   onDelete: (entryId: string) => void;
   style?: ViewStyle;
 }

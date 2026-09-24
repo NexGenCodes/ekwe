@@ -75,10 +75,13 @@ jobs:
           filters: |
             worker:
               - 'apps/worker/**'
+              - 'packages/shared/**'
             pages:
               - 'apps/web/**'
+              - 'packages/shared/**'
             ota:
               - 'apps/mobile/src/**'
+              - 'packages/shared/**'
             native:
               - 'apps/mobile/app.json'
               - 'apps/mobile/app.config.*'
@@ -87,6 +90,7 @@ jobs:
               - 'apps/mobile/ios/**'
               - 'apps/mobile/modules/ekwe-native/**'
               - 'apps/mobile/eas.json'
+              - 'packages/shared/**'
               - 'pnpm-lock.yaml'
               - 'package.json'
             db:
@@ -516,10 +520,16 @@ jobs:
             { printf 'chore: release %s\n\n' "${{ steps.bump.outputs.next_tag }}"; cat dist/release-body.md; } > /tmp/release-commit-msg
             git commit --no-verify -F /tmp/release-commit-msg
           fi
-          echo "next_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           # Safe to push mid-run: paths-ignore on this push event means this
           # commit does NOT create a new run, so cancel-in-progress can't kill us.
-          git push
+          # A developer may have pushed during the ~90-min build: rebase the
+          # bump commit onto that latest master instead of having the push
+          # rejected as non-fast-forward (which used to fail the whole release).
+          git pull --rebase && git push
+          # Capture AFTER the rebase+push: if the rebase rewrote the bump
+          # commit (remote advanced mid-run), the pre-rebase HEAD is an unpushed
+          # commit and the Release's target_commitish / OTA git_ref dangle.
+          echo "next_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -557,20 +567,20 @@ jobs:
       - name: Publish manifest + notify devices
         env:
           WORKER_URL: ${{ secrets.WORKER_URL }}
-          PUSH_NOTIFY_SECRET: ${{ secrets.PUSH_NOTIFY_SECRET }}
+          UPDATE_NOTIFY_SECRET: ${{ secrets.UPDATE_NOTIFY_SECRET }}
         run: |
           # Download URL comes from apps/web/config.json (single source of
           # truth); the bumped config.json is already on disk at this point.
           DOWNLOAD_URL=$(node -p "require('./apps/web/config.json').links.download")
-          curl -fsS -X POST "$WORKER_URL/update/manifest" \
-            -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
+          curl -fsS -X POST "$WORKER_URL/admin/update/manifest" \
+            -H "Authorization: Bearer $UPDATE_NOTIFY_SECRET" \
             -H "Content-Type: application/json" \
             --data @dist/version.json
           # Push decision comes from the "Decide whether to notify users" step
           # (minor/major releases, or an explicitly forced patch).
           if [[ "${{ steps.notify.outputs.value }}" == "true" ]]; then
-            curl -fsS -X POST "$WORKER_URL/push-notify" \
-              -H "Authorization: Bearer $PUSH_NOTIFY_SECRET" \
+            curl -fsS -X POST "$WORKER_URL/admin/update/notify" \
+              -H "Authorization: Bearer $UPDATE_NOTIFY_SECRET" \
               -H "Content-Type: application/json" \
               -d "{
                 \"version\": \"${{ steps.bump.outputs.next_version }}\",
@@ -579,7 +589,7 @@ jobs:
                 \"checksumSha256\": \"${{ steps.assets.outputs.sha256 }}\"
               }"
           else
-            echo "Skipping push-notify: patch release (users see the in-app update badge)"
+            echo "Skipping /admin/update/notify: patch release (users see the in-app update badge)"
           fi
 
       - name: Rebuild landing site

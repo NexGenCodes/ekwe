@@ -1,10 +1,12 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { Redirect, Stack } from "expo-router";
 
+import { useTheme } from "@/hooks";
 import { settings$ } from "@/store";
 
 export default function AuthLayout(): React.ReactElement {
-  const onboardingCompleted = useSelector(() =>
+  const { isDark } = useTheme();
+  const onboardingCompleted = useValue(() =>
     settings$.onboardingCompleted.get(),
   );
 
@@ -15,6 +17,8 @@ export default function AuthLayout(): React.ReactElement {
       screenOptions={{
         headerShown: false,
         animation: "slide_from_right",
+        statusBarStyle: isDark ? "light" : "dark",
+        statusBarTranslucent: true,
       }}
     />
   );

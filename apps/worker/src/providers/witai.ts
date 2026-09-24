@@ -1,25 +1,31 @@
-import { logger } from "../core/logger";
-import { Env, TranscribeResult } from "../core/types";
-import { sanitizeKey } from "../utils/keys";
-import { isHallucination } from "../utils/prompts";
+import { logger } from "@/core/logger";
+import {
+  Env,
+  CLIENT_ABORTED,
+  TranscribeResult,
+  SpeechAttempt,
+} from "@/core/types";
+import { sanitizeKey, rotateKeysDetailed } from "@/utils/keys";
+import { getWitSecretKey } from "@/utils/wit-pools";
+import { isHallucination } from "@/utils/hallucination";
 import {
   fetchWithIdleTimeout,
+  fetchWithTimeout,
   getUserAgent,
   TIMEOUT_SLOW,
-} from "../utils/fetch";
-import { decodeOpusFrame, isOpusDecoderReady } from "../utils/opus";
-import { pcmToWav } from "../utils/wav";
-import { mergePcmFrames } from "../utils/pcm";
-import { clientMessageToBytes } from "../utils/websocket";
+  TIMEOUT_FAST,
+} from "@/utils/fetch";
+import { decodeOpusFrame, isOpusDecoderReady } from "@/utils/opus";
+import { pcmToWav } from "@/utils/wav";
+import { mergePcmFrames } from "@/utils/pcm";
+import { clientMessageToBytes } from "@/utils/stream";
 
 const WITAI_DICTATION = "https://api.wit.ai/dictation?v=20240304";
+const WITAI_SYNTH_URL = "https://api.wit.ai/synthesize?v=20240304";
 
-/**
- * Wit.ai Dictation API — zero cost, language-locked per API key.
- * Each WIT_KEY_{LANG} in env maps to one language.
- * Does NOT support auto-detection.
- */
-export async function transcribe(
+export const MAX_PENDING_OPUS_FRAMES = 512;
+
+export async function stt(
   blob: Blob,
   lang: string,
   env: Env,
@@ -27,9 +33,7 @@ export async function transcribe(
 ): Promise<TranscribeResult | null> {
   const targetLang = lang.toUpperCase().replace("-", "_");
   const baseLang = targetLang.split("_")[0];
-  const witKey = sanitizeKey(
-    env[`WIT_KEY_${targetLang}`] ?? env[`WIT_KEY_${baseLang}`],
-  );
+  const witKey = sanitizeKey(await getWitSecretKey(env, targetLang, baseLang));
 
   if (!witKey) {
     logger.warn("[witai] Skipping: No API key found", {
@@ -91,22 +95,12 @@ export async function transcribe(
   return null;
 }
 
-/**
- * Parses Wit.ai's newline-delimited JSON stream response.
- * Splits on \r\n and builds partial chunks until valid JSON forms.
- */
 async function parseStream(res: Response): Promise<{ text: string } | null> {
   const raw = await res.text();
   return parseJsonStream(raw);
 }
 
-/**
- * Handles a real-time streaming session via Wit.ai HTTP dictation.
- * Pipes client WebSocket audio → ReadableStream → Wit.ai HTTP,
- * then streams incremental transcripts back to the client.
- * Returns true if the session was handled, false if the provider could not connect.
- */
-export async function handleStream(
+export async function sttStream(
   env: Env,
   lang: string,
   clientWs: WebSocket,
@@ -114,17 +108,15 @@ export async function handleStream(
 ): Promise<boolean> {
   const targetLang = lang.toUpperCase().replace("-", "_");
   const baseLang = targetLang.split("_")[0];
-  const witKey = sanitizeKey(
-    env[`WIT_KEY_${targetLang}`] ?? env[`WIT_KEY_${baseLang}`],
-  );
+  const witKey = sanitizeKey(await getWitSecretKey(env, targetLang, baseLang));
   if (!witKey) return false;
 
   logger.info("[witai:stream] Starting dictation session", { lang });
 
-  // Buffer for accumulating decoded PCM frames for WAV wrapping
   let pcmFrames: Int16Array[] = [];
   let lastFlush = Date.now();
   let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
+  let pendingFrames: Uint8Array[] = [];
 
   const flushPcm = (): void => {
     if (pcmFrames.length === 0) return;
@@ -139,19 +131,27 @@ export async function handleStream(
     if (!data) return;
 
     if (isOpusDecoderReady()) {
-      const pcm = decodeOpusFrame(data, 16000);
-      if (pcm) {
-        pcmFrames.push(pcm);
-        // Flush periodically (every 500ms) to send WAV chunks
-        const now = Date.now();
-        if (now - lastFlush > 500 || pcmFrames.length >= 25) {
-          flushPcm();
-          lastFlush = now;
+      const frames = [...pendingFrames, data];
+      pendingFrames = [];
+      for (const frame of frames) {
+        const pcm = decodeOpusFrame(frame, 16000);
+        if (pcm) {
+          pcmFrames.push(pcm);
+          const now = Date.now();
+          if (now - lastFlush > 500 || pcmFrames.length >= 25) {
+            flushPcm();
+            lastFlush = now;
+          }
         }
       }
     } else {
-      // Fallback: forward raw data
-      controllerRef?.enqueue(data);
+      pendingFrames.push(data);
+      if (pendingFrames.length > MAX_PENDING_OPUS_FRAMES) {
+        pendingFrames.splice(0, pendingFrames.length - MAX_PENDING_OPUS_FRAMES);
+        logger.warn(
+          "[witai] Opus decoder late; dropping earliest pending frames",
+        );
+      }
     }
   };
 
@@ -174,10 +174,6 @@ export async function handleStream(
     }
   };
 
-  // Listeners are attached inside the ReadableStream start() but must be
-  // removed on EVERY exit path (failed fetch, no body, normal end, thrown
-  // error), not just abort — otherwise a closed session keeps forwarding
-  // frames to the next session and transcripts get duplicated.
   const detach = (): void => {
     clientWs.removeEventListener("message", onMessage);
     clientWs.removeEventListener("close", onClose);
@@ -290,10 +286,6 @@ export async function handleStream(
   }
 }
 
-/**
- * Shared JSON stream parser — splits on \r\n, builds partial chunks,
- * returns the last successfully parsed object (which is the final transcript).
- */
 function parseJsonStream(raw: string): { text: string } | null {
   const cleaned = raw.replace(/^\uFEFF/, "");
   logger.info("[witai] Raw response", {
@@ -331,10 +323,6 @@ function parseJsonStream(raw: string): { text: string } | null {
   return { text: last.text.trim() };
 }
 
-/**
- * Wit.ai supported MIME types + common aliases.
- * Returns null for types Wit.ai will reject — lets the orchestrator skip silently.
- */
 function toWitMime(mime: string): string | null {
   const baseMime = mime.split(";")[0].trim().toLowerCase();
   const map: Record<string, string | null> = {
@@ -356,4 +344,252 @@ function toWitMime(mime: string): string | null {
   return map[baseMime] ?? null;
 }
 
-export { WITAI_LANGUAGES as supportedLanguages } from "../services/languages";
+const WITAI_LANGUAGES = new Set([
+  "af",
+  "ak",
+  "sq",
+  "am",
+  "ar",
+  "hy",
+  "as",
+  "ay",
+  "az",
+  "eu",
+  "be",
+  "bn",
+  "bs",
+  "br",
+  "bg",
+  "my",
+  "ca",
+  "ci",
+  "ck",
+  "ny",
+  "zh",
+  "hr",
+  "cs",
+  "da",
+  "dv",
+  "nl",
+  "en",
+  "eo",
+  "et",
+  "fo",
+  "fi",
+  "fr",
+  "ff",
+  "gl",
+  "lg",
+  "ka",
+  "de",
+  "el",
+  "gn",
+  "gu",
+  "ht",
+  "ha",
+  "he",
+  "hi",
+  "hu",
+  "is",
+  "ig",
+  "id",
+  "iu",
+  "ga",
+  "it",
+  "ja",
+  "jv",
+  "kl",
+  "kn",
+  "ks",
+  "kk",
+  "km",
+  "rw",
+  "ky",
+  "ko",
+  "ku",
+  "lo",
+  "la",
+  "lv",
+  "li",
+  "ln",
+  "lt",
+  "mk",
+  "mg",
+  "ms",
+  "ml",
+  "mt",
+  "mi",
+  "mr",
+  "mn",
+  "ne",
+  "se",
+  "no",
+  "nb",
+  "or",
+  "om",
+  "pa",
+  "ps",
+  "fa",
+  "pl",
+  "pt",
+  "qu",
+  "rm",
+  "ro",
+  "ru",
+  "sa",
+  "sc",
+  "gd",
+  "sr",
+  "sn",
+  "sd",
+  "si",
+  "sk",
+  "sl",
+  "so",
+  "st",
+  "nr",
+  "es",
+  "su",
+  "sw",
+  "ss",
+  "sv",
+  "tl",
+  "tg",
+  "ta",
+  "tt",
+  "te",
+  "th",
+  "bo",
+  "ti",
+  "ts",
+  "tn",
+  "tr",
+  "ug",
+  "uk",
+  "ur",
+  "uz",
+  "ve",
+  "vi",
+  "cy",
+  "fy",
+  "wo",
+  "xh",
+  "yi",
+  "yo",
+  "zu",
+]);
+export { WITAI_LANGUAGES as supportedLanguages };
+
+const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
+
+const WITAI_VOICES = new Set([
+  "wit$Remi",
+  "wit$Rebecca",
+  "wit$Cody",
+  "wit$Charlie",
+]);
+
+type VoiceGender = "male" | "female";
+
+const WITAI_PROVIDER_VOICES: Record<
+  string,
+  Partial<Record<VoiceGender, string[]>>
+> = {
+  standard: { female: ["wit$Remi"], male: ["wit$Cody"] },
+  "studio-female-1": { female: ["wit$Rebecca"], male: ["wit$Charlie"] },
+  "studio-female-2": { female: ["wit$Remi"], male: ["wit$Cody"] },
+  "studio-male-1": { female: ["wit$Rebecca"], male: ["wit$Charlie"] },
+  "studio-male-2": { female: ["wit$Remi"], male: ["wit$Cody"] },
+};
+
+export function voice(
+  voiceId: string | undefined,
+  _langCode: string,
+  gender: VoiceGender,
+): string[] {
+  const sets =
+    WITAI_PROVIDER_VOICES[voiceId ?? "standard"] ??
+    WITAI_PROVIDER_VOICES.standard;
+  return sets[gender] ?? sets.female ?? [];
+}
+
+export async function tts(
+  text: string,
+  _lang: string,
+  env: Env,
+  signal: AbortSignal,
+  voice?: string,
+): Promise<SpeechAttempt> {
+  if (signal.aborted || !text || !text.trim()) {
+    return { result: null, status: null };
+  }
+
+  const resolvedVoice = voice && WITAI_VOICES.has(voice) ? voice : "wit$Remi";
+
+  try {
+    const rotation = await rotateKeysDetailed(
+      env,
+      "WIT_KEY_",
+      (key) =>
+        fetchWithTimeout(
+          WITAI_SYNTH_URL,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${key}`,
+              Accept: "audio/mpeg",
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+              q: text,
+              voice: resolvedVoice,
+              style: "default",
+              speed: "100",
+              pitch: "100",
+              fformat: "mp3",
+            }).toString(),
+          },
+          TIMEOUT_FAST,
+          signal,
+        ),
+      signal,
+    );
+
+    if (!rotation.response) {
+      const status = rotation.lastStatus;
+      if (
+        status === 429 ||
+        status === 503 ||
+        status === 401 ||
+        status === 403
+      ) {
+        logger.warn("[witai:tts] Synth failed", { status });
+        return { result: null, status };
+      }
+      return { result: null, status: null };
+    }
+
+    const bytes = new Uint8Array(await rotation.response.arrayBuffer());
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_SPEECH_BYTES) {
+      logger.warn("[witai:tts] Output over hard cap", {
+        bytes: bytes.byteLength,
+      });
+      return { result: null, status: 502 };
+    }
+
+    return {
+      result: {
+        audio: bytes,
+        mime: "audio/mpeg",
+        provider: "witai",
+      },
+      status: null,
+    };
+  } catch (e) {
+    if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
+    logger.error("[witai:tts] Synth exception", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return { result: null, status: null };
+  }
+}

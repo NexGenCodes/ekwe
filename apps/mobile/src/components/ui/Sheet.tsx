@@ -4,9 +4,9 @@ import { Modal as RNModal, type DimensionValue } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Box } from "./Box";
-import { Pressable } from "./Pressable";
-import { Text } from "./Text";
+import { Box } from "@/components/ui/Box";
+import { Pressable } from "@/components/ui/Pressable";
+import { Text } from "@/components/ui/Text";
 
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
@@ -18,11 +18,7 @@ export interface SheetProps {
   title?: string;
   children: React.ReactNode;
   maxHeight?: DimensionValue;
-  /**
-   * Fixed height for the sheet (e.g. so a loading state can fill the sheet
-   * and vertically center its content). When set, takes precedence over the
-   * content-sized `maxHeight` behavior.
-   */
+
   height?: DimensionValue;
 }
 

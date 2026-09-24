@@ -36,7 +36,6 @@ const initialAudioState: AudioState = {
 
 export const audio$ = observable<AudioState>(initialAudioState);
 
-// Actions
 export const audioActions = {
   setSaved: (saved: boolean): void => {
     audio$.isSaved.set(saved);

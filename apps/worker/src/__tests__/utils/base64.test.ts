@@ -18,7 +18,6 @@ describe("base64 utils", () => {
   });
 
   it("round-trips large data (tests chunking)", () => {
-    // 100KB of random data
     const size = 100 * 1024;
     const data = new Uint8Array(size);
     for (let i = 0; i < size; i++) {

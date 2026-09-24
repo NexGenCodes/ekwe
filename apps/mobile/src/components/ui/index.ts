@@ -1,8 +1,7 @@
-// — Primitives —
-export { Box } from "./Box";
-export { Text } from "./Text";
-export { Pressable } from "./Pressable";
-export { Spinner } from "./Spinner";
-export { SafeArea } from "./SafeArea";
-export { ScrollArea } from "./ScrollArea";
-export { ScreenContainer } from "./ScreenContainer";
+export { Box } from "@/components/ui/Box";
+export { Text } from "@/components/ui/Text";
+export { Pressable } from "@/components/ui/Pressable";
+export { Spinner } from "@/components/ui/Spinner";
+export { SafeArea } from "@/components/ui/SafeArea";
+export { ScrollArea } from "@/components/ui/ScrollArea";
+export { ScreenContainer } from "@/components/ui/ScreenContainer";

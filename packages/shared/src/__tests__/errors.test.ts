@@ -20,8 +20,6 @@ describe("WORKER_ERROR_CODES", () => {
   });
 
   it("contains every code the worker currently emits", () => {
-    // If the worker adds a code and forgets the shared contract, this list is
-    // stale — but the shared file is the single source, so keep it in sync.
     const expected = [
       "NOT_FOUND",
       "TOO_MANY_REQUESTS",
@@ -35,6 +33,8 @@ describe("WORKER_ERROR_CODES", () => {
       "INVALID_EMAIL",
       "TURNSTILE_REQUIRED",
       "TURNSTILE_INVALID",
+      "APP_CHECK_REQUIRED",
+      "APP_CHECK_INVALID",
       "OTP_SEND_FAILED",
       "UNAUTHORIZED",
       "UNKNOWN_PROVIDER",
@@ -50,8 +50,8 @@ describe("WORKER_ERROR_CODES", () => {
       "INVALID_TARGET_LANGUAGE",
       "TEXT_TOO_LONG",
       "PREMIUM_FEATURE_REQUIRED",
-      "TTS_UNAVAILABLE",
-      // Billing / payment providers
+      "SPEECH_UNAVAILABLE",
+
       "PAYMENT_INITIALIZATION_FAILED",
       "PAYMENT_PROVIDER_UNAVAILABLE",
       "WEBHOOK_MISSING_HEADERS",

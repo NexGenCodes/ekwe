@@ -1,16 +1,5 @@
 #!/usr/bin/env node
-/**
- * Manual native-env codegen for the iOS share Extension.
- *
- * Renders `apps/mobile/targets/share/EchoEnvironment.swift` from the PUBLIC
- * `EXPO_PUBLIC_*` keys in `apps/mobile/.env` plus the canonical
- * `MAX_AUDIO_BYTES` from `packages/shared/src/plans.ts`. Shared logic lives in
- * `scripts/tokens/native-env.cjs`.
- *
- * Prebuild note: `expo prebuild` regenerates this file itself via
- * app.plugin.js (withDangerousMod), so this manual script is only for local
- * dev/iteration and CI parity. Run with `pnpm gen:env`.
- */
+
 import { writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -27,7 +16,7 @@ const OUT_DIR = resolve(ROOT, "apps/mobile/targets/share");
 const OUT_FILE = resolve(OUT_DIR, "EchoEnvironment.swift");
 const PLANS_URL = pathToFileURL(resolve(ROOT, "packages/shared/src/plans.ts")).href;
 
-/** Keys the share extension *requires* — the build fails without them. */
+
 const REQUIRED = [
   "EXPO_PUBLIC_WORKER_URL",
   "EXPO_PUBLIC_SUPABASE_URL",

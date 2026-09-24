@@ -7,13 +7,6 @@ const ENCRYPTION_KEY_ID = "ekwe-mmkv-key";
 
 const OLD_FLAT_KEY_ID = "ekwe-key-storage";
 
-/**
- * In-memory stand-in used until initializeMMKV() resolves. Writes made before
- * the encrypted store is ready are ephemeral and are migrated on init — they
- * are never persisted to disk in plaintext. This guarantees the MMKV
- * encryption key is the only thing required to decrypt session data and it
- * never leaves SecureStore.
- */
 class InMemoryMMKV {
   private map = new Map<string, string>();
 
@@ -64,7 +57,6 @@ export async function initializeMMKV(): Promise<void> {
 
       if (!key) {
         try {
-          // One-time legacy migration from the pre-SecureStore plaintext cache.
           const oldKeyStorage = createMMKV({ id: OLD_FLAT_KEY_ID });
           key = oldKeyStorage.getString(ENCRYPTION_KEY_ID) ?? null;
           oldKeyStorage.clearAll();
@@ -86,7 +78,6 @@ export async function initializeMMKV(): Promise<void> {
         encryptionKey: key,
       });
 
-      // Migrate any ephemeral in-memory writes made before init completed.
       const keys = _storage.getAllKeys();
       for (const k of keys) {
         const val = _storage.getString(k);
@@ -96,11 +87,6 @@ export async function initializeMMKV(): Promise<void> {
       _storage = encrypted;
       _ready = true;
     } catch (err) {
-      // A one-off failure (e.g. SecureStore briefly unavailable) must not
-      // poison init forever: clear the promise so the NEXT call retries.
-      // Otherwise every initializeMMKV() resolves to the same rejected promise
-      // and the app silently runs on the ephemeral in-memory store for the
-      // whole session — losing all persistence.
       _upgradePromise = null;
       logger.error(
         "[mmkv] initializeMMKV failed, will retry on next call",

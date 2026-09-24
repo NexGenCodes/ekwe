@@ -11,12 +11,6 @@ import {
 import { sql } from "drizzle-orm";
 import { usersInAuth } from "./history";
 
-/**
- * Tracks subscription status per user. Written by the Worker (service_role)
- * via set_pro_status RPC when RevenueCat or Flutterwave confirms a payment.
- * Read by the custom_access_token_hook to inject `is_pro` into JWTs and by
- * check_preflight to derive the authoritative tier.
- */
 export const userSubscriptions = pgTable(
   "user_subscriptions",
   {
@@ -32,7 +26,7 @@ export const userSubscriptions = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),
-    // Added by 20260818000000_dual_provider_billing
+
     provider: text("provider").notNull().default("revenuecat"),
     paymentReference: text("payment_reference"),
     flutterwaveTxRef: text("flutterwave_tx_ref"),

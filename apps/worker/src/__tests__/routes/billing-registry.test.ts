@@ -5,23 +5,20 @@ import {
   hasProvider,
   processWebhookEvent,
   unknownProvider,
-} from "../../services/billing";
-// Side-effect imports: trigger self-registration of built-in providers.
-import "../../routes/webhook";
-import "../../routes/flutterwave";
+} from "@/services/billing";
+
+import "@/routes/webhook";
+import "@/services/flutterwave";
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
-import { mockEnv, jsonResponse } from "../setup";
-import { server } from "../msw/server";
+import { mockEnv, jsonResponse } from "@/__tests__/setup";
+import { server } from "@/__tests__/msw/server";
 
 describe("Provider Registry", () => {
   beforeEach(() => {
-    // Clear all providers registered during tests by re-registering
-    // the built-in ones (they self-register on import)
     server.resetHandlers();
   });
 
   test("hasProvider returns true for registered providers", () => {
-    // "flutterwave" is registered at module load time
     expect(hasProvider("flutterwave")).toBe(true);
   });
 
@@ -73,7 +70,7 @@ describe("Provider Registry", () => {
   });
 
   test("processWebhookEvent returns 503 for disabled provider", async () => {
-    const env = mockEnv({}); // No FLUTTERWAVE_SECRET
+    const env = mockEnv({});
 
     registerProvider("disabled-provider", {
       enabled: (e) => !!e.FLUTTERWAVE_SECRET,
@@ -135,6 +132,6 @@ describe("Provider Registry", () => {
     });
 
     await processWebhookEvent("overwrite-test", {}, env);
-    expect(callCount).toBe(11); // 1 + 10
+    expect(callCount).toBe(11);
   });
 });

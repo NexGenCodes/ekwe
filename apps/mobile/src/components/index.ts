@@ -1,47 +1,43 @@
-// Canonical shared components
-export * from "./EkweLogo";
+export * from "@/components/EkweLogo";
 
-// UI Primitives
-export * from "./ui";
+export * from "@/components/ui";
 
-// Domain Components
-export * from "./AuthHeader";
-export * from "./AuthShell";
-export * from "./SocialAuthGroup";
-export * from "./SocialButton";
-export * from "./LanguagePickerSheet";
-export * from "./LanguageSelectionGrid";
-export * from "./ScrollableTextBox";
-export * from "./CustomTabBar";
-export * from "./CustomTabBarItem";
+export * from "@/components/AuthHeader";
+export * from "@/components/AuthShell";
+export * from "@/components/SocialAuthGroup";
+export * from "@/components/SocialButton";
+export * from "@/components/LanguagePickerSheet";
+export * from "@/components/LanguageSelectionGrid";
+export * from "@/components/ScrollableTextBox";
+export * from "@/components/CustomTabBar";
+export * from "@/components/CustomTabBarItem";
 
-// Composites (moved from ui/)
-export * from "./Input";
-export * from "./Divider";
-export * from "./ErrorBanner";
-export * from "./Button";
-export * from "./AnimatedCopyButton";
-export * from "./AppAlertModal";
-export * from "./ErrorBoundary";
-export * from "./AudioWaveform";
-export * from "./Card";
-export * from "./Badge";
-export * from "./IconContainer";
-export * from "./EmptyState";
-export * from "./GradientMesh";
-export * from "./SkeletonBox";
-export * from "./IconButton";
-export * from "./Transliteration";
-export * from "./ToastContainer";
-export * from "./Disclaimer";
-export * from "./OtpInput";
-export * from "./AuthBackground";
+export * from "@/components/Input";
+export * from "@/components/Divider";
+export * from "@/components/ErrorBanner";
+export * from "@/components/Button";
+export * from "@/components/AnimatedCopyButton";
+export * from "@/components/AppAlertModal";
+export * from "@/components/ErrorBoundary";
+export * from "@/components/AudioWaveform";
+export * from "@/components/Card";
+export * from "@/components/Badge";
+export * from "@/components/IconContainer";
+export * from "@/components/EmptyState";
+export * from "@/components/GradientMesh";
+export * from "@/components/SkeletonBox";
+export * from "@/components/IconButton";
+export * from "@/components/Transliteration";
+export * from "@/components/ToastContainer";
+export * from "@/components/Disclaimer";
+export * from "@/components/OtpInput";
+export * from "@/components/AuthBackground";
+export * from "@/components/ProBadge";
+export * from "@/components/LockedPressable";
 
-// Screen-specific
-export * from "./home";
-export * from "./profile";
-export * from "./history";
+export * from "@/components/home";
+export * from "@/components/profile";
+export * from "@/components/history";
 
-// Feature modules
-export * from "./features";
-export * from "./onboarding";
+export * from "@/components/features";
+export * from "@/components/onboarding";

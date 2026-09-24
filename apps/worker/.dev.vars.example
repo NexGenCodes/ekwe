@@ -22,6 +22,8 @@ TURNSTILE_HOSTNAMES=ekwe.app
 
 # ─── STT / TTS Providers (multiply-keys = failover rotation) ──────────
 # Required: at least one working key per provider you intend to use.
+# DEEPGRAM_KEY_* also powers Aura-2 speech (7 languages) on the PREMIUM
+# speech pipeline.
 DEEPGRAM_KEY_1=
 DEEPGRAM_KEY_2=
 DEEPGRAM_KEY_3=
@@ -63,12 +65,19 @@ MISTRAL_KEY_3=
 MISTRAL_KEY_4=
 MISTRAL_KEY_5=
 
-OPENROUTER_KEY=
+OPENROUTER_KEY_1=
+OPENROUTER_KEY_2=
+
+# Optional: overrides the built-in TrustedClientToken used by the Edge TTS
+# provider. Set this if Microsoft rotates/revokes the bundled token.
+EDGE_CLIENT_TOKEN=
 
 # ─── Wit.ai (per-language keys) ───────────────────────────────────────
 # Optional. Each WIT_KEY_<code> enables Wit.ai transcription for that
 # language. 130 languages use ISO 639-1 codes; Cherokee (CI) and Sicilian
 # (CK) use Wit's own codes. Must match src/languages.ts.
+# The same pool also powers the free TTS tier (voice synthesis via
+# POST /synthesize) — no separate TTS keys are needed.
 WIT_KEY_AF=
 WIT_KEY_AK=
 WIT_KEY_AM=
@@ -206,7 +215,7 @@ WIT_KEY_ZU=
 # Required for /billing/checkout and /webhook to work.
 # FLUTTERWAVE_SECRET: API secret key (FLWSECK_...) for checkout/payment calls.
 FLUTTERWAVE_SECRET=
-PUSH_NOTIFY_SECRET=
+UPDATE_NOTIFY_SECRET=
 
 # FLUTTERWAVE_WEBHOOK_SECRET: secret hash from the Flutterwave dashboard
 # (Settings → Webhooks), used to verify inbound webhook signatures.

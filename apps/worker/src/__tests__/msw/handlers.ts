@@ -1,10 +1,5 @@
 import { http, HttpResponse } from "msw";
 
-/**
- * Canonical outbound endpoints the worker reaches. Centralised so tests,
- * handlers, contract checks and fixture recording all reference the same
- * URLs (path matching ignores query strings).
- */
 export const PROVIDER_URLS = {
   deepgram: "https://api.deepgram.com/v1/listen",
   gladiaUpload: "https://api.gladia.io/v2/upload",
@@ -21,7 +16,10 @@ export const PROVIDER_URLS = {
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
   geminiTtsGenerate:
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent",
+  deepgramSpeak: "https://api.deepgram.com/v1/speak",
+  witaiSynthesize: "https://api.wit.ai/synthesize",
   openrouterChat: "https://openrouter.ai/api/v1/chat/completions",
+  openrouterTranscriptions: "https://openrouter.ai/api/v1/audio/transcriptions",
   openErApiLatest: "https://open.er-api.com/v6/latest/USD",
   supabaseCheckPreflight:
     "https://mock.supabase.co/rest/v1/rpc/check_preflight",
@@ -41,15 +39,10 @@ export const PROVIDER_URLS = {
 const notFound = () =>
   HttpResponse.json({ error: "not found" }, { status: 404 });
 
-/**
- * Default handlers registered on the Node server at construction.
- * Every endpoint the worker may reach gets an explicit (failing) response so
- * tests are deterministic and `onUnhandledRequest: "error"` still catches any
- * URL we forgot about. Tests override individual endpoints with `server.use`.
- */
 export const defaultHandlers = [
-  // Transcribe providers
   http.post(PROVIDER_URLS.deepgram, notFound),
+  http.post(PROVIDER_URLS.deepgramSpeak, notFound),
+  http.post(PROVIDER_URLS.witaiSynthesize, notFound),
   http.post(PROVIDER_URLS.gladiaUpload, notFound),
   http.post(PROVIDER_URLS.gladiaTranscription, notFound),
   http.post(PROVIDER_URLS.assemblyaiUpload, notFound),
@@ -57,18 +50,18 @@ export const defaultHandlers = [
   http.post(PROVIDER_URLS.witaiDictation, notFound),
   http.post(PROVIDER_URLS.groqTranscriptions, notFound),
   http.post(PROVIDER_URLS.cohereTranscriptions, notFound),
-  // Translate providers
+
   http.post(PROVIDER_URLS.groqChat, notFound),
   http.post(PROVIDER_URLS.cohereChat, notFound),
   http.post(PROVIDER_URLS.mistralChat, notFound),
   http.post(PROVIDER_URLS.geminiGenerate, notFound),
   http.post(PROVIDER_URLS.geminiTtsGenerate, notFound),
   http.post(PROVIDER_URLS.openrouterChat, notFound),
-  // Backend services
+  http.post(PROVIDER_URLS.openrouterTranscriptions, notFound),
+
   http.get(PROVIDER_URLS.openErApiLatest, notFound),
   http.post(PROVIDER_URLS.supabaseCheckPreflight, notFound),
   http.post(PROVIDER_URLS.supabaseCheckSessionActive, () =>
-    // Sessions are active by default; individual tests override with `false`.
     HttpResponse.json(true),
   ),
   http.post(PROVIDER_URLS.supabaseConsumeUsage, notFound),

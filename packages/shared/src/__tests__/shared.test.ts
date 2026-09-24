@@ -8,6 +8,8 @@ import {
   roundToCurrency,
   toLowestUnit,
   countryToCurrency,
+  countryNamesForCurrency,
+  countrySummaryForCurrency,
 } from "../money";
 import { LANGUAGES, getLanguageFlag, languageName } from "../languages";
 
@@ -55,8 +57,8 @@ describe("money helpers", () => {
   test("every Flutterwave-billable currency has a proper symbol", () => {
     expect(getCurrencySymbol("USD")).toBe("$");
     expect(getCurrencySymbol("NGN")).toBe("₦");
-    expect(getCurrencySymbol("GHS")).toBe("GH₵");
-    expect(getCurrencySymbol("KES")).toBe("KSh");
+    expect(getCurrencySymbol("GHS")).toBe("₵");
+    expect(getCurrencySymbol("KES")).toBe("sh");
     expect(getCurrencySymbol("ZAR")).toBe("R");
     expect(getCurrencySymbol("ZMW")).toBe("ZK");
     expect(getCurrencySymbol("UGX")).toBe("USh");
@@ -109,5 +111,29 @@ describe("money helpers", () => {
   test("countryToCurrency returns undefined for unknown countries", () => {
     expect(countryToCurrency("XA")).toBeUndefined();
     expect(countryToCurrency("")).toBeUndefined();
+  });
+
+  test("countryNamesForCurrency lists every country using a currency", () => {
+    expect(countryNamesForCurrency("XOF")).toEqual([
+      "Benin",
+      "Burkina Faso",
+      "Guinea-Bissau",
+      "Ivory Coast",
+      "Mali",
+      "Niger",
+      "Senegal",
+      "Togo",
+    ]);
+    expect(countryNamesForCurrency("GHS")).toEqual(["Ghana"]);
+  });
+
+  test("countrySummaryForCurrency compacts long country sets", () => {
+    expect(countrySummaryForCurrency("XOF")).toBe(
+      "Benin, Burkina Faso & 6 more",
+    );
+    expect(countrySummaryForCurrency("XOF", 3)).toBe(
+      "Benin, Burkina Faso, Guinea-Bissau & 5 more",
+    );
+    expect(countrySummaryForCurrency("GHS")).toBe("Ghana");
   });
 });

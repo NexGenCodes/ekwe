@@ -37,6 +37,21 @@ export default tseslint.config(
         'error',
         { allowNumber: true, allowBoolean: true, allowNullish: true },
       ],
+      // Internal imports must use the `@/` absolute alias (tsconfig `paths` +
+      // wrangler/vitest resolve it); relative `..` imports crossing modules
+      // make files brittle to moves. The `.wasm` asset + node_modules
+      // relative imports in src/utils/opus.ts are the only sanctioned breaks.
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            { group: ['../*'], message: "Use the '@/…' absolute alias" },
+            { group: ['../../*'], message: "Use the '@/…' absolute alias" },
+            { group: ['../../../*'], message: "Use the '@/…' absolute alias" },
+            { group: ['../../../../*'], message: "Use the '@/…' absolute alias" },
+          ],
+        },
+      ],
     },
   },
   {

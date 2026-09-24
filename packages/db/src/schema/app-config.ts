@@ -10,14 +10,6 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-/**
- * Singleton config row (id = 1) for all application configuration
- * (pricing, feature toggles, defaults).
- * The Worker reads this via service_role.
- *
- * Security: REVOKE ALL from anon/authenticated. Only service_role (which
- * bypasses RLS) can read or write.
- */
 export const appConfig = pgTable(
   "app_config",
   {

@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { checkPreflight, runPreflightGate } from "../../services/preflight";
-import { mockEnv, jsonResponse } from "../setup";
+import { checkPreflight, runPreflightGate } from "@/services/preflight";
+import { getLimits } from "@/core/limits";
+import { mockEnv, jsonResponse } from "@/__tests__/setup";
 import { http } from "msw";
-import { server } from "../msw/server";
-import { PROVIDER_URLS } from "../msw/handlers";
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 describe("checkPreflight (cooldown + quota gate)", () => {
   beforeEach(() => {
@@ -69,7 +70,7 @@ describe("checkPreflight (cooldown + quota gate)", () => {
     expect(body).toMatchObject({
       p_type: "transcribe",
       p_premium_daily_limit: 0,
-      p_premium_throttle_threshold: 500,
+      p_premium_throttle_threshold: 200,
       p_free_daily_limit: 25,
       p_throttle_cooldown_seconds: 3,
     });
@@ -95,7 +96,7 @@ describe("checkPreflight (cooldown + quota gate)", () => {
     });
   });
 
-  test("sends the premium tts char limit and this request's charge for a tts gate", async () => {
+  test("sends the premium speech char limit and this request's charge for a speech gate", async () => {
     let body: Record<string, unknown> = {};
     server.use(
       http.post(PROVIDER_URLS.supabaseCheckPreflight, async ({ request }) => {
@@ -104,18 +105,18 @@ describe("checkPreflight (cooldown + quota gate)", () => {
       }),
     );
 
-    await checkPreflight(mockEnv(), "uid-tts", "PREMIUM", "tts", null, 42);
+    await checkPreflight(mockEnv(), "uid-tts", "PREMIUM", "speech", null, 42);
 
     expect(body).toMatchObject({
-      p_type: "tts",
-      p_free_daily_limit: 2500,
-      p_premium_tts_chars_limit: 5000,
+      p_type: "speech",
+      p_free_daily_limit: getLimits("FREE").dailySpeechCharsLimit,
+      p_premium_speech_chars_limit: getLimits("PREMIUM").dailySpeechCharsLimit,
       p_charge_chars: 42,
       p_premium_throttle_threshold: 0,
     });
   });
 
-  test("sends a zero char charge for non-tts usage types", async () => {
+  test("sends a zero char charge for non-speech usage types", async () => {
     let body: Record<string, unknown> = {};
     server.use(
       http.post(PROVIDER_URLS.supabaseCheckPreflight, async ({ request }) => {

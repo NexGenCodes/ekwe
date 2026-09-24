@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeEach } from "vitest";
-import { handleStorePricing, resetPricingCache } from "../../routes/pricing";
-import { mockEnv, mockExecutionContext } from "../setup";
+import { handleStorePricing, resetPricingCache } from "@/routes/pricing";
+import { mockEnv, mockExecutionContext } from "@/__tests__/setup";
 import { http } from "msw";
-import { server } from "../msw/server";
-import { PROVIDER_URLS } from "../msw/handlers";
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 function pricingRequest(
   currency?: string,
@@ -69,9 +69,6 @@ describe("handleStorePricing", () => {
   });
 
   test("resolves currency from geo CF-IPCountry when none is explicit", async () => {
-    // No explicit currency, but the request comes from Nigeria (NG → NGN): the
-    // worker should bill in NGN, not fall back to USD. This is the battle-tested
-    // path that fixes the Android locale misreporting bug.
     const res = await handleStorePricing(
       pricingRequest(undefined, { "CF-IPCountry": "NG" }),
       mockEnv(),
@@ -84,7 +81,6 @@ describe("handleStorePricing", () => {
   });
 
   test("explicit currency wins over geo CF-IPCountry", async () => {
-    // User is geo-Ghana (GH → GHS) but explicitly chose USD — manual wins.
     const res = await handleStorePricing(
       pricingRequest("USD", { "CF-IPCountry": "GH" }),
       mockEnv(),

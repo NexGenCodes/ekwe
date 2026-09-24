@@ -1,4 +1,4 @@
-import { getRelativeTime } from "../relativeTime";
+import { getRelativeTime } from "@/utils/relativeTime";
 
 describe("getRelativeTime", () => {
   const now = Date.now();

@@ -8,11 +8,11 @@ import { useTheme } from "@/hooks/ui";
 
 export interface BadgeProps {
   label: string;
-  /** Color variant */
+
   variant?: "primary" | "muted" | "success" | "warning" | "error";
-  /** Optional leading icon */
+
   icon?: React.ReactNode;
-  /** Text size preset */
+
   size?: "sm" | "md";
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -26,10 +26,6 @@ const VARIANT_CONFIG = {
   error: { bgOpacity: "20", textKey: "error" },
 } as const;
 
-/**
- * Badge — Small pill label.
- * Replaces all inline tier badges, provider badges, and status indicators.
- */
 export const Badge = ({
   label,
   variant = "primary",

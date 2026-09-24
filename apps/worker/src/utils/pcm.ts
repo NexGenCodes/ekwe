@@ -1,6 +1,3 @@
-/**
- * Merges multiple Int16Array PCM frames into a single buffer.
- */
 export function mergePcmFrames(frames: Int16Array[]): Int16Array {
   if (frames.length === 0) return new Int16Array(0);
   if (frames.length === 1) return frames[0];

@@ -3,34 +3,34 @@ import { Dimensions } from "react-native";
 import Animated, {
   SharedValue,
   useAnimatedStyle,
+  useSharedValue,
   withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { useKeyboardState } from "react-native-keyboard-controller";
 
-import { InputFooterActions } from "./InputFooterActions";
-import { LanguageSwitcher } from "./LanguageSwitcher";
-import { MainTextInput } from "./MainTextInput";
-import { RecordingInline } from "./RecordingInline";
-import { Divider } from "../Divider";
+import { InputFooterActions } from "@/components/home/InputFooterActions";
+import { LanguageSwitcher } from "@/components/home/LanguageSwitcher";
+import { MainTextInput } from "@/components/home/MainTextInput";
+import { RecordingInline } from "@/components/home/RecordingInline";
+import { Divider } from "@/components/Divider";
 
-import { Box, Text } from "@/components/ui";
-import { borderRadius } from "@/constants/sizes";
+import { Box } from "@/components/ui";
+import { borderRadius, opacity } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme, usePermissions } from "@/hooks";
+import type { SharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
 import type { DictationStatus } from "@/hooks/useVoiceDictation";
-import { AppToast, triggerHaptic } from "@/utils";
+import { triggerHaptic } from "@/utils";
 
 interface ExpressiveInputProps {
   value: string;
   onChangeText: (text: string) => void;
   onClear: () => void;
   onMicPress: () => void;
-  onTranslate: () => void;
-  isTranslating?: boolean;
+  onConvert: () => void;
   sourceLang: string;
   targetLang: string;
-  detectedLanguage?: string | null;
   onSwap: () => void;
   onSourceChange: (code: string) => void;
   onTargetChange: (code: string) => void;
@@ -40,6 +40,8 @@ interface ExpressiveInputProps {
     amplitude: SharedValue<number>;
     elapsedMs: number;
     maxDurationMs: number;
+
+    capturedDurationMs?: number;
     onStop: () => void;
     onCancel: () => void;
     onConfirm: () => void;
@@ -49,7 +51,19 @@ interface ExpressiveInputProps {
     finalText?: string;
     isLive?: boolean;
   };
-  canTranslate?: boolean;
+  canConvert?: boolean;
+
+  hasRecording?: boolean;
+  recordingUri?: string | null;
+
+  recordingPeaks?: number[];
+
+  recordingPlayer?: SharedAudioPlayer;
+  onDeleteAudio?: () => void;
+
+  isConverting?: boolean;
+
+  isDormant?: boolean;
   onFocus?: () => void;
   onBlur?: () => void;
 }
@@ -60,16 +74,21 @@ export const ExpressiveInput = React.memo(
     onChangeText,
     onClear,
     onMicPress,
-    onTranslate,
-    isTranslating = false,
+    onConvert,
     sourceLang,
     targetLang,
     onSwap,
     onSourceChange,
     onTargetChange,
-    detectedLanguage,
     dictationState,
-    canTranslate = true,
+    canConvert = true,
+    hasRecording = false,
+    recordingUri = null,
+    recordingPeaks,
+    recordingPlayer,
+    onDeleteAudio,
+    isConverting = false,
+    isDormant = false,
     onFocus,
     onBlur,
   }: ExpressiveInputProps): React.ReactElement => {
@@ -82,6 +101,7 @@ export const ExpressiveInput = React.memo(
       amplitude,
       elapsedMs,
       maxDurationMs,
+      capturedDurationMs,
       onStop,
       onCancel,
       onConfirm,
@@ -98,28 +118,23 @@ export const ExpressiveInput = React.memo(
     const isPreview = dictationStatus === "preview";
     const isActive = isRecording || isProcessing || isPreview;
 
+    const recordingAmp = useSharedValue(0);
+
     const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
     const [isFocused, setIsFocused] = useState(false);
-    const languagesConflict = sourceLang === targetLang;
 
-    // Reactive keyboard visibility from react-native-keyboard-controller,
-    // replacing the manual keyboardWillShow/kit event listeners (which
-    // behave differently on iOS vs Android). Drives the footer discard
-    // caption that is hidden while the keyboard is up.
+    const [isPreviewReady, setIsPreviewReady] = useState(false);
+    useEffect(() => {
+      setIsPreviewReady(false);
+    }, [isPreview, capturedUri, dictationStatus]);
+    const handlePreviewReady = useCallback((ready: boolean) => {
+      setIsPreviewReady(ready);
+    }, []);
+
     const keyboardVisible = useKeyboardState((state) => state.isVisible);
     useEffect(() => {
       setIsKeyboardVisible(keyboardVisible);
     }, [keyboardVisible]);
-
-    useEffect(() => {
-      if (languagesConflict && value.length > 0) {
-        AppToast.warning("Language Conflict", {
-          description:
-            "Source and target languages must be different to translate.",
-          duration: 3000,
-        });
-      }
-    }, [languagesConflict, value.length]);
 
     const handleFocus = useCallback(() => {
       setIsFocused(true);
@@ -144,6 +159,10 @@ export const ExpressiveInput = React.memo(
       onClear();
     }, [onClear]);
 
+    const handleDeleteAudio = useCallback((): void => {
+      onDeleteAudio?.();
+    }, [onDeleteAudio]);
+
     const handleRightButtonPress = useCallback(async () => {
       if (isRecording) {
         await triggerHaptic();
@@ -151,18 +170,10 @@ export const ExpressiveInput = React.memo(
       } else if (isPreview) {
         await triggerHaptic();
         onConfirm();
-      } else if (value.length > 0) {
-        const isTargetLangValid = targetLang !== "none" && targetLang !== "";
-        if (!isTargetLangValid) {
-          await triggerHaptic();
-          AppToast.error("Target Language Required", {
-            description: "Please select a language to translate into.",
-            duration: 3000,
-          });
-          return;
-        }
-        if (!canTranslate) return; // e.g., source text too short
-        onTranslate();
+      } else if (value.length > 0 || hasRecording) {
+        if (value.length > 0 && !canConvert) return;
+        await triggerHaptic();
+        onConvert();
       } else {
         await triggerHaptic();
         onMicPress();
@@ -171,28 +182,29 @@ export const ExpressiveInput = React.memo(
       isRecording,
       isPreview,
       value.length,
+      hasRecording,
       onStop,
       onConfirm,
-      onTranslate,
+      onConvert,
       onMicPress,
-      canTranslate,
-      targetLang,
+      canConvert,
     ]);
 
-    const isTargetLangValid = targetLang !== "none" && targetLang !== "";
-    const isGlobalDisabled = isTranslating || isProcessing || isInitializing;
+    const isRecordingLoading =
+      hasRecording && !!recordingUri && !!recordingPlayer
+        ? !recordingPlayer.isLoaded || recordingPlayer.isDecoding
+        : false;
 
-    // If there is text, the button is "Translate" and needs a valid targetLang.
-    // If there is no text, the button is "Mic" and does NOT need a targetLang.
-    const isDisabled =
-      value.length > 0
-        ? isGlobalDisabled ||
-          !canTranslate ||
-          !isTargetLangValid ||
-          languagesConflict
-        : isGlobalDisabled || languagesConflict;
+    const isAudioLoading = isPreview ? !isPreviewReady : isRecordingLoading;
 
-    // Animated scale: card lifts up subtly when focused or active
+    const isGlobalDisabled =
+      isProcessing || isInitializing || isConverting || isAudioLoading;
+
+    const hasSource = value.length > 0 || hasRecording;
+    const isDisabled = hasSource
+      ? isGlobalDisabled || (value.length > 0 && !canConvert)
+      : isGlobalDisabled;
+
     const animatedCardStyle = useAnimatedStyle(() => {
       const isActiveOrFocused =
         isRecording || isProcessing || isPreview || isFocused;
@@ -205,7 +217,7 @@ export const ExpressiveInput = React.memo(
             }),
           },
         ],
-        // Animated shadow radius widens when active
+
         shadowRadius: withTiming(
           isRecording || isProcessing || isPreview ? 24 : isFocused ? 20 : 12,
           { duration: 250 },
@@ -225,7 +237,6 @@ export const ExpressiveInput = React.memo(
       };
     });
 
-    // Static per-state accent border color and shadow color (these can't animate in RN)
     let activeBorderColor = color.border;
     let activeShadowColor = color.border;
     if (isRecording) {
@@ -260,16 +271,17 @@ export const ExpressiveInput = React.memo(
         ]}
       >
         <Box
+          pointerEvents={isConverting ? "none" : "auto"}
           style={{
             paddingHorizontal: spacing.md,
             paddingBottom: spacing.sm,
             width: "100%",
+            opacity: isConverting ? opacity.disabled : 1,
           }}
         >
           <LanguageSwitcher
             sourceLang={sourceLang}
             targetLang={targetLang}
-            detectedLanguage={detectedLanguage}
             onSwap={onSwap}
             onSourceChange={onSourceChange}
             onTargetChange={onTargetChange}
@@ -289,35 +301,43 @@ export const ExpressiveInput = React.memo(
               status={dictationStatus}
               amplitude={amplitude}
               elapsedMs={elapsedMs}
+              capturedDurationMs={capturedDurationMs}
               capturedUri={capturedUri}
               meteringData={meteringData}
               isLive={isLive}
               interimText={interimText}
               finalText={finalText}
+              onReadyChange={handlePreviewReady}
+              dormant={isDormant}
             />
           </Box>
-        ) : languagesConflict ? (
+        ) : hasRecording && recordingUri ? (
           <Box
+            pointerEvents={isConverting ? "none" : "auto"}
             style={{
               flex: 1,
-              minHeight: 120,
+              minHeight: Math.max(120, Dimensions.get("window").height * 0.15),
               justifyContent: "center",
-              alignItems: "center",
               paddingHorizontal: spacing.lg,
+              opacity: isConverting ? opacity.disabled : 1,
             }}
           >
-            <Text
-              variant="body"
-              style={{ color: color.muted, textAlign: "center" }}
-            >
-              Source and target languages must be different
-            </Text>
+            <RecordingInline
+              status="preview"
+              amplitude={recordingAmp}
+              elapsedMs={0}
+              capturedUri={recordingUri}
+              meteringData={recordingPeaks ?? []}
+              externalPlayer={recordingPlayer}
+              dormant={isDormant}
+            />
           </Box>
         ) : (
           <MainTextInput
             value={value}
             onChangeText={onChangeText}
             maxChars={maxChars}
+            editable={!isGlobalDisabled}
             onFocus={handleFocus}
             onBlur={handleBlur}
           />
@@ -332,13 +352,16 @@ export const ExpressiveInput = React.memo(
           isRecording={isRecording}
           isProcessing={isProcessing}
           isPreview={isPreview}
-          isTranslating={isTranslating}
           isDisabled={isDisabled}
-          canTranslate={canTranslate}
+          canConvert={canConvert}
+          hasRecording={hasRecording}
+          isConverting={isConverting}
+          isAudioLoading={isAudioLoading}
           isKeyboardVisible={isKeyboardVisible}
           progress={progress}
           handleCancelPress={handleCancelPress}
           handleClear={handleClear}
+          handleDeleteAudio={handleDeleteAudio}
           handleRightButtonPress={handleRightButtonPress}
         />
       </Animated.View>

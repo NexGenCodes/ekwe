@@ -2,7 +2,7 @@ import { Tabs } from "expo-router";
 import React from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { CustomTabBarItem } from "./CustomTabBarItem";
+import { CustomTabBarItem } from "@/components/CustomTabBarItem";
 
 import { Box } from "@/components/ui";
 import { shadows } from "@/constants";
@@ -10,8 +10,6 @@ import { zIndex } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 
-// Derive the tab bar props type from expo-router's Tabs component
-// to avoid depending on @react-navigation/bottom-tabs directly.
 type TabBarProps = Parameters<
   NonNullable<React.ComponentProps<typeof Tabs>["tabBar"]>
 >[0];

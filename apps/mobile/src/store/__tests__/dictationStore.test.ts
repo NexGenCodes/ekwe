@@ -1,7 +1,11 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 import { EkweError, ErrorMessages } from "@/constants/errors";
-import { dictationActions, dictation$, INITIAL_STATE } from "../dictationStore";
+import {
+  dictationActions,
+  dictation$,
+  INITIAL_STATE,
+} from "@/store/dictationStore";
 
 const capture = vi.hoisted(() => ({
   requestPermission: vi.fn(),
@@ -49,9 +53,9 @@ const fileMock = vi.hoisted(() => ({
   deletes: vi.fn(),
 }));
 
-vi.mock("@/services/AudioCapture", () => ({ AudioCapture: capture }));
-vi.mock("@/services/StreamTranscriber", () => ({ StreamTranscriber: stream }));
-vi.mock("@/services/BatchTranscriber", () => ({ batchTranscriber: batch }));
+vi.mock("@/services/audioCapture", () => ({ AudioCapture: capture }));
+vi.mock("@/services/streamTranscriber", () => ({ StreamTranscriber: stream }));
+vi.mock("@/services/batchTranscriber", () => ({ batchTranscriber: batch }));
 vi.mock("@/store", () => ({
   audioActions: audio,
   RecordingState: {
@@ -79,7 +83,7 @@ vi.mock("@/utils/analytics", () => ({
 vi.mock("@/utils", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
-vi.mock("@/utils/networkUtils", () => ({
+vi.mock("@/utils/http", () => ({
   getWorkerUrl: vi.fn(() => "wss://worker/kw"),
 }));
 vi.mock("expo-file-system", () => ({
@@ -141,7 +145,7 @@ describe("startDictation", () => {
     expect(audio.setRecordingState).toHaveBeenCalledWith("recording");
     expect(capture.startRecording).toHaveBeenCalledWith(
       expect.any(String),
-      expect.any(Function), // native stop callback
+      expect.any(Function),
       "file",
     );
     expect(analytics.track).toHaveBeenCalledWith("dictation_started", {
@@ -375,5 +379,39 @@ describe("confirmDictation", () => {
     expect(audio.appendTranscript).toHaveBeenCalledWith("hello world");
     expect(audio.setRecordingState).toHaveBeenCalledWith("done");
     expect(dictation$.status.peek()).toBe("idle");
+  });
+});
+
+describe("commitRecording", () => {
+  it("is ignored without a valid preview", () => {
+    const result = dictationActions.commitRecording();
+
+    expect(result).toBeNull();
+    expect(batch.transcribe).not.toHaveBeenCalled();
+  });
+
+  it("returns the recording and KEEPS the file (no ASR)", () => {
+    dictation$.set({
+      ...INITIAL_STATE,
+      status: "preview",
+      capturedUri: "file:///rec.m4a",
+      capturedDurationMs: 5000,
+      nativeWaveform: [0.1, 0.2, 0.3],
+    });
+
+    const result = dictationActions.commitRecording();
+
+    expect(result).toEqual({
+      uri: "file:///rec.m4a",
+      durationMs: 5000,
+      waveform: [0.1, 0.2, 0.3],
+    });
+    expect(batch.transcribe).not.toHaveBeenCalled();
+    expect(audio.setDuration).toHaveBeenCalledWith(5);
+    expect(audio.setRecordingState).toHaveBeenCalledWith("done");
+    expect(dictation$.status.peek()).toBe("idle");
+    expect(dictation$.capturedUri.peek()).toBeNull();
+
+    expect(fileMock.deletes).not.toHaveBeenCalled();
   });
 });

@@ -26,7 +26,7 @@ const c = cmp(cur, last);
 
 let NEXT;
 if (c > 0) {
-  // Version already set ahead of the last tag (e.g. hand-edited) — respect it.
+  
   NEXT = cur.join('.');
 } else if (c < 0) {
   console.error('app.json version (' + cur.join('.') + ') is lower than the last release (' + last.join('.') + '). Set it higher.');
@@ -67,7 +67,7 @@ updateJson('./package.json', rk => { rk.version = NEXT; });
 updateJson('./apps/web/config.json', w => { if (w.app) w.app.version = NEXT; });
 updateJson('./apps/web/package.json', w => { w.version = NEXT; });
 
-// Update shared version constant (single source of truth)
+
 const versionTsPath = path.resolve('./packages/shared/src/version.ts');
 const versionTs = [
   '/** Single source of truth for the Ekwe app version. */',

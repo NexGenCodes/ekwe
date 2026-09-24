@@ -8,6 +8,13 @@
       "when": 1789647249921,
       "tag": "0000_romantic_trish_tilby",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790255469443,
+      "tag": "0001_optimized_indexes",
+      "breakpoints": true
     }
   ]
 }

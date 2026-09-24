@@ -1,7 +1,8 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { triggerHaptic } from "@/utils/haptics";
 import { Stack } from "expo-router";
 import Crown from "lucide-react-native/icons/crown";
+import ShieldCheck from "lucide-react-native/icons/shield-check";
 import Sparkles from "lucide-react-native/icons/sparkles";
 import React, { useEffect, useMemo, useRef } from "react";
 import Animated, {
@@ -12,23 +13,26 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { GradientMesh } from "@/components/GradientMesh";
+import { IconContainer } from "@/components/IconContainer";
 import { BillingToggle } from "@/components/billing/BillingToggle";
 import { CheckoutSheet } from "@/components/billing/CheckoutSheet";
 import { FreePlanCard } from "@/components/billing/FreePlanCard";
 import { ProPlanCard } from "@/components/billing/ProPlanCard";
 import { Box, Text, Pressable, ScrollArea, Spinner } from "@/components/ui";
+import { shadows } from "@/constants";
 import { useTheme, useTokens } from "@/hooks";
 import { useBilling } from "@/hooks/billing/useBilling";
 import { auth$ } from "@/store";
 import { AnalyticsEvents, track } from "@/utils/analytics";
+import { withAlpha } from "@/utils/color";
 
 export default function BillingScreen(): React.ReactElement {
   const { color, isDark } = useTheme();
   const tokens = useTokens();
   const { spacing, borderRadius, duration } = tokens;
 
-  const sessionLoaded = useSelector(() => auth$.sessionLoaded.get());
-  const email = useSelector(() => auth$.session.get()?.user?.email ?? "");
+  const sessionLoaded = useValue(() => auth$.sessionLoaded.get());
+  const email = useValue(() => auth$.session.get()?.user?.email ?? "");
 
   const {
     isPro,
@@ -48,8 +52,6 @@ export default function BillingScreen(): React.ReactElement {
     handleCheckoutDismiss,
   } = useBilling();
 
-  // Fire exactly once per screen visit (guarded in case isPro flips while the
-  // checkout sheet is open after an upgrade).
   const hasTrackedViewRef = useRef(false);
   useEffect(() => {
     if (hasTrackedViewRef.current) return;
@@ -67,70 +69,72 @@ export default function BillingScreen(): React.ReactElement {
       } as const,
       scrollView: { flex: 1 } as const,
       scrollContent: {
-        paddingHorizontal: spacing.md,
-        paddingBottom: spacing["3xl"],
+        paddingHorizontal: spacing.lg,
+        paddingBottom: spacing["4xl"],
       } as const,
 
-      // Hero
       heroBanner: {
         alignItems: "center",
-        paddingVertical: spacing.xl,
-      } as const,
-      heroIconContainer: {
-        width: 80,
-        height: 80,
-        borderRadius: borderRadius.full,
-        alignItems: "center",
-        justifyContent: "center",
-        marginBottom: spacing.md,
+        paddingTop: spacing.lg,
+        paddingHorizontal: spacing.md,
       } as const,
       heroTitle: {
+        marginTop: spacing.md,
+        marginBottom: spacing.sm,
         textAlign: "center",
-        marginBottom: spacing.md,
+        maxWidth: 320,
       } as const,
       heroSubtitle: {
         textAlign: "center",
-        paddingHorizontal: spacing.md,
+        maxWidth: 320,
       } as const,
 
-      // Toggle
-      toggleWrapper: {
+      toggleRow: {
+        flexDirection: "row",
         alignItems: "center",
-        marginBottom: spacing.xl,
+        gap: spacing.sm,
         position: "relative",
+        marginTop: spacing.xl,
+        marginBottom: spacing["2xl"],
       } as const,
-      savingsBadgeWrapper: {
+      toggleFlex: { flex: 1 } as const,
+      savingsBadgeWrap: {
         position: "absolute",
-        top: -12,
-        right: spacing.lg,
+        top: -10,
+        left: 0,
+        right: 0,
+        alignItems: "center",
+        zIndex: 1,
       } as const,
-      savingsBadge: {
+      savingsChip: {
+        flexDirection: "row",
+        alignItems: "center",
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.xs,
-        borderRadius: borderRadius.sm,
-        transform: [{ rotate: "-6deg" }],
+        borderRadius: borderRadius.full,
       } as const,
 
-      // Plans
       plansContainer: { gap: spacing.xl } as const,
 
-      // Footer
       footer: {
-        paddingVertical: spacing.xl,
+        paddingTop: spacing["2xl"],
         alignItems: "center",
         paddingHorizontal: spacing.xl,
+        gap: spacing.sm,
+      } as const,
+      trustRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: spacing.xs,
       } as const,
       footerText: {
         textAlign: "center",
+        maxWidth: 320,
       } as const,
     }),
     [spacing, borderRadius],
   );
 
-  // The billing UI flips between a "Go Pro" and an "Active Plan" state,
-  // driven by the auth session. Render a stable placeholder until the
-  // session has finished loading so the screen mounts in its final state
-  // instead of flickering through both.
   if (!sessionLoaded) {
     return (
       <Box style={[styles.centered, { backgroundColor: color.background }]}>
@@ -148,77 +152,98 @@ export default function BillingScreen(): React.ReactElement {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.scrollContent}
       >
-        {/* ── Hero Banner ── */}
-        <Box style={styles.heroBanner}>
-          <Animated.View
-            entering={ZoomIn.duration(duration.slow)}
-            style={[
-              styles.heroIconContainer,
-              { backgroundColor: color.background },
-            ]}
-          >
-            {isPro ? (
-              <Crown size={32} color={color.foreground} strokeWidth={2.5} />
-            ) : (
-              <Sparkles size={32} color={color.foreground} strokeWidth={2.5} />
-            )}
+        {}
+        <Box accessible accessibilityRole="header" style={styles.heroBanner}>
+          <Animated.View entering={ZoomIn.duration(duration.slow)}>
+            <IconContainer
+              size={72}
+              variant="custom"
+              backgroundColor={withAlpha(color.brand, 0.1)}
+              style={{ boxShadow: shadows.softLg }}
+            >
+              {isPro ? (
+                <Crown
+                  size={32}
+                  color={color.brand}
+                  strokeWidth={2.5}
+                  fill={color.brand}
+                />
+              ) : (
+                <Sparkles size={32} color={color.brand} strokeWidth={2.5} />
+              )}
+            </IconContainer>
           </Animated.View>
-          <Animated.View entering={FadeIn.duration(duration.slow)}>
+          <Animated.View
+            key={isPro ? "pro" : "free"}
+            entering={FadeIn.duration(duration.slow)}
+          >
             <Text
-              variant="bodySmall"
+              variant="heading1"
+              style={[styles.heroTitle, { color: color.foreground }]}
+            >
+              {isPro ? "You're on Ekwe Pro" : "Unlock Ekwe Pro"}
+            </Text>
+            <Text
+              variant="body"
               style={[styles.heroSubtitle, { color: color.muted }]}
             >
               {isPro
-                ? "You have access to all premium features and an ad-free experience."
-                : "Go Pro for an ad-free, distraction-free translation experience with premium voices and offline packs."}
+                ? "Enjoy every premium feature and an ad-free experience."
+                : "Premium voices, live dictation, higher limits, and zero ads."}
             </Text>
           </Animated.View>
         </Box>
 
-        {/* ── Billing Toggle ── */}
+        {}
         {!isPro && (
           <Animated.View
             entering={FadeIn.duration(duration.normal)}
             exiting={FadeOut.duration(duration.normal)}
           >
-            <Box style={styles.toggleWrapper}>
-              <BillingToggle
-                isAnnual={isAnnual}
-                onToggle={async (annual) => {
-                  await triggerHaptic("selection");
-                  track(AnalyticsEvents.BILLING_TOGGLED, {
-                    cycle: annual ? "annual" : "monthly",
-                  });
-                  setIsAnnual(annual);
-                }}
-                color={color}
-              />
+            <Box style={styles.toggleRow}>
               {isAnnual && (
                 <Animated.View
                   entering={FadeIn.duration(duration.fast)}
                   exiting={FadeOut.duration(duration.fast)}
-                  style={styles.savingsBadgeWrapper}
+                  style={styles.savingsBadgeWrap}
+                  pointerEvents="none"
                 >
                   <Box
                     style={[
-                      styles.savingsBadge,
+                      styles.savingsChip,
                       { backgroundColor: color.success },
                     ]}
                   >
-                    <Text variant="caption" style={{ color: color.onBrand }}>
+                    <Text
+                      variant="caption"
+                      style={{ color: color.onBrand, fontWeight: "800" }}
+                    >
                       Save {annualSavingPercent}%
                     </Text>
                   </Box>
                 </Animated.View>
               )}
+              <Box style={styles.toggleFlex}>
+                <BillingToggle
+                  isAnnual={isAnnual}
+                  onToggle={async (annual) => {
+                    await triggerHaptic("selection");
+                    track(AnalyticsEvents.BILLING_TOGGLED, {
+                      cycle: annual ? "annual" : "monthly",
+                    });
+                    setIsAnnual(annual);
+                  }}
+                  color={color}
+                />
+              </Box>
             </Box>
           </Animated.View>
         )}
 
-        {/* ── Plan Cards ── */}
+        {}
         <Box style={styles.plansContainer}>
           <Animated.View
-            entering={FadeInDown.duration(duration.slow).delay(200)}
+            entering={FadeInDown.duration(duration.slow).delay(150)}
           >
             <ProPlanCard
               isPro={isPro}
@@ -232,7 +257,7 @@ export default function BillingScreen(): React.ReactElement {
             />
           </Animated.View>
           <Animated.View
-            entering={FadeInDown.duration(duration.slow).delay(300)}
+            entering={FadeInDown.duration(duration.slow).delay(250)}
             exiting={FadeOut.duration(duration.normal)}
           >
             <FreePlanCard
@@ -244,19 +269,30 @@ export default function BillingScreen(): React.ReactElement {
           </Animated.View>
         </Box>
 
-        {/* ── Footer ── */}
+        {}
         <Box style={styles.footer}>
+          <Box style={styles.trustRow}>
+            <ShieldCheck size={14} color={color.muted} strokeWidth={2} />
+            <Text
+              variant="caption"
+              style={[styles.footerText, { color: color.muted }]}
+            >
+              Secure payments powered by Flutterwave
+            </Text>
+          </Box>
           <Text
-            variant="caption"
+            variant="bodySmall"
             style={[styles.footerText, { color: color.muted }]}
           >
-            Subscriptions are managed through your device's App Store. You can
-            cancel anytime from your settings.
+            Cancel anytime. No hidden fees.
           </Text>
           {!isPro && (
             <Pressable
-              onPress={handleRestore}
-              style={{ marginTop: spacing.md }}
+              onPress={() => {
+                triggerHaptic();
+                void handleRestore();
+              }}
+              style={{ marginTop: spacing.sm }}
               accessibilityLabel="Check your subscription status"
               accessibilityRole="link"
               accessibilityHint="Checks whether your account has an active Pro subscription"

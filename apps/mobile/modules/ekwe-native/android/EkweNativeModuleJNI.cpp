@@ -83,7 +83,7 @@ static void captureCallback(const ekwe::CaptureEventData& event) {
 
 extern "C" JNIEXPORT jobject JNICALL
 Java_expo_modules_ekwenative_EkweNativeModule_transcodeToOpusWithWaveformJNI(
-    JNIEnv *env, jobject thiz, jstring inputPath, jstring outputPath, jlong maxAudioBytes) {
+    JNIEnv *env, jobject thiz, jstring inputPath, jstring outputPath, jlong maxAudioBytes, jint frameMs) {
 
     const char *input_c_str = env->GetStringUTFChars(inputPath, nullptr);
     const char *output_c_str = env->GetStringUTFChars(outputPath, nullptr);
@@ -100,7 +100,7 @@ Java_expo_modules_ekwenative_EkweNativeModule_transcodeToOpusWithWaveformJNI(
     env->ReleaseStringUTFChars(outputPath, output_c_str);
 
     ekwe::DecodeResult result = ekwe::transcode_audio_to_opus(input, output,
-        static_cast<size_t>(maxAudioBytes));
+        static_cast<size_t>(maxAudioBytes), static_cast<int>(frameMs));
     return buildResultArray(env, result);
 }
 

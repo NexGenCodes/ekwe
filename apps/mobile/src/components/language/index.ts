@@ -1,7 +1,7 @@
-export { LanguageFlag } from "./LanguageFlag";
+export { LanguageFlag } from "@/components/language/LanguageFlag";
 
-export { LanguageSearchBar } from "./LanguageSearchBar";
+export { LanguageSearchBar } from "@/components/language/LanguageSearchBar";
 
-export { LanguageRow } from "./LanguageRow";
+export { LanguageRow } from "@/components/language/LanguageRow";
 
-export { LanguageGridCard } from "./LanguageGridCard";
+export { LanguageGridCard } from "@/components/language/LanguageGridCard";

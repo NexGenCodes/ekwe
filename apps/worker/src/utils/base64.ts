@@ -1,6 +1,5 @@
 const B64_CHUNK = 0x8000;
 
-/** Binary → base64 (chunked to avoid call-stack exhaustion on large payloads). */
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.length; i += B64_CHUNK) {
@@ -9,7 +8,6 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** base64 → binary. Returns a fresh Uint8Array (safe to mutate). */
 export function base64ToBytes(b64: string): Uint8Array {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);

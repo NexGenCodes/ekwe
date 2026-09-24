@@ -3,7 +3,7 @@ import {
   hasSharedTranslation,
   mapSharedRecordToEntry,
   SharedHistoryRecord,
-} from "../sharedHistory";
+} from "@/services/sharedHistory";
 
 function record(
   overrides: Partial<SharedHistoryRecord> = {},

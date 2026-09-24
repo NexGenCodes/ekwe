@@ -1,4 +1,4 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { Tabs, useRouter } from "expo-router";
 import Home from "lucide-react-native/icons/house";
 import History from "lucide-react-native/icons/rotate-ccw-clock";
@@ -14,11 +14,15 @@ export default function TabLayout(): React.ReactElement | null {
   const { color } = useTheme();
   const router = useRouter();
 
-  const onboardingCompleted = useSelector(() =>
+  const onboardingCompleted = useValue(() =>
     settings$.onboardingCompleted.get(),
   );
 
-  const hasUpdate = useSelector(() => update$.manifest.get() != null);
+  const hasUpdate = useValue(() =>
+    update$.manifest.get() != null && update$.channel.get() === "apk-sideload"
+      ? true
+      : false,
+  );
 
   useEffect(() => {
     if (!onboardingCompleted) {

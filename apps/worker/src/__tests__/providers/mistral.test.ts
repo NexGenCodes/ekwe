@@ -1,9 +1,9 @@
 import { describe, test, expect } from "vitest";
-import * as mistral from "../../providers/mistral";
-import { mockEnv, jsonResponse, mockSignal } from "../setup";
+import * as mistral from "@/providers/mistral";
+import { mockEnv, jsonResponse, mockSignal } from "@/__tests__/setup";
 import { http } from "msw";
-import { server } from "../msw/server";
-import { PROVIDER_URLS } from "../msw/handlers";
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 describe("Mistral provider", () => {
   test("returns translation on success", async () => {

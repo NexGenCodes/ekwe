@@ -1,18 +1,5 @@
-import { logger } from "../core/logger";
+import { logger } from "@/core/logger";
 
-/**
- * D1 cache utility — replaces KV for translation/transcription caching.
- *
- * KV free tier: 1K writes/day (per-user cache burns this fast)
- * D1 free tier: 100K writes/day (100x more headroom)
- *
- * Same code works on paid tier with higher limits — zero code changes.
- */
-
-/**
- * Read a cached value from D1.
- * Returns the parsed result string, or null if expired/missing.
- */
 export async function d1Get(
   db: D1Database,
   table: "cache_translation" | "cache_transcription",
@@ -26,7 +13,6 @@ export async function d1Get(
 
     if (!row) return null;
     if (row.expires_at < Date.now() / 1000) {
-      // Expired — delete lazily
       db.prepare(`DELETE FROM ${table} WHERE cache_key = ?`)
         .bind(cacheKey)
         .run()
@@ -40,10 +26,6 @@ export async function d1Get(
   }
 }
 
-/**
- * Write a value to D1 cache.
- * TTL is in seconds. Upserts on conflict.
- */
 export async function d1Put(
   db: D1Database,
   table: "cache_translation" | "cache_transcription",
@@ -71,13 +53,6 @@ export async function d1Put(
   }
 }
 
-/**
- * Cleanup expired cache entries.
- * Call this from the cron job — D1 doesn't auto-expire like KV.
- * A single DELETE statement reclaims every expired row in one operation,
- * so the cleanup can always keep up with the free-tier write rate without
- * counting per-row write ops.
- */
 export async function d1Cleanup(
   db: D1Database,
   table:
@@ -94,8 +69,6 @@ export async function d1Cleanup(
       .run();
     return meta.changes ?? 0;
   } catch (e) {
-    // A missing table (SQLITE_ERROR) means the schema hasn't been applied
-    // yet or the table was dropped — skip silently instead of polluting Sentry.
     const msg = String(e);
     if (msg.includes("SQLITE_ERROR") || msg.includes("no such table")) {
       logger.warn(`[d1-cache] cleanup skipped (table ${table} missing)`);
@@ -105,9 +78,6 @@ export async function d1Cleanup(
     return 0;
   }
 }
-
-// ─── Language detection cache ─────────────────────────────────────
-// Shared across users (same text → same detection), no user_id/tier columns.
 
 export async function d1GetLang(
   db: D1Database,

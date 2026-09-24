@@ -1,68 +1,53 @@
 import {
+  getLanguageName,
   WORKER_ERROR_CODES,
   translateRequestSchema,
   translateResponseSchema,
 } from "@ekwe/shared";
-import { logger } from "../core/logger";
-import { getTranslateProviderNames } from "../core/config";
-import { getLimits } from "../core/limits";
-import * as cloudflare from "../providers/cloudflare";
-import * as cohere from "../providers/cohere";
-import * as gemini from "../providers/gemini";
-import * as groq from "../providers/groq";
-import * as mistral from "../providers/mistral";
-import * as openrouter from "../providers/openrouter";
-import { detectTextLanguage } from "../services/autoDetect";
-import { needsRomanization } from "../utils/prompts";
+import { logger } from "@/core/logger";
+import { TRANSLATE_PER_PROVIDER_MS, TRANSLATE_TOTAL_MS } from "@/core/budgets";
+import { getLimits } from "@/core/limits";
+import { getProviderModule, getProviderNamesFor } from "@/providers";
+import { detectTextLanguage } from "@/services/auto-detect";
+import { needsRomanization } from "@/utils/prompts";
 import {
   guardTextLength,
   guardAutoDetect,
   guardLanguageCode,
   safeParseJSON,
-} from "../core/guards";
-import { sanitizeTranslationText } from "../core/sanitize";
-import { getLanguageName } from "../services/languages";
-import { hashKey } from "../utils/keys";
-import { d1Get, d1Put } from "../services/d1-cache";
-import { runProviderFailover } from "../utils/pipeline";
-import { trackBillableSuccess } from "../services/usage";
-import { CLIENT_ABORTED, Env, Tier, TranslateResult } from "../core/types";
-
-type TranslateFn = (
-  text: string,
-  targetLang: string,
-  sourceLang: string | undefined,
-  env: Env,
-  signal: AbortSignal,
-  transliteration: boolean,
-) => Promise<TranslateResult | null>;
-
-const TRANSLATE_PROVIDER_MODULES: Record<string, TranslateFn> = {
-  gemini: gemini.translate,
-  cohere: cohere.translate,
-  mistral: mistral.translate,
-  groq: groq.translate,
-  openrouter: openrouter.translate,
-  cloudflare: cloudflare.translate,
-};
+  guardContentType,
+  guardJsonSize,
+  MAX_JSON_BODY_BYTES,
+} from "@/core/guards";
+import { sanitizeTranslationText } from "@/core/sanitize";
+import { hashKey } from "@/utils/keys";
+import { d1Get, d1Put } from "@/services/d1-cache";
+import { runProviderFailover } from "@/utils/retry";
+import { isProviderDegraded, reportProviderOutcome } from "@/services/health";
+import { trackBillableSuccess } from "@/services/usage";
+import {
+  CLIENT_ABORTED,
+  Env,
+  Tier,
+  TranslateResult,
+  TranslateFn,
+} from "@/core/types";
 
 function buildTranslatePipeline(
   tier: Tier,
 ): { name: string; fn: TranslateFn }[] {
-  return getTranslateProviderNames(tier)
-    .filter((name) => name in TRANSLATE_PROVIDER_MODULES)
-    .map((name) => ({ name, fn: TRANSLATE_PROVIDER_MODULES[name] }));
+  return getProviderNamesFor("translate", tier)
+    .map((name) => ({
+      name,
+      fn: getProviderModule(name)?.translate ?? (() => Promise.resolve(null)),
+    }))
+    .filter((entry): entry is { name: string; fn: TranslateFn } =>
+      Boolean(entry.fn),
+    );
 }
 
 const PREMIUM_PIPELINE = buildTranslatePipeline("PREMIUM");
 const FREE_PIPELINE = buildTranslatePipeline("FREE");
-
-// Hard ceiling for the whole provider failover loop. The mobile client gives
-// /translate 60s before surfacing a timeout, so this stays well under it.
-const PIPELINE_TOTAL_MS = 20_000;
-// Each provider gets a fair share of the budget. Gemini-3.5-flash-lite responds
-// in ~1s; fallbacks (cohere, groq) are similarly fast.
-const PER_PROVIDER_MS = 10_000;
 
 export async function handleTranslate(
   request: Request,
@@ -72,11 +57,15 @@ export async function handleTranslate(
   userId: string,
   ctx?: ExecutionContext,
 ): Promise<Response> {
+  const ctGuard = guardContentType(request);
+  if (!ctGuard.allowed) return ctGuard.response;
+
+  const sizeGuard = guardJsonSize(request, MAX_JSON_BODY_BYTES);
+  if (!sizeGuard.allowed) return sizeGuard.response;
+
   const parsed = await safeParseJSON<unknown>(request);
   if (!parsed.ok) return parsed.response;
 
-  // Shape gate before tier-aware guards: a malformed body (missing fields,
-  // wrong types) would otherwise slip through and throw deep in the handler.
   const body = translateRequestSchema.safeParse(parsed.data);
   if (!body.success) {
     const firstPath = body.error.issues[0]?.path[0];
@@ -130,16 +119,22 @@ export async function handleTranslate(
 
   const cleanText = sanitizeTranslationText(text);
 
+  if (sourceLang === targetLang) {
+    logger.info(
+      `[translate] Short-circuiting identical languages (${sourceLang})`,
+    );
+    return Response.json({
+      translation: cleanText,
+      provider: "ekwe",
+      language: sourceLang,
+    });
+  }
+
   let cacheKey: string;
   try {
     const textHash = await hashKey(
       `${cleanText}_${sourceLang || "auto"}_${targetLang}`,
     );
-    // Tier is part of the key so a premium result (which may carry auto-detected
-    // `language` / `transliteration` fields the FREE tier isn't entitled to) can
-    // never be served to a downgraded FREE user — and a FREE-cached stripped
-    // result can never be served to a PREMIUM user who should get the richer
-    // response.
     cacheKey = `trans:${userId}:${tier}:${textHash}`;
     if (env.EKWE_D1) {
       const cached = await d1Get(env.EKWE_D1, "cache_translation", cacheKey);
@@ -162,8 +157,6 @@ export async function handleTranslate(
       }
     }
   } catch (err) {
-    // Cache lookup failure is non-fatal — degrade gracefully instead of
-    // blocking all translate requests on a transient D1 outage.
     logger.error(`[translate] D1 cache lookup error (continuing)`, {
       error: String(err),
     });
@@ -174,9 +167,6 @@ export async function handleTranslate(
 
   const isAuto = !sourceLang || sourceLang === "auto";
 
-  // When the source language is "auto", detect it BEFORE calling providers so
-  // we can pass the real language code (e.g. "English") instead of the useless
-  // string "auto-detected language" into the translation prompt.
   let detectedLang: string | null = null;
   if (isAuto) {
     try {
@@ -188,8 +178,6 @@ export async function handleTranslate(
   }
 
   const byName = new Map(pipeline.map((p) => [p.name, p]));
-  // Lookup helper: names come from `pipeline` itself, so a miss is a real
-  // misconfiguration — fail loudly instead of hitting `undefined.fn`.
   const entry = (name: string): { name: string; fn: TranslateFn } => {
     const e = byName.get(name);
     if (!e) throw new Error(`[translate] Unknown provider: ${name}`);
@@ -198,21 +186,23 @@ export async function handleTranslate(
   const result = await runProviderFailover<TranslateResult>({
     providers: pipeline.map((p) => p.name),
     signal,
-    totalMs: PIPELINE_TOTAL_MS,
+    totalMs: TRANSLATE_TOTAL_MS,
     route: "translate",
-    attemptTimeoutMs: () => PER_PROVIDER_MS,
+    attemptTimeoutMs: () => TRANSLATE_PER_PROVIDER_MS,
+    shouldSkip: async (name) => {
+      if (await isProviderDegraded(env, name)) {
+        logger.info(`[translate] Skipping ${name} (circuit open)`);
+        return true;
+      }
+      return false;
+    },
     invoke: (name, attemptSignal) => {
       const targetName = getLanguageName(targetLang);
-      // Use the detected language code when source was "auto", not the
-      // display string "auto-detected language". Pass undefined when
-      // detection failed so the prompt omits the source hint entirely.
       const sourceName = isAuto
         ? detectedLang
           ? getLanguageName(detectedLang)
           : undefined
         : getLanguageName(sourceLang);
-      // Romanization guides are a premium-only feature AND only meaningful
-      // when the target language uses a non-Latin script.
       const wantTransliteration =
         limits.transliterationAllowed && needsRomanization(targetLang);
       return entry(name).fn(
@@ -225,11 +215,11 @@ export async function handleTranslate(
       );
     },
     handleAttempt: async (name, attempt) => {
-      if (!attempt) return false;
+      if (!attempt) {
+        await reportProviderOutcome(env, name, false);
+        return false;
+      }
 
-      // Schema gate: a provider emitting a malformed result (missing/typed
-      // fields) is treated as a failed attempt so the pipeline fails over
-      // instead of shipping garbage to the client.
       const shapeCheck = translateResponseSchema.safeParse(attempt);
       if (!shapeCheck.success) {
         logger.warn(`[translate] ${name} returned a malformed result`, {
@@ -274,13 +264,13 @@ export async function handleTranslate(
         });
       }
 
-      // Billable success: counts against the user's daily translate quota.
-      // The preflight gate is invalidated so the next request sees the fresh
-      // count; KV cache replays never reach this point and stay free.
       trackBillableSuccess(env, userId, "translate", ctx);
+
+      await reportProviderOutcome(env, name, true);
 
       return true;
     },
+    onAttemptError: (name) => reportProviderOutcome(env, name, false),
   });
   if (result) return Response.json(result);
 

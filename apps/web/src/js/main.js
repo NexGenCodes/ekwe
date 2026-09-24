@@ -20,7 +20,6 @@
     return ICONS[name] || "";
   }
 
-  /* ── Waveform ─────────────────────────────────────── */
   function initWaveform() {
     const bars = document.querySelectorAll("#hero-waveform span");
     if (!bars.length) return;
@@ -35,14 +34,12 @@
     });
   }
 
-  /* ── Language ticker (seamless loop) ──────────────── */
   function initTicker() {
     const track = document.getElementById("language-ticker");
     if (!track) return;
     track.innerHTML += track.innerHTML;
   }
 
-  /* ── Scroll reveal ────────────────────────────────── */
   function initReveal() {
     const els = document.querySelectorAll("[data-reveal]");
     if (!els.length) return;
@@ -67,7 +64,6 @@
     els.forEach((el) => observer.observe(el));
   }
 
-  /* ── Count-up stats ───────────────────────────────── */
   function initCounters() {
     const counters = document.querySelectorAll("[data-count]");
     if (!counters.length) return;
@@ -108,7 +104,6 @@
     counters.forEach((el) => observer.observe(el));
   }
 
-  /* ── Mobile nav (close on link tap) ─────────────────── */
   function initMobileNav() {
     const toggle = document.getElementById("nav-toggle");
     if (!toggle) return;
@@ -120,7 +115,6 @@
     });
   }
 
-  /* ── Live label cycle ─────────────────────────────── */
   function initLiveLabel() {
     const label = document.getElementById("live-label");
     if (!label) return;
@@ -151,7 +145,6 @@
   }
 
   function renderDynamicContent(config) {
-    // A single APK is served for every device architecture.
     const downloadUrl = config.links.download;
 
     document.querySelectorAll("[data-download-primary]").forEach((el) => {
@@ -193,7 +186,6 @@
     initMobileNav();
     initLiveLabel();
 
-    // Load Lucide icons
     if (window.lucide) {
       window.lucide.createIcons();
     }

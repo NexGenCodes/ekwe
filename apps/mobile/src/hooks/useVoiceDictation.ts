@@ -1,21 +1,13 @@
-/**
- * useVoiceDictation — React hook facade for the dictation state machine.
- *
- * All business logic (audio capture, streaming, batch transcription, timers)
- * lives in `@/store/dictationStore`. This hook adds only the React-specific
- * wiring: KeepAwake, Haptics, AppState listener, native status listener,
- * metering animation value, and the elapsed-time ticker.
- */
 import * as Haptics from "expo-haptics";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { useCallback, useEffect } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import type { SharedValue } from "react-native-reanimated";
 
 import { useMetering } from "@/hooks/audio/useMetering";
 import { usePermissions } from "@/hooks/usePermissions";
-import { AudioCapture } from "@/services/AudioCapture";
+import { AudioCapture } from "@/services/audioCapture";
 import { logger } from "@/utils";
 import {
   type DictationStatus,
@@ -35,6 +27,7 @@ export interface UseVoiceDictationReturn {
   maxDurationMs: number;
   error: string | null;
   capturedUri: string | null;
+  capturedDurationMs: number;
   meteringData: number[];
   nativeWaveform: number[];
   interimText: string;
@@ -43,27 +36,34 @@ export interface UseVoiceDictationReturn {
   startDictation: (sourceLang: string, isLive?: boolean) => Promise<void>;
   stopDictation: () => Promise<string | null>;
   confirmDictation: (sourceLang: string) => Promise<string | null>;
+  commitRecording: () => {
+    uri: string;
+    durationMs: number;
+    waveform: number[];
+  } | null;
   cancelDictation: () => Promise<void>;
 }
 
 export function useVoiceDictation(): UseVoiceDictationReturn {
   const maxDurationMs = usePermissions().dictationDurationMs;
-  const status = useSelector(() => dictation$.status.get());
-  // Metering only runs while the capture is active or starting up — not idle.
+  const status = useValue(() => dictation$.status.get());
+
   const amplitude = useMetering(
     status === "recording" || status === "initializing",
   );
 
-  const error = useSelector(() => dictation$.error.get());
-  const meteringData = useSelector(() => dictation$.meteringData.get());
-  const nativeWaveform = useSelector(() => dictation$.nativeWaveform.get());
-  const capturedUri = useSelector(() => dictation$.capturedUri.get());
-  const interimText = useSelector(() => dictation$.interimText.get());
-  const finalText = useSelector(() => dictation$.finalText.get());
-  const isLive = useSelector(() => dictation$.isLive.get());
-  const elapsedMs = useSelector(() => dictation$.elapsedMs.get());
+  const error = useValue(() => dictation$.error.get());
+  const meteringData = useValue(() => dictation$.meteringData.get());
+  const nativeWaveform = useValue(() => dictation$.nativeWaveform.get());
+  const capturedUri = useValue(() => dictation$.capturedUri.get());
+  const capturedDurationMs = useValue(() =>
+    dictation$.capturedDurationMs.get(),
+  );
+  const interimText = useValue(() => dictation$.interimText.get());
+  const finalText = useValue(() => dictation$.finalText.get());
+  const isLive = useValue(() => dictation$.isLive.get());
+  const elapsedMs = useValue(() => dictation$.elapsedMs.get());
 
-  // AppState background listener — stop + cleanup
   useEffect(() => {
     const handleAppState = (nextState: AppStateStatus): void => {
       if (nextState === "background" || nextState === "inactive") {
@@ -101,7 +101,6 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
   const startDictation = useCallback(
     async (sourceLang: string, isLiveMode: boolean = false): Promise<void> => {
-      // Provide immediate haptic feedback before the async native initialization
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
       await dictationActions
@@ -115,10 +114,11 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
       if (dictation$.status.peek() === "recording") {
         activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
-        const startTime = Date.now();
+
+        const startTime = performance.now();
         setTimerInterval(
           setInterval(() => {
-            dictation$.elapsedMs.set(Date.now() - startTime);
+            dictation$.elapsedMs.set(performance.now() - startTime);
           }, TIMER_TICK_MS),
         );
       }
@@ -143,6 +143,11 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     await dictationActions.cancelDictation();
   }, []);
 
+  const commitRecording = useCallback(() => {
+    deactivateKeepAwake(KEEP_AWAKE_TAG);
+    return dictationActions.commitRecording();
+  }, []);
+
   return {
     status,
     amplitude,
@@ -150,6 +155,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     maxDurationMs,
     error,
     capturedUri,
+    capturedDurationMs,
     meteringData,
     nativeWaveform,
     interimText,
@@ -158,6 +164,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     startDictation,
     stopDictation,
     confirmDictation,
+    commitRecording,
     cancelDictation,
   };
 }

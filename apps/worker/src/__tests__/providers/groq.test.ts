@@ -1,9 +1,14 @@
 import { describe, test, expect } from "vitest";
-import * as groq from "../../providers/groq";
-import { mockEnv, makeAudioBlob, jsonResponse, mockSignal } from "../setup";
+import * as groq from "@/providers/groq";
+import {
+  mockEnv,
+  makeAudioBlob,
+  jsonResponse,
+  mockSignal,
+} from "@/__tests__/setup";
 import { http } from "msw";
-import { server } from "../msw/server";
-import { PROVIDER_URLS } from "../msw/handlers";
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 describe("Groq provider", () => {
   describe("transcribe", () => {
@@ -15,7 +20,7 @@ describe("Groq provider", () => {
       );
 
       const blob = makeAudioBlob();
-      const result = await groq.transcribe(blob, "en", mockEnv(), mockSignal());
+      const result = await groq.stt(blob, "en", mockEnv(), mockSignal());
       expect(result).not.toBeNull();
       expect(result!.text).toBe("Hello world");
       expect(result!.provider).toBe("groq");
@@ -29,7 +34,7 @@ describe("Groq provider", () => {
           jsonResponse({ error: "unauthorized" }, 401),
         ),
       );
-      const result = await groq.transcribe(
+      const result = await groq.stt(
         makeAudioBlob(),
         "en",
         mockEnv(),
@@ -44,7 +49,7 @@ describe("Groq provider", () => {
           jsonResponse({ text: "Thanks for watching", duration: 1.0 }),
         ),
       );
-      const result = await groq.transcribe(
+      const result = await groq.stt(
         makeAudioBlob(),
         "en",
         mockEnv(),
@@ -57,7 +62,7 @@ describe("Groq provider", () => {
       server.use(
         http.post(PROVIDER_URLS.groqTranscriptions, () => jsonResponse({})),
       );
-      const result = await groq.transcribe(
+      const result = await groq.stt(
         makeAudioBlob(),
         "en",
         mockEnv(),

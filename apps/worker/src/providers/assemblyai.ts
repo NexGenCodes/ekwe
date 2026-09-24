@@ -1,22 +1,23 @@
-import { Env, TranscribeResult } from "../core/types";
-import { rotateKeys } from "../utils/keys";
-import { isHallucination } from "../utils/prompts";
-import { fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
-import { pollForJobResult } from "../utils/jobPoll";
-import {
-  rotateWsKeys,
-  createOpusDecodingInterceptor,
-} from "../utils/websocket";
-import { logger } from "../core/logger";
+import { Env, TranscribeResult } from "@/core/types";
+import { rotateKeys } from "@/utils/keys";
+import { isHallucination } from "@/utils/hallucination";
+import { fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
+import { pollUntilReady } from "@/utils/poll";
+import { rotateWsKeys, createOpusDecodingInterceptor } from "@/utils/stream";
+import { logger } from "@/core/logger";
 
 const ASSEMBLYAI_UPLOAD = "https://api.assemblyai.com/v2/upload";
 const ASSEMBLYAI_TRANSCRIPT = "https://api.assemblyai.com/v2/transcript";
 
-/**
- * AssemblyAI — async upload → poll pattern.
- * Multi-key rotation. High maintenance (one-time $50 credit).
- */
-export async function transcribe(
+interface AssemblyResult {
+  status?: string;
+  text?: string;
+  error?: string;
+  audio_duration?: number;
+  language_code?: string;
+}
+
+export async function stt(
   blob: Blob,
   lang: string,
   env: Env,
@@ -26,7 +27,6 @@ export async function transcribe(
     env,
     "ASSEMBLYAI_KEY_",
     async (key) => {
-      // Step 1: Upload audio
       const uploadRes = await fetchWithTimeout(
         ASSEMBLYAI_UPLOAD,
         {
@@ -62,7 +62,6 @@ export async function transcribe(
       }
       const { upload_url } = await uploadRes.json<{ upload_url: string }>();
 
-      // Step 2: Create transcript
       const isAuto = !lang || lang === "auto";
       const createBody: Record<string, unknown> = {
         audio_url: upload_url,
@@ -109,8 +108,7 @@ export async function transcribe(
       }
       const { id } = await createRes.json<{ id: string }>();
 
-      // Step 3: Poll for result
-      const polled = await pollForJobResult<AssemblyResult>({
+      const polled = await pollUntilReady<AssemblyResult>({
         url: `${ASSEMBLYAI_TRANSCRIPT}/${id}`,
         headers: { Authorization: key },
         signal,
@@ -166,21 +164,7 @@ export async function transcribe(
   return null;
 }
 
-interface AssemblyResult {
-  status?: string;
-  text?: string;
-  error?: string;
-  audio_duration?: number;
-  language_code?: string;
-}
-
-export { ALL_LANGUAGES as supportedLanguages } from "../services/languages";
-
-/**
- * Handles a real-time streaming session via AssemblyAI WebSocket.
- * Returns true if the session was handled, false if the provider could not connect.
- */
-export async function handleStream(
+export async function sttStream(
   env: Env,
   lang: string,
   clientWs: WebSocket,
@@ -233,3 +217,5 @@ export async function handleStream(
 
   return true;
 }
+
+export { ALL_LANGUAGES as supportedLanguages } from "@/core/languages";

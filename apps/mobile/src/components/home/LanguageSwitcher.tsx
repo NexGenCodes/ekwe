@@ -4,13 +4,15 @@ import Animated, {
   LinearTransition,
 } from "react-native-reanimated";
 
-import { LanguageDropdown } from "./LanguageDropdown";
-import { LanguagePill } from "./LanguagePill";
-import { SwapButton } from "./SwapButton";
+import { LanguageDropdown } from "@/components/home/LanguageDropdown";
+import { LanguagePill } from "@/components/home/LanguagePill";
+import { SwapButton } from "@/components/home/SwapButton";
 
-import { borderRadius, zIndex } from "@/constants/sizes";
+import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme, useLanguageSwitcher, usePermissions } from "@/hooks";
+import { useLockedFeature } from "@/hooks/useLockedFeature";
+import { triggerHaptic } from "@/utils/haptics";
 
 interface LanguageSwitcherProps {
   sourceLang: string;
@@ -42,8 +44,6 @@ export function LanguageSwitcher({
     openDropdown,
     closeDropdown,
   } = useLanguageSwitcher({
-    sourceLang,
-    targetLang,
     onSourceChange,
     onTargetChange,
   });
@@ -61,19 +61,32 @@ export function LanguageSwitcher({
     return gates;
   }, [permissions?.autoLanguageDetect]);
 
+  const handleLockedPress = useLockedFeature({
+    navigateToBilling: true,
+    message: "Auto-detect language is a Pro feature",
+  });
+
+  const handlePressGated = React.useCallback(
+    (_code: string): void => {
+      closeDropdown();
+      handleLockedPress();
+    },
+    [closeDropdown, handleLockedPress],
+  );
+
   const sourceOptions = React.useMemo(
     () => ["auto", ...myLanguages],
     [myLanguages],
   );
 
-  const sourcePillOnPress = React.useCallback(
-    () => openDropdown("source"),
-    [openDropdown],
-  );
-  const targetPillOnPress = React.useCallback(
-    () => openDropdown("target"),
-    [openDropdown],
-  );
+  const sourcePillOnPress = React.useCallback(() => {
+    void triggerHaptic();
+    openDropdown("source");
+  }, [openDropdown]);
+  const targetPillOnPress = React.useCallback(() => {
+    void triggerHaptic();
+    openDropdown("target");
+  }, [openDropdown]);
 
   const items = React.useMemo(
     () => [
@@ -121,7 +134,6 @@ export function LanguageSwitcher({
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
-        zIndex: zIndex.dropdown,
         borderRadius: borderRadius["2xl"],
         borderWidth: 1,
         paddingHorizontal: spacing.sm,
@@ -135,10 +147,10 @@ export function LanguageSwitcher({
         onClose={closeDropdown}
         options={activeDropdown === "source" ? sourceOptions : myLanguages}
         currentLang={activeDropdown === "source" ? sourceLang : targetLang}
-        oppositeLang={activeDropdown === "source" ? targetLang : sourceLang}
         onSelect={handleSelect}
         animatedStyle={animatedDropdownStyle}
         gatedOptions={gatedOptions}
+        onPressGated={handlePressGated}
       />
 
       {items}

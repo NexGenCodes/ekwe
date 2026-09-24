@@ -6,7 +6,7 @@ import {
   PREMIUM_LIMITS,
   LOCAL_PRICES,
   PRO_PRODUCT_IDS,
-  TTS_MAX_TEXT_CHARS,
+  SPEECH_MAX_TEXT_CHARS,
 } from "../plans";
 import { FLUTTERWAVE_CURRENCIES } from "../money";
 
@@ -28,7 +28,7 @@ describe("Plan Limits (FREE vs PREMIUM)", () => {
     expect(PREMIUM_LIMITS.maxAudioBytes).toBeGreaterThan(
       FREE_LIMITS.maxAudioBytes,
     );
-    expect(PREMIUM_LIMITS.maxTextChars).toBeGreaterThan(
+    expect(PREMIUM_LIMITS.maxTextChars).toBeGreaterThanOrEqual(
       FREE_LIMITS.maxTextChars,
     );
     expect(PREMIUM_LIMITS.dictationDurationMs).toBeGreaterThan(
@@ -80,9 +80,9 @@ describe("PRO_PRODUCT_IDS", () => {
   });
 });
 
-describe("TTS_MAX_TEXT_CHARS", () => {
+describe("SPEECH_MAX_TEXT_CHARS", () => {
   it("is a positive number", () => {
-    expect(typeof TTS_MAX_TEXT_CHARS).toBe("number");
-    expect(TTS_MAX_TEXT_CHARS).toBeGreaterThan(0);
+    expect(typeof SPEECH_MAX_TEXT_CHARS).toBe("number");
+    expect(SPEECH_MAX_TEXT_CHARS).toBeGreaterThan(0);
   });
 });

@@ -1,7 +1,6 @@
 export interface FakeWebSocketOptions {
-  /** URLs containing these substrings will emit "error" on construction. */
   failUrls?: string[];
-  /** URLs containing these substrings will never open (used for timeout tests). */
+
   neverOpenUrls?: string[];
 }
 
@@ -24,7 +23,6 @@ export class FakeWebSocket {
     if (fail.some((s) => url.includes(s))) {
       queueMicrotask(() => this.emit("error", {}));
     } else if (never.some((s) => url.includes(s))) {
-      // never opens
     } else {
       queueMicrotask(() => {
         this.readyState = FakeWebSocket.OPEN;

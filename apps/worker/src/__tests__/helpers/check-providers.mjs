@@ -7,9 +7,7 @@ const PASS = '\x1b[32mPASS\x1b[0m';
 const FAIL = '\x1b[31mFAIL\x1b[0m';
 const SKIP = '\x1b[33mSKIP\x1b[0m';
 
-// ─── Env loading ────────────────────────────────────────────────
-// Default to the worker root's .dev.vars (this file lives in tests/helpers/).
-const DEFAULT_DEV_VARS = resolve(__dirname, '../../.dev.vars');
+const DEFAULT_DEV_VARS = resolve(__dirname, '../../../.dev.vars');
 
 export function loadEnv(path = DEFAULT_DEV_VARS) {
   const envPath = path;
@@ -90,10 +88,10 @@ export async function testTranslateProviders(env, { groq = false } = {}) {
       { headers: { Authorization: `Bearer ${key}` } },
     ));
   }
-  if (env.OPENROUTER_KEY) {
+  for (const key of getMultiKeys(env, 'OPENROUTER_KEY_')) {
     checks.push(checkWithResult(
       'OpenRouter', 'https://openrouter.ai/api/v1/auth/key',
-      { headers: { Authorization: `Bearer ${env.OPENROUTER_KEY}` } },
+      { headers: { Authorization: `Bearer ${key}` } },
     ));
   }
 
@@ -152,7 +150,6 @@ export async function testTranscribeProviders(env) {
   return Promise.all(checks);
 }
 
-// ─── CLI entry point ───────────────────────────────────────────
 
 async function main() {
   const env = loadEnv();

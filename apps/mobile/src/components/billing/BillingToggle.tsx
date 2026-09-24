@@ -7,7 +7,7 @@ import Animated, {
 
 import { Box, Pressable, Text } from "@/components/ui";
 import { duration, shadows } from "@/constants";
-import { borderRadius } from "@/constants/sizes";
+import { borderRadius, touchTarget } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import type { ThemeTokens } from "@/hooks/ui/useTheme";
 
@@ -69,7 +69,7 @@ export function BillingToggle({
         accessibilityLabel="Monthly billing"
       >
         <Text
-          variant="body"
+          variant={!isAnnual ? "label" : "body"}
           style={{ color: !isAnnual ? color.onBrand : color.foreground }}
         >
           Monthly
@@ -84,7 +84,7 @@ export function BillingToggle({
         accessibilityLabel="Annual billing"
       >
         <Text
-          variant="body"
+          variant={isAnnual ? "label" : "body"}
           style={{ color: isAnnual ? color.onBrand : color.foreground }}
         >
           Annual
@@ -112,7 +112,7 @@ const styles = {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: spacing.md,
+    minHeight: touchTarget.comfortable,
     zIndex: 1,
   } as const,
 };

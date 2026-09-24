@@ -25,7 +25,6 @@ describe("sanitizeTranslationText", () => {
   });
 
   it("strips bidi control characters", () => {
-    // Left-to-Right Override (U+202D) + text + Pop Directional Formatting (U+202C)
     const injected = "\u202Dhidden\u202C";
     expect(sanitizeTranslationText(injected)).toBe("hidden");
   });

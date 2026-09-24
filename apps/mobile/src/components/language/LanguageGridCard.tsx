@@ -3,7 +3,7 @@ import Globe from "lucide-react-native/icons/globe";
 import type { JSX } from "react";
 import type { DimensionValue } from "react-native";
 
-import { LanguageFlag } from "./LanguageFlag";
+import { LanguageFlag } from "@/components/language/LanguageFlag";
 
 import { Box, Pressable, Text } from "@/components/ui";
 import { useTokens } from "@/hooks/ui";

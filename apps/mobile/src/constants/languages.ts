@@ -1,6 +1,6 @@
 import { LANGUAGES as BASE_LANGUAGES } from "@ekwe/shared/languages";
 import type { Language as BaseLanguage } from "@ekwe/shared/languages";
-import { languageName as sharedLanguageName } from "@ekwe/shared/languages";
+import { LANGUAGE_BY_CODE } from "@ekwe/shared/languages";
 
 export { getLanguageFlag } from "@ekwe/shared/languages";
 
@@ -83,12 +83,14 @@ export const LANGUAGES: Language[] = BASE_LANGUAGES.map((l) => ({
 
 export const getLanguageName = (code: string): string => {
   if (code === "auto") return "Auto";
-  return sharedLanguageName(code);
+  return LANGUAGE_BY_CODE.get(code)?.englishName ?? code;
 };
+
+export const isKnownLanguage = (code: string): boolean =>
+  LANGUAGE_BY_CODE.has(code);
 
 export const getLanguageAbbreviation = (code: string): string => {
   if (code === "auto") return "AUTO";
-  const lang = LANGUAGES.find((l) => l.code === code);
-  if (!lang) return code.toUpperCase();
-  return lang.englishName.substring(0, 3).toUpperCase();
+  const lang = LANGUAGE_BY_CODE.get(code);
+  return (lang?.code ?? code)?.toUpperCase() ?? "";
 };

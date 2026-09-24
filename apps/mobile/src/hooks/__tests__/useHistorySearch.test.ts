@@ -10,7 +10,7 @@ import {
 } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 
-import { useHistorySearch } from "../useHistorySearch";
+import { useHistorySearch } from "@/hooks/useHistorySearch";
 
 import type { HistoryEntry } from "@/store";
 
@@ -110,7 +110,6 @@ describe("useHistorySearch", () => {
 
     await act(() => result.current.setQuery("hola"));
 
-    // Before the debounce elapses: still searching via empty debounced query
     expect(result.current.debouncedQuery).toBe("");
     expect(mockSearchHistory).not.toHaveBeenCalled();
 

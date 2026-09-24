@@ -1,8 +1,8 @@
 import Check from "lucide-react-native/icons/check";
 import Lock from "lucide-react-native/icons/lock";
-import type { JSX } from "react";
+import React, { type JSX } from "react";
 
-import { LanguageFlag } from "./LanguageFlag";
+import { LanguageFlag } from "@/components/language/LanguageFlag";
 
 import { Box, Pressable, Text } from "@/components/ui";
 import { getLanguageName } from "@/constants/languages";
@@ -16,7 +16,7 @@ export interface LanguageRowProps {
   onPress: () => void;
 }
 
-export function LanguageRow({
+function LanguageRowComponent({
   code,
   isSelected,
   showLock = false,
@@ -30,6 +30,7 @@ export function LanguageRow({
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      accessibilityState={{ disabled, selected: isSelected }}
       style={{
         height: 52,
         flexDirection: "row",
@@ -48,7 +49,6 @@ export function LanguageRow({
           style={{ color: disabled ? color.muted : color.foreground }}
         >
           {langName}
-          {disabled ? "  ✕" : ""}
         </Text>
       </Box>
 
@@ -97,3 +97,6 @@ export function LanguageRow({
     </Pressable>
   );
 }
+
+export const LanguageRow = React.memo(LanguageRowComponent);
+LanguageRow.displayName = "LanguageRow";

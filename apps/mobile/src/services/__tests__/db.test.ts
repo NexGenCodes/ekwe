@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Db } from "../db";
+import { Db } from "@/services/db";
 import { openDatabaseSync } from "expo-sqlite";
 
 describe("Db service", () => {

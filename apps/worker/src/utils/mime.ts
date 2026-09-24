@@ -21,23 +21,17 @@ export function mimeToExt(mime: string): string {
   return EXT_MAP[base] ?? "wav";
 }
 
-/**
- * Sniffs the actual audio container from magic bytes, falling back to the
- * declared Content-Type. Prevents MP3/M4A/FLAC uploads (often sent as
- * application/octet-stream) from being mislabeled as audio/wav, which would
- * make providers reject them.
- */
 export function sniffAudioMime(bytes: Uint8Array, declared: string): string {
   const base = declared.split(";")[0].trim().toLowerCase();
 
   if (bytes.length >= 4) {
     const b = bytes;
     if (b[0] === 0x4f && b[1] === 0x67 && b[2] === 0x67 && b[3] === 0x53)
-      return "audio/ogg"; // "OggS"
+      return "audio/ogg";
     if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46)
-      return "audio/wav"; // "RIFF"
+      return "audio/wav";
     if (b[0] === 0x66 && b[1] === 0x4c && b[2] === 0x61 && b[3] === 0x43)
-      return "audio/flac"; // "fLaC"
+      return "audio/flac";
   }
 
   if (
@@ -46,7 +40,7 @@ export function sniffAudioMime(bytes: Uint8Array, declared: string): string {
     bytes[1] === 0x44 &&
     bytes[2] === 0x33
   ) {
-    return "audio/mpeg"; // "ID3" tag
+    return "audio/mpeg";
   }
 
   if (
@@ -56,11 +50,9 @@ export function sniffAudioMime(bytes: Uint8Array, declared: string): string {
     bytes[6] === 0x79 &&
     bytes[7] === 0x70
   ) {
-    return "audio/mp4"; // MP4/M4A "ftyp" box
+    return "audio/mp4";
   }
 
-  // MP3 frame sync (11-bit all-ones marker) — checked last to avoid
-  // false positives on formats whose headers we recognize above.
   if (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) {
     return "audio/mpeg";
   }

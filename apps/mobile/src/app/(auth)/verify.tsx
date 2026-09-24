@@ -45,8 +45,6 @@ export default function VerifyScreen(): React.JSX.Element {
   const [resent, setResent] = useState(false);
   const [clipboardCode, setClipboardCode] = useState("");
 
-  // Surface a "Paste code" affordance on Android (iOS auto-fills the field via
-  // oneTimeCode). Never auto-paste — copying is a privacy-sensitive action.
   useEffect(() => {
     let active = true;
     Clipboard.getStringAsync()
@@ -54,9 +52,7 @@ export default function VerifyScreen(): React.JSX.Element {
         const trimmed = (text ?? "").trim();
         if (active && /^\d{6}$/.test(trimmed)) setClipboardCode(trimmed);
       })
-      .catch(() => {
-        /* clipboard unavailable */
-      });
+      .catch(() => {});
     return (): void => {
       active = false;
     };
@@ -67,7 +63,6 @@ export default function VerifyScreen(): React.JSX.Element {
     defaultValues: { token: "" },
   });
 
-  // Auto-dismiss the "new code sent" confirmation.
   useEffect(() => {
     if (!resent) return;
     const timer = setTimeout(() => setResent(false), 4000);
@@ -85,8 +80,6 @@ export default function VerifyScreen(): React.JSX.Element {
       return;
     }
 
-    // Link flow: the user proved ownership of the email, so attach the social
-    // identity that hit the "already registered" wall.
     if (isLinkMode) {
       const linkResult = await linkSocialIdentity();
       if (!linkResult.ok) {

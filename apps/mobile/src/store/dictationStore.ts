@@ -1,40 +1,25 @@
-/**
- * Dictation State Store — Pure state machine + actions for voice dictation.
- *
- * Contains the Legend-State observable, timer management, and all the
- * async action logic (start/stop/cancel/confirm). The React hook in
- * `useVoiceDictation.ts` composes this store with UI-only concerns
- * (KeepAwake, Haptics, AppState, metering).
- */
 import * as Crypto from "expo-crypto";
 import { File } from "expo-file-system";
 import { observable } from "@legendapp/state";
 
 import { EkweError, ErrorMessages } from "@/constants/errors";
-import { AudioCapture } from "@/services/AudioCapture";
-import { StreamTranscriber } from "@/services/StreamTranscriber";
-import { batchTranscriber } from "@/services/BatchTranscriber";
+import { AudioCapture } from "@/services/audioCapture";
+import { StreamTranscriber } from "@/services/streamTranscriber";
+import { batchTranscriber } from "@/services/batchTranscriber";
 import { audioActions, RecordingState } from "@/store";
 import { getToken } from "@/store/auth";
 import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 import { logger } from "@/utils";
-import { getWorkerUrl } from "@/utils/networkUtils";
+import { getWorkerUrl } from "@/utils/http";
 
-// ─── Constants ───────────────────────────────────────────────────
-export const TIMER_TICK_MS = 100;
+export const TIMER_TICK_MS = 250;
 export const KEEP_AWAKE_TAG = "ekwe-dictation-recording";
 
-// If native capture hasn't reported back within this window (audio session
-// stall, module not ready, etc.), bail the init instead of leaving the UI
-// stuck on the "initializing" state indefinitely.
 const START_TIMEOUT_MS = 10_000;
 
-// Sub-quarter-second clips are mis-taps or VAD glitches; transcribing silence
-// wastes a request and lands a confusing result, so reject them up front.
 const MIN_RECORD_MS = 250;
 
-// ─── Types ───────────────────────────────────────────────────────
 export type DictationStatus =
   "idle" | "initializing" | "recording" | "preview" | "processing" | "error";
 
@@ -64,23 +49,16 @@ export const INITIAL_STATE: MachineState = {
   isLive: false,
 };
 
-// ─── Observable ──────────────────────────────────────────────────
 export const dictation$ = observable<MachineState>({ ...INITIAL_STATE });
 
-// ─── Module-level mutable refs ───────────────────────────────────
 let abortController: AbortController | null = null;
 export let timerInterval: NodeJS.Timeout | null = null;
 let maxDurationTimer: NodeJS.Timeout | null = null;
 let startTimeout: NodeJS.Timeout | null = null;
 let streamUnsub: (() => void) | null = null;
 
-// Guards against re-entrant `stopDictation` calls (double-tap the stop button,
-// a max-duration auto-stop racing a manual stop, or a VAD auto-stop racing the
-// native "stopped" status event). Without it the second call can pass the
-// "recording" status check and hit `AudioCapture.stopRecording()` twice.
 let stopInFlight = false;
 
-// ─── Timer helpers ───────────────────────────────────────────────
 export function clearTimers(): void {
   if (timerInterval) {
     clearInterval(timerInterval);
@@ -100,7 +78,6 @@ export function setTimerInterval(id: NodeJS.Timeout): void {
   timerInterval = id;
 }
 
-// ─── Actions ─────────────────────────────────────────────────────
 export const dictationActions = {
   reset(): void {
     dictation$.set({ ...INITIAL_STATE });
@@ -146,9 +123,6 @@ export const dictationActions = {
         status: "initializing",
       });
 
-      // Watchdog: native capture must reach the "recording" state within the
-      // budget, otherwise this session is soft-broken (permission dialog hung,
-      // native module busy) and we'd sit on the "initializing" card forever.
       startTimeout = setTimeout(async () => {
         if (dictation$.status.peek() !== "initializing") return;
         logger.error(
@@ -173,9 +147,6 @@ export const dictationActions = {
         return;
       }
 
-      // The start watchdog may have already failed this session out (native
-      // init stalled while the permission dialog was up). Don't resurrect a
-      // flagged-error state by continuing the capture.
       if (dictation$.status.peek() !== "initializing") {
         dictation$.status.set("error");
         dictation$.error.set(ErrorMessages[EkweError.AUDIO_RECORD_FAIL]);
@@ -187,7 +158,6 @@ export const dictationActions = {
       audioActions.setSourceLang(sourceLang);
       audioActions.setRecordingState(RecordingState.Recording);
 
-      // Start native capture (mode depends on isLive)
       const startRecTime = Date.now();
       const startResult = await AudioCapture.startRecording(
         sessionId,
@@ -218,9 +188,6 @@ export const dictationActions = {
         return;
       }
 
-      // If the watchdog already failed this session while the native init was
-      // running, don't let the (now stale) success overrun resurrect it — and
-      // tear the just-started capture down before it leaks a session.
       if (dictation$.status.peek() !== "initializing") {
         if (AudioCapture.isRecording()) {
           await AudioCapture.cancelRecording().catch(() => {});
@@ -228,7 +195,6 @@ export const dictationActions = {
         return;
       }
 
-      // Connect streaming WebSocket for live mode
       if (isLive) {
         const token = getToken();
         const serverUrl = getWorkerUrl();
@@ -270,9 +236,6 @@ export const dictationActions = {
         };
       }
 
-      // If the watchdog already failed this session while the native init was
-      // running, don't let the (now stale) success overrun resurrect it — the
-      // live stream subscription above must be torn down too.
       if (dictation$.status.peek() !== "initializing") {
         if (streamUnsub) {
           streamUnsub();
@@ -329,17 +292,9 @@ export const dictationActions = {
     if (currentStatus !== "recording") {
       return null;
     }
-    // Re-entrancy guard: VAD auto-stop, max-duration auto-stop, a manual stop
-    // tap, and the native "stopped" status event can all arrive in the same
-    // frame. Only the first caller proceeds; the rest observe the transitioned
-    // state and bail out.
     if (stopInFlight) return null;
     stopInFlight = true;
 
-    // The UI already shows a recording session but the native capture is gone
-    // (audio-session interruption, engine error). Don't leave a stuck card:
-    // back to a clean idle instead of silently no-oping — the "processing"
-    // spinner would otherwise persist with no way forward.
     if (!AudioCapture.isRecording()) {
       stopInFlight = false;
       logger.warn(
@@ -350,14 +305,12 @@ export const dictationActions = {
       return null;
     }
 
-    // Set intermediate state immediately to prevent re-entrant calls
     dictation$.status.set("processing");
 
     try {
       clearTimers();
       logger.info("[VoiceDictation] Stopping recording");
 
-      // Disconnect streaming first
       if (streamUnsub) {
         streamUnsub();
         streamUnsub = null;
@@ -387,9 +340,6 @@ export const dictationActions = {
 
       const { uri, durationMs, meteringData, waveform } = captureResult.value;
 
-      // A sub-250ms clip is not a real utterance (mis-tap, permission-dialog
-      // straggler, VAD blip). Surface an empty-audio error instead of sending a
-      // single decode frame to the transcription provider.
       if (
         durationMs > 0 &&
         durationMs < MIN_RECORD_MS &&
@@ -417,7 +367,6 @@ export const dictationActions = {
         return null;
       }
 
-      // Use real native waveform (60 bins from C++ get_waveform) when available
       const realWaveform = waveform ?? [];
 
       dictation$.set({
@@ -431,9 +380,6 @@ export const dictationActions = {
 
       audioActions.setDuration(durationMs / 1000);
       audioActions.setRecordingState(RecordingState.Processing);
-
-      // For live mode, stay in preview — transcript is already in interimText/finalText
-      // No auto-submit; user taps send to commit
 
       return uri;
     } finally {
@@ -481,7 +427,6 @@ export const dictationActions = {
       return null;
     }
 
-    // For live mode, use accumulated transcript directly — no batch transcription needed
     const isLive = dictation$.isLive.peek();
     if (isLive) {
       const transcript = dictation$.finalText.peek().trim();
@@ -492,7 +437,6 @@ export const dictationActions = {
         dictation$.set({ ...INITIAL_STATE });
         return transcript;
       }
-      // Fall through to batch transcription if no accumulated text
     }
 
     dictation$.status.set("processing");
@@ -573,7 +517,29 @@ export const dictationActions = {
     }
   },
 
-  /** Tear down all resources — called from the hook's cleanup effect. */
+  commitRecording(): {
+    uri: string;
+    durationMs: number;
+    waveform: number[];
+  } | null {
+    const uri = dictation$.capturedUri.peek();
+    if (!uri || dictation$.status.peek() !== "preview") {
+      logger.warn(
+        "[VoiceDictation] commitRecording called without valid preview",
+      );
+      return null;
+    }
+
+    const durationMs = dictation$.capturedDurationMs.peek();
+    const waveform = dictation$.nativeWaveform.peek();
+
+    audioActions.setDuration(durationMs / 1000);
+    audioActions.setRecordingState(RecordingState.Done);
+
+    dictation$.set({ ...INITIAL_STATE });
+    return { uri, durationMs, waveform };
+  },
+
   teardown(): void {
     clearTimers();
     abortController?.abort();
@@ -586,10 +552,6 @@ export const dictationActions = {
     if (AudioCapture.isRecording()) {
       AudioCapture.cancelRecording().catch(() => {});
     }
-    // Fully reset the machine, mirroring `cancelDictation`. Without this an
-    // unmount mid-start (e.g. navigating away while "initializing") leaves the
-    // store stuck at a non-idle status and `stopInFlight` latched, so the next
-    // mount's `startDictation` bails early and the session can never recover.
     stopInFlight = false;
     dictation$.set({ ...INITIAL_STATE });
     audioActions.resetAudioState();

@@ -1,38 +1,9 @@
 "use strict";
-/**
- * Shared native-env codegen for the iOS Echo share Extension.
- *
- * The share Extension ships a Swift-only binary (no JS runtime), so it can't
- * read Expo's `EXPO_PUBLIC_*` env vars at runtime. This module renders
- * `EchoEnvironment.swift` from a flat set of public env vars plus the canonical
- * `MAX_AUDIO_BYTES` constant — the single source of truth for the Swift file.
- *
- * Two callers share it:
- *   - scripts/tokens/gen-env.mjs   (manual `pnpm gen:env`, local dev)
- *   - modules/ekwe-native/app.plugin.js  (every `expo prebuild`, incl. EAS/CI,
- *     via withDangerousMod — reads Expo's injected process.env)
- *
- * Only `EXPO_PUBLIC_*` keys are emitted — that prefix is Expo's contract that a
- * value is safe to embed in the shipped binary. Everything else in `.env`
- * (auth tokens, org slugs) is intentionally dropped.
- *
- * Type inference (deterministic from the value):
- *   - `http(s)://…`            → `URL`
- *   - integer                  → `Int`
- *   - float                    → `Double`
- *   - `true` / `false`         → `Bool`
- *   - empty                    → `String` ("" — safe, no crash)
- *   - anything else            → `String`
- *
- * Name mapping: `EXPO_PUBLIC_WORKER_URL` → `workerURL` (plain camelCase,
- * keeping the `URL` acronym upper so accessors match `URL(string:)` and the
- * names the extension already references: `workerURL`, `supabaseURL`,
- * `supabaseAnonKey`).
- */
+
 
 const APP_GROUP_ID = "group.com.ekwe.app";
 
-/** `EXPO_PUBLIC_WORKER_URL` → `workerURL`. */
+
 function swiftName(key) {
   const segments = key.replace(/^EXPO_PUBLIC_/, "").split("_");
   return segments
@@ -49,7 +20,7 @@ function escapeSwiftString(value) {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-/** Infer a typed Swift declaration from a raw env value. */
+
 function typedDecl(name, value) {
   if (/^https?:\/\/\S+$/i.test(value)) {
     return `    static let ${name}: URL = URL(string: "${escapeSwiftString(value)}")!`;
@@ -66,13 +37,6 @@ function typedDecl(name, value) {
   return `    static let ${name}: String = "${escapeSwiftString(value)}"`;
 }
 
-/**
- * Renders the Swift source for EchoEnvironment.swift.
- * @param {Object<string,string>} envVars flat env mapping (already filtered to
- *   public keys if desired — caller decides)
- * @param {number} maxAudioBytes product-aware upload cap (see plans.ts)
- * @returns {string} Swift file contents
- */
 function generateEchoEnvironment(envVars, maxAudioBytes) {
   const publicKeys = Object.keys(envVars)
     .filter((k) => k.startsWith("EXPO_PUBLIC_"))

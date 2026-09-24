@@ -7,7 +7,7 @@ import {
   afterEach,
   type Mock,
 } from "vitest";
-import { pushOnce, resetNavigationGuard } from "../navigation";
+import { pushOnce, resetNavigationGuard } from "@/utils/navigation";
 
 describe("pushOnce", () => {
   const makeRouter = (): { push: Mock } => ({ push: vi.fn() });

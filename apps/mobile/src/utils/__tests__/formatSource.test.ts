@@ -1,4 +1,4 @@
-import { formatSourceApp } from "../formatSource";
+import { formatSourceApp } from "@/utils/formatSource";
 
 describe("formatSourceApp", () => {
   it("returns 'Audio' for null/undefined/empty/unknown sentinels", () => {

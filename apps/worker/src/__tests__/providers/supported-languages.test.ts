@@ -1,13 +1,17 @@
 import { describe, test, expect } from "vitest";
-import * as assemblyai from "../../providers/assemblyai";
+import * as assemblyai from "@/providers/assemblyai";
 
-import * as cloudflare from "../../providers/cloudflare";
-import * as cohere from "../../providers/cohere";
-import * as deepgram from "../../providers/deepgram";
-import * as gladia from "../../providers/gladia";
-import * as groq from "../../providers/groq";
-import * as witai from "../../providers/witai";
-import { ALL_LANGUAGES, toWhisperCode } from "../../services/languages";
+import * as cloudflare from "@/providers/cloudflare";
+import * as cohere from "@/providers/cohere";
+import * as deepgram from "@/providers/deepgram";
+import * as gladia from "@/providers/gladia";
+import * as groq from "@/providers/groq";
+import * as witai from "@/providers/witai";
+import {
+  ALL_LANGUAGES,
+  ASSEMBLYAI_STREAM_LANGUAGES,
+  toWhisperCode,
+} from "@/core/languages";
 import { LANGUAGES } from "@ekwe/shared";
 
 describe("all transcription providers export supportedLanguages", () => {
@@ -50,18 +54,16 @@ describe("all transcription providers export supportedLanguages", () => {
     expect(cohere.supportedLanguages.has("ig")).toBe(false);
   });
 
-  test("assemblyai streaming only supports en", async () => {
-    const { ASSEMBLYAI_STREAM_LANGUAGES } =
-      await import("../../services/languages");
+  test("assemblyai streaming only supports en", () => {
     expect(ASSEMBLYAI_STREAM_LANGUAGES.size).toBe(1);
     expect(ASSEMBLYAI_STREAM_LANGUAGES.has("en")).toBe(true);
   });
 
-  test("streaming pipeline includes witai with correct languages", async () => {
-    const { STREAM_STT_LANGUAGES } = await import("../../services/languages");
-    expect(STREAM_STT_LANGUAGES.witai).toBeDefined();
-    expect(STREAM_STT_LANGUAGES.witai.has("ig")).toBe(true);
-    expect(STREAM_STT_LANGUAGES.witai.has("en")).toBe(true);
+  test("streaming pipeline reuses each provider's supportedLanguages", () => {
+    expect(deepgram.supportedLanguages.has("en")).toBe(true);
+    expect(gladia.supportedLanguages).toBe(ALL_LANGUAGES);
+    expect(witai.supportedLanguages.has("ig")).toBe(true);
+    expect(witai.supportedLanguages.has("en")).toBe(true);
   });
 
   test("toWhisperCode translates Javanese jv -> jw and Norwegian Bokmål nb -> no", () => {

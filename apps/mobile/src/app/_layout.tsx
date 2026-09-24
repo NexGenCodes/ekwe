@@ -1,10 +1,10 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
 } from "expo-router/react-navigation";
-import { QueryClientProvider } from "@tanstack/react-query";
+
 import { Stack } from "expo-router/stack";
 import { useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -16,22 +16,15 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import "react-native-reanimated";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
-// Direct imports (NOT the @/components / @/hooks barrels): the barrels
-// transitively statically import Skia, WebView, the Supabase client, PostHog,
-// and the whole Echo/audio pipeline — every one of those must parse + execute
-// before the layout can render its first frame, which is exactly what turns a
-// cold start into a long black screen. Importing only what the layout itself
-// uses keeps the heavy graph off the boot path (route screens are already
-// lazy-loaded by expo-router).
 import { AppAlertModal } from "@/components/AppAlertModal";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastContainer } from "@/components/ToastContainer";
 import { Box } from "@/components/ui";
 import { useTheme } from "@/hooks/ui/useTheme";
-import { queryClient } from "@/hooks/queries/queryClient";
+
 import { auth$ } from "@/store/auth";
 import logger, { setSentryTag } from "@/utils/logger";
-import type { UpdateManifest } from "@/services/otaUpdates";
+import type { UpdateManifest, UpdateChannel } from "@/services/otaUpdates";
 import {
   initNetworkMonitoring,
   stopNetworkMonitoring,
@@ -39,10 +32,6 @@ import {
 
 SplashScreen.preventAutoHideAsync();
 
-// Startup instrumentation: measure the split between JS bundle eval and the
-// first committed React frame, so a slow cold start can be attributed to module
-// evaluation vs. app-level init. appStartTime is set at the very top of
-// index.js; auth.ts logs the final "Startup -> Auth Init complete" marker.
 function markPerformance(step: string): void {
   const globalObj = globalThis as Record<string, unknown>;
   if (typeof globalObj.appStartTime === "number") {
@@ -57,20 +46,15 @@ markPerformance("Module graph evaluated (layout imported)");
 function InnerLayout(): React.ReactElement {
   const { isDark, color } = useTheme();
 
-  const isInitialized = useSelector(() => auth$.isInitialized.get());
-  const sessionLoaded = useSelector(() => auth$.sessionLoaded.get());
-  const isAuthenticated = useSelector(() => auth$.session.get() !== null);
+  const isInitialized = useValue(() => auth$.isInitialized.get());
+  const sessionLoaded = useValue(() => auth$.sessionLoaded.get());
+  const isAuthenticated = useValue(() => auth$.session.get() !== null);
 
-  // Tag every Sentry event with the active screen so errors from shared
-  // services (transcription, sync, billing) can be blamed to a route.
   const segments = useSegments();
   useEffect(() => {
     setSentryTag("screen", segments.join("/") || "/");
   }, [segments]);
 
-  // First committed React frame — the splash can hide here (the router and
-  // theme are mounted), so the user sees the themed window, not a void. The
-  // gatekeeper (index.tsx) still waits for auth before deciding where to go.
   useEffect(() => {
     markPerformance("First React frame committed");
     SplashScreen.hideAsync();
@@ -92,11 +76,7 @@ function InnerLayout(): React.ReactElement {
       SplashScreen.hideAsync();
       if (sessionLoaded) {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { HistoryService } = require("@/services/HistoryService");
-        // Import any transcription/translation the native iOS share extension
-        // completed while the app was backgrounded (writes into the shared
-        // App Group container and is drained here). Expired local rows are
-        // pruned on every SyncService.start, so no separate cleanup is needed.
+        const { HistoryService } = require("@/services/historyService");
         HistoryService.importSharedEchoHistory(auth$.session.peek()).catch(
           (err: unknown) =>
             logger.error("[RootLayout] importSharedEchoHistory failed", err),
@@ -105,9 +85,6 @@ function InnerLayout(): React.ReactElement {
     }
   }, [isInitialized, sessionLoaded]);
 
-  // Keep the native window / root-view background in sync with the active
-  // theme so a device appearance change is reflected instantly across the
-  // whole surface (Android window + behind transparent modals/sheets).
   useEffect(() => {
     setBackgroundColorAsync(color.background).catch(() => {});
   }, [color.background]);
@@ -130,6 +107,8 @@ function InnerLayout(): React.ReactElement {
                   headerShown: false,
                   contentStyle: { backgroundColor: color.background },
                   animation: "slide_from_bottom",
+                  statusBarStyle: isDark ? "light" : "dark",
+                  statusBarTranslucent: true,
                 }}
               >
                 <Stack.Screen name="index" options={{ animation: "fade" }} />
@@ -138,9 +117,6 @@ function InnerLayout(): React.ReactElement {
                   options={{ animation: "fade" }}
                 />
                 <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
-                {/* Auth-gated routes: hard-excluded from the navigator when
-                    signed out, so deep links / back-stack cannot reach tabs,
-                    history holders, or Pro purchase flows. */}
                 <Stack.Protected guard={isAuthenticated}>
                   <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
                   <Stack.Screen
@@ -205,10 +181,11 @@ function RootLayout(): React.ReactElement {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { initializeMMKV } = require("@/services/mmkv");
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { SyncService } = require("@/services/SyncService");
+    const { SyncService } = require("@/services/syncService");
     const {
       silentUpdateCheck,
       checkForApkUpdate,
+      resolveUpdateChannel,
     } = require("@/services/otaUpdates"); // eslint-disable-line @typescript-eslint/no-require-imports
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { update$ } = require("@/store/update");
@@ -221,17 +198,22 @@ function RootLayout(): React.ReactElement {
       setupNotificationTapListener,
     } = require("@/services/notifications"); // eslint-disable-line @typescript-eslint/no-require-imports
 
-    // Seed the network store + TanStack onlineManager as early as possible so
-    // "am I offline?" is answered the same way everywhere from the first frame.
     initNetworkMonitoring();
 
-    // Silent OTA update — downloads in background, applies on next cold start.
-    // Never blocks the app, never shows a modal, never shows a prompt.
-    silentUpdateCheck();
+    setTimeout((): void => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { sweepStaleEchoCache } = require("@/utils/audioCache");
+      void sweepStaleEchoCache();
+    }, 4000);
 
-    // Startup APK version probe (Android): feeds the Profile-tab update badge
-    // and a one-shot prompt. Non-blocking — critical releases are additionally
-    // pushed natively by the deploy workflow.
+    silentUpdateCheck().catch((error: unknown): void => {
+      logger.warn("[OTA] Non-blocking silent update check failed:", error);
+    });
+
+    void resolveUpdateChannel().then((channel: UpdateChannel): void => {
+      update$.channel.set(channel);
+    });
+
     checkForApkUpdate().then((manifest: UpdateManifest | null): void => {
       if (!manifest) return;
       update$.manifest.set(manifest);
@@ -252,22 +234,13 @@ function RootLayout(): React.ReactElement {
       }, 500);
     });
 
-    // Handle user interacting with a push notification from the tray.
     const removeNotificationListener = setupNotificationTapListener();
 
-    // Register for push notifications — used for APK update alerts.
-    // APK updates themselves are handled natively, so the app never opens.
-    // Pass no userId yet — will re-register after auth resolves below.
     registerForPushNotifications();
 
-    // Must resolve BEFORE initAuth: until initializeMMKV finishes, the mmkv
-    // proxy falls back to the plaintext boot storage, so a concurrent initAuth
-    // would persist session tokens unencrypted.
     initializeMMKV()
       .then(() => initAuth())
       .then(() => {
-        // Re-register push token now that auth is resolved.
-        // The Worker reads the user from the JWT; no need to pass user_id.
         const session = auth$.session.peek();
         if (session?.user?.id) {
           registerForPushNotifications();
@@ -288,9 +261,7 @@ function RootLayout(): React.ReactElement {
 
   return (
     <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <InnerLayout />
-      </QueryClientProvider>
+      <InnerLayout />
     </SafeAreaProvider>
   );
 }

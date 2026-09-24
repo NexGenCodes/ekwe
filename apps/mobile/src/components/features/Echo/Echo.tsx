@@ -10,16 +10,16 @@ import React, {
 } from "react";
 import type { DimensionValue } from "react-native";
 
-import { EchoPreviewStep } from "./EchoPreviewStep";
-import { EchoFinalResult } from "./EchoFinalResult";
-import { EchoLanguagePicker } from "./EchoLanguagePicker";
-import { EchoProcessingStep } from "./EchoProcessingStep";
-import { EchoTranslationConfig } from "./EchoTranslationConfig";
-import { Badge } from "../../Badge";
-import { IconContainer } from "../../IconContainer";
-import { Sheet } from "../../ui/Sheet";
+import { EchoPreviewStep } from "@/components/features/Echo/EchoPreviewStep";
+import { EchoFinalResult } from "@/components/features/Echo/EchoFinalResult";
+import { EchoLanguagePicker } from "@/components/features/Echo/EchoLanguagePicker";
+import { EchoProcessingStep } from "@/components/features/Echo/EchoProcessingStep";
+import { EchoTranslationConfig } from "@/components/features/Echo/EchoTranslationConfig";
+import { Badge } from "@/components/Badge";
+import { IconContainer } from "@/components/IconContainer";
+import { Sheet } from "@/components/ui/Sheet";
 
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 
 import { Box, Text, Pressable } from "@/components/ui";
 import { STEP_METADATA } from "@/constants/echo";
@@ -54,9 +54,6 @@ export const Echo = (props: EchoProps): React.ReactElement => {
 
   const { onClose } = props;
 
-  // The native player is created below; `useEchoFlow` may call its release (on
-  // dismiss/background) before the player instance exists in this render, so
-  // hand it a ref-backed callback that resolves to the latest controller.
   const playerReleaseRef = useRef<() => void>(() => {});
 
   const {
@@ -94,10 +91,6 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     "Translated",
   );
 
-  // The source-audio player stays "active" (i.e. won't auto-pause) across the
-  // Preview, TranscribeResult, and the FullResult Original tab, so the speaker
-  // button in the results can play the original recording. It pauses everywhere
-  // else — while transcribing/translating and on the Translated tab.
   const playerActive =
     step === "Preview" ||
     step === "TranscribeResult" ||
@@ -108,18 +101,12 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     durationMs: convertedDurationMs,
   });
 
-  // Keep the flow's release hook pointed at the live player controller.
   useEffect(() => {
     playerReleaseRef.current = player.release;
   }, [player.release]);
 
-  // The "Translate to" list comes from the user's selected languages (mirroring
-  // the standard translate screen). Stored selections take priority; when the
-  // user hasn't picked any yet, fall back to the default set. The detected
-  // source language is always excluded so the user never translates to the
-  // language the audio was already in.
   const storedSelectedLanguages =
-    useSelector(() => settings$.selectedLanguages.get()) || [];
+    useValue(() => settings$.selectedLanguages.get()) || [];
   const targetLanguageCodes =
     storedSelectedLanguages.length > 0
       ? storedSelectedLanguages
@@ -157,11 +144,6 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     [setSelectedLang, setStep],
   );
 
-  // Stable footer for the Preview step. It's rendered as `children` of the
-  // memoized EchoPreviewStep, so it must NOT be rebuilt each parent render
-  // (Echo re-renders ~2Hz on audio status ticks) — a fresh element identity
-  // would silently defeat that memo. Memoizing on language + theme keeps it
-  // identical across status ticks.
   const previewFooter = useMemo(
     () => (
       <Box
@@ -391,7 +373,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
       >
         {!isProcessing && (
           <>
-            {/* Header */}
+            {}
             <Box
               style={{
                 flexDirection: "row",
@@ -452,7 +434,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
           </>
         )}
 
-        {/* Step Content */}
+        {}
         {renderStepContent(step)}
       </Box>
     </Sheet>

@@ -9,7 +9,7 @@ import {
   ScrollView,
 } from "react-native-gesture-handler";
 
-import { TextBox } from "./TextBox";
+import { TextBox } from "@/components/features/Echo/TextBox";
 
 import type { WaveformPlaybackController } from "@/hooks/audio/useAudioWaveformPlayback";
 
@@ -70,7 +70,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
 
       return (
         <Box>
-          {/* Language Pills */}
+          {}
           <Box style={{ marginBottom: spacing.md, gap: spacing.sm }}>
             {isMismatch && (
               <Box
@@ -95,7 +95,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
             )}
 
             <Box style={{ flexDirection: "row", alignItems: "center" }}>
-              {/* Selected pill */}
+              {}
               <Box
                 style={{
                   flex: 1,
@@ -141,7 +141,7 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                     style={{ marginHorizontal: spacing.xs }}
                   />
 
-                  {/* Detected pill */}
+                  {}
                   <Box
                     style={{
                       flex: 1,

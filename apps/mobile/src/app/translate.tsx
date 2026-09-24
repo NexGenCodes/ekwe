@@ -1,4 +1,4 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { BlurView } from "expo-blur";
 import { useLocalSearchParams } from "expo-router";
 import ChevronDown from "lucide-react-native/icons/chevron-down";
@@ -16,7 +16,7 @@ import { getLanguageName, getLanguageFlag } from "@/constants/languages";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTranslation, useClipboard, useTheme } from "@/hooks";
-import { HistoryService } from "@/services/HistoryService";
+import { HistoryService } from "@/services/historyService";
 import { settings$, auth$ } from "@/store";
 import { AppToast, isIOS } from "@/utils";
 import { EkweError, ErrorMessages } from "@/constants/errors";
@@ -25,10 +25,9 @@ export default function TranslateScreen(): React.JSX.Element {
   const params = useLocalSearchParams();
   const { text, detectedLang = "und" } = params;
 
-  // Store & Settings
-  const userSession = useSelector(() => auth$.session.get());
-  const isPro = useSelector(() => auth$.isPro.get());
-  const defaultTargetLang = useSelector(() => settings$.targetLanguage.get());
+  const userSession = useValue(() => auth$.session.get());
+  const isPro = useValue(() => auth$.isPro.get());
+  const defaultTargetLang = useValue(() => settings$.targetLanguage.get());
 
   const { color, isDark } = useTheme();
   const primaryColor = color.foreground;
@@ -40,7 +39,6 @@ export default function TranslateScreen(): React.JSX.Element {
 
   const paramDetected = (detectedLang as string) !== "und";
 
-  // Local State
   const [sourceLang, setSourceLang] = useState<string>(
     paramDetected ? (detectedLang as string) : "en",
   );
@@ -54,12 +52,9 @@ export default function TranslateScreen(): React.JSX.Element {
   const [transliteration, setTransliteration] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
 
-  const autoCopy = useSelector(() => settings$.autoCopy.get());
+  const autoCopy = useValue(() => settings$.autoCopy.get());
   const lastAutoCopiedRef = useRef<string | null>(null);
 
-  // Auto-copy completed translations when the profile toggle is on. Fires once
-  // per unique translation value (reset whenever the result clears) so toggling
-  // the switch mid-session never re-copies the text already on screen.
   useEffect(() => {
     if (isTranslating || !translation) {
       if (!translation) lastAutoCopiedRef.current = null;
@@ -71,7 +66,6 @@ export default function TranslateScreen(): React.JSX.Element {
     void copy(translation);
   }, [autoCopy, isTranslating, translation, copy]);
 
-  // Language Picker State
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerMode, setPickerMode] = useState<"source" | "target">("source");
 
@@ -126,7 +120,6 @@ export default function TranslateScreen(): React.JSX.Element {
       setTranslation(translationText);
       setTransliteration(result.value.transliteration ?? null);
 
-      // Save to history via HistoryService
       await HistoryService.recordTranslation(
         {
           sourceLang,
@@ -188,7 +181,7 @@ export default function TranslateScreen(): React.JSX.Element {
         contentInsetAdjustmentBehavior="automatic"
       >
         <Box style={styles.mainContainer}>
-          {/* Source Text Context */}
+          {}
           <Box style={styles.block}>
             <Box style={styles.blockHeader}>
               <Pressable
@@ -218,7 +211,7 @@ export default function TranslateScreen(): React.JSX.Element {
             </Card>
           </Box>
 
-          {/* Divider & Target Language Selector */}
+          {}
           <Box style={styles.controlsRow}>
             <Pressable
               onPress={handleSwap}
@@ -249,7 +242,7 @@ export default function TranslateScreen(): React.JSX.Element {
             </Pressable>
           </Box>
 
-          {/* Translation Result or Translate Button */}
+          {}
           {translation ? (
             <Box style={styles.resultBlock}>
               <Box style={styles.blockHeader}>
@@ -293,7 +286,7 @@ export default function TranslateScreen(): React.JSX.Element {
         </Box>
       </ScrollArea>
 
-      {/* Global Action Bar */}
+      {}
       {!isTranslating && translation && (
         <Box
           style={[
@@ -310,7 +303,7 @@ export default function TranslateScreen(): React.JSX.Element {
         </Box>
       )}
 
-      {/* Reusable Language Picker */}
+      {}
       <LanguagePickerSheet
         isVisible={pickerVisible}
         selectedLanguages={

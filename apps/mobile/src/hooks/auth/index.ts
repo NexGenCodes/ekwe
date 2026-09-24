@@ -1,3 +1,3 @@
-export { useAuthFlow } from "./useAuthFlow";
-export { useLogout } from "./useLogout";
-export { useOtpVerify } from "./useOtpVerify";
+export { useAuthFlow } from "@/hooks/auth/useAuthFlow";
+export { useLogout } from "@/hooks/auth/useLogout";
+export { useOtpVerify } from "@/hooks/auth/useOtpVerify";

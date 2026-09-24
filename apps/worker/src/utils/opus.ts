@@ -1,7 +1,8 @@
 // @ts-expect-error - vendored emscripten glue, no published types
+
 import createLibopusModuleRaw from "../../node_modules/libopus-wasm/dist/generated/libopus.generated.mjs";
 import libopusWasm from "./libopus.wasm";
-import { logger } from "../core/logger";
+import { logger } from "@/core/logger";
 
 interface LibopusModule {
   _malloc(size: number): number;

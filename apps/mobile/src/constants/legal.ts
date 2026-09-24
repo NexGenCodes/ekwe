@@ -1,8 +1,3 @@
-/**
- * Legal content — update ONLY this file when legal text changes.
- * The UI screens read from these constants and never need modification.
- */
-
 export interface LegalSection {
   title: string;
   body: string;

@@ -8,24 +8,25 @@ import {
   type Mock,
 } from "vitest";
 
-vi.mock("../../services/supabase", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("../../services/supabase")>();
+vi.mock("@/services/supabase", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@/services/supabase")>();
   return { ...mod, supabasePost: vi.fn() };
 });
 
-vi.mock("../../routes/flutterwave", () => ({
-  processMissingTransaction: vi.fn(),
-}));
+vi.mock("@/services/flutterwave", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@/services/flutterwave")>();
+  return { ...mod, processMissingTransaction: vi.fn() };
+});
 
 import {
   fetchRecentSuccessfulTransactions,
   getMissingTransactions,
   reconcileFlutterwaveTransactions,
-} from "../../services/flutterwave_reconciliation";
-import { supabasePost } from "../../services/supabase";
-import { processMissingTransaction } from "../../routes/flutterwave";
-import { mockEnv } from "../setup";
-import type { Env } from "../../core/types";
+  processMissingTransaction,
+} from "@/services/flutterwave";
+import { supabasePost } from "@/services/supabase";
+import { mockEnv } from "@/__tests__/setup";
+import type { Env } from "@/core/types";
 
 const mockedSupabasePost = supabasePost as Mock;
 const mockProcessMissing = processMissingTransaction as Mock;
@@ -169,7 +170,7 @@ describe("reconcileFlutterwaveTransactions", () => {
     mockProcessMissing.mockResolvedValue(true);
 
     await expect(
-      reconcileFlutterwaveTransactions(env()),
+      reconcileFlutterwaveTransactions(env(), processMissingTransaction),
     ).resolves.toBeUndefined();
 
     expect(mockedSupabasePost).toHaveBeenCalledWith(
@@ -184,7 +185,7 @@ describe("reconcileFlutterwaveTransactions", () => {
     stubFlwFetch([]);
 
     await expect(
-      reconcileFlutterwaveTransactions(env()),
+      reconcileFlutterwaveTransactions(env(), processMissingTransaction),
     ).resolves.toBeUndefined();
 
     expect(mockedSupabasePost).not.toHaveBeenCalled();
@@ -195,9 +196,9 @@ describe("reconcileFlutterwaveTransactions", () => {
     stubFlwFetch([TX]);
     failRpc(500);
 
-    await expect(reconcileFlutterwaveTransactions(env())).rejects.toThrow(
-      "Failed to fetch missing transactions",
-    );
+    await expect(
+      reconcileFlutterwaveTransactions(env(), processMissingTransaction),
+    ).rejects.toThrow("Failed to fetch missing transactions");
     expect(mockProcessMissing).not.toHaveBeenCalled();
   });
 
@@ -207,9 +208,9 @@ describe("reconcileFlutterwaveTransactions", () => {
       vi.fn(async () => new Response("boom", { status: 503 })),
     );
 
-    await expect(reconcileFlutterwaveTransactions(env())).rejects.toThrow(
-      "Flutterwave API error: 503",
-    );
+    await expect(
+      reconcileFlutterwaveTransactions(env(), processMissingTransaction),
+    ).rejects.toThrow("Flutterwave API error: 503");
     expect(mockProcessMissing).not.toHaveBeenCalled();
   });
 
@@ -224,7 +225,7 @@ describe("reconcileFlutterwaveTransactions", () => {
       .mockResolvedValueOnce(true);
 
     await expect(
-      reconcileFlutterwaveTransactions(env()),
+      reconcileFlutterwaveTransactions(env(), processMissingTransaction),
     ).resolves.toBeUndefined();
 
     expect(mockProcessMissing).toHaveBeenCalledTimes(2);
@@ -235,9 +236,9 @@ describe("reconcileFlutterwaveTransactions", () => {
     okRpc(["flw_1"]);
     mockProcessMissing.mockRejectedValue(new Error("transient"));
 
-    await expect(reconcileFlutterwaveTransactions(env())).rejects.toThrow(
-      "Triggering queue retry",
-    );
+    await expect(
+      reconcileFlutterwaveTransactions(env(), processMissingTransaction),
+    ).rejects.toThrow("Triggering queue retry");
   });
 
   test("does not throw when refs failed terminally (nothing to retry)", async () => {
@@ -246,7 +247,7 @@ describe("reconcileFlutterwaveTransactions", () => {
     mockProcessMissing.mockResolvedValue(false);
 
     await expect(
-      reconcileFlutterwaveTransactions(env()),
+      reconcileFlutterwaveTransactions(env(), processMissingTransaction),
     ).resolves.toBeUndefined();
   });
 });

@@ -21,7 +21,6 @@ const defaultState: AppAlertState = {
   cancelable: true,
 };
 
-// Global observable state for the custom AppAlert UI
 export const appAlert$ = observable<AppAlertState>(defaultState);
 
 export const appAlertActions = {
@@ -33,6 +32,5 @@ export const appAlertActions = {
   },
   hide: (): void => {
     appAlert$.isVisible.set(false);
-    // We do not clear the title/message immediately so the exit animation doesn't snap to empty text
   },
 };

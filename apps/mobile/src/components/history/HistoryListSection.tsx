@@ -24,10 +24,6 @@ export interface HistoryListSectionProps {
   onDeleteEntry: (entryId: string) => void;
 }
 
-/**
- * HistoryListSection — Extracted FlashList rendering logic.
- * Manages list rendering, item rendering, footer, and pagination.
- */
 export const HistoryListSection = React.memo(function HistoryListSection({
   listRef,
   listData,
@@ -95,7 +91,6 @@ export const HistoryListSection = React.memo(function HistoryListSection({
   const listFooter = useCallback(() => {
     if (isSearching) return null;
 
-    // On-demand paging is in flight — surface it instead of a static label.
     if (isFetchingNextPage) {
       return (
         <Box style={styles.listFooter}>

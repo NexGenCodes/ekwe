@@ -9,11 +9,11 @@ import { withAlpha } from "@/utils/color";
 
 export interface CardProps {
   children: React.ReactNode;
-  /** default = filled bg, outlined = border only, accent = primary tint */
+
   variant?: "default" | "outlined" | "accent";
-  /** Padding preset. 'none' for custom padding via style. */
+
   padding?: "none" | "sm" | "md" | "lg";
-  /** Clip children to card bounds (needed for grouped rows) */
+
   overflow?: boolean;
   style?: StyleProp<ViewStyle>;
 }
@@ -25,10 +25,6 @@ const PADDING_MAP = {
   lg: 24,
 } as const;
 
-/**
- * Card — Universal container primitive.
- * Replaces all inline `bg-card rounded-[24px] border border-border` patterns.
- */
 export const Card = ({
   children,
   variant = "default",

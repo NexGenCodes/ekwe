@@ -16,10 +16,8 @@ import {
   mapWorkerError,
   isOfflineNetworkError,
   isTimeoutError,
-} from "@/utils/networkUtils";
+} from "@/utils/http";
 
-// The wire fields come straight from the shared zod schema; sourceLang/targetLang
-// are echoed back to the caller for convenience.
 export type TranslationResult = TranslateResponse & {
   sourceLang: string;
   targetLang: string;
@@ -47,8 +45,6 @@ export async function translateText(
   const token = session?.access_token;
 
   const payload: TranslateRequest = { text, targetLang, sourceLang };
-  // Fail fast client-side instead of spending a fetch round-trip on a shape
-  // the worker would reject anyway (keeps the two sides in lockstep).
   const shapeCheck = translateRequestSchema.safeParse(payload);
   if (!shapeCheck.success) {
     return err(EkweError.TRANSLATION_FAIL);
@@ -65,8 +61,6 @@ export async function translateText(
       retries: 2,
       timeout: 60000,
       signal,
-      // The worker already tried every LLM provider before returning 5xx;
-      // retrying would double the provider spend for no extra chance of success.
       retryOnHttpResponse: false,
     });
 
@@ -80,9 +74,6 @@ export async function translateText(
       }
 
       if (response.status === 429) {
-        // The worker returns 429 for BOTH the cooldown gate (EKWE_RATE_LIMIT)
-        // and the daily quota (EKWE_QUOTA_EXCEEDED) — surface them distinctly
-        // so the UI can explain "limit reached" instead of "busy, retry".
         if (errorCode === WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED) {
           trackTranslationFailed(sourceLang, targetLang, "quota_exceeded");
           return err(EkweError.QUOTA_EXCEEDED);
@@ -128,8 +119,6 @@ export async function translateText(
       provider: data.provider,
     });
   } catch (e: unknown) {
-    // A definitive offline signal short-circuits the request before any fetch
-    // (fail-fast in fetchWithRetry) — map it quietly, no error log needed.
     if (isOfflineNetworkError(e)) {
       trackTranslationFailed(sourceLang, targetLang, "offline");
       return err(EkweError.NETWORK_LOST);

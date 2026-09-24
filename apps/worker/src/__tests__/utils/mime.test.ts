@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { mimeToExt, sniffAudioMime } from "../../utils/mime";
+import { mimeToExt, sniffAudioMime } from "@/utils/mime";
 
 describe("mimeToExt", () => {
   test("maps known audio MIME types", () => {

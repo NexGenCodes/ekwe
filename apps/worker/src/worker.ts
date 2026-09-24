@@ -1,63 +1,80 @@
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import {
   guardAutoDetect,
-  guardContentType,
-  guardJsonSize,
   guardLanguageCode,
   guardStreamingAllowed,
   guardWebSocketUpgrade,
-  MAX_JSON_BODY_BYTES,
-} from "./core/guards";
+} from "@/core/guards";
 import {
   runPipeline,
   type AppRoute,
   type AuthedRouteHandler,
   type RouteHandler,
-} from "./core/pipeline";
-import { addCorsHeaders, getCorsHeaders } from "./core/cors";
-import { error } from "./core/http";
-import { logger } from "./core/logger";
-import type { Env } from "./core/types";
-import { d1Cleanup } from "./services/d1-cache";
-import { supabasePost } from "./services/supabase";
-import { handleTranscribe } from "./routes/transcribe";
-import { handleTranslate } from "./routes/translate";
-import { handleTts } from "./routes/tts";
-import { handleStorePricing } from "./routes/pricing";
-import { handleUsage } from "./routes/usage";
-import { handleWebhook } from "./routes/webhook";
-import { handleFlutterwaveWebhook } from "./routes/flutterwave";
+} from "@/core/pipeline";
+import { addCorsHeaders, getCorsHeaders } from "@/core/cors";
+import { error } from "@/core/http";
+import { logger } from "@/core/logger";
+import type { Env } from "@/core/types";
+import { d1Cleanup } from "@/services/d1-cache";
+import { supabasePost } from "@/services/supabase";
+import { handleTranscribe } from "@/routes/transcribe";
+import { handleTranslate } from "@/routes/translate";
+import { handleSynthesize } from "@/routes/synthesize";
+import { handleStorePricing } from "@/routes/pricing";
+import { handleUsage } from "@/routes/usage";
+import { handleWebhook } from "@/routes/webhook";
+
 import {
   handleCheckout,
   handleVerifyTransaction,
   handleBillingFlags,
-} from "./routes/billing";
-import { handleSendOtp } from "./routes/otp";
-import { handleRegisterPushToken } from "./routes/push-tokens";
-import { handlePushNotify } from "./routes/push-notify";
+} from "@/routes/billing";
+import { handleSendOtp } from "@/routes/otp";
+import { handleRegisterDeviceToken } from "@/routes/device-token";
 import {
+  handleUpdateNotify,
   handleGetUpdateManifest,
   handlePostUpdateManifest,
-} from "./routes/update-manifest";
-import { type OptionalAuthedRouteHandler } from "./core/pipeline";
+} from "@/routes/admin";
+import { type OptionalAuthedRouteHandler } from "@/core/pipeline";
+import { reconcileFlutterwaveTransactions } from "@/services/flutterwave";
+import { isProviderDegraded } from "@/services/health";
+import { PROVIDER_MODULES } from "@/providers";
 
-// ─── Route table ─────────────────────────────────────────────────
-// Single source of truth for every endpoint the worker serves. Each route
-// declares its auth mode and — for the billable routes — which daily usage
-// pool the preflight gate draws down. `auth: "jwt-subprotocol"` reads the
-// token from Sec-WebSocket-Protocol so it never lands in access logs.
+const MAINTENANCE_DLQ_NAME = "ekwe-maintenance-dlq";
 
-const healthHandler: RouteHandler = () =>
-  Response.json({ status: "ok", timestamp: Date.now() });
+const healthHandler: RouteHandler = async (rctx) => {
+  const degraded: string[] = [];
+  for (const name of Object.keys(PROVIDER_MODULES)) {
+    if (await isProviderDegraded(rctx.env, name)) degraded.push(name);
+  }
+
+  let d1 = "ok";
+  try {
+    await rctx.env.EKWE_D1.prepare("SELECT 1").bind().first();
+  } catch {
+    d1 = "error";
+  }
+  let kv = "ok";
+  try {
+    await rctx.env.EKWE_KV.get("health:probe", { type: "text" });
+  } catch {
+    kv = "error";
+  }
+
+  return Response.json({
+    status: "ok",
+    timestamp: Date.now(),
+    degradedProviders: degraded,
+    bindings: { d1, kv },
+  });
+};
 
 const storePricingHandler: RouteHandler = (rctx) =>
   handleStorePricing(rctx.request, rctx.env, rctx.ctx);
 
 const webhookHandler: RouteHandler = (rctx) =>
   handleWebhook(rctx.request, rctx.env, rctx.ctx);
-
-const flutterwaveWebhookHandler: RouteHandler = (rctx) =>
-  handleFlutterwaveWebhook(rctx.request, rctx.env, rctx.ctx);
 
 const checkoutHandler: AuthedRouteHandler = (rctx) =>
   handleCheckout(rctx.request, rctx.env, rctx.auth);
@@ -68,17 +85,13 @@ const verifyTransactionHandler: AuthedRouteHandler = (rctx) =>
 const billingFlagsHandler: RouteHandler = (rctx) =>
   handleBillingFlags(rctx.request, rctx.env);
 
-const otpHandler: RouteHandler = (rctx) => {
-  const ctGuard = guardContentType(rctx.request);
-  if (!ctGuard.allowed) return ctGuard.response;
-  return handleSendOtp(rctx.request, rctx.env);
-};
+const otpHandler: RouteHandler = (rctx) =>
+  handleSendOtp(rctx.request, rctx.env);
 
 const streamHandler: AuthedRouteHandler = (rctx) => {
   const { request, env } = rctx;
-  const { userId, tier } = rctx.auth;
+  const { userId, tier, sessionId } = rctx.auth;
 
-  // Validate in the Worker first to avoid DO billing for invalid requests.
   const upgradeGuard = guardWebSocketUpgrade(request);
   if (upgradeGuard) return upgradeGuard;
 
@@ -94,9 +107,9 @@ const streamHandler: AuthedRouteHandler = (rctx) => {
   const langGuard = guardLanguageCode(streamLang, "lang");
   if (!langGuard.allowed) return langGuard.response;
 
-  // One DO per user: persistent, hibernating, per-user concurrency cap.
   const doUrl = new URL(request.url);
   doUrl.searchParams.set("tier", tier);
+  if (sessionId) doUrl.searchParams.set("sid", sessionId);
   const stub = env.STREAM_DO.getByName(userId) as unknown as DurableObjectStub;
   return stub.fetch(new Request(doUrl.toString(), request));
 };
@@ -114,12 +127,8 @@ const transcribeHandler: AuthedRouteHandler = (rctx) =>
     rctx.ctx,
   );
 
-const translateHandler: AuthedRouteHandler = (rctx) => {
-  const ctGuard = guardContentType(rctx.request);
-  if (!ctGuard.allowed) return ctGuard.response;
-  const sizeGuard = guardJsonSize(rctx.request, MAX_JSON_BODY_BYTES);
-  if (!sizeGuard.allowed) return sizeGuard.response;
-  return handleTranslate(
+const translateHandler: AuthedRouteHandler = (rctx) =>
+  handleTranslate(
     rctx.request,
     rctx.env,
     rctx.auth.tier,
@@ -127,31 +136,22 @@ const translateHandler: AuthedRouteHandler = (rctx) => {
     rctx.auth.userId,
     rctx.ctx,
   );
-};
 
-const ttsHandler: AuthedRouteHandler = (rctx) => {
-  const ctGuard = guardContentType(rctx.request);
-  if (!ctGuard.allowed) return ctGuard.response;
-  const sizeGuard = guardJsonSize(rctx.request, MAX_JSON_BODY_BYTES);
-  if (!sizeGuard.allowed) return sizeGuard.response;
-  return handleTts(
+const synthesizeHandler: AuthedRouteHandler = (rctx) =>
+  handleSynthesize(
     rctx.request,
     rctx.env,
     rctx.auth.tier,
     rctx.request.signal,
-    {
-      userId: rctx.auth.userId,
-      sessionId: rctx.auth.sessionId,
-      ctx: rctx.ctx,
-    },
+    { userId: rctx.auth.userId, sessionId: rctx.auth.sessionId },
+    rctx.ctx,
   );
-};
 
-const registerPushTokenHandler: OptionalAuthedRouteHandler = (rctx) =>
-  handleRegisterPushToken(rctx.request, rctx.env, rctx.auth);
+const registerDeviceTokenHandler: OptionalAuthedRouteHandler = (rctx) =>
+  handleRegisterDeviceToken(rctx.request, rctx.env, rctx.auth);
 
-const pushNotifyHandler: RouteHandler = (rctx) =>
-  handlePushNotify(rctx.request, rctx.env);
+const updateNotifyHandler: RouteHandler = (rctx) =>
+  handleUpdateNotify(rctx.request, rctx.env);
 
 const getUpdateManifestHandler: RouteHandler = (rctx) =>
   handleGetUpdateManifest(rctx.request, rctx.env, rctx.ctx);
@@ -168,12 +168,7 @@ const routes: AppRoute[] = [
     handler: storePricingHandler,
   },
   { method: "POST", path: "/webhook", auth: "none", handler: webhookHandler },
-  {
-    method: "POST",
-    path: "/webhook/flutterwave",
-    auth: "none",
-    handler: flutterwaveWebhookHandler,
-  },
+
   { method: "POST", path: "/auth/otp", auth: "none", handler: otpHandler },
   {
     method: "POST",
@@ -216,21 +211,15 @@ const routes: AppRoute[] = [
   },
   {
     method: "POST",
-    path: "/tts",
+    path: "/synthesize",
     auth: "jwt",
-    handler: ttsHandler,
+    handler: synthesizeHandler,
   },
   {
     method: "POST",
-    path: "/push-tokens",
+    path: "/devices/token",
     auth: "optional-jwt",
-    handler: registerPushTokenHandler,
-  },
-  {
-    method: "POST",
-    path: "/push-notify",
-    auth: "none",
-    handler: pushNotifyHandler,
+    handler: registerDeviceTokenHandler,
   },
   {
     method: "GET",
@@ -240,18 +229,19 @@ const routes: AppRoute[] = [
   },
   {
     method: "POST",
-    path: "/update/manifest",
-    auth: "none",
+    path: "/admin/update/notify",
+    auth: "admin",
+    handler: updateNotifyHandler,
+  },
+  {
+    method: "POST",
+    path: "/admin/update/manifest",
+    auth: "admin",
     handler: postUpdateManifestHandler,
   },
 ];
 
-// ─── Maintenance (cron) ──────────────────────────────────────────
-// Daily maintenance (see wrangler.jsonc triggers.crons): purge expired
-// history rows per plan retention (free: 30d, pro: 365d).
-
 async function runMaintenance(env: Env): Promise<void> {
-  // D1 cache cleanup — best-effort, non-blocking
   if (env.EKWE_D1) {
     try {
       await d1Cleanup(env.EKWE_D1, "cache_translation");
@@ -266,7 +256,6 @@ async function runMaintenance(env: Env): Promise<void> {
     }
   }
 
-  // Enqueue Supabase RPC — queue consumer handles retries (max 3) and DLQ.
   try {
     await env.MAINTENANCE_QUEUE.send({ type: "cleanup_expired_history" });
     logger.info("[scheduled] Enqueued cleanup_expired_history");
@@ -276,7 +265,6 @@ async function runMaintenance(env: Env): Promise<void> {
     });
   }
 
-  // Enqueue Flutterwave Reconciliation
   try {
     await env.MAINTENANCE_QUEUE.send({ type: "reconcile_flutterwave" });
     logger.info("[scheduled] Enqueued reconcile_flutterwave");
@@ -324,6 +312,17 @@ export function createWorker() {
       env: Env,
       _ctx: ExecutionContext,
     ): Promise<void> {
+      if (batch.queue === MAINTENANCE_DLQ_NAME) {
+        for (const msg of batch.messages) {
+          const body = msg.body as { type?: string } | null;
+          logger.error("[queue][dlq] Maintenance task permanently failed", {
+            type: body?.type ?? "unknown",
+            attempts: msg.attempts,
+          });
+          msg.ack();
+        }
+        return;
+      }
       for (const msg of batch.messages) {
         const body = msg.body as { type: string } | null;
         if (body?.type === "cleanup_expired_history") {
@@ -344,7 +343,6 @@ export function createWorker() {
               status: res.status,
               body: body.slice(0, 500),
             });
-            // Throw to trigger retry (up to 3 attempts before DLQ)
             throw new Error(`cleanup_expired_history failed: ${res.status}`);
           }
 
@@ -354,8 +352,6 @@ export function createWorker() {
           >;
           logger.info("[queue] cleanup_expired_history completed", result);
         } else if (body?.type === "reconcile_flutterwave") {
-          const { reconcileFlutterwaveTransactions } =
-            await import("./services/flutterwave_reconciliation");
           await reconcileFlutterwaveTransactions(env);
         }
       }

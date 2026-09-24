@@ -1,27 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
-import { handleWebhook } from "../../routes/webhook";
-import { mockEnv } from "../setup";
-import { verifyWebhook } from "../../services/signatures";
-import { processWebhookEvent } from "../../services/billing";
+import { handleWebhook } from "@/routes/webhook";
+import { mockEnv } from "@/__tests__/setup";
+import { processWebhookEvent } from "@/services/billing";
 
-// ─── Mocks ──────────────────────────────────────────────────────
-
-vi.mock("../../services/signatures", () => ({
-  verifyWebhook: vi.fn(),
-}));
-
-vi.mock("../../services/billing", () => ({
+vi.mock("@/services/billing", () => ({
   processWebhookEvent: vi.fn(),
 }));
 
-const mockedVerifyWebhook = vi.mocked(verifyWebhook);
 const mockedProcessWebhookEvent = vi.mocked(processWebhookEvent);
 
-// ─── Test Env Setup ────────────────────────────────────────────────
+const SECRET = "sk_test_abc123def456";
 
 const env = mockEnv({
-  FLUTTERWAVE_WEBHOOK_SECRET: "sk_test_abc123def456",
+  FLUTTERWAVE_WEBHOOK_SECRET: SECRET,
 });
 
 function fakeCtx(): ExecutionContext {
@@ -37,22 +29,36 @@ function fakeCtx(): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────
+async function flutterwaveSignedRequest(body: string): Promise<Request> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(body),
+  );
+  const bytes = new Uint8Array(sig);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++)
+    binary += String.fromCharCode(bytes[i]);
+  const signature = btoa(binary);
 
-function flutterwaveRequest(body: object): Request {
-  const rawBody = JSON.stringify(body);
   return new Request("https://ekwe.app/webhooks", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-flutterwave-signature": "test-signature",
+      "verif-hash": SECRET,
+      "flutterwave-signature": signature,
       "x-flutterwave-timestamp": `${Math.floor(Date.now() / 1000)}`,
     },
-    body: rawBody,
+    body,
   });
 }
-
-// ─── Test Scenarios ────────────────────────────────────────────────
 
 describe("Webhook Endpoint", () => {
   const ctx = fakeCtx();
@@ -79,15 +85,17 @@ describe("Webhook Endpoint", () => {
       expect(res.status).toBe(413);
     });
 
-    it("returns 401 for invalid signature", async () => {
-      mockedVerifyWebhook.mockResolvedValue({
-        isValid: false,
-        provider: "flutterwave",
-        error: "Signature mismatch",
-        code: WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
+    it("returns 401 for an unsigned or mismatched signature", async () => {
+      const req = new Request("https://ekwe.app/webhooks", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "verif-hash": "bogus",
+          "x-flutterwave-timestamp": `${Math.floor(Date.now() / 1000)}`,
+        },
+        body: JSON.stringify({ event: "test" }),
       });
 
-      const req = flutterwaveRequest({ event: "test" });
       const res = await handleWebhook(req, env, ctx);
       expect(res.status).toBe(401);
       expect(((await res.json()) as any).error).toBe(
@@ -95,37 +103,8 @@ describe("Webhook Endpoint", () => {
       );
     });
 
-    it("maps expired timestamps to WEBHOOK_TIMESTAMP_EXPIRED", async () => {
-      mockedVerifyWebhook.mockResolvedValue({
-        isValid: false,
-        provider: "flutterwave",
-        error: "Timestamp expired",
-        code: WORKER_ERROR_CODES.WEBHOOK_TIMESTAMP_EXPIRED,
-      });
-
-      const req = flutterwaveRequest({ event: "test" });
-      const res = await handleWebhook(req, env, ctx);
-      expect(res.status).toBe(401);
-      expect(((await res.json()) as any).error).toBe(
-        WORKER_ERROR_CODES.WEBHOOK_TIMESTAMP_EXPIRED,
-      );
-    });
-
     it("returns 400 for malformed JSON body", async () => {
-      mockedVerifyWebhook.mockResolvedValue({
-        isValid: true,
-        provider: "flutterwave",
-      });
-
-      const req = new Request("https://ekwe.app/webhooks", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-flutterwave-signature": "test-signature",
-          "x-flutterwave-timestamp": `${Math.floor(Date.now() / 1000)}`,
-        },
-        body: "not-valid-json",
-      });
+      const req = await flutterwaveSignedRequest("not-valid-json");
 
       const res = await handleWebhook(req, env, ctx);
       expect(res.status).toBe(400);
@@ -134,22 +113,19 @@ describe("Webhook Endpoint", () => {
 
   describe("POST /webhooks - Happy Path", () => {
     it("processes a valid webhook event successfully", async () => {
-      mockedVerifyWebhook.mockResolvedValue({
-        isValid: true,
-        provider: "flutterwave",
-      });
-
       const responseBody = { ok: true, message: "Processed" };
       mockedProcessWebhookEvent.mockResolvedValue({
         response: Response.json(responseBody, { status: 200 }),
         fullyApplied: true,
       });
 
-      const req = flutterwaveRequest({
-        id: 12345,
-        event: "charge.completed",
-        data: { amount: 1000, currency: "NGN" },
-      });
+      const req = await flutterwaveSignedRequest(
+        JSON.stringify({
+          id: 12345,
+          event: "charge.completed",
+          data: { amount: 1000, currency: "NGN" },
+        }),
+      );
 
       const res = await handleWebhook(req, env, ctx);
       expect(res.status).toBe(200);
@@ -168,101 +144,111 @@ describe("Webhook Endpoint", () => {
 
   describe("POST /webhooks - Idempotency", () => {
     it("returns duplicate response for already-processed event", async () => {
-      mockedVerifyWebhook.mockResolvedValue({
-        isValid: true,
-        provider: "flutterwave",
-      });
-
-      // First call succeeds
       mockedProcessWebhookEvent.mockResolvedValue({
         response: Response.json({ ok: true }, { status: 200 }),
         fullyApplied: true,
       });
 
       const event = { id: 99999, event: "charge.completed", data: {} };
+      const raw = JSON.stringify(event);
 
-      // First call claims the idempotency key atomically in D1 and processes.
-      const req1 = flutterwaveRequest(event);
-      const res1 = await handleWebhook(req1, env, ctx);
+      const res1 = await handleWebhook(
+        await flutterwaveSignedRequest(raw),
+        env,
+        ctx,
+      );
       expect(res1.status).toBe(200);
 
-      // Second (duplicate) delivery: the key is already claimed, so it is
-      // dropped without re-running the event processor.
       mockedProcessWebhookEvent.mockClear();
-      const req2 = flutterwaveRequest(event);
-      const res2 = await handleWebhook(req2, env, ctx);
+      const res2 = await handleWebhook(
+        await flutterwaveSignedRequest(raw),
+        env,
+        ctx,
+      );
       const body = (await res2.json()) as any;
       expect(body.action).toBe("duplicate");
+      expect(mockedProcessWebhookEvent).not.toHaveBeenCalled();
+    });
+
+    it("fails closed with a retryable 500 when the claim errors, without processing", async () => {
+      mockedProcessWebhookEvent.mockResolvedValue({
+        response: Response.json({ ok: true }, { status: 200 }),
+        fullyApplied: true,
+      });
+
+      const throwingD1 = {
+        prepare() {
+          throw new Error("D1 unavailable");
+        },
+      } as unknown as Env["EKWE_D1"];
+
+      const req = await flutterwaveSignedRequest(
+        JSON.stringify({ id: 88888, event: "charge.completed", data: {} }),
+      );
+
+      const res = await handleWebhook(
+        req,
+        mockEnv({ FLUTTERWAVE_WEBHOOK_SECRET: SECRET, EKWE_D1: throwingD1 }),
+        ctx,
+      );
+      expect(res.status).toBe(500);
       expect(mockedProcessWebhookEvent).not.toHaveBeenCalled();
     });
   });
 
   describe("POST /webhooks - Error Handling", () => {
     it("returns 500 when processWebhookEvent fails to fully apply", async () => {
-      mockedVerifyWebhook.mockResolvedValue({
-        isValid: true,
-        provider: "flutterwave",
-      });
-
       mockedProcessWebhookEvent.mockResolvedValue({
         response: Response.json({ error: "DB_ERROR" }, { status: 500 }),
         fullyApplied: false,
       });
 
-      const req = flutterwaveRequest({
-        id: 11111,
-        event: "charge.completed",
-        data: {},
-      });
+      const req = await flutterwaveSignedRequest(
+        JSON.stringify({ id: 11111, event: "charge.completed", data: {} }),
+      );
 
       const res = await handleWebhook(req, env, ctx);
       expect(res.status).toBe(500);
     });
 
     it("releases the idempotency claim so a retry can reprocess a failed grant", async () => {
-      mockedVerifyWebhook.mockResolvedValue({
-        isValid: true,
-        provider: "flutterwave",
-      });
-
       const event = { id: 55555, event: "charge.completed", data: {} };
+      const raw = JSON.stringify(event);
 
-      // First delivery fails to fully apply (e.g. Supabase down) → 500 + claim released.
       mockedProcessWebhookEvent.mockResolvedValue({
         response: Response.json({ error: "DB_ERROR" }, { status: 500 }),
         fullyApplied: false,
       });
-      const res1 = await handleWebhook(flutterwaveRequest(event), env, ctx);
+      const res1 = await handleWebhook(
+        await flutterwaveSignedRequest(raw),
+        env,
+        ctx,
+      );
       expect(res1.status).toBe(500);
 
-      // Re-delivery now reprocesses (not dropped as a duplicate) and succeeds.
-      // A fresh Request is required — a Request body is single-use.
       mockedProcessWebhookEvent.mockClear();
       mockedProcessWebhookEvent.mockResolvedValue({
         response: Response.json({ ok: true }, { status: 200 }),
         fullyApplied: true,
       });
-      const res2 = await handleWebhook(flutterwaveRequest(event), env, ctx);
+      const res2 = await handleWebhook(
+        await flutterwaveSignedRequest(raw),
+        env,
+        ctx,
+      );
       expect(res2.status).toBe(200);
       expect(mockedProcessWebhookEvent).toHaveBeenCalledTimes(1);
     });
 
-    it("returns 500 for unknown event types", async () => {
-      mockedVerifyWebhook.mockResolvedValue({
-        isValid: true,
-        provider: "flutterwave",
-      });
-
+    it("returns 400 for unknown event types", async () => {
       mockedProcessWebhookEvent.mockResolvedValue({
         response: Response.json({ error: "UNKNOWN_PROVIDER" }, { status: 400 }),
         fullyApplied: true,
       });
 
-      const req = flutterwaveRequest({
-        id: 22222,
-        event: "unknown.event",
-        data: {},
-      });
+      const req = await flutterwaveSignedRequest(
+        JSON.stringify({ id: 22222, event: "unknown.event", data: {} }),
+      );
 
       const res = await handleWebhook(req, env, ctx);
       expect(res.status).toBe(400);

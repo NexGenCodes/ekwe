@@ -1,4 +1,4 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { translationSchema } from "@ekwe/shared";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -7,7 +7,7 @@ import { Keyboard } from "react-native";
 import { EkweError, ErrorMessages } from "@/constants/errors";
 import { useTranslateMutation } from "@/hooks/queries/useTranslateMutation";
 import { usePermissions } from "@/hooks/usePermissions";
-import { HistoryService } from "@/services/HistoryService";
+import { HistoryService } from "@/services/historyService";
 import { TranslationResult } from "@/services/translateText";
 import { audioActions, settings$, auth$, audio$ } from "@/store";
 import { Result, ok, err } from "@/types/Result";
@@ -50,8 +50,8 @@ export interface UseTranslationReturn {
 export const useTranslation = (): UseTranslationReturn => {
   const translateMutation = useTranslateMutation();
 
-  const defaultTargetLang = useSelector(() => settings$.targetLanguage.get());
-  const userSession = useSelector(() => auth$.session.get());
+  const defaultTargetLang = useValue(() => settings$.targetLanguage.get());
+  const userSession = useValue(() => auth$.session.get());
 
   const [translation, setTranslation] = useState<string | null>(null);
   const [transliteration, setTransliteration] = useState<string | null>(null);
@@ -60,8 +60,7 @@ export const useTranslation = (): UseTranslationReturn => {
   const [sourceText, setSourceText] = useState("");
 
   const permissions = usePermissions();
-  const myLanguages =
-    useSelector(() => settings$.selectedLanguages.get()) || [];
+  const myLanguages = useValue(() => settings$.selectedLanguages.get()) || [];
   const defaultSourceLang = getDefaultSourceLang(
     permissions.autoLanguageDetect,
   );
@@ -80,7 +79,6 @@ export const useTranslation = (): UseTranslationReturn => {
   const translationAbortRef = useRef<AbortController | null>(null);
   const lastRequestRef = useRef<string | null>(null);
 
-  // History-entry state refs
   const sourceLangRef = useRef(sourceLang);
   const targetLangRef = useRef(targetLang);
   const userSessionRef = useRef(userSession);
@@ -91,7 +89,6 @@ export const useTranslation = (): UseTranslationReturn => {
     userSessionRef.current = userSession;
   }, [sourceLang, targetLang, userSession]);
 
-  // Defer save helper for transcription-only
   const saveTranscriptionOnly = useCallback(() => {
     const currentTranscript = audio$.transcriptBuffer.get();
     const duration = audio$.duration.get() || 0;
@@ -130,7 +127,6 @@ export const useTranslation = (): UseTranslationReturn => {
     }
   }, []);
 
-  // Save on unmount
   useEffect(() => {
     return (): void => {
       saveTranscriptionOnly();
@@ -173,7 +169,6 @@ export const useTranslation = (): UseTranslationReturn => {
     [translateMutation, setError],
   );
 
-  // Clear request cache when sourceText changes
   useEffect(() => {
     lastRequestRef.current = null;
   }, [sourceText]);
@@ -199,7 +194,7 @@ export const useTranslation = (): UseTranslationReturn => {
       sourceLang === targetLang
     )
       return;
-    // Abort any in-flight translation before swapping languages
+
     translationAbortRef.current?.abort();
     translationAbortRef.current = null;
     await triggerHaptic();
@@ -275,9 +270,6 @@ export const useTranslation = (): UseTranslationReturn => {
         const currentSessionId = audio$.sessionId.get();
 
         if (currentSessionId !== null && duration > 0) {
-          // Voice note transcribed then translated → TWO separate history
-          // entries: a transcription (text + audio metadata) and a separate
-          // translation. The audio is only ever saved once.
           const resolvedSource =
             resolveDetectedLanguage(
               audio$.sourceLang.get(),
@@ -302,13 +294,9 @@ export const useTranslation = (): UseTranslationReturn => {
                 },
                 userSession,
               );
-              // Mark saved ONLY after the write succeeded — otherwise a failed
-              // save would permanently suppress the transcription entry on
-              // every later save attempt (and leak history).
+
               audioActions.setSaved(true);
             } catch (saveErr) {
-              // Non-fatal: don't drop the translation entry because the
-              // transcription history write failed — log and continue.
               logger.error(
                 "[Translation] Failed to save transcription",
                 saveErr,
@@ -316,7 +304,6 @@ export const useTranslation = (): UseTranslationReturn => {
             }
           }
 
-          // Translation entry — text → text, no audio metadata.
           await HistoryService.recordTranslation(
             {
               sourceLang: resolvedSource,
@@ -332,7 +319,6 @@ export const useTranslation = (): UseTranslationReturn => {
             userSession,
           );
         } else {
-          // Pure text translation (no audio)
           await HistoryService.recordTranslation(
             {
               sourceLang,

@@ -1,4 +1,4 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { BlurView } from "expo-blur";
 import AlertCircle from "lucide-react-native/icons/circle-alert";
 import CheckCircle from "lucide-react-native/icons/circle-check-big";
@@ -24,18 +24,16 @@ const ICON_MAP = {
   info: Info,
   success: CheckCircle,
   error: AlertCircle,
-  confirm: Trash2, // Or a warning icon depending on context
+  confirm: Trash2,
 };
 
 export function AppAlertModal(): React.JSX.Element | null {
   const { color, isDark } = useTheme();
   const { width } = useWindowDimensions();
 
-  // Subscribe to the global alert state
-  const state = useSelector(() => appAlert$.get());
+  const state = useValue(() => appAlert$.get());
   const { isVisible, type, title, message, buttons, cancelable } = state;
 
-  // Render the correct icon based on type
   const IconComponent = ICON_MAP[type] || Info;
   const iconColor =
     type === "error" || type === "confirm"
@@ -53,7 +51,6 @@ export function AppAlertModal(): React.JSX.Element | null {
   const handleButtonPress = (onPress?: () => void): void => {
     appAlertActions.hide();
     if (onPress) {
-      // Small delay to let the modal close animation start
       setTimeout(onPress, 100);
     }
   };

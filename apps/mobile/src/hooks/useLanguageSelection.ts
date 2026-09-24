@@ -1,13 +1,12 @@
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef } from "react";
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
+import { usePermissions } from "@/hooks/usePermissions";
 import { settingsActions, settings$ } from "@/store";
 import { DEFAULT_LANGUAGES } from "@/utils/languageUtils";
 import { triggerHaptic } from "@/utils/haptics";
-
-const MAX_LANGUAGES = 5;
 
 export interface UseLanguageSelectionReturn {
   selected: string[];
@@ -18,7 +17,8 @@ export interface UseLanguageSelectionReturn {
 }
 
 export function useLanguageSelection(): UseLanguageSelectionReturn {
-  const selected = useSelector(() => settings$.selectedLanguages.get());
+  const { maxSelectedLanguages } = usePermissions();
+  const selected = useValue(() => settings$.selectedLanguages.get());
   const hasInteracted = useRef(false);
 
   useEffect(() => {
@@ -27,16 +27,19 @@ export function useLanguageSelection(): UseLanguageSelectionReturn {
     }
   }, [selected.length]);
 
-  const commitToggle = useCallback((code: string): void => {
-    const prev = settings$.selectedLanguages.peek();
-    if (prev.includes(code)) {
-      settingsActions.setSelectedLanguages(prev.filter((c) => c !== code));
-    } else if (prev.length >= MAX_LANGUAGES) {
-      return;
-    } else {
-      settingsActions.setSelectedLanguages([...prev, code]);
-    }
-  }, []);
+  const commitToggle = useCallback(
+    (code: string): void => {
+      const prev = settings$.selectedLanguages.peek();
+      if (prev.includes(code)) {
+        settingsActions.setSelectedLanguages(prev.filter((c) => c !== code));
+      } else if (prev.length >= maxSelectedLanguages) {
+        return;
+      } else {
+        settingsActions.setSelectedLanguages([...prev, code]);
+      }
+    },
+    [maxSelectedLanguages],
+  );
 
   const debouncedToggle = useDebouncedCallback(commitToggle, 200);
 
@@ -46,7 +49,7 @@ export function useLanguageSelection(): UseLanguageSelectionReturn {
       hasInteracted.current = true;
       if (prev.includes(code)) {
         triggerHaptic();
-      } else if (prev.length >= MAX_LANGUAGES) {
+      } else if (prev.length >= maxSelectedLanguages) {
         triggerHaptic(Haptics.NotificationFeedbackType.Warning);
         return;
       } else {
@@ -54,12 +57,12 @@ export function useLanguageSelection(): UseLanguageSelectionReturn {
       }
       debouncedToggle(code);
     },
-    [debouncedToggle],
+    [debouncedToggle, maxSelectedLanguages],
   );
 
-  const isComplete = selected.length === MAX_LANGUAGES;
-  const remaining = MAX_LANGUAGES - selected.length;
-  const isMaxed = selected.length >= MAX_LANGUAGES;
+  const isComplete = selected.length === maxSelectedLanguages;
+  const remaining = Math.max(0, maxSelectedLanguages - selected.length);
+  const isMaxed = selected.length >= maxSelectedLanguages;
 
   return {
     selected,

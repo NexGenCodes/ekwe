@@ -1,8 +1,9 @@
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
-import { Env, Tier, UsageType } from "../core/types";
-import { getLimits } from "../core/limits";
-import { logger } from "../core/logger";
-import { supabasePost, supabaseServiceHeaders } from "./supabase";
+import { Env, Tier, UsageType } from "@/core/types";
+import { getLimits } from "@/core/limits";
+import { logger } from "@/core/logger";
+import { recordUserEvent } from "@/utils/analytics";
+import { supabasePost, supabaseServiceHeaders } from "@/services/supabase";
 
 type PreflightReason =
   | "RATE_LIMIT"
@@ -18,11 +19,6 @@ interface PreflightResponse {
   cooldown_remaining?: number;
   quota_total?: number;
   quota_remaining?: number;
-  /**
-   * True when a PREMIUM user is past the abuse throttle threshold for this
-   * usage type. They are never blocked — the caller serves the request with
-   * FREE-tier limits until UTC midnight.
-   */
   throttled?: boolean;
 }
 
@@ -38,25 +34,10 @@ interface PreflightGateFailure {
 
 type PreflightGateResult = PreflightGateSuccess | PreflightGateFailure;
 
-/**
- * KV key backing the short-lived preflight decision cache. Shared with
- * `utils/usage.ts`, which deletes it after a billable success so the next
- * request re-runs the RPC and sees the fresh remaining count.
- */
 export function preflightCacheKey(userId: string): string {
   return `preflight:${userId}`;
 }
 
-/**
- * Atomic cooldown + daily quota gate with a short-lived KV cache.
- * Each request type draws down a separate daily pool, so the cached gate
- * carries the type it was minted for and a mismatched type misses the cache
- * and re-runs the RPC.
- *
- * The 2s cache lets a client's repeated rapid requests reuse the same gate
- * instead of hammering the RPC. On a cache miss the result is stored
- * fire-and-forget via `ctx.waitUntil`, never blocking the response.
- */
 export async function runPreflightGate(
   env: Env,
   ctx: ExecutionContext,
@@ -111,8 +92,9 @@ export async function runPreflightGate(
   }
 
   if (!preflight.allowed) {
+    let result: PreflightGateResult;
     if (preflight.reason === "SESSION_INACTIVE") {
-      return {
+      result = {
         ok: false,
         response: Response.json(
           {
@@ -122,14 +104,14 @@ export async function runPreflightGate(
           { status: 401 },
         ),
       };
-    }
-    if (preflight.reason === "QUOTA_EXCEEDED") {
-      return {
+    } else if (preflight.reason === "QUOTA_EXCEEDED") {
+      result = {
         ok: false,
         response: Response.json(
           {
             error: WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED,
             message: "You've reached your daily limit. Try again tomorrow.",
+            usage_type: usageType,
             quota_total: preflight.quota_total,
             quota_remaining: 0,
           },
@@ -139,12 +121,11 @@ export async function runPreflightGate(
           },
         ),
       };
-    }
-    if (
+    } else if (
       preflight.reason === "PREFLIGHT_CONFIG_ERROR" ||
       preflight.reason === "PREFLIGHT_UNAVAILABLE"
     ) {
-      return {
+      result = {
         ok: false,
         response: Response.json(
           {
@@ -154,18 +135,28 @@ export async function runPreflightGate(
           { status: 500 },
         ),
       };
+    } else {
+      const retryAfter = Math.ceil(preflight.cooldown_remaining || 0);
+      result = {
+        ok: false,
+        response: Response.json(
+          {
+            error: WORKER_ERROR_CODES.EKWE_RATE_LIMIT,
+            message: `Please wait ${retryAfter} seconds.`,
+          },
+          { status: 429, headers: { "Retry-After": String(retryAfter) } },
+        ),
+      };
     }
-    const retryAfter = Math.ceil(preflight.cooldown_remaining || 0);
-    return {
-      ok: false,
-      response: Response.json(
-        {
-          error: WORKER_ERROR_CODES.EKWE_RATE_LIMIT,
-          message: `Please wait ${retryAfter} seconds.`,
-        },
-        { status: 429, headers: { "Retry-After": String(retryAfter) } },
-      ),
-    };
+    await recordUserEvent(
+      env,
+      "preflight",
+      userId,
+      "deny",
+      usageType,
+      preflight.reason ?? "unknown",
+    );
+    return result;
   }
 
   if (!wasCached) {
@@ -178,34 +169,21 @@ export async function runPreflightGate(
     );
   }
 
+  await recordUserEvent(env, "preflight", userId, "allow", usageType, "ok");
+
   return { ok: true, preflight };
 }
 
-/**
- * Milliseconds until the next UTC midnight — the daily quota reset boundary.
- */
 export function nextUtcMidnightMs(): number {
   const now = Date.now();
   const msPerDay = 86_400_000;
   return Math.ceil(now / msPerDay) * msPerDay;
 }
 
-/**
- * Seconds until the next UTC midnight. Used for the Retry-After header on
- * 429 quota responses.
- */
 function secondsUntilUtcMidnight(): number {
   return Math.max(1, Math.ceil((nextUtcMidnightMs() - Date.now()) / 1000));
 }
 
-/**
- * Whether the JWT's session still exists in auth.sessions. Supabase access
- * tokens stay valid until `exp` after the user is deleted, so the local
- * signature check in auth.ts cannot see a revocation. Returns `true` when the
- * session exists, `false` only on a definitive "no such session", and `null`
- * when the RPC is unreachable or the token carried no session_id claim (the
- * caller treats null as "skip the check" — fail open).
- */
 async function isSessionActive(
   env: Env,
   sessionId: string | null,
@@ -224,14 +202,6 @@ async function isSessionActive(
   return null;
 }
 
-/**
- * Atomic cooldown + daily quota gate, executed server-side in one RPC call.
- * The Worker owns the numeric limits (passed in), so plan changes never
- * require a migration. The RPC derives the AUTHORITATIVE tier from
- * `user_subscriptions` and applies that tier's limits — a user whose webhook
- * landed (or lapsed) before their JWT refreshed is gated correctly, not by
- * the stale JWT tier. Fails closed on any config/network problem.
- */
 export async function checkPreflight(
   env: Env,
   userId: string,
@@ -241,33 +211,33 @@ export async function checkPreflight(
   chargeChars = 0,
 ): Promise<PreflightResponse> {
   const isTranscribe = type === "transcribe";
-  const isTts = type === "tts";
-  // Pass BOTH tiers' limits: the RPC picks the effective ones from the
-  // authoritative tier. The free tier never throttles (threshold 0), the tts
-  // pool has no throttle at all (it is already a hard char cap), and a
-  // throttled PREMIUM request is served with the free cooldown.
+  const isSpeech = type === "speech";
+  const isStream = type === "stream";
   const freeLimits = getLimits("FREE");
   const premiumLimits = getLimits("PREMIUM");
   const freeCooldownSeconds = freeLimits.cooldownSeconds;
-  const freeDailyLimit = isTts
-    ? freeLimits.dailyTtsCharsLimit
-    : isTranscribe
-      ? freeLimits.dailyTranscribeLimit
-      : freeLimits.dailyTranslateLimit;
+  const freeDailyLimit = isSpeech
+    ? freeLimits.dailySpeechCharsLimit
+    : isStream
+      ? freeLimits.dailyStreamLimit
+      : isTranscribe
+        ? freeLimits.dailyTranscribeLimit
+        : freeLimits.dailyTranslateLimit;
   const premiumCooldownSeconds = premiumLimits.cooldownSeconds;
-  const premiumDailyLimit = isTts
-    ? premiumLimits.dailyTtsCharsLimit
-    : isTranscribe
-      ? premiumLimits.dailyTranscribeLimit
-      : premiumLimits.dailyTranslateLimit;
-  const premiumThrottleThreshold = isTts
-    ? 0
-    : isTranscribe
-      ? premiumLimits.throttleTranscribeThreshold
-      : premiumLimits.throttleTranslateThreshold;
+  const premiumDailyLimit = isSpeech
+    ? premiumLimits.dailySpeechCharsLimit
+    : isStream
+      ? premiumLimits.dailyStreamLimit
+      : isTranscribe
+        ? premiumLimits.dailyTranscribeLimit
+        : premiumLimits.dailyTranslateLimit;
+  const premiumThrottleThreshold =
+    isSpeech || isStream
+      ? 0
+      : isTranscribe
+        ? premiumLimits.throttleTranscribeThreshold
+        : premiumLimits.throttleTranslateThreshold;
 
-  // Reject a deleted/banned user before touching the quota RPC (a revoked
-  // session must not burn cooldown or quota for a user that no longer exists).
   const sessionActive = await isSessionActive(env, sessionId);
   if (sessionActive === false) {
     return {
@@ -295,7 +265,7 @@ export async function checkPreflight(
       p_premium_daily_limit: premiumDailyLimit,
       p_premium_throttle_threshold: premiumThrottleThreshold,
       p_throttle_cooldown_seconds: freeCooldownSeconds,
-      p_premium_tts_chars_limit: premiumLimits.dailyTtsCharsLimit,
+      p_premium_speech_chars_limit: premiumLimits.dailySpeechCharsLimit,
       p_charge_chars: chargeChars,
     });
 

@@ -11,7 +11,7 @@ describe("makeLogEntry", () => {
     expect(entry.message).toBe("User logged in");
     expect(entry.userId).toBe("123");
     expect(typeof entry.timestamp).toBe("string");
-    // Ensure timestamp is a valid ISO string
+
     expect(() => new Date(entry.timestamp)).not.toThrow();
   });
 
@@ -21,7 +21,7 @@ describe("makeLogEntry", () => {
 
     expect(entry.level).toBe("ERROR");
     expect(entry.message).toBe("Something broke");
-    expect(Object.keys(entry).length).toBe(3); // level, message, timestamp
+    expect(Object.keys(entry).length).toBe(3);
   });
 });
 
@@ -107,14 +107,13 @@ describe("scrubSentryEvent", () => {
 
   it("swallows exceptions gracefully if sanitization fails (e.g. read-only properties)", () => {
     const event = {};
-    // Make user read-only to intentionally cause a TypeError when trying to delete its properties
+
     Object.defineProperty(event, "user", {
       value: { email: "test@example.com" },
       writable: false,
       configurable: false,
     });
 
-    // Should not throw
     const scrubbed = scrubSentryEvent(event);
     expect(scrubbed).toBeDefined();
   });

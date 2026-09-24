@@ -107,8 +107,6 @@ export const OtpInput = memo(function OtpInput({
   const shakeX = useSharedValue(0);
   const lastShake = useRef(0);
 
-  // Any increment in `shakeSignal` fires a horizontal shake on the digit row —
-  // used to signal an invalid code without adding layout noise.
   useEffect(() => {
     if (shakeSignal === 0 || shakeSignal === lastShake.current) return;
     lastShake.current = shakeSignal;
@@ -147,9 +145,7 @@ export const OtpInput = memo(function OtpInput({
   return (
     <Box>
       <Animated.View style={shakeStyle}>
-        {/* The TextInput below covers this entire row, so taps land directly on
-            the input and reliably summon the keyboard on Android. The digit
-            boxes are non-interactive (pointerEvents="none"). */}
+        {}
         <Box
           pointerEvents="none"
           style={{
@@ -181,10 +177,7 @@ export const OtpInput = memo(function OtpInput({
         </Box>
       </Animated.View>
 
-      {/* Invisible-but-tappable input stretched over the digit row. A hidden
-          1x1 text input won't summon the IME on Android when tapped — by
-          making it fill the row, every tap focuses it and opens the keyboard
-          while remaining visually hidden (transparent text + caret). */}
+      {}
       <TextInput
         ref={inputRef}
         value={value}

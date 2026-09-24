@@ -1,9 +1,5 @@
 import logger from "@/utils/logger";
 
-// Known bundle IDs → brand names. This is only a fallback for when the native
-// layer can't resolve a display label (historical records, iOS, unmapped
-// packages). Android resolves the real installed app label at the source, so
-// values here are usually already human-readable.
 const KNOWN_APPS: Record<string, string> = {
   "com.whatsapp": "WhatsApp",
   "com.whatsapp.w4b": "WhatsApp Business",
@@ -56,16 +52,11 @@ export const formatSourceApp = (source: string | null | undefined): string => {
 
   if (UNKNOWN_SENTINELS.has(normalized)) return "Audio";
 
-  // Native-resolved display labels (e.g. "WhatsApp Business") pass through
-  // untouched — no splitting, no truncation.
   if (value.includes(" ") || (/[A-Z]/.test(value) && !value.includes(".")))
     return value;
 
-  // Exact known-package match.
   if (KNOWN_APPS[value]) return KNOWN_APPS[value];
 
-  // Dotted bundle ID — last resort heuristic. Strips namespace segments and
-  // title-cases the most specific part (e.g. org.telegram.messenger → Telegram).
   const parts = value.split(".");
   if (parts.length === 1) {
     logger.info(

@@ -1,13 +1,9 @@
-import { CLIENT_ABORTED, Env } from "../core/types";
-import { logger } from "../core/logger";
+import { CLIENT_ABORTED, Env } from "@/core/types";
+import { logger } from "@/core/logger";
+import { loadWitPoolKeys } from "@/utils/wit-pools";
 
 export function getRandomInt(max: number): number {
-  // Guard: max <= 0 would make `threshold` NaN and `value < NaN` false forever,
-  // turning the rejection loop below into an infinite loop.
   if (!Number.isInteger(max) || max <= 0) return NaN;
-  // Rejection sampling: `% max` is biased whenever 2^32 % max != 0 (and even
-  // 32-bit getRandomValues has slight bias per the Web Crypto spec). A 1-in-2
-  // rejection bound keeps expected draws < 2 while removing the bias entirely.
   const threshold = Math.floor(0x100000000 / max) * max;
   for (;;) {
     const arr = new Uint32Array(1);
@@ -28,7 +24,6 @@ export function hexEncode(buffer: ArrayBuffer): string {
     .join("");
 }
 
-/** Cache for key → hash lookups. Bounded LRU cache (max 1000). */
 const keyHashCache = new Map<string, string>();
 const MAX_CACHE_SIZE = 1000;
 const MAX_CACHE_KEY_LENGTH = 512;
@@ -69,19 +64,23 @@ export async function hashBytes(buffer: ArrayBuffer): Promise<string> {
   return hexEncode(buf);
 }
 
+export async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const [hashA, hashB] = await Promise.all([
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(a)),
+    crypto.subtle.digest("SHA-256", new TextEncoder().encode(b)),
+  ]);
+  const aBuf = new Uint8Array(hashA);
+  const bBuf = new Uint8Array(hashB);
+  if (aBuf.length !== bBuf.length) return false;
+  let diff = 0;
+  for (let i = 0; i < aBuf.length; i++) {
+    diff |= aBuf[i] ^ bBuf[i];
+  }
+  return diff === 0;
+}
+
 export interface RotateKeysDetailedResult {
-  /** First 2xx response, or null if no key succeeded. */
   response: Response | null;
-  /**
-   * Status code of the terminal non-2xx attempt when rotation stopped without
-   * a 2xx (either a 5xx early-stop or the last failed key before the pool was
-   * exhausted). Null when rotation stopped for another reason (no key pool,
-   * all keys blacklisted, or execution threw for every key).
-   *
-   * Callers use this to distinguish "provider is hard-down" (5xx) from
-   * "every key exhausted / unauthorized" (429/403) when deciding whether to
-   * disable a provider for the rest of the day.
-   */
   lastStatus: number | null;
 }
 
@@ -97,22 +96,18 @@ export async function rotateKeysDetailed(
     .map((k) => sanitizeKey(env[k]))
     .filter((k) => k.length > 10);
 
-  const array = new Uint32Array(keys.length);
+  const candidates =
+    prefix === "WIT_KEY_" ? [...keys, ...(await loadWitPoolKeys(env))] : keys;
+
+  const array = new Uint32Array(candidates.length);
   crypto.getRandomValues(array);
-  const idx = keys.map((_, i) => i).sort((a, b) => array[a] - array[b]);
-  const shuffled = idx.map((i) => keys[i]);
+  const idx = candidates.map((_, i) => i).sort((a, b) => array[a] - array[b]);
+  const shuffled = idx.map((i) => candidates[i]);
 
   let lastStatus: number | null = null;
 
   for (const key of shuffled) {
     if (signal.aborted) {
-      // The combined attempt signal (AbortSignal.any) aborts for two reasons:
-      // the client hung up (reason is an AbortError-style DOMException) or the
-      // per-attempt timeout fired (AbortSignal.timeout aborts with a
-      // "TimeoutError" DOMException). A timeout must NOT masquerade as a client
-      // abort — that would kill the whole failover chain for one slow provider.
-      // Stop this rotation and let the pipeline try the next provider with a
-      // fresh attempt budget.
       if (
         (signal.reason as { name?: string } | undefined)?.name !==
         "TimeoutError"
@@ -129,8 +124,6 @@ export async function rotateKeysDetailed(
     try {
       res = await execute(key);
     } catch (err) {
-      // A single key failing must not abort rotation for the remaining keys.
-      // Expected during provider failover (timeouts, aborts) — warn only.
       logger.warn("[keys] Rotation attempt failed", {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -178,9 +171,6 @@ export async function rotateKeysDetailed(
     }
 
     if (res.status >= 500) {
-      // Provider-side failure: every remaining key will 5xx too, and each
-      // attempt costs the full timeout latency. Fail fast instead of cycling
-      // through the whole pool.
       logger.warn("[keys] Provider returned 5xx, stopping rotation early", {
         status: res.status,
         namespace,
@@ -194,10 +184,6 @@ export async function rotateKeysDetailed(
   return { response: null, lastStatus };
 }
 
-/**
- * Rotation wrapper for callers that only need the first 2xx response.
- * See {@link rotateKeysDetailed} for the status-aware variant.
- */
 export async function rotateKeys(
   env: Env,
   prefix: string,

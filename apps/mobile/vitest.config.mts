@@ -111,7 +111,7 @@ export default defineConfig({
           functions: 95,
           branches: 85,
         },
-        "src/services/tts.ts": {
+        "src/services/speech.ts": {
           lines: 95,
           statements: 95,
           functions: 80,

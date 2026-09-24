@@ -1,4 +1,4 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import { useRouter } from "expo-router";
 import React from "react";
 
@@ -13,7 +13,7 @@ import { auth$ } from "@/store";
 export function AccountStatusPill(): React.ReactElement {
   const { color } = useTheme();
   const router = useRouter();
-  const isPro = useSelector(() => auth$.isPro.get());
+  const isPro = useValue(() => auth$.isPro.get());
 
   if (isPro) {
     return (

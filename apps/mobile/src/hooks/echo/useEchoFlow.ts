@@ -1,4 +1,4 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { triggerHaptic } from "@/utils/haptics";
@@ -6,27 +6,27 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { useEffect, useCallback, useReducer, useRef, useState } from "react";
 import { Linking } from "react-native";
 
-import { useEchoAudioResolver } from "./useEchoAudioResolver";
+import { useEchoAudioResolver } from "@/hooks/echo/useEchoAudioResolver";
 
-import { useTranslation } from "../useTranslation";
+import { useTranslation } from "@/hooks/useTranslation";
 import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 
 import { usePermissions } from "@/hooks/usePermissions";
-import { batchTranscriber } from "@/services/BatchTranscriber";
-import { HistoryService } from "@/services/HistoryService";
-import { IntentService } from "@/services/IntentService";
+import { batchTranscriber } from "@/services/batchTranscriber";
+import { HistoryService } from "@/services/historyService";
+import { IntentService } from "@/services/intentService";
 import { settings$, auth$, network$ } from "@/store";
 import { EchoStep, EchoProps, UseEchoFlowResult } from "@/types/echo";
 import { default as logger } from "@/utils/logger";
 import { isIOS } from "@/utils/platform";
-import { cleanEchoCache } from "@/utils/echo";
+import { cleanEchoCache } from "@/utils/audioCache";
 import { ECHO_SHARE_SIGNATURE } from "@/constants/echo";
 import {
   resolveDetectedLanguage,
   getDefaultSourceLang,
   isAutoDetectPermitted,
 } from "@/utils/languageUtils";
-import { checkIsOnline } from "@/utils/netInfo";
+import { checkIsOnline } from "@/utils/connectivity";
 import { AppAlert } from "@/utils/alert";
 
 interface EchoState {
@@ -108,21 +108,15 @@ export const useEchoFlow = (
   onPlayerRelease?: () => void,
 ): UseEchoFlowResult => {
   const permissions = usePermissions();
-  const autoCopySetting = useSelector(() => settings$.autoCopy.get());
+  const autoCopySetting = useValue(() => settings$.autoCopy.get());
   const autoCopy = permissions.autoCopy ? autoCopySetting : false;
-  const session = useSelector(() => auth$.session.get());
+  const session = useValue(() => auth$.session.get());
   const sourceApp = props.sourceApp || (isIOS ? "ios" : "");
 
-  // Reactive connectivity (single source of truth from the network store).
-  // Only a *definitive* disconnect counts as offline — `null` probes never do.
-  const netConnected = useSelector(() => network$.isConnected.get());
-  const netReachable = useSelector(() => network$.isInternetReachable.get());
+  const netConnected = useValue(() => network$.isConnected.get());
+  const netReachable = useValue(() => network$.isInternetReachable.get());
   const isOnline = netConnected !== false && netReachable !== false;
 
-  // Log the raw native sourceApp exactly once per mount, NOT on every render.
-  // `useEchoFlow` re-renders at the native status cadence (~2 Hz during
-  // playback) because `useAudioPlayerStatus` emits a fresh status object per
-  // event; a body-level log would otherwise spam the console per re-render.
   const sourceAppLoggedRef = useRef(false);
   if (!sourceAppLoggedRef.current) {
     sourceAppLoggedRef.current = true;
@@ -132,7 +126,6 @@ export const useEchoFlow = (
     );
   }
 
-  // State Machine via Reducer
   const [state, dispatch] = useReducer(echoReducer, {
     step: "PickLanguage",
     selectedLang: getDefaultSourceLang(isAutoDetectPermitted()),
@@ -152,9 +145,6 @@ export const useEchoFlow = (
     [],
   );
 
-  // Auto-copy "copied" feedback flag: set true right after the automatic
-  // clipboard write, then reset shortly after so the copy button's check
-  // animation plays exactly once per auto-copy.
   const [autoCopied, setAutoCopied] = useState(false);
   const autoCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -163,10 +153,6 @@ export const useEchoFlow = (
     };
   }, []);
 
-  // Marks the flow as torn down (dismissed or unmounted). Once set, the async
-  // transcribe/translate handlers MUST stop side-effecting (dispatching state,
-  // writing history) so a late completion never double-records, sets state on an
-  // unmounted tree, or resurrects the sheet after it was closed.
   const goneRef = useRef(false);
   const isGone = (): boolean => goneRef.current;
   useEffect(
@@ -176,7 +162,6 @@ export const useEchoFlow = (
     [],
   );
 
-  // Entry state refs
   const savedRef = useRef(false);
   const transcriptRef = useRef(state.transcription);
   const detectedLangRef = useRef(state.detectedLang);
@@ -184,23 +169,16 @@ export const useEchoFlow = (
   const sttRef = useRef(state.sttProvider);
   const durationRef = useRef(state.audioDuration);
 
-  // Abort controller for the in-flight transcribe/translate request, so the
-  // user can cancel mid-processing. Only one operation runs at a time.
   const processingAbortRef = useRef<AbortController | null>(null);
 
-  // Remembers the last failed operation + its inputs so the Error step can
-  // retry with a single tap (without resetting the chosen language).
   const lastOpRef = useRef<"transcribe" | "translate" | "resolve" | null>(null);
   const lastTranscribeArgsRef = useRef<{
     durationSeconds: number;
     waveform: number[];
   } | null>(null);
 
-  // Throttles upload-progress dispatches to whole-percent changes so the
-  // sheet doesn't re-render on every native progress event.
   const lastUploadPctRef = useRef(-1);
 
-  // Rate-limiting: prevents rapid-fire transcription requests.
   const lastTranscribeTimeRef = useRef<number>(0);
 
   useEffect(() => {
@@ -225,13 +203,8 @@ export const useEchoFlow = (
     [],
   );
 
-  // KeepAwake is now activated only during active processing steps
-  // (Transcribing / Translating) — see handleTranscribe & handleTranslate
-
-  // API calls
   const { translate } = useTranslation();
 
-  // ── URI Resolution Pipeline ──────────────────────────────────────────
   const {
     audioUri,
     isResolving,
@@ -245,8 +218,6 @@ export const useEchoFlow = (
     setIsSubsequentIntent,
   } = useEchoAudioResolver(props);
 
-  // Surface audio-resolution failures (unreadable / too-large / decode error)
-  // into the Error step so the user isn't left stuck on "Loading Audio…".
   useEffect(() => {
     if (resolveError && !isResolving) {
       lastOpRef.current = "resolve";
@@ -254,13 +225,8 @@ export const useEchoFlow = (
     }
   }, [resolveError, isResolving]);
 
-  // Reset state on subsequent share intents
   useEffect(() => {
     if (!isSubsequentIntent) return;
-    // An unpersisted transcription would be lost on reset; save it here before
-    // the flow resets — the same transcription-only semantics as onDismiss.
-    // When savedRef is already true, everything was persisted and the reset is
-    // safe.
     if (!savedRef.current && transcriptRef.current?.trim()) {
       savedRef.current = true;
       HistoryService.recordTranslation(
@@ -288,20 +254,13 @@ export const useEchoFlow = (
       );
     }
     savedRef.current = false;
-    // Clear the transcript refs synchronously — the ref-sync effect at the top
-    // of the hook runs post-render. A dismiss landing in the gap between this
-    // reset and the next render would otherwise see savedRef=false with a stale
-    // transcriptRef and re-save the OLD transcript under the new intent.
     transcriptRef.current = null;
     detectedLangRef.current = null;
     dispatch({ type: "RESET" });
     setIsSubsequentIntent(false);
   }, [isSubsequentIntent, setIsSubsequentIntent, sourceApp, session, audioUri]);
 
-  // Tear down and dismiss. Hoisted above the transcribe/translate handlers so
-  // they can safely reference it (e.g. the login prompt calls onDismiss).
   const onDismiss = useCallback((): void => {
-    // If not saved, save as transcription-only (Half Transaction)
     if (!savedRef.current && transcriptRef.current?.trim()) {
       savedRef.current = true;
       HistoryService.recordTranslation(
@@ -326,13 +285,9 @@ export const useEchoFlow = (
       );
     }
 
-    // Tear down the flow: stop any in-flight request and freeze all async
-    // handlers so a late completion never dispatches/saves after dismissal.
     goneRef.current = true;
     processingAbortRef.current?.abort();
 
-    // Release the native player BEFORE the cache files it may still reference
-    // are deleted, so a backgrounded app never tries to play a removed file.
     onPlayerRelease?.();
     if (activeResolvedUri.current) cleanEchoCache(activeResolvedUri.current);
     if (audioUri && audioUri !== activeResolvedUri.current) {
@@ -342,7 +297,6 @@ export const useEchoFlow = (
     IntentService.dismissEcho();
   }, [sourceApp, session, audioUri, activeResolvedUri, onPlayerRelease]);
 
-  // Transcription Logic
   const handleTranscribe = useCallback(
     async (durationSeconds: number, waveform: number[]): Promise<void> => {
       if (isGone()) return;
@@ -374,13 +328,9 @@ export const useEchoFlow = (
         return;
       }
 
-      // Remember the operation + inputs up-front (BEFORE the cooldown and
-      // plan-limit guards) so "Try Again" works regardless of which guard
-      // rejected the request — cooldown, plan limit, offline, or server.
       lastTranscribeArgsRef.current = { durationSeconds, waveform };
       lastOpRef.current = "transcribe";
 
-      // Enforce Cooldown Limit (Throttling)
       const now = Date.now();
       const elapsedSeconds = (now - lastTranscribeTimeRef.current) / 1000;
       if (elapsedSeconds < permissions.cooldownSeconds) {
@@ -396,8 +346,6 @@ export const useEchoFlow = (
         return;
       }
 
-      // Prefer the native duration reported during content resolution; fall
-      // back to the player-derived estimate when unavailable.
       const durationMs =
         convertedDurationMs ?? Math.round(durationSeconds * 1000);
       dispatch({ type: "SET_AUDIO_DURATION", payload: durationMs / 1000 });
@@ -408,7 +356,6 @@ export const useEchoFlow = (
 
       if (!audioUri) return;
 
-      // Enforce Plan Limits for Audio Duration
       if (durationMs > permissions.dictationDurationMs) {
         const limitSec = permissions.dictationDurationMs / 1000;
         dispatch({
@@ -434,8 +381,6 @@ export const useEchoFlow = (
       const controller = new AbortController();
       processingAbortRef.current = controller;
 
-      // A request is now actually being submitted — only now stamp the throttle so
-      // validation/cancel/offline rejections don't consume the user's cooldown.
       lastTranscribeTimeRef.current = Date.now();
 
       triggerHaptic("selection");
@@ -445,10 +390,8 @@ export const useEchoFlow = (
 
       try {
         activateKeepAwakeAsync("echoSession").catch(() => {});
-        // Audio is already decoded and pre-warmed during the Intent Resolution phase
         const safeUri = audioUri;
 
-        // Transcription Mutation
         const trResult = await batchTranscriber.transcribe(
           {
             uri: safeUri,
@@ -459,14 +402,11 @@ export const useEchoFlow = (
           state.selectedLang,
           controller.signal,
           (fraction) => {
-            // Upload done → the worker pipeline is running server-side; switch
-            // to the indeterminate phase so the bar doesn't sit at 100%.
             if (fraction >= 1) {
               lastUploadPctRef.current = -1;
               dispatch({ type: "SET_UPLOAD_PROGRESS", payload: null });
               return;
             }
-            // Throttle to whole-percent changes to limit re-renders.
             const pct = Math.round(fraction * 100);
             if (pct !== lastUploadPctRef.current) {
               lastUploadPctRef.current = pct;
@@ -478,7 +418,6 @@ export const useEchoFlow = (
         if (isGone()) return;
 
         if (controller.signal.aborted) {
-          // User cancelled → back to the config step, no error.
           dispatch({ type: "SET_ERROR", payload: null });
           dispatch({ type: "SET_STEP", payload: "Preview" });
           return;
@@ -534,9 +473,6 @@ export const useEchoFlow = (
     ],
   );
 
-  // Translation Logic. The user-facing result is applied BEFORE persisting, and
-  // the history write is error-safe so a sync failure never strands the user on
-  // the Translating sheet or keeps FullResult from rendering.
   const handleTranslate = useCallback(async (): Promise<void> => {
     if (isGone()) return;
 
@@ -547,10 +483,6 @@ export const useEchoFlow = (
 
     if (!textToTranslate) return;
 
-    // The detected language is the source. When auto-detect came back empty
-    // (provider didn't report one AND the worker fallback didn't run), fall
-    // back to a concrete user selection before giving up — an explicit
-    // "English" source is still translatable even without a detection.
     const sourceLang =
       source ?? (state.selectedLang !== "auto" ? state.selectedLang : null);
     if (!sourceLang) {
@@ -567,7 +499,6 @@ export const useEchoFlow = (
 
     logger.info("[EchoFlow] Translating %s → %s", sourceLang, target);
 
-    // Set up-front so an offline rejection still lands on a retryable Error step.
     lastOpRef.current = "translate";
 
     const isOnline = await checkIsOnline();
@@ -585,7 +516,6 @@ export const useEchoFlow = (
     processingAbortRef.current = controller;
 
     triggerHaptic("selection");
-    // Clear old translation immediately to prevent "brief text flash"
     dispatch({ type: "SET_TRANSLATION", payload: { text: null } });
     dispatch({ type: "SET_STEP", payload: "Translating" });
 
@@ -604,7 +534,6 @@ export const useEchoFlow = (
       if (isGone()) return;
 
       if (controller.signal.aborted) {
-        // User cancelled → back to the transcript, no error.
         dispatch({ type: "SET_ERROR", payload: null });
         dispatch({ type: "SET_STEP", payload: "TranscribeResult" });
         return;
@@ -624,9 +553,6 @@ export const useEchoFlow = (
         },
       });
 
-      // Auto-copy carries the same brand signature the manual copy appends, so
-      // a pasted result always points back to Ekwe regardless of how it was
-      // copied.
       if (autoCopy && translationResultText) {
         await Clipboard.setStringAsync(
           `${translationResultText}${ECHO_SHARE_SIGNATURE}`,
@@ -645,21 +571,14 @@ export const useEchoFlow = (
       const message = e instanceof Error ? e.message : "Unknown error";
       logger.warn("Translate Error:", message);
       dispatch({ type: "FAIL", payload: { error: message } });
-      return; // Stop flow on translation error
+      return;
     } finally {
       processingAbortRef.current = null;
       deactivateKeepAwake("echoSession").catch(() => {});
     }
 
-    // If the flow was dismissed mid-translate (backgrounded / closed) or the
-    // call failed, do NOT write history — onDismiss already recorded a
-    // transcription-only row, and an error row would be misleading.
     if (isGone() || !succeeded) return;
 
-    // Record to history safely: the transcription and its translation become
-    // TWO separate entries — the transcription keeps the audio metadata, the
-    // translation is a plain text → text row. A history-sync rejection must
-    // never prevent reaching FullResult.
     lastOpRef.current = null;
     savedRef.current = true;
     try {
@@ -715,23 +634,15 @@ export const useEchoFlow = (
     session,
   ]);
 
-  // Cancels the in-flight transcribe/translate request. The operation handlers
-  // observe `controller.signal.aborted` and return to their originating step.
   const cancelProcessing = useCallback((): void => {
     processingAbortRef.current?.abort();
   }, []);
 
-  // Re-runs the operation that failed, keeping the user's language choices.
-  // The Error step calls this instead of resetting to the language picker.
   const retryOperation = useCallback(async (): Promise<void> => {
     if (lastOpRef.current === "translate") {
       await handleTranslate();
     } else if (lastOpRef.current === "resolve") {
-      // Terminal file conditions (e.g. FILE_TOO_LARGE) can never succeed on a
-      // retry, so stay put instead of burning a resolve cycle on the same file.
       if (!resolveRetryable) return;
-      // Re-attempt audio resolution, then return to the language picker (the
-      // flow's initial step) so the user can proceed once it loads.
       retryResolve();
       setStep("PickLanguage");
     } else if (lastTranscribeArgsRef.current) {

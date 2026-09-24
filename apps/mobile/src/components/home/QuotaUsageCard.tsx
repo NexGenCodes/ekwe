@@ -1,16 +1,20 @@
 import Activity from "lucide-react-native/icons/activity";
+import { useRouter } from "expo-router";
 import React, { useMemo } from "react";
 
-import { Box, Text, Spinner } from "@/components/ui";
+import { Box, Text, Spinner, Pressable } from "@/components/ui";
 import { Card } from "@/components/Card";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useUsageQuery } from "@/hooks/queries/useUsageQuery";
 import { useTheme } from "@/hooks";
 import { withAlpha } from "@/utils/color";
+import { triggerHaptic } from "@/utils/haptics";
+import { pushOnce } from "@/utils/navigation";
 
 interface PoolRowProps {
   label: string;
+  unit: string;
   used: number;
   total: number;
   remaining: number;
@@ -21,15 +25,8 @@ interface MeterState {
   tone: "brand" | "warning" | "error";
 }
 
-/**
- * Color the meter/status by how much of the pool has been consumed, so the
- * "reached quota" moment is visible at a glance before the hard 429.
- *  - < 75% consumed → brand (healthy)
- *  - 75–99%      → warning (getting close)
- *  - 100%        → error (reached daily limit)
- */
 function computeMeterState(used: number, total: number): MeterState | null {
-  if (total <= 0) return null; // unlimited
+  if (total <= 0) return null;
   const fraction = Math.min(used / total, 1);
   const tone: MeterState["tone"] =
     fraction >= 1 ? "error" : fraction >= 0.75 ? "warning" : "brand";
@@ -38,6 +35,7 @@ function computeMeterState(used: number, total: number): MeterState | null {
 
 function PoolRow({
   label,
+  unit,
   used,
   total,
   remaining,
@@ -54,7 +52,7 @@ function PoolRow({
         <Text variant="bodySmall" style={{ color: color.muted }}>
           {meter === null
             ? "Unlimited"
-            : `${used} / ${total} used · ${remaining} left`}
+            : `${used} / ${total} ${unit} used · ${remaining} left`}
         </Text>
       </Box>
 
@@ -99,23 +97,29 @@ function resetsLabel(resetsAt: number): string {
 
 export function QuotaUsageCard(): React.ReactElement {
   const { color } = useTheme();
+  const router = useRouter();
   const { data, isLoading, isError } = useUsageQuery();
 
-  const headline = useMemo(() => {
-    if (isError) return null;
-    if (!data) return null;
+  const { headline, showUpgrade } = useMemo(() => {
+    if (isError || !data) return { headline: null, showUpgrade: false };
 
-    const pools = [data.translate, data.transcribe];
-    const anyExhausted = pools.some((p) => p.total > 0 && p.remaining === 0);
-    const anyNear = pools.some(
+    const meters = data.meters;
+    const anyExhausted = meters.some((p) => p.total > 0 && p.remaining === 0);
+    const anyNear = meters.some(
       (p) => p.total > 0 && p.remaining / p.total < 0.25 && p.remaining > 0,
     );
 
     if (anyExhausted)
-      return { text: "Daily limit reached", tone: "error" as const };
+      return {
+        headline: { text: "Daily limit reached", tone: "error" as const },
+        showUpgrade: true,
+      };
     if (anyNear)
-      return { text: "Almost out for today", tone: "warning" as const };
-    return null;
+      return {
+        headline: { text: "Almost out for today", tone: "warning" as const },
+        showUpgrade: true,
+      };
+    return { headline: null, showUpgrade: false };
   }, [data, isError]);
 
   return (
@@ -168,20 +172,50 @@ export function QuotaUsageCard(): React.ReactElement {
         </Text>
       ) : data ? (
         <Box style={styles.pools}>
-          <PoolRow
-            label="Translations"
-            used={data.translate.used}
-            total={data.translate.total}
-            remaining={data.translate.remaining}
-          />
-          <PoolRow
-            label="Transcriptions"
-            used={data.transcribe.used}
-            total={data.transcribe.total}
-            remaining={data.transcribe.remaining}
-          />
+          {data.meters.map((meter) => (
+            <PoolRow
+              key={meter.id}
+              label={meter.label}
+              unit={meter.unit}
+              used={meter.used}
+              total={meter.total}
+              remaining={meter.remaining}
+            />
+          ))}
         </Box>
       ) : null}
+
+      {showUpgrade && (
+        <Pressable
+          onPress={() => {
+            triggerHaptic();
+            pushOnce(router, "/billing");
+          }}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel="Upgrade to Pro. Unlimited translations and transcriptions."
+          style={({ pressed }) => [
+            styles.upgradeRow,
+            { backgroundColor: withAlpha(color.brand, 0.08) },
+            pressed && { backgroundColor: withAlpha(color.brand, 0.16) },
+          ]}
+        >
+          <Text
+            variant="bodySmall"
+            style={{ color: color.brand, fontWeight: "600" }}
+          >
+            Need more today?
+          </Text>
+          <Box style={[styles.upgradePill, { backgroundColor: color.brand }]}>
+            <Text
+              variant="caption"
+              style={{ color: color.onBrand, fontWeight: "600" }}
+            >
+              Go unlimited
+            </Text>
+          </Box>
+        </Pressable>
+      )}
     </Card>
   );
 }
@@ -219,5 +253,21 @@ const styles = {
   fill: {
     height: "100%",
     borderRadius: borderRadius.full,
+  } as const,
+  upgradeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+  } as const,
+  upgradePill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: borderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
   } as const,
 };

@@ -1,26 +1,21 @@
 import { describe, test, expect, beforeEach, vi, type Mock } from "vitest";
 
-// Mock supabasePost (the RPC calls) before importing the module under test.
-// Keep the real supabaseGet so the pricing config read hits the MSW server.
-vi.mock("../../services/supabase", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("../../services/supabase")>();
+vi.mock("@/services/supabase", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@/services/supabase")>();
   return { ...mod, supabasePost: vi.fn() };
 });
 
-import { processWebhookEvent } from "../../services/billing";
-import "../../routes/flutterwave"; // Side-effect: registers flutterwave provider
-import { resetPricingCache } from "../../routes/pricing";
-import { mockEnv } from "../setup";
-import { supabasePost } from "../../services/supabase";
+import { processWebhookEvent } from "@/services/billing";
+import "@/services/flutterwave";
+import { resetPricingCache } from "@/routes/pricing";
+import { mockEnv } from "@/__tests__/setup";
+import { supabasePost } from "@/services/supabase";
 import { http } from "msw";
-import { server } from "../msw/server";
-import { PROVIDER_URLS } from "../msw/handlers";
-
-// ─── Helpers ───────────────────────────────────────────────────────
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 const mockedSupabasePost = supabasePost as Mock;
 
-// Mirrors supabase/migrations/20260821000000_add_local_prices_to_subscription_config.sql
 const SEEDED_CONFIG = {
   id: 1,
   base_price_usd: 2.23,
@@ -106,21 +101,16 @@ function buildEvent(overrides: Record<string, unknown> = {}) {
   };
 }
 
-// ─── Tests ─────────────────────────────────────────────────────────
-
 describe("Flutterwave Event Processor", () => {
   const env = mockEnv({ FLUTTERWAVE_WEBHOOK_SECRET: "fw-secret-123" });
 
   beforeEach(() => {
     vi.clearAllMocks();
     successRpc();
-    // The webhook prices against the Supabase row (strict), so serve the
-    // seeded config unless a test overrides it.
+
     resetPricingCache();
     serveSeededConfig();
   });
-
-  // ── charge.success ──
 
   describe("charge.success", () => {
     test("grants Pro for successful charge", async () => {
@@ -142,7 +132,6 @@ describe("Flutterwave Event Processor", () => {
           p_email: "test@example.com",
           p_is_pro: true,
         }),
-        expect.any(Number),
       );
     });
 
@@ -166,7 +155,6 @@ describe("Flutterwave Event Processor", () => {
         expect.objectContaining({
           p_expires_at: endDate.toISOString(),
         }),
-        expect.any(Number),
       );
     });
 
@@ -192,10 +180,6 @@ describe("Flutterwave Event Processor", () => {
     });
 
     test("rejects a charge at the bundled-map price when Supabase prices it lower", async () => {
-      // The exploit surface: the bundled LOCAL_PRICES map is also embedded in
-      // the mobile app (display-only). Prove the grant decision comes from the
-      // Supabase row, not the bundled map: the row prices NGN monthly at 2500,
-      // so paying 3000 (the bundled map / seed value) must be rejected.
       server.use(
         http.get(PROVIDER_URLS.supabaseAppConfig, () =>
           Response.json([
@@ -269,9 +253,6 @@ describe("Flutterwave Event Processor", () => {
     });
 
     test("retries without granting when Supabase cannot confirm the price", async () => {
-      // Supabase outage / no row: the worker cannot verify the amount, so it
-      // must NOT grant Pro and must NOT ack as applied (which would make
-      // Flutterwave stop retrying a legitimate payment).
       server.use(
         http.get(PROVIDER_URLS.supabaseAppConfig, () =>
           Response.json({ error: "Internal Server Error" }, { status: 500 }),
@@ -292,9 +273,6 @@ describe("Flutterwave Event Processor", () => {
     });
 
     test("rejects charge with amount mismatch (server-derived price)", async () => {
-      // Charged $5 but the server price for monthly is $2.23. The client echo
-      // (meta.amount) is updated to the correct price to prove the rejection
-      // comes from the server's price, not the client-controlled meta.
       const event = buildEvent({
         data: {
           ...buildEvent().data,
@@ -315,9 +293,6 @@ describe("Flutterwave Event Processor", () => {
     });
 
     test("rejects tampered payment where meta echoes the wrong amount", async () => {
-      // The exploit scenario: a modified client charges 100 NGN for monthly
-      // Pro and sets meta.amount=100 so the echo "matches". The server must
-      // reject because 100 NGN != 3000 NGN (the server-derived monthly price).
       const event = buildEvent({
         data: {
           ...buildEvent().data,
@@ -340,9 +315,6 @@ describe("Flutterwave Event Processor", () => {
     });
 
     test("rejects charge in a currency checkout never authorizes", async () => {
-      // EGP is not a billable currency — checkout would resolve it to USD, so
-      // a charge landing in EGP is anomalous. Rejected even though the amount
-      // happens to equal the USD price.
       const event = buildEvent({
         data: {
           ...buildEvent().data,
@@ -365,7 +337,6 @@ describe("Flutterwave Event Processor", () => {
     });
 
     test("rejects annual plan charged at the monthly price", async () => {
-      // tx_ref encodes an annual plan, but only the monthly amount was paid.
       const event = buildEvent({
         data: {
           ...buildEvent().data,
@@ -409,10 +380,6 @@ describe("Flutterwave Event Processor", () => {
     });
 
     test("rejects charge with currency mismatch (legacy meta fallback)", async () => {
-      // Events without a resolvable plan fail closed — the server cannot price
-      // them, so they never grant Pro (previously the client meta echo could
-      // be matched to a tiny underpayment). Charged NGN but meta expects USD →
-      // rejected.
       const event = buildEvent({
         data: {
           ...buildEvent().data,
@@ -437,9 +404,6 @@ describe("Flutterwave Event Processor", () => {
     });
 
     test("rejects underpayment where an unresolvable plan echoes its own meta amount", async () => {
-      // The critical exploit: an attacker pays 100 NGN with a non-ekwe tx_ref
-      // and echoes meta.amount=100 so the legacy meta comparison would match.
-      // The plan cannot be resolved, so this must fail closed — NO grant.
       const event = buildEvent({
         data: {
           ...buildEvent().data,
@@ -464,9 +428,6 @@ describe("Flutterwave Event Processor", () => {
     });
 
     test("rejects a charge with no meta.amount at all (unconditional grant hole)", async () => {
-      // Previously a charge.success with an unresolvable plan and NO
-      // meta.amount returned ok unconditionally — an attacker could pay ~0 and
-      // get Pro. It must fail closed now.
       const event = buildEvent({
         data: {
           ...buildEvent().data,
@@ -501,8 +462,6 @@ describe("Flutterwave Event Processor", () => {
     });
   });
 
-  // ── subscription events ──
-
   describe("subscription.paused", () => {
     test("revokes Pro immediately", async () => {
       const event = buildEvent({ event: "subscription.paused" });
@@ -520,7 +479,6 @@ describe("Flutterwave Event Processor", () => {
           p_is_pro: false,
           p_expires_at: null,
         }),
-        expect.any(Number),
       );
     });
   });
@@ -552,7 +510,6 @@ describe("Flutterwave Event Processor", () => {
           p_is_pro: true,
           p_expires_at: endDate.toISOString(),
         }),
-        expect.any(Number),
       );
     });
   });
@@ -577,7 +534,6 @@ describe("Flutterwave Event Processor", () => {
       const body = (await result.response.json()) as any;
       expect(body.action).toBe("retained");
 
-      // Should keep is_pro=true so user has access through paid period
       expect(mockedSupabasePost).toHaveBeenCalledWith(
         env,
         "/rest/v1/rpc/set_pro_status",
@@ -585,7 +541,6 @@ describe("Flutterwave Event Processor", () => {
           p_is_pro: true,
           p_expires_at: endDate.toISOString(),
         }),
-        expect.any(Number),
       );
     });
   });
@@ -607,12 +562,9 @@ describe("Flutterwave Event Processor", () => {
           p_is_pro: false,
           p_expires_at: null,
         }),
-        expect.any(Number),
       );
     });
   });
-
-  // ── Invoice events ──
 
   describe("invoice.updated", () => {
     test("renews Pro with new end_date", async () => {
@@ -641,7 +593,6 @@ describe("Flutterwave Event Processor", () => {
           p_is_pro: true,
           p_expires_at: newEndDate.toISOString(),
         }),
-        expect.any(Number),
       );
     });
 
@@ -664,8 +615,6 @@ describe("Flutterwave Event Processor", () => {
       expect(body.action).toBe("skipped");
     });
   });
-
-  // ── Refund events ──
 
   describe("charge.refund / charge.refunded", () => {
     test("revokes Pro on a completed refund", async () => {
@@ -690,7 +639,6 @@ describe("Flutterwave Event Processor", () => {
           p_is_pro: false,
           p_expires_at: null,
         }),
-        expect.any(Number),
       );
     });
 
@@ -729,8 +677,6 @@ describe("Flutterwave Event Processor", () => {
     });
   });
 
-  // ── Ignored events ──
-
   describe("ignored events", () => {
     const ignoredEvents = [
       "charge.failed",
@@ -755,8 +701,6 @@ describe("Flutterwave Event Processor", () => {
     });
   });
 
-  // ── Unknown events ──
-
   describe("unknown events", () => {
     test("acks unknown event types", async () => {
       const event = buildEvent({ event: "some.unknown.event" });
@@ -769,8 +713,6 @@ describe("Flutterwave Event Processor", () => {
     });
   });
 
-  // ── Error handling ──
-
   describe("RPC failures", () => {
     test("returns not fullyApplied when Supabase returns 500", async () => {
       failRpc(500);
@@ -782,10 +724,6 @@ describe("Flutterwave Event Processor", () => {
     });
 
     test("acks (does not retry) when Supabase returns 400 (permanent)", async () => {
-      // A 4xx from set_pro_status is a permanent condition (e.g. no Supabase
-      // user for the email) — no retry can fix it, so the event is acked to
-      // stop the infinite Flutterwave redelivery loop, even though Pro wasn't
-      // granted.
       failRpc(400);
       const event = buildEvent();
 
@@ -804,8 +742,6 @@ describe("Flutterwave Event Processor", () => {
     });
   });
 
-  // ── User resolution ──
-
   describe("user resolution", () => {
     test("resolves user by email", async () => {
       const event = buildEvent();
@@ -819,7 +755,6 @@ describe("Flutterwave Event Processor", () => {
           p_email: "test@example.com",
           p_user_id: null,
         }),
-        expect.any(Number),
       );
     });
 
@@ -842,7 +777,6 @@ describe("Flutterwave Event Processor", () => {
           p_email: null,
           p_user_id: userId,
         }),
-        expect.any(Number),
       );
     });
 

@@ -1,13 +1,11 @@
 import { describe, test, expect } from "vitest";
-import * as cohere from "../../providers/cohere";
-import { mockEnv, jsonResponse, mockSignal } from "../setup";
+import * as cohere from "@/providers/cohere";
+import { mockEnv, jsonResponse, mockSignal } from "@/__tests__/setup";
 import { http } from "msw";
-import { server } from "../msw/server";
-import { PROVIDER_URLS } from "../msw/handlers";
+import { server } from "@/__tests__/msw/server";
+import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 describe("Cohere provider", () => {
-  // ─── Transcribe ─────────────────────────────────────────────────
-
   test("transcribe returns text on success", async () => {
     server.use(
       http.post(PROVIDER_URLS.cohereTranscriptions, () =>
@@ -16,7 +14,7 @@ describe("Cohere provider", () => {
     );
 
     const blob = new Blob(["fake audio"], { type: "audio/wav" });
-    const result = await cohere.transcribe(blob, "en", mockEnv(), mockSignal());
+    const result = await cohere.stt(blob, "en", mockEnv(), mockSignal());
     expect(result).not.toBeNull();
     expect(result!.text).toBe("hello world");
     expect(result!.provider).toBe("cohere");
@@ -24,7 +22,7 @@ describe("Cohere provider", () => {
 
   test("transcribe returns null for unsupported language", async () => {
     const blob = new Blob(["fake audio"], { type: "audio/wav" });
-    const result = await cohere.transcribe(blob, "ig", mockEnv(), mockSignal());
+    const result = await cohere.stt(blob, "ig", mockEnv(), mockSignal());
     expect(result).toBeNull();
   });
 
@@ -36,7 +34,7 @@ describe("Cohere provider", () => {
     );
 
     const blob = new Blob(["fake audio"], { type: "audio/wav" });
-    const result = await cohere.transcribe(blob, "en", mockEnv(), mockSignal());
+    const result = await cohere.stt(blob, "en", mockEnv(), mockSignal());
     expect(result).toBeNull();
   });
 
@@ -46,21 +44,19 @@ describe("Cohere provider", () => {
     );
 
     const blob = new Blob(["fake audio"], { type: "audio/wav" });
-    const result = await cohere.transcribe(blob, "en", mockEnv(), mockSignal());
+    const result = await cohere.stt(blob, "en", mockEnv(), mockSignal());
     expect(result).toBeNull();
   });
 
   test("transcribe does not skip supported languages", async () => {
-    const result = await cohere.transcribe(
+    const result = await cohere.stt(
       new Blob(["fake"], { type: "audio/wav" }),
       "es",
       mockEnv(),
       mockSignal(),
     );
-    expect(result).toBeNull(); // 404 from default handler, but not rejected for language
+    expect(result).toBeNull();
   });
-
-  // ─── Translate ─────────────────────────────────────────────────
 
   test("returns translation on success", async () => {
     server.use(

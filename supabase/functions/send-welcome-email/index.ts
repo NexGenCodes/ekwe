@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-// Types for the Supabase Database Webhook payload
 interface WebhookPayload {
   type: "INSERT" | "UPDATE" | "DELETE";
   table: string;
@@ -13,7 +12,6 @@ interface WebhookPayload {
   old_record: Record<string, unknown> | null;
 }
 
-// Brevo SMTP relay — same credentials Supabase Auth already uses for OTP emails.
 const SMTP_HOST = "smtp-relay.brevo.com";
 const SMTP_PORT = 465;
 const SMTP_USER = Deno.env.get("BREVO_SMTP_USER") || "";
@@ -22,7 +20,6 @@ const SENDER_EMAIL =
   Deno.env.get("SENDER_EMAIL") || "emmanuelforchinagorom@gmail.com";
 const SENDER_NAME = "Ekwe";
 
-// Shared-secret auth for the Database Webhook.
 const WEBHOOK_SECRET = Deno.env.get("SEND_WELCOME_EMAIL_SECRET") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
@@ -50,8 +47,6 @@ async function isAuthorized(req: Request): Promise<boolean> {
   }
   return false;
 }
-
-// ─── Minimal SMTP client (implicit TLS on 465) ─────────────────────
 
 class LineReader {
   private buffer = "";

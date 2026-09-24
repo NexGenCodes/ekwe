@@ -1,28 +1,27 @@
 import React from "react";
 import type { ViewStyle, TextStyle, StyleProp } from "react-native";
 
-import { Card } from "./Card";
+import { Card } from "@/components/Card";
 
 import { Box, Text, Spinner, ScrollArea } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 
 interface ScrollableTextBoxProps {
-  /** Text content to display. */
   text: string | null;
-  /** Fixed height of the scroll view container (default: 280). */
+
   height?: number;
-  /** Card variant (default: 'default'). */
+
   variant?: "default" | "outlined" | "accent";
-  /** Primary brand color for the loader. */
+
   brandPrimary?: string;
-  /** Whether to show a loading indicator. */
+
   isLoading?: boolean;
-  /** Optional extra style for the container. */
+
   containerStyle?: StyleProp<ViewStyle>;
-  /** Optional extra style for the text. */
+
   textStyle?: StyleProp<TextStyle>;
-  /** Optional toolbar rendered inside the card above the scroll area. */
+
   header?: React.ReactNode;
 }
 

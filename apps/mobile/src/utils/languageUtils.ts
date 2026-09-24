@@ -1,33 +1,34 @@
 import { PLAN_LIMITS } from "@/constants/billing";
-import { LANGUAGES } from "@/constants/languages";
+import { LANGUAGES, isKnownLanguage } from "@/constants/languages";
 import { auth$ } from "@/store";
 
 export const DEFAULT_LANGUAGES: string[] = LANGUAGES.filter(
   (l) => l.defaultSelected,
 ).map((l) => l.code);
 
+export function sanitizeLanguageCodes(
+  codes: readonly string[],
+  maxLanguages: number,
+): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const code of codes) {
+    if (code === "auto" || seen.has(code) || !isKnownLanguage(code)) continue;
+    seen.add(code);
+    result.push(code);
+    if (result.length >= maxLanguages) break;
+  }
+  return result;
+}
+
 export function getDefaultSourceLang(autoDetectAllowed: boolean): string {
   return autoDetectAllowed ? "auto" : "en";
 }
 
-/**
- * Non-reactive read of whether auto-detect-source is permitted, for use inside
- * effects/callbacks that must read the current plan without re-running.
- */
 export function isAutoDetectPermitted(): boolean {
   return PLAN_LIMITS[auth$.isPro.peek() ? "pro" : "free"].autoDetectAllowed;
 }
 
-/**
- * Resolves the effective source language from a transcript/translation result.
- *
- * A provider-reported language is only a *genuine detection* when it differs
- * from the language the user asked for (or the user asked for auto-detect).
- * When the provider merely echoes the requested language back, nothing was
- * detected — the user's selection is the source. Auto-detect (a Pro feature)
- * never returns `null`: the worker backfills detection on auto, so this falls
- * back to the default source rather than hiding the "Detected" pill.
- */
 export function resolveDetectedLanguage(
   detectedLang: string | undefined | null,
   sourceLang: string,
@@ -38,23 +39,14 @@ export function resolveDetectedLanguage(
       ? detectedLang
       : null;
 
-  // Auto-detect request: the provider's report is the answer, falling back to
-  // the default source so the detected pill is always visible for Pro users.
   if (sourceLang === "auto") return reported ?? fallback;
 
-  // Explicit source: only accept a DIFFERENT language as a detection signal.
   if (reported && reported !== sourceLang) return reported;
 
-  // No detection — the user's chosen source (or fallback) wins.
   if (sourceLang && sourceLang !== "auto") return sourceLang;
   return fallback;
 }
 
-/**
- * True only when the provider genuinely detected a language that the user did
- * not just echo back (i.e. auto-detect was requested, or the reported language
- * contradicts the user's selection). Drives "Detected ·" vs "Source ·" labels.
- */
 export function isGenuineLanguageDetection(
   detectedLang: string | undefined | null,
   requestedLang: string,

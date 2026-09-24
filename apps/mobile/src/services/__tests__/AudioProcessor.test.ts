@@ -1,5 +1,5 @@
 import { describe, test, expect } from "vitest";
-import { AudioProcessor } from "../AudioProcessor";
+import { AudioProcessor } from "@/services/audioProcessor";
 import { EkweError } from "@/constants/errors";
 
 describe("AudioProcessor.processRecording", () => {

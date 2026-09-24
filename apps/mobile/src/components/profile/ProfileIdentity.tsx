@@ -1,13 +1,14 @@
 import { User } from "@supabase/supabase-js";
 import { Image as ExpoImage } from "expo-image";
-import Crown from "lucide-react-native/icons/crown";
 import Lock from "lucide-react-native/icons/lock";
 import Edit3 from "lucide-react-native/icons/pen-line";
+import Crown from "lucide-react-native/icons/crown";
 import React from "react";
 
-import { Badge } from "@/components/Badge";
-import { Box, Text, Pressable } from "@/components/ui";
-import { shadows, opacity } from "@/constants";
+import { LockedPressable } from "@/components/LockedPressable";
+import { IconContainer } from "@/components/IconContainer";
+import { Box, Text } from "@/components/ui";
+import { shadows } from "@/constants";
 import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
@@ -45,23 +46,29 @@ export function ProfileIdentity({
   return (
     <Box
       style={{
+        flexDirection: "row",
         alignItems: "center",
-        marginBottom: spacing.xl,
-        marginTop: spacing.md,
+        gap: spacing.lg,
+        marginBottom: spacing["2xl"],
+        marginTop: spacing.sm,
       }}
     >
-      <Box>
-        <Box
+      <Box style={styles.avatarWrapper}>
+        <IconContainer
+          size={72}
+          variant={isPro ? "custom" : "primary"}
+          backgroundColor={
+            isPro
+              ? withAlpha(color.brand, 0.15)
+              : withAlpha(color.foreground, 0.08)
+          }
           style={{
-            width: 100,
-            height: 100,
-            borderRadius: borderRadius.full,
-            borderWidth: 4,
-            boxShadow: shadows.softLg,
-            alignItems: "center",
-            justifyContent: "center",
             overflow: "hidden",
-            borderColor: color.card,
+            boxShadow: isPro
+              ? `0 4px 16px ${withAlpha(color.brand, 0.18)}`
+              : shadows.softLg,
+            borderWidth: isPro ? 2 : 0,
+            borderColor: isPro ? color.brand : undefined,
           }}
         >
           {currentIconData ? (
@@ -71,11 +78,11 @@ export function ProfileIdentity({
                 height: "100%",
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: withAlpha(currentIconData.color, 0.102),
+                backgroundColor: withAlpha(currentIconData.color, 0.12),
               }}
             >
               {React.createElement(currentIconData.icon, {
-                size: 48,
+                size: 36,
                 color: currentIconData.color,
               })}
             </Box>
@@ -85,7 +92,7 @@ export function ProfileIdentity({
               contentFit="cover"
               transition={300}
               cachePolicy="memory-disk"
-              style={{ width: "100%", height: "100%" }}
+              style={{ width: "100%", height: "100%", borderRadius: 36 }}
             />
           ) : (
             <Box
@@ -94,103 +101,153 @@ export function ProfileIdentity({
                 height: "100%",
                 alignItems: "center",
                 justifyContent: "center",
-                backgroundColor: withAlpha(color.brand, 0.102),
+                backgroundColor: isPro
+                  ? withAlpha(color.brand, 0.12)
+                  : withAlpha(color.foreground, 0.08),
               }}
             >
               <Text
                 variant="display"
                 style={{
-                  color: color.brand,
+                  color: isPro ? color.brand : color.foreground,
                 }}
               >
-                {rawName?.[0] || userName[0]?.toUpperCase() || "U"}
+                {rawName?.charAt(0) || userName.charAt(0).toUpperCase() || "U"}
               </Text>
             </Box>
           )}
-        </Box>
-        <Pressable
-          style={({ pressed }) => [
-            {
-              position: "absolute",
-              bottom: -4,
-              right: -4,
-              width: iconSize.lg,
-              height: iconSize.lg,
-              borderRadius: borderRadius.xl,
-              alignItems: "center",
-              justifyContent: "center",
-              borderWidth: 3,
-              backgroundColor: color.brand,
-              borderColor: color.background,
-            },
-            pressed && {
-              opacity: opacity.inactive,
-              transform: [{ scale: 0.92 }],
-            },
-          ]}
-          accessibilityRole="button"
+        </IconContainer>
+        <LockedPressable
+          locked={avatarLocked}
+          navigateToBilling
+          onPress={onEditAvatar}
           accessibilityLabel={
             avatarLocked
               ? "Avatar customization is a Pro feature"
               : "Edit avatar"
           }
-          onPress={onEditAvatar}
+          style={[
+            styles.editButton,
+            {
+              backgroundColor: isPro ? color.brand : color.foreground,
+              borderColor: color.background,
+            },
+          ]}
+          hitSlop={12}
         >
-          {avatarLocked ? (
-            isIOS ? (
-              <ExpoImage
-                source="sf:lock.fill"
-                style={{ width: 14, height: 14 }}
-                tintColor={color.onBrand}
-              />
-            ) : (
-              <Lock size={14} color={color.onBrand} />
-            )
-          ) : isIOS ? (
+          {isIOS ? (
             <ExpoImage
-              source="sf:pencil"
+              source={avatarLocked ? "sf:lock.fill" : "sf:pencil"}
               style={{ width: 14, height: 14 }}
-              tintColor={color.onBrand}
+              tintColor={isPro ? color.onBrand : color.background}
             />
+          ) : avatarLocked ? (
+            <Lock size={14} color={isPro ? color.onBrand : color.background} />
           ) : (
-            <Edit3 size={14} color={color.onBrand} />
+            <Edit3 size={14} color={isPro ? color.onBrand : color.background} />
           )}
-        </Pressable>
+        </LockedPressable>
       </Box>
-      <Text
-        variant="heading2"
-        style={{
-          marginTop: spacing.md,
-          color: color.foreground,
-        }}
-      >
-        {userName}
-      </Text>
-      {userEmail && (
+      <Box style={{ flex: 1, minWidth: 0 }}>
         <Text
-          variant="bodySmall"
-          style={{ marginTop: spacing.xs, color: color.muted }}
+          variant="heading3"
+          numberOfLines={1}
+          style={{ color: color.foreground }}
         >
-          {userEmail}
+          {userName}
         </Text>
-      )}
-      <Box style={{ marginTop: spacing.md }}>
-        <Badge
-          label={isPro ? "Pro Member" : "Free Plan"}
-          variant={isPro ? "warning" : "primary"}
-          icon={
-            isIOS ? (
-              <ExpoImage
-                source="sf:crown.fill"
-                style={{ width: 14, height: 14 }}
-                tintColor={isPro ? color.warning : color.brand}
-              />
-            ) : (
-              <Crown size={14} color={isPro ? color.warning : color.brand} />
-            )
-          }
-        />
+        {isPro ? (
+          <Box
+            accessible
+            accessibilityRole="text"
+            accessibilityLabel="Pro account"
+            style={[
+              styles.planChip,
+              {
+                backgroundColor: withAlpha(color.brand, 0.1),
+                borderColor: withAlpha(color.brand, 0.28),
+              },
+            ]}
+          >
+            <Crown size={12} color={color.brand} />
+            <Text
+              variant="label"
+              style={{
+                color: color.brand,
+                textTransform: "uppercase",
+              }}
+            >
+              Pro
+            </Text>
+          </Box>
+        ) : (
+          <Box
+            accessible
+            accessibilityRole="text"
+            accessibilityLabel="Free account"
+            style={[
+              styles.planChip,
+              {
+                backgroundColor: withAlpha(color.foreground, 0.05),
+                borderColor: withAlpha(color.foreground, 0.1),
+              },
+            ]}
+          >
+            <Box style={[styles.statusDot, { backgroundColor: color.muted }]} />
+            <Text
+              variant="label"
+              style={{
+                color: color.muted,
+                textTransform: "uppercase",
+              }}
+            >
+              Free
+            </Text>
+          </Box>
+        )}
+        {userEmail && (
+          <Text
+            variant="bodySmall"
+            numberOfLines={1}
+            style={{ marginTop: spacing.xs, color: color.muted }}
+          >
+            {userEmail}
+          </Text>
+        )}
       </Box>
     </Box>
   );
 }
+
+const styles = {
+  avatarWrapper: {
+    position: "relative",
+  } as const,
+  planChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    alignSelf: "flex-start",
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  } as const,
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: borderRadius.full,
+  } as const,
+  editButton: {
+    position: "absolute",
+    bottom: -4,
+    right: -4,
+    width: iconSize.lg,
+    height: iconSize.lg,
+    borderRadius: borderRadius.xl,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+  } as const,
+};

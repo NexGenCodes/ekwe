@@ -1,12 +1,12 @@
-// Shared parser for CHANGELOG.md (single source of truth for release notes).
-// Used by the landing-site build (renders the changelog page) and by
-// append-changelog.mjs (writes release entries into the file).
-//
-// Parse model:
-//   ## [1.2.6] - 2026-09-10        -> entry { version, date }
-//   ### Added                       -> section
-//   - Supports WAV sharing          -> item on the current section
-// An entry without any sections simply has sections: [].
+
+
+
+
+
+
+
+
+
 
 export function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (ch) => {
@@ -53,7 +53,7 @@ export function parseChangelog(markdown) {
       continue;
     }
 
-    // Continuation line of the previous item (indented markdown wrap).
+    
     const continuation = raw.match(/^\s+(.+)$/);
     if (continuation && section && section.items.length > 0) {
       section.items[section.items.length - 1] += " " + continuation[1].trim();
@@ -63,7 +63,7 @@ export function parseChangelog(markdown) {
   return entries;
 }
 
-// Newest released entry (skips [Unreleased]).
+
 export function latestReleaseEntry(markdown) {
   const entries = parseChangelog(markdown);
   const released = entries.filter((e) => !/^unreleased$/i.test(e.version));

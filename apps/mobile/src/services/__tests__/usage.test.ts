@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fetchUsage } from "../usage";
+import { fetchUsage } from "@/services/usage";
 
 const getSessionMock = vi.hoisted(() => vi.fn());
 
@@ -8,24 +8,43 @@ vi.mock("@/services/supabase", () => ({
   supabase: { auth: { getSession: getSessionMock } },
 }));
 
-vi.mock("@/utils/networkUtils", () => ({
+vi.mock("@/utils/http", () => ({
   getWorkerUrl: vi.fn(() => "https://worker.test"),
   fetchWithRetry: vi.fn(),
   isTimeoutError: vi.fn(() => false),
 }));
 
-import {
-  fetchWithRetry,
-  getWorkerUrl,
-  isTimeoutError,
-} from "@/utils/networkUtils";
+import { fetchWithRetry, getWorkerUrl, isTimeoutError } from "@/utils/http";
 
 const validSnapshot = {
   day: "2026-09-17",
   resetsAt: 1729200000000,
-  translate: { used: 1, total: 10, remaining: 9 },
-  transcribe: { used: 0, total: 3, remaining: 3 },
-  tts: { used: 2, total: 5, remaining: 3 },
+  meters: [
+    {
+      id: "translate",
+      label: "Translations",
+      unit: "requests",
+      used: 1,
+      total: 10,
+      remaining: 9,
+    },
+    {
+      id: "transcribe",
+      label: "Transcriptions",
+      unit: "requests",
+      used: 0,
+      total: 3,
+      remaining: 3,
+    },
+    {
+      id: "speech",
+      label: "Speech",
+      unit: "characters",
+      used: 2,
+      total: 5,
+      remaining: 3,
+    },
+  ],
 };
 
 const jsonResponse = (body: unknown, status = 200): Response =>
@@ -86,9 +105,7 @@ describe("fetchUsage", () => {
   });
 
   it("rejects a payload that fails the shared schema", async () => {
-    vi.mocked(fetchWithRetry).mockResolvedValue(
-      jsonResponse({ day: "nope", translate: {} }),
-    );
+    vi.mocked(fetchWithRetry).mockResolvedValue(jsonResponse({ day: "nope" }));
     const result = await fetchUsage();
     expect(result).toEqual({ ok: false, error: "Invalid usage payload" });
   });

@@ -11,11 +11,11 @@ type SdkOptions = ComponentProps<typeof PayWithFlutterwave>["options"];
 
 interface CheckoutSheetProps {
   visible: boolean;
-  /** The worker-authorized session (tx_ref, amount, currency) for the SDK. */
+
   session: CheckoutSession | null;
-  /** The plan id echoed back in meta so the webhook can resolve it. */
+
   plan: string | null;
-  /** The signed-in user's email (required by Flutterwave customer). */
+
   email: string;
   onDismiss: () => void;
   onComplete: (data: {
@@ -25,12 +25,6 @@ interface CheckoutSheetProps {
   }) => void;
 }
 
-/**
- * Payment methods offered per currency. Flutterwave takes a comma-separated
- * `payment_options` string; we always offer the card/bank/USSD/account basics
- * and add the local mobile-money rail where Flutterwave supports it, so the
- * checkout never surfaces a dead payment method.
- */
 const BASE_PAYMENT_OPTIONS = ["card", "banktransfer", "ussd", "account"];
 
 const MOBILE_MONEY_OPTIONS: Partial<Record<FlutterwaveCurrency, string[]>> = {
@@ -54,14 +48,6 @@ const PLAN_LABELS: Record<string, string> = {
   annual: "Annual",
 };
 
-/**
- * Flutterwave SDK checkout. Mounts `PayWithFlutterwave` (which renders its
- * own full-screen checkout modal) and triggers initialization through the
- * `customButton` render-prop's `onPress`, captured into a ref.
- *
- * `key={session.tx_ref}` remounts the SDK per session so its SAME_TXREF
- * guard never blocks a repeat checkout for the same user+plan.
- */
 export function CheckoutSheet({
   visible,
   session,
@@ -72,7 +58,6 @@ export function CheckoutSheet({
 }: CheckoutSheetProps): React.ReactElement | null {
   const triggerPressRef = useRef<(() => void) | null>(null);
 
-  // Auto-trigger the SDK when a new session arrives.
   useEffect(() => {
     if (visible && session) {
       requestAnimationFrame(() => triggerPressRef.current?.());
@@ -114,16 +99,13 @@ export function CheckoutSheet({
     amount: session.amount,
     currency: session.currency,
     payment_options: getPaymentOptions(session.currency),
-    // Prefer the server-authoritative public key so the SDK always initializes
-    // with the key matching the configured secret's environment. Falls back to
-    // the env key so older workers / local dev still work.
+
     authorization: session.public_key || getFlutterwavePublicKey(),
     tx_ref: session.tx_ref,
     customer: {
       email,
     },
-    // Echoed back in the webhook so the worker can verify the charged
-    // amount/currency and resolve the plan.
+
     meta: {
       plan,
       amount: session.amount,

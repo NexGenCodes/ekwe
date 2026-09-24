@@ -4,7 +4,7 @@ import Zap from "lucide-react-native/icons/zap";
 import React, { useCallback, useState } from "react";
 import { SharedValue } from "react-native-reanimated";
 
-import { AudioWaveform as ReanimatedWaveform } from "../../AudioWaveform";
+import { AudioWaveform as ReanimatedWaveform } from "@/components/AudioWaveform";
 
 import { Box, Text, Pressable, Spinner } from "@/components/ui";
 import { borderRadius, touchTarget, opacity } from "@/constants/sizes";
@@ -39,12 +39,6 @@ interface PlaybackControlProps {
   onScrubStateChange?: (isScrubbing: boolean) => void;
 }
 
-/**
- * A WhatsApp-style audio control bar. The play button, waveform and speed pill
- * (1x/1.5x/2x) share a single centered row so they align with each other; the
- * elapsed/total timer sits directly beneath the waveform. All controls are
- * disabled until the audio is loaded.
- */
 const PlaybackControl: React.FC<PlaybackControlProps> = React.memo(
   function PlaybackControl({
     isPlaying,
@@ -243,9 +237,6 @@ export const EchoPreviewStep: React.FC<EchoPreviewStepProps> = React.memo(
           peaks={peaks}
           playbackRate={player.playbackRate}
           onTogglePlay={handleTogglePlay}
-          // The scrub lifecycle lives in the player: `beginScrub` captures
-          // whether audio was actively playing, `endScrub` seeks and resumes
-          // only if it was. A finished/paused track stays paused.
           onSeek={handleSeek}
           onPlaybackRateChange={player.setPlaybackRate}
           onScrubStateChange={handleScrubStateChange}

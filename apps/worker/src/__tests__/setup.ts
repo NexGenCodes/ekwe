@@ -1,8 +1,7 @@
 import { vi, beforeAll, afterEach, afterAll } from "vitest";
-import type { Env } from "../core/types";
-import { server } from "./msw/server";
-
-// ─── Mock Cache API ──────────────────────────────────────────────────
+import type { Env } from "@/core/types";
+import { server } from "@/__tests__/msw/server";
+import { resetHealthMemo } from "@/services/health";
 
 const cacheStore = new Map<string, Response>();
 
@@ -21,16 +20,12 @@ const mockCaches = {
   },
 };
 
-// Make caches available globally for the Cache API
 globalThis.caches = mockCaches as unknown as CacheStorage;
 
-// Clear cache and mocks between tests
 beforeEach(() => {
   cacheStore.clear();
   vi.clearAllMocks();
 });
-
-// ─── Mock ExecutionContext ───────────────────────────────────────────
 
 export function mockExecutionContext(): ExecutionContext {
   const waitUntilFns: Array<Promise<unknown>> = [];
@@ -39,18 +34,10 @@ export function mockExecutionContext(): ExecutionContext {
       waitUntilFns.push(p);
     }),
     passThroughOnException: vi.fn(),
-    // Helper for tests to await all waitUntil promises
+
     _waitUntilFns: waitUntilFns,
   } as unknown as ExecutionContext;
 }
-
-// ─── Mock D1 (in-memory) ───────────────────────────────────────────
-// Backs the translate/transcribe result cache (d1-cache.ts). Supports only
-// the exact statements the cache utilities emit:
-//   SELECT result, expires_at FROM <table> WHERE cache_key = ?
-//   SELECT cache_key FROM <table> WHERE expires_at < ? LIMIT ?
-//   INSERT INTO <table> (...) VALUES (...) ON CONFLICT(cache_key) DO UPDATE ...
-//   DELETE FROM <table> WHERE cache_key = ?
 
 interface D1Row {
   cache_key: string;
@@ -71,6 +58,15 @@ class InMemoryD1 {
       run: () => Promise<{ meta: { changes: number } }>;
     };
   } {
+    if (/^\s*SELECT\s+1\s*$/i.test(sql)) {
+      return {
+        bind: () => ({
+          first: async <T>() => ({ 1: 1 }) as T,
+          all: async <T>() => ({ results: [] }) as unknown as { results: T[] },
+          run: async () => ({ meta: { changes: 0 } }),
+        }),
+      };
+    }
     const tableMatch = sql.match(/FROM\s+(\w+)|INTO\s+(\w+)|UPDATE\s+(\w+)/i);
     const table = tableMatch?.[1] ?? tableMatch?.[2] ?? tableMatch?.[3];
     if (!table) throw new Error(`Mock D1: cannot infer table from: ${sql}`);
@@ -78,7 +74,6 @@ class InMemoryD1 {
 
     return {
       bind: (...args: unknown[]) => {
-        // SELECT by cache_key
         if (
           /SELECT result, expires_at/i.test(sql) &&
           /WHERE cache_key = \?/.test(sql)
@@ -99,7 +94,6 @@ class InMemoryD1 {
           };
         }
 
-        // SELECT cache_key WHERE expires_at < ? LIMIT ?
         if (
           /SELECT cache_key/i.test(sql) &&
           /WHERE expires_at < \?/.test(sql)
@@ -118,11 +112,7 @@ class InMemoryD1 {
           };
         }
 
-        // INSERT ... ON CONFLICT DO UPDATE
         if (/INSERT INTO/i.test(sql)) {
-          // Idempotency claim: atomic INSERT ... ON CONFLICT DO NOTHING.
-          // Only the first insert wins (changes 1); a concurrent/duplicate
-          // insert changes nothing (changes 0).
           if (/webhook_idempotency/i.test(sql)) {
             const [key, createdAt, expiresAt] = args;
             return {
@@ -160,7 +150,6 @@ class InMemoryD1 {
           };
         }
 
-        // DELETE
         if (/DELETE FROM/i.test(sql)) {
           const key = args[0] as string;
           return {
@@ -182,8 +171,6 @@ class InMemoryD1 {
     return Promise.all(stmts.map((s) => s.run()));
   }
 }
-
-// ─── Mock Env Factory ──────────────────────────────────────────────
 
 export function mockEnv(overrides: Partial<Env> = {}): Env {
   const store = new Map<string, string | Uint8Array>();
@@ -243,11 +230,61 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
     limit: vi.fn(async () => ({ success: true })),
   } as Env["RATE_LIMITER"];
 
+  const r2Store = new Map<
+    string,
+    { value: Uint8Array; customMetadata: Record<string, string> }
+  >();
+  const r2 = {
+    get: vi.fn(async (key: string) => {
+      const entry = r2Store.get(key);
+      if (!entry) return null;
+      const arr = entry.value;
+      return {
+        key,
+        size: arr.byteLength,
+        customMetadata: { ...entry.customMetadata },
+        httpMetadata: {},
+        body: null,
+        arrayBuffer: async () =>
+          arr.buffer.slice(arr.byteOffset, arr.byteOffset + arr.byteLength),
+        writeHttpMetadata: vi.fn(),
+      };
+    }),
+    put: vi.fn(
+      async (
+        key: string,
+        value: string | ArrayBuffer | Uint8Array,
+        options?: {
+          customMetadata?: Record<string, string>;
+          httpMetadata?: Record<string, string>;
+        },
+      ) => {
+        let bytes: Uint8Array;
+        if (value instanceof Uint8Array) bytes = value;
+        else if (value instanceof ArrayBuffer) bytes = new Uint8Array(value);
+        else bytes = new TextEncoder().encode(value);
+        r2Store.set(key, {
+          value: new Uint8Array(bytes),
+          customMetadata: options?.customMetadata ?? {},
+        });
+        return {
+          key,
+          size: bytes.byteLength,
+          customMetadata: options?.customMetadata ?? {},
+          httpMetadata: options?.httpMetadata ?? {},
+        };
+      },
+    ),
+    delete: vi.fn(async (key: string) => r2Store.delete(key)),
+    list: vi.fn(async () => ({ objects: [] })),
+  } as unknown as Env["SPEECH_CACHE"];
+
+  const analyticsDataset = {
+    writeDataPoint: vi.fn(),
+  } as unknown as Env["EKWE_ANALYTICS"];
+
   const d1 = new InMemoryD1() as unknown as Env["EKWE_D1"];
 
-  // In-memory stand-in for the ThrottleBucket DO: getByName("otp") returns a
-  // stub whose fetch mirrors the production counter semantics (fixed window
-  // rolled over by a stored resetAt timestamp, no storage TTL).
   const throttleStore = new Map<string, { count: number; resetAt: number }>();
   const throttleDo = {
     getByName: vi.fn((_name: string) => ({
@@ -286,6 +323,8 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
     EKWE_D1: d1,
     AI: ai,
     RATE_LIMITER: rateLimiter,
+    SPEECH_CACHE: r2,
+    EKWE_ANALYTICS: analyticsDataset,
     THROTTLE_DO: throttleDo,
     GROQ_KEY_1: "mock-groq-key-1-abcde",
     GROQ_KEY_2: "mock-groq-key-2-abcde",
@@ -309,7 +348,8 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
     MISTRAL_KEY_3: "mock-mistral-key-3-abcde",
     MISTRAL_KEY_4: "mock-mistral-key-4-abcde",
     MISTRAL_KEY_5: "mock-mistral-key-5-abcde",
-    OPENROUTER_KEY: "mock-openrouter-key",
+    OPENROUTER_KEY_1: "mock-openrouter-key-1-abcde",
+    OPENROUTER_KEY_2: "mock-openrouter-key-2-abcde",
 
     WIT_KEY_EN: "mock-wit-en-key-10",
     WIT_KEY_FR: "mock-wit-fr-key-10",
@@ -317,8 +357,6 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
     ...overrides,
   } as unknown as Env;
 }
-
-// ─── Mock Blob / Audio Helpers ─────────────────────────────────────
 
 export function makeAudioBlob(): Blob {
   const sampleRate = 8000;
@@ -350,8 +388,6 @@ export function makeAudioBlob(): Blob {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-// ─── JSON Response Helper ──────────────────────────────────────────
-
 export function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -359,28 +395,25 @@ export function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
-// ─── Signal Helper ─────────────────────────────────────────────────
-
 export function mockSignal(): AbortSignal {
   return new AbortController().signal;
 }
 
-// ─── MSW lifecycle ─────────────────────────────────────────────────
-// Replace the hand-rolled `globalThis.fetch` interceptor (which silently fell
-// through to the real network for unmocked requests and could burn real
-// provider tokens) with native MSW handlers. Unhandled requests now throw
-// loudly; only the explicit live key-validity run may bypass the network.
+const IS_INTEGRATION = process.env.RUN_INTEGRATION_TESTS === "true";
 
-beforeAll(() => {
-  server.listen({
-    onUnhandledRequest: "error",
+if (!IS_INTEGRATION) {
+  beforeAll(() => {
+    server.listen({
+      onUnhandledRequest: "error",
+    });
   });
-});
 
-afterEach(() => {
-  server.resetHandlers();
-});
+  afterEach(() => {
+    server.resetHandlers();
+    resetHealthMemo();
+  });
 
-afterAll(() => {
-  server.close();
-});
+  afterAll(() => {
+    server.close();
+  });
+}

@@ -1,6 +1,6 @@
 import React from "react";
 
-import { IconContainer } from "../IconContainer";
+import { IconContainer } from "@/components/IconContainer";
 
 import { EkweLogo } from "@/components/EkweLogo";
 import { AccountStatusPill } from "@/components/home/AccountStatusPill";

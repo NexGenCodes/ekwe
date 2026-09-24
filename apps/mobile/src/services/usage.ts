@@ -2,20 +2,11 @@ import { usageSnapshotSchema } from "@ekwe/shared";
 import type { UsageSnapshot } from "@ekwe/shared";
 
 import { supabase } from "@/services/supabase";
-import {
-  fetchWithRetry,
-  getWorkerUrl,
-  isTimeoutError,
-} from "@/utils/networkUtils";
+import { fetchWithRetry, getWorkerUrl, isTimeoutError } from "@/utils/http";
 import logger from "@/utils/logger";
 
 export type { UsageSnapshot };
 
-/**
- * Fetches the caller's daily usage snapshot from the worker's read-only
- * /usage endpoint. Returns an error Result rather than throwing so callers
- * can decide how to degrade (hide the meter, show a retry state, etc.).
- */
 export async function fetchUsage(): Promise<
   { ok: true; value: UsageSnapshot } | { ok: false; error: string }
 > {

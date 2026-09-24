@@ -33,6 +33,7 @@ vi.mock("expo-file-system", () => ({
   // sharedContainer calls these when the app-group container is missing
   // (iOS-only); simulate that state so the unit tests hit the null path.
   File: class File {},
+  Directory: class Directory {},
   Paths: {
     appleSharedContainers: undefined,
   },
@@ -56,6 +57,7 @@ const mockExpoDb = {
   execSync: vi.fn(),
   withExclusiveTransactionSync: vi.fn((fn) => fn()),
   runSync: vi.fn(() => ({ changes: 0 })),
+  getAllSync: vi.fn(() => []),
   getFirstSync: vi.fn(() => ({ count: 0 })),
 };
 
@@ -63,49 +65,65 @@ vi.mock("expo-sqlite", () => ({
   openDatabaseSync: vi.fn(() => mockExpoDb),
 }));
 
-vi.mock("drizzle-orm/expo-sqlite", () => ({
-  drizzle: vi.fn(() => ({
-    insert: vi.fn(() => ({
-      values: vi.fn(() => ({
-        onConflictDoUpdate: vi.fn(() => ({
+vi.mock("drizzle-orm/expo-sqlite", () => {
+  const mockPrepared = () => ({
+    all: vi.fn(() => []),
+    execute: vi.fn(() => ({ changes: 0 })),
+  });
+
+  const mockLimit = () => ({
+    all: vi.fn(() => []),
+    prepare: vi.fn(mockPrepared),
+  });
+
+  const mockOrderBy = () => ({
+    limit: vi.fn(mockLimit),
+    all: vi.fn(() => []),
+    prepare: vi.fn(mockPrepared),
+  });
+
+  const mockWhere = () => ({
+    orderBy: vi.fn(mockOrderBy),
+    limit: vi.fn(mockLimit),
+    all: vi.fn(() => []),
+    run: vi.fn(() => ({ changes: 0 })),
+    prepare: vi.fn(mockPrepared),
+  });
+
+  const mockFrom = () => ({
+    where: vi.fn(mockWhere),
+    orderBy: vi.fn(mockOrderBy),
+  });
+
+  return {
+    drizzle: vi.fn(() => ({
+      insert: vi.fn(() => ({
+        values: vi.fn(() => ({
+          onConflictDoUpdate: vi.fn(() => ({
+            run: vi.fn(),
+          })),
           run: vi.fn(),
         })),
-        run: vi.fn(),
       })),
-    })),
-    delete: vi.fn(() => ({
-      where: vi.fn(() => ({
-        run: vi.fn(() => ({ changes: 0 })),
+      delete: vi.fn(() => ({
+        where: vi.fn(mockWhere),
+        prepare: vi.fn(mockPrepared),
       })),
-    })),
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          orderBy: vi.fn(() => ({
-            limit: vi.fn(() => ({
-              all: vi.fn(() => []),
-            })),
-            all: vi.fn(() => []),
+      select: vi.fn(() => ({
+        from: vi.fn(mockFrom),
+      })),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn(() => ({
+            run: vi.fn(() => ({ changes: 0 })),
+            prepare: vi.fn(mockPrepared),
           })),
-          all: vi.fn(() => []),
-        })),
-        orderBy: vi.fn(() => ({
-          limit: vi.fn(() => ({
-            all: vi.fn(() => []),
-          })),
-          all: vi.fn(() => []),
+          prepare: vi.fn(mockPrepared),
         })),
       })),
     })),
-    update: vi.fn(() => ({
-      set: vi.fn(() => ({
-        where: vi.fn(() => ({
-          run: vi.fn(() => ({ changes: 0 })),
-        })),
-      })),
-    })),
-  })),
-}));
+  };
+});
 
 // Real expo-modules-core reads `globalThis.expo.modules` when evaluated in a
 // non-Expo runtime. Provide a benign shim so the module body executes cleanly.

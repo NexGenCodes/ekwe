@@ -1,4 +1,4 @@
-import { sanitizeErrorMessage } from "../errorSafe";
+import { sanitizeErrorMessage } from "@/utils/errorSafe";
 
 describe("sanitizeErrorMessage", () => {
   it("returns trimmed string for short safe message", () => {

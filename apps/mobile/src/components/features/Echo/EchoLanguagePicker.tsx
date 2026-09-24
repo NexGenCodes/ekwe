@@ -1,4 +1,4 @@
-import { useSelector } from "@legendapp/state/react";
+import { useValue } from "@legendapp/state/react";
 import Globe from "lucide-react-native/icons/globe";
 import React, { useMemo } from "react";
 
@@ -29,9 +29,7 @@ interface PickerOption {
 export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
   ({ selectedLang, onSelect }) => {
     const { color, spacing, borderRadius, opacity } = useTokens();
-    const selectedLanguages = useSelector(() =>
-      settings$.selectedLanguages.get(),
-    );
+    const selectedLanguages = useValue(() => settings$.selectedLanguages.get());
     const permissions = usePermissions();
     const canUseAuto = permissions.autoLanguageDetect;
 

@@ -1,2 +1,2 @@
-export { useSharedAudioPlayer } from "./useSharedAudioPlayer";
-export { useAudioWaveformPlayback } from "./useAudioWaveformPlayback";
+export { useSharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
+export { useAudioWaveformPlayback } from "@/hooks/audio/useAudioWaveformPlayback";

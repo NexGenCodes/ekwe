@@ -1,20 +1,16 @@
-import { Env, TranscribeResult } from "../core/types";
-import { rotateKeys } from "../utils/keys";
-import { isHallucination } from "../utils/prompts";
-import { fetchWithTimeout, TIMEOUT_FAST } from "../utils/fetch";
-import { pollForJobResult } from "../utils/jobPoll";
-import { mimeToExt } from "../utils/mime";
-import { rotateWsKeys, createStreamInterceptor } from "../utils/websocket";
-import { logger } from "../core/logger";
+import { Env, TranscribeResult } from "@/core/types";
+import { rotateKeys } from "@/utils/keys";
+import { isHallucination } from "@/utils/hallucination";
+import { fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
+import { pollUntilReady } from "@/utils/poll";
+import { mimeToExt } from "@/utils/mime";
+import { rotateWsKeys, createStreamInterceptor } from "@/utils/stream";
+import { logger } from "@/core/logger";
 
 const GLADIA_UPLOAD = "https://api.gladia.io/v2/upload";
 const GLADIA_TRANSCRIPTION = "https://api.gladia.io/v2/pre-recorded";
 
-/**
- * Gladia pre-recorded transcription — async upload → poll pattern.
- * Slower than direct providers, use as a fallback.
- */
-export async function transcribe(
+export async function stt(
   blob: Blob,
   lang: string,
   env: Env,
@@ -43,7 +39,6 @@ async function attemptTranscription(
   apiKey: string,
   signal: AbortSignal,
 ): Promise<Response> {
-  // Step 1: Upload audio
   const uploadForm = new FormData();
   uploadForm.append("audio", blob, `audio.${mimeToExt(blob.type)}`);
 
@@ -67,7 +62,6 @@ async function attemptTranscription(
 
   const { audio_url } = await uploadRes.json<{ audio_url: string }>();
 
-  // Step 2: Submit transcription request
   const isAuto = !lang || lang === "auto";
   const transcriptBody: Record<string, unknown> = {
     audio_url,
@@ -96,8 +90,7 @@ async function attemptTranscription(
 
   const { result_url } = await submitRes.json<{ result_url: string }>();
 
-  // Step 3: Poll for result
-  const polled = await pollForJobResult<GladiaResult>({
+  const polled = await pollUntilReady<GladiaResult>({
     url: result_url,
     headers: { "x-gladia-key": apiKey },
     signal,
@@ -145,13 +138,9 @@ interface GladiaResult {
   };
 }
 
-export { ALL_LANGUAGES as supportedLanguages } from "../services/languages";
+export { ALL_LANGUAGES as supportedLanguages } from "@/core/languages";
 
-/**
- * Handles a real-time streaming session via Gladia WebSocket.
- * Returns true if the session was handled, false if the provider could not connect.
- */
-export async function handleStream(
+export async function sttStream(
   env: Env,
   lang: string,
   clientWs: WebSocket,

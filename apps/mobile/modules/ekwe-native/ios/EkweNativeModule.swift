@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import AVFoundation
+import UIKit
 
 public class EkweNativeModule: Module {
   private var audioEngine: AVAudioEngine?
@@ -57,6 +58,33 @@ public class EkweNativeModule: Module {
     }
 
     AsyncFunction("releaseEffects") { () in
+    }
+
+    // ------------------------------------
+    // System
+    // ------------------------------------
+    // Authoritative resolved device theme, mirroring Android's `getSystemTheme`
+    // so the JS contract is honest on both platforms. UI traits must be read on
+    // the main thread, so unlike Android's synchronous implementation this runs
+    // async there and resolves against the active window (falling back to the
+    // current trait environment). Returns "light" | "dark".
+    AsyncFunction("getSystemTheme") { () -> String in
+      let style = UIApplication.shared.connectedScenes
+        .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+        .first?.traitCollection.userInterfaceStyle
+        ?? UITraitCollection.current.userInterfaceStyle
+      return style == .dark ? "dark" : "light"
+    }.runOnQueue(.main)
+
+    // Who installed Ekwe. On iOS there is no installer concept — the binary can
+    // only reach the device through the App Store or TestFlight, never a direct
+    // sideload — so the honest answer is always "store". This keeps the JS
+    // channel resolver platform-symmetric (no Platform.OS branch needed) and
+    // means the "New version" update badge simply never appears on iOS; the
+    // day we publish the Android binary to a store, this same code hides it
+    // there too, with zero JS changes.
+    AsyncFunction("getInstallerSource") { () -> String in
+      "store"
     }
 
     // ------------------------------------
@@ -120,9 +148,9 @@ public class EkweNativeModule: Module {
     }
 
     // Remuxes Ogg Opus into Opus-in-CAF, or re-encodes non-Opus sources to Opus
-    // CAF (see cpp::decode_audio_to_caf). CAF is an iOS-supported container, so
+    // CAF (see cpp::remux_audio_to_caf). CAF is an iOS-supported container, so
     // playback avoids the size and CPU cost of the WAV round-trip.
-    AsyncFunction("decodeAudioToCaf") { (inputPath: String, outputPath: String, maxAudioBytes: Int) -> [String: Any] in
+    AsyncFunction("remuxToCaf") { (inputPath: String, outputPath: String, maxAudioBytes: Int) -> [String: Any] in
       switch self.guardedSourcePath(inputPath, maxAudioBytes: maxAudioBytes) {
       case .tooLarge:
         return [
@@ -139,7 +167,7 @@ public class EkweNativeModule: Module {
           "waveform": [] as [Float],
         ]
       case .ok(let sourcePath):
-        let result = EkweAudioBridge.decodeToCafWithSourcePath(sourcePath, outputPath: outputPath, maxAudioBytes: UInt(max(0, maxAudioBytes)))
+        let result = EkweAudioBridge.remuxToCafWithSourcePath(sourcePath, outputPath: outputPath, maxAudioBytes: UInt(max(0, maxAudioBytes)))
         return [
           "success": result[0] as! Bool,
           "error": result[1] as! String,

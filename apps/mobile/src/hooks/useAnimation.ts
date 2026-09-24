@@ -11,9 +11,6 @@ interface FadeConfig {
   delay?: number;
 }
 
-/**
- * Simple fade-in animation.
- */
 export function useFadeIn(
   config: FadeConfig = {},
 ): ReturnType<typeof useAnimatedStyle> {

@@ -5,7 +5,7 @@ import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks";
 
 export default function LegalLayout(): React.JSX.Element {
-  const { color } = useTheme();
+  const { color, isDark } = useTheme();
 
   return (
     <Stack
@@ -21,6 +21,8 @@ export default function LegalLayout(): React.JSX.Element {
           fontWeight: "400",
           color: color.foreground,
         },
+        statusBarStyle: isDark ? "light" : "dark",
+        statusBarTranslucent: true,
       }}
     >
       <Stack.Screen name="[slug]" />

@@ -1,31 +1,9 @@
 import { LANGUAGES, WORKER_ERROR_CODES } from "@ekwe/shared";
-import { logger } from "./logger";
-import { error } from "./http";
-import { getLimits, type Tier } from "./limits";
-
-/**
- * ─── Ekwe Worker Request Guards ─────────────────────────────────
- *
- * Every route handler imports from here instead of hardcoding values.
- *
- * If a malicious user tampers with the frontend (e.g. flipping isPro
- * in MMKV), these limits still apply because the Worker derives the
- * tier from the cryptographically signed Supabase JWT — not from
- * any client-supplied flag.
- *
- * ── Enforcement Layers ──
- *   1. Rate Limiter      → Cloudflare binding (worker.ts)
- *   2. Preflight Check   → Atomic cooldown via Supabase RPC (worker.ts)
- *   3. Payload Guards     → This file (called by transcribe/translate)
- */
-
-// ─── Valid Language Codes (allowlist) ─────────────────────────────
-// Derived from the shared LANGUAGES constant. Any code not in this
-// set is rejected before it reaches an LLM provider.
+import { logger } from "@/core/logger";
+import { error } from "@/core/http";
+import { getLimits, type Tier } from "@/core/limits";
 
 const VALID_LANG_CODES = new Set(["auto", ...LANGUAGES.map((l) => l.code)]);
-
-// ─── Guard Results ───────────────────────────────────────────────
 
 interface GuardPass {
   allowed: true;
@@ -36,13 +14,8 @@ interface GuardFail {
 }
 type GuardResult = GuardPass | GuardFail;
 
-/** Framing/metadata margin for multipart upload pre-guards (256KB). */
 export const MULTIPART_OVERHEAD = 256 * 1024;
 
-/**
- * Standard 429 "slow down" response for the TOO_MANY_REQUESTS wire code.
- * Used by the Cloudflare rate limiter (worker.ts) and the OTP throttles.
- */
 export function tooManyRequests(
   message = "Rate limit exceeded. Please slow down.",
   retryAfterSeconds = 60,
@@ -52,28 +25,14 @@ export function tooManyRequests(
   });
 }
 
-/**
- * Rejects non-WebSocket upgrades before the Durable Object accepts a socket.
- * Returns null when the request is a valid WS upgrade. Used by the stream
- * route (worker.ts) and the Durable Object entry (durable/stream-do.ts).
- */
 export function guardWebSocketUpgrade(request: Request): Response | null {
   const upgradeHeader = request.headers.get("Upgrade");
-  // HTTP header values are case-insensitive; a compliant client may send
-  // "WebSocket" or "WEBSOCKET".
   if (!upgradeHeader || upgradeHeader.toLowerCase() !== "websocket") {
     return new Response("Expected WebSocket upgrade", { status: 426 });
   }
   return null;
 }
 
-// ─── Reusable Guard Functions ────────────────────────────────────
-
-/**
- * Validates that the request Content-Type matches what the route expects.
- * Prevents malformed payloads from causing unhandled exceptions.
- * Used by: worker.ts (JSON routes) and /transcribe (multipart).
- */
 export function guardContentType(
   request: Request,
   expected: "json" | "multipart" = "json",
@@ -103,11 +62,6 @@ export function guardContentType(
   return { allowed: true };
 }
 
-/**
- * Reads a request body up to a byte cap, enforcing the limit even when the
- * client sends a chunked body with no (or a lying) Content-Length header.
- * Returns null when the body exceeds `maxBytes`; throws on stream I/O errors.
- */
 export async function readLimitedBody(
   request: Request,
   maxBytes: number,
@@ -141,19 +95,8 @@ export async function readLimitedBody(
   return out;
 }
 
-/**
- * Byte cap for JSON request bodies (translate, checkout, ...). Kept well under
- * the 128MB Workers request limit and sized for the largest legit payload
- * (a long translate request), not audio (audio goes via /transcribe multipart).
- */
 export const MAX_JSON_BODY_BYTES = 128_000;
 
-/**
- * Safely parses JSON from a request body, enforcing a byte cap while
- * streaming the body (chunked bodies without Content-Length are capped too).
- * Returns the parsed body or a 4xx response on malformed/oversized input.
- * Used by: /translate
- */
 export async function safeParseJSON<T>(
   request: Request,
   maxBytes = MAX_JSON_BODY_BYTES,
@@ -203,10 +146,6 @@ export async function safeParseJSON<T>(
   }
 }
 
-/**
- * Rejects text payloads that exceed the tier's character limit.
- * Used by: /translate
- */
 export function guardTextLength(text: string, tier: Tier): GuardResult {
   const { maxTextChars } = getLimits(tier);
 
@@ -227,10 +166,6 @@ export function guardTextLength(text: string, tier: Tier): GuardResult {
   return { allowed: true };
 }
 
-/**
- * Rejects audio files that exceed the tier's byte-size limit.
- * Used by: /transcribe
- */
 export function guardAudioSize(fileSize: number, tier: Tier): GuardResult {
   const { maxAudioBytes } = getLimits(tier);
 
@@ -251,12 +186,6 @@ export function guardAudioSize(fileSize: number, tier: Tier): GuardResult {
   return { allowed: true };
 }
 
-/**
- * Rejects audio whose reported duration exceeds the tier's dictation limit.
- * The client sends its decoded duration (ms) alongside the file, which catches
- * long, low-bitrate recordings that stay under the byte-size limit.
- * Used by: /transcribe. Unknown/absent durations pass through (older clients).
- */
 export function guardAudioDuration(
   durationMs: number | undefined,
   tier: Tier,
@@ -282,10 +211,6 @@ export function guardAudioDuration(
   return { allowed: true };
 }
 
-/**
- * Rejects auto-detect language requests from non-Pro users.
- * Used by: /transcribe AND /translate
- */
 export function guardAutoDetect(
   lang: string | undefined | null,
   tier: Tier,
@@ -308,12 +233,6 @@ export function guardAutoDetect(
   return { allowed: true };
 }
 
-/**
- * Validates that a language code is in the known allowlist.
- * Prevents unknown codes from reaching LLM providers (which could
- * cause unexpected behavior or token waste).
- * Used by: /translate AND /transcribe
- */
 export function guardLanguageCode(
   code: string | undefined | null,
   fieldName: string,
@@ -337,11 +256,6 @@ export function guardLanguageCode(
   return { allowed: true };
 }
 
-/**
- * Rejects JSON request bodies that exceed a byte-size limit.
- * Uses Content-Length header when available (avoids reading the body).
- * Used by: /translate
- */
 export function guardJsonSize(request: Request, maxBytes: number): GuardResult {
   const contentLength = request.headers.get("Content-Length");
   const parsedLength = contentLength ? Number(contentLength) : NaN;
@@ -362,13 +276,6 @@ export function guardJsonSize(request: Request, maxBytes: number): GuardResult {
   return { allowed: true };
 }
 
-/**
- * Rejects oversized multipart bodies BEFORE they are buffered by request.formData().
- * Without this, an unbounded upload could exhaust memory before guardAudioSize runs.
- * Uses Content-Length (avoids reading the body). The file limit is the tier's
- * maxAudioBytes plus a generous margin for multipart framing/metadata overhead.
- * Used by: /transcribe
- */
 export function guardMultipartSize(
   request: Request,
   tier: Tier,
@@ -377,8 +284,6 @@ export function guardMultipartSize(
   const contentLength = request.headers.get("Content-Length");
   const parsedLength = contentLength ? Number(contentLength) : NaN;
   if (isNaN(parsedLength)) {
-    // No Content-Length (rare with FormData clients). We can't pre-guard
-    // without buffering; rely on the post-buffer guardAudioSize instead.
     logger.debug(
       `[security] Multipart request without Content-Length for tier ${tier}; skipping pre-guard`,
     );
@@ -403,10 +308,6 @@ export function guardMultipartSize(
   return { allowed: true };
 }
 
-/**
- * Guards streaming access — checks if the user's tier allows live streaming.
- * Used by: /transcribe/stream
- */
 export function guardStreamingAllowed(tier: Tier): GuardResult {
   const { streamingAllowed } = getLimits(tier);
 
@@ -425,10 +326,6 @@ export function guardStreamingAllowed(tier: Tier): GuardResult {
   return { allowed: true };
 }
 
-/**
- * Guards streaming duration — checks if the session exceeds the tier's max duration.
- * Used by: /transcribe/stream
- */
 export function guardStreamDuration(
   elapsedMs: number,
   tier: Tier,
