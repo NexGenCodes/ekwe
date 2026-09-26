@@ -14,20 +14,20 @@ export interface UsageMeterMeta {
 export const USAGE_METER_META: readonly UsageMeterMeta[] = [
   {
     id: "translate",
-    label: "Translations",
+    label: "Translation",
     unit: "requests",
     helper: "Text translated today",
   },
   {
     id: "transcribe",
-    label: "Transcriptions",
+    label: "Transcription",
     unit: "requests",
     helper: "Audio transcribed today",
   },
   {
     id: "speech",
-    label: "Voice conversions",
-    unit: "conversions",
+    label: "Speech",
+    unit: "chars",
     helper: "Conversions today",
   },
 ];

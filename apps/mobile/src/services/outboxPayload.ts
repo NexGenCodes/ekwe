@@ -1,4 +1,5 @@
 import { syncCursorSchema, type SyncCursor } from "@ekwe/shared";
+import type { HistoryInput, HistoryOrigin } from "@ekwe/shared";
 
 import type { EntryType } from "@/store";
 
@@ -9,18 +10,26 @@ export interface HistoryWriteFields {
   translation: string | null;
   transliteration: string | null;
   duration: number;
-  sourceApp: string;
-  provider: string;
+  sourceApp: string | null;
+  voiceId: string | null;
+  sttProvider: string;
+  mtProvider: string | null;
+  origin: HistoryOrigin;
+  input: HistoryInput;
 }
 
 export function buildUpsertOutboxPayload(
   type: EntryType,
   fields: HistoryWriteFields,
   created_at: string,
+  captureId: string | null,
 ): string {
   return JSON.stringify({
     action: "upsert",
     type,
+    capture_id: captureId,
+    origin: fields.origin,
+    input: fields.input,
     source_lang: fields.sourceLang,
     target_lang: fields.targetLang,
     transcript: fields.transcript,
@@ -28,7 +37,9 @@ export function buildUpsertOutboxPayload(
     transliteration_text: fields.transliteration || null,
     duration: fields.duration,
     source_app: fields.sourceApp,
-    provider: fields.provider,
+    voice_id: fields.voiceId,
+    stt_provider: fields.sttProvider,
+    mt_provider: fields.mtProvider,
     created_at,
   });
 }

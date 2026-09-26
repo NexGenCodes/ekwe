@@ -56,12 +56,12 @@ export const cleanAudioArtifacts = async (
 
 const TRANSIENT_CACHE_PREFIXES = [
   "ekwe_recording_",
-  "ekwe_tts_",
   "ekwe_speech_",
   "ekwe_converted_",
   "ekwe_decoded_",
   "ekwe_remuxed_",
-  "ekwe_shareout_",
+  // Outgoing share copies made by ShareOutService.prepareShareFile.
+  "ekwe-voice-",
 ];
 
 const SWEEP_MIN_AGE_MS = 10 * 60 * 1000;
@@ -69,7 +69,7 @@ const SWEEP_MIN_AGE_MS = 10 * 60 * 1000;
 const isTransientEchoFile = (name: string): boolean =>
   TRANSIENT_CACHE_PREFIXES.some((prefix) => name.startsWith(prefix));
 
-export const sweepStaleEchoCache = async (): Promise<void> => {
+export const sweepStaleAudioCache = async (): Promise<void> => {
   try {
     const entries = new Directory(Paths.cache).list();
     const cutoff = Date.now() - SWEEP_MIN_AGE_MS;

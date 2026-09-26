@@ -482,35 +482,38 @@ export { WITAI_LANGUAGES as supportedLanguages };
 
 const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 
-const WITAI_VOICES = new Set([
-  "wit$Remi",
-  "wit$Rebecca",
-  "wit$Cody",
-  "wit$Charlie",
-]);
-
 type VoiceGender = "male" | "female";
 
-const WITAI_PROVIDER_VOICES: Record<
-  string,
-  Partial<Record<VoiceGender, string[]>>
+/**
+ * Order is the persona contract: index 0 is the Clear voice, index 1 the Warm
+ * voice. Wit has no per-language voice identity, so one list per gender serves
+ * every locale.
+ *
+ * Only these four names are enabled. Wit free-tier voice access is
+ * account-assigned and an unassigned name fails the request outright; with
+ * `HEALTH_TRIP_THRESHOLD = 3`, three such attempts open this provider's
+ * circuit for the whole pool. `wit$Railey`, `wit$Rubie`, `wit$Charlie` and
+ * `wit$Carl` are documented and appropriate, but must be confirmed against the
+ * live Ekwe key before being added here.
+ */
+const WITAI_VOICE_POOL: Readonly<
+  Record<VoiceGender | "default", readonly string[]>
 > = {
-  standard: { female: ["wit$Remi"], male: ["wit$Cody"] },
-  "studio-female-1": { female: ["wit$Rebecca"], male: ["wit$Charlie"] },
-  "studio-female-2": { female: ["wit$Remi"], male: ["wit$Cody"] },
-  "studio-male-1": { female: ["wit$Rebecca"], male: ["wit$Charlie"] },
-  "studio-male-2": { female: ["wit$Remi"], male: ["wit$Cody"] },
+  default: ["wit$Remi"],
+  // [0] Remi · Natural   [1] Rebecca · Professional
+  female: ["wit$Remi", "wit$Rebecca"],
+  // [0] Cody · Natural   [1] Cooper · Professional
+  male: ["wit$Cody", "wit$Cooper"],
 };
 
-export function voice(
-  voiceId: string | undefined,
+const WITAI_VOICES = new Set(Object.values(WITAI_VOICE_POOL).flat());
+
+export function voices(
+  gender: VoiceGender | undefined,
   _langCode: string,
-  gender: VoiceGender,
 ): string[] {
-  const sets =
-    WITAI_PROVIDER_VOICES[voiceId ?? "standard"] ??
-    WITAI_PROVIDER_VOICES.standard;
-  return sets[gender] ?? sets.female ?? [];
+  if (gender) return [...WITAI_VOICE_POOL[gender]];
+  return [...WITAI_VOICE_POOL.default];
 }
 
 export async function tts(
@@ -524,8 +527,8 @@ export async function tts(
     return { result: null, status: null };
   }
 
-  const resolvedVoice = voice && WITAI_VOICES.has(voice) ? voice : "wit$Remi";
-
+  const resolvedVoice =
+    voice && WITAI_VOICES.has(voice) ? voice : WITAI_VOICE_POOL.default[0];
   try {
     const rotation = await rotateKeysDetailed(
       env,

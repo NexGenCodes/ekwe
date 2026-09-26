@@ -1,6 +1,7 @@
 import Activity from "lucide-react-native/icons/activity";
 import { useRouter } from "expo-router";
 import React, { useMemo } from "react";
+import { USAGE_METER_META } from "@ekwe/shared";
 
 import { Box, Text, Spinner, Pressable } from "@/components/ui";
 import { Card } from "@/components/Card";
@@ -33,6 +34,10 @@ function computeMeterState(used: number, total: number): MeterState | null {
   return { fraction, tone };
 }
 
+function formatUsageNumber(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
 function PoolRow({
   label,
   unit,
@@ -46,13 +51,21 @@ function PoolRow({
   return (
     <Box style={styles.poolRow}>
       <Box style={styles.poolHeader}>
-        <Text variant="bodySmall" style={{ color: color.foreground }}>
+        <Text
+          variant="bodySmall"
+          numberOfLines={1}
+          style={[styles.poolLabel, { color: color.foreground }]}
+        >
           {label}
         </Text>
-        <Text variant="bodySmall" style={{ color: color.muted }}>
+        <Text
+          variant="caption"
+          numberOfLines={1}
+          style={[styles.poolValue, { color: color.muted }]}
+        >
           {meter === null
             ? "Unlimited"
-            : `${used} / ${total} ${unit} used · ${remaining} left`}
+            : `${formatUsageNumber(used)} / ${formatUsageNumber(total)} ${unit} · ${formatUsageNumber(remaining)} left`}
         </Text>
       </Box>
 
@@ -172,16 +185,22 @@ export function QuotaUsageCard(): React.ReactElement {
         </Text>
       ) : data ? (
         <Box style={styles.pools}>
-          {data.meters.map((meter) => (
-            <PoolRow
-              key={meter.id}
-              label={meter.label}
-              unit={meter.unit}
-              used={meter.used}
-              total={meter.total}
-              remaining={meter.remaining}
-            />
-          ))}
+          {data.meters.map((meter) => {
+            const displayMeta = USAGE_METER_META.find(
+              (meta) => meta.id === meter.id,
+            );
+
+            return (
+              <PoolRow
+                key={meter.id}
+                label={displayMeta?.label ?? meter.label}
+                unit={displayMeta?.unit ?? meter.unit}
+                used={meter.used}
+                total={meter.total}
+                remaining={meter.remaining}
+              />
+            );
+          })}
         </Box>
       ) : null}
 
@@ -244,6 +263,13 @@ const styles = {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  } as const,
+  poolLabel: {
+    flexShrink: 0,
+  } as const,
+  poolValue: {
+    flexShrink: 1,
+    textAlign: "right",
   } as const,
   track: {
     height: 6,

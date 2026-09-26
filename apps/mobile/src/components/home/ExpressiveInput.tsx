@@ -192,7 +192,7 @@ export const ExpressiveInput = React.memo(
 
     const isRecordingLoading =
       hasRecording && !!recordingUri && !!recordingPlayer
-        ? !recordingPlayer.isLoaded || recordingPlayer.isDecoding
+        ? !recordingPlayer.isReady || recordingPlayer.isDecoding
         : false;
 
     const isAudioLoading = isPreview ? !isPreviewReady : isRecordingLoading;

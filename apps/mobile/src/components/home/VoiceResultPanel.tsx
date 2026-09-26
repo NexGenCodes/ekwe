@@ -5,6 +5,7 @@ import Pencil from "lucide-react-native/icons/pencil";
 import Play from "lucide-react-native/icons/play";
 import RefreshCw from "lucide-react-native/icons/refresh-cw";
 import Share from "lucide-react-native/icons/share";
+import Wand from "lucide-react-native/icons/wand";
 import X from "lucide-react-native/icons/x";
 import React, { useCallback, useRef, useState } from "react";
 import { StyleProp, ViewStyle } from "react-native";
@@ -15,10 +16,11 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from "react-native-reanimated";
-import type { Voice } from "@ekwe/shared";
+import type { VoiceGender, VoiceSlot } from "@ekwe/shared";
 
 import { IconButton } from "@/components/IconButton";
 import { AudioWaveform } from "@/components/AudioWaveform";
+import { EditableText } from "@/components/home/EditableText";
 
 import { Box, Pressable, Spinner, Text } from "@/components/ui";
 import {
@@ -37,7 +39,8 @@ export interface VoiceResultPanelProps {
   player: SharedAudioPlayer;
 
   sourceKind: "text" | "audio";
-  voice: Voice;
+  voice: VoiceSlot;
+  voiceGender?: VoiceGender;
 
   langName: string;
 
@@ -48,7 +51,33 @@ export interface VoiceResultPanelProps {
   onChangeVoice: () => void;
   onRegenerate: () => void;
   onShare: () => void;
-  onShareWhatsApp: () => void;
+
+  /**
+   * The text being sent — the translation when there is one, otherwise what was
+   * said. This is the artifact; the audio is its read-aloud.
+   */
+  resultText: string;
+  /**
+   * What the app heard, or what was typed before translation.
+   *
+   * Shown as its own line only when it differs from `resultText`; when the
+   * result *is* the transcript, a second copy of the same words is noise.
+   */
+  transcriptText: string;
+  /** True when a translation exists, so the transcript is a distinct document. */
+  hasTranslation: boolean;
+  isEditing: boolean;
+  /** Which text the open editor owns, for labelling. */
+  editTarget: "transcript" | "translation";
+  editBuffer: string;
+  maxChars: number;
+  /** Open the editor on the primary result text. */
+  onEditResult: () => void;
+  /** Open the editor on the transcript. */
+  onEditTranscript: () => void;
+  onEditChange: (next: string) => void;
+  onCancelEdit: () => void;
+  onApplyEdit: () => void;
 
   onClear: () => void;
   onTogglePlay: () => void;
@@ -106,6 +135,7 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
   player,
   sourceKind,
   voice,
+  voiceGender,
   langName,
   durationSeconds,
   amplitudes,
@@ -113,7 +143,18 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
   onChangeVoice,
   onRegenerate,
   onShare,
-  onShareWhatsApp,
+  resultText,
+  transcriptText,
+  hasTranslation,
+  isEditing,
+  editTarget,
+  editBuffer,
+  maxChars,
+  onEditResult,
+  onEditTranscript,
+  onEditChange,
+  onCancelEdit,
+  onApplyEdit,
   onClear,
   onTogglePlay,
   isAudioLoading = false,
@@ -184,15 +225,17 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         }}
       >
         <Pressable
-          onPress={onBack}
+          onPress={isEditing ? onCancelEdit : onBack}
           disabled={isAudioLoading}
           accessibilityRole="button"
           accessibilityLabel={
             isAudioLoading
               ? "Preparing audio, please wait"
-              : isTextSource
-                ? "Edit source text"
-                : "Back to recording"
+              : isEditing
+                ? "Cancel editing"
+                : isTextSource
+                  ? "Edit source text"
+                  : "Back to recording"
           }
           accessibilityState={{ disabled: isAudioLoading }}
           hitSlop={10}
@@ -210,6 +253,8 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         >
           {isAudioLoading ? (
             <Spinner size="sm" color={color.onBrand} />
+          ) : isEditing ? (
+            <X size={iconSize.sm} color={color.onBrand} />
           ) : isTextSource ? (
             <Pencil
               size={iconSize.sm}
@@ -220,7 +265,7 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
             <ArrowLeft size={iconSize.sm} color={color.onBrand} />
           )}
           <Text variant="label" style={{ color: color.onBrand }}>
-            {isAudioLoading ? "Preparing…" : backLabel}
+            {isAudioLoading ? "Preparing…" : isEditing ? "Cancel" : backLabel}
           </Text>
         </Pressable>
 
@@ -250,6 +295,9 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
             style={{ color: color.onBrand }}
           >
             {voice.name}
+            {voiceGender
+              ? ` · ${voiceGender === "male" ? "Male" : "Female"}`
+              : ""}
           </Text>
           <Text
             variant="bodySmall"
@@ -262,148 +310,238 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
       </Box>
 
       {}
-      <Box
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: spacing.md,
-          marginBottom: spacing.lg,
-        }}
-      >
+      {!isEditing && hasTranslation && transcriptText.trim().length > 0 && (
         <Pressable
-          onPress={onTogglePlay}
+          onPress={onEditTranscript}
           accessibilityRole="button"
-          accessibilityLabel={
-            isPlaying ? "Pause voice note" : "Play voice note"
-          }
+          accessibilityLabel={`Edit what you said. ${transcriptText}`}
+          accessibilityHint="Correct the original words, then convert to hear them"
           hitSlop={8}
           style={({ pressed }) => [
             {
-              width: touchTarget.comfortable,
-              height: touchTarget.comfortable,
-              borderRadius: touchTarget.comfortable / 2,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: withAlpha(color.onBrand, 0.18),
+              flexDirection: "row",
+              alignItems: "flex-start",
+              gap: spacing.sm,
+              marginBottom: spacing.sm,
             },
-            pressed && { transform: [{ scale: 0.92 }] },
+            pressed && { opacity: 0.7 },
           ]}
         >
-          {isPlaying ? (
-            <Pause size={iconSize.md} color={color.onBrand} />
-          ) : (
-            <Play
-              size={iconSize.md}
-              color={color.onBrand}
-              fill={color.onBrand}
-              style={{ marginLeft: 3 }}
-            />
-          )}
+          <Text
+            variant="caption"
+            numberOfLines={2}
+            style={{
+              flex: 1,
+              color: withAlpha(color.onBrand, 0.7),
+              fontStyle: "italic",
+            }}
+          >
+            {transcriptText}
+          </Text>
+          <Pencil
+            size={12}
+            color={withAlpha(color.onBrand, 0.55)}
+            strokeWidth={2}
+          />
         </Pressable>
+      )}
 
-        <Box
-          style={{ flex: 1, height: 34, position: "relative" }}
-          onLayout={(e) => {
-            widthSV.value = e.nativeEvent.layout.width;
-          }}
-        >
-          <AudioWaveform
-            amplitudes={amplitudes ?? EMPTY_PEAKS}
-            progressSV={player.progressSV}
-            duration={totalSeconds}
-            barCount={48}
-            barWidth={3}
-            barGap={2}
-            height={34}
-            interactive
-            activeColor={color.onBrand}
-            inactiveColor={withAlpha(color.onBrand, 0.35)}
-            onSeek={handleSeek}
-            onScrubStateChange={handleScrubStateChange}
-          />
-          {hasWaveform && (
-            <Animated.View
-              pointerEvents="none"
-              style={[
+      {}
+      <EditableText
+        text={
+          isEditing && editTarget === "transcript" ? transcriptText : resultText
+        }
+        value={editBuffer}
+        onChangeText={onEditChange}
+        onEdit={onEditResult}
+        onCancel={onCancelEdit}
+        isEditing={isEditing}
+        accessibilityName={
+          isEditing && editTarget === "transcript"
+            ? "original words"
+            : "message"
+        }
+        maxChars={maxChars}
+      />
+
+      {isEditing ? (
+        <>
+          {/* Editing shows words and nothing else. The audio on screen would
+              be the pre-edit rendering, so putting it here invites the reader
+              to trust something that no longer matches the text. */}
+          <Box style={{ height: spacing.lg }} />
+          <Pressable
+            onPress={onApplyEdit}
+            disabled={editBuffer.trim().length === 0}
+            accessibilityRole="button"
+            accessibilityLabel="Convert"
+            accessibilityHint="Renders the edited text in your voice"
+            accessibilityState={{ disabled: editBuffer.trim().length === 0 }}
+            hitSlop={8}
+            style={({ pressed }) => [
+              {
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: spacing.sm,
+                minHeight: touchTarget.comfortable,
+                borderRadius: borderRadius.xl,
+                backgroundColor: color.onBrand,
+                opacity: editBuffer.trim().length === 0 ? 0.5 : 1,
+              },
+              pressed && { transform: [{ scale: 0.98 }], opacity: 0.92 },
+            ]}
+          >
+            <Wand size={iconSize.sm} color={color.brand} strokeWidth={2.2} />
+            <Text variant="heading3" style={{ color: color.brand }}>
+              Convert
+            </Text>
+          </Pressable>
+        </>
+      ) : (
+        <>
+          {}
+          <Box
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: spacing.md,
+              marginTop: spacing.lg,
+              marginBottom: spacing.lg,
+            }}
+          >
+            <Pressable
+              onPress={onTogglePlay}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isPlaying ? "Pause voice note" : "Play voice note"
+              }
+              hitSlop={8}
+              style={({ pressed }) => [
                 {
-                  position: "absolute",
-                  width: 12,
-                  height: 12,
-                  borderRadius: 6,
-                  backgroundColor: color.onBrand,
-                  left: -6,
-                  top: 11,
+                  width: touchTarget.comfortable,
+                  height: touchTarget.comfortable,
+                  borderRadius: touchTarget.comfortable / 2,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: withAlpha(color.onBrand, 0.18),
                 },
-                thumbStyle,
+                pressed && { transform: [{ scale: 0.92 }] },
               ]}
+            >
+              {isPlaying ? (
+                <Pause size={iconSize.md} color={color.onBrand} />
+              ) : (
+                <Play
+                  size={iconSize.md}
+                  color={color.onBrand}
+                  fill={color.onBrand}
+                  style={{ marginLeft: 3 }}
+                />
+              )}
+            </Pressable>
+
+            <Box
+              style={{ flex: 1, height: 34, position: "relative" }}
+              onLayout={(e) => {
+                widthSV.value = e.nativeEvent.layout.width;
+              }}
+            >
+              <AudioWaveform
+                amplitudes={amplitudes ?? EMPTY_PEAKS}
+                progressSV={player.progressSV}
+                duration={totalSeconds}
+                barCount={48}
+                barWidth={3}
+                barGap={2}
+                height={34}
+                interactive
+                activeColor={color.onBrand}
+                inactiveColor={withAlpha(color.onBrand, 0.35)}
+                onSeek={handleSeek}
+                onScrubStateChange={handleScrubStateChange}
+              />
+              {hasWaveform && (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    {
+                      position: "absolute",
+                      width: 12,
+                      height: 12,
+                      borderRadius: 6,
+                      backgroundColor: color.onBrand,
+                      left: -6,
+                      top: 11,
+                    },
+                    thumbStyle,
+                  ]}
+                />
+              )}
+            </Box>
+
+            <Text
+              variant="bodySmall"
+              numberOfLines={1}
+              style={{ color: color.onBrand, textAlign: "right" }}
+            >
+              {formatClock(displaySeconds)} / {formatClock(totalSeconds)}
+            </Text>
+          </Box>
+        </>
+      )}
+
+      {!isEditing && (
+        <>
+          {}
+          <Box
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: spacing.sm,
+              marginBottom: spacing.md,
+            }}
+          >
+            <ActionChip
+              icon={<AudioLines size={iconSize.sm} color={color.onBrand} />}
+              label="Change Voice"
+              onPress={onChangeVoice}
+              tint={color.onBrand}
             />
-          )}
-        </Box>
+            <ActionChip
+              icon={<RefreshCw size={iconSize.sm} color={color.onBrand} />}
+              label="Regenerate"
+              onPress={onRegenerate}
+              tint={color.onBrand}
+            />
+          </Box>
 
-        <Text
-          variant="bodySmall"
-          numberOfLines={1}
-          style={{ color: color.onBrand, textAlign: "right" }}
-        >
-          {formatClock(displaySeconds)} / {formatClock(totalSeconds)}
-        </Text>
-      </Box>
-
-      {}
-      <Box
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: spacing.sm,
-          marginBottom: spacing.md,
-        }}
-      >
-        <ActionChip
-          icon={<AudioLines size={iconSize.sm} color={color.onBrand} />}
-          label="Change Voice"
-          onPress={onChangeVoice}
-          tint={color.onBrand}
-        />
-        <ActionChip
-          icon={<RefreshCw size={iconSize.sm} color={color.onBrand} />}
-          label="Regenerate"
-          onPress={onRegenerate}
-          tint={color.onBrand}
-        />
-        {onShareWhatsApp && (
-          <ActionChip
-            icon={<Share size={iconSize.sm} color={color.onBrand} />}
-            label="WhatsApp"
-            onPress={onShareWhatsApp}
-            tint={color.onBrand}
-          />
-        )}
-      </Box>
-
-      {}
-      <Pressable
-        onPress={onShare}
-        accessibilityRole="button"
-        accessibilityLabel="Share voice note"
-        hitSlop={8}
-        style={({ pressed }) => [
-          {
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: spacing.sm,
-            minHeight: touchTarget.comfortable,
-            borderRadius: borderRadius.xl,
-            backgroundColor: color.onBrand,
-          },
-          pressed && { transform: [{ scale: 0.98 }], opacity: 0.92 },
-        ]}
-      >
-        <Share size={iconSize.sm} color={color.brand} strokeWidth={2.2} />
-        <Text variant="heading3" style={{ color: color.brand }}>
-          Share voice note
-        </Text>
-      </Pressable>
+          {}
+          <Pressable
+            onPress={onShare}
+            accessibilityRole="button"
+            accessibilityLabel="Share voice note"
+            hitSlop={8}
+            style={({ pressed }) => [
+              {
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: spacing.sm,
+                minHeight: touchTarget.comfortable,
+                borderRadius: borderRadius.xl,
+                backgroundColor: color.onBrand,
+              },
+              pressed && { transform: [{ scale: 0.98 }], opacity: 0.92 },
+            ]}
+          >
+            <Share size={iconSize.sm} color={color.brand} strokeWidth={2.2} />
+            <Text variant="heading3" style={{ color: color.brand }}>
+              Share voice note
+            </Text>
+          </Pressable>
+        </>
+      )}
     </Animated.View>
   );
 });

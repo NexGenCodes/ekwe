@@ -1,11 +1,13 @@
 import Check from "lucide-react-native/icons/check";
-import Globe from "lucide-react-native/icons/globe";
 import React from "react";
 import { ScrollView } from "react-native";
 
 import { Box, Text, Pressable } from "@/components/ui";
 import { Sheet } from "@/components/ui/Sheet";
-import { getCurrencySymbol } from "@ekwe/shared/money";
+import {
+  getCurrencySymbol,
+  type FlutterwaveCurrency,
+} from "@ekwe/shared/money";
 import { CURRENCY_NAMES, MANUAL_CURRENCY_OPTIONS } from "@/constants/currency";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
@@ -16,41 +18,25 @@ import { triggerHaptic } from "@/utils/haptics";
 interface CurrencyPickerModalProps {
   visible: boolean;
   onClose: () => void;
-
-  onSelect: (value: string | null) => void;
-
-  currentCurrency: string | null;
-
-  resolvedCurrency?: string;
+  onSelect: (value: FlutterwaveCurrency) => void;
+  currentCurrency: FlutterwaveCurrency;
 }
-
-const AUTO_LABEL = "Auto (detected)";
 
 export function CurrencyPickerModal({
   visible,
   onClose,
   onSelect,
   currentCurrency,
-  resolvedCurrency,
 }: CurrencyPickerModalProps): React.JSX.Element {
   const { color } = useTheme();
 
-  const autoLabel = resolvedCurrency
-    ? `${getCurrencySymbol(resolvedCurrency)} ${
-        CURRENCY_NAMES[resolvedCurrency] ?? resolvedCurrency
-      } (auto)`
-    : AUTO_LABEL;
-
-  const options = [
-    { value: null as string | null, label: autoLabel },
-    ...MANUAL_CURRENCY_OPTIONS.map((code) => ({
-      value: code,
-      label: CURRENCY_NAMES[code] ?? code,
-    })),
-  ];
-
   return (
-    <Sheet visible={visible} onClose={onClose} title="Select Currency">
+    <Sheet visible={visible} onClose={onClose} title="Payment currency">
+      <Box style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.sm }}>
+        <Text variant="caption" style={{ color: color.muted }}>
+          NGN is the default. Choose another currency anytime before checkout.
+        </Text>
+      </Box>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
@@ -59,11 +45,11 @@ export function CurrencyPickerModal({
           paddingBottom: spacing["2xl"],
         }}
       >
-        {options.map((item) => {
-          const isSelected = currentCurrency === item.value;
+        {MANUAL_CURRENCY_OPTIONS.map((code) => {
+          const isSelected = currentCurrency === code;
           return (
             <Pressable
-              key={item.value ?? "auto"}
+              key={code}
               style={({ pressed }) => [
                 {
                   flexDirection: "row",
@@ -82,45 +68,29 @@ export function CurrencyPickerModal({
               ]}
               onPress={() => {
                 triggerHaptic();
-                onSelect(item.value);
+                onSelect(code);
               }}
-              accessibilityLabel={`Select ${item.label}`}
+              accessibilityLabel={`Select ${CURRENCY_NAMES[code] ?? code}`}
               accessibilityState={isSelected ? { selected: true } : undefined}
             >
-              {item.value ? (
-                <Box
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: borderRadius.md,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginRight: spacing.md,
-                    backgroundColor: withAlpha(color.foreground, 0.08),
-                  }}
+              <Box
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: borderRadius.md,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginRight: spacing.md,
+                  backgroundColor: withAlpha(color.foreground, 0.08),
+                }}
+              >
+                <Text
+                  variant="body"
+                  style={{ color: color.foreground, fontWeight: "600" }}
                 >
-                  <Text
-                    variant="body"
-                    style={{ color: color.foreground, fontWeight: "600" }}
-                  >
-                    {getCurrencySymbol(item.value)}
-                  </Text>
-                </Box>
-              ) : (
-                <Box
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: borderRadius.md,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginRight: spacing.md,
-                    backgroundColor: withAlpha(color.foreground, 0.08),
-                  }}
-                >
-                  <Globe size={20} color={color.foreground} strokeWidth={2} />
-                </Box>
-              )}
+                  {getCurrencySymbol(code)}
+                </Text>
+              </Box>
               <Box style={{ flex: 1 }}>
                 <Text
                   variant="body"
@@ -129,30 +99,15 @@ export function CurrencyPickerModal({
                     fontWeight: isSelected ? "600" : "400",
                   }}
                 >
-                  {item.label}
+                  {CURRENCY_NAMES[code] ?? code}
                 </Text>
-                {item.value ? (
-                  <Text
-                    variant="caption"
-                    style={{
-                      color: color.muted,
-                      marginTop: spacing.hairline,
-                    }}
-                  >
-                    {getCurrencySymbol(item.value)} {item.value}
-                  </Text>
-                ) : resolvedCurrency ? (
-                  <Text
-                    variant="caption"
-                    style={{
-                      color: color.muted,
-                      marginTop: spacing.hairline,
-                    }}
-                  >
-                    {getCurrencySymbol(resolvedCurrency)} {resolvedCurrency} ·
-                    based on your region
-                  </Text>
-                ) : null}
+                <Text
+                  variant="caption"
+                  style={{ color: color.muted, marginTop: spacing.hairline }}
+                >
+                  {code}
+                  {code === "NGN" ? " · Default" : ""}
+                </Text>
               </Box>
               {isSelected && <Check size={20} color={color.brand} />}
             </Pressable>

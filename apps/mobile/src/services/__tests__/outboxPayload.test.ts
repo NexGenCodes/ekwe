@@ -17,25 +17,62 @@ describe("buildUpsertOutboxPayload", () => {
         translation: "bonjour",
         transliteration: null,
         duration: 3,
-        sourceApp: "ios",
-        provider: "groq",
+        sourceApp: "com.whatsapp",
+        voiceId: null,
+        sttProvider: "deepgram",
+        mtProvider: "gemini",
+        origin: "echo",
+        input: "audio",
       },
       "2026-08-13T10:00:00.000Z",
+      "cap-1",
     );
 
     expect(JSON.parse(payload)).toEqual({
       action: "upsert",
       type: "translation",
+      capture_id: "cap-1",
+      origin: "echo",
+      input: "audio",
       source_lang: "en",
       target_lang: "fr",
       transcript: "hello",
       translation_text: "bonjour",
       transliteration_text: null,
       duration: 3,
-      source_app: "ios",
-      provider: "groq",
+      source_app: "com.whatsapp",
+      voice_id: null,
+      stt_provider: "deepgram",
+      mt_provider: "gemini",
       created_at: "2026-08-13T10:00:00.000Z",
     });
+  });
+
+  test("carries a null capture id for rows written before capture ids", () => {
+    const payload = JSON.parse(
+      buildUpsertOutboxPayload(
+        "transcription",
+        {
+          sourceLang: "en",
+          targetLang: "fr",
+          transcript: "hello",
+          translation: null,
+          transliteration: null,
+          duration: 0,
+          sourceApp: null,
+          voiceId: null,
+          sttProvider: "",
+          mtProvider: null,
+          origin: "speech-studio",
+          input: "text",
+        },
+        "2026-08-13T10:00:00.000Z",
+        null,
+      ),
+    );
+    expect(payload.capture_id).toBeNull();
+    expect(payload.source_app).toBeNull();
+    expect(payload.origin).toBe("speech-studio");
   });
 
   test("normalises an empty/undefined translation to null", () => {
@@ -49,10 +86,15 @@ describe("buildUpsertOutboxPayload", () => {
           translation: "",
           transliteration: undefined as unknown as string | null,
           duration: 0,
-          sourceApp: "ios",
-          provider: "groq",
+          sourceApp: null,
+          voiceId: null,
+          sttProvider: "groq",
+          mtProvider: null,
+          origin: "echo",
+          input: "audio",
         },
         "2026-08-13T10:00:00.000Z",
+        "cap-2",
       ),
     );
     expect(empty.translation_text).toBeNull();

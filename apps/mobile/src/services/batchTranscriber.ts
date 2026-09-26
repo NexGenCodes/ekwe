@@ -21,7 +21,7 @@ export interface BatchAudioInput {
 }
 
 function computeAverageDb(meteringData: number[]): number {
-  if (meteringData.length === 0) return -40;
+  if (!Array.isArray(meteringData) || meteringData.length === 0) return -40;
   return meteringData.reduce((sum, v) => sum + v, 0) / meteringData.length;
 }
 
@@ -42,34 +42,41 @@ class BatchTranscriber {
       return err(EkweError.TOO_SHORT);
     }
 
-    const file = new ExpoFile(input.uri);
-    if (!file.exists) {
-      logger.error("[BatchTranscriber] File not found:", input.uri);
+    let processed: ProcessedAudio;
+    try {
+      const file = new ExpoFile(input.uri);
+      if (!file.exists) {
+        logger.error("[BatchTranscriber] File not found:", input.uri);
+        return err(EkweError.SHARE_COPY_FAIL);
+      }
+
+      if (file.size && file.size > MAX_FILE_SIZE) {
+        logger.warn("[BatchTranscriber] File too large:", file.size);
+        return err(EkweError.FILE_TOO_LARGE);
+      }
+
+      if (
+        input.durationMs > 0 &&
+        input.durationMs > PREMIUM_LIMITS.dictationDurationMs
+      ) {
+        logger.warn("[BatchTranscriber] Audio too long:", input.durationMs);
+        return err(EkweError.AUDIO_TOO_LONG);
+      }
+
+      processed = {
+        uri: input.uri,
+        durationMs: input.durationMs,
+        averageDb: computeAverageDb(input.meteringData),
+        meteringData: input.meteringData,
+        waveform: input.waveform,
+      };
+    } catch (e: unknown) {
+      logger.error(
+        "[BatchTranscriber] FAIL: preflight exception",
+        e instanceof Error ? (e.stack ?? e.message) : String(e),
+      );
       return err(EkweError.SHARE_COPY_FAIL);
     }
-
-    if (file.size && file.size > MAX_FILE_SIZE) {
-      logger.warn("[BatchTranscriber] File too large:", file.size);
-      return err(EkweError.FILE_TOO_LARGE);
-    }
-
-    if (
-      input.durationMs > 0 &&
-      input.durationMs > PREMIUM_LIMITS.dictationDurationMs
-    ) {
-      logger.warn("[BatchTranscriber] Audio too long:", input.durationMs);
-      return err(EkweError.AUDIO_TOO_LONG);
-    }
-
-    const averageDb = computeAverageDb(input.meteringData);
-
-    const processed: ProcessedAudio = {
-      uri: input.uri,
-      durationMs: input.durationMs,
-      averageDb,
-      meteringData: input.meteringData,
-      waveform: input.waveform,
-    };
 
     return transcribeAudio(processed, lang, signal, onProgress);
   }

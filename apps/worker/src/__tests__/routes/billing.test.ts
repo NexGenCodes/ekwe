@@ -51,7 +51,7 @@ describe("handleCheckout", () => {
     );
   };
 
-  test("authorizes a checkout session with tx_ref, amount, and currency", async () => {
+  test("authorizes a checkout session with tx_ref, amount, and NGN default", async () => {
     seedSubscriptionConfig();
     const env = mockEnv();
     const res = await handleCheckout(monthlyRequest(), env, mockAuth);
@@ -61,8 +61,8 @@ describe("handleCheckout", () => {
     expect(data.tx_ref).toMatch(
       /^ekwe_test-user-123_monthly_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
-    expect(data.amount).toBe(2.23);
-    expect(data.currency).toBe("USD");
+    expect(data.amount).toBe(3000);
+    expect(data.currency).toBe("NGN");
     expect(data).not.toHaveProperty("checkout_url");
   });
 
@@ -86,13 +86,16 @@ describe("handleCheckout", () => {
     expect(data.error).toBe("INVALID_BODY");
   });
 
-  test("charges the static annual USD amount", async () => {
+  test("charges the static annual USD amount when requested", async () => {
     seedSubscriptionConfig();
     const env = mockEnv();
     const req = new Request("http://test/billing/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plan: "ekwe_pro_annual" }),
+      body: JSON.stringify({
+        plan: "ekwe_pro_annual",
+        currency: "USD",
+      }),
     });
 
     const res = await handleCheckout(req, env, mockAuth);
@@ -102,11 +105,19 @@ describe("handleCheckout", () => {
     expect(data.currency).toBe("USD");
   });
 
-  test("charges the static monthly USD amount", async () => {
+  test("charges the static monthly USD amount when requested", async () => {
     seedSubscriptionConfig();
     const env = mockEnv();
-    const res = await handleCheckout(monthlyRequest(), env, mockAuth);
+    const req = new Request("http://test/billing/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        plan: "ekwe_pro_monthly",
+        currency: "USD",
+      }),
+    });
 
+    const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
     expect(data.amount).toBe(2.23);
@@ -164,7 +175,7 @@ describe("handleCheckout", () => {
     expect(data.currency).toBe("NGN");
   });
 
-  test("resolves unsupported currencies to USD server-side", async () => {
+  test("falls back to NGN for unsupported currencies server-side", async () => {
     seedSubscriptionConfig();
     const env = mockEnv();
     const req = new Request("http://test/billing/checkout", {
@@ -179,8 +190,8 @@ describe("handleCheckout", () => {
     const res = await handleCheckout(req, env, mockAuth);
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
-    expect(data.amount).toBe(2.23);
-    expect(data.currency).toBe("USD");
+    expect(data.amount).toBe(3000);
+    expect(data.currency).toBe("NGN");
   });
 
   test("returns 400 for an invalid currency code", async () => {

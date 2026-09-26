@@ -1,3 +1,4 @@
+import { DEFAULT_PAYMENT_CURRENCY } from "@ekwe/shared/money";
 import { PRO_PRODUCT_IDS } from "@ekwe/shared/plans";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -57,7 +58,7 @@ beforeEach(() => {
   authActions.setSession(null);
   authActions.setIsPro(false);
   authActions.setEntitlementSynced(false);
-  settingsActions.setCurrency(null);
+  settingsActions.setCurrency(DEFAULT_PAYMENT_CURRENCY);
   vi.mocked(getWorkerUrl).mockReturnValue("https://worker.test");
   refreshSessionMock.mockReset();
 });
@@ -116,7 +117,7 @@ describe("openFlutterwaveCheckout", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("authorizes a monthly checkout and omits currency by default", async () => {
+  it("authorizes a monthly checkout with the NGN default", async () => {
     authActions.setSession(makeSession() as never);
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -133,7 +134,10 @@ describe("openFlutterwaveCheckout", () => {
           "Content-Type": "application/json",
           Authorization: "Bearer access-token-123",
         },
-        body: JSON.stringify({ plan: PRO_PRODUCT_IDS.monthly }),
+        body: JSON.stringify({
+          plan: PRO_PRODUCT_IDS.monthly,
+          currency: DEFAULT_PAYMENT_CURRENCY,
+        }),
       },
     );
   });

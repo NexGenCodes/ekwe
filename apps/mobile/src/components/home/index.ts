@@ -1,7 +1,6 @@
 export * from "@/components/home/HomeHeader";
 export * from "@/components/home/LanguageSwitcher";
 export * from "@/components/home/ExpressiveInput";
-export * from "@/components/home/ExpressiveOutput";
 export * from "@/components/home/RecordingInline";
 export * from "@/components/home/VoiceStudioInterface";
 export * from "@/components/home/VoiceResultPanel";

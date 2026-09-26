@@ -140,6 +140,7 @@ export const initAuth = async (): Promise<void> => {
     }
 
     if (event === "SIGNED_OUT") {
+      SyncService.onUserSignedOut();
       SyncService.loadInitialHistory();
     }
   });
@@ -434,7 +435,8 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
       return { ok: false };
     }
 
-    const { idToken } = await GoogleSignin.getTokens();
+    const idToken =
+      signInResult.type === "success" ? signInResult.data.idToken : null;
 
     if (!idToken) {
       return { ok: false, error: "Google Sign In couldn't be completed." };
@@ -512,7 +514,7 @@ export const signOut = async (): Promise<AuthResult> => {
 
     if (userId) {
       await SyncService.drain();
-      const remaining = Db.getPendingOutbox(userId).length;
+      const remaining = Db.countUnsyncedOutbox(userId);
       if (remaining === 0) {
         SyncService.purgeLocalHistory(userId);
         SyncService.clearSyncCursor(userId);

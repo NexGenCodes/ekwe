@@ -33,6 +33,13 @@ export interface SharedAudioPlayer {
   duration: number;
   isDecoding: boolean;
   isLoaded: boolean;
+  /**
+   * `isLoaded` for the *currently requested* `uri`, which is stricter than
+   * `isLoaded` on its own. Callers that swap `uri` must gate on this, because
+   * expo-audio replaces the source asynchronously and `isLoaded` keeps
+   * reporting the previous clip as ready during that window.
+   */
+  isReady: boolean;
   playbackRate: number;
   isEnded: boolean;
 }
@@ -68,6 +75,11 @@ export const useSharedAudioPlayer = (
     hasCafSibling ? cafSiblingUri : isOggSource ? null : uri,
   );
   const decodedTempRef = useRef<string | null>(null);
+  /** The `uri` whose source is installed in the player right now. */
+  const boundUriRef = useRef<string | null>(null);
+  /** The `uri` that most recently completed a load. */
+  const [loadedUri, setLoadedUri] = useState<string | null>(null);
+  const wasLoadedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,11 +91,13 @@ export const useSharedAudioPlayer = (
         setTimeout(() => cleanEchoCache(previous), 1000);
       }
       setPlayableSource(null);
+      boundUriRef.current = null;
       return;
     }
 
     if (!isOggSource) {
       setPlayableSource(uri);
+      boundUriRef.current = uri;
       return;
     }
 
@@ -94,10 +108,12 @@ export const useSharedAudioPlayer = (
         setTimeout(() => cleanEchoCache(previous), 1000);
       }
       setPlayableSource(cafSiblingUri);
+      boundUriRef.current = uri;
       return;
     }
 
     setPlayableSource(null);
+    boundUriRef.current = null;
 
     const commitTemp = (temp: string): void => {
       const previous = decodedTempRef.current;
@@ -106,6 +122,7 @@ export const useSharedAudioPlayer = (
       }
       decodedTempRef.current = temp;
       setPlayableSource(temp);
+      boundUriRef.current = uri;
     };
 
     const fallbackToWav = (reason: string): void => {
@@ -123,6 +140,7 @@ export const useSharedAudioPlayer = (
             wavResult.error,
           );
           setPlayableSource(uri);
+          boundUriRef.current = uri;
         }
       });
     };
@@ -200,6 +218,40 @@ export const useSharedAudioPlayer = (
   }, false);
 
   const isPlaying = status.playing;
+
+  /**
+   * `isLoaded` is per-source, but expo-audio installs the new source
+   * asynchronously (after `preloadAsync` resolves), so a `uri` change is
+   * observable for a window while `isLoaded` still reports the *previous* clip
+   * as ready. Only a false -> true transition is attributed to whichever `uri`
+   * is bound at that moment, which keeps a new clip from autoplaying on the old
+   * clip's readiness.
+   */
+  useEffect(() => {
+    const loaded = status.isLoaded;
+    if (loaded && !wasLoadedRef.current) {
+      setLoadedUri(boundUriRef.current);
+    } else if (!loaded) {
+      setLoadedUri(null);
+    }
+    wasLoadedRef.current = loaded;
+  }, [status.isLoaded]);
+
+  // If a platform never reports the intermediate `isLoaded: false`, readiness
+  // would stall forever, so fall back to the reported flag once the swap has had
+  // time to land. Bounded so a genuinely slow load still gets a chance.
+  useEffect(() => {
+    if (!status.isLoaded || !uri || loadedUri === uri) return;
+    const timer = setTimeout(() => {
+      // Whatever is bound by now is the source that reported ready.
+      setLoadedUri(boundUriRef.current);
+    }, 500);
+    return (): void => {
+      clearTimeout(timer);
+    };
+  }, [status.isLoaded, loadedUri, uri]);
+
+  const isReady = status.isLoaded && loadedUri === uri;
 
   useEffect(() => {
     isPlayingSV.value = isPlaying;
@@ -458,6 +510,7 @@ export const useSharedAudioPlayer = (
       duration,
       isDecoding: status.isBuffering,
       isLoaded: status.isLoaded,
+      isReady,
       playbackRate,
       isEnded,
     }),
@@ -475,6 +528,7 @@ export const useSharedAudioPlayer = (
       duration,
       status.isBuffering,
       status.isLoaded,
+      isReady,
       playbackRate,
       isEnded,
     ],

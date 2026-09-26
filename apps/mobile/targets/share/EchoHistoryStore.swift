@@ -20,38 +20,48 @@ import Foundation
 @available(iOS 16.4, *)
 struct EchoHistoryRecord: Codable {
     /// Stable id per share session; used to update the record in place when a
-    /// translation lands for the same transcription.
+    /// translation lands for the same transcription. Doubles as the history
+    /// layer's `capture_id`, so the app can fold the two writes into one row.
     let sessionKey: String
+    /// The app the audio was shared from. iOS share extensions are not told
+    /// which app sent the item, so this is usually nil — which is honest, and
+    /// better than the "ios" sentinel it replaced, which every display path
+    /// then had to special-case so it wasn't shown as if it were an app.
+    let sourceApp: String?
     let sourceLang: String
     let targetLang: String
     let transcript: String
     let translation: String?
     let transliteration: String?
     let duration: Double
-    let sourceApp: String
     let provider: String
+    /// Which machine-translation provider ran, when one did. Distinct from
+    /// `provider`, which is the speech-to-text provider that heard the audio.
+    let mtProvider: String?
     let createdAt: String
 
     init(
         sessionKey: String,
+        sourceApp: String? = nil,
         sourceLang: String,
         targetLang: String,
         transcript: String,
         translation: String?,
         transliteration: String? = nil,
         duration: Double,
-        sourceApp: String,
-        provider: String
+        provider: String,
+        mtProvider: String? = nil
     ) {
         self.sessionKey = sessionKey
+        self.sourceApp = sourceApp
         self.sourceLang = sourceLang
         self.targetLang = targetLang
         self.transcript = transcript
         self.translation = translation
         self.transliteration = transliteration
         self.duration = duration
-        self.sourceApp = sourceApp
         self.provider = provider
+        self.mtProvider = mtProvider
         self.createdAt = ISO8601DateFormatter().string(from: Date())
     }
 }
@@ -61,26 +71,28 @@ final class EchoHistoryStore {
 
     private struct DecoderRecord: Codable {
         let sessionKey: String
+        let sourceApp: String?
         let sourceLang: String
         let targetLang: String
         let transcript: String
         let translation: String?
         let transliteration: String?
         let duration: Double
-        let sourceApp: String
         let provider: String
+        let mtProvider: String?
         let createdAt: String
 
         init(_ record: EchoHistoryRecord) {
             sessionKey = record.sessionKey
+            sourceApp = record.sourceApp
             sourceLang = record.sourceLang
             targetLang = record.targetLang
             transcript = record.transcript
             translation = record.translation
             transliteration = record.transliteration
             duration = record.duration
-            sourceApp = record.sourceApp
             provider = record.provider
+            mtProvider = record.mtProvider
             createdAt = record.createdAt
         }
     }

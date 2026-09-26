@@ -7,18 +7,12 @@ import { Keyboard } from "react-native";
 import { EkweError, ErrorMessages } from "@/constants/errors";
 import { useTranslateMutation } from "@/hooks/queries/useTranslateMutation";
 import { usePermissions } from "@/hooks/usePermissions";
-import { HistoryService } from "@/services/historyService";
 import { TranslationResult } from "@/services/translateText";
-import { audioActions, settings$, auth$, audio$ } from "@/store";
+import { audioActions, settings$ } from "@/store";
 import { Result, ok, err } from "@/types/Result";
 import { AppToast } from "@/utils/toast";
 import { triggerHaptic } from "@/utils/haptics";
-import { default as logger } from "@/utils/logger";
-import {
-  getDefaultSourceLang,
-  isAutoDetectPermitted,
-  resolveDetectedLanguage,
-} from "@/utils/languageUtils";
+import { getDefaultSourceLang } from "@/utils/languageUtils";
 
 export interface UseTranslationReturn {
   translate: (
@@ -51,7 +45,6 @@ export const useTranslation = (): UseTranslationReturn => {
   const translateMutation = useTranslateMutation();
 
   const defaultTargetLang = useValue(() => settings$.targetLanguage.get());
-  const userSession = useValue(() => auth$.session.get());
 
   const [translation, setTranslation] = useState<string | null>(null);
   const [transliteration, setTransliteration] = useState<string | null>(null);
@@ -78,60 +71,6 @@ export const useTranslation = (): UseTranslationReturn => {
   const { setError } = audioActions;
   const translationAbortRef = useRef<AbortController | null>(null);
   const lastRequestRef = useRef<string | null>(null);
-
-  const sourceLangRef = useRef(sourceLang);
-  const targetLangRef = useRef(targetLang);
-  const userSessionRef = useRef(userSession);
-
-  useEffect(() => {
-    sourceLangRef.current = sourceLang;
-    targetLangRef.current = targetLang;
-    userSessionRef.current = userSession;
-  }, [sourceLang, targetLang, userSession]);
-
-  const saveTranscriptionOnly = useCallback(() => {
-    const currentTranscript = audio$.transcriptBuffer.get();
-    const duration = audio$.duration.get() || 0;
-    const currentSessionId = audio$.sessionId.get();
-    const isSaved = audio$.isSaved.get();
-
-    if (
-      !isSaved &&
-      currentTranscript.trim() &&
-      duration > 0 &&
-      currentSessionId !== null
-    ) {
-      audioActions.setSaved(true);
-      const detectedSource =
-        audio$.sourceLang.get() ||
-        getDefaultSourceLang(isAutoDetectPermitted());
-      const resolvedSource =
-        resolveDetectedLanguage(detectedSource, sourceLangRef.current, "en") ??
-        (targetLangRef.current || "en");
-
-      HistoryService.recordTranslation(
-        {
-          sourceLang: resolvedSource,
-          targetLang: targetLangRef.current || "en",
-          transcript: currentTranscript,
-          translation: null,
-          transliteration: null,
-          duration,
-          sourceApp: "ekwe",
-          provider: "gemini",
-          sessionKey: currentSessionId,
-          type: "transcription",
-        },
-        userSessionRef.current,
-      ).catch((e) => logger.error("Failed to save transcription-only", e));
-    }
-  }, []);
-
-  useEffect(() => {
-    return (): void => {
-      saveTranscriptionOnly();
-    };
-  }, [saveTranscriptionOnly]);
 
   const translate = useCallback(
     async (
@@ -174,7 +113,6 @@ export const useTranslation = (): UseTranslationReturn => {
   }, [sourceText]);
 
   const handleClear = useCallback(async () => {
-    saveTranscriptionOnly();
     translationAbortRef.current?.abort();
     translationAbortRef.current = null;
     lastRequestRef.current = null;
@@ -184,7 +122,7 @@ export const useTranslation = (): UseTranslationReturn => {
     setTransliteration(null);
     setDetectedLanguage(null);
     audioActions.resetAudioState();
-  }, [saveTranscriptionOnly]);
+  }, []);
 
   const handleSwap = useCallback(async () => {
     if (
@@ -265,75 +203,6 @@ export const useTranslation = (): UseTranslationReturn => {
         lastRequestRef.current = requestSignature;
 
         await triggerHaptic(Haptics.NotificationFeedbackType.Success);
-
-        const duration = audio$.duration.get() || 0;
-        const currentSessionId = audio$.sessionId.get();
-
-        if (currentSessionId !== null && duration > 0) {
-          const resolvedSource =
-            resolveDetectedLanguage(
-              audio$.sourceLang.get(),
-              sourceLang,
-              "en",
-            ) ?? sourceLang;
-
-          if (!audio$.isSaved.get()) {
-            try {
-              await HistoryService.recordTranslation(
-                {
-                  sourceLang: resolvedSource,
-                  targetLang,
-                  transcript: textToTranslate,
-                  translation: null,
-                  transliteration: null,
-                  duration,
-                  sourceApp: "ekwe",
-                  provider: "gemini",
-                  sessionKey: currentSessionId,
-                  type: "transcription",
-                },
-                userSession,
-              );
-
-              audioActions.setSaved(true);
-            } catch (saveErr) {
-              logger.error(
-                "[Translation] Failed to save transcription",
-                saveErr,
-              );
-            }
-          }
-
-          await HistoryService.recordTranslation(
-            {
-              sourceLang: resolvedSource,
-              targetLang,
-              transcript: textToTranslate,
-              translation: result.value.translation,
-              transliteration: result.value.transliteration || null,
-              duration: 0,
-              sourceApp: "ekwe",
-              provider: "gemini",
-              type: "translation",
-            },
-            userSession,
-          );
-        } else {
-          await HistoryService.recordTranslation(
-            {
-              sourceLang,
-              targetLang,
-              transcript: textToTranslate,
-              translation: result.value.translation,
-              transliteration: result.value.transliteration || null,
-              duration: 0,
-              sourceApp: "ekwe-home",
-              provider: "gemini",
-              type: "translation",
-            },
-            userSession,
-          );
-        }
       } catch (e: unknown) {
         if (e instanceof Error && e.name === "AbortError") return;
         const code = e instanceof Error ? (e.message as EkweError) : undefined;
@@ -345,7 +214,7 @@ export const useTranslation = (): UseTranslationReturn => {
         });
       }
     },
-    [sourceText, sourceLang, targetLang, userSession, translate, translation],
+    [sourceText, sourceLang, targetLang, translate, translation],
   );
 
   const canTranslate =

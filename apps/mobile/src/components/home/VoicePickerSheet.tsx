@@ -1,19 +1,16 @@
 import AudioLines from "lucide-react-native/icons/audio-lines";
 import Check from "lucide-react-native/icons/check";
+import Pause from "lucide-react-native/icons/pause";
 import Play from "lucide-react-native/icons/play";
 import Mars from "lucide-react-native/icons/mars";
 import Venus from "lucide-react-native/icons/venus";
 import { useValue } from "@legendapp/state/react";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ScrollView } from "react-native";
-import {
-  getVoiceById,
-  getVoicesByGender,
-  type Voice,
-  type VoiceGender,
-} from "@ekwe/shared";
+import { VOICE_SLOTS, type VoiceGender, type VoiceSlot } from "@ekwe/shared";
 
 import { Sheet } from "@/components/ui/Sheet";
+import { Spinner } from "@/components/ui/Spinner";
 import { ProBadge } from "@/components/ProBadge";
 import { LockedPressable } from "@/components/LockedPressable";
 import { Box, Pressable, Text } from "@/components/ui";
@@ -22,42 +19,56 @@ import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
 import { auth$ } from "@/store";
 import { withAlpha } from "@/utils/color";
+import type { PreviewPhase } from "@/hooks/audio/useVoicePreview";
+import type { VoiceSelection } from "@/utils/voices";
 import { triggerHaptic } from "@/utils/haptics";
 
 export interface VoicePickerSheetProps {
   visible: boolean;
   onClose: () => void;
   currentVoiceId: string | null;
-  onSelect: (voice: Voice) => void;
-  onPreview?: (voice: Voice) => void;
+  onSelect: (selection: VoiceSelection) => void;
+  onPreview?: (selection: VoiceSelection) => void;
+  /** The voice currently loading or playing, as `${slotId}_${gender}`. */
+  activePreviewKey?: string | null;
+  previewPhase?: PreviewPhase | null;
+  /**
+   * Fires when the user changes the She/He tab. Persisting this immediately
+   * keeps the tab, the previewed voice, and the next synthesis in agreement.
+   */
+  onGenderChange?: (gender: VoiceGender) => void;
   currentGender?: VoiceGender;
 
   title?: string;
 }
 
 function VoiceCard({
-  voice,
+  slot,
+  gender,
   selected,
   locked,
   onPress,
   onPreview,
+  previewPhase,
   color,
 }: {
-  voice: Voice;
+  slot: VoiceSlot;
+  gender: VoiceGender;
   selected: boolean;
   locked: boolean;
   onPress: () => void;
   onPreview?: () => void;
+  previewPhase?: PreviewPhase | null;
   color: ReturnType<typeof useTheme>["color"];
 }): React.ReactElement {
-  const isBuiltin = voice.origin === "builtin";
+  const isProSlot = slot.tier === "pro";
 
   return (
     <LockedPressable
       locked={locked}
       navigateToBilling
       onPress={onPress}
-      accessibilityLabel={`${voice.name}, ${voice.tagline}`}
+      accessibilityLabel={`${slot.name}, ${slot.tagline}`}
       accessibilityHint={locked ? "Requires Ekwe Pro subscription" : undefined}
       style={({ pressed }) => [
         {
@@ -90,19 +101,19 @@ function VoiceCard({
           borderCurve: "continuous",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: isBuiltin
+          backgroundColor: isProSlot
             ? withAlpha(color.brand, 0.14)
             : withAlpha(color.foreground, 0.06),
         }}
       >
-        {isBuiltin ? (
+        {isProSlot ? (
           <AudioLines size={20} color={color.brand} />
         ) : (
           <Text
             variant="body"
             style={{ color: color.foreground, fontWeight: "700" }}
           >
-            {voice.name.charAt(0)}
+            {slot.name.charAt(0)}
           </Text>
         )}
         {selected && (
@@ -143,16 +154,16 @@ function VoiceCard({
               fontWeight: selected ? "700" : "600",
             }}
           >
-            {voice.name}
+            {slot.name}
           </Text>
-          {voice.tier === "pro" && <ProBadge />}
+          {slot.tier === "pro" && <ProBadge />}
         </Box>
         <Text
           variant="caption"
           numberOfLines={1}
           style={{ color: color.muted, marginTop: 4 }}
         >
-          {voice.tagline}
+          {slot.tagline}
         </Text>
       </Box>
 
@@ -160,9 +171,17 @@ function VoiceCard({
       {onPreview && !locked && (
         <Pressable
           onPress={onPreview}
+          disabled={previewPhase === "loading"}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={`Preview ${voice.name}`}
+          accessibilityState={{ busy: previewPhase === "loading" }}
+          accessibilityLabel={
+            previewPhase === "playing"
+              ? `Stop preview of ${slot.name}, ${gender}`
+              : previewPhase === "loading"
+                ? `Loading preview of ${slot.name}, ${gender}`
+                : `Preview ${slot.name}, ${gender}`
+          }
           style={({ pressed }) => [
             {
               width: 40,
@@ -178,7 +197,13 @@ function VoiceCard({
             pressed && { transform: [{ scale: 0.9 }] },
           ]}
         >
-          <Play size={15} color={color.brand} fill={color.brand} />
+          {previewPhase === "loading" ? (
+            <Spinner size="sm" color={color.brand} />
+          ) : previewPhase === "playing" ? (
+            <Pause size={15} color={color.brand} fill={color.brand} />
+          ) : (
+            <Play size={15} color={color.brand} fill={color.brand} />
+          )}
         </Pressable>
       )}
     </LockedPressable>
@@ -191,30 +216,31 @@ export function VoicePickerSheet({
   currentVoiceId,
   onSelect,
   onPreview,
+  activePreviewKey = null,
+  previewPhase = null,
+  onGenderChange,
   currentGender,
   title = "Choose a voice",
 }: VoicePickerSheetProps): React.JSX.Element {
   const { color } = useTheme();
   const isPro = useValue(() => auth$.isPro.get());
 
-  const current = useMemo(
-    () => (currentVoiceId ? (getVoiceById(currentVoiceId) ?? null) : null),
-    [currentVoiceId],
-  );
+  const [gender, setGender] = useState<VoiceGender>(currentGender ?? "female");
 
-  const [gender, setGender] = useState<VoiceGender>(
-    currentGender ?? current?.gender ?? "female",
-  );
-
+  // The tab always reflects the persisted gender, so a preview, a selection
+  // and the next synthesis can never disagree about which gender is active.
   useEffect(() => {
-    if (currentGender) {
-      setGender(currentGender);
-    } else if (current) {
-      setGender(current.gender);
-    }
-  }, [current, currentGender]);
+    if (currentGender) setGender(currentGender);
+  }, [currentGender]);
 
-  const voices = useMemo(() => getVoicesByGender(gender), [gender]);
+  const handleGenderPress = useCallback(
+    (next: VoiceGender): void => {
+      triggerHaptic();
+      setGender(next);
+      onGenderChange?.(next);
+    },
+    [onGenderChange],
+  );
 
   return (
     <Sheet visible={visible} onClose={onClose} title={title}>
@@ -241,8 +267,7 @@ export function VoicePickerSheet({
               <Pressable
                 key={key}
                 onPress={() => {
-                  triggerHaptic();
-                  setGender(key);
+                  handleGenderPress(key);
                 }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
@@ -293,27 +318,36 @@ export function VoicePickerSheet({
             paddingBottom: spacing["2xl"],
           }}
         >
-          {voices.map((voice) => {
-            const locked = voice.tier === "pro" && !isPro;
-            const effective =
-              voice.origin === "standard" ? { ...voice, gender } : voice;
+          {VOICE_SLOTS.map((slot) => {
+            const locked = slot.tier === "pro" && !isPro;
+            // Slot and gender both have to match: both genders share a slot id,
+            // so a slot-only check would mark the Studio card selected even
+            // when the active voice is the other gender.
+            const selected =
+              currentVoiceId === slot.id && currentGender === gender;
+            const selection: VoiceSelection = { slot, gender };
+            // Only the card that owns the preview reflects it, so switching
+            // tabs never leaves a spinner behind on the gender you left.
+            const ownsPreview = activePreviewKey === `${slot.id}_${gender}`;
             return (
               <VoiceCard
-                key={voice.id}
-                voice={voice}
+                key={slot.id}
+                slot={slot}
+                gender={gender}
                 color={color}
-                selected={currentVoiceId === voice.id}
+                selected={selected}
                 locked={locked}
                 onPress={() => {
-                  if (!locked) onSelect(effective);
+                  if (!locked) onSelect(selection);
                 }}
                 onPreview={
                   onPreview && !locked
                     ? (): void => {
-                        void onPreview(effective);
+                        onPreview(selection);
                       }
                     : undefined
                 }
+                previewPhase={ownsPreview ? previewPhase : null}
               />
             );
           })}

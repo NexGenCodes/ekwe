@@ -15,6 +15,13 @@
       "when": 1790255469443,
       "tag": "0001_optimized_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790409808093,
+      "tag": "0002_history_origin",
+      "breakpoints": true
     }
   ]
 }

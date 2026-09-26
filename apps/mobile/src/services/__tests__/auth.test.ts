@@ -46,6 +46,7 @@ const mmkvMock = vi.hoisted(() => ({
 
 const syncMock = vi.hoisted(() => ({
   onUserSignedIn: vi.fn(),
+  onUserSignedOut: vi.fn(),
   loadInitialHistory: vi.fn(),
   drain: vi.fn(),
   purgeLocalHistory: vi.fn(),
@@ -53,7 +54,7 @@ const syncMock = vi.hoisted(() => ({
 }));
 
 const dbMock = vi.hoisted(() => ({
-  getPendingOutbox: vi.fn<() => Array<{ id: number }>>(() => []),
+  countUnsyncedOutbox: vi.fn<() => number>(() => 0),
 }));
 
 const posthogClientMock = vi.hoisted(() => ({ reset: vi.fn() }));
@@ -308,6 +309,7 @@ describe("auth state change handler", () => {
     listenerCb?.("SIGNED_OUT", null);
     await flushMicrotasks();
 
+    expect(syncMock.onUserSignedOut).toHaveBeenCalled();
     expect(syncMock.loadInitialHistory).toHaveBeenCalled();
     expect(mmkvMock.set).toHaveBeenCalledWith("hasSession", false);
     expect(syncMock.onUserSignedIn).not.toHaveBeenCalled();
@@ -620,9 +622,8 @@ describe("signInWithGoogle", () => {
   it("rejects when no id token is returned", async () => {
     googleSigninMock.signIn.mockResolvedValue({
       type: "success",
-      data: { user: { email: "a@b.com" } },
+      data: { idToken: null, user: { email: "a@b.com" } },
     });
-    googleSigninMock.getTokens.mockResolvedValue({ idToken: null });
     const result = await signInWithGoogle();
     expect(result).toEqual({
       ok: false,
@@ -633,7 +634,10 @@ describe("signInWithGoogle", () => {
   it("offers the email-link flow when the social account already exists", async () => {
     googleSigninMock.signIn.mockResolvedValue({
       type: "success",
-      data: { user: { email: "existing@example.com" } },
+      data: {
+        idToken: "google-id-token",
+        user: { email: "existing@example.com" },
+      },
     });
     authMock.signInWithIdToken.mockResolvedValue({
       data: { user: null },
@@ -654,10 +658,11 @@ describe("signInWithGoogle", () => {
   it("succeeds", async () => {
     googleSigninMock.signIn.mockResolvedValue({
       type: "success",
-      data: { user: { email: "a@b.com" } },
+      data: { idToken: "google-id-token", user: { email: "a@b.com" } },
     });
     const result = await signInWithGoogle();
     expect(result).toEqual({ ok: true });
+    expect(googleSigninMock.getTokens).not.toHaveBeenCalled();
     expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.SIGN_IN, {
       method: "google",
     });
@@ -685,7 +690,7 @@ describe("linkSocialIdentity", () => {
   it("links a pending provider", async () => {
     googleSigninMock.signIn.mockResolvedValue({
       type: "success",
-      data: { user: { email: "x@y.com" } },
+      data: { idToken: "google-id-token", user: { email: "x@y.com" } },
     });
     authMock.signInWithIdToken.mockResolvedValue({
       data: { user: null },
@@ -712,7 +717,7 @@ describe("linkSocialIdentity", () => {
   it("maps a link failure to safe copy", async () => {
     googleSigninMock.signIn.mockResolvedValue({
       type: "success",
-      data: { user: { email: "x@y.com" } },
+      data: { idToken: "google-id-token", user: { email: "x@y.com" } },
     });
     authMock.signInWithIdToken.mockResolvedValue({
       data: { user: null },
@@ -758,12 +763,36 @@ describe("signOut", () => {
 
   it("keeps local history when the outbox still has rows", async () => {
     authActions.setSession(makeSession("u1") as never);
-    dbMock.getPendingOutbox.mockReturnValue([{ id: 1 }]);
+    dbMock.countUnsyncedOutbox.mockReturnValue(1);
     const result = await signOut();
     expect(result).toEqual({ ok: true });
     expect(syncMock.purgeLocalHistory).not.toHaveBeenCalled();
     expect(syncMock.clearSyncCursor).not.toHaveBeenCalled();
     expect(loggerMock.warn).toHaveBeenCalled();
+  });
+
+  it("keeps local history when rows are dead and no longer retry-eligible", async () => {
+    authActions.setSession(makeSession("u1") as never);
+    dbMock.countUnsyncedOutbox.mockReturnValue(3);
+    await signOut();
+    expect(syncMock.purgeLocalHistory).not.toHaveBeenCalled();
+    expect(syncMock.clearSyncCursor).not.toHaveBeenCalled();
+  });
+
+  it("waits for the outbox to flush before deciding to purge", async () => {
+    authActions.setSession(makeSession("u1") as never);
+    const order: string[] = [];
+    syncMock.drain.mockImplementation(async () => {
+      await Promise.resolve();
+      order.push("drained");
+      dbMock.countUnsyncedOutbox.mockReturnValue(0);
+    });
+    dbMock.countUnsyncedOutbox.mockReturnValue(1);
+
+    await signOut();
+
+    expect(order).toEqual(["drained"]);
+    expect(syncMock.purgeLocalHistory).toHaveBeenCalledWith("u1");
   });
 
   it("still clears local state when the sign-out call fails", async () => {

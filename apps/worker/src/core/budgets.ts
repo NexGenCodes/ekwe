@@ -8,6 +8,10 @@ export const TRANSLATE_CACHE_TTL_SECONDS = 4 * 60 * 60;
 export const SYNTHESIZE_TOTAL_MS = 25_000;
 
 export const SPEECH_PIPELINE_TOTAL_MS = 20_000;
+// Deliberately not extended for previews even though they are shared and
+// immutable: a slot can fail over to a different provider at runtime, so a long
+// TTL would pin a degraded clip for every user until it expired. 24h bounds
+// that to one self-healing cycle.
 export const SPEECH_CACHE_TTL_SECONDS = 24 * 60 * 60;
 export const SPEECH_DOWN_TTL_SECONDS = 23 * 60 * 60;
 // Hybrid speech cache: audio ≤ the KV cap stays in KV (hot, low latency); larger

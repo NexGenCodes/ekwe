@@ -17,11 +17,162 @@ All notable changes to the Ekwe Android app are documented here.
 
 ### Added
 
+- The result screen now shows the text it produced. The translation (or the
+  transcript, when there is no translation) is the hero of the card, with a
+  heard-it line above it for dictated input. The audio was the only thing on
+  screen, so the words a voice was rendering could not be read, corrected, or
+  copied from the same place.
+- The result text is editable. Tapping it drops to an editor with only Cancel
+  and Convert — deliberately no player, waveform, or Send, because the audio on
+  screen would be the pre-edit render and would no longer match the text being
+  read. Convert re-renders the edited text in the same voice and returns to the
+  result. Editing does not re-translate: the text is already in its final
+  language, so re-running translation would pay for a machine translation of the
+  user's own words.
+- Both texts are now editable, not just the artifact. When a translation exists
+  the words you said are shown as their own tappable line above it, because a
+  mistranslation is usually a mishearing and the fix belongs to the source. The
+  editor is told which document it is holding, so Convert re-renders the field
+  you corrected and leaves the other one alone. With no translation the result
+  _is_ the transcript, and editing it edits the transcript.
+- Re-renders are rate-limited to one every 2.5s, and a refused re-render is now
+  silent. Regenerate is a re-roll; explaining that a tap did nothing interrupted
+  the pause it was meant to protect.
+- Echo now shares the voice note itself instead of only its text. The audio was
+  already in memory and was being dropped on the way to the result screen.
+- `ShareOutService.shareArtifact` is now the single send path. It prefers the
+  audio file, falls back to text, and reports failure instead of opening an
+  empty share sheet. History, Echo, and Speech Studio no longer call a share
+  sheet directly.
+- `CopyService` now owns the share signature for every copy. Five call sites
+  used to decide independently, so the same result pasted from the History row
+  came out unsigned while the same text copied from the result screen was
+  signed.
+- `docs/speech-studio.md`, and a rewritten `docs/naming.md` covering the
+  surface-vs-reporting split.
+- Speech Studio notes are stored with `origin = "speech-studio"` instead of
+  `"studio"`, which collided with `STUDIO_VOICE_ID` — a voice id, and an
+  unrelated field that happened to share a string. Telemetry keeps `"studio"`:
+  `result_shared.source` is a frozen reporting contract and existing dashboards
+  must not break.
+
+- History is now tagged by capture surface — Speech Studio, Echo, Orb — with a filter
+  for each and an empty state that explains what belongs there. Previously the
+  filter split entries by whether a translation existed, which the row already
+  showed.
+- Speech Studio now writes to History. The Worker already computed the
+  transcript and translation to render speech and discarded them; it now
+  returns both, at no extra inference cost, so what you said or typed is
+  archived along with the voice that rendered it.
+- History records which machine-translation provider translated a note,
+  separately from the speech-to-text provider that heard it. The MT provider
+  was previously fetched and thrown away.
+- `POST /synthesize` returns the transcript and translation it produced.
+- Speech Studio on the home screen: record or type text, choose a target language
+  and voice, edit the result, then share a translated voice note to WhatsApp and
+  other apps.
+- A voice picker with one free Standard voice and two Pro Studio voices —
+  Clear and Warm — each in a male and female variant.
+- Pro live-streaming quota enforcement with a daily streaming allowance.
+- Provider health tracking, circuit breaking, and failover for translation,
+  transcription, and speech requests.
+- A hybrid speech cache: short clips stay in Key-Value storage, while larger
+  clips use R2.
+- Installer-source detection for store builds and sideloaded APKs.
+
 ### Changed
+
+- The conversion surface is now **Speech Studio**, and its History origin value
+  is `speech-studio` (was `studio`). The `HistoryOrigin` union no longer accepts
+  the old value and does not fall back to it. Analytics still report the
+  surface as `studio`: the reporting vocabulary is frozen, so renaming a
+  surface cannot move a dashboard key.
+- Regenerate now re-rolls the render of the text on screen. It previously
+  re-ran the full conversion from the transcript, which silently discarded an
+  edit and replaced the user's wording with a fresh machine translation.
+- Re-renders are rate-limited to one every 2.5s. A first conversion is not, so
+  changing voice and converting again still works immediately.
+- Auto-copy to Clipboard is now visibly Pro-only. It was the one Smart Feature
+  row whose switch rendered and toggled for free users, leaving the tier gate on
+  the pipeline as the only thing stopping a paid behaviour.
+- The chooser title is "Send with Ekwe" rather than naming the inbound feature
+  on the outbound path.
+
+- History stores one row per capture instead of two. Translating a voice note
+  previously left an orphan transcript-only row beside it, because the dedup
+  lookup keyed on entry type and the two rows could never match. A capture is
+  now identified by a `capture_id` and a later translation updates it in
+  place, which is what removes the duplicate.
+- Echo now saves transliteration, which it was discarding. Transliteration is
+  what makes a non-Latin script readable, and the detail sheet already had a
+  place to show it.
+- History stores no audio and never did. The synthesized speech is a rendering
+  of text that is already kept, and every capture surface deleted it at the end
+  of its session regardless.
+- The History filter is now Speech Studio / Echo / Orb instead of All /
+  Transcription / Translation.
+- Renamed the TTS surface to speech. `POST /synthesize` now returns JSON with
+  base64 audio and replaces `POST /tts`.
+- Daily speech quotas are now 5,000 characters for Free and 15,000 for Pro.
+- Usage responses now use meter snapshots, and the app shows translation,
+  transcription, and speech usage separately.
+- Update manifest writes and device notifications now use admin-authenticated
+  Worker routes.
+- Flutterwave events now use the consolidated `POST /webhook` route.
+- The release workflow rebases onto the latest `master` before pushing a
+  version bump.
+- Native audio APIs now include remuxing, installer-source detection, and
+  asynchronous system-theme queries on supported platforms.
+- Payment currency now defaults to NGN and is chosen manually in the profile.
+  The Worker no longer infers a currency from the request's country, so a
+  device or network location can no longer show prices in the wrong currency.
+  Previously stored currencies are preserved; unsupported values fall back to
+  NGN.
 
 ### Fixed
 
+- Outgoing voice notes now declare `audio/ogg; codecs=opus` verbatim.
+  `expo-sharing` set the type via `Intent.setTypeAndNormalize`, which strips
+  everything after the `;`, so WhatsApp and Telegram received a bare
+  `audio/ogg` and rendered the note as an audio document instead of a playable
+  voice note. The type is now set exactly, through the native module.
+- An edit to a result with no translation was discarded. The re-rendered audio
+  used the edited words while History kept recording the original transcript.
+
+- Translating a shared voice note no longer leaves a duplicate transcript-only
+  entry in History beside the translated one.
+- Clearing or re-recording in Speech Studio no longer overwrites the previous
+  note's History entry.
+- A Speech Studio capture with no target language no longer records `"none"` as
+  its target language.
+- Echo's read-aloud button no longer leaves a generated audio file behind on
+  every tap, and switching result tabs no longer orphans one.
+- History no longer displays a bare platform name as the source app, which is
+  what the old `"ios"` placeholder resolved to.
+- Provider failures now fail over or fail fast instead of repeatedly sending
+  requests to an unhealthy provider.
+- OTP rate limiting fails closed when its backing Durable Object is
+  unavailable.
+- Failed maintenance jobs now reach a dead-letter queue and are reported.
+- Streaming frames and history-sync payloads are validated before they enter
+  the client data flow.
+- The streaming Durable Object no longer opens duplicate provider sockets for
+  the same audio session.
+- Android system-bar icons now follow the active light or dark theme.
+
 ### Removed
+
+- The unused `voice_notes` storage bucket, along with its policies. It allowed
+  25 MB per user of user-writable audio storage that no code path created,
+  expired, or accounted for.
+- The unreachable Translate screen and the shared-audio branch of the result
+  route, neither of which could be reached from any navigation path.
+- On-device speech fallback. Voice output is unavailable after the daily
+  speech quota is exhausted.
+- The old `/tts`, `/push-tokens`, `/push-notify`, `POST /update/manifest`, and
+  `/webhook/flutterwave` Worker routes.
+- Premium text input is capped at 2,400 characters per request, down from
+  10,000.
 
 ## [1.2.6] - 2026-09-10
 

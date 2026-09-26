@@ -55,6 +55,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/utils/opus.ts'],
+    rules: {
+      'no-restricted-imports': 'off',
+    },
+  },
+  {
     files: ['tests/**/*.ts', 'src/__tests__/**/*.ts', 'vitest.config.mts'],
     rules: {
       'no-console': 'off',

@@ -57,7 +57,7 @@ export const PROVIDER_MODULES: Readonly<Record<string, ProviderModule>> = {
     stt: witai.stt,
     sttStream: witai.sttStream,
     tts: ttsWithLang(witai.tts),
-    voice: witai.voice,
+    voices: witai.voices,
   },
   groq: {
     name: "groq",
@@ -101,7 +101,7 @@ export const PROVIDER_MODULES: Readonly<Record<string, ProviderModule>> = {
     stt: deepgram.stt,
     sttStream: deepgram.sttStream,
     tts: ttsWithLang(deepgram.tts),
-    voice: deepgram.voice,
+    voices: deepgram.voices,
   },
   assemblyai: {
     name: "assemblyai",
@@ -115,7 +115,7 @@ export const PROVIDER_MODULES: Readonly<Record<string, ProviderModule>> = {
     capabilities: ["translate", "tts"],
     translate: gemini.translate,
     tts: ttsNoLang(gemini.tts),
-    voice: gemini.voice,
+    voices: gemini.voices,
   },
   mistral: {
     name: "mistral",
@@ -126,7 +126,7 @@ export const PROVIDER_MODULES: Readonly<Record<string, ProviderModule>> = {
     name: "edge",
     capabilities: ["tts"],
     tts: ttsNoLang(edge.tts),
-    voice: edge.voice,
+    voices: edge.voices,
   },
 };
 

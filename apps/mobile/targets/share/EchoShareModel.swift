@@ -3,7 +3,9 @@ import Combine
 import Foundation
 import UIKit
 
-/// Mirrors `ECHO_SHARE_SIGNATURE` in the RN app (constants/echo.ts).
+/// Mirrors `EKWE_SHARE_SIGNATURE` in the RN app (src/constants/share.ts).
+/// The string is shared by both directions — Echo copies with it, and Studio
+/// share-out sends with it — so it does not live in the Echo constants.
 @available(iOS 16.4, *)
 enum EchoSignature {
     static let value = "\n\n— Shared with Ekwe · Speak, we'll handle the rest"
@@ -420,14 +422,16 @@ final class EchoShareModel: NSObject, ObservableObject {
         guard !transcriptText.isEmpty else { return }
         let record = EchoHistoryRecord(
             sessionKey: sessionKey,
+            // iOS does not tell a share extension which app sent the item.
+            sourceApp: nil,
             sourceLang: detectedLang.isEmpty ? selectedLang : detectedLang,
             targetLang: targetLang.isEmpty ? "en" : targetLang,
             transcript: transcriptText,
             translation: translation,
             transliteration: transliteration,
             duration: duration,
-            sourceApp: "ios",
-            provider: transcriptionProvider ?? "unknown"
+            provider: transcriptionProvider ?? "unknown",
+            mtProvider: translation != nil ? translationProvider : nil
         )
         historyStore.save(record)
     }

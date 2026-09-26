@@ -2,7 +2,8 @@ import { logger } from "@/core/logger";
 import { Env } from "@/core/types";
 import {
   computeSavingPercent,
-  countryToCurrency,
+  DEFAULT_PAYMENT_CURRENCY,
+  isSupportedPaymentCurrency,
   resolvePaymentCurrency,
   roundToCurrency,
 } from "@ekwe/shared/money";
@@ -13,7 +14,7 @@ import { withCache } from "@/core/cache";
 import { supabaseGet } from "@/services/supabase";
 
 export interface LocalPlanPrices {
-  currency: string;
+  currency: FlutterwaveCurrency;
   monthly: number;
   annual: number;
   monthlyUsd: number;
@@ -67,14 +68,19 @@ function parseLocalPrices(raw: unknown): Record<string, LocalPrice> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return parsed;
 
   for (const [code, value] of Object.entries(raw)) {
-    if (!/^[A-Z]{3}$/.test(code) || !value || typeof value !== "object")
+    const normalizedCode = code.toUpperCase();
+    if (
+      !isSupportedPaymentCurrency(normalizedCode) ||
+      !value ||
+      typeof value !== "object"
+    )
       continue;
     const v = value as Record<string, unknown>;
     const monthly = toFinite(v.monthly, NaN);
     const annual = toFinite(v.annual, NaN);
     if (!Number.isFinite(monthly) || !Number.isFinite(annual)) continue;
     if (monthly <= 0 || annual <= 0) continue;
-    parsed[code] = { monthly, annual };
+    parsed[normalizedCode] = { monthly, annual };
   }
 
   return parsed;
@@ -181,17 +187,8 @@ export async function getAuthoritativePlanPrices(
 
 export function resolveRequestCurrency(
   explicit: string | undefined,
-  request?: Request,
 ): FlutterwaveCurrency {
-  if (explicit) return resolvePaymentCurrency(explicit);
-
-  const geo = request?.headers.get("CF-IPCountry");
-  if (geo) {
-    const fromCountry = countryToCurrency(geo);
-    if (fromCountry) return resolvePaymentCurrency(fromCountry);
-  }
-
-  return "USD";
+  return explicit ? resolvePaymentCurrency(explicit) : DEFAULT_PAYMENT_CURRENCY;
 }
 
 export async function handleStorePricing(
@@ -205,7 +202,6 @@ export async function handleStorePricing(
     async () => {
       const currency = resolveRequestCurrency(
         new URL(request.url).searchParams.get("currency") ?? undefined,
-        request,
       );
 
       const prices = await getLocalPlanPrices(env, currency);

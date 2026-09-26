@@ -52,10 +52,10 @@ async function initializeCheckout(isAnnual: boolean): Promise<CheckoutSession> {
   const session = auth$.session.get();
   if (!session) throw new Error("Authentication required");
 
-  const manual = settings$.currency.peek();
+  const currency = settings$.currency.peek();
   const body: CheckoutRequest = {
     plan: getFlutterwavePlanId(isAnnual),
-    ...(manual ? { currency: manual } : {}),
+    currency,
   };
 
   const res = await fetch(`${getWorkerBaseUrl()}${CHECKOUT_PATH}`, {

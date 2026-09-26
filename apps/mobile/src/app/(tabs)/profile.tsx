@@ -35,12 +35,11 @@ import {
   QuotaUsageCard,
 } from "@/components";
 import { Box, Text, Pressable, ScrollArea, Spinner } from "@/components/ui";
-import { APP_VERSION, VOICE_PREVIEW_TEXT, type Voice } from "@ekwe/shared";
+import { APP_VERSION, type VoiceGender } from "@ekwe/shared";
 import { getCurrencySymbol } from "@ekwe/shared/money";
 import { duration, borderRadius, opacity, spacing } from "@/constants";
 import { PLAN_LIMITS } from "@/constants/billing";
 import { useLogout, useTheme, usePermissions, useReduceMotion } from "@/hooks";
-import { useActivePricing } from "@/hooks/billing/useActivePricing";
 import { deleteAccount } from "@/services/auth";
 import {
   checkForApkUpdate,
@@ -57,10 +56,10 @@ import {
 } from "@/store";
 import { AppAlert, isIOS } from "@/utils";
 
-import { resolveActiveVoice, resolveVoiceGender } from "@/utils/voices";
+import { resolveVoiceSelection, type VoiceSelection } from "@/utils/voices";
 
-import { synthesizeSpeech } from "@/services/speech";
-import { useSharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
+import { useVoicePreview } from "@/hooks/audio/useVoicePreview";
+import { useSessionAudioFiles } from "@/utils/sessionAudioFiles";
 import { AppToast } from "@/utils/toast";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 import { triggerHaptic } from "@/utils/haptics";
@@ -98,12 +97,9 @@ export default function ProfileScreen(): React.JSX.Element {
   );
   const voiceGender = useValue(() => settings$.voiceGender.get());
   const voiceId = useValue(() => settings$.voiceId.get());
-  const activeVoice = resolveActiveVoice(voiceId, voiceGender);
+  const activeVoice = resolveVoiceSelection(voiceId, voiceGender);
   const currency = useValue(() => settings$.currency.get());
-
-  const { pricing } = useActivePricing();
-  const effectiveCurrency = currency ?? pricing.currency;
-  const currencyLabel = `${getCurrencySymbol(effectiveCurrency)} ${effectiveCurrency}`;
+  const currencyLabel = `${getCurrencySymbol(currency)} ${currency}`;
 
   const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
   const [isVoiceModalVisible, setIsVoiceModalVisible] = useState(false);
@@ -198,51 +194,34 @@ export default function ProfileScreen(): React.JSX.Element {
 
   const previewLang = selectedLanguages[0] ?? "en";
 
-  const [previewUri, setPreviewUri] = useState<string | null>(null);
-  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-  const previewPlayer = useSharedAudioPlayer(previewUri);
-
-  React.useEffect(() => {
-    if (
-      isPreviewLoading &&
-      previewUri &&
-      previewPlayer.isLoaded &&
-      !previewPlayer.isDecoding
-    ) {
-      setIsPreviewLoading(false);
-      void previewPlayer.playFromStart();
-    }
-  }, [
-    isPreviewLoading,
-    previewUri,
-    previewPlayer.isLoaded,
-    previewPlayer.isDecoding,
-    previewPlayer,
-  ]);
+  const files = useSessionAudioFiles();
+  const handlePreviewError = useCallback((): void => {
+    AppToast.error("Preview Unavailable", {
+      description: "Failed to load voice preview.",
+    });
+  }, []);
+  const preview = useVoicePreview({
+    lang: previewLang,
+    files,
+    onError: handlePreviewError,
+  });
 
   const handlePreviewVoice = useCallback(
-    async (previewed: Voice): Promise<void> => {
+    async (previewed: VoiceSelection): Promise<void> => {
       await triggerHaptic();
-      try {
-        previewPlayer.pause();
-        setIsPreviewLoading(true);
-        const result = await synthesizeSpeech(VOICE_PREVIEW_TEXT, previewLang, {
-          voiceId: previewed.id,
-          gender: previewed.gender,
-        });
-        if (result.ok) {
-          setPreviewUri(result.value.uri);
-        } else {
-          setIsPreviewLoading(false);
-          AppToast.error("Preview Unavailable", {
-            description: "Failed to load voice preview.",
-          });
-        }
-      } catch {
-        setIsPreviewLoading(false);
-      }
+      preview.preview(previewed);
     },
-    [previewLang, previewPlayer],
+    [preview],
+  );
+
+  const handleVoiceGenderChange = useCallback(
+    (gender: VoiceGender): void => {
+      // Drop anything sounding first, so a preview of the gender being left
+      // cannot begin playing under the one just selected.
+      preview.cancel();
+      setVoiceGender(gender);
+    },
+    [preview, setVoiceGender],
   );
 
   return (
@@ -360,7 +339,7 @@ export default function ProfileScreen(): React.JSX.Element {
               sfIcon="dollarsign.circle.fill"
               iconColor={color.foreground}
               title="Currency"
-              subtitle="Payment currency for subscriptions"
+              subtitle="Currency used for subscription prices and checkout"
               hasDivider
               onPress={async () => {
                 await triggerHaptic();
@@ -501,7 +480,7 @@ export default function ProfileScreen(): React.JSX.Element {
                       flexShrink: 1,
                     }}
                   >
-                    {activeVoice.name}
+                    {activeVoice.slot.name}
                   </Text>
                   <ChevronRight size={16} color={color.muted} />
                 </Box>
@@ -513,22 +492,33 @@ export default function ProfileScreen(): React.JSX.Element {
               iconColor={color.foreground}
               title="Auto-copy to Clipboard"
               subtitle="Copy translation automatically"
+              locked={!isPro}
+              navigateToBilling
               onPress={async () => {
-                await triggerHaptic();
-                setAutoCopy(!autoCopy);
+                // Was the only Smart Feature row that flipped the setting for
+                // free users: the switch rendered and toggled regardless of
+                // tier, so the gate on the pipeline was the only thing stopping
+                // a paid behaviour. It now advertises the gate and routes to
+                // billing, like Live Transcription.
+                if (isPro) {
+                  await triggerHaptic();
+                  setAutoCopy(!autoCopy);
+                }
               }}
               trailing={
-                <Switch
-                  value={autoCopy}
-                  onValueChange={(val) => {
-                    setAutoCopy(val);
-                  }}
-                  trackColor={{
-                    true: color.brand,
-                    false: color.border,
-                  }}
-                  thumbColor={color.card}
-                />
+                isPro ? (
+                  <Switch
+                    value={autoCopy}
+                    onValueChange={(val) => {
+                      setAutoCopy(val);
+                    }}
+                    trackColor={{
+                      true: color.brand,
+                      false: color.border,
+                    }}
+                    thumbColor={color.card}
+                  />
+                ) : undefined
               }
             />
           </ProfileSection>
@@ -770,17 +760,24 @@ export default function ProfileScreen(): React.JSX.Element {
 
       <VoicePickerSheet
         visible={isVoiceModalVisible}
-        onClose={() => setIsVoiceModalVisible(false)}
+        onClose={() => {
+          preview.reset();
+          setIsVoiceModalVisible(false);
+        }}
         title="Default Voice"
-        currentVoiceId={activeVoice.id}
-        currentGender={resolveVoiceGender(voiceGender)}
-        onSelect={async (voice) => {
+        currentVoiceId={activeVoice.slot.id}
+        currentGender={activeVoice.gender}
+        onGenderChange={handleVoiceGenderChange}
+        onSelect={async (selection) => {
           await triggerHaptic();
-          setVoiceId(voice.id);
-          setVoiceGender(voice.gender);
+          setVoiceId(selection.slot.id);
+          setVoiceGender(selection.gender);
+          preview.reset();
           setIsVoiceModalVisible(false);
         }}
         onPreview={handlePreviewVoice}
+        activePreviewKey={preview.activeKey}
+        previewPhase={preview.phase}
       />
 
       <CurrencyPickerModal
@@ -792,7 +789,6 @@ export default function ProfileScreen(): React.JSX.Element {
           setIsCurrencyModalVisible(false);
         }}
         currentCurrency={currency}
-        resolvedCurrency={effectiveCurrency}
       />
 
       {}

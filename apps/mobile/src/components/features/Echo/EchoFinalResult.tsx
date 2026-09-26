@@ -24,6 +24,8 @@ interface EchoFinalResultProps {
   activeTab: ResultTab;
   onTabChange: (tab: ResultTab) => void;
   audioPlayer: WaveformPlaybackController | null;
+  /** The received voice note, so the result can share it rather than only its text. */
+  audioUri: string | null;
 
   copied?: boolean;
 }

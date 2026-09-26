@@ -1,72 +1,83 @@
 export type VoiceGender = "male" | "female";
 export type VoiceTier = "free" | "pro";
-export type VoiceOrigin = "standard" | "builtin" | "clone";
 
-export interface Voice {
-  id: string;
-  name: string;
-  gender: VoiceGender;
-  tier: VoiceTier;
-  origin: VoiceOrigin;
-
-  tagline: string;
+/**
+ * A product voice slot. A slot is an *entitlement label*, not a voice: it
+ * selects which provider pipeline a request is allowed to draw from. The
+ * actual voice is resolved per (slot, gender, language) by the worker.
+ */
+export interface VoiceSlot {
+  readonly id: string;
+  readonly name: string;
+  /**
+   * The descriptor alone, with the tier prefix dropped.
+   *
+   * `name` is the picker label and carries the tier ("Studio · Clear"), which
+   * is what the industry does for a voice-quality tier. Provenance lines need
+   * only the descriptor, because the surface already names itself there — with
+   * both, a Speech Studio row read "Speech Studio · Studio · Clear".
+   */
+  readonly shortName: string;
+  readonly tier: VoiceTier;
+  readonly tagline: string;
 }
 
-export const STANDARD_VOICE_ID = "standard";
-
+/** The audition line used to sample a voice's timbre. */
 export const VOICE_PREVIEW_TEXT = "Hi, this is how I sound.";
 
-export const VOICES: Voice[] = [
+/**
+ * Bump to invalidate every memoized voice preview on clients.
+ *
+ * A slot resolves to a provider voice per (gender, language, tier) and can
+ * fail over at runtime, so a cached preview can drift from what a slot now
+ * produces. Bumping this retires the old files on next launch.
+ */
+export const VOICE_PREVIEW_VERSION = 1;
+
+export const STANDARD_VOICE_ID = "standard";
+export const STUDIO_VOICE_ID = "studio";
+export const STUDIO_WARM_VOICE_ID = "studio-2";
+
+export const VOICE_SLOTS = [
   {
-    id: "standard",
+    id: STANDARD_VOICE_ID,
     name: "Standard",
-    gender: "female",
+    shortName: "Standard",
     tier: "free",
-    origin: "standard",
-    tagline: "Basic synthetic voice",
+    tagline: "Clear, natural everyday voice",
   },
   {
-    id: "studio-female-1",
-    name: "Studio 1 (Female)",
-    gender: "female",
+    id: STUDIO_VOICE_ID,
+    name: "Studio · Clear",
+    shortName: "Clear",
     tier: "pro",
-    origin: "builtin",
-    tagline: "Warm and expressive studio voice",
+    tagline: "Measured, confident, easy to listen to",
   },
   {
-    id: "studio-female-2",
-    name: "Studio 2 (Female)",
-    gender: "female",
+    id: STUDIO_WARM_VOICE_ID,
+    name: "Studio · Warm",
+    shortName: "Warm",
     tier: "pro",
-    origin: "builtin",
-    tagline: "Soft and soothing for longer notes",
+    tagline: "Softer and friendlier, for personal notes",
   },
-  {
-    id: "studio-male-1",
-    name: "Studio 1 (Male)",
-    gender: "male",
-    tier: "pro",
-    origin: "builtin",
-    tagline: "Rich, expressive studio voice",
-  },
-  {
-    id: "studio-male-2",
-    name: "Studio 2 (Male)",
-    gender: "male",
-    tier: "pro",
-    origin: "builtin",
-    tagline: "Deep and clear, confident tone",
-  },
-] as const;
+] as const satisfies readonly VoiceSlot[];
 
-export const VOICE_IDS = VOICES.map((v) => v.id) as [string, ...string[]];
+export const VOICE_SLOT_IDS = VOICE_SLOTS.map((slot) => slot.id) as [
+  string,
+  ...string[],
+];
 
-export function getVoicesByGender(gender: VoiceGender): Voice[] {
-  return VOICES.filter(
-    (v) => v.gender === gender || v.id === STANDARD_VOICE_ID,
-  );
+const SLOT_BY_ID = new Map<string, VoiceSlot>(
+  VOICE_SLOTS.map((slot) => [slot.id, slot]),
+);
+
+export function getVoiceSlot(
+  id: string | null | undefined,
+): VoiceSlot | undefined {
+  if (!id) return undefined;
+  return SLOT_BY_ID.get(id);
 }
 
-export function getVoiceById(id: string): Voice | undefined {
-  return VOICES.find((v) => v.id === id);
+export function getStandardSlot(): VoiceSlot {
+  return SLOT_BY_ID.get(STANDARD_VOICE_ID) as VoiceSlot;
 }

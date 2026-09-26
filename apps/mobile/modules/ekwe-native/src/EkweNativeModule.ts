@@ -7,6 +7,7 @@ import type {
   RemuxToCafResult,
   AudioRecordingResult,
   StartRecordingResult,
+  ShareAudioResult,
 } from "./EkweNative.types";
 
 declare global {
@@ -101,6 +102,21 @@ declare class EkweNativeModule extends NativeModule<{
     outputPath: string,
     maxAudioBytes: number,
   ): Promise<OpusTranscodeResult>;
+
+  // --- Outgoing audio share ---
+  // Native because the MIME type must reach the receiving app intact: setting
+  // it with setTypeAndNormalize() would strip "; codecs=opus" and cost the
+  // voice-note rendering in WhatsApp and Telegram. Resolves once the chooser is
+  // on screen, not once the user commits to a target.
+  //
+  // `chooserTitle` is Android-only. UIActivityViewController renders no title
+  // bar, so iOS ignores it and the caption travels as the first activity item.
+  shareAudio(
+    filePath: string,
+    mimeType: string,
+    text: string | null,
+    chooserTitle: string | null,
+  ): Promise<ShareAudioResult>;
 }
 
 export default requireNativeModule<EkweNativeModule>("EkweNative");

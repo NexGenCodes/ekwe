@@ -152,9 +152,17 @@ export const FLUTTERWAVE_CURRENCIES = [
 
 export type FlutterwaveCurrency = (typeof FLUTTERWAVE_CURRENCIES)[number];
 
+export const DEFAULT_PAYMENT_CURRENCY: FlutterwaveCurrency = "NGN";
+
+export function isSupportedPaymentCurrency(
+  code: string,
+): code is FlutterwaveCurrency {
+  return (FLUTTERWAVE_CURRENCIES as readonly string[]).includes(
+    code.toUpperCase(),
+  );
+}
+
 export function resolvePaymentCurrency(code: string): FlutterwaveCurrency {
   const upper = code.toUpperCase();
-  return (FLUTTERWAVE_CURRENCIES as readonly string[]).includes(upper)
-    ? (upper as FlutterwaveCurrency)
-    : "USD";
+  return isSupportedPaymentCurrency(upper) ? upper : DEFAULT_PAYMENT_CURRENCY;
 }

@@ -513,9 +513,28 @@ describe("synthesizeRequestSchema", () => {
       sourceLang: "fr",
       targetLang: "en",
       gender: "female",
-      voiceId: "studio-female-1",
+      voiceId: "studio",
     });
     expect(parsed.success).toBe(true);
+  });
+
+  test("accepts an unset gender so the provider supplies its default", () => {
+    const parsed = synthesizeRequestSchema.safeParse({
+      text: "Hello",
+      targetLang: "en",
+      voiceId: "studio",
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.gender).toBeUndefined();
+  });
+
+  test("rejects a voiceId that is not a slot", () => {
+    const parsed = synthesizeRequestSchema.safeParse({
+      text: "Hello",
+      targetLang: "en",
+      voiceId: "studio-female-1",
+    });
+    expect(parsed.success).toBe(false);
   });
 
   test("accepts an auto sourceLang", () => {
@@ -567,9 +586,9 @@ describe("synthesizeRequestSchema", () => {
 });
 
 describe("synthesizeResponseSchema", () => {
-  test("accepts a minimal audio-base64 response", () => {
+  test("accepts a minimal audio-url response", () => {
     const parsed = synthesizeResponseSchema.safeParse({
-      audioBase64: "UklGRg==",
+      audioUrl: "/speech/speech:abc:standard:auto:free:cache:en:def",
       mime: "audio/wav",
       sourceLang: "en",
       targetLang: "en",
@@ -582,12 +601,12 @@ describe("synthesizeResponseSchema", () => {
   test("accepts a translated response with durationMs", () => {
     expect(
       synthesizeResponseSchema.safeParse({
-        audioBase64: "UklGRg==",
+        audioUrl: "/speech/speech:abc:standard:auto:free:cache:en:def",
         mime: "audio/wav",
         sourceLang: "fr",
         targetLang: "en",
         translated: true,
-        voiceId: "studio-male-1",
+        voiceId: "studio",
         durationMs: 1240,
       }).success,
     ).toBe(true);
@@ -596,7 +615,7 @@ describe("synthesizeResponseSchema", () => {
   test("rejects a missing translated flag", () => {
     expect(
       synthesizeResponseSchema.safeParse({
-        audioBase64: "UklGRg==",
+        audioUrl: "/speech/speech:abc:standard:auto:free:cache:en:def",
         mime: "audio/wav",
         sourceLang: "en",
         targetLang: "en",

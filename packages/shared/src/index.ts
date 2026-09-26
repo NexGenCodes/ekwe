@@ -9,14 +9,17 @@ export {
 } from "./languages";
 export type { Language } from "./languages";
 export {
-  VOICES,
-  VOICE_IDS,
+  VOICE_SLOTS,
+  VOICE_SLOT_IDS,
   STANDARD_VOICE_ID,
+  STUDIO_VOICE_ID,
+  STUDIO_WARM_VOICE_ID,
   VOICE_PREVIEW_TEXT,
-  getVoicesByGender,
-  getVoiceById,
+  VOICE_PREVIEW_VERSION,
+  getVoiceSlot,
+  getStandardSlot,
 } from "./voices";
-export type { Voice, VoiceGender, VoiceTier, VoiceOrigin } from "./voices";
+export type { VoiceSlot, VoiceGender, VoiceTier } from "./voices";
 export {
   FREE_LIMITS,
   PREMIUM_LIMITS,
@@ -47,9 +50,18 @@ export {
   formatMoney,
   countryToCurrency,
   resolvePaymentCurrency,
+  isSupportedPaymentCurrency,
+  DEFAULT_PAYMENT_CURRENCY,
   FLUTTERWAVE_CURRENCIES,
 } from "./money";
 export type { FlutterwaveCurrency } from "./money";
+export {
+  HISTORY_ORIGINS,
+  ORIGIN_META,
+  isHistoryOrigin,
+  FALLBACK_ORIGIN,
+} from "./origins";
+export type { HistoryOrigin, HistoryInput, OriginMeta } from "./origins";
 export * from "./schemas";
 export { USAGE_METER_META, USAGE_METER_IDS } from "./usageMeters";
 export type { UsageMeterId, UsageMeterMeta } from "./usageMeters";

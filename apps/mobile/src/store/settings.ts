@@ -3,6 +3,11 @@ import { syncObservable } from "@legendapp/state/sync";
 import { internal } from "@legendapp/state";
 
 import { VoiceGender } from "@ekwe/shared";
+import {
+  DEFAULT_PAYMENT_CURRENCY,
+  isSupportedPaymentCurrency,
+} from "@ekwe/shared/money";
+import type { FlutterwaveCurrency } from "@ekwe/shared/money";
 import { PLAN_LIMITS } from "@/constants/billing";
 import {
   mirrorSettingsToShared,
@@ -42,7 +47,7 @@ export interface SettingsState {
   liveTranscriptionEnabled: boolean;
   voiceGender: VoiceGenderSetting;
   voiceId: string | null;
-  currency: string | null;
+  currency: FlutterwaveCurrency;
   analyticsConsent: boolean;
   analyticsConsentUpdatedAt: string | null;
   analyticsConsentVersion: number | null;
@@ -62,7 +67,7 @@ const initialSettings: SettingsState = {
   liveTranscriptionEnabled: false,
   voiceGender: "default",
   voiceId: null,
-  currency: null,
+  currency: DEFAULT_PAYMENT_CURRENCY,
   analyticsConsent: false,
   analyticsConsentUpdatedAt: null,
   analyticsConsentVersion: null,
@@ -98,6 +103,18 @@ void (async (): Promise<void> => {
       if (parsed && parsed.voiceGender === "neutral") {
         parsed.voiceGender = "default";
         mmkv.set("ekwe-settings", internal.safeStringify(parsed));
+      }
+      if (parsed) {
+        const storedCurrency =
+          typeof parsed.currency === "string" ? parsed.currency.trim() : "";
+        const normalizedCurrency = storedCurrency.toUpperCase();
+        if (!isSupportedPaymentCurrency(normalizedCurrency)) {
+          parsed.currency = DEFAULT_PAYMENT_CURRENCY;
+          mmkv.set("ekwe-settings", internal.safeStringify(parsed));
+        } else if (parsed.currency !== normalizedCurrency) {
+          parsed.currency = normalizedCurrency;
+          mmkv.set("ekwe-settings", internal.safeStringify(parsed));
+        }
       }
     }
   } catch {
@@ -156,7 +173,7 @@ export const settingsActions = {
   setVoiceId: (val: string | null): void => {
     settings$.voiceId.set(val);
   },
-  setCurrency: (val: string | null): void => {
+  setCurrency: (val: FlutterwaveCurrency): void => {
     settings$.currency.set(val);
   },
   setAnalyticsConsent: (val: boolean): void => {

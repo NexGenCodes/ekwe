@@ -154,16 +154,22 @@ const _historyPageFirstStmt = db
   .limit(placeholder("limit"))
   .prepare();
 
-const _dedupStmt = db
+/**
+ * Backs the capture-id upsert that gives each capture exactly one row. A
+ * transcription writes the row and a later translation updates it in place.
+ *
+ * This replaces a lookup keyed on the entry's text, which could never match a
+ * transcription against its own translation because it also keyed on
+ * `entry_type` — and the two rows always had different `entry_type` values.
+ * That is why every translated note used to leave an orphan row behind.
+ */
+const _captureStmt = db
   .select()
   .from(history)
   .where(
     and(
       eq(history.userId, placeholder("userId")),
-      eq(history.entryType, "translation"),
-      eq(history.sourceLang, placeholder("sourceLang")),
-      eq(history.targetLang, placeholder("targetLang")),
-      eq(history.transcript, placeholder("transcript")),
+      eq(history.captureId, placeholder("captureId")),
     ),
   )
   .orderBy(desc(history.createdAt))
@@ -186,6 +192,12 @@ const _countDeadStmt = db
   .where(
     and(eq(outbox.userId, placeholder("userId")), eq(outbox.status, "dead")),
   )
+  .prepare();
+
+const _countUnsyncedStmt = db
+  .select({ count: sql<number>`COUNT(*)` })
+  .from(outbox)
+  .where(eq(outbox.userId, placeholder("userId")))
   .prepare();
 
 const _markInFlightStmt = db
@@ -247,39 +259,57 @@ export const Db = {
     _deleteHistoryStmt.execute({ id });
   },
 
-  findTranslationByDedupKey: (
+  /**
+   * Find the row for a capture so a later step can update it instead of
+   * appending. Returns null for an empty captureId, which must never match:
+   * legacy rows all share a NULL capture_id and would otherwise collapse into
+   * one another.
+   */
+  findByCaptureId: (
     userId: string,
-    sourceLang: string,
-    targetLang: string,
-    transcript: string,
+    captureId: string | null,
   ): HistoryRow | null => {
-    if (!userId) return null;
-    const results = _dedupStmt.all({
-      userId,
-      sourceLang,
-      targetLang,
-      transcript,
-    });
+    if (!userId || !captureId) return null;
+    const results = _captureStmt.all({ userId, captureId });
     return results[0] ?? null;
   },
 
-  updateTranslationRow: (
+  updateCaptureRow: (
     id: string,
     row: {
+      /**
+       * The transcript, on updates as well as inserts. Omitting it left the
+       * local row holding the pre-edit text while the outbox and the in-memory
+       * store carried the corrected one, so a restart re-read the stale value.
+       */
+      transcript: string;
       translation_text: string | null;
       transliteration_text: string | null;
       duration: number;
-      source_app: string;
-      provider: string;
+      /** Nullable in the model; stored as "" because the column is NOT NULL. */
+      source_app: string | null;
+      voice_id: string | null;
+      stt_provider: string;
+      mt_provider: string | null;
+      origin: string;
+      input: string;
     },
   ): void => {
     db.update(history)
       .set({
+        transcript: row.transcript,
         translationText: row.translation_text,
         transliterationText: row.transliteration_text,
         duration: row.duration,
-        sourceApp: row.source_app,
-        provider: row.provider,
+        sourceApp: row.source_app ?? "",
+        voiceId: row.voice_id,
+        sttProvider: row.stt_provider,
+        mtProvider: row.mt_provider,
+        origin: row.origin,
+        input: row.input,
+        // Kept in step with the translation so the column stays meaningful for
+        // older clients, which still read it.
+        entryType: row.translation_text ? "translation" : "transcription",
       })
       .where(eq(history.id, id))
       .run();
@@ -382,6 +412,9 @@ export const Db = {
           payload: row.payload,
           userId: row.userId,
           createdAt: row.createdAt,
+          status: "pending",
+          retries: 0,
+          lastAttempt: null,
         },
       })
       .run();
@@ -425,6 +458,12 @@ export const Db = {
   countDeadOutbox: (userId: string): number => {
     if (!userId) return 0;
     const result = _countDeadStmt.all({ userId });
+    return result[0]?.count ?? 0;
+  },
+
+  countUnsyncedOutbox: (userId: string): number => {
+    if (!userId) return 0;
+    const result = _countUnsyncedStmt.all({ userId });
     return result[0]?.count ?? 0;
   },
 

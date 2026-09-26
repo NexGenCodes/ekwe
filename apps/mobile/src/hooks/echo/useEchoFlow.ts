@@ -1,5 +1,5 @@
 import { useValue } from "@legendapp/state/react";
-import * as Clipboard from "expo-clipboard";
+import * as Crypto from "expo-crypto";
 import * as Haptics from "expo-haptics";
 import { triggerHaptic } from "@/utils/haptics";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
@@ -12,15 +12,15 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 
 import { usePermissions } from "@/hooks/usePermissions";
+import { CopyService } from "@/services/copyOutService";
 import { batchTranscriber } from "@/services/batchTranscriber";
 import { HistoryService } from "@/services/historyService";
 import { IntentService } from "@/services/intentService";
 import { settings$, auth$, network$ } from "@/store";
 import { EchoStep, EchoProps, UseEchoFlowResult } from "@/types/echo";
 import { default as logger } from "@/utils/logger";
-import { isIOS } from "@/utils/platform";
 import { cleanEchoCache } from "@/utils/audioCache";
-import { ECHO_SHARE_SIGNATURE } from "@/constants/echo";
+import { ErrorMessages } from "@/constants/errors";
 import {
   resolveDetectedLanguage,
   getDefaultSourceLang,
@@ -111,7 +111,23 @@ export const useEchoFlow = (
   const autoCopySetting = useValue(() => settings$.autoCopy.get());
   const autoCopy = permissions.autoCopy ? autoCopySetting : false;
   const session = useValue(() => auth$.session.get());
-  const sourceApp = props.sourceApp || (isIOS ? "ios" : "");
+  /**
+   * The app the audio was shared from, or null when the platform did not tell
+   * us. Previously this fell back to the sentinel "ios", which then had to be
+   * special-cased by every display path to avoid rendering a bare platform name
+   * as if it were an app.
+   */
+  const sourceApp = props.sourceApp?.trim() ? props.sourceApp.trim() : null;
+
+  /**
+   * Identifies this capture so the transcription and any later translation land
+   * on one row. Re-minted per share intent.
+   */
+  const captureIdRef = useRef<string | null>(null);
+  const getCaptureId = useCallback((): string => {
+    captureIdRef.current ??= Crypto.randomUUID();
+    return captureIdRef.current;
+  }, []);
 
   const netConnected = useValue(() => network$.isConnected.get());
   const netReachable = useValue(() => network$.isInternetReachable.get());
@@ -231,6 +247,9 @@ export const useEchoFlow = (
       savedRef.current = true;
       HistoryService.recordTranslation(
         {
+          captureId: getCaptureId(),
+          origin: "echo",
+          input: "audio",
           sourceLang:
             detectedLangRef.current ||
             getDefaultSourceLang(isAutoDetectPermitted()),
@@ -241,8 +260,9 @@ export const useEchoFlow = (
           transliteration: null,
           duration: durationRef.current,
           sourceApp,
-          provider: sttRef.current || "unknown",
-          sessionKey: audioUri || undefined,
+          voiceId: null,
+          sttProvider: sttRef.current || "unknown",
+          mtProvider: null,
           type: "transcription",
         },
         session,
@@ -256,15 +276,26 @@ export const useEchoFlow = (
     savedRef.current = false;
     transcriptRef.current = null;
     detectedLangRef.current = null;
+    // A new share intent is a new capture.
+    captureIdRef.current = null;
     dispatch({ type: "RESET" });
     setIsSubsequentIntent(false);
-  }, [isSubsequentIntent, setIsSubsequentIntent, sourceApp, session, audioUri]);
+  }, [
+    isSubsequentIntent,
+    setIsSubsequentIntent,
+    sourceApp,
+    session,
+    getCaptureId,
+  ]);
 
   const onDismiss = useCallback((): void => {
     if (!savedRef.current && transcriptRef.current?.trim()) {
       savedRef.current = true;
       HistoryService.recordTranslation(
         {
+          captureId: getCaptureId(),
+          origin: "echo",
+          input: "audio",
           sourceLang:
             detectedLangRef.current ||
             getDefaultSourceLang(isAutoDetectPermitted()),
@@ -275,8 +306,9 @@ export const useEchoFlow = (
           transliteration: null,
           duration: durationRef.current,
           sourceApp,
-          provider: sttRef.current || "unknown",
-          sessionKey: audioUri || undefined,
+          voiceId: null,
+          sttProvider: sttRef.current || "unknown",
+          mtProvider: null,
           type: "transcription",
         },
         session,
@@ -295,7 +327,14 @@ export const useEchoFlow = (
     }
     deactivateKeepAwake("echoSession").catch(() => {});
     IntentService.dismissEcho();
-  }, [sourceApp, session, audioUri, activeResolvedUri, onPlayerRelease]);
+  }, [
+    sourceApp,
+    session,
+    audioUri,
+    activeResolvedUri,
+    onPlayerRelease,
+    getCaptureId,
+  ]);
 
   const handleTranscribe = useCallback(
     async (durationSeconds: number, waveform: number[]): Promise<void> => {
@@ -367,7 +406,15 @@ export const useEchoFlow = (
         return;
       }
 
-      const isOnline = await checkIsOnline();
+      let isOnline = false;
+      try {
+        isOnline = await checkIsOnline();
+      } catch (e: unknown) {
+        logger.error(
+          "[EchoFlow] Connectivity check failed:",
+          e instanceof Error ? (e.stack ?? e.message) : String(e),
+        );
+      }
       if (!isOnline) {
         dispatch({
           type: "FAIL",
@@ -424,7 +471,14 @@ export const useEchoFlow = (
         }
 
         if (!trResult.ok) {
-          throw new Error(trResult.error);
+          logger.error("[EchoFlow] Transcribe rejected:", trResult.error);
+          dispatch({
+            type: "FAIL",
+            payload: {
+              error: ErrorMessages[trResult.error] ?? trResult.error,
+            },
+          });
+          return;
         }
 
         const detectedLang = resolveDetectedLanguage(
@@ -454,7 +508,11 @@ export const useEchoFlow = (
           return;
         }
         const message = err instanceof Error ? err.message : "Unknown error";
-        logger.error("[EchoFlow] Transcription Error:", message);
+        logger.error(
+          "[EchoFlow] Transcription Error:",
+          message,
+          err instanceof Error ? (err.stack ?? message) : String(err),
+        );
         dispatch({ type: "FAIL", payload: { error: message } });
       } finally {
         processingAbortRef.current = null;
@@ -520,6 +578,8 @@ export const useEchoFlow = (
     dispatch({ type: "SET_STEP", payload: "Translating" });
 
     let translationResultText: string | null = null;
+    let transliterationText: string | null = null;
+    let mtProvider: string | null = null;
     let succeeded = false;
 
     try {
@@ -540,10 +600,20 @@ export const useEchoFlow = (
       }
 
       if (!trResult.ok) {
-        throw new Error(trResult.error);
+        logger.warn("Translate Error:", trResult.error);
+        dispatch({
+          type: "FAIL",
+          payload: { error: ErrorMessages[trResult.error] ?? trResult.error },
+        });
+        return;
       }
 
       translationResultText = trResult.value.translation;
+      // Both of these came back with the translation and used to be discarded.
+      // Transliteration is what makes non-Latin scripts readable, and the MT
+      // provider is a different model from the STT one that heard the audio.
+      transliterationText = trResult.value.transliteration ?? null;
+      mtProvider = trResult.value.provider || null;
       succeeded = true;
       dispatch({
         type: "SET_TRANSLATION",
@@ -554,12 +624,16 @@ export const useEchoFlow = (
       });
 
       if (autoCopy && translationResultText) {
-        await Clipboard.setStringAsync(
-          `${translationResultText}${ECHO_SHARE_SIGNATURE}`,
-        );
-        setAutoCopied(true);
-        if (autoCopyTimerRef.current) clearTimeout(autoCopyTimerRef.current);
-        autoCopyTimerRef.current = setTimeout(() => setAutoCopied(false), 2000);
+        // CopyService owns the signature — Echo used to append it by hand,
+        // which is the only reason the string constant was imported here.
+        if (await CopyService.copyText(translationResultText)) {
+          setAutoCopied(true);
+          if (autoCopyTimerRef.current) clearTimeout(autoCopyTimerRef.current);
+          autoCopyTimerRef.current = setTimeout(
+            () => setAutoCopied(false),
+            2000,
+          );
+        }
       }
     } catch (e: unknown) {
       if (isGone()) return;
@@ -582,32 +656,27 @@ export const useEchoFlow = (
     lastOpRef.current = null;
     savedRef.current = true;
     try {
+      // One write, not two. Transcription does not write history on its own —
+      // the note is only archived once the user commits to keeping it — so
+      // there is no earlier row for this to update. The transcription-only
+      // paths above (dismiss, next intent) cover the case where the user never
+      // gets this far.
       await HistoryService.recordTranslation(
         {
-          sourceLang: sourceLang,
-          targetLang: target,
-          transcript: textToTranslate,
-          translation: null,
-          transliteration: null,
-          duration: state.audioDuration,
-          sourceApp,
-          provider: stt || "unknown",
-          sessionKey: audioUri || undefined,
-          type: "transcription",
-        },
-        session,
-      );
-      if (isGone()) return;
-      await HistoryService.recordTranslation(
-        {
+          captureId: getCaptureId(),
+          origin: "echo",
+          input: "audio",
           sourceLang: sourceLang,
           targetLang: target,
           transcript: textToTranslate,
           translation: translationResultText,
-          transliteration: null,
-          duration: 0,
+          transliteration: transliterationText,
+          // Seconds of the source audio, not of anything we generated.
+          duration: state.audioDuration,
           sourceApp,
-          provider: stt || "unknown",
+          voiceId: null,
+          sttProvider: stt || "unknown",
+          mtProvider,
           type: "translation",
         },
         session,
@@ -628,10 +697,10 @@ export const useEchoFlow = (
     state.sttProvider,
     state.audioDuration,
     autoCopy,
-    audioUri,
     sourceApp,
     translate,
     session,
+    getCaptureId,
   ]);
 
   const cancelProcessing = useCallback((): void => {

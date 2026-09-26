@@ -102,15 +102,13 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - name: Drizzle migration drift check
-        run: pnpm db:check
+      - name: Migration convention guard
+        run: node scripts/check-migrations.mjs
+      - name: Test the migration convention guard
+        run: node --test scripts/check-migrations.test.mjs
 
   secret-scan:
     runs-on: ubuntu-latest

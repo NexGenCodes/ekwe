@@ -8,12 +8,34 @@ Ekwe is a cross-platform voice translation app for Android and iOS built with Re
 
 ## Core Features
 
-- **Voice Studio (Home):** the share-out hub. Record live dictation or type text, pick a target language and voice, and Ekwe produces a natural translated voice note via the Cloudflare Worker (`/synthesize`, `/translate`), ready to share out to WhatsApp, Messenger, and every other target app.
-- **Echo (Share-In):** Ekwe is a registered share target. Share an audio file from external apps (WhatsApp, voice messaging, file managers) directly into Ekwe for instant transcription and translation, resolved through the worker backend.
-- **Live Streaming Transcription:** real-time WebSocket streaming (`/transcribe/stream`) with on-device Opus capture and a per-user Durable Object session, giving live transcripts as you speak.
-- **Tiers & Billing:** Free and Pro plans with daily usage quotas, gated by the worker's preflight system and paid via Flutterwave checkout. TTS is available on all tiers.
-- **Audio Capture:** custom native modules (iOS Swift/Objective-C++, Android Kotlin/JNI + C++) for low-latency capture, WAV/Opus encoding, and Ogg muxing.
-- **Premium UI System:** a custom design-token system (`src/constants/` + `src/components/ui/`), OLED-friendly dark mode scaling, custom haptics, and spring-physics animations.
+- **Speech Studio (Home):** record live dictation or type text, choose a target language and voice, edit the result, then share a translated voice note through WhatsApp, Messenger, or any other app. The Worker uses `/translate` and `/synthesize`.
+- **Echo (Share-In):** Ekwe is a registered share target. Share an audio file from external apps, including WhatsApp, voice messaging apps, and file managers, directly into Ekwe for transcription and translation.
+- **History:** one searchable, exportable row per capture, tagged by the surface that produced it — Studio, Echo, or Orb. History stores **text only**: audio is a rendering of text that is already kept, so it is regenerated on demand rather than persisted. The Worker's content-addressed speech cache makes that free inside its TTL.
+- **Live Streaming Transcription:** Pro users can use real-time WebSocket streaming (`GET /transcribe/stream`) with native Opus capture and a per-user Durable Object session.
+- **Tiers & Billing:** Free and Pro plans use daily translation, transcription, and speech quotas. Pro adds four studio voices and live streaming; Flutterwave handles checkout. Speech is available on both tiers.
+- **Reliable AI Pipeline:** provider failover, health tracking, speech caching in Key-Value storage and R2, and separate usage meters keep requests observable and recoverable.
+- **Audio Capture:** custom native modules for iOS and Android provide low-latency capture, audio remuxing, WAV/Opus encoding, and Ogg muxing.
+- **Premium UI System:** a custom design-token system, OLED-friendly dark mode scaling, custom haptics, spring-physics animations, and voice-picker gating for Pro features.
+
+## Worker API
+
+The Worker exposes the primary routes used by the mobile app:
+
+| Route                         | Purpose                                                        |
+| ----------------------------- | -------------------------------------------------------------- |
+| `GET /health`                 | Report provider and binding health                             |
+| `POST /translate`             | Translate text                                                 |
+| `POST /transcribe`            | Transcribe uploaded audio                                      |
+| `GET /transcribe/stream`      | Stream live transcription over WebSocket                       |
+| `POST /synthesize`            | Translate and synthesize speech; return JSON with base64 audio |
+| `GET /usage`                  | Return daily translation, transcription, and speech meters     |
+| `POST /webhook`               | Process Flutterwave events                                     |
+| `POST /devices/token`         | Register a device push token                                   |
+| `GET /update/manifest`        | Read the latest APK manifest                                   |
+| `POST /admin/update/manifest` | Publish an APK manifest with admin authentication              |
+| `POST /admin/update/notify`   | Notify devices with admin authentication                       |
+
+> **API compatibility:** Use `/synthesize` instead of `/tts`; the response is JSON containing base64 audio. Apply the Supabase migrations before deploying the new Worker, and ship the Worker and mobile client together because endpoint names and response formats changed.
 
 ## Technology Stack
 
@@ -22,20 +44,20 @@ Ekwe is a cross-platform voice translation app for Android and iOS built with Re
 - **Animations:** `react-native-reanimated`
 - **Audio:** `expo-audio`
 - **Local Database:** `expo-sqlite` + `drizzle-orm`
-- **Backend:** Cloudflare Workers (AI proxies, streaming, queues, Durable Objects) + D1 cache + KV
+- **Backend:** Cloudflare Workers (provider failover, streaming, queues, Durable Objects, KV, D1, and R2) + Supabase
 - **Database:** Supabase (PostgreSQL, RLS, edge functions)
 - **Payments:** Flutterwave (checkout + webhooks + reconciliation)
 - **AI Providers:** Deepgram, AssemblyAI, Gladia, Wit.ai, Groq, Mistral, Gemini, Cohere, Cloudflare AI, OpenRouter
 - **Error Tracking:** Sentry
 - **Analytics:** PostHog
-- **Testing:** Vitest (worker), Jest (mobile)
+- **Testing:** Vitest (mobile, worker, and shared packages)
 
 ## Project Structure
 
 ```
 ekwe/
 ├── apps/
-│   ├── mobile/          # Expo React Native app (Voice Studio + Echo)
+│   ├── mobile/          # Expo React Native app (Speech Studio + Echo)
 │   ├── web/             # Landing site (Cloudflare Pages)
 │   └── worker/          # Cloudflare Worker backend (API + cron + queues)
 ├── packages/

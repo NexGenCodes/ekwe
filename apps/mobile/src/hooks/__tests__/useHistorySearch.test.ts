@@ -30,17 +30,48 @@ import { Db } from "@/services/db";
 
 const mockSearchHistory = Db.searchHistory as Mock;
 
-function entry(overrides: Partial<HistoryEntry>): HistoryEntry {
+function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
   return {
-    id: overrides.id ?? "e1",
+    id: "e1",
+    captureId: "cap-1",
+    origin: "echo",
+    input: "audio",
     sourceLang: "en",
     targetLang: "es",
     transcript: "hello world",
     translation: null,
+    transliteration: null,
     timestamp: 1_700_000_000_000,
-    duration: 0,
-    sourceApp: "shared-text",
+    duration: 4,
+    sourceApp: "com.whatsapp",
+    voiceId: null,
+    sttProvider: "deepgram",
+    mtProvider: null,
     type: "transcription",
+    ...overrides,
+  };
+}
+
+/** A DB row as `Db.searchHistory` returns it. */
+function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "found",
+    userId: "user-1",
+    captureId: "cap-9",
+    origin: "echo",
+    input: "audio",
+    source_lang: "en",
+    target_lang: "es",
+    transcript: "hello world",
+    translation_text: "hola mundo",
+    transliteration_text: null,
+    duration: 4,
+    source_app: "com.whatsapp",
+    voice_id: null,
+    stt_provider: "deepgram",
+    mt_provider: "gemini",
+    created_at: "2026-08-12T00:00:00Z",
+    entry_type: "translation",
     ...overrides,
   };
 }
@@ -58,7 +89,7 @@ describe("useHistorySearch", () => {
   it("starts with no filter, empty query, and all entries", async () => {
     const entries = [
       entry({ id: "a" }),
-      entry({ id: "b", type: "translation" }),
+      entry({ id: "b", origin: "speech-studio" }),
     ];
     const { result } = await renderHook(() => useHistorySearch(entries));
 
@@ -68,43 +99,40 @@ describe("useHistorySearch", () => {
     expect(result.current.filteredEntries).toEqual(entries);
   });
 
-  it("filters to transcriptions by type", async () => {
+  it("filters by capture surface", async () => {
     const entries = [
-      entry({ id: "a", type: "transcription" }),
-      entry({ id: "b", type: "translation" }),
+      entry({ id: "a", origin: "echo" }),
+      entry({ id: "b", origin: "speech-studio", sourceApp: null }),
+      entry({ id: "c", origin: "orb" }),
     ];
     const { result } = await renderHook(() => useHistorySearch(entries));
 
-    await act(() => result.current.setFilter("transcription"));
-    expect(result.current.filteredEntries).toEqual([entries[0]]);
+    await act(() => result.current.setFilter("speech-studio"));
+    expect(result.current.filteredEntries.map((e) => e.id)).toEqual(["b"]);
+
+    await act(() => result.current.setFilter("orb"));
+    expect(result.current.filteredEntries.map((e) => e.id)).toEqual(["c"]);
+
+    await act(() => result.current.setFilter("echo"));
+    expect(result.current.filteredEntries.map((e) => e.id)).toEqual(["a"]);
   });
 
-  it("filters to translations by type", async () => {
-    const entries = [
-      entry({ id: "a", type: "transcription" }),
-      entry({ id: "b", type: "translation" }),
-    ];
-    const { result } = await renderHook(() => useHistorySearch(entries));
+  it("files an unrecognised origin under echo, ignoring the old sentinel", async () => {
+    // `source_app` sentinels no longer derive anything: the column is
+    // NOT NULL DEFAULT 'echo', so a sentinel is the only thing it can hold.
+    const legacy = entry({
+      id: "legacy",
+      origin: "echo",
+      sourceApp: "ekwe-home",
+    });
+    const { result } = await renderHook(() => useHistorySearch([legacy]));
 
-    await act(() => result.current.setFilter("translation"));
-    expect(result.current.filteredEntries).toEqual([entries[1]]);
+    await act(() => result.current.setFilter("speech-studio"));
+    expect(result.current.filteredEntries).toEqual([]);
   });
 
   it("debounces the query and delegates to the DB search", async () => {
-    const searchResult = {
-      id: "found",
-      source_lang: "en",
-      target_lang: "es",
-      transcript: "hello world",
-      translation_text: "hola mundo",
-      transliteration_text: null,
-      duration: 0,
-      source_app: "shared-text",
-      provider: "gemini",
-      created_at: "2026-08-12T00:00:00Z",
-      entry_type: "translation",
-    };
-    mockSearchHistory.mockReturnValue([searchResult]);
+    mockSearchHistory.mockReturnValue([row()]);
 
     const { result } = await renderHook(() => useHistorySearch([]));
 
@@ -138,27 +166,13 @@ describe("useHistorySearch", () => {
     expect(result.current.filteredEntries).toEqual([]);
   });
 
-  it("applies the type filter to search results too", async () => {
-    mockSearchHistory.mockReturnValue([
-      {
-        id: "found",
-        source_lang: "en",
-        target_lang: "es",
-        transcript: "hello world",
-        translation_text: null,
-        transliteration_text: null,
-        duration: 0,
-        source_app: "shared-text",
-        provider: "gemini",
-        created_at: "2026-08-12T00:00:00Z",
-        entry_type: "transcription",
-      },
-    ]);
+  it("applies the origin filter to search results too", async () => {
+    mockSearchHistory.mockReturnValue([row({ origin: "echo" })]);
 
     const { result } = await renderHook(() => useHistorySearch([]));
 
     await act(() => result.current.setQuery("hello"));
-    await act(() => result.current.setFilter("translation"));
+    await act(() => result.current.setFilter("orb"));
     await act(() => vi.advanceTimersByTime(301));
 
     expect(result.current.filteredEntries).toEqual([]);

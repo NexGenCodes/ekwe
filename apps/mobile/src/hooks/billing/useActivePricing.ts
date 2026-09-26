@@ -1,19 +1,24 @@
 import { useMemo } from "react";
-import { observable } from "@legendapp/state";
+import { observable, syncState } from "@legendapp/state";
 import type { ObservableParam } from "@legendapp/state";
 import { synced } from "@legendapp/state/sync";
 import type { Synced } from "@legendapp/state/sync";
 import { useValue } from "@legendapp/state/react";
 
 import { LOCAL_PRICES } from "@ekwe/shared/plans";
-import { getCurrencySymbol, resolvePaymentCurrency } from "@ekwe/shared/money";
+import {
+  getCurrencySymbol,
+  isSupportedPaymentCurrency,
+  resolvePaymentCurrency,
+} from "@ekwe/shared/money";
+import type { FlutterwaveCurrency } from "@ekwe/shared/money";
 import { fetchWorkerPricing } from "@/services/pricing";
 import { settings$ } from "@/store";
 import { mmkvPlugin } from "@/store/mmkvPlugin";
 import type { StorePricingResponse } from "@ekwe/shared";
 
 export interface ActivePricing {
-  currency: string;
+  currency: FlutterwaveCurrency;
   symbol: string;
   monthlyAmount: number;
   annualAmount: number;
@@ -31,13 +36,12 @@ const pricingCache$ = observable<
 >({});
 
 function getPricingObs(
-  currency: string,
+  currency: FlutterwaveCurrency,
 ): ObservableParam<Synced<StorePricingResponse | undefined>> {
   if (!pricingCache$[currency].peek()) {
     pricingCache$[currency].set(
       synced({
-        get: () =>
-          fetchWorkerPricing(currency === "auto" ? undefined : currency),
+        get: () => fetchWorkerPricing(currency),
         persist: {
           name: `pricing-cache-${currency}`,
           plugin: mmkvPlugin,
@@ -50,20 +54,19 @@ function getPricingObs(
 
 export function useActivePricing(): ActivePricingResult {
   const manualCurrency = useValue(() => settings$.currency.get());
-  const queryCurrency = manualCurrency ?? "auto";
 
-  const pricingObs = getPricingObs(queryCurrency);
+  const pricingObs = getPricingObs(manualCurrency);
   const workerPricing = useValue(pricingObs) as
     StorePricingResponse | undefined;
-  // @ts-expect-error syncState is added onto the observable at runtime
-  const syncState = useValue(pricingObs.syncState);
+  const syncStatus = useValue(syncState(pricingObs));
 
   const pricing = useMemo<ActivePricing>(() => {
     if (isValidPricing(workerPricing)) {
       const valid = workerPricing;
-      const symbol = getCurrencySymbol(valid.currency);
+      const currency = resolvePaymentCurrency(valid.currency);
+      const symbol = getCurrencySymbol(currency);
       return {
-        currency: valid.currency,
+        currency,
         symbol,
         monthlyAmount: valid.price,
         annualAmount: valid.annualPrice,
@@ -72,7 +75,7 @@ export function useActivePricing(): ActivePricingResult {
       };
     }
 
-    const currency = resolvePaymentCurrency(manualCurrency ?? "USD");
+    const currency = manualCurrency;
     const local = LOCAL_PRICES[currency];
     return {
       currency,
@@ -84,7 +87,7 @@ export function useActivePricing(): ActivePricingResult {
     };
   }, [workerPricing, manualCurrency]);
 
-  return { pricing, isPending: syncState?.isSyncing ?? false };
+  return { pricing, isPending: syncStatus.isGetting ?? false };
 }
 
 function isValidPricing(value: unknown): value is StorePricingResponse {
@@ -92,7 +95,7 @@ function isValidPricing(value: unknown): value is StorePricingResponse {
   const p = value as Partial<Record<keyof StorePricingResponse, unknown>>;
   return (
     typeof p.currency === "string" &&
-    p.currency.length > 0 &&
+    isSupportedPaymentCurrency(p.currency) &&
     typeof p.price === "number" &&
     Number.isFinite(p.price) &&
     typeof p.annualPrice === "number" &&

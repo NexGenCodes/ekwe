@@ -64,10 +64,15 @@ export type TtsFn = (
   voice?: string,
 ) => Promise<SpeechAttempt>;
 
-type VoiceResolver = (
-  voiceId: string | undefined,
+/**
+ * A provider's own best voices for a gender, most-preferred first. Providers
+ * declare *capability* only — they have no knowledge of product voice slots,
+ * tiers, or failover policy. `gender` is undefined when the client has not
+ * chosen, in which case the provider returns its neutral default first.
+ */
+type VoiceListFn = (
+  gender: SpeechGender | undefined,
   langCode: string,
-  gender: SpeechGender,
 ) => string[];
 
 export interface ProviderModule {
@@ -78,5 +83,5 @@ export interface ProviderModule {
   sttStream?: SttStreamFn;
   translate?: TranslateFn;
   tts?: TtsFn;
-  voice?: VoiceResolver;
+  voices?: VoiceListFn;
 }

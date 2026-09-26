@@ -11,7 +11,6 @@ import {
   mockExecutionContext,
   jsonResponse,
 } from "@/__tests__/setup";
-import { base64ToBytes } from "@/utils/base64";
 import { VOICE_PREVIEW_TEXT } from "@ekwe/shared";
 import { http } from "msw";
 import { server } from "@/__tests__/msw/server";
@@ -219,30 +218,8 @@ describe("handleSynthesize — text branch", () => {
     expect(body.voiceId).toBe("standard");
     expect(body.mime).toBe("audio/mpeg");
     expect(body.durationMs).toBeUndefined();
-    // Default delivery is a URL into the speech cache, not inline bytes.
+    // Delivery is always a URL into the speech cache, never inline bytes.
     expect(body.audioUrl).toMatch(/^\/speech\/speech:[^/]+$/);
-    expect(body.audioBase64).toBeUndefined();
-  });
-
-  test("inlines base64 for clients that opt out of the URL response", async () => {
-    gateOk("PREMIUM", 5000, 5000);
-    const env = aiMp3Env();
-
-    const res = await handle(
-      textRequest({
-        text: "Hello world",
-        targetLang: "es",
-        preferBase64: true,
-      }),
-      env,
-      "PREMIUM",
-    );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
-
-    expect(body.audioBase64).toBeTypeOf("string");
-    expect(base64ToBytes(body.audioBase64).byteLength).toBeGreaterThan(0);
-    expect(body.audioUrl).toBeUndefined();
   });
 
   test("collapses concurrent identical requests into one provider call", async () => {

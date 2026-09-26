@@ -281,6 +281,9 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             activeTab={resultTab}
             onTabChange={setResultTab}
             audioPlayer={player}
+            // The share sheet can hand on the voice note itself, not just its
+            // text — the audio is already in memory here and was being dropped.
+            audioUri={audioUri ?? null}
             copied={autoCopied}
           />
         );

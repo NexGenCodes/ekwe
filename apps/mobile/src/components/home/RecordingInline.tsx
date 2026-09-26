@@ -87,7 +87,7 @@ export function RecordingInline({
     [beginScrub],
   );
 
-  const previewReady = player.isLoaded && !player.isDecoding;
+  const previewReady = player.isReady && !player.isDecoding;
   useEffect(() => {
     onReadyChange?.(isPreview && previewReady);
   }, [isPreview, previewReady, onReadyChange]);
@@ -172,12 +172,12 @@ export function RecordingInline({
         >
           <Pressable
             onPress={() => (player.isPlaying ? player.pause() : player.play())}
-            disabled={!player.isLoaded || player.isDecoding}
+            disabled={!player.isReady || player.isDecoding}
             accessibilityLabel={
               player.isPlaying ? "Pause preview" : "Play preview"
             }
             accessibilityState={{
-              disabled: !player.isLoaded || player.isDecoding,
+              disabled: !player.isReady || player.isDecoding,
             }}
             style={{
               width: 44,
@@ -187,10 +187,10 @@ export function RecordingInline({
               justifyContent: "center",
               boxShadow: shadows.soft,
               backgroundColor: color.brand,
-              opacity: player.isLoaded && !player.isDecoding ? 1 : 0.5,
+              opacity: player.isReady && !player.isDecoding ? 1 : 0.5,
             }}
           >
-            {!player.isLoaded || player.isDecoding ? (
+            {!player.isReady || player.isDecoding ? (
               <Spinner size="sm" color={color.onBrand} />
             ) : player.isPlaying ? (
               <Pause size={20} color={color.onBrand} fill={color.onBrand} />

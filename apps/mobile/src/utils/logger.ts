@@ -12,6 +12,7 @@ let sentryAddBreadcrumb:
       category: string;
       message: string;
       level?: string;
+      data?: Record<string, unknown>;
     }) => void)
   | null = null;
 let sentrySetTag: ((key: string, value: string) => void) | null = null;
@@ -62,6 +63,24 @@ export function setSentryContext(
 
 export function captureSentryMessage(message: string, level?: string): void {
   sentryCaptureMessage?.(message, level ?? "info");
+}
+
+/**
+ * Records a production-visible event. Unlike `logger.info`, which is compiled
+ * out of release builds, breadcrumbs survive to Sentry, so this is how
+ * non-error outcomes (such as a preview cache hit) become measurable.
+ */
+export function addSentryBreadcrumb(
+  category: string,
+  message: string,
+  data?: Record<string, unknown>,
+): void {
+  sentryAddBreadcrumb?.({
+    category,
+    message,
+    level: "info",
+    data,
+  });
 }
 
 /* eslint-disable no-console */

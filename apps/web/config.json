@@ -40,8 +40,8 @@
       "icon": "share"
     },
     {
-      "title": "History & Playback",
-      "description": "All your translations saved locally. Search, replay, and export anytime.",
+      "title": "History",
+      "description": "Every voice note Ekwe has understood, tagged by where it came from. Search and export anytime.",
       "icon": "clock"
     },
     {

@@ -1,37 +1,29 @@
 import { useState, useEffect, useMemo } from "react";
 
 import { Db } from "@/services/db";
-import { auth$, EntryType, HistoryEntry } from "@/store";
+import { historyRowToEntry } from "@/services/historyMapper";
+import { auth$, HistoryEntry } from "@/store";
 
 const DEBOUNCE_DELAY_MS = 300;
-export type HistoryFilterOption = "all" | "transcription" | "translation";
 
-export function getEntryType(entry: HistoryEntry): EntryType {
-  if (entry.type === "transcription" || entry.type === "translation") {
-    return entry.type;
-  }
-  const hasDistinctTranslation =
+/**
+ * History is filtered by capture surface rather than by what was done to the
+ * entry. Every row is one capture, so whether it carries a translation is
+ * visible on the row itself and needs no filter of its own.
+ */
+export type HistoryFilterOption = "all" | "speech-studio" | "echo" | "orb";
+
+export function hasTranslation(entry: HistoryEntry): boolean {
+  return (
     !!entry.translation?.trim() &&
-    entry.translation.trim() !== entry.transcript?.trim();
-  return hasDistinctTranslation ? "translation" : "transcription";
+    entry.translation.trim() !== entry.transcript?.trim()
+  );
 }
 
 import type { HistoryRow } from "@/services/db";
 
 function rowToEntry(row: HistoryRow): HistoryEntry {
-  return {
-    id: row.id,
-    sourceLang: row.sourceLang,
-    targetLang: row.targetLang,
-    transcript: row.transcript,
-    translation: row.translationText,
-    transliteration: row.transliterationText,
-    duration: row.duration,
-    sourceApp: row.sourceApp,
-    provider: row.provider ?? "",
-    timestamp: new Date(row.createdAt).getTime(),
-    type: (row.entryType as EntryType) ?? "transcription",
-  };
+  return historyRowToEntry(row);
 }
 
 export interface HistorySearchState {
@@ -64,10 +56,8 @@ export function useHistorySearch(entries: HistoryEntry[]): HistorySearchState {
       list = rows.map(rowToEntry);
     }
 
-    if (filter === "transcription") {
-      list = list.filter((e) => getEntryType(e) === "transcription");
-    } else if (filter === "translation") {
-      list = list.filter((e) => getEntryType(e) === "translation");
+    if (filter !== "all") {
+      list = list.filter((e) => e.origin === filter);
     }
 
     return list;

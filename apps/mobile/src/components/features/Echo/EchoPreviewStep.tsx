@@ -26,7 +26,7 @@ export interface EchoPreviewStepProps {
 interface PlaybackControlProps {
   isPlaying: boolean;
   isDecoding: boolean;
-  isLoaded: boolean;
+  isReady: boolean;
   disabled: boolean;
   progress: number;
   progressSV: SharedValue<number>;
@@ -43,7 +43,7 @@ const PlaybackControl: React.FC<PlaybackControlProps> = React.memo(
   function PlaybackControl({
     isPlaying,
     isDecoding,
-    isLoaded,
+    isReady,
     disabled,
     progress,
     progressSV,
@@ -115,7 +115,7 @@ const PlaybackControl: React.FC<PlaybackControlProps> = React.memo(
                 opacity: disabled ? opacity.disabled : 1,
               }}
             >
-              {isDecoding || !isLoaded ? (
+              {isDecoding || !isReady ? (
                 <Spinner size="sm" color={color.onBrand} />
               ) : isPlaying ? (
                 <Pause size={18} color={color.onBrand} fill={color.onBrand} />
@@ -196,7 +196,7 @@ const PlaybackControl: React.FC<PlaybackControlProps> = React.memo(
 export const EchoPreviewStep: React.FC<EchoPreviewStepProps> = React.memo(
   ({ player, isResolving, peaks, onTranscribe, children }) => {
     const { color } = useTheme();
-    const ready = player.isLoaded && !isResolving && !player.isDecoding;
+    const ready = player.isReady && !isResolving && !player.isDecoding;
 
     const handleTogglePlay = useCallback((): void => {
       if (player.isPlaying) {
@@ -229,7 +229,7 @@ export const EchoPreviewStep: React.FC<EchoPreviewStepProps> = React.memo(
         <PlaybackControl
           isPlaying={player.isPlaying}
           isDecoding={player.isDecoding || isResolving}
-          isLoaded={player.isLoaded}
+          isReady={player.isReady}
           disabled={!ready}
           progress={player.progress}
           progressSV={player.progressSV}

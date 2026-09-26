@@ -1,17 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 
 import { useResultPipeline } from "@/hooks/useResultPipeline";
 import { history$ } from "@/store";
+import type { HistoryEntry } from "@/store";
 
-import { batchTranscriber } from "@/services/batchTranscriber";
 import { HistoryService } from "@/services/historyService";
-import type { TranscriptionResult } from "@/services/transcribeAudio";
-import { EkweError } from "@/constants/errors";
 import { AppToast } from "@/utils/toast";
-import { triggerHaptic } from "@/utils/haptics";
-import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 
 vi.mock("@/hooks/queries/useUsageQuery", () => ({
   invalidateUsage: vi.fn(),
@@ -69,118 +65,83 @@ vi.mock("@/store", async () => {
   };
 });
 
-vi.mock("expo-file-system", () => {
-  return {
-    File: class {
-      constructor(mockUri: string) {
-        this.uri = mockUri;
-      }
-      uri: string;
-      exists = true;
-      delete() {}
-    },
-  };
-});
-
-vi.mock("expo-haptics", () => ({
-  NotificationFeedbackType: { Success: 0 },
-}));
-
 const ok = <T>(value: T) => ({ ok: true, value }) as const;
 const fail = <E>(error: E) => ({ ok: false, error }) as const;
 
-const transcription: TranscriptionResult = {
-  transcript: "hello world",
-  detectedLang: "en",
-  sourceLang: "en",
-  durationSeconds: 2.5,
-  isLowQuality: false,
-};
-
-const mockTranscribe = vi.mocked(batchTranscriber.transcribe);
 const mockRecord = vi.mocked(HistoryService.recordTranslation);
 const mockToastError = vi.mocked(AppToast.error);
-const mockInvalidate = vi.mocked(invalidateUsage);
+
+function storeEntry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
+  return {
+    id: "entry-1",
+    captureId: "cap-1",
+    origin: "echo",
+    input: "audio",
+    sourceLang: "en",
+    targetLang: "fr",
+    transcript: "hello",
+    translation: "bonjour",
+    transliteration: null,
+    timestamp: 1,
+    duration: 2,
+    sourceApp: "com.whatsapp",
+    voiceId: null,
+    sttProvider: "deepgram",
+    mtProvider: "gemini",
+    type: "translation",
+    ...overrides,
+  };
+}
 
 describe("useResultPipeline", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockTranscribe.mockResolvedValue(ok(transcription));
     mockRecord.mockResolvedValue(undefined);
-    vi.mocked(triggerHaptic).mockResolvedValue(undefined);
     mockTranslate.mockResolvedValue(ok({ translation: "" }));
   });
 
-  it("transcribes a shared-audio URI exactly once", async () => {
+  it("hydrates from a history entry", async () => {
+    history$["entry-1"].set(storeEntry());
+
     const { result } = await renderHook(() =>
-      useResultPipeline({ uri: "file:///tmp/a.m4a" }),
+      useResultPipeline({ entryId: "entry-1" }),
     );
 
-    await waitFor(() => expect(result.current.isProcessing).toBe(false));
-    await waitFor(() => expect(result.current.hasPolished).toBe(true));
-
-    expect(mockTranscribe).toHaveBeenCalledTimes(1);
-    expect(result.current.transcript).toBe("hello world");
-    expect(mockInvalidate).toHaveBeenCalledTimes(1);
+    expect(result.current.transcript).toBe("hello");
+    expect(result.current.translation).toBe("bonjour");
+    expect(result.current.isHistoryReplay).toBe(true);
   });
 
-  it("does not retry a failed URI on re-render (retry-guard)", async () => {
-    mockTranscribe.mockResolvedValueOnce(fail(EkweError.TRANSCRIPTION_FAIL));
-
-    const { result, rerender } = await renderHook(() =>
-      useResultPipeline({ uri: "file:///tmp/a.m4a" }),
-    );
-
-    await waitFor(() => expect(result.current.isProcessing).toBe(false));
-    expect(mockTranscribe).toHaveBeenCalledTimes(1);
-    expect(mockToastError).toHaveBeenCalled();
-    expect(result.current.hasPolished).toBe(false);
-
-    await rerender({ uri: "file:///tmp/a.m4a" });
-    expect(mockTranscribe).toHaveBeenCalledTimes(1);
-  });
-
-  it("skips transcription entirely for a history replay", async () => {
+  it("falls back to the route params before an entry has paged in", async () => {
     const { result } = await renderHook(() =>
       useResultPipeline({
-        uri: "file:///tmp/a.m4a",
-        isHistoryReplay: true,
+        entryId: "not-loaded",
         initialTranscript: "cached transcript",
         initialSourceLang: "en",
         initialTargetLang: "fr",
+        isHistoryReplay: true,
       }),
     );
 
     expect(result.current.transcript).toBe("cached transcript");
+    expect(result.current.sourceLang).toBe("en");
     expect(result.current.isHistoryReplay).toBe(true);
-    expect(mockTranscribe).not.toHaveBeenCalled();
-    expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
-  it("syncs transcript/translation when the history entry resolves after mount", async () => {
+  it("syncs when the history entry resolves after mount", async () => {
     const entryId = "late-entry";
-    const { result } = await renderHook(() =>
-      useResultPipeline({
-        entryId,
-        initialSourceLang: "en",
-        initialTargetLang: "es",
-      }),
-    );
+    const { result } = await renderHook(() => useResultPipeline({ entryId }));
 
     expect(result.current.transcript).toBe("");
-    expect(result.current.isHistoryReplay).toBe(false);
 
     await act(async () => {
-      history$[entryId].set({
-        id: entryId,
-        sourceLang: "en",
-        targetLang: "fr",
-        transcript: "delayed transcript",
-        translation: "delayed translation",
-        timestamp: 1,
-        duration: 0,
-        sourceApp: null,
-      });
+      history$[entryId].set(
+        storeEntry({
+          id: entryId,
+          transcript: "delayed transcript",
+          translation: "delayed translation",
+        }),
+      );
     });
 
     expect(result.current.transcript).toBe("delayed transcript");
@@ -188,7 +149,7 @@ describe("useResultPipeline", () => {
     expect(result.current.isHistoryReplay).toBe(true);
   });
 
-  it("translates the transcript and records it as a translation", async () => {
+  it("translates without writing to history", async () => {
     mockTranslate.mockResolvedValue(ok({ translation: "hola mundo" }));
 
     const { result } = await renderHook(() =>
@@ -199,20 +160,18 @@ describe("useResultPipeline", () => {
       }),
     );
 
-    await actAsync(() => result.current.handleTranslate());
+    await act(async () => {
+      await result.current.handleTranslate();
+    });
 
     expect(mockTranslate).toHaveBeenCalledWith("hello", "en", "es");
     expect(result.current.translation).toBe("hola mundo");
-    expect(mockRecord).toHaveBeenCalledTimes(1);
-    expect(mockRecord.mock.calls[0][0]).toMatchObject({
-      transcript: "hello",
-      translation: "hola mundo",
-      type: "translation",
-      provider: "gemini",
-    });
+    // The entry being shown is already in History; re-translating it must not
+    // append a second row for the same capture.
+    expect(mockRecord).not.toHaveBeenCalled();
   });
 
-  it("does not record history on translation failure", async () => {
+  it("surfaces a translation failure without recording", async () => {
     mockTranslate.mockResolvedValueOnce(fail("QUOTA_EXCEEDED"));
 
     const { result } = await renderHook(() =>
@@ -223,35 +182,20 @@ describe("useResultPipeline", () => {
       }),
     );
 
-    await actAsync(() => result.current.handleTranslate());
+    await act(async () => {
+      await result.current.handleTranslate();
+    });
 
     expect(mockRecord).not.toHaveBeenCalled();
     expect(mockToastError).toHaveBeenCalled();
     expect(result.current.isTranslating).toBe(false);
   });
 
-  it("skips translation history recording for a replay", async () => {
-    mockTranslate.mockResolvedValue(ok({ translation: "hola mundo" }));
-
+  it("never reports processing, because it no longer captures", async () => {
     const { result } = await renderHook(() =>
-      useResultPipeline({
-        isHistoryReplay: true,
-        initialTranscript: "hello",
-        initialSourceLang: "en",
-        initialTargetLang: "es",
-      }),
+      useResultPipeline({ initialTranscript: "hello" }),
     );
-
-    await actAsync(() => result.current.handleTranslate());
-
-    expect(mockTranslate).toHaveBeenCalled();
-    expect(mockRecord).not.toHaveBeenCalled();
-    expect(result.current.translation).toBe("hola mundo");
+    expect(result.current.isProcessing).toBe(false);
+    expect(result.current.hasPolished).toBe(false);
   });
 });
-
-async function actAsync(fn: () => Promise<unknown>): Promise<void> {
-  await act(async () => {
-    await fn();
-  });
-}

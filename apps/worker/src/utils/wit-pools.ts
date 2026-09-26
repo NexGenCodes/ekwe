@@ -1,19 +1,6 @@
 import type { Env } from "@/core/types";
 import { logger } from "@/core/logger";
 
-/**
- * Wit.ai keys are stored in two places:
- *   1. Individual `WIT_KEY_<LANG>` bindings (local dev via .dev.vars, and the
- *      legacy deployed secrets), read synchronously from env.
- *   2. Pooled JSON maps in Secrets Store bindings `WIT_POOL_<N>` (e.g.
- *      {"EN": "..."}), read asynchronously via `await binding.get()`.
- *
- * Lookup prefers the individual binding first so local development and the
- * existing test suite keep working unchanged; pools are a fallback. Pool
- * values are cached for a short TTL so a single request does not re-fetch every
- * binding while still picking up rotations within minutes.
- */
-
 interface SecretStoreBindingLike {
   get(): Promise<string | null>;
 }

@@ -41,7 +41,16 @@ function markPerformance(step: string): void {
   }
 }
 
-markPerformance("Module graph evaluated (layout imported)");
+// This marker lives at module top level, so Fast Refresh re-evaluates it on
+// every reload while `appStartTime` stays pinned to the first bundle load —
+// producing a stream of ever-growing "NNNms" values that look like a slow boot
+// but are just the same marker repeating. The flag goes on globalThis (a
+// module-level `let` would be reset by the re-evaluation it is meant to guard).
+const perfGlobal = globalThis as Record<string, unknown>;
+if (perfGlobal.__ekweModuleGraphLogged !== true) {
+  perfGlobal.__ekweModuleGraphLogged = true;
+  markPerformance("Module graph evaluated (layout imported)");
+}
 
 function InnerLayout(): React.ReactElement {
   const { isDark, color } = useTheme();
@@ -136,16 +145,6 @@ function InnerLayout(): React.ReactElement {
                     }}
                   />
                   <Stack.Screen
-                    name="translate"
-                    options={{
-                      presentation: "formSheet",
-                      sheetGrabberVisible: true,
-                      headerShown: true,
-                      title: "Translate",
-                      contentStyle: { backgroundColor: "transparent" },
-                    }}
-                  />
-                  <Stack.Screen
                     name="billing"
                     options={{
                       headerShown: true,
@@ -202,8 +201,13 @@ function RootLayout(): React.ReactElement {
 
     setTimeout((): void => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { sweepStaleEchoCache } = require("@/utils/audioCache");
-      void sweepStaleEchoCache();
+      const { sweepStaleAudioCache } = require("@/utils/audioCache");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { clearStalePreviewCache } = require("@/utils/voicePreviewCache");
+      void sweepStaleAudioCache();
+      // Memoized previews are not transient, so they outlive the sweep above
+      // and are retired by version instead.
+      void clearStalePreviewCache();
     }, 4000);
 
     silentUpdateCheck().catch((error: unknown): void => {

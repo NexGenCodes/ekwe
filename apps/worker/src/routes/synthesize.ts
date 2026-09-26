@@ -38,7 +38,6 @@ import {
 import { sanitizeTranslationText } from "@/core/sanitize";
 import { hashBytes, hashKey } from "@/utils/keys";
 import { sniffAudioMime } from "@/utils/mime";
-import { bytesToBase64 } from "@/utils/base64";
 import { d1Get, d1Put } from "@/services/d1-cache";
 import { detectTextLanguage } from "@/services/auto-detect";
 import { runProviderFailover } from "@/utils/retry";
@@ -356,35 +355,13 @@ function wavDurationMs(audio: Uint8Array): number | undefined {
   return Math.round((audio.byteLength / byteRate) * 1000);
 }
 
-interface SpeechDelivery {
-  /** Absent when the cache key could not be built, which forces inline audio. */
-  cacheKey: string;
-  preferBase64: boolean;
-}
-
-/**
- * The multipart path has no JSON body to carry `preferBase64`, so it takes the
- * opt-out as a query flag instead. Anything that does not ask for it gets the
- * URL response.
- */
-function wantsInlineAudio(request: Request): boolean {
-  return new URL(request.url).searchParams.get("inline") === "1";
-}
-
 function buildSpeechResponse(
   result: SpeechResult,
   meta: ResponseMeta,
-  delivery: SpeechDelivery,
+  cacheKey: string,
 ): Response {
-  // Default to the URL. Base64 inflates the body by a third and burns CPU
-  // re-encoding bytes the client is about to decode again, so it is only
-  // inlined when the client asked for it or when there is no key to address.
-  const useUrl = !delivery.preferBase64 && delivery.cacheKey.length > 0;
-
   const response = synthesizeResponseSchema.parse({
-    ...(useUrl
-      ? { audioUrl: `/speech/${delivery.cacheKey}` }
-      : { audioBase64: bytesToBase64(result.audio) }),
+    audioUrl: `/speech/${cacheKey}`,
     mime: result.mime,
     sourceLang: meta.sourceLang,
     targetLang: meta.targetLang,
@@ -415,12 +392,6 @@ interface FinishSpeechOptions {
   remainingMs: () => number;
   timings: RequestTimings;
   meta: ResponseMeta;
-  /**
-   * Set by clients that predate the URL response. When they ask for inline
-   * audio the cache write can be deferred, because nothing in the response
-   * depends on the object existing yet.
-   */
-  preferBase64: boolean;
 }
 
 async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
@@ -439,7 +410,6 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     remainingMs,
     timings,
     meta,
-    preferBase64,
   } = options;
 
   let cleanSpoken = sanitizeTranslationText(spokenText);
@@ -594,10 +564,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
       `[synthesize] Speech cache hit scope=${scope} tier=${executionTier}`,
     );
     timings.start("encode");
-    const res = buildSpeechResponse(cached, meta, {
-      cacheKey,
-      preferBase64,
-    });
+    const res = buildSpeechResponse(cached, meta, cacheKey);
     timings.end("encode");
     return res;
   }
@@ -618,10 +585,9 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
       signal,
       budgetMs: speechBudget,
       cacheKey,
-      // A URL response is only useful once the bytes are actually addressable,
-      // so in that mode the write is awaited. Inline responses can keep
-      // deferring it, because the caller already has the audio in hand.
-      waitUntil: preferBase64 ? (promise) => ctx.waitUntil(promise) : undefined,
+      // The response points straight at this object, so the write must have
+      // landed before we reply: a client that fetches the URL immediately
+      // would otherwise race it.
     }),
   );
   if (!result) {
@@ -640,7 +606,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
   }
 
   timings.start("encode");
-  const res = buildSpeechResponse(result, meta, { cacheKey, preferBase64 });
+  const res = buildSpeechResponse(result, meta, cacheKey);
   timings.end("encode");
   return res;
 }
@@ -673,9 +639,6 @@ async function synthesizeFromText(
     );
   }
   const { text, sourceLang, targetLang, gender, voiceId } = parsed.data;
-  // Absent means the client predates the URL response, which is the signal to
-  // keep inlining the audio for it.
-  const preferBase64 = parsed.data.preferBase64 === true;
 
   if (!text) {
     return Response.json(
@@ -714,7 +677,6 @@ async function synthesizeFromText(
       isPreview: true,
       remainingMs,
       timings,
-      preferBase64,
       meta: {
         sourceLang: sourceLang ?? targetLang,
         targetLang,
@@ -799,7 +761,6 @@ async function synthesizeFromText(
     isPreview: false,
     remainingMs,
     timings,
-    preferBase64,
     meta: {
       sourceLang: effectiveSource,
       targetLang,
@@ -1073,7 +1034,6 @@ async function synthesizeFromAudio(
     isPreview: false,
     remainingMs,
     timings,
-    preferBase64: wantsInlineAudio(request),
     meta: {
       sourceLang: effectiveSource,
       targetLang,

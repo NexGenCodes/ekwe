@@ -92,7 +92,7 @@ class ApkDownloadService : Service() {
 
       val contentUri = FileProvider.getUriForFile(
         this,
-        "$packageName.fileprovider",
+        "$packageName.apkfileprovider",
         file,
       )
       val installIntent = Intent(Intent.ACTION_VIEW).apply {

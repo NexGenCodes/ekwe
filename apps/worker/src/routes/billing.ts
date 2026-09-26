@@ -45,7 +45,7 @@ export async function handleCheckout(
   }
   const body = parsed.data;
 
-  const currency = resolveRequestCurrency(body.currency, request);
+  const currency = resolveRequestCurrency(body.currency);
 
   const keyGuard = guardFlutterwaveKeys(env);
   if (!keyGuard.allowed) return keyGuard.response;

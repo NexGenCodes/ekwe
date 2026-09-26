@@ -42,6 +42,21 @@ public class EkweNativeModule: Module {
     return .ok(plainPath)
   }
 
+  /// The view controller a share sheet should be presented from: the key
+  /// window's root, plus anything it has already presented. Presenting from a
+  /// controller that is mid-presentation fails, and `UIActivityViewController`
+  /// refuses to appear over another sheet.
+  private static func topViewController() -> UIViewController? {
+    let keyWindow = UIApplication.shared.connectedScenes
+      .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+      .first
+    var top = keyWindow?.rootViewController
+    while let presented = top?.presentedViewController {
+      top = presented
+    }
+    return top
+  }
+
   public func definition() -> ModuleDefinition {
     Name("EkweNative")
 
@@ -342,6 +357,68 @@ public class EkweNativeModule: Module {
          return true
        } catch {
          return false
+       }
+     }
+
+     // ─── Outgoing audio share ──────────────────────────────────────
+     // Native rather than expo-sharing: that module builds
+     // `UIActivityViewController(activityItems: [url])` and drops the options
+     // object entirely, so there is no way to attach the transcript caption
+     // through it.
+     //
+     // `mimeType` is accepted for signature symmetry with Android but is not
+     // used — iOS derives org.xiph.ogg-audio from the file's `.ogg` extension,
+     // which is what audio-capable activities match on. Note that voice-note
+     // rendering is not reachable on iOS: Telegram's share path only attaches
+     // a filename, never an audio attribute, so it renders a music player
+     // regardless of what we send.
+     AsyncFunction("shareAudio") {
+       (filePath: String, _ mimeType: String, text: String?, _ chooserTitle: String?, promise: Promise) in
+       let plainPath = filePath.hasPrefix("file://")
+         ? String(filePath.dropFirst("file://".count))
+         : filePath
+       guard FileManager.default.fileExists(atPath: plainPath) else {
+         promise.resolve(["success": false, "error": "File not found"])
+         return
+       }
+
+       // Caption first: share extensions that act on the first text item
+       // (mail, notes, most messengers) lead with the readable content.
+       var items: [Any] = []
+       if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+         items.append(text)
+       }
+       items.append(URL(fileURLWithPath: plainPath))
+
+       DispatchQueue.main.async {
+         guard let presenter = Self.topViewController() else {
+           promise.resolve(["success": false, "error": "No view controller"])
+           return
+         }
+
+         // `chooserTitle` is deliberately unused. UIActivityViewController has
+         // no title bar, so there is nothing to title — and the only way to
+         // fake one is the private `subject` property, which only Mail reads
+         // (as an email subject line) and which is not App Store safe.
+         let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+         controller.completionWithItemsHandler = { _, _, _, _ in
+           promise.resolve(["success": true, "error": ""])
+         }
+
+         // Apple requires a popover on iPad or the presentation traps.
+         if UIDevice.current.userInterfaceIdiom == .pad,
+            let popover = controller.popoverPresentationController {
+           popover.sourceView = presenter.view
+           popover.sourceRect = CGRect(
+             x: presenter.view.bounds.midX,
+             y: presenter.view.bounds.maxY,
+             width: 0,
+             height: 0
+           )
+           popover.permittedArrowDirections = []
+         }
+
+         presenter.present(controller, animated: true)
        }
      }
    }

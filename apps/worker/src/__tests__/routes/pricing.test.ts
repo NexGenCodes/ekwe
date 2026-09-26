@@ -20,7 +20,7 @@ describe("handleStorePricing", () => {
     server.resetHandlers();
   });
 
-  test("returns USD monthly + annual pricing by default", async () => {
+  test("returns NGN monthly + annual pricing by default", async () => {
     const res = await handleStorePricing(
       pricingRequest(),
       mockEnv(),
@@ -28,12 +28,12 @@ describe("handleStorePricing", () => {
     );
     expect(res.status).toBe(200);
     expect((await res.json()) as any).toEqual({
-      currency: "USD",
-      price: 2.23,
+      currency: "NGN",
+      price: 3000,
       usd: 2.23,
       originalPriceUsd: 2.23,
       discountPercent: 0,
-      annualPrice: 21.41,
+      annualPrice: 28800,
       annualUsd: 21.41,
       originalAnnualUsd: 26.76,
       annualDiscountPercent: 20,
@@ -56,21 +56,9 @@ describe("handleStorePricing", () => {
     expect(json.annualDiscountPercent).toBe(20);
   });
 
-  test("falls back to USD for unsupported currencies", async () => {
+  test("falls back to NGN for unsupported currencies", async () => {
     const res = await handleStorePricing(
       pricingRequest("BRL"),
-      mockEnv(),
-      mockExecutionContext(),
-    );
-    expect(res.status).toBe(200);
-    const json = (await res.json()) as any;
-    expect(json.currency).toBe("USD");
-    expect(json.price).toBe(2.23);
-  });
-
-  test("resolves currency from geo CF-IPCountry when none is explicit", async () => {
-    const res = await handleStorePricing(
-      pricingRequest(undefined, { "CF-IPCountry": "NG" }),
       mockEnv(),
       mockExecutionContext(),
     );
@@ -80,25 +68,16 @@ describe("handleStorePricing", () => {
     expect(json.price).toBe(3000);
   });
 
-  test("explicit currency wins over geo CF-IPCountry", async () => {
+  test("uses an explicit currency without relying on geo headers", async () => {
     const res = await handleStorePricing(
-      pricingRequest("USD", { "CF-IPCountry": "GH" }),
+      pricingRequest("USD", { "CF-IPCountry": "NG" }),
       mockEnv(),
       mockExecutionContext(),
     );
     expect(res.status).toBe(200);
     const json = (await res.json()) as any;
     expect(json.currency).toBe("USD");
-  });
-
-  test("unmapped geo country falls back to USD", async () => {
-    const res = await handleStorePricing(
-      pricingRequest(undefined, { "CF-IPCountry": "XX" }),
-      mockEnv(),
-      mockExecutionContext(),
-    );
-    const json = (await res.json()) as any;
-    expect(json.currency).toBe("USD");
+    expect(json.price).toBe(2.23);
   });
 
   test("reads local_prices from the app_config row in Supabase", async () => {

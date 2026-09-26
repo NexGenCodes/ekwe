@@ -1,6 +1,10 @@
 const fs = require("node:fs");
 const path = require("node:path");
-const { withAppBuildGradle, withDangerousMod } = require("@expo/config-plugins");
+const {
+  withAppBuildGradle,
+  withDangerousMod,
+  withInfoPlist,
+} = require("@expo/config-plugins");
 
 // Wire release APK signing to a gitignored android/keystore.properties file
 // (written by CI from the ANDROID_KEYSTORE_B64 secret) instead of the
@@ -91,6 +95,62 @@ if (keystorePropertiesFile.exists()) {
  * value is a `@bool` resource so the values/ (light) and values-night/ (dark)
  * qualifiers pick the right state automatically at build time.
  */
+function withGoogleIosUrlScheme(config) {
+  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+  if (!iosClientId) return config;
+
+  const urlScheme = `com.googleusercontent.apps.${iosClientId}`;
+  return withInfoPlist(config, (cfg) => {
+    const urlTypes = cfg.modResults.CFBundleURLTypes ?? [];
+    const hasScheme = urlTypes.some(({ CFBundleURLSchemes }) =>
+      CFBundleURLSchemes?.includes(urlScheme),
+    );
+    if (!hasScheme) {
+      urlTypes.push({ CFBundleURLSchemes: [urlScheme] });
+    }
+    cfg.modResults.CFBundleURLTypes = urlTypes;
+    return cfg;
+  });
+}
+
+function withGoogleAndroidWebClientId(config) {
+  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+  if (!webClientId) return config;
+
+  return withDangerousMod(config, [
+    "android",
+    (cfg) => {
+      const googleServicesPath = path.join(__dirname, "google-services.json");
+      const googleServices = JSON.parse(
+        fs.readFileSync(googleServicesPath, "utf8"),
+      );
+      const hasWebClient = googleServices.client.some((client) =>
+        client.oauth_client?.some(({ client_type }) => client_type === 3),
+      );
+      if (hasWebClient) return cfg;
+
+      const stringsPath = path.join(
+        cfg.modRequest.platformProjectRoot,
+        "app",
+        "src",
+        "main",
+        "res",
+        "values",
+        "strings.xml",
+      );
+      let strings = fs.readFileSync(stringsPath, "utf8");
+      if (!strings.includes('name="default_web_client_id"')) {
+        strings = strings.replace(
+          "</resources>",
+          `  <string name="default_web_client_id">${webClientId}</string>\n</resources>`,
+        );
+        fs.writeFileSync(stringsPath, strings);
+      }
+      return cfg;
+    },
+  ]);
+}
+
 function withStatusBarTheme(config) {
   return withDangerousMod(config, [
     "android",
@@ -198,16 +258,11 @@ module.exports = ({ config }) => {
     return plugin;
   });
 
-  plugins.push([
-    "@react-native-google-signin/google-signin",
-    {
-      iosUrlScheme: `com.googleusercontent.apps.${process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID}`,
-    },
-  ]);
+  plugins.push("@react-native-google-signin/google-signin");
+  plugins.push(withGoogleIosUrlScheme);
+  plugins.push(withGoogleAndroidWebClientId);
 
   plugins.push("expo-asset");
-
-  plugins.push("expo-sharing");
 
   plugins.push(withStatusBarTheme);
 

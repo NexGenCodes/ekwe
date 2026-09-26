@@ -1,11 +1,10 @@
-import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import Copy from "lucide-react-native/icons/copy";
 import Languages from "lucide-react-native/icons/languages";
 import ShareIcon from "lucide-react-native/icons/share";
 import Trash2 from "lucide-react-native/icons/trash";
 import React, { useCallback, useState } from "react";
-import { Share, StyleSheet, ViewStyle } from "react-native";
+import { StyleSheet, ViewStyle } from "react-native";
 
 import { HistoryItem } from "@/components/history/HistoryItem";
 import { Box, Pressable, Text } from "@/components/ui";
@@ -14,11 +13,13 @@ import { getLanguageName } from "@/constants/languages";
 import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { CopyService } from "@/services/copyOutService";
+import { ShareOutService } from "@/services/shareOutService";
 import { HistoryEntry } from "@/store";
-import { AnalyticsEvents, track } from "@/utils/analytics";
 import { withAlpha } from "@/utils/color";
+import { originProvenanceLabel } from "@/utils/historyOrigin";
 import { triggerHaptic } from "@/utils/haptics";
-import { AppToast, logger } from "@/utils";
+import { AppToast } from "@/utils";
 
 export interface HistoryEntryRowProps {
   entry: HistoryEntry;
@@ -102,11 +103,13 @@ export const HistoryEntryRow = React.memo(
       if (!text) return;
       setSheetVisible(false);
       triggerHaptic("selection");
-      Clipboard.setStringAsync(text)
-        .then(() =>
-          AppToast.info("Text copied to clipboard", { haptics: false }),
-        )
-        .catch((err) => logger.error("[History] Copy transcript failed", err));
+      void CopyService.copyText(text).then((copied) => {
+        if (copied) {
+          AppToast.info("Text copied to clipboard", { haptics: false });
+        } else {
+          AppToast.error("Copy failed");
+        }
+      });
     }, [entry.transcript]);
 
     const handleCopyTranslation = useCallback((): void => {
@@ -114,11 +117,13 @@ export const HistoryEntryRow = React.memo(
       if (!text) return;
       setSheetVisible(false);
       triggerHaptic("selection");
-      Clipboard.setStringAsync(text)
-        .then(() =>
-          AppToast.info("Translation copied to clipboard", { haptics: false }),
-        )
-        .catch((err) => logger.error("[History] Copy translation failed", err));
+      void CopyService.copyText(text).then((copied) => {
+        if (copied) {
+          AppToast.info("Translation copied to clipboard", { haptics: false });
+        } else {
+          AppToast.error("Copy failed");
+        }
+      });
     }, [entry.translation]);
 
     const handleShare = useCallback((): void => {
@@ -127,13 +132,13 @@ export const HistoryEntryRow = React.memo(
         entry.translation?.trim(),
       ].filter((part): part is string => !!part);
       setSheetVisible(false);
-      track(AnalyticsEvents.RESULT_SHARED, { source: "history" });
-      Share.share({ message: parts.join("\n\n") }).catch((err) => {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!message.includes("dismissed")) {
-          logger.error("[History] Share entry failed", err);
-        }
-      });
+      // No audio here: History stores text only, by design. The service still
+      // applies the share signature these two paths were skipping.
+      void ShareOutService.shareArtifact(
+        null,
+        parts.join("\n\n") || null,
+        "history",
+      );
     }, [entry.transcript, entry.translation]);
 
     const handleSheetDelete = useCallback((): void => {
@@ -145,7 +150,10 @@ export const HistoryEntryRow = React.memo(
       !!entry.translation?.trim() &&
       entry.translation.trim() !== entry.transcript?.trim();
 
-    const sheetTitle = `${getLanguageName(
+    // Lead with provenance. The language pair alone doesn't tell you which
+    // surface produced the note, which is usually the thing you want to know
+    // when you are about to act on it.
+    const sheetTitle = `${originProvenanceLabel(entry)} · ${getLanguageName(
       entry.sourceLang,
     )} → ${getLanguageName(entry.targetLang)}`;
 

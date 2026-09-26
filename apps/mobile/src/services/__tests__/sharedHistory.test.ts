@@ -65,9 +65,13 @@ describe("mapSharedRecordToEntry", () => {
     );
     expect(entry.type).toBe("translation");
     expect(entry.translation).toBe("bonjour le monde");
-    expect(entry.sessionKey).toBe("sess-1");
+    // The extension's session key is the capture's identity, so it is
+    // promoted rather than discarded as it once was.
+    expect(entry.captureId).toBe("sess-1");
+    expect(entry.origin).toBe("echo");
+    expect(entry.input).toBe("audio");
     expect(entry.sourceApp).toBe("WhatsApp");
-    expect(entry.provider).toBe("groq");
+    expect(entry.sttProvider).toBe("groq");
   });
 
   test("maps a transcription-only record", () => {
@@ -76,12 +80,14 @@ describe("mapSharedRecordToEntry", () => {
     expect(entry.translation).toBeNull();
   });
 
-  test("falls back to the ios/unknown defaults for empty sourceApp and provider", () => {
+  test("normalises an empty sourceApp to null rather than a platform sentinel", () => {
+    // Used to become "ios", which then had to be special-cased by every
+    // display path so it was not shown as if it were an app.
     const entry = mapSharedRecordToEntry(
       record({ sourceApp: "", provider: "" }),
     );
-    expect(entry.sourceApp).toBe("ios");
-    expect(entry.provider).toBe("unknown");
+    expect(entry.sourceApp).toBeNull();
+    expect(entry.sttProvider).toBe("unknown");
   });
 
   test("defaults an undefined duration to zero", () => {

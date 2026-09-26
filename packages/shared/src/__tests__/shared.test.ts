@@ -10,6 +10,9 @@ import {
   countryToCurrency,
   countryNamesForCurrency,
   countrySummaryForCurrency,
+  DEFAULT_PAYMENT_CURRENCY,
+  isSupportedPaymentCurrency,
+  resolvePaymentCurrency,
 } from "../money";
 import { LANGUAGES, getLanguageFlag, languageName } from "../languages";
 
@@ -111,6 +114,14 @@ describe("money helpers", () => {
   test("countryToCurrency returns undefined for unknown countries", () => {
     expect(countryToCurrency("XA")).toBeUndefined();
     expect(countryToCurrency("")).toBeUndefined();
+  });
+
+  test("currency resolution filters to supported payment currencies", () => {
+    expect(DEFAULT_PAYMENT_CURRENCY).toBe("NGN");
+    expect(isSupportedPaymentCurrency("NGN")).toBe(true);
+    expect(isSupportedPaymentCurrency("PLN")).toBe(false);
+    expect(resolvePaymentCurrency("USD")).toBe("USD");
+    expect(resolvePaymentCurrency("PLN")).toBe("NGN");
   });
 
   test("countryNamesForCurrency lists every country using a currency", () => {

@@ -57,6 +57,9 @@ vi.mock("@/utils/http", () => ({
   mapWorkerError: vi.fn((_code: string, fallback: string) => fallback),
   TimeoutError: networkMock.TimeoutError,
   isTimeoutError: vi.fn((e: unknown) => e instanceof networkMock.TimeoutError),
+  // The audio fetch goes through the shared retry helper; these tests pin the
+  // single-attempt behaviour by driving `globalThis.fetch` directly.
+  fetchWithRetry: (url: string, init?: RequestInit) => fetch(url, init),
 }));
 
 vi.mock("@/services/uploadMultipart", () => ({
@@ -75,6 +78,10 @@ import { settingsActions } from "@/store/settings";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 
+const AUDIO_KEY =
+  "speech:1111111111111111111111111111111111111111111111111111111111111111:standard:auto:free:cache:en:2222222222222222222222222222222222222222222222222222222222222222";
+const AUDIO_PATH = `/speech/${AUDIO_KEY}`;
+
 const audioJsonResponse = (
   mime = "audio/wav",
   status = 200,
@@ -84,7 +91,7 @@ const audioJsonResponse = (
     status >= 400
       ? JSON.stringify({ error: "EKWE_SPEECH_FAIL" })
       : JSON.stringify({
-          audioBase64: "UklGRg==",
+          audioUrl: AUDIO_PATH,
           mime,
           sourceLang: "en",
           targetLang: "en",
@@ -95,9 +102,40 @@ const audioJsonResponse = (
     { status, headers: JSON_HEADERS },
   );
 
+/**
+ * Synthesis is two requests now: a POST returning metadata plus an audio URL,
+ * then a GET on that URL for the bytes. Route on the path so one spy can answer
+ * both without a call-order assumption.
+ */
+const mockSynthFetch = (
+  mime = "audio/wav",
+  status = 200,
+  extra: Record<string, unknown> = {},
+) =>
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) =>
+    String(input).includes("/speech/")
+      ? new Response(new Uint8Array([0x52, 0x49, 0x46, 0x46]), {
+          headers: { "content-type": mime },
+        })
+      : audioJsonResponse(mime, status, extra),
+  );
+
+/**
+ * Synthesis makes a POST and then a bodyless GET for the audio, so assertions
+ * about the request have to look at the POST specifically rather than the most
+ * recent call.
+ */
+const synthCall = (): [unknown, RequestInit | undefined] => {
+  const call = vi
+    .mocked(fetch)
+    .mock.calls.find(([input]) => !String(input).includes("/speech/"));
+  if (!call) throw new Error("expected a /synthesize call");
+  return call as [unknown, RequestInit | undefined];
+};
+
 const fetchBody = (): Record<string, unknown> => {
-  const call = vi.mocked(fetch).mock.calls.at(-1)!;
-  return JSON.parse(call[1]?.body as string) as Record<string, unknown>;
+  const [, init] = synthCall();
+  return JSON.parse(init?.body as string) as Record<string, unknown>;
 };
 
 const expectRiffBytes = (): void => {
@@ -159,9 +197,7 @@ describe("synthesizeSpeech", () => {
   });
 
   it("normalizes provider audio to Ogg/Opus and returns the waveform", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(audioJsonResponse("audio/wav"));
+    const fetchSpy = mockSynthFetch("audio/wav");
     const result = await synthesizeSpeech("hello", "en");
 
     expect(result.ok).toBe(true);
@@ -186,9 +222,7 @@ describe("synthesizeSpeech", () => {
       ok: false,
       error: EkweError.PROCESSOR_FAIL,
     });
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(audioJsonResponse("audio/wav"));
+    const fetchSpy = mockSynthFetch("audio/wav");
     const result = await synthesizeSpeech("hello", "en");
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -205,11 +239,9 @@ describe("synthesizeSpeech", () => {
       data: { session: { access_token: "token-zzz" } },
       error: null,
     });
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(audioJsonResponse("audio/wav"));
+    const fetchSpy = mockSynthFetch("audio/wav");
     await synthesizeSpeech("hello", "en");
-    const init = vi.mocked(fetch).mock.calls.at(-1)![1] as RequestInit;
+    const init = synthCall()[1] as RequestInit;
     expect(init.headers).toEqual({
       "Content-Type": "application/json",
       Authorization: "Bearer token-zzz",
@@ -219,31 +251,25 @@ describe("synthesizeSpeech", () => {
 
   it("maps the voiceGender setting to the wire gender field", async () => {
     settingsActions.setVoiceGender("male");
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(audioJsonResponse("audio/wav"));
+    const fetchSpy = mockSynthFetch("audio/wav");
     await synthesizeSpeech("hello", "en");
     expect(fetchBody().gender).toBe("male");
     fetchSpy.mockRestore();
   });
 
   it("sends the stored voiceId, and an explicit option overrides it", async () => {
-    settingsActions.setVoiceId("studio-male-1");
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(audioJsonResponse("audio/wav"));
+    settingsActions.setVoiceId("studio");
+    const fetchSpy = mockSynthFetch("audio/wav");
     await synthesizeSpeech("hello", "en");
-    expect(fetchBody().voiceId).toBe("studio-male-1");
+    expect(fetchBody().voiceId).toBe("studio");
 
-    await synthesizeSpeech("hello", "en", { voiceId: "studio-female-1" });
-    expect(fetchBody().voiceId).toBe("studio-female-1");
+    await synthesizeSpeech("hello", "en", { voiceId: "studio" });
+    expect(fetchBody().voiceId).toBe("studio");
     fetchSpy.mockRestore();
   });
 
   it("normalizes mp3 provider audio through the transcoder", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(audioJsonResponse("audio/mpeg"));
+    const fetchSpy = mockSynthFetch("audio/mpeg");
     const result = await synthesizeSpeech("hello", "en");
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -268,9 +294,7 @@ describe("synthesizeSpeech", () => {
   });
 
   it("falls back to SPEECH_FAIL on a non-ok response with a worker error body", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(audioJsonResponse("audio/wav", 500));
+    const fetchSpy = mockSynthFetch("audio/wav", 500);
     const result = await synthesizeSpeech("hello", "en");
     expect(result).toEqual(err(EkweError.SPEECH_FAIL));
     fetchSpy.mockRestore();
@@ -330,9 +354,7 @@ describe("synthesizeSpeech", () => {
 
   it("rejects when the cache directory is unavailable", async () => {
     (Paths.cache as { uri: string }).uri = "";
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(audioJsonResponse("audio/wav"));
+    const fetchSpy = mockSynthFetch("audio/wav");
     const result = await synthesizeSpeech("hello", "en");
     expect(result).toEqual(err(EkweError.SPEECH_FAIL));
     fetchSpy.mockRestore();
@@ -385,17 +407,23 @@ describe("synthesizeAudio", () => {
     uploadMultipartMock.mockResolvedValue({
       status: 200,
       body: JSON.stringify({
-        audioBase64: "UklGRg==",
+        audioUrl: AUDIO_PATH,
         mime: "audio/wav",
         sourceLang: "en",
         targetLang: "es",
         translated: true,
-        voiceId: "studio-female-1",
+        voiceId: "studio",
       }),
     });
+    // The audio itself arrives on a second, bodyless GET.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(new Uint8Array([0x52, 0x49, 0x46, 0x46]), {
+        headers: { "content-type": "audio/wav" },
+      }),
+    );
 
     const result = await synthesizeAudio(source, "en", "es", {
-      voiceId: "studio-female-1",
+      voiceId: "studio",
       gender: "female",
     });
 
@@ -407,7 +435,7 @@ describe("synthesizeAudio", () => {
       lang: "en",
       targetLang: "es",
       duration: "1500",
-      voiceId: "studio-female-1",
+      voiceId: "studio",
       gender: "female",
     });
     expect(opts.timeoutMs).toBe(28_000);

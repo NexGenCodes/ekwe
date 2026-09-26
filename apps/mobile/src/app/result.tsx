@@ -9,7 +9,8 @@ import { ResultProcessingIndicator } from "@/components/result";
 import { Box, Pressable } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useResultPipeline, useClipboard, useTheme } from "@/hooks";
+import { useResultPipeline, useTheme } from "@/hooks";
+import { CopyService } from "@/services/copyOutService";
 import { SyncService } from "@/services/syncService";
 import { auth$, history$, settings$, HistoryEntry } from "@/store";
 import { triggerHaptic } from "@/utils/haptics";
@@ -33,13 +34,11 @@ export default function ResultScreen(): React.JSX.Element {
     isHistoryReplay,
     handleTranslate,
   } = useResultPipeline({
-    uri: params.uri as string | undefined,
     entryId,
     initialTranscript: params.transcript as string | undefined,
     initialSourceLang: params.sourceLang as string | undefined,
     initialTargetLang: params.targetLang as string | undefined,
     isHistoryReplay: params.isHistoryReplay === "true",
-    sourceApp: params.sourceApp as string | undefined,
   });
 
   const entry = useValue(() =>
@@ -48,7 +47,6 @@ export default function ResultScreen(): React.JSX.Element {
 
   const { color } = useTheme();
 
-  const { copy } = useClipboard();
   const autoCopy = useValue(() => settings$.autoCopy.get());
   const lastAutoCopiedRef = useRef<string | null>(null);
 
@@ -60,8 +58,8 @@ export default function ResultScreen(): React.JSX.Element {
     if (!autoCopy) return;
     if (lastAutoCopiedRef.current === translation) return;
     lastAutoCopiedRef.current = translation;
-    void copy(translation);
-  }, [autoCopy, isTranslating, translation, isHistoryReplay, copy]);
+    void CopyService.copyText(translation);
+  }, [autoCopy, isTranslating, translation, isHistoryReplay]);
 
   const handleDeleteEntry = useCallback(async (): Promise<void> => {
     if (!entryId) return;
@@ -102,8 +100,13 @@ export default function ResultScreen(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript, isHistoryReplay]);
 
-  const detailEntry: HistoryEntry | null = entry ?? {
+  // The store is the source of truth; this only covers the brief window before
+  // a row that has not been paged in yet has hydrated.
+  const fallbackEntry: HistoryEntry = {
     id: entryId ?? "",
+    captureId: null,
+    origin: "echo",
+    input: "audio",
     sourceLang,
     targetLang,
     transcript,
@@ -112,10 +115,14 @@ export default function ResultScreen(): React.JSX.Element {
     timestamp: 0,
     duration: Number(params.duration ?? 0),
     sourceApp: null,
+    voiceId: null,
+    sttProvider: "",
+    mtProvider: null,
   };
+  const detailEntry: HistoryEntry = entry ?? fallbackEntry;
 
   const showDetail =
-    detailEntry.transcript.length > 0 || detailEntry.translation;
+    detailEntry.transcript.length > 0 || !!detailEntry.translation;
 
   return (
     <Box style={[styles.overlay, { backgroundColor: color.overlay }]}>

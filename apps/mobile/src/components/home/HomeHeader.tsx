@@ -25,7 +25,7 @@ export const HomeHeader = React.memo(function HomeHeader(): React.ReactElement {
       <Box
         accessible
         accessibilityRole="header"
-        accessibilityLabel="Ekwe. Ready to translate."
+        accessibilityLabel="Ekwe"
         style={{
           flexDirection: "row",
           alignItems: "center",
@@ -39,10 +39,7 @@ export const HomeHeader = React.memo(function HomeHeader(): React.ReactElement {
         >
           <EkweLogo size={iconSize.xl} color={color.brand} />
         </IconContainer>
-        <Box>
-          <Text variant="display">Ekwe</Text>
-          <Text variant="body">Ready to translate.</Text>
-        </Box>
+        <Text variant="display">Ekwe</Text>
       </Box>
 
       <AccountStatusPill />

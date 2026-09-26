@@ -1,6 +1,8 @@
 package expo.modules.ekwenative
 
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -14,6 +16,7 @@ import android.media.audiofx.NoiseSuppressor
 import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlin.concurrent.thread
@@ -240,6 +243,72 @@ class EkweNativeModule : Module() {
 
     AsyncFunction("writeSharedFile") { fileName: String, content: String ->
       true
+    }
+
+    // ─── Outgoing audio share ───────────────────────────────────────
+    // Built here rather than through expo-sharing because that module sets the
+    // type with Intent.setTypeAndNormalize(), which truncates at the first ";"
+    // (AOSP Intent.normalizeMimeType). "audio/ogg; codecs=opus" would arrive as
+    // "audio/ogg", and that parameter is load-bearing:
+    //   * WhatsApp allow-lists exactly "audio/ogg; codecs=opus" (plus audio/m4a
+    //     and audio/x-m4a) to render an incoming file as a PTT voice note.
+    //   * Telegram requires the type to both start with "audio/ogg" and contain
+    //     "codecs=opus" before it treats the file as a voice message.
+    // Anything else lands as an ordinary audio attachment.
+    //
+    // Resolves once the chooser is on screen, not once the user picks a target:
+    // callers only need to know the share was launched, and the receiving app
+    // may still be reading the file long after this returns.
+    AsyncFunction("shareAudio") {
+        filePath: String, mimeType: String, text: String?, chooserTitle: String? ->
+      val context = appContext.reactContext
+        ?: return@AsyncFunction mapOf("success" to false, "error" to "No context")
+      val activity = appContext.currentActivity
+        ?: return@AsyncFunction mapOf("success" to false, "error" to "No foreground activity")
+
+      val file = java.io.File(resolvePath(filePath))
+      if (!file.exists()) {
+        return@AsyncFunction mapOf("success" to false, "error" to "File not found")
+      }
+
+      try {
+        val contentUri = FileProvider.getUriForFile(
+          context,
+          "${context.packageName}.ekweshareprovider",
+          file,
+        )
+
+        val send = Intent(Intent.ACTION_SEND).apply {
+          putExtra(Intent.EXTRA_STREAM, contentUri)
+          // setType, deliberately NOT setTypeAndNormalize — see note above.
+          setType(mimeType)
+          if (!text.isNullOrBlank()) putExtra(Intent.EXTRA_TEXT, text)
+          addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        // The chooser does not reliably propagate the read grant on OEM
+        // builds, so grant each resolved target explicitly. Without the
+        // <queries> entry for ACTION_SEND this returns nothing on API 30+.
+        context.packageManager
+          .queryIntentActivities(send, PackageManager.MATCH_DEFAULT_ONLY)
+          .forEach { info ->
+            try {
+              context.grantUriPermission(
+                info.activityInfo.packageName,
+                contentUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+              )
+            } catch (e: SecurityException) {
+              Log.w("EkweNative", "grantUriPermission denied for ${info.activityInfo.packageName}", e)
+            }
+          }
+
+        activity.startActivity(Intent.createChooser(send, chooserTitle ?: "Share"))
+        mapOf("success" to true, "error" to "")
+      } catch (e: Exception) {
+        Log.e("EkweNative", "shareAudio failed for $filePath", e)
+        mapOf("success" to false, "error" to (e.message ?: "Share failed"))
+      }
     }
 
     // --- Accessibility & Content Resolution ---

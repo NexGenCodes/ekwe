@@ -39,7 +39,7 @@ vi.mock("expo-file-system", () => ({
 import {
   cleanAudioArtifacts,
   cleanEchoCache,
-  sweepStaleEchoCache,
+  sweepStaleAudioCache,
 } from "@/utils/audioCache";
 
 beforeEach(() => {
@@ -102,7 +102,7 @@ describe("cleanAudioArtifacts", () => {
   });
 });
 
-describe("sweepStaleEchoCache", () => {
+describe("sweepStaleAudioCache", () => {
   const entry = (uri: string, ageMs: number | null): File => {
     const file = new File(uri);
     file.modificationTime = ageMs === null ? null : Date.now() - ageMs;
@@ -110,7 +110,10 @@ describe("sweepStaleEchoCache", () => {
   };
 
   it("removes old Echo transients and leaves fresh or foreign files", async () => {
-    const stale = entry("file:///mock/cache/ekwe_tts_old.mp3", 60 * 60 * 1000);
+    const stale = entry(
+      "file:///mock/cache/ekwe_speech_old.mp3",
+      60 * 60 * 1000,
+    );
     const recording = entry(
       "file:///mock/cache/ekwe_recording_abc.ogg",
       60 * 60 * 1000,
@@ -125,11 +128,11 @@ describe("sweepStaleEchoCache", () => {
       new Directory("file:///mock/cache/sub"),
     );
 
-    await sweepStaleEchoCache();
+    await sweepStaleAudioCache();
 
     expect(new Set(cacheDeletes)).toEqual(
       new Set([
-        "file:///mock/cache/ekwe_tts_old.mp3",
+        "file:///mock/cache/ekwe_speech_old.mp3",
         "file:///mock/cache/ekwe_recording_abc.ogg",
       ]),
     );
@@ -138,14 +141,14 @@ describe("sweepStaleEchoCache", () => {
   it("treats an unknown modification time as stale", async () => {
     mockDirEntries.push(entry("file:///mock/cache/ekwe_decoded_x.wav", null));
 
-    await sweepStaleEchoCache();
+    await sweepStaleAudioCache();
 
     expect(cacheDeletes).toEqual(["file:///mock/cache/ekwe_decoded_x.wav"]);
   });
 
   it("never throws when the cache cannot be listed", async () => {
     dirListThrows = true;
-    await expect(sweepStaleEchoCache()).resolves.toBeUndefined();
+    await expect(sweepStaleAudioCache()).resolves.toBeUndefined();
     expect(cacheDeletes).toEqual([]);
   });
 });

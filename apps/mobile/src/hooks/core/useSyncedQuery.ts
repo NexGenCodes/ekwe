@@ -1,4 +1,5 @@
-import { observable } from "@legendapp/state";
+import { observable, syncState } from "@legendapp/state";
+import type { ObservableParam } from "@legendapp/state";
 import { synced } from "@legendapp/state/sync";
 import { useValue } from "@legendapp/state/react";
 import { mmkvPlugin } from "@/store/mmkvPlugin";
@@ -11,12 +12,9 @@ interface SyncedQueryResult<T> {
     error: unknown;
     refetch: () => void;
   };
-  query$: ReturnType<typeof observable>;
+  query$: ObservableParam<unknown>;
   invalidate: () => void;
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Legend State synced observables expose syncState at runtime but not in static types
-type SyncedObservable = ReturnType<typeof observable> & { syncState?: any };
 
 export function createSyncedQuery<T>(
   cacheKey: string,
@@ -30,7 +28,14 @@ export function createSyncedQuery<T>(
         plugin: mmkvPlugin,
       },
     }),
-  ) as SyncedObservable;
+    // `observable(synced(...))` widens to a union that TS cannot reconcile with
+    // `ObservableParam`; the runtime value is the mutable synced observable.
+  ) as unknown as ObservableParam<unknown>;
+
+  // Legend v3 exposes the sync state through the standalone `syncState()`
+  // helper, not as a `query$.syncState` property — reading that property
+  // yields `{}` and calling anything off it throws "Object is not a function".
+  const sync$ = syncState(query$);
 
   function useQuery(): SyncedQueryResult<T>["useQuery"] extends (
     ...args: never[]
@@ -38,21 +43,21 @@ export function createSyncedQuery<T>(
     ? R
     : never {
     const data = useValue(query$);
-    const syncState = useValue(query$.syncState);
+    const syncStatus = useValue(sync$);
 
     return {
       data: data as T | undefined,
-      isLoading: syncState?.isSyncing ?? false,
-      isError: !!syncState?.error,
-      error: syncState?.error,
+      isLoading: syncStatus.isGetting ?? false,
+      isError: !!syncStatus.error,
+      error: syncStatus.error,
       refetch: (): void => {
-        query$.syncState?.refresh?.();
+        void sync$.sync();
       },
     };
   }
 
   function invalidate(): void {
-    query$.syncState?.refresh?.();
+    void sync$.sync();
   }
 
   return {

@@ -1,4 +1,3 @@
-import * as Clipboard from "expo-clipboard";
 import { triggerHaptic } from "@/utils/haptics";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 import Copy from "lucide-react-native/icons/copy";
@@ -9,6 +8,7 @@ import type { StyleProp, ViewStyle } from "react-native";
 import { Pressable, Box } from "@/components/ui";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { CopyService } from "@/services/copyOutService";
 
 interface Props {
   textToCopy: string;
@@ -42,7 +42,8 @@ export const AnimatedCopyButton: React.FC<Props> = ({
     if (copiedByPress || !textToCopy) return;
 
     triggerHaptic("selection");
-    await Clipboard.setStringAsync(textToCopy);
+    const copied = await CopyService.copyText(textToCopy);
+    if (!copied) return;
     track(AnalyticsEvents.RESULT_COPIED, { chars: textToCopy.length });
     setCopiedByPress(true);
 

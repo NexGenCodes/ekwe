@@ -1,39 +1,41 @@
-import {
-  resolveActiveVoice,
-  resolveVoiceGender,
-  voiceIdForGender,
-} from "@/utils/voices";
+import { resolveVoiceGender, resolveVoiceSelection } from "@/utils/voices";
 
-describe("resolveActiveVoice", () => {
-  it("returns the Standard voice when nothing is selected", () => {
-    const voice = resolveActiveVoice(null, null);
-    expect(voice.id).toBe("standard");
-    expect(voice.gender).toBe("female");
+describe("resolveVoiceSelection", () => {
+  it("returns Standard/female when nothing is selected", () => {
+    const selection = resolveVoiceSelection(null, null);
+    expect(selection.slot.id).toBe("standard");
+    expect(selection.gender).toBe("female");
   });
 
-  it("pins Standard's gender to the selected voiceGender", () => {
-    const male = resolveActiveVoice("standard", "male");
-    const female = resolveActiveVoice("standard", "female");
+  it("keeps the slot and the gender independent", () => {
+    const male = resolveVoiceSelection("standard", "male");
+    const female = resolveVoiceSelection("standard", "female");
+    expect(male.slot.id).toBe("standard");
+    expect(female.slot.id).toBe("standard");
     expect(male.gender).toBe("male");
     expect(female.gender).toBe("female");
-    expect(male.id).toBe("standard");
   });
 
-  it("keeps studio voices on their own fixed gender", () => {
-    const voice = resolveActiveVoice("studio-male-1", "female");
-    expect(voice.id).toBe("studio-male-1");
-    expect(voice.gender).toBe("male");
+  it("resolves Studio in either gender", () => {
+    const male = resolveVoiceSelection("studio", "male");
+    const female = resolveVoiceSelection("studio", "female");
+    expect(male.slot.id).toBe("studio");
+    expect(male.slot.tier).toBe("pro");
+    expect(male.gender).toBe("male");
+    expect(female.gender).toBe("female");
   });
 
-  it("resolves the gender-only path to Standard with the matching gender", () => {
-    const voice = resolveActiveVoice(null, "male");
-    expect(voice.id).toBe("standard");
-    expect(voice.gender).toBe("male");
+  it("falls back to Standard for an unknown or missing slot id", () => {
+    expect(resolveVoiceSelection("not-a-real-id", "female").slot.id).toBe(
+      "standard",
+    );
+    expect(resolveVoiceSelection(undefined, "male").slot.id).toBe("standard");
   });
 
-  it("falls back to Standard for an unknown voiceId", () => {
-    const voice = resolveActiveVoice("not-a-real-id", "female");
-    expect(voice.id).toBe("standard");
+  it("treats the 'default' gender setting as unset, not as an error", () => {
+    const selection = resolveVoiceSelection("studio", "default");
+    expect(selection.gender).toBe("female");
+    expect(selection.slot.id).toBe("studio");
   });
 });
 
@@ -41,16 +43,8 @@ describe("resolveVoiceGender", () => {
   it("maps concrete genders through and unwraps non-gender settings", () => {
     expect(resolveVoiceGender("male")).toBe("male");
     expect(resolveVoiceGender("female")).toBe("female");
-    expect(resolveVoiceGender("default")).toBeUndefined();
-    expect(resolveVoiceGender(null)).toBeUndefined();
-    expect(resolveVoiceGender(undefined)).toBeUndefined();
-  });
-});
-
-describe("voiceIdForGender", () => {
-  it("always maps a gender to the free Standard voice", () => {
-    expect(voiceIdForGender("male")).toBe("standard");
-    expect(voiceIdForGender("female")).toBe("standard");
-    expect(voiceIdForGender("default")).toBe("standard");
+    expect(resolveVoiceGender("default")).toBe("female");
+    expect(resolveVoiceGender(null)).toBe("female");
+    expect(resolveVoiceGender(undefined)).toBe("female");
   });
 });

@@ -9,14 +9,6 @@ const run = (cmd, opts = {}) => {
   return result ? result.toString().trim() : "";
 };
 
-
-
-
-
-
-
-
-
 try {
   run("git rev-parse --abbrev-ref --symbolic-full-name @{u}", {
     stdio: "ignore",
@@ -30,7 +22,6 @@ try {
       "  (or `git rebase --abort`) and push again.\n",
   );
 }
-
 
 console.log("\nChanges vs origin/master:\n");
 
@@ -46,6 +37,18 @@ if (diff) {
   console.log();
 } else {
   console.log("  (no changes)\n");
+}
+
+console.log("Checking migration directory (naming + applied checksums)...\n");
+try {
+  run("node scripts/check-migrations.mjs", {});
+  console.log();
+} catch {
+  // Do not warn-and-continue here. Editing or deleting a migration that has
+  // already been applied is the failure this catches, and it is invisible to
+  // the Supabase CLI, so letting the push proceed would ship the change as if
+  // it had been applied. The fix is a new forward migration.
+  process.exit(1);
 }
 
 console.log(

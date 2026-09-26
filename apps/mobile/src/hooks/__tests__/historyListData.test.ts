@@ -3,7 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 
-import { getEntryType } from "@/hooks/useHistorySearch";
+import { hasTranslation } from "@/hooks/useHistorySearch";
 import { useHistoryListData } from "@/hooks/useHistoryListData";
 
 import type { HistoryEntry } from "@/store";
@@ -14,17 +14,24 @@ vi.mock("@/store", () => ({
   },
 }));
 
-function entry(overrides: Partial<HistoryEntry>): HistoryEntry {
+function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
   return {
-    id: overrides.id ?? "e1",
+    id: "e1",
+    captureId: "cap-1",
+    origin: "echo",
+    input: "audio",
     sourceLang: "en",
     targetLang: "es",
     transcript: "hello",
-    translation: overrides.type === "translation" ? "hola" : null,
+    translation: null,
+    transliteration: null,
     timestamp: 1_700_000_000_000,
-    duration: 0,
-    sourceApp: "shared-text",
-    type: overrides.type,
+    duration: 4,
+    sourceApp: "com.whatsapp",
+    voiceId: null,
+    sttProvider: "deepgram",
+    mtProvider: null,
+    type: "transcription",
     ...overrides,
   };
 }
@@ -37,32 +44,27 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("getEntryType", () => {
-  it("respects an explicit persisted type", () => {
-    expect(getEntryType(entry({ type: "transcription" }))).toBe(
-      "transcription",
-    );
-    expect(getEntryType(entry({ type: "translation" }))).toBe("translation");
+describe("hasTranslation", () => {
+  it("is false when no translation was produced", () => {
+    expect(hasTranslation(entry({ translation: null }))).toBe(false);
   });
 
-  it("derives transcription when translation is absent or identical to transcript", () => {
-    const legacy = entry({ type: undefined, translation: null });
-    const identical = entry({
-      type: undefined,
-      translation: "hello",
-      transcript: "hello",
-    });
-    expect(getEntryType(legacy)).toBe("transcription");
-    expect(getEntryType(identical)).toBe("transcription");
+  it("is false when the translation is identical to the transcript", () => {
+    expect(
+      hasTranslation(entry({ translation: "hello", transcript: "hello" })),
+    ).toBe(false);
   });
 
-  it("derives translation when a distinct translation exists", () => {
-    const legacy = entry({
-      type: undefined,
-      translation: "  hola  ",
-      transcript: "hello",
-    });
-    expect(getEntryType(legacy)).toBe("translation");
+  it("is false when the translation is only whitespace around the transcript", () => {
+    expect(
+      hasTranslation(entry({ translation: "  hello  ", transcript: "hello" })),
+    ).toBe(false);
+  });
+
+  it("is true when a distinct translation exists", () => {
+    expect(
+      hasTranslation(entry({ translation: "  hola  ", transcript: "hello" })),
+    ).toBe(true);
   });
 });
 

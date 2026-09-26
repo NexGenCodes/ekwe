@@ -133,15 +133,24 @@ const EDGE_VOICES: Record<string, EdgeVoiceSet> = {
   zu: { female: ["zu-ZA-ThandoNeural"], male: ["zu-ZA-ThembaNeural"] },
 };
 
-export function voice(
-  voiceId: string | undefined,
+/**
+ * Index 0 is the Clear voice and index 1 the Warm voice, matching the persona
+ * contract the slot pools assume. Most locales list only one voice per gender,
+ * so the Warm persona simply has no Edge candidate there and the resolver skips
+ * it — which is correct: Edge is the safety net, not the voice's identity.
+ *
+ * No `languageCode` equivalent is set: the catalogue is keyed by locale and the
+ * model reads the text as written.
+ */
+export function voices(
+  gender: "male" | "female" | undefined,
   langCode: string,
-  gender: "male" | "female",
 ): string[] {
-  if (voiceId && /^[a-z]{2,}-[A-Z]{2,}-.+Neural$/.test(voiceId))
-    return [voiceId];
   const set = EDGE_VOICES[langCode] ?? EDGE_FALLBACK_VOICES;
-  return gender === "male" ? set.male : set.female;
+  if (gender) return [...(gender === "male" ? set.male : set.female)];
+  // No preference: the female list's heads (Jenny, Ava) are the most widely
+  // supported names on the service.
+  return [...set.female];
 }
 
 const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
@@ -290,18 +299,25 @@ function extractAudioSegments(data: Uint8Array): Uint8Array[] {
   let offset = 0;
   const decoder = new TextDecoder();
 
+  // Every protocol frame is `uint16 headerLen | header | uint16 bodyLen | body`.
+  // Advancing by the header alone and treating the whole remainder as the body
+  // happened to work only while Microsoft shipped exactly one audio segment per
+  // binary frame; a second segment in the same frame replayed the tail.
   while (offset + 2 <= data.length) {
     const headerLength = (data[offset] << 8) | data[offset + 1];
-    if (offset + 2 + headerLength > data.length) break;
-    const header = decoder.decode(
-      data.subarray(offset + 2, offset + 2 + headerLength),
-    );
-    const body = data.subarray(offset + 2 + headerLength);
+    const headerEnd = offset + 2 + headerLength;
+    if (headerEnd + 2 > data.length) break;
+    const header = decoder.decode(data.subarray(offset + 2, headerEnd));
     const contentType = parseTextHeaders(header)["Content-Type"]?.[0];
     if (!contentType || !contentType.includes("audio/mpeg")) break;
-    offset += 2 + headerLength;
-    if (body.length === 0) continue;
-    segments.push(body);
+
+    const bodyLength = (data[headerEnd] << 8) | data[headerEnd + 1];
+    const bodyEnd = headerEnd + 2 + bodyLength;
+    if (bodyEnd > data.length) break;
+
+    offset = bodyEnd;
+    if (bodyLength === 0) continue;
+    segments.push(data.subarray(headerEnd + 2, bodyEnd));
   }
   return segments;
 }
@@ -577,29 +593,51 @@ class EdgeWsSession {
   }
 }
 
-const CHUNK_BUDGET_WEIGHT = 180;
-const CJK_RE =
-  /[\u3001-\u303F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF01-\uFF60\uAC00-\uD7A3]/;
+// The Edge read-aloud endpoint silently truncates a turn at ~600 s of audio,
+// and every turn costs a fresh TCP + TLS + WebSocket handshake. Mainstream
+// clients therefore cap each turn at 4096 bytes of escaped text
+// (rany2/edge-tts PR #394). Budget against escaped UTF-8 bytes rather than
+// characters: CJK costs 3 bytes and XML entities up to 6, so a character
+// count under-uses the budget for Latin text and overshoots it for CJK.
+const CHUNK_BUDGET_BYTES = 3584;
 
-function charWeight(ch: string): number {
-  return CJK_RE.test(ch) ? 7 : 1;
+const XML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&apos;",
+};
+
+function escapedByteLength(ch: string): number {
+  const escaped = XML_ESCAPES[ch];
+  if (escaped !== undefined) return escaped.length;
+  const code = ch.codePointAt(0) ?? 0;
+  if (code < 0x80) return 1;
+  if (code < 0x800) return 2;
+  if (code < 0x10000) return 3;
+  return 4;
 }
 
-function weightedLength(text: string): number {
-  let weight = 0;
-  for (const ch of text) weight += charWeight(ch);
-  return weight;
+function escapedByteLengthOf(text: string): number {
+  let total = 0;
+  for (const ch of text) total += escapedByteLength(ch);
+  return total;
 }
 
 function hardSplit(text: string): string[] {
   const parts: string[] = [];
   let run = "";
+  let runBytes = 0;
   for (const ch of text) {
-    if (run && weightedLength(run) + charWeight(ch) > CHUNK_BUDGET_WEIGHT) {
+    const size = escapedByteLength(ch);
+    if (run && runBytes + size > CHUNK_BUDGET_BYTES) {
       parts.push(run);
       run = "";
+      runBytes = 0;
     }
     run += ch;
+    runBytes += size;
   }
   if (run) parts.push(run);
   return parts;
@@ -607,7 +645,7 @@ function hardSplit(text: string): string[] {
 
 function splitSpeechChunks(text: string): string[] {
   const trimmed = text.trim();
-  if (!trimmed || weightedLength(trimmed) <= CHUNK_BUDGET_WEIGHT) {
+  if (!trimmed || escapedByteLengthOf(trimmed) <= CHUNK_BUDGET_BYTES) {
     return [trimmed];
   }
 
@@ -615,24 +653,29 @@ function splitSpeechChunks(text: string): string[] {
   const sentences = trimmed.match(sentenceRe) ?? [trimmed];
   const chunks: string[] = [];
   let current = "";
+  let currentBytes = 0;
 
   for (const sentence of sentences) {
     const s = sentence.trim();
     if (!s) continue;
-    const weight = weightedLength(s);
-    if (weight > CHUNK_BUDGET_WEIGHT) {
+    const weight = escapedByteLengthOf(s);
+    if (weight > CHUNK_BUDGET_BYTES) {
       if (current) {
         chunks.push(current);
         current = "";
+        currentBytes = 0;
       }
       chunks.push(...hardSplit(s));
       continue;
     }
-    if (current && weightedLength(current) + weight > CHUNK_BUDGET_WEIGHT) {
+    if (current && currentBytes + 1 + weight > CHUNK_BUDGET_BYTES) {
       chunks.push(current);
       current = s;
+      currentBytes = weight;
     } else {
+      if (current) currentBytes += 1;
       current = current ? `${current} ${s}` : s;
+      currentBytes += weight;
     }
   }
   if (current) chunks.push(current);

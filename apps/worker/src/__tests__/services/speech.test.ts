@@ -2,7 +2,7 @@ import { describe, test, expect, vi } from "vitest";
 
 vi.mock("@/providers/edge", () => ({
   tts: vi.fn(async () => ({ result: null, status: null })),
-  voice: (_voiceId: string | undefined, _lang: string, gender: string) =>
+  voices: (gender: string | undefined) =>
     gender === "male"
       ? ["en-US-AndrewMultilingualNeural"]
       : ["en-US-AvaMultilingualNeural"],
@@ -11,10 +11,15 @@ import {
   buildSpeechCacheKey,
   readSpeechCache,
   resolveEffectiveLang,
-  resolveProviderVoices,
   runSpeechSynth,
   writeSpeechCache,
 } from "@/services/speech";
+import {
+  pipelineTierForSlot,
+  resolveExecutionTier,
+  resolveProviderVoices,
+  resolveVoicePool,
+} from "@/core/voices";
 import {
   SPEECH_KV_CACHE_MAX_BYTES,
   SPEECH_R2_CACHE_MAX_BYTES,
@@ -24,7 +29,7 @@ import { hashKey } from "@/utils/keys";
 import { http } from "msw";
 import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
-import { VOICE_PREVIEW_TEXT } from "@ekwe/shared";
+import { getVoiceSlot, VOICE_PREVIEW_TEXT } from "@ekwe/shared";
 
 function mp3Response(): Response {
   const mp3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00, 0x00]);
@@ -51,7 +56,7 @@ describe("speech engine (services/speech.ts)", () => {
         "hi",
         "es",
         "female",
-        "studio-male-1",
+        "studio",
         "user-1",
       );
       const withoutVoice = await buildSpeechCacheKey(
@@ -62,7 +67,7 @@ describe("speech engine (services/speech.ts)", () => {
         "user-1",
       );
       expect(withVoice).toBe(
-        `speech:${hashUid}:studio-male-1:female:free:cache:es:${hashHi}`,
+        `speech:${hashUid}:studio:female:free:cache:es:${hashHi}`,
       );
       expect(withoutVoice).toBe(
         `speech:${hashUid}:standard:female:free:cache:es:${hashHi}`,
@@ -127,14 +132,14 @@ describe("speech engine (services/speech.ts)", () => {
         "shared phrase",
         "en",
         "female",
-        "studio-female-1",
+        "studio",
         "user-A",
       );
       const b = await buildSpeechCacheKey(
         "shared phrase",
         "en",
         "female",
-        "studio-female-1",
+        "studio",
         "user-B",
       );
       expect(a).not.toBe(b);
@@ -164,6 +169,99 @@ describe("speech engine (services/speech.ts)", () => {
         `speech:${await hashKey("user-1")}:standard:female:premium:cache:es:${await hashKey("hi")}`,
       );
       expect(free).not.toBe(premium);
+    });
+
+    test("shared scope drops the per-user partition", async () => {
+      const hashText = await hashKey("hi");
+      const a = await buildSpeechCacheKey(
+        "hi",
+        "en",
+        "female",
+        "studio",
+        "user-A",
+        "PREMIUM",
+        "shared",
+      );
+      const b = await buildSpeechCacheKey(
+        "hi",
+        "en",
+        "female",
+        "studio",
+        "user-B",
+        "PREMIUM",
+        "shared",
+      );
+      expect(a).toBe(
+        `speech:shared:studio:female:premium:cache:en:${hashText}`,
+      );
+      // Two different users must land on the same entry, which is the whole
+      // point: the clip is identical for both of them.
+      expect(a).toBe(b);
+      // And it must not leak the user hash into the key.
+      expect(a).not.toContain(await hashKey("user-A"));
+    });
+
+    test("shared scope still separates tier, gender and slot", async () => {
+      const base = await buildSpeechCacheKey(
+        "hi",
+        "en",
+        "female",
+        "studio",
+        "user-1",
+        "FREE",
+        "shared",
+      );
+      const premium = await buildSpeechCacheKey(
+        "hi",
+        "en",
+        "female",
+        "studio",
+        "user-1",
+        "PREMIUM",
+        "shared",
+      );
+      const male = await buildSpeechCacheKey(
+        "hi",
+        "en",
+        "male",
+        "studio",
+        "user-1",
+        "FREE",
+        "shared",
+      );
+      const warm = await buildSpeechCacheKey(
+        "hi",
+        "en",
+        "female",
+        "studio-2",
+        "user-1",
+        "FREE",
+        "shared",
+      );
+      // A free request must never be served a premium-cached clip.
+      expect(base).not.toBe(premium);
+      expect(base).not.toBe(male);
+      expect(base).not.toBe(warm);
+    });
+
+    test("the default scope stays per-user", async () => {
+      const a = await buildSpeechCacheKey(
+        "hi",
+        "en",
+        "female",
+        "standard",
+        "user-A",
+      );
+      const b = await buildSpeechCacheKey(
+        "hi",
+        "en",
+        "female",
+        "standard",
+        "user-B",
+      );
+      expect(a).toContain(await hashKey("user-A"));
+      expect(a).not.toBe(b);
+      expect(a).not.toContain("shared");
     });
   });
 
@@ -316,81 +414,225 @@ describe("speech engine (services/speech.ts)", () => {
 
   describe("resolveProviderVoices", () => {
     test("deepgram resolves per-language gendered voices", () => {
-      expect(
-        resolveProviderVoices("deepgram", "es", "female", undefined),
-      ).toEqual(["selena"]);
-      expect(
-        resolveProviderVoices("deepgram", "de", "male", undefined),
-      ).toEqual(["julius"]);
-      expect(
-        resolveProviderVoices("deepgram", "ja", "female", undefined),
-      ).toEqual(["izanami"]);
-    });
-
-    test("deepgram falls back to the default voice for an unmapped lang", () => {
-      expect(
-        resolveProviderVoices("deepgram", "zh", "female", undefined),
-      ).toEqual(["luna"]);
+      expect(resolveProviderVoices("deepgram", "female", "es")).toEqual([
+        "diana",
+        "estrella",
+        "selena",
+      ]);
+      expect(resolveProviderVoices("deepgram", "male", "de")).toEqual([
+        "fabian",
+        "julius",
+      ]);
+      expect(resolveProviderVoices("deepgram", "female", "ja")).toEqual([
+        "izanami",
+        "ama",
+        "uzume",
+      ]);
     });
 
     test("witai resolves by gender", () => {
-      expect(resolveProviderVoices("witai", "en", "male", undefined)).toEqual([
+      expect(resolveProviderVoices("witai", "male", "en")).toEqual([
         "wit$Cody",
+        "wit$Cooper",
       ]);
-      expect(resolveProviderVoices("witai", "en", "female", undefined)).toEqual(
-        ["wit$Remi"],
-      );
+      expect(resolveProviderVoices("witai", "female", "en")).toEqual([
+        "wit$Remi",
+        "wit$Rebecca",
+      ]);
     });
 
-    test("studio voice ids resolve through the gender-aware matrix", () => {
+    test("an unset gender yields the provider neutral default", () => {
+      expect(resolveProviderVoices("gemini", undefined, "en")).toEqual([
+        "Kore",
+      ]);
+      expect(resolveProviderVoices("witai", undefined, "en")).toEqual([
+        "wit$Remi",
+      ]);
       expect(
-        resolveProviderVoices("gemini", "en", "female", "studio-female-1"),
-      ).toEqual(["Aoede", "Kore"]);
-      expect(
-        resolveProviderVoices("witai", "en", "male", "studio-female-1"),
-      ).toEqual(["wit$Charlie"]);
+        resolveProviderVoices("edge", undefined, "en").length,
+      ).toBeGreaterThan(0);
+    });
+
+    test("no provider falls through to the other gender", () => {
+      for (const provider of ["gemini", "deepgram", "witai", "edge"]) {
+        const male = resolveProviderVoices(provider, "male", "en");
+        const female = resolveProviderVoices(provider, "female", "en");
+        expect(male.length).toBeGreaterThan(0);
+        expect(female.length).toBeGreaterThan(0);
+        expect(male).not.toEqual(female);
+      }
     });
 
     test("unknown provider returns no voices", () => {
-      expect(resolveProviderVoices("nope", "en", "female", undefined)).toEqual(
-        [],
-      );
+      expect(resolveProviderVoices("nope", "female", "en")).toEqual([]);
     });
 
     test("edge maps to its own per-language catalog", () => {
-      const female = resolveProviderVoices("edge", "en", "female", undefined);
-      const male = resolveProviderVoices("edge", "en", "male", undefined);
+      const female = resolveProviderVoices("edge", "female", "en");
+      const male = resolveProviderVoices("edge", "male", "en");
       expect(female.length).toBeGreaterThan(0);
       expect(male.length).toBeGreaterThan(0);
       expect(male).not.toEqual(female);
     });
 
-    test("standard free voice is gendered: male != female on every free provider", () => {
-      const witaiMale = resolveProviderVoices(
-        "witai",
-        "en",
-        "male",
-        "standard",
-      );
-      const witaiFemale = resolveProviderVoices(
-        "witai",
-        "en",
-        "female",
-        "standard",
-      );
-      expect(witaiMale).toEqual(["wit$Cody"]);
-      expect(witaiFemale).toEqual(["wit$Remi"]);
+    // The persona axis is load-bearing: SLOT_POOLS addresses voices by index,
+    // so a provider whose list is not reordered silently turns the two Studio
+    // slots into the same voice.
+    test("every provider exposes a distinct Clear and Warm persona", () => {
+      for (const gender of ["female", "male"] as const) {
+        for (const provider of ["gemini", "deepgram", "witai"]) {
+          const [clear, warm] = resolveProviderVoices(provider, gender, "en");
+          expect(clear).toBeTruthy();
+          expect(warm).toBeTruthy();
+          expect(clear).not.toBe(warm);
+        }
+      }
+    });
+  });
 
-      const edgeMale = resolveProviderVoices("edge", "en", "male", "standard");
-      const edgeFemale = resolveProviderVoices(
-        "edge",
-        "en",
+  describe("resolveVoicePool", () => {
+    const slot = (id: string) => getVoiceSlot(id);
+
+    test("Standard draws only from the free pool", () => {
+      const providers = [
+        ...new Set(
+          resolveVoicePool(slot("standard"), "female", "en", "FREE").map(
+            (c) => c.provider,
+          ),
+        ),
+      ];
+      expect(providers).toEqual(["edge", "witai"]);
+    });
+
+    test("Studio draws from the premium pool in pool order", () => {
+      const providers = [
+        ...new Set(
+          resolveVoicePool(slot("studio"), "male", "en", "PREMIUM").map(
+            (c) => c.provider,
+          ),
+        ),
+      ];
+      expect(providers).toEqual(["gemini", "deepgram", "edge", "witai"]);
+    });
+
+    test("the two Studio slots resolve to different first candidates", () => {
+      for (const gender of ["female", "male"] as const) {
+        const clear = resolveVoicePool(slot("studio"), gender, "en", "PREMIUM");
+        const warm = resolveVoicePool(
+          slot("studio-2"),
+          gender,
+          "en",
+          "PREMIUM",
+        );
+        expect(clear[0].voice).toBeTruthy();
+        expect(warm[0].voice).toBeTruthy();
+        expect(clear[0].voice).not.toBe(warm[0].voice);
+      }
+    });
+
+    test("the two personas share no premium voice in any gender", () => {
+      for (const gender of ["female", "male"] as const) {
+        const premium = (id: string): string[] =>
+          resolveVoicePool(slot(id), gender, "en", "PREMIUM")
+            .filter((c) => c.provider === "gemini" || c.provider === "deepgram")
+            .map((c) => c.voice);
+        const overlap = premium("studio").filter((v) =>
+          premium("studio-2").includes(v),
+        );
+        expect(overlap).toEqual([]);
+      }
+    });
+
+    test("a provider appears at most once in a pool", () => {
+      for (const id of ["standard", "studio", "studio-2"]) {
+        const pool = resolveVoicePool(slot(id), "female", "en", "PREMIUM");
+        const providers = pool.map((c) => c.provider);
+        expect(new Set(providers).size).toBe(providers.length);
+      }
+    });
+
+    test("a provider with no voice for the language is absent from the pool", () => {
+      const providers = [
+        ...new Set(
+          resolveVoicePool(slot("studio"), "female", "zh", "PREMIUM").map(
+            (c) => c.provider,
+          ),
+        ),
+      ];
+      // deepgram supports 7 languages and zh is not one of them, so it must
+      // not be attempted (and therefore cannot be marked down for it).
+      expect(providers).not.toContain("deepgram");
+      expect(providers).toEqual(["gemini", "edge", "witai"]);
+    });
+
+    test("a missing persona position is skipped, not clamped", () => {
+      // French publishes exactly one deepgram voice per gender, so the Warm
+      // persona has no deepgram candidate. Clamping would hand it the Clear
+      // voice and make the two slots identical in French.
+      const warm = resolveVoicePool(
+        slot("studio-2"),
         "female",
-        "standard",
+        "fr",
+        "PREMIUM",
       );
-      expect(edgeMale[0]).toMatch(/Male|Andrew|Brian/);
-      expect(edgeFemale[0]).toMatch(/Ava|Emma|Female/);
-      expect(edgeMale).not.toEqual(edgeFemale);
+      expect(warm.find((c) => c.provider === "deepgram")).toBeUndefined();
+      expect(warm.length).toBeGreaterThan(0);
+    });
+
+    test("an unset gender still yields a full pool", () => {
+      expect(
+        resolveVoicePool(slot("studio"), undefined, "en", "PREMIUM").length,
+      ).toBeGreaterThan(0);
+      expect(
+        resolveVoicePool(slot("standard"), undefined, "en", "FREE").length,
+      ).toBeGreaterThan(0);
+    });
+
+    test("an unknown slot resolves to nothing rather than throwing", () => {
+      expect(
+        resolveVoicePool(getVoiceSlot("nope"), "female", "en", "PREMIUM"),
+      ).toEqual([]);
+    });
+  });
+
+  describe("pipelineTierForSlot", () => {
+    test("maps each slot onto its pipeline", () => {
+      expect(pipelineTierForSlot(getVoiceSlot("standard"))).toBe("FREE");
+      expect(pipelineTierForSlot(getVoiceSlot("studio"))).toBe("PREMIUM");
+      expect(pipelineTierForSlot(getVoiceSlot("studio-2"))).toBe("PREMIUM");
+    });
+
+    test("an unknown slot is treated as the free pipeline", () => {
+      expect(pipelineTierForSlot(getVoiceSlot("nope"))).toBe("FREE");
+    });
+  });
+
+  describe("resolveExecutionTier", () => {
+    test("a Pro account on Standard still runs on the free pool", () => {
+      const slotTier = pipelineTierForSlot(getVoiceSlot("standard"));
+      expect(slotTier).toBe("FREE");
+      expect(resolveExecutionTier(slotTier, "PREMIUM")).toBe("FREE");
+    });
+
+    test("a Pro account on Studio runs on the premium pool", () => {
+      const slotTier = pipelineTierForSlot(getVoiceSlot("studio"));
+      expect(resolveExecutionTier(slotTier, "PREMIUM")).toBe("PREMIUM");
+    });
+
+    test("a throttled Pro account on Studio degrades to free, never errors", () => {
+      const slotTier = pipelineTierForSlot(getVoiceSlot("studio"));
+      expect(resolveExecutionTier(slotTier, "FREE")).toBe("FREE");
+    });
+
+    test("the same holds for the Warm persona", () => {
+      const slotTier = pipelineTierForSlot(getVoiceSlot("studio-2"));
+      expect(resolveExecutionTier(slotTier, "PREMIUM")).toBe("PREMIUM");
+      expect(resolveExecutionTier(slotTier, "FREE")).toBe("FREE");
+    });
+
+    test("an absent voiceId never reaches the premium pool", () => {
+      const slotTier = pipelineTierForSlot(getVoiceSlot(undefined));
+      expect(resolveExecutionTier(slotTier, "PREMIUM")).toBe("FREE");
     });
   });
 
@@ -409,7 +651,7 @@ describe("speech engine (services/speech.ts)", () => {
         text: "hello",
         lang: "es",
         gender: "female",
-        voiceId: undefined,
+        slot: getVoiceSlot("standard"),
         tier: "FREE",
         env,
         signal: new AbortController().signal,
@@ -435,7 +677,7 @@ describe("speech engine (services/speech.ts)", () => {
         text: "hello",
         lang: "en",
         gender: "female",
-        voiceId: undefined,
+        slot: getVoiceSlot("standard"),
         tier: "FREE",
         env,
         signal: new AbortController().signal,
@@ -458,7 +700,7 @@ describe("speech engine (services/speech.ts)", () => {
         text: "hello",
         lang: "en",
         gender: "female",
-        voiceId: "studio-female-1",
+        slot: getVoiceSlot("studio"),
         tier: "PREMIUM",
         env,
         signal: new AbortController().signal,
@@ -476,7 +718,7 @@ describe("speech engine (services/speech.ts)", () => {
         text: "Hallo",
         lang: "de",
         gender: "female",
-        voiceId: undefined,
+        slot: getVoiceSlot("studio"),
         tier: "PREMIUM",
         env,
         signal: new AbortController().signal,

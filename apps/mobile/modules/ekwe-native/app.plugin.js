@@ -439,7 +439,10 @@ const withApkUpdateNative = (config) => {
     });
 
     // FileProvider for handing the downloaded APK to the package installer.
-    const authority = '${applicationId}.fileprovider';
+    // Own authority, distinct from the one react-native-webview registers:
+    // both default to ${applicationId}.fileprovider, and two providers sharing
+    // an authority make ContentResolver lookups ambiguous at runtime.
+    const authority = '${applicationId}.apkfileprovider';
     if (!mainApplication.provider) mainApplication.provider = [];
     if (
       !mainApplication.provider.some(
@@ -499,6 +502,107 @@ const withApkFileProviderPaths = (config) => {
       return pluginConfig;
     },
   ]);
+};
+
+/**
+ * Android: FileProvider for handing outgoing shares to other apps, plus the
+ * <queries> entry that Android 11+ package visibility needs.
+ *
+ * This deliberately does not reuse expo-sharing's SharingFileProvider. That
+ * module builds the share intent with Intent.setTypeAndNormalize(), which
+ * truncates the type at the first ";" — so "audio/ogg; codecs=opus" would
+ * arrive as "audio/ogg". That parameter is what WhatsApp and Telegram require
+ * to treat the file as a voice note rather than an audio document.
+ */
+const SHARE_PROVIDER_SUFFIX = 'ekweshareprovider';
+
+const withShareFileProvider = (config) => {
+  let updatedConfig = withAndroidManifest(config, (config) => {
+    const mainApplication = AndroidConfig.Manifest.getMainApplicationOrThrow(
+      config.modResults,
+    );
+    const authority = `\${applicationId}.${SHARE_PROVIDER_SUFFIX}`;
+
+    if (!mainApplication.provider) mainApplication.provider = [];
+    if (
+      !mainApplication.provider.some(
+        (p) => p.$ && p.$['android:authorities'] === authority,
+      )
+    ) {
+      mainApplication.provider.push({
+        $: {
+          'android:name': 'androidx.core.content.FileProvider',
+          'android:authorities': authority,
+          'android:exported': 'false',
+          'android:grantUriPermissions': 'true',
+        },
+        'meta-data': [
+          {
+            $: {
+              'android:name': 'android.support.FILE_PROVIDER_PATHS',
+              'android:resource': '@xml/ekwe_share_paths',
+            },
+          },
+        ],
+      });
+    }
+
+    // Without this, queryIntentActivities() returns nothing on API 30+ and the
+    // explicit per-target read grant in shareAudio() silently never happens.
+    if (!config.modResults.manifest.queries) {
+      config.modResults.manifest.queries = [];
+    }
+    const hasSendQuery = config.modResults.manifest.queries.some((q) =>
+      (q.intent || []).some((i) =>
+        (i.action || []).some(
+          (a) => a.$['android:name'] === 'android.intent.action.SEND',
+        ),
+      ),
+    );
+    if (!hasSendQuery) {
+      config.modResults.manifest.queries.push({
+        intent: [
+          {
+            action: [{ $: { 'android:name': 'android.intent.action.SEND' } }],
+            data: [{ $: { 'android:mimeType': '*/*' } }],
+          },
+        ],
+      });
+    }
+
+    return config;
+  });
+
+  updatedConfig = withDangerousMod(updatedConfig, [
+    'android',
+    (pluginConfig) => {
+      const outFile = path.join(
+        pluginConfig.modRequest.platformProjectRoot,
+        'app',
+        'src',
+        'main',
+        'res',
+        'xml',
+        'ekwe_share_paths.xml',
+      );
+      fs.mkdirSync(path.dirname(outFile), { recursive: true });
+      fs.writeFileSync(
+        outFile,
+        `<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+  <cache-path name="ekwe_share_cache" path="." />
+  <files-path name="ekwe_share_files" path="." />
+  <external-path name="ekwe_share_external" path="." />
+</paths>
+`,
+        'utf8',
+      );
+      console.log(`[EkwePlugin] Wrote ${outFile}`);
+      return pluginConfig;
+    },
+  ]);
+
+  return updatedConfig;
 };
 
 /**
@@ -562,6 +666,7 @@ const withEkweNativePermissionsAndServices = (config) => {
   updatedConfig = withEchoDesignTokens(updatedConfig);
   updatedConfig = withApkUpdateNative(updatedConfig);
   updatedConfig = withApkFileProviderPaths(updatedConfig);
+  updatedConfig = withShareFileProvider(updatedConfig);
   if (process.platform === 'darwin') {
     updatedConfig = withIosAppGroup(updatedConfig);
   }

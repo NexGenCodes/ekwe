@@ -5,7 +5,7 @@ import ShareIcon from "lucide-react-native/icons/share-2";
 import Volume2 from "lucide-react-native/icons/volume-2";
 import VolumeX from "lucide-react-native/icons/volume-x";
 import React, { useCallback, useEffect, useState } from "react";
-import { Share, type StyleProp, type TextStyle } from "react-native";
+import type { StyleProp, TextStyle } from "react-native";
 
 import { ScrollableTextBox } from "@/components/ScrollableTextBox";
 import { AnimatedCopyButton } from "@/components/AnimatedCopyButton";
@@ -13,12 +13,12 @@ import { IconButton } from "@/components/IconButton";
 
 import { useSharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
 import type { WaveformPlaybackController } from "@/hooks/audio/useAudioWaveformPlayback";
+import { ShareOutService } from "@/services/shareOutService";
 import { synthesizeSpeech } from "@/services/speech";
 
 import { claimSpeechFocus, releaseSpeechFocus } from "@/hooks/audio/audioFocus";
 
 import { Box, Text, Pressable, Spinner } from "@/components/ui";
-import { ECHO_SHARE_SIGNATURE } from "@/constants/echo";
 import { LANGUAGES, getLanguageFlag } from "@/constants/languages";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
@@ -28,6 +28,7 @@ import { withAlpha } from "@/utils/color";
 
 import logger from "@/utils/logger";
 import { AppToast } from "@/utils/toast";
+import { cleanEchoCache } from "@/utils/audioCache";
 
 interface TextBoxProps {
   text: string | null;
@@ -47,7 +48,12 @@ interface TextBoxProps {
 
   audioPlayer?: WaveformPlaybackController | null;
 
-  signature?: string;
+  /**
+   * The received voice note. When present, the share sheet hands on the audio
+   * itself instead of only its text — Echo already has the file in memory, so
+   * there is nothing to look up and nothing to regenerate.
+   */
+  audioUri?: string | null;
 
   copied?: boolean;
 }
@@ -64,7 +70,7 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
     withCheck = false,
     showShare = false,
     audioPlayer,
-    signature = ECHO_SHARE_SIGNATURE,
+    audioUri = null,
     copied = false,
   }) => {
     const { color } = useTheme();
@@ -80,7 +86,7 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
       if (
         isSpeechLoading &&
         speechAudioUri &&
-        speechPlayer.isLoaded &&
+        speechPlayer.isReady &&
         !speechPlayer.isDecoding
       ) {
         setIsSpeechLoading(false);
@@ -90,7 +96,7 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
     }, [
       isSpeechLoading,
       speechAudioUri,
-      speechPlayer.isLoaded,
+      speechPlayer.isReady,
       speechPlayer.isDecoding,
       speechPlayer,
     ]);
@@ -101,8 +107,6 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
         releaseSpeechFocus();
       }
     }, [isSpeaking, speechPlayer.isEnded]);
-
-    const signedText = text ? `${text}${signature}` : "";
 
     const langName = lang
       ? (LANGUAGES.find((l) => l.code === lang)?.englishName ?? lang)
@@ -125,9 +129,14 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
       return (): void => {
         speechPlayer.pause();
         releaseSpeechFocus();
+        // The synthesized file was never cleaned up: every tap minted a new
+        // one in the cache directory, and `EchoFinalResult` remounts this
+        // component per tab, orphaning the previous file. The startup sweep
+        // was the only thing reclaiming them.
+        if (speechAudioUri) void cleanEchoCache(speechAudioUri);
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [speechAudioUri]);
 
     const handleSpeakToggle = useCallback(async (): Promise<void> => {
       if (isSourceMode) {
@@ -191,15 +200,12 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
     ]);
 
     const handleShare = useCallback(async (): Promise<void> => {
-      if (!signedText) return;
+      if (!text?.trim()) return;
       triggerHaptic("selection");
-      try {
-        track(AnalyticsEvents.RESULT_SHARED, { source: "echo" });
-        await Share.share({ message: signedText });
-      } catch (err) {
-        logger.warn("[TextBox] Share failed", err);
-      }
-    }, [signedText]);
+      // The service signs, tracks, and falls back to text if the audio cannot
+      // be handed over — so this no longer needs its own try/catch.
+      await ShareOutService.shareArtifact(audioUri, text, "echo");
+    }, [audioUri, text]);
 
     const labelColor = withCheck ? color.brand : color.foreground;
 
@@ -307,7 +313,7 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
                   icon={
                     isSourceMode ? (
                       audioPlayer?.isDecoding ||
-                      audioPlayer?.isLoaded === false ? (
+                      audioPlayer?.isReady === false ? (
                         <Spinner size="sm" color={color.brand} />
                       ) : audioPlayer?.isPlaying ? (
                         <VolumeX size={18} color={color.onBrand} />
@@ -325,7 +331,7 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
                 />
               )}
               <AnimatedCopyButton
-                textToCopy={signedText}
+                textToCopy={text ?? ""}
                 accessibilityLabel={`Copy ${lead}`}
                 copied={copied}
                 size={18}

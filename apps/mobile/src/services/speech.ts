@@ -1,7 +1,5 @@
 import { File, Paths } from "expo-file-system";
 
-import type { z } from "zod";
-
 import {
   synthesizeResponseSchema,
   WORKER_ERROR_CODES,
@@ -15,7 +13,6 @@ import { supabase } from "@/services/supabase";
 import { getMimeType, uploadMultipart } from "@/services/uploadMultipart";
 import { settings$ } from "@/store/settings";
 import { Result, ok, err } from "@/types/Result";
-import { base64ToBytes } from "@/utils/base64";
 import logger from "@/utils/logger";
 import { isDefinitelyOffline } from "@/utils/connectivity";
 import { headerValue, parseServerTiming } from "@/utils/perfSpan";
@@ -51,26 +48,19 @@ export interface SynthesizedAudio {
 }
 
 /**
- * Resolves synthesised audio from whichever form the worker chose to send.
+ * Fetches synthesised audio from the URL the worker returned.
  *
- * Newer workers hand back a URL into the speech cache, which keeps the response
- * small and skips a base64 round trip. Older ones — and any client that asked
- * for the inline form — send the bytes directly. Both have to work, because the
- * app and the worker are deployed independently and neither can be forced on
- * the other.
+ * The response is a few hundred bytes regardless of clip length; the audio
+ * itself is a separate, cacheable GET, so nothing here has to decode base64
+ * or hold a few megabytes in memory to hand them to the player.
  */
-async function resolveSynthAudioBytes(
-  data: z.infer<typeof synthesizeResponseSchema>,
-): Promise<Uint8Array | null> {
-  if (data.audioBase64) return base64ToBytes(data.audioBase64);
-  if (!data.audioUrl) return null;
-
+async function fetchSynthAudio(audioUrl: string): Promise<Uint8Array | null> {
   // The worker returns a path so it never has to trust a forwarded host. Join it
   // onto the same base every other request uses.
   const base = getWorkerUrl();
-  const url = data.audioUrl.startsWith("http")
-    ? data.audioUrl
-    : `${base.replace(/\/$/, "")}${data.audioUrl}`;
+  const url = audioUrl.startsWith("http")
+    ? audioUrl
+    : `${base.replace(/\/$/, "")}${audioUrl}`;
 
   const res = await fetchWithRetry(url, { method: "GET" });
   if (!res.ok) {
@@ -222,7 +212,7 @@ export async function synthesizeSpeech(
       return err(EkweError.SPEECH_FAIL);
     }
 
-    const audioBytes = await resolveSynthAudioBytes(parsed.data);
+    const audioBytes = await fetchSynthAudio(parsed.data.audioUrl);
     if (!audioBytes) return err(EkweError.SPEECH_FAIL);
 
     const rawUri = await writeAudioFile(audioBytes, parsed.data.mime);
@@ -359,7 +349,7 @@ export async function synthesizeAudio(
     }
 
     const data = parsed.data;
-    const audioBytes = await resolveSynthAudioBytes(data);
+    const audioBytes = await fetchSynthAudio(data.audioUrl);
     if (!audioBytes) return err(EkweError.SPEECH_FAIL);
 
     const rawUri = await writeAudioFile(audioBytes, data.mime);

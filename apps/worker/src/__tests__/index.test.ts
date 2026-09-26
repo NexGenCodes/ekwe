@@ -13,7 +13,7 @@ vi.mock("jose", () => ({
 
 vi.mock("@/providers/edge", () => ({
   tts: vi.fn(async () => ({ result: null, status: null })),
-  voice: () => [],
+  voices: () => [],
 }));
 
 import { jwtVerify } from "jose";

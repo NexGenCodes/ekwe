@@ -11,15 +11,40 @@ export const history = sqliteTable(
   {
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
+    /**
+     * Stable identifier for the capture session that produced this row. One
+     * capture yields exactly one row: transcribing writes it with a null
+     * translation, and a later translation updates the same row in place.
+     * This replaces a dedup key built from the entry's text, which could not
+     * match across the transcription/translation pair and so left an orphan
+     * row behind every time a note was translated.
+     */
+    captureId: text("capture_id"),
+    /** Which surface captured it: speech-studio | echo | orb. */
+    origin: text("origin").notNull().default("echo"),
+    /** What that surface consumed: audio | text. */
+    input: text("input").notNull().default("audio"),
     sourceLang: text("source_lang").notNull(),
     targetLang: text("target_lang").notNull(),
     transcript: text("transcript").notNull(),
     translationText: text("translation_text"),
     transliterationText: text("transliteration_text"),
+    /** Seconds of *source* audio. 0 when nothing was recorded. */
     duration: real("duration").notNull().default(0),
+    /** The external app the audio came from. Null for in-app captures. */
     sourceApp: text("source_app").notNull().default(""),
-    provider: text("provider").notNull().default(""),
+    /** Voice slot used to render speech, for Studio entries. */
+    voiceId: text("voice_id"),
+    /** Which speech-to-text provider heard it. */
+    sttProvider: text("stt_provider").notNull().default(""),
+    /** Which machine-translation provider translated it. Null until translated. */
+    mtProvider: text("mt_provider"),
     createdAt: text("created_at").notNull(),
+    /**
+     * Retained only as a stored column. It is no longer a user-facing concept:
+     * one row exists per capture, so whether a translation exists is derivable
+     * from `translation_text` being non-null.
+     */
     entryType: text("entry_type").notNull().default("transcription"),
   },
   (table) => ({
@@ -32,12 +57,13 @@ export const history = sqliteTable(
       table.createdAt,
       table.id,
     ),
-    dedupIdx: index("idx_history_dedup").on(
+    /**
+     * Backs the capture-id upsert. Partial, because legacy rows have no
+     * capture_id and must not all collide on NULL.
+     */
+    userCaptureIdx: index("idx_history_user_capture").on(
       table.userId,
-      table.entryType,
-      table.sourceLang,
-      table.targetLang,
-      table.transcript,
+      table.captureId,
     ),
   }),
 );

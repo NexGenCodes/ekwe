@@ -4,7 +4,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ECHO_SHARE_SIGNATURE } from "@/constants/echo";
+import { EKWE_SHARE_SIGNATURE } from "@/constants/share";
 import type { EchoProps } from "@/types/echo";
 import { useEchoFlow } from "@/hooks/echo/useEchoFlow";
 
@@ -139,7 +139,11 @@ const SUCCESS_TRANSCRIPT = {
 };
 const SUCCESS_TRANSLATION = {
   ok: true as const,
-  value: { translation: "hola mundo", provider: "llama" },
+  value: {
+    translation: "hola mundo",
+    provider: "llama",
+    transliteration: "ola mundo",
+  },
 };
 
 beforeEach(() => {
@@ -300,19 +304,29 @@ describe("handleTranslate", () => {
     expect(result.current.translation).toBe("hola mundo");
     expect(result.current.autoCopied).toBe(true);
     expect(vi.mocked(Clipboard.setStringAsync)).toHaveBeenCalledWith(
-      `hola mundo${ECHO_SHARE_SIGNATURE}`,
+      `hola mundo${EKWE_SHARE_SIGNATURE}`,
     );
-    expect(impl.recordTranslation).toHaveBeenCalledTimes(2);
+    // One row per capture. This used to write twice — a transcription-only
+    // row and then a translation row — and because the dedup lookup keyed on
+    // entry_type, the two could never match, so every translated note left an
+    // orphan transcript behind in History.
+    expect(impl.recordTranslation).toHaveBeenCalledTimes(1);
     expect(impl.recordTranslation.mock.calls[0][0]).toMatchObject({
-      type: "transcription",
-      translation: null,
+      origin: "echo",
+      input: "audio",
+      type: "translation",
       transcript: "hola mundo",
+      translation: "hola mundo",
       sourceLang: "es",
       targetLang: "fr",
     });
-    expect(impl.recordTranslation.mock.calls[1][0]).toMatchObject({
-      type: "translation",
-      translation: "hola mundo",
+    expect(impl.recordTranslation.mock.calls[0][0].captureId).toBeTruthy();
+    // Both of these came back with the translation and used to be written as
+    // null — transliteration is what makes non-Latin scripts readable, and the
+    // MT provider is a different model from the STT one.
+    expect(impl.recordTranslation.mock.calls[0][0]).toMatchObject({
+      transliteration: "ola mundo",
+      mtProvider: "llama",
     });
   });
 

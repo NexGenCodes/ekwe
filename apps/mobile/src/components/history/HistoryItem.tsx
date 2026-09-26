@@ -1,22 +1,38 @@
 import { triggerHaptic } from "@/utils/haptics";
-import Captions from "lucide-react-native/icons/captions";
-import Languages from "lucide-react-native/icons/languages";
+import CircleDot from "lucide-react-native/icons/circle-dot";
+import Mic from "lucide-react-native/icons/mic";
+import Share2 from "lucide-react-native/icons/share-2";
 import React, { useCallback, useMemo } from "react";
 import { AccessibilityActionEvent, ViewStyle, StyleSheet } from "react-native";
 import Animated from "react-native-reanimated";
 
+import { ORIGIN_META } from "@ekwe/shared";
+import type { HistoryOrigin } from "@ekwe/shared";
+
 import { Card } from "@/components/Card";
 
 import { Box, Text, Pressable } from "@/components/ui";
-import { getLanguageName } from "@/constants/languages";
 import { scale } from "@/constants/motion";
 import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
-import { getEntryType } from "@/hooks/useHistorySearch";
+import { hasTranslation } from "@/hooks/useHistorySearch";
+import {
+  entryAccessibilityLabel,
+  entryLanguageLabel,
+  formatEntryDuration,
+  originProvenanceLabel,
+  resolveOrigin,
+} from "@/utils/historyOrigin";
+import { getRelativeTime } from "@/utils/relativeTime";
 import { HistoryEntry } from "@/store";
 import { withAlpha } from "@/utils/color";
-import { getRelativeTime } from "@/utils/relativeTime";
+
+const ORIGIN_ICONS = {
+  "speech-studio": Mic,
+  echo: Share2,
+  orb: CircleDot,
+} as const satisfies Record<HistoryOrigin, typeof Mic>;
 
 export interface HistoryItemProps {
   entry: HistoryEntry;
@@ -56,8 +72,9 @@ export const HistoryItem = React.memo(
       [entry, onDelete],
     );
 
-    const entryType = useMemo(() => getEntryType(entry), [entry]);
-    const isTranslation = entryType === "translation";
+    const origin = useMemo(() => resolveOrigin(entry), [entry]);
+    const isTranslated = useMemo(() => hasTranslation(entry), [entry]);
+    const OriginIcon = ORIGIN_ICONS[origin];
 
     const snippetBody = useMemo((): React.ReactNode => {
       const hasTranscript = !!entry.transcript?.trim();
@@ -116,43 +133,16 @@ export const HistoryItem = React.memo(
       );
     }, [entry.transcript, entry.translation, color]);
 
-    const formattedDuration = useMemo(() => {
-      if (!entry.duration) return null;
-      const seconds = Math.round(entry.duration);
-      if (seconds < 60) return `${seconds}s`;
-      const minutes = Math.floor(seconds / 60);
-      const remainingSeconds = seconds % 60;
-      if (minutes < 60) {
-        return remainingSeconds > 0
-          ? `${minutes}m ${remainingSeconds}s`
-          : `${minutes}m`;
-      }
-      const hours = Math.floor(minutes / 60);
-      const remainingMinutes = minutes % 60;
-      return remainingMinutes > 0
-        ? `${hours}h ${remainingMinutes}m`
-        : `${hours}h`;
-    }, [entry.duration]);
-
     const metadataLabel = useMemo(() => {
-      const langStr = isTranslation
-        ? `${entry.sourceLang.toUpperCase()} → ${entry.targetLang.toUpperCase()}`
-        : entry.sourceLang.toUpperCase();
-      const mediaType =
-        entryType === "translation" ? "Translation" : "Transcription";
-      const durationStr = isTranslation
-        ? ""
-        : formattedDuration
-          ? ` · ${formattedDuration}`
-          : "";
-      return `${mediaType}${durationStr} · ${langStr}`;
-    }, [
-      entryType,
-      entry.sourceLang,
-      entry.targetLang,
-      isTranslation,
-      formattedDuration,
-    ]);
+      // Provenance first, then what happened to the text, then how long the
+      // source audio was. The translated/untranslated distinction is already
+      // carried by the tile and the indented translation block, so it is not
+      // repeated here.
+      const parts = [originProvenanceLabel(entry), entryLanguageLabel(entry)];
+      const duration = formatEntryDuration(entry.duration);
+      if (duration) parts.push(duration);
+      return parts.filter(Boolean).join(" · ");
+    }, [entry]);
 
     const typeIconTile = useMemo(
       (): React.ReactElement => (
@@ -160,23 +150,22 @@ export const HistoryItem = React.memo(
           style={[
             styles.typeIconTile,
             {
-              backgroundColor: isTranslation
+              backgroundColor: isTranslated
                 ? withAlpha(color.brand, 0.12)
                 : withAlpha(color.foreground, 0.06),
-              borderColor: isTranslation
+              borderColor: isTranslated
                 ? withAlpha(color.brand, 0.2)
                 : withAlpha(color.foreground, 0.1),
             },
           ]}
         >
-          {isTranslation ? (
-            <Languages size={iconSize.sm} color={color.brand} />
-          ) : (
-            <Captions size={iconSize.sm} color={color.foreground} />
-          )}
+          <OriginIcon
+            size={iconSize.sm}
+            color={isTranslated ? color.brand : color.foreground}
+          />
         </Box>
       ),
-      [isTranslation, color],
+      [isTranslated, color, OriginIcon],
     );
 
     const cardStyle = useMemo(
@@ -189,10 +178,11 @@ export const HistoryItem = React.memo(
     );
 
     const pressableLabel = useMemo(
-      () =>
-        `${entry.transcript?.split("\n")[0] || "Voice Note"}. ${getLanguageName(entry.sourceLang)} to ${getLanguageName(entry.targetLang)}`,
-      [entry.transcript, entry.sourceLang, entry.targetLang],
+      () => entryAccessibilityLabel(entry),
+      [entry],
     );
+
+    const originHint = useMemo(() => ORIGIN_META[origin].description, [origin]);
 
     const captionStyle = useMemo(() => ({ color: color.muted }), [color.muted]);
 
@@ -206,7 +196,7 @@ export const HistoryItem = React.memo(
           onAccessibilityAction={handleAccessibilityAction}
           accessibilityActions={[{ name: "delete", label: "Delete entry" }]}
           accessibilityLabel={pressableLabel}
-          accessibilityHint="Swipe left or long press for more actions"
+          accessibilityHint={`${originHint}. Long press for more actions`}
           feedback="none"
           style={({ pressed }) => [
             styles.contentContainer,
@@ -251,10 +241,12 @@ export const HistoryItem = React.memo(
     prev.entry.transcript === next.entry.transcript &&
     prev.entry.translation === next.entry.translation &&
     prev.entry.duration === next.entry.duration &&
-    prev.entry.type === next.entry.type &&
+    prev.entry.origin === next.entry.origin &&
+    prev.entry.input === next.entry.input &&
     prev.entry.sourceLang === next.entry.sourceLang &&
     prev.entry.targetLang === next.entry.targetLang &&
     prev.entry.sourceApp === next.entry.sourceApp &&
+    prev.entry.voiceId === next.entry.voiceId &&
     prev.onPress === next.onPress &&
     prev.onDelete === next.onDelete &&
     prev.onLongPress === next.onLongPress &&

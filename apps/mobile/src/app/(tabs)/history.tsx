@@ -6,10 +6,12 @@ import { useValue } from "@legendapp/state/react";
 import AudioLines from "lucide-react-native/icons/audio-lines";
 import Search from "lucide-react-native/icons/search";
 import X from "lucide-react-native/icons/x";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { TextInput, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn } from "react-native-reanimated";
+
+import { ORIGIN_META } from "@ekwe/shared";
 
 import { type FlashListRef } from "@shopify/flash-list";
 import { EkweLogo } from "@/components/EkweLogo";
@@ -35,9 +37,17 @@ import { isIOS, logger } from "@/utils";
 
 const FILTER_OPTIONS: HistoryFilterOption[] = [
   "all",
-  "transcription",
-  "translation",
+  "speech-studio",
+  "echo",
+  "orb",
 ];
+
+const FILTER_LABELS: Record<HistoryFilterOption, string> = {
+  all: "All",
+  "speech-studio": ORIGIN_META["speech-studio"].label,
+  echo: ORIGIN_META.echo.label,
+  orb: ORIGIN_META.orb.label,
+};
 
 export default function HistoryScreen(): React.JSX.Element {
   const router = useRouter();
@@ -91,6 +101,31 @@ export default function HistoryScreen(): React.JSX.Element {
   }, [refetchHistory]);
 
   const isGrouped = !isSearching && filter === "all" && query.length === 0;
+
+  /**
+   * An empty filter should explain itself. "No matches" is only true when a
+   * search is running; an origin filter that matches nothing is telling the
+   * user something about that surface, not about their query.
+   */
+  const { emptyTitle, emptySubtitle } = useMemo(() => {
+    if (query.trim().length > 0) {
+      return {
+        emptyTitle: "No Matches Found",
+        emptySubtitle: "We couldn't find any transcripts matching your search.",
+      };
+    }
+    if (filter !== "all") {
+      return {
+        emptyTitle: `No ${ORIGIN_META[filter].label} Captures`,
+        emptySubtitle: `${ORIGIN_META[filter].description}. Nothing has been captured here yet.`,
+      };
+    }
+    return {
+      emptyTitle: "Silent Library",
+      emptySubtitle:
+        "Everything you record, share, or capture with Ekwe shows up here.",
+    };
+  }, [query, filter]);
 
   const listData = useHistoryListData({
     isGrouped,
@@ -280,7 +315,7 @@ export default function HistoryScreen(): React.JSX.Element {
                       : { color: color.foreground },
                   ]}
                 >
-                  {option.charAt(0).toUpperCase() + option.slice(1)}
+                  {FILTER_LABELS[option]}
                 </Text>
               </Pressable>
             ))}
@@ -316,12 +351,8 @@ export default function HistoryScreen(): React.JSX.Element {
                   )}
                 </IconContainer>
               }
-              title={query.length > 0 ? "No Matches Found" : "Silent Library"}
-              subtitle={
-                query.length > 0
-                  ? "We couldn't find any transcripts matching your search."
-                  : "Your voice note history will appear here."
-              }
+              title={emptyTitle}
+              subtitle={emptySubtitle}
             />
           </Box>
         </Animated.View>

@@ -11,5 +11,5 @@
     "outDir": "./dist",
     "types": ["node"]
   },
-  "include": ["src/**/*", "drizzle.config.ts"]
+  "include": ["src/**/*", "drizzle.local.config.ts", "drizzle.pull.config.ts"]
 }

@@ -121,21 +121,64 @@ const GEMINI_SPEECH_MAX_ATTEMPTS = 3;
 
 type VoiceGender = "male" | "female";
 
-const GEMINI_VOICES: Record<string, Partial<Record<VoiceGender, string[]>>> = {
-  standard: { female: ["Kore"], male: ["Puck"] },
-  "studio-female-1": { female: ["Aoede", "Kore"] },
-  "studio-female-2": { female: ["Zephyr", "Leda"] },
-  "studio-male-1": { male: ["Puck"] },
-  "studio-male-2": { male: ["Charon", "Fenrir"] },
+/**
+ * Order is the persona contract: index 0 is the Clear voice, index 1 is the
+ * Warm voice, and the tail is generic fallback. Descriptors are Google's own
+ * (ai.google.dev/gemini-api/docs/speech-generation).
+ *
+ * One list per gender serves every locale because the model auto-detects.
+ * `speechConfig.languageCode` is deliberately unset: it requires specific
+ * BCP-47 locales, and `ig`, `yo`, `ha`, `haw`, `ci`, `ck` have no Gemini
+ * equivalent, so pinning one turns working synthesis into a 400.
+ */
+const GEMINI_VOICES: Readonly<
+  Record<VoiceGender | "default", readonly string[]>
+> = {
+  default: ["Kore"],
+  // [0] Kore · Firm   [1] Sulafat · Warm
+  female: [
+    "Kore",
+    "Sulafat",
+    "Despina",
+    "Vindemiatrix",
+    "Gacrux",
+    "Erinome",
+    "Zephyr",
+    "Aoede",
+    "Achernar",
+    "Laomedeia",
+    "Callirrhoe",
+    "Autonoe",
+    "Pulcherrima",
+    "Leda",
+  ],
+  // [0] Charon · Informative   [1] Sadachbia · Lively
+  male: [
+    "Charon",
+    "Sadachbia",
+    "Puck",
+    "Iapetus",
+    "Orus",
+    "Umbriel",
+    "Algieba",
+    "Rasalgethi",
+    "Fenrir",
+    "Enceladus",
+    "Algenib",
+    "Schedar",
+    "Zubenelgenubi",
+    "Alnilam",
+    "Achird",
+    "Sadaltager",
+  ],
 };
 
-export function voice(
-  voiceId: string | undefined,
+export function voices(
+  gender: VoiceGender | undefined,
   _langCode: string,
-  gender: VoiceGender,
 ): string[] {
-  const sets = GEMINI_VOICES[voiceId ?? "standard"] ?? GEMINI_VOICES.standard;
-  return sets[gender] ?? sets.female ?? [];
+  if (gender) return [...GEMINI_VOICES[gender]];
+  return [...GEMINI_VOICES.default];
 }
 
 export async function tts(

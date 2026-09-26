@@ -128,40 +128,54 @@ const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 
 function resolveModelName(voice: string | undefined, lang: string): string {
   const langCode = lang.split("-")[0].toLowerCase() || "en";
-  if (voice && voice.startsWith("aura-2-")) return voice;
-  return `aura-2-${voice ?? "luna"}-${langCode}`;
+  return `aura-2-${voice ?? "vesta"}-${langCode}`;
 }
 
 type VoiceGender = "male" | "female";
 
+/**
+ * Aura-2 voices per language, ordered so index 0 is the Clear persona and
+ * index 1 the Warm persona. Characteristics are Deepgram's own
+ * (developers.deepgram.com/docs/tts-models). Accent is baked into the voice
+ * identity — `aura-2-draco-en` is British, `aura-2-hyperion-en` Australian — so
+ * no non-`en-us` voice appears in a pool unless that is deliberate.
+ *
+ * Coverage is uneven: French publishes one voice per gender, so the Warm
+ * persona legitimately has no Deepgram candidate there. Lists are short on
+ * purpose — the pool walks at most one voice per provider, and a long list
+ * only spends the synthesis budget on requests that already failed.
+ */
 const DEEPGRAM_FEMALE: Record<string, string[]> = {
-  default: ["luna"],
-  es: ["selena"],
-  de: ["viktoria"],
+  default: ["vesta", "hera"],
+  en: ["vesta", "hera", "luna", "callista"],
+  es: ["diana", "estrella", "selena"],
+  de: ["elara", "kara", "viktoria"],
   fr: ["agathe"],
-  nl: ["beatrix"],
-  it: ["livia"],
-  ja: ["izanami"],
+  nl: ["daphne", "rhea", "beatrix"],
+  it: ["livia", "maia", "cinzia"],
+  ja: ["izanami", "ama", "uzume"],
 };
 
 const DEEPGRAM_MALE: Record<string, string[]> = {
-  default: ["orion"],
-  es: ["javier"],
-  de: ["julius"],
+  default: ["orpheus", "aries"],
+  en: ["orpheus", "aries", "orion", "arcas"],
+  es: ["nestor", "javier", "sirio"],
+  de: ["fabian", "julius"],
   fr: ["hector"],
-  nl: ["sander"],
-  it: ["dionisio"],
-  ja: ["fujin"],
+  nl: ["sander", "roman", "lars"],
+  it: ["dionisio", "flavio", "elio"],
+  ja: ["fujin", "ebisu"],
 };
 
-export function voice(
-  voiceId: string | undefined,
+export function voices(
+  gender: VoiceGender | undefined,
   langCode: string,
-  gender: VoiceGender,
 ): string[] {
-  if (voiceId && voiceId.startsWith("aura-2-")) return [voiceId];
+  if (!gender) {
+    return [...(DEEPGRAM_FEMALE[langCode] ?? DEEPGRAM_FEMALE.default)];
+  }
   const set = gender === "male" ? DEEPGRAM_MALE : DEEPGRAM_FEMALE;
-  return set[langCode] ?? set.default;
+  return [...(set[langCode] ?? set.default)];
 }
 
 export async function tts(

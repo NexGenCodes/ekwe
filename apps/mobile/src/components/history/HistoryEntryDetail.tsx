@@ -4,8 +4,14 @@ import Clock from "lucide-react-native/icons/clock";
 import ShareIcon from "lucide-react-native/icons/share";
 import Timer from "lucide-react-native/icons/timer";
 import Trash2 from "lucide-react-native/icons/trash";
-import React, { useCallback, useMemo } from "react";
-import { Share, StyleSheet } from "react-native";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { StyleSheet } from "react-native";
 import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -17,14 +23,14 @@ import { Box, Pressable, ScrollArea, Text } from "@/components/ui";
 import { getLanguageName, getLanguageFlag } from "@/constants/languages";
 import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useClipboard, useTheme } from "@/hooks";
+import { useTheme } from "@/hooks";
+import { CopyService } from "@/services/copyOutService";
+import { ShareOutService } from "@/services/shareOutService";
 import type { HistoryEntry } from "@/store";
-import { AnalyticsEvents, track } from "@/utils/analytics";
 import { withAlpha } from "@/utils/color";
 import { formatDuration } from "@/utils/formatDuration";
-import { formatSourceApp } from "@/utils/formatSource";
+import { originProvenanceLabel } from "@/utils/historyOrigin";
 import { triggerHaptic } from "@/utils/haptics";
-import logger from "@/utils/logger";
 import { getRelativeTime } from "@/utils/relativeTime";
 
 export interface HistoryEntryDetailProps {
@@ -125,7 +131,25 @@ export const HistoryEntryDetail = React.memo(
   }: HistoryEntryDetailProps): React.ReactElement {
     const { color } = useTheme();
     const insets = useSafeAreaInsets();
-    const { copied, copy } = useClipboard();
+    // The copy call itself now lives in CopyService; only the transient
+    // "Copied" label is local state, so a plain ref+timer replaces the hook.
+    const [copied, setCopied] = useState(false);
+    const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+      return (): void => {
+        if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      };
+    }, []);
+
+    const copy = useCallback((text: string): void => {
+      void CopyService.copyText(text).then((ok) => {
+        if (!ok) return;
+        setCopied(true);
+        if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
+      });
+    }, []);
 
     const sharedTag = `history-snippet-${entry.id}`;
 
@@ -141,7 +165,6 @@ export const HistoryEntryDetail = React.memo(
     const sourceFlag = getLanguageFlag(entry.sourceLang);
     const targetFlag = getLanguageFlag(entry.targetLang);
     const durationLabel = formatDuration(entry.duration);
-    const sourceLabel = formatSourceApp(entry.sourceApp);
 
     const handlePrimaryCopy = useCallback((): void => {
       if (hasTranslation) {
@@ -157,13 +180,12 @@ export const HistoryEntryDetail = React.memo(
         entry.transcript?.trim(),
         entry.translation?.trim(),
       ].filter((part): part is string => !!part);
-      track(AnalyticsEvents.RESULT_SHARED, { source: "history" });
-      Share.share({ message: parts.join("\n\n") }).catch((err) => {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!message.includes("dismissed")) {
-          logger.error("[HistoryDetail] Share entry failed", err);
-        }
-      });
+      // Text only, for the same reason as the row: History keeps no audio.
+      void ShareOutService.shareArtifact(
+        null,
+        parts.join("\n\n") || null,
+        "history",
+      );
     }, [entry.transcript, entry.translation]);
 
     const handleDelete = useCallback((): void => {
@@ -218,7 +240,7 @@ export const HistoryEntryDetail = React.memo(
               )}
               <MetaChip
                 icon={<AppWindow size={iconSize.sm} color={color.muted} />}
-                label={sourceLabel}
+                label={originProvenanceLabel(entry)}
               />
             </Box>
           </Box>

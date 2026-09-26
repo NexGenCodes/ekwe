@@ -2,7 +2,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 
 import { SyncService } from "@/services/syncService";
 import { Db, HistoryRow } from "@/services/db";
-import { history$, HistoryEntry, EntryType, sortedHistory$ } from "@/store";
+import { historyRowToEntry } from "@/services/historyMapper";
+import { history$, HistoryEntry, sortedHistory$ } from "@/store";
 import logger from "@/utils/logger";
 
 const PAGE_SIZE = 20;
@@ -13,19 +14,7 @@ export interface HistoryCursor {
 }
 
 function rowToEntry(row: HistoryRow): HistoryEntry {
-  return {
-    id: row.id,
-    sourceLang: row.sourceLang,
-    targetLang: row.targetLang,
-    transcript: row.transcript,
-    translation: row.translationText,
-    transliteration: row.transliterationText,
-    duration: row.duration,
-    sourceApp: row.sourceApp,
-    provider: row.provider,
-    timestamp: new Date(row.createdAt).getTime(),
-    type: (row.entryType as EntryType) ?? "transcription",
-  };
+  return historyRowToEntry(row);
 }
 
 function hydrate(entries: HistoryEntry[]): void {

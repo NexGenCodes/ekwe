@@ -7,9 +7,6 @@ export const ECHO_CONSTANTS = {
   },
 };
 
-export const ECHO_SHARE_SIGNATURE =
-  "\n\n— Shared with Ekwe · Speak, we'll handle the rest";
-
 export const STEP_METADATA = {
   PickLanguage: {
     title: "Pick Original Language",

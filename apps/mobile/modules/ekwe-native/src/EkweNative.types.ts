@@ -36,3 +36,8 @@ export type StartRecordingResult = {
   success: boolean;
   error: string;
 };
+
+export type ShareAudioResult = {
+  success: boolean;
+  error: string;
+};

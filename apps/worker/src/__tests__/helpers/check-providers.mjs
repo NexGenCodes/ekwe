@@ -8,11 +8,11 @@ const FAIL = '\x1b[31mFAIL\x1b[0m';
 const SKIP = '\x1b[33mSKIP\x1b[0m';
 
 const DEFAULT_DEV_VARS = resolve(__dirname, '../../../.dev.vars');
+const DEFAULT_WIT_VARS = resolve(__dirname, '../../../.dev.vars.store');
 
-export function loadEnv(path = DEFAULT_DEV_VARS) {
-  const envPath = path;
-  if (!existsSync(envPath)) return {};
-  const text = readFileSync(envPath, 'utf-8');
+function readEnvFile(path) {
+  if (!existsSync(path)) return {};
+  const text = readFileSync(path, 'utf-8');
   const env = {};
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
@@ -20,6 +20,12 @@ export function loadEnv(path = DEFAULT_DEV_VARS) {
     const match = trimmed.match(/^(\w+)="?(.+?)"?$/);
     if (match) env[match[1]] = match[2].replace(/^"|"$/g, '');
   }
+  return env;
+}
+
+export function loadEnv(path = DEFAULT_DEV_VARS) {
+  const env = readEnvFile(path);
+  if (path === DEFAULT_DEV_VARS) Object.assign(env, readEnvFile(DEFAULT_WIT_VARS));
   return env;
 }
 
@@ -154,7 +160,7 @@ export async function testTranscribeProviders(env) {
 async function main() {
   const env = loadEnv();
   const checkGroq = process.argv.includes('--groq');
-  console.log(`Loaded ${Object.keys(env).length} vars from .dev.vars\n`);
+  console.log(`Loaded ${Object.keys(env).length} vars from .dev.vars and .dev.vars.store\n`);
 
   let allOk = true;
 
