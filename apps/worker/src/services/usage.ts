@@ -18,7 +18,10 @@ export function trackBillableSuccess(
   ctx.waitUntil(
     consumeUsage(env, userId, type, charCount).finally(async () => {
       try {
-        await env.EKWE_KV.delete(preflightCacheKey(userId));
+        // Only this usage type's entry is stale now. Deleting the untyped key
+        // would no longer evict anything, and evicting the sibling types would
+        // throw away cache entries that are still valid.
+        await env.EKWE_KV.delete(preflightCacheKey(userId, type));
       } catch {
         // A stale cache entry self-expires in 2s and never blocks quota
         // enforcement for long; swallowing here keeps the request path clean.

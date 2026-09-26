@@ -7,6 +7,7 @@ import { tooManyRequests } from "@/core/guards";
 import { matchRoute, type RouteLike } from "@/core/router";
 import { runPreflightGate } from "@/services/preflight";
 import { CLIENT_ABORTED, type Env } from "@/core/types";
+import { RequestTimings } from "@/core/timing";
 import { recordRequestEvent } from "@/utils/analytics";
 
 interface RouteContext {
@@ -14,6 +15,7 @@ interface RouteContext {
   env: Env;
   ctx: ExecutionContext;
   params: Record<string, string>;
+  timings: RequestTimings;
 }
 
 export type RouteHandler = (rctx: RouteContext) => Response | Promise<Response>;
@@ -52,10 +54,13 @@ export type AppRoute =
 
 type UnauthorizedReason = "missing" | "invalid";
 
+/**
+ * No CORS headers here: `runPipeline`'s `emit` applies them to every
+ * non-streaming response, so the header set is defined in exactly one place.
+ */
 function unauthorizedResponse(
   isStream: boolean,
   reason: UnauthorizedReason,
-  corsHeaders: Record<string, string>,
 ): Response {
   if (isStream) {
     return new Response(
@@ -63,10 +68,7 @@ function unauthorizedResponse(
       { status: 401 },
     );
   }
-  return addCorsHeaders(
-    error(reason === "missing" ? "UNAUTHORIZED" : "INVALID_TOKEN", 401),
-    corsHeaders,
-  );
+  return error(reason === "missing" ? "UNAUTHORIZED" : "INVALID_TOKEN", 401);
 }
 
 function extractToken(request: Request, isStream: boolean): string | null {
@@ -92,32 +94,44 @@ export async function runPipeline(
   }
 
   const url = new URL(request.url);
+  const startTime = Date.now();
+  const timings = new RequestTimings();
+  // Stage names describe our internal pipeline shape, so the header is
+  // development-only. Production latency is already captured by
+  // recordRequestEvent into Analytics Engine.
+  const exposeTimings = env.APP_ENV !== "production";
+  // Single exit point for every non-streaming response, so a rejected request
+  // is measured and recorded exactly like a served one. The denials below used
+  // to return directly, which meant a quota rejection, a rate-limit block or an
+  // expired session — the requests most worth explaining — produced neither a
+  // Server-Timing breakdown nor a latency sample.
+  //
+  // Streaming routes still bypass this: once a body is streaming the status
+  // line is already sent and neither header can be attached. Their pre-stream
+  // failures (auth, rate limit) do come through here, since nothing has been
+  // written yet.
+  const emit = (response: Response, tier = ""): Response => {
+    const totalMs = Date.now() - startTime;
+    recordRequestEvent(env, url.pathname, response.status, totalMs, tier);
+    const serverTiming = exposeTimings ? timings.toServerTiming(totalMs) : null;
+    return addCorsHeaders(
+      response,
+      corsHeaders,
+      serverTiming ? { "Server-Timing": serverTiming } : undefined,
+    );
+  };
+
   const matched = matchRoute(routes, request.method, url.pathname);
 
   if (!matched) {
     logger.info("[auth] Unknown path probed", { path: url.pathname });
-    return addCorsHeaders(
-      error(WORKER_ERROR_CODES.NOT_FOUND, 404),
-      corsHeaders,
-    );
+    return emit(error(WORKER_ERROR_CODES.NOT_FOUND, 404));
   }
   const { route, params } = matched;
   const isStream = route.auth === "jwt-subprotocol";
 
-  const startTime = Date.now();
-  const emit = (response: Response, tier = ""): Response => {
-    recordRequestEvent(
-      env,
-      url.pathname,
-      response.status,
-      Date.now() - startTime,
-      tier,
-    );
-    return addCorsHeaders(response, corsHeaders);
-  };
-
   if (route.auth === "none") {
-    return emit(await route.handler({ request, env, ctx, params }));
+    return emit(await route.handler({ request, env, ctx, params, timings }));
   }
 
   if (route.auth === "admin") {
@@ -125,7 +139,7 @@ export async function runPipeline(
       logger.warn("[auth] Admin secret rejected", { path: url.pathname });
       return emit(error(WORKER_ERROR_CODES.UNAUTHORIZED, 401));
     }
-    return emit(await route.handler({ request, env, ctx, params }));
+    return emit(await route.handler({ request, env, ctx, params, timings }));
   }
 
   const token = extractToken(request, isStream);
@@ -133,40 +147,46 @@ export async function runPipeline(
   if (route.auth === "optional-jwt") {
     let auth: AuthResult | null = null;
     if (token) {
-      auth = await authenticate(token, env);
+      auth = await timings.measure("auth", () => authenticate(token, env));
     }
     return emit(
-      await route.handler({ request, env, ctx, params, auth }),
+      await route.handler({ request, env, ctx, params, auth, timings }),
       auth?.tier ?? "",
     );
   }
 
   if (!token) {
     logger.info("[auth] Missing token", { path: url.pathname });
-    return unauthorizedResponse(isStream, "missing", corsHeaders);
+    return emit(unauthorizedResponse(isStream, "missing"));
   }
-  const auth = await authenticate(token, env);
+  const auth = await timings.measure("auth", () => authenticate(token, env));
   if (!auth) {
     logger.warn("[auth] Invalid token", { path: url.pathname });
-    return unauthorizedResponse(isStream, "invalid", corsHeaders);
+    return emit(unauthorizedResponse(isStream, "invalid"));
   }
 
-  if (env.RATE_LIMITER) {
+  const rateLimiter = env.RATE_LIMITER;
+  if (rateLimiter) {
     const clientIp = request.headers.get("CF-Connecting-IP") || "";
     const rateLimitKey = clientIp ? `${auth.userId}::${clientIp}` : auth.userId;
 
-    const { success } = await env.RATE_LIMITER.limit({ key: rateLimitKey });
+    const { success } = await timings.measure("rate", () =>
+      rateLimiter.limit({ key: rateLimitKey }),
+    );
     if (!success) {
       logger.warn(`[rate-limiter] Blocked request for key: ${rateLimitKey}`);
       if (isStream) {
-        return new Response("Rate limit exceeded", {
-          status: 429,
-          headers: { "Retry-After": "60" },
-        });
+        return emit(
+          new Response("Rate limit exceeded", {
+            status: 429,
+            headers: { "Retry-After": "60" },
+          }),
+          auth.tier,
+        );
       }
-      return addCorsHeaders(
+      return emit(
         tooManyRequests("Rate limit exceeded. Please slow down.", 60),
-        corsHeaders,
+        auth.tier,
       );
     }
   }
@@ -177,6 +197,7 @@ export async function runPipeline(
     ctx,
     params,
     auth,
+    timings,
   };
 
   if (isStream) {
@@ -184,15 +205,17 @@ export async function runPipeline(
   }
 
   if (route.preflight) {
-    const gate = await runPreflightGate(
-      env,
-      ctx,
-      auth.userId,
-      auth.tier,
-      route.preflight,
-      auth.sessionId,
+    const gate = await timings.measure("gate", () =>
+      runPreflightGate(
+        env,
+        ctx,
+        auth.userId,
+        auth.tier,
+        route.preflight!,
+        auth.sessionId,
+      ),
     );
-    if (!gate.ok) return addCorsHeaders(gate.response, corsHeaders);
+    if (!gate.ok) return emit(gate.response, auth.tier);
     rctx.auth.tier = gate.preflight.throttled
       ? "FREE"
       : gate.preflight.tier_active;
@@ -204,7 +227,7 @@ export async function runPipeline(
   } catch (e: unknown) {
     const errorMsg = e instanceof Error ? e.message : String(e);
     if (errorMsg === CLIENT_ABORTED) {
-      return new Response(null, { status: 499 });
+      return emit(new Response(null, { status: 499 }), rctx.auth.tier);
     }
     if (e instanceof HttpError) {
       logger.error("[pipeline] HttpError", { code: e.code, error: errorMsg });

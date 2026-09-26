@@ -2,7 +2,7 @@ import { describe, test, expect, vi } from "vitest";
 
 vi.mock("@/providers/edge", () => ({
   tts: vi.fn(async () => ({ result: null, status: null })),
-  voice: () => [],
+  voices: () => [],
 }));
 import { handleSynthesize } from "@/routes/synthesize";
 import {
@@ -105,6 +105,100 @@ async function awaitWaitUntil(
   );
 }
 
+describe("handleSynthesize — gate/cache overlap", () => {
+  test("reads the cache while the speech gate is still in flight", async () => {
+    // Sequentially this was two round trips before any work could start.
+    const order: string[] = [];
+    let releaseGate: (() => void) | null = null;
+    const gateBlocked = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, async () => {
+        order.push("gate:start");
+        await gateBlocked;
+        order.push("gate:end");
+        return jsonResponse({
+          allowed: true,
+          tier_active: "PREMIUM",
+          quota_total: 5000,
+          quota_remaining: 5000,
+        });
+      }),
+    );
+
+    const env = aiMp3Env();
+    const getSpy = vi.spyOn(env.EKWE_KV, "get");
+    const ctx = mockExecutionContext();
+
+    const pending = handleSynthesize(
+      textRequest({ text: "Overlap me", sourceLang: "en", targetLang: "en" }),
+      env,
+      "PREMIUM",
+      new AbortController().signal,
+      { userId: "uid-ov", sessionId: null },
+      ctx,
+    );
+
+    // Scope to the speech cache read: preflight also does a KV.get, before its
+    // own RPC, so an unfiltered assertion would pass against sequential code.
+    const speechGets = () =>
+      getSpy.mock.calls.filter((c) => String(c[0]).startsWith("speech:"));
+
+    await vi.waitFor(() => expect(speechGets().length).toBeGreaterThan(0));
+    // The speech cache read was issued before the gate came back.
+    expect(order).toContain("gate:start");
+    expect(order).not.toContain("gate:end");
+
+    releaseGate!();
+    const res = await pending;
+    expect(res.status).toBe(200);
+  });
+
+  test("re-reads the cache when the gate downgrades a Pro slot to FREE", async () => {
+    // The speculative read used the slot tier in the key. For a Pro slot the
+    // gate can still downgrade to FREE, so trusting that read would serve audio
+    // cached under the wrong tier — and a cache "hit" would skip the gate
+    // entirely on the next request.
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+        jsonResponse({
+          allowed: true,
+          tier_active: "FREE",
+          throttled: true,
+          quota_total: 5000,
+          quota_remaining: 5000,
+        }),
+      ),
+    );
+
+    const env = aiMp3Env();
+    const getSpy = vi.spyOn(env.EKWE_KV, "get");
+    const ctx = mockExecutionContext();
+
+    const res = await handleSynthesize(
+      textRequest({
+        text: "Downgrade me",
+        sourceLang: "en",
+        targetLang: "en",
+        voiceId: "studio",
+      }),
+      env,
+      "PREMIUM",
+      new AbortController().signal,
+      { userId: "uid-dg", sessionId: null },
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const keys = getSpy.mock.calls.map((c) => String(c[0]));
+    // Premium slot: speculative key, then the correct FREE key.
+    expect(keys.some((k) => k.includes("premium"))).toBe(true);
+    expect(keys.some((k) => k.includes(":free:"))).toBe(true);
+  });
+});
+
 describe("handleSynthesize — text branch", () => {
   test("missing sourceLang short-circuits translation and lazily reserves the gate", async () => {
     gateOk("PREMIUM", 5000, 5000);
@@ -125,7 +219,68 @@ describe("handleSynthesize — text branch", () => {
     expect(body.voiceId).toBe("standard");
     expect(body.mime).toBe("audio/mpeg");
     expect(body.durationMs).toBeUndefined();
+    // Default delivery is a URL into the speech cache, not inline bytes.
+    expect(body.audioUrl).toMatch(/^\/speech\/speech:[^/]+$/);
+    expect(body.audioBase64).toBeUndefined();
+  });
+
+  test("inlines base64 for clients that opt out of the URL response", async () => {
+    gateOk("PREMIUM", 5000, 5000);
+    const env = aiMp3Env();
+
+    const res = await handle(
+      textRequest({
+        text: "Hello world",
+        targetLang: "es",
+        preferBase64: true,
+      }),
+      env,
+      "PREMIUM",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+
+    expect(body.audioBase64).toBeTypeOf("string");
     expect(base64ToBytes(body.audioBase64).byteLength).toBeGreaterThan(0);
+    expect(body.audioUrl).toBeUndefined();
+  });
+
+  test("collapses concurrent identical requests into one provider call", async () => {
+    gateOk("PREMIUM", 5000, 5000);
+
+    const env = aiMp3Env();
+
+    // Counted at the network edge rather than by mocking the provider, so this
+    // measures what the biller would actually see. Registered after `aiMp3Env`
+    // because msw takes the most recently registered handler for a route.
+    let providerCalls = 0;
+    server.use(
+      http.post(PROVIDER_URLS.witaiSynthesize, () => {
+        providerCalls += 1;
+        return mp3Response();
+      }),
+    );
+
+    const results = await Promise.all([
+      handle(
+        textRequest({ text: "Collapse me", targetLang: "es" }),
+        env,
+        "PREMIUM",
+      ),
+      handle(
+        textRequest({ text: "Collapse me", targetLang: "es" }),
+        env,
+        "PREMIUM",
+      ),
+      handle(
+        textRequest({ text: "Collapse me", targetLang: "es" }),
+        env,
+        "PREMIUM",
+      ),
+    ]);
+
+    for (const res of results) expect(res.status).toBe(200);
+    expect(providerCalls).toBe(1);
   });
 
   test("charges the flat speech conversion pool on live synthesis", async () => {
@@ -454,6 +609,7 @@ describe("handleSynthesize — audio branch", () => {
     let witCalls = 0;
     let geminiTranslateCalls = 0;
     let speakCalls = 0;
+    let freeSpeakCalls = 0;
     server.use(
       http.post(PROVIDER_URLS.witaiDictation, () => {
         witCalls++;
@@ -469,6 +625,10 @@ describe("handleSynthesize — audio branch", () => {
         speakCalls++;
         return mp3Response();
       }),
+      http.post(PROVIDER_URLS.witaiSynthesize, () => {
+        freeSpeakCalls++;
+        return mp3Response();
+      }),
     );
     const fields = { lang: "en", targetLang: "es" };
 
@@ -482,7 +642,10 @@ describe("handleSynthesize — audio branch", () => {
 
     expect(witCalls).toBe(1);
     expect(geminiTranslateCalls).toBe(1);
-    expect(speakCalls).toBe(1);
+    // No voiceId means Standard, which is the free pool even for a Pro
+    // account, so synthesis must not reach a premium provider.
+    expect(freeSpeakCalls).toBe(1);
+    expect(speakCalls).toBe(0);
   });
 
   test("returns 400 MISSING_FILE without a file part", async () => {

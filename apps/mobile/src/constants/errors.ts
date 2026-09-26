@@ -29,6 +29,9 @@ export const EkweError = {
   FILE_TOO_LARGE: WORKER_ERROR_CODES.FILE_TOO_LARGE,
   AUDIO_TOO_LONG: WORKER_ERROR_CODES.AUDIO_TOO_LONG,
   SPEECH_FAIL: "EKWE_SPEECH_FAIL",
+  /** Every speech provider was down or rate limited. Worth a retry later. */
+  SPEECH_UNAVAILABLE: WORKER_ERROR_CODES.SPEECH_UNAVAILABLE,
+  SPEECH_TIMEOUT: "EKWE_SPEECH_TIMEOUT",
   SERVER_ERROR: WORKER_ERROR_CODES.EKWE_SERVER_ERROR,
   REQUEST_CANCELLED: "EKWE_REQUEST_CANCELLED",
 } as const;
@@ -74,6 +77,10 @@ export const ErrorMessages: Record<EkweError, string> = {
     "This file is too large to process. Maximum size is 25MB.",
   [EkweError.AUDIO_TOO_LONG]: `This audio is too long for your plan. Free: ${FREE_MAX_MIN} min per file · Pro: ${PRO_MAX_MIN} min.`,
   [EkweError.SPEECH_FAIL]: "Speech failed. Please try again.",
+  [EkweError.SPEECH_UNAVAILABLE]:
+    "Voice is temporarily unavailable. Please try again shortly.",
+  [EkweError.SPEECH_TIMEOUT]:
+    "Voice took too long to respond. Try a shorter passage.",
   [EkweError.SERVER_ERROR]: "Server error. Please try again.",
   [EkweError.REQUEST_CANCELLED]: "Request was cancelled.",
 };

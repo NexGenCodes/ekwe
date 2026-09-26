@@ -3,7 +3,7 @@ import { USAGE_METER_IDS } from "./usageMeters";
 import { PRO_PRODUCT_IDS } from "./plans";
 import { LANGUAGES } from "./languages";
 import { FLUTTERWAVE_CURRENCIES } from "./money";
-import { VOICE_IDS } from "./voices";
+import { VOICE_SLOT_IDS } from "./voices";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -128,19 +128,55 @@ export const synthesizeRequestSchema = z.object({
   sourceLang: z.enum(SOURCE_LANG_CODES).optional(),
   targetLang: z.enum(LANG_CODES),
   gender: z.enum(["male", "female"]).optional(),
-  voiceId: z.enum(VOICE_IDS).optional(),
+  voiceId: z.enum(VOICE_SLOT_IDS).optional(),
+  /**
+   * Opt back in to inlining the audio as base64.
+   *
+   * The worker now returns a URL to the cached audio instead of the bytes,
+   * because base64 inflates the payload by a third and costs CPU to encode on
+   * every single request. App builds already in the field predate this field and
+   * unconditionally expect `audioBase64`, and we cannot force-update them — so
+   * the fast path is opt-in and anything that does not send this flag still
+   * receives the old inline payload.
+   */
+  preferBase64: z.boolean().optional(),
 });
 export type SynthesizeRequest = z.infer<typeof synthesizeRequestSchema>;
 
-export const synthesizeResponseSchema = z.object({
-  audioBase64: z.string(),
-  mime: z.string(),
-  sourceLang: z.string(),
-  targetLang: z.string(),
-  translated: z.boolean(),
-  voiceId: z.string(),
-  durationMs: z.number().optional(),
-});
+export const synthesizeResponseSchema = z
+  .object({
+    /**
+     * Where the audio lives. The worker writes it to the speech cache and hands
+     * back a URL, so the response stays a few hundred bytes no matter how long
+     * the clip is.
+     *
+     * Optional so a build that predates this field — or a worker that has not
+     * been redeployed yet — still validates.
+     */
+    audioUrl: z.string().optional(),
+    /** Inline audio, for clients that sent `preferBase64`. */
+    audioBase64: z.string().optional(),
+    mime: z.string(),
+    sourceLang: z.string(),
+    targetLang: z.string(),
+    translated: z.boolean(),
+    voiceId: z.string(),
+    durationMs: z.number().optional(),
+    /**
+     * The text that was spoken, and its translation when one was produced. The
+     * worker always computed both — they are what it synthesised from — but used
+     * to discard them, which meant the client could never archive what it had
+     * just paid to understand. Returning them costs no extra inference.
+     *
+     * Optional so an older worker paired with a newer client still validates.
+     */
+    transcript: z.string().optional(),
+    translation: z.string().nullable().optional(),
+  })
+  .refine((value) => Boolean(value.audioUrl || value.audioBase64), {
+    message: "synthesize response must carry either audioUrl or audioBase64",
+    path: ["audioUrl"],
+  });
 export type SynthesizeResponse = z.infer<typeof synthesizeResponseSchema>;
 
 export const checkoutRequestSchema = z.object({
@@ -209,6 +245,16 @@ export const sharedHistoryRecordSchema = z.object({
   sourceApp: z.string().optional(),
   provider: z.string().optional(),
   createdAt: z.string().optional(),
+  /**
+   * Written by newer share extensions. The share sheet only ever produces
+   * `echo` captures, so a record that omits these is resolved by the reader
+   * rather than rejected.
+   */
+  captureId: z.string().optional(),
+  origin: z.string().optional(),
+  input: z.string().optional(),
+  voiceId: z.string().nullish(),
+  mtProvider: z.string().nullish(),
 });
 export type SharedHistoryRecord = z.infer<typeof sharedHistoryRecordSchema>;
 
@@ -253,15 +299,32 @@ export type StreamServerMessage = z.infer<typeof streamServerMessageSchema>;
 
 export const historyOutboxUpsertPayloadSchema = z.object({
   action: z.literal("upsert"),
+  /**
+   * Retained as a stored column, but no longer a user-facing concept: one row
+   * now exists per capture, so whether it carries a translation is derivable
+   * from `translation_text` being non-null.
+   */
   type: z.enum(["transcription", "translation"]),
+  /**
+   * The `capture_id` / `origin` / `input` / `voice_id` / `mt_provider` fields
+   * are optional because the outbox is a durable queue: a payload enqueued by
+   * an older app version is still sitting in the table and must keep
+   * validating, or it would be retried to death on every drain. The drain site
+   * substitutes defaults for anything absent.
+   */
+  capture_id: z.string().nullish(),
+  origin: z.string().optional(),
+  input: z.string().optional(),
   source_lang: z.string(),
   target_lang: z.string(),
   transcript: z.string(),
   translation_text: z.string().nullable(),
   transliteration_text: z.string().nullable(),
   duration: z.number(),
-  source_app: z.string(),
-  provider: z.string(),
+  source_app: z.string().nullable().optional(),
+  voice_id: z.string().nullish(),
+  stt_provider: z.string().optional(),
+  mt_provider: z.string().nullish(),
   created_at: z.string(),
 });
 export const historyOutboxDeletePayloadSchema = z.object({

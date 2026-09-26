@@ -2,6 +2,11 @@ import { batch, observable } from "@legendapp/state";
 import * as Crypto from "expo-crypto";
 
 import { Db, type OutboxRow } from "@/services/db";
+import {
+  cloudRowToEntry,
+  historyRowToEntry,
+  legacyEntryDefaults,
+} from "@/services/historyMapper";
 import { mmkv as storage } from "@/services/mmkv";
 import {
   buildDeleteAllOutboxPayload,
@@ -11,26 +16,110 @@ import {
 } from "@/services/outboxPayload";
 
 import { historyOutboxPayloadSchema } from "@ekwe/shared";
+import type { HistoryInput, HistoryOrigin } from "@ekwe/shared";
 
 import { supabase } from "@/services/supabase";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import { EntryType, HistoryEntry, history$, auth$ } from "@/store";
 import { logger } from "@/utils";
-import { checkIsOnline, subscribeToNetwork } from "@/utils/connectivity";
+import {
+  checkIsOnline,
+  isDefinitelyOffline,
+  subscribeToNetwork,
+} from "@/utils/connectivity";
 import { HISTORY_LOCAL_TTL_DAYS } from "@/constants/retention";
+import type { HistoryWriteFields } from "@/services/outboxPayload";
 
 const INITIAL_HISTORY_SIZE = 20;
 const MAX_HISTORY_CACHE = 1000;
 const LOCAL_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const DRAIN_TIMEOUT_MS = 15_000;
+const REALTIME_RETRY_BASE_MS = 2_000;
+const REALTIME_RETRY_MAX_MS = 60_000;
+const REALTIME_MAX_RETRIES = 5;
+/**
+ * Jitter band for the realtime backoff, as a fraction of the base delay.
+ * Matches the HTTP retry loop in `utils/http.ts` so both spread reconnect
+ * storms the same way instead of each hammering on a different schedule.
+ */
+const REALTIME_RETRY_JITTER = 0.5;
+
+/**
+ * Whether a pending outbox payload is a whole-history delete.
+ *
+ * `clearAllHistory` enqueues a single row under a random UUID, so the guard for
+ * its realtime echo has to recognise the payload, not the row id.
+ */
+function isDeleteAllPayload(payload: string): boolean {
+  return readOutboxAction(payload) === "delete_all";
+}
+
+/** Whether a pending outbox payload deletes this specific row. */
+function isDeletePayloadFor(payload: string, id: string): boolean {
+  const parsed = readOutboxActionId(payload);
+  return parsed.action === "delete" && parsed.id === id;
+}
+
+function readOutboxAction(payload: string): string | null {
+  return readOutboxActionId(payload).action;
+}
+
+function readOutboxActionId(payload: string): {
+  action: string | null;
+  id?: string;
+} {
+  try {
+    const parsed = JSON.parse(payload) as { action?: string; id?: string };
+    return { action: parsed.action ?? null, id: parsed.id };
+  } catch {
+    // A malformed payload cannot be proven to be ours, so let the event
+    // through rather than silently dropping a real remote delete.
+    return { action: null };
+  }
+}
+
+/**
+ * Coerce anything thrown into a real `Error`.
+ *
+ * supabase-js rejects with a PostgREST error *plain object*
+ * (`{ message, details, hint, code }`), not an `Error`. Every
+ * `err instanceof Error` check therefore fails on the one class of failure we
+ * most want to classify, which is how a drained batch reported
+ * `Batch drain failed ` with no reason attached and skipped the timeout branch
+ * entirely. Normalising at the boundary keeps the classification honest.
+ */
+function toError(err: unknown): Error {
+  if (err instanceof Error) return err;
+  if (typeof err === "object" && err !== null) {
+    const record = err as {
+      message?: unknown;
+      code?: unknown;
+      details?: unknown;
+    };
+    if (typeof record.message === "string" && record.message) {
+      const code = typeof record.code === "string" ? ` (${record.code})` : "";
+      const error = new Error(`${record.message}${code}`);
+      if (typeof record.code === "string") {
+        (error as Error & { code?: string }).code = record.code;
+      }
+      return error;
+    }
+  }
+  if (typeof err === "string") return new Error(err);
+  return new Error(JSON.stringify(err));
+}
 
 const CLOUD_COLUMNS =
-  "id, user_id, source_lang, target_lang, transcript, translation_text, transliteration_text, duration, source_app, provider, created_at, type";
+  "id, user_id, capture_id, origin, input, source_lang, target_lang, transcript, translation_text, transliteration_text, duration, source_app, voice_id, stt_provider, mt_provider, created_at, type";
 
 type CloudRow = {
   id: string;
   user_id: string;
   created_at: string;
+  capture_id: string | null;
+  origin: string | null;
+  input: string | null;
   source_lang: string;
   target_lang: string;
   transcript: string;
@@ -38,16 +127,28 @@ type CloudRow = {
   transliteration_text: string | null;
   duration: number;
   source_app: string | null;
-  provider: string | null;
+  voice_id: string | null;
+  stt_provider: string | null;
+  mt_provider: string | null;
   type: EntryType | null;
 };
 
 class SyncServiceClass {
   private unsubscribeNetInfo: (() => void) | null = null;
-  private isDraining = false;
+  private drainQueue: Promise<void> = Promise.resolve();
   private drainTimeout: NodeJS.Timeout | null = null;
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
   private realtimeChannel: RealtimeChannel | null = null;
+  private realtimeRetryTimeout: ReturnType<typeof setTimeout> | null = null;
+  private realtimeRetryAttempt = 0;
+  private realtimeUserId: string | null = null;
+  /**
+   * Bumped on every join and on every teardown. A subscribe callback carries
+   * the generation it was created under and is ignored once it is stale, which
+   * is what stops a superseded channel from applying events or scheduling
+   * retries against the current session.
+   */
+  private realtimeGeneration = 0;
 
   pullError = observable<string | null>(null);
 
@@ -65,81 +166,118 @@ class SyncServiceClass {
     return this.drain().finally(() => this.refreshDeadCount());
   }
 
+  /**
+   * Write one capture to history, inserting or updating as needed.
+   *
+   * A capture produces exactly one row. Transcribing calls this with a null
+   * translation; translating later calls it again with the same `captureId` and
+   * the row is updated in place. Keyed on the capture rather than on the
+   * entry's text, because text cannot distinguish a capture from its own
+   * translation — they share it by definition.
+   */
   async writeHistory(
     payload: {
+      captureId: string;
+      origin: HistoryOrigin;
+      input: HistoryInput;
       sourceLang: string;
       targetLang: string;
       transcript: string;
       translation: string | null;
       transliteration: string | null;
       duration: number;
-      sourceApp: string;
-      provider: string;
+      sourceApp: string | null;
+      voiceId: string | null;
+      sttProvider: string;
+      mtProvider: string | null;
       type: EntryType;
     },
     userId: string,
   ): Promise<string> {
-    if (payload.type === "translation") {
-      const existing = Db.findTranslationByDedupKey(
-        userId,
-        payload.sourceLang,
-        payload.targetLang,
-        payload.transcript,
-      );
-      if (existing) {
-        Db.transaction(() => {
-          Db.updateTranslationRow(existing.id, {
-            translation_text: payload.translation || null,
-            transliteration_text: payload.transliteration || null,
-            duration: payload.duration,
-            source_app: payload.sourceApp,
-            provider: payload.provider,
-          });
-          Db.insertOutbox({
-            id: existing.id,
-            payload: buildUpsertOutboxPayload(
-              payload.type,
-              {
-                sourceLang: payload.sourceLang,
-                targetLang: payload.targetLang,
-                transcript: payload.transcript,
-                translation: payload.translation,
-                transliteration: payload.transliteration,
-                duration: payload.duration,
-                sourceApp: payload.sourceApp,
-                provider: payload.provider,
-              },
-              existing.createdAt,
-            ),
-            userId: userId,
-            createdAt: existing.createdAt,
-          });
-        });
+    const fields: HistoryWriteFields = {
+      sourceLang: payload.sourceLang,
+      targetLang: payload.targetLang,
+      transcript: payload.transcript,
+      translation: payload.translation,
+      transliteration: payload.transliteration,
+      duration: payload.duration,
+      sourceApp: payload.sourceApp,
+      voiceId: payload.voiceId,
+      sttProvider: payload.sttProvider,
+      mtProvider: payload.mtProvider,
+      origin: payload.origin,
+      input: payload.input,
+    };
 
-        history$[existing.id].set({
-          id: existing.id,
-          sourceLang: payload.sourceLang,
-          targetLang: payload.targetLang,
+    const translation = payload.translation || null;
+    const transliteration = payload.transliteration || null;
+
+    // Skip the lookup entirely when there is no capture id: legacy rows all
+    // share a NULL, so asking for one could only ever match a row that does
+    // not belong to this capture.
+    const existing = payload.captureId
+      ? Db.findByCaptureId(userId, payload.captureId)
+      : null;
+    if (existing) {
+      // Preserve the original capture time: a translation arriving later must
+      // not make the note look newer than it is, or it jumps to the top of a
+      // list the user is already reading.
+      const createdAt = existing.createdAt;
+
+      Db.transaction(() => {
+        Db.updateCaptureRow(existing.id, {
           transcript: payload.transcript,
-          translation: payload.translation || null,
-          transliteration: payload.transliteration || null,
+          translation_text: translation,
+          transliteration_text: transliteration,
           duration: payload.duration,
-          sourceApp: payload.sourceApp,
-          provider: payload.provider,
-          timestamp: Date.parse(existing.createdAt),
-          type: "translation",
+          source_app: payload.sourceApp,
+          voice_id: payload.voiceId,
+          stt_provider: payload.sttProvider,
+          mt_provider: payload.mtProvider,
+          origin: payload.origin,
+          input: payload.input,
         });
-
-        this.pushToCloud(existing.id, userId).catch((err) =>
-          logger.error(
-            "[Sync] pushToCloud (dedup update) failed",
-            existing.id,
-            err,
+        Db.insertOutbox({
+          id: existing.id,
+          payload: buildUpsertOutboxPayload(
+            translation ? "translation" : "transcription",
+            fields,
+            createdAt,
+            payload.captureId,
           ),
-        );
+          userId: userId,
+          createdAt: createdAt,
+        });
+      });
 
-        return existing.id;
-      }
+      history$[existing.id].set({
+        id: existing.id,
+        captureId: payload.captureId,
+        origin: payload.origin,
+        input: payload.input,
+        sourceLang: payload.sourceLang,
+        targetLang: payload.targetLang,
+        transcript: payload.transcript,
+        translation,
+        transliteration,
+        duration: payload.duration,
+        sourceApp: payload.sourceApp,
+        voiceId: payload.voiceId,
+        sttProvider: payload.sttProvider,
+        mtProvider: payload.mtProvider,
+        timestamp: Date.parse(createdAt),
+        type: translation ? "translation" : "transcription",
+      });
+
+      this.pushToCloud(existing.id, userId).catch((err) =>
+        logger.error(
+          "[Sync] pushToCloud (capture update) failed",
+          existing.id,
+          err,
+        ),
+      );
+
+      return existing.id;
     }
 
     const id = Crypto.randomUUID();
@@ -149,14 +287,19 @@ class SyncServiceClass {
       Db.insertHistory({
         id,
         userId: userId,
+        captureId: payload.captureId,
+        origin: payload.origin,
+        input: payload.input,
         sourceLang: payload.sourceLang,
         targetLang: payload.targetLang,
         transcript: payload.transcript,
-        translationText: payload.translation || null,
-        transliterationText: payload.transliteration || null,
+        translationText: translation,
+        transliterationText: transliteration,
         duration: payload.duration,
-        sourceApp: payload.sourceApp,
-        provider: payload.provider,
+        sourceApp: payload.sourceApp ?? "",
+        voiceId: payload.voiceId,
+        sttProvider: payload.sttProvider,
+        mtProvider: payload.mtProvider,
         createdAt: created_at,
         entryType: payload.type,
       });
@@ -165,17 +308,9 @@ class SyncServiceClass {
         id,
         payload: buildUpsertOutboxPayload(
           payload.type,
-          {
-            sourceLang: payload.sourceLang,
-            targetLang: payload.targetLang,
-            transcript: payload.transcript,
-            translation: payload.translation,
-            transliteration: payload.transliteration,
-            duration: payload.duration,
-            sourceApp: payload.sourceApp,
-            provider: payload.provider,
-          },
+          fields,
           created_at,
+          payload.captureId,
         ),
         userId: userId,
         createdAt: created_at,
@@ -184,14 +319,19 @@ class SyncServiceClass {
 
     const entry: HistoryEntry = {
       id,
+      captureId: payload.captureId,
+      origin: payload.origin,
+      input: payload.input,
       sourceLang: payload.sourceLang,
       targetLang: payload.targetLang,
       transcript: payload.transcript,
-      translation: payload.translation || null,
-      transliteration: payload.transliteration || null,
+      translation,
+      transliteration,
       duration: payload.duration,
       sourceApp: payload.sourceApp,
-      provider: payload.provider,
+      voiceId: payload.voiceId,
+      sttProvider: payload.sttProvider,
+      mtProvider: payload.mtProvider,
       timestamp: Date.now(),
       type: payload.type,
     };
@@ -220,23 +360,30 @@ class SyncServiceClass {
     this.scheduleDrain();
   }
 
-  async restoreHistory(entry: HistoryEntry, userId: string): Promise<void> {
+  /** Undo support: put a deleted entry back exactly as it was. */
+  async restoreHistory(rawEntry: HistoryEntry, userId: string): Promise<void> {
+    const entry = legacyEntryDefaults(rawEntry);
     const created_at = new Date(entry.timestamp).toISOString();
-    const type = entry.type ?? "transcription";
+    const type: EntryType = entry.translation ? "translation" : "transcription";
 
     Db.transaction(() => {
       Db.deleteOutboxForHistory(entry.id);
       Db.insertHistory({
         id: entry.id,
         userId: userId,
+        captureId: entry.captureId,
+        origin: entry.origin,
+        input: entry.input,
         sourceLang: entry.sourceLang,
         targetLang: entry.targetLang,
         transcript: entry.transcript,
-        translationText: entry.translation ?? null,
+        translationText: entry.translation,
         transliterationText: entry.transliteration ?? null,
         duration: entry.duration,
         sourceApp: entry.sourceApp ?? "",
-        provider: entry.provider ?? "",
+        voiceId: entry.voiceId,
+        sttProvider: entry.sttProvider,
+        mtProvider: entry.mtProvider,
         createdAt: created_at,
         entryType: type,
       });
@@ -248,13 +395,18 @@ class SyncServiceClass {
             sourceLang: entry.sourceLang,
             targetLang: entry.targetLang,
             transcript: entry.transcript,
-            translation: entry.translation ?? null,
+            translation: entry.translation,
             transliteration: entry.transliteration ?? null,
             duration: entry.duration,
-            sourceApp: entry.sourceApp ?? "",
-            provider: entry.provider ?? "",
+            sourceApp: entry.sourceApp,
+            voiceId: entry.voiceId,
+            sttProvider: entry.sttProvider,
+            mtProvider: entry.mtProvider,
+            origin: entry.origin,
+            input: entry.input,
           },
           created_at,
+          entry.captureId,
         ),
         userId: userId,
         createdAt: created_at,
@@ -344,29 +496,34 @@ class SyncServiceClass {
           .from("history")
           .delete()
           .eq("id", targetId);
-        if (error) throw error;
+        if (error) throw toError(error);
       } else if (payload.action === "delete_all") {
         const { error } = await supabase
           .from("history")
           .delete()
           .eq("user_id", row.userId);
-        if (error) throw error;
+        if (error) throw toError(error);
       } else {
         const { error } = await supabase.from("history").upsert({
           id: row.id,
           user_id: row.userId,
           type: payload.type,
+          capture_id: payload.capture_id ?? null,
+          origin: payload.origin ?? "echo",
+          input: payload.input ?? "audio",
           source_lang: payload.source_lang,
           target_lang: payload.target_lang,
           transcript: payload.transcript,
           translation_text: payload.translation_text,
           transliteration_text: payload.transliteration_text,
           duration: payload.duration,
-          source_app: payload.source_app,
-          provider: payload.provider,
+          source_app: payload.source_app ?? "",
+          voice_id: payload.voice_id ?? null,
+          stt_provider: payload.stt_provider ?? "",
+          mt_provider: payload.mt_provider ?? null,
           created_at: payload.created_at,
         });
-        if (error) throw error;
+        if (error) throw toError(error);
       }
 
       Db.deleteOutbox(id);
@@ -378,11 +535,21 @@ class SyncServiceClass {
     }
   }
 
-  async drain(): Promise<void> {
-    if (this.isDraining) return;
-    this.isDraining = true;
+  drain(): Promise<void> {
+    const next = this.drainQueue.then(
+      () => this.runDrain(),
+      () => this.runDrain(),
+    );
+    this.drainQueue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
 
+  private async runDrain(): Promise<void> {
     let entries: OutboxRow[] = [];
+    const attempted = new Set<string>();
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), DRAIN_TIMEOUT_MS);
 
@@ -420,6 +587,7 @@ class SyncServiceClass {
             );
           }
           const payload = parsed.data;
+          attempted.add(entry.id);
           if (payload.action === "delete_all") {
             deleteAll = true;
           } else if (payload.action === "delete") {
@@ -429,14 +597,24 @@ class SyncServiceClass {
               id: entry.id,
               user_id: entry.userId,
               type: payload.type,
+              // A payload enqueued by an older app version has no capture
+              // metadata. Fall back to the legacy shape rather than dropping
+              // the row: `source_app` may hold an in-app sentinel that we no
+              // longer write, and `origin` defaults to echo, which is correct
+              // for every row that path produced.
+              capture_id: payload.capture_id ?? null,
+              origin: payload.origin ?? "echo",
+              input: payload.input ?? "audio",
               source_lang: payload.source_lang,
               target_lang: payload.target_lang,
               transcript: payload.transcript,
               translation_text: payload.translation_text,
               transliteration_text: payload.transliteration_text,
               duration: payload.duration,
-              source_app: payload.source_app,
-              provider: payload.provider,
+              source_app: payload.source_app ?? "",
+              voice_id: payload.voice_id ?? null,
+              stt_provider: payload.stt_provider ?? "",
+              mt_provider: payload.mt_provider ?? null,
               created_at: payload.created_at,
             });
           }
@@ -452,7 +630,7 @@ class SyncServiceClass {
           .delete()
           .eq("user_id", userId)
           .abortSignal(controller.signal);
-        if (error) throw error;
+        if (error) throw toError(error);
       }
 
       if (toDelete.length > 0) {
@@ -461,7 +639,7 @@ class SyncServiceClass {
           .delete()
           .in("id", toDelete)
           .abortSignal(controller.signal);
-        if (error) throw error;
+        if (error) throw toError(error);
       }
 
       if (toUpsert.length > 0) {
@@ -469,7 +647,7 @@ class SyncServiceClass {
           .from("history")
           .upsert(toUpsert)
           .abortSignal(controller.signal);
-        if (error) throw error;
+        if (error) throw toError(error);
       }
 
       for (const entry of entries) {
@@ -482,22 +660,20 @@ class SyncServiceClass {
         toDelete.length,
         "deletes.",
       );
-    } catch (err) {
-      const isTimeout = err instanceof Error && err.name === "AbortError";
+    } catch (rawErr) {
+      const err = toError(rawErr);
+      const isTimeout = err.name === "AbortError";
       logger.error(
         isTimeout
           ? "[Sync] Batch drain timed out, reverting in-flight rows"
           : "[Sync] Batch drain failed",
         err,
       );
-      for (const entry of entries) {
-        if (entry.status === "in_flight") {
-          Db.incrementOutboxRetry(entry.id);
-        }
+      for (const id of attempted) {
+        Db.incrementOutboxRetry(id);
       }
     } finally {
       clearTimeout(timeoutId);
-      this.isDraining = false;
       this.refreshDeadCount();
     }
   }
@@ -526,7 +702,7 @@ class SyncServiceClass {
         }
 
         const { data, error } = await query;
-        if (error) throw error;
+        if (error) throw toError(error);
         if (!data || data.length === 0) break;
 
         const ttlCutoff =
@@ -538,53 +714,56 @@ class SyncServiceClass {
               continue;
             }
 
+            const entry = cloudRowToEntry(row);
+            const pending = Db.getPendingOutbox(userId).find(
+              (r) => r.id === row.id,
+            );
+
             Db.insertHistory({
-              id: row.id,
+              id: entry.id,
               userId: row.user_id,
-              sourceLang: row.source_lang,
-              targetLang: row.target_lang,
-              transcript: row.transcript,
-              translationText: row.translation_text,
-              transliterationText: row.transliteration_text,
-              duration: row.duration || 0,
-              sourceApp: row.source_app || "",
-              provider: row.provider || "",
+              captureId: entry.captureId,
+              origin: entry.origin,
+              input: entry.input,
+              sourceLang: entry.sourceLang,
+              targetLang: entry.targetLang,
+              transcript: entry.transcript,
+              translationText: entry.translation,
+              transliterationText: entry.transliteration,
+              duration: entry.duration,
+              sourceApp: entry.sourceApp ?? "",
+              voiceId: entry.voiceId,
+              sttProvider: entry.sttProvider,
+              mtProvider: entry.mtProvider,
               createdAt: row.created_at,
-              entryType: row.type || "transcription",
+              entryType: entry.type ?? "transcription",
             });
 
             if (!history$[row.id].get()) {
+              history$[row.id].set(entry);
+            } else if (!pending) {
+              // Keep whatever the local capture recorded about where it came
+              // from, and take the cloud's text — a translation may have been
+              // added on another device.
               history$[row.id].set({
-                id: row.id,
-                sourceLang: row.source_lang,
-                targetLang: row.target_lang,
-                transcript: row.transcript,
-                translation: row.translation_text,
-                transliteration: row.transliteration_text,
-                duration: row.duration || 0,
-                sourceApp: row.source_app || "",
-                provider: row.provider || "",
-                timestamp: new Date(row.created_at).getTime(),
-                type: row.type || "transcription",
+                ...history$[row.id].get(),
+                transcript: entry.transcript,
+                translation: entry.translation,
+                transliteration: entry.transliteration,
+                mtProvider: entry.mtProvider,
               });
-            } else {
-              const pending = Db.getPendingOutbox(userId).find(
-                (r) => r.id === row.id,
-              );
-              if (!pending) {
-                history$[row.id].set({
-                  ...history$[row.id].get(),
-                  translation: row.translation_text,
-                  transliteration: row.transliteration_text,
-                });
-                Db.updateTranslationRow(row.id, {
-                  translation_text: row.translation_text,
-                  transliteration_text: row.transliteration_text,
-                  duration: row.duration || 0,
-                  source_app: row.source_app || "",
-                  provider: row.provider || "",
-                });
-              }
+              Db.updateCaptureRow(row.id, {
+                transcript: entry.transcript,
+                translation_text: entry.translation,
+                transliteration_text: entry.transliteration ?? null,
+                duration: entry.duration,
+                source_app: entry.sourceApp,
+                voice_id: entry.voiceId,
+                stt_provider: entry.sttProvider,
+                mt_provider: entry.mtProvider,
+                origin: entry.origin,
+                input: entry.input,
+              });
             }
           }
         });
@@ -603,12 +782,10 @@ class SyncServiceClass {
         this.trimHistoryWindow();
         logger.info("[Sync] Pulled", totalPulled, "entries from cloud");
       }
-    } catch (err) {
-      this.pullError.set(err instanceof Error ? err.message : String(err));
-      logger.error(
-        "[Sync] Pull from cloud failed",
-        err instanceof Error ? err : JSON.stringify(err),
-      );
+    } catch (rawErr) {
+      const err = toError(rawErr);
+      this.pullError.set(err.message);
+      logger.error("[Sync] Pull from cloud failed", err);
     }
   }
 
@@ -634,21 +811,9 @@ class SyncServiceClass {
         .order("id", { ascending: false })
         .limit(limit);
 
-      if (error) throw error;
+      if (error) throw toError(error);
 
-      return (data ?? []).map((row: CloudRow) => ({
-        id: row.id,
-        sourceLang: row.source_lang,
-        targetLang: row.target_lang,
-        transcript: row.transcript,
-        translation: row.translation_text,
-        transliteration: row.transliteration_text,
-        duration: row.duration || 0,
-        sourceApp: row.source_app || "",
-        provider: row.provider || "",
-        timestamp: new Date(row.created_at).getTime(),
-        type: row.type || "transcription",
-      }));
+      return (data ?? []).map((row: CloudRow) => cloudRowToEntry(row));
     } catch (err) {
       logger.error("[Sync] fetchOlderHistory failed", err);
       return [];
@@ -692,19 +857,7 @@ class SyncServiceClass {
     if (!userId) return;
     const rows = Db.getRecentHistory(userId, INITIAL_HISTORY_SIZE);
     for (const row of rows) {
-      history$[row.id].set({
-        id: row.id,
-        sourceLang: row.sourceLang,
-        targetLang: row.targetLang,
-        transcript: row.transcript,
-        translation: row.translationText,
-        transliteration: row.transliterationText,
-        duration: row.duration,
-        sourceApp: row.sourceApp,
-        provider: row.provider,
-        timestamp: new Date(row.createdAt).getTime(),
-        type: (row.entryType as EntryType) ?? "transcription",
-      });
+      history$[row.id].set(historyRowToEntry(row));
     }
   }
 
@@ -730,8 +883,18 @@ class SyncServiceClass {
     }
 
     this.unsubscribeNetInfo = subscribeToNetwork((isOnline) => {
-      if (isOnline) {
-        this.scheduleDrain();
+      if (!isOnline) return;
+      this.scheduleDrain();
+      // Reconnecting is a fresh start for realtime. The reason we are not
+      // subscribed is most likely the outage we just sat through, so reset the
+      // retry budget instead of waiting for the next sign-in — otherwise the
+      // retry cap is spent during one bad network window and the client stays
+      // pull-only for the rest of the session.
+      const userId = this.realtimeUserId;
+      if (userId) {
+        this.startRealtimeListener(userId).catch((err) =>
+          logger.error("[Sync] Realtime join after reconnect failed", err),
+        );
       }
     });
 
@@ -742,7 +905,9 @@ class SyncServiceClass {
 
   onUserSignedIn(userId: string): void {
     this.loadInitialHistory(userId);
-    this.startRealtimeListener(userId);
+    this.startRealtimeListener(userId).catch((err) =>
+      logger.error("[Sync] onUserSignedIn realtime subscribe failed", err),
+    );
     this.pullFromCloud(userId).catch((err) =>
       logger.error("[Sync] onUserSignedIn pullFromCloud failed", err),
     );
@@ -751,14 +916,76 @@ class SyncServiceClass {
     );
   }
 
+  onUserSignedOut(): void {
+    this.stopRealtimeListener();
+    this.deadCount.set(0);
+  }
+
   /**
    * Subscribe to Supabase Realtime for instant cross-device sync.
    * When another device inserts, updates, or deletes a history row,
    * the change is applied to the local SQLite DB and Legend State
    * store immediately — no polling required.
    */
-  private startRealtimeListener(userId: string): void {
-    this.stopRealtimeListener();
+  private async startRealtimeListener(userId: string): Promise<void> {
+    // Only a genuine sign-in clears the failure history. The retry timer calls
+    // `joinRealtime` directly precisely so that it does NOT reset this counter
+    // and the backoff keeps growing across attempts.
+    //
+    // The pending timer is dropped here too. It only gets cleared on a
+    // successful SUBSCRIBED, so without this a timer left over from an earlier
+    // failure could fire against the counter this method is about to reset and
+    // restart the backoff at the floor — the same class of bug this split was
+    // meant to close.
+    this.clearRealtimeRetry();
+    this.realtimeRetryAttempt = 0;
+    await this.joinRealtime(userId);
+  }
+
+  /**
+   * Join, or re-join, the realtime channel.
+   *
+   * Must not touch `realtimeRetryAttempt` — see `startRealtimeListener`.
+   */
+  private async joinRealtime(userId: string): Promise<void> {
+    const generation = ++this.realtimeGeneration;
+
+    // Claimed before the await so a sign-out landing mid-handshake cancels the
+    // join instead of leaving a channel subscribed behind a dead session.
+    this.realtimeUserId = userId;
+
+    // `removeChannel` is async. Awaiting it before subscribing is what keeps
+    // two channels from being live at once: a second subscribed channel
+    // receives every broadcast, so each row would be applied — and logged —
+    // once per channel. Re-joining without awaiting is what produced duplicate
+    // DELETE handling.
+    const detached = this.teardownRealtimeChannel();
+    if (detached) await detached;
+    if (!this.isCurrentRealtimeJoin(userId, generation)) return;
+
+    // Realtime authorizes postgres_changes from the JWT on the socket. If we
+    // join without a session, supabase-js falls back to the anon key
+    // (_getAccessToken -> ?? this.supabaseKey), the server authorizes the
+    // subscription as `anon`, RLS denies it, and the channel errors out. So
+    // only ever join with a real access token, and set it explicitly rather
+    // than relying on listener ordering with onAuthStateChange.
+    const { data } = await supabase.auth.getSession();
+    if (!this.isCurrentRealtimeJoin(userId, generation)) {
+      logger.info("[Sync] Realtime join cancelled — signed out mid-handshake");
+      return;
+    }
+
+    const token = data.session?.access_token;
+    if (!token) {
+      logger.info(
+        "[Sync] Skipping realtime subscribe — no session yet for",
+        userId,
+      );
+      return;
+    }
+
+    await supabase.realtime.setAuth(token);
+    if (!this.isCurrentRealtimeJoin(userId, generation)) return;
 
     this.realtimeChannel = supabase
       .channel(`history:${userId}`)
@@ -776,34 +1003,28 @@ class SyncServiceClass {
           const pending = Db.getPendingOutbox(userId);
           if (pending.some((p) => p.id === row.id)) return;
 
+          const entry = cloudRowToEntry(row);
           Db.insertHistory({
-            id: row.id,
+            id: entry.id,
             userId: row.user_id,
-            sourceLang: row.source_lang,
-            targetLang: row.target_lang,
-            transcript: row.transcript,
-            translationText: row.translation_text,
-            transliterationText: row.transliteration_text,
-            duration: row.duration || 0,
-            sourceApp: row.source_app || "",
-            provider: row.provider || "",
+            captureId: entry.captureId,
+            origin: entry.origin,
+            input: entry.input,
+            sourceLang: entry.sourceLang,
+            targetLang: entry.targetLang,
+            transcript: entry.transcript,
+            translationText: entry.translation,
+            transliterationText: entry.transliteration,
+            duration: entry.duration,
+            sourceApp: entry.sourceApp ?? "",
+            voiceId: entry.voiceId,
+            sttProvider: entry.sttProvider,
+            mtProvider: entry.mtProvider,
             createdAt: row.created_at,
-            entryType: row.type || "transcription",
+            entryType: entry.type ?? "transcription",
           });
 
-          history$[row.id].set({
-            id: row.id,
-            sourceLang: row.source_lang,
-            targetLang: row.target_lang,
-            transcript: row.transcript,
-            translation: row.translation_text,
-            transliteration: row.transliteration_text,
-            duration: row.duration || 0,
-            sourceApp: row.source_app || "",
-            provider: row.provider || "",
-            timestamp: new Date(row.created_at).getTime(),
-            type: row.type || "transcription",
-          });
+          history$[row.id].set(entry);
           logger.info("[Sync] Realtime INSERT received", row.id);
         },
       )
@@ -820,26 +1041,29 @@ class SyncServiceClass {
           const pending = Db.getPendingOutbox(userId);
           if (pending.some((p) => p.id === row.id)) return;
 
-          Db.updateTranslationRow(row.id, {
-            translation_text: row.translation_text,
-            transliteration_text: row.transliteration_text,
-            duration: row.duration || 0,
-            source_app: row.source_app || "",
-            provider: row.provider || "",
+          const entry = cloudRowToEntry(row);
+          // A translation added on another device. Preserve the local origin
+          // and capture time — the cloud row knows them, but a legacy row's
+          // default is not worth overwriting a real value with.
+          const existing = history$[row.id].get();
+          history$[row.id].set({
+            ...entry,
+            origin: existing?.origin ?? entry.origin,
+            captureId: existing?.captureId ?? entry.captureId,
+            timestamp: existing?.timestamp ?? entry.timestamp,
           });
 
-          history$[row.id].set({
-            id: row.id,
-            sourceLang: row.source_lang,
-            targetLang: row.target_lang,
-            transcript: row.transcript,
-            translation: row.translation_text,
-            transliteration: row.transliteration_text,
-            duration: row.duration || 0,
-            sourceApp: row.source_app || "",
-            provider: row.provider || "",
-            timestamp: new Date(row.created_at).getTime(),
-            type: row.type || "transcription",
+          Db.updateCaptureRow(row.id, {
+            transcript: entry.transcript,
+            translation_text: entry.translation,
+            transliteration_text: entry.transliteration ?? null,
+            duration: entry.duration,
+            source_app: entry.sourceApp,
+            voice_id: entry.voiceId,
+            stt_provider: entry.sttProvider,
+            mt_provider: entry.mtProvider,
+            origin: entry.origin,
+            input: entry.input,
           });
           logger.info("[Sync] Realtime UPDATE received", row.id);
         },
@@ -855,21 +1079,165 @@ class SyncServiceClass {
         (payload) => {
           const oldRow = payload.old as { id?: string };
           if (!oldRow.id) return;
-          Db.deleteHistory(oldRow.id);
-          history$[oldRow.id].delete();
-          logger.info("[Sync] Realtime DELETE received", oldRow.id);
+          const deletedId = oldRow.id;
+          // Same echo guard the INSERT/UPDATE handlers use, but keyed on the
+          // outbox payload rather than the row id. `clearAllHistory` enqueues
+          // one outbox row under a random UUID carrying `delete_all`, so
+          // `p.id === oldRow.id` can never match it — yet its own DELETE
+          // broadcast comes back to us for every row it removed. Re-applying
+          // those is redundant work against rows the local purge already
+          // removed, so skip them while the delete is still in flight.
+          const pending = Db.getPendingOutbox(userId);
+          if (
+            pending.some(
+              (p) =>
+                p.id === deletedId ||
+                isDeleteAllPayload(p.payload) ||
+                isDeletePayloadFor(p.payload, deletedId),
+            )
+          ) {
+            return;
+          }
+          Db.deleteHistory(deletedId);
+          history$[deletedId].delete();
+          logger.info("[Sync] Realtime DELETE received", deletedId);
         },
       )
-      .subscribe((status) => {
+      .subscribe((status, err) => {
+        // A superseded channel still has callbacks owed to it. Acting on them
+        // would apply events for the wrong session and spend retry budget that
+        // belongs to the channel that is actually live.
+        if (generation !== this.realtimeGeneration) {
+          logger.info(
+            "[Sync] Ignoring status from superseded realtime channel:",
+            status,
+          );
+          return;
+        }
         logger.info("[Sync] Realtime subscription status:", status);
+        if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
+          this.realtimeRetryAttempt = 0;
+          this.clearRealtimeRetry();
+          return;
+        }
+        // CLOSED joins CHANNEL_ERROR and TIMED_OUT as recoverable. The usual
+        // causes are a transient socket failure, a token that expired between
+        // setAuth and join, or the realtime server not being reachable yet at
+        // cold start. Back off and re-join so a dropped socket does not
+        // silently downgrade the client to pull-only sync. CLOSED used to fall
+        // through unmatched, so that downgrade was permanent and silent.
+        if (
+          status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR ||
+          status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT ||
+          status === REALTIME_SUBSCRIBE_STATES.CLOSED
+        ) {
+          logger.error(
+            "[Sync] Realtime subscribe failed:",
+            status,
+            err instanceof Error ? err.message : String(err ?? ""),
+          );
+          this.scheduleRealtimeRetry();
+        }
       });
   }
 
-  private stopRealtimeListener(): void {
-    if (this.realtimeChannel) {
-      supabase.removeChannel(this.realtimeChannel);
-      this.realtimeChannel = null;
+  /**
+   * True while `generation` is still the newest join and `userId` is still the
+   * signed-in user. Guards every await boundary in the handshake.
+   */
+  private isCurrentRealtimeJoin(userId: string, generation: number): boolean {
+    return (
+      this.realtimeUserId === userId && this.realtimeGeneration === generation
+    );
+  }
+
+  /**
+   * Remove the current channel, if any, and hand back the detach promise.
+   *
+   * Returns `null` when there was nothing to remove, so the common first-join
+   * path stays synchronous up to the next real await instead of paying a
+   * microtask tick for an empty teardown.
+   *
+   * Does not bump the generation or clear `realtimeUserId` — the caller owns
+   * that decision, because a re-join must be able to keep its own generation.
+   */
+  private teardownRealtimeChannel(): Promise<void> | null {
+    const channel = this.realtimeChannel;
+    this.realtimeChannel = null;
+    if (!channel) return null;
+    // `Promise.resolve` is load-bearing, not ceremony: `removeChannel` can hand
+    // back a non-promise (or nothing at all) for an already-detached channel,
+    // and calling `.catch` on that throws inside the teardown.
+    //
+    // The cast keeps the resolved value out of the signature without a trailing
+    // `.then`, which would add a microtask to every re-join's teardown.
+    return Promise.resolve(supabase.removeChannel(channel)).catch((err) => {
+      // A channel that refuses to detach must not abort the re-join; the
+      // generation guard already neutralises its callbacks.
+      logger.warn("[Sync] removeChannel failed, continuing", err);
+    }) as Promise<void>;
+  }
+
+  private clearRealtimeRetry(): void {
+    if (this.realtimeRetryTimeout) {
+      clearTimeout(this.realtimeRetryTimeout);
+      this.realtimeRetryTimeout = null;
     }
+  }
+
+  private scheduleRealtimeRetry(): void {
+    if (this.realtimeRetryTimeout) return;
+    const userId = this.realtimeUserId;
+    if (!userId) return;
+
+    // Being offline is not a provider failure, and spending a retry on a dead
+    // network only walks us toward the cap while the user is in a tunnel. The
+    // network subscription re-arms realtime on reconnect.
+    if (isDefinitelyOffline()) {
+      logger.info(
+        "[Sync] Offline — holding realtime retry until reconnect rather than spending the budget",
+      );
+      return;
+    }
+
+    this.realtimeRetryAttempt += 1;
+    if (this.realtimeRetryAttempt > REALTIME_MAX_RETRIES) {
+      logger.error(
+        "[Sync] Realtime gave up after",
+        REALTIME_MAX_RETRIES,
+        "attempts — history will sync on next sign-in or pull",
+      );
+      return;
+    }
+
+    const base = Math.min(
+      REALTIME_RETRY_BASE_MS * 2 ** (this.realtimeRetryAttempt - 1),
+      REALTIME_RETRY_MAX_MS,
+    );
+    const delay = Math.round(
+      base *
+        (1 - REALTIME_RETRY_JITTER + Math.random() * REALTIME_RETRY_JITTER),
+    );
+    logger.info("[Sync] Retrying realtime subscribe in", delay, "ms");
+    this.realtimeRetryTimeout = setTimeout(() => {
+      this.realtimeRetryTimeout = null;
+      if (this.realtimeUserId !== userId) return;
+      // `joinRealtime`, not `startRealtimeListener`: resetting the counter here
+      // is what pinned the delay at 2s forever and made the cap unreachable.
+      this.joinRealtime(userId).catch((err) =>
+        logger.error("[Sync] Realtime retry failed", err),
+      );
+    }, delay);
+  }
+
+  private stopRealtimeListener(): void {
+    this.clearRealtimeRetry();
+    // Invalidate in-flight joins and any callback the outgoing channel still
+    // owes us, so a sign-out cannot be undone by a late subscribe status.
+    this.realtimeGeneration += 1;
+    this.realtimeUserId = null;
+    this.realtimeRetryAttempt = 0;
+    void this.teardownRealtimeChannel();
   }
 
   stop(): void {

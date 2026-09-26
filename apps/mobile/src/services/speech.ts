@@ -1,5 +1,7 @@
 import { File, Paths } from "expo-file-system";
 
+import type { z } from "zod";
+
 import {
   synthesizeResponseSchema,
   WORKER_ERROR_CODES,
@@ -16,7 +18,13 @@ import { Result, ok, err } from "@/types/Result";
 import { base64ToBytes } from "@/utils/base64";
 import logger from "@/utils/logger";
 import { isDefinitelyOffline } from "@/utils/connectivity";
-import { getWorkerUrl, isTimeoutError, mapWorkerError } from "@/utils/http";
+import { headerValue, parseServerTiming } from "@/utils/perfSpan";
+import {
+  fetchWithRetry,
+  getWorkerUrl,
+  isTimeoutError,
+  mapWorkerError,
+} from "@/utils/http";
 
 const SPEECH_TEXT_TIMEOUT_MS = 26_000;
 const SPEECH_AUDIO_TIMEOUT_MS = 28_000;
@@ -33,6 +41,44 @@ export interface SynthesizedAudio {
   sourceLang?: string;
   targetLang?: string;
   translated?: boolean;
+  /**
+   * The text that was spoken — the user's input, or the transcript of their
+   * audio. Null only when talking to a worker that predates the field.
+   */
+  transcript?: string | null;
+  /** The translation that was rendered, when one was produced. */
+  translation?: string | null;
+}
+
+/**
+ * Resolves synthesised audio from whichever form the worker chose to send.
+ *
+ * Newer workers hand back a URL into the speech cache, which keeps the response
+ * small and skips a base64 round trip. Older ones — and any client that asked
+ * for the inline form — send the bytes directly. Both have to work, because the
+ * app and the worker are deployed independently and neither can be forced on
+ * the other.
+ */
+async function resolveSynthAudioBytes(
+  data: z.infer<typeof synthesizeResponseSchema>,
+): Promise<Uint8Array | null> {
+  if (data.audioBase64) return base64ToBytes(data.audioBase64);
+  if (!data.audioUrl) return null;
+
+  // The worker returns a path so it never has to trust a forwarded host. Join it
+  // onto the same base every other request uses.
+  const base = getWorkerUrl();
+  const url = data.audioUrl.startsWith("http")
+    ? data.audioUrl
+    : `${base.replace(/\/$/, "")}${data.audioUrl}`;
+
+  const res = await fetchWithRetry(url, { method: "GET" });
+  if (!res.ok) {
+    logger.warn("[speech] audio fetch failed", res.status, url);
+    return null;
+  }
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  return bytes.byteLength > 0 ? bytes : null;
 }
 
 const getExtension = (mime: string): string =>
@@ -176,13 +222,24 @@ export async function synthesizeSpeech(
       return err(EkweError.SPEECH_FAIL);
     }
 
-    const rawUri = await writeAudioFile(
-      base64ToBytes(parsed.data.audioBase64),
-      parsed.data.mime,
-    );
+    const audioBytes = await resolveSynthAudioBytes(parsed.data);
+    if (!audioBytes) return err(EkweError.SPEECH_FAIL);
+
+    const rawUri = await writeAudioFile(audioBytes, parsed.data.mime);
     if (!rawUri) return err(EkweError.SPEECH_FAIL);
 
-    return ok(await normalizeSynthAudio(rawUri));
+    const normalized = await normalizeSynthAudio(rawUri);
+    return ok({
+      ...normalized,
+      sourceLang: parsed.data.sourceLang,
+      targetLang: parsed.data.targetLang,
+      translated: parsed.data.translated,
+      // The worker understood this text on our behalf to render it. Returning
+      // it costs no extra inference and is the only way Studio can archive
+      // what the user said or typed.
+      transcript: parsed.data.transcript ?? null,
+      translation: parsed.data.translation ?? null,
+    });
   } catch (e: unknown) {
     if (e instanceof Error && e.name === "AbortError") {
       logger.info("[speech] Request was aborted");
@@ -235,6 +292,8 @@ export async function synthesizeAudio(
     const extension = audio.uri.split(".").pop()?.toLowerCase() || "m4a";
     const token = await getAccessToken();
 
+    const requestStart = Date.now();
+
     const parameters: Record<string, string> = {
       lang: sourceLang || "auto",
       targetLang,
@@ -253,6 +312,18 @@ export async function synthesizeAudio(
       onProgress: options?.onProgress,
       timeoutMs: SPEECH_AUDIO_TIMEOUT_MS,
     });
+
+    if (__DEV__) {
+      const serverTiming = parseServerTiming(
+        headerValue(upload.headers, "server-timing"),
+      );
+      const stages = Object.entries(serverTiming)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(" ");
+      if (stages) logger.info(`[Perf] synth server: ${stages}`);
+    }
+
+    const responseAt = Date.now();
 
     if (upload.status >= 400) {
       let errorCode = "EKWE_SPEECH_FAIL";
@@ -288,13 +359,20 @@ export async function synthesizeAudio(
     }
 
     const data = parsed.data;
-    const rawUri = await writeAudioFile(
-      base64ToBytes(data.audioBase64),
-      data.mime,
-    );
+    const audioBytes = await resolveSynthAudioBytes(data);
+    if (!audioBytes) return err(EkweError.SPEECH_FAIL);
+
+    const rawUri = await writeAudioFile(audioBytes, data.mime);
     if (!rawUri) return err(EkweError.SPEECH_FAIL);
 
     const normalized = await normalizeSynthAudio(rawUri);
+
+    if (__DEV__) {
+      const writeMs = Date.now() - responseAt;
+      logger.info(
+        `[Perf] synth client: write+normalize ${writeMs}ms, total ${Date.now() - requestStart}ms`,
+      );
+    }
 
     return ok({
       uri: normalized.uri,
@@ -303,6 +381,8 @@ export async function synthesizeAudio(
       sourceLang: data.sourceLang,
       targetLang: data.targetLang,
       translated: data.translated,
+      transcript: data.transcript ?? null,
+      translation: data.translation ?? null,
     });
   } catch (e: unknown) {
     if (isTimeoutError(e)) {

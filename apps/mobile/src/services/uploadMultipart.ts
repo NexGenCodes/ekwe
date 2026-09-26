@@ -21,7 +21,7 @@ export async function uploadMultipart(
   file: ExpoFile,
   url: string,
   opts: UploadMultipartOptions,
-): Promise<{ status: number; body: string }> {
+): Promise<{ status: number; body: string; headers: Record<string, string> }> {
   const retries = 2;
   const timeoutMs =
     opts.timeoutMs ??
@@ -57,7 +57,11 @@ export async function uploadMultipart(
           : undefined,
       });
       const result = await task.uploadAsync();
-      return { status: result.status, body: result.body };
+      return {
+        status: result.status,
+        body: result.body,
+        headers: result.headers ?? {},
+      };
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error(String(err));
       lastError = error;

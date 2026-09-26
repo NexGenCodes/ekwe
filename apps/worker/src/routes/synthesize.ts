@@ -4,12 +4,15 @@ import {
   synthesizeRequestSchema,
   synthesizeResponseSchema,
   translateResponseSchema,
-  VOICE_IDS,
-  getVoiceById,
+  VOICE_SLOT_IDS,
+  getStandardSlot,
+  getVoiceSlot,
   getLanguageName,
 } from "@ekwe/shared";
 import { logger } from "@/core/logger";
+import { RequestTimings } from "@/core/timing";
 import { getProviderModule, getProviderNamesFor } from "@/providers";
+import { pipelineTierForSlot, resolveExecutionTier } from "@/core/voices";
 import {
   SPEECH_PIPELINE_TOTAL_MS,
   SYNTHESIZE_TOTAL_MS,
@@ -118,12 +121,12 @@ async function reserveSpeechGate(
 
 function guardVoiceEntitlement(
   voiceId: string | undefined,
-  tier: Tier,
+  entitlementTier: Tier,
   isPreview: boolean,
 ): Response | null {
-  if (isPreview || !voiceId || tier !== "FREE") return null;
-  const voice = getVoiceById(voiceId);
-  if (voice?.tier === "pro") {
+  if (isPreview || !voiceId || entitlementTier !== "FREE") return null;
+  const slot = getVoiceSlot(voiceId);
+  if (slot?.tier === "pro") {
     return Response.json(
       {
         error: WORKER_ERROR_CODES.PREMIUM_FEATURE_REQUIRED,
@@ -334,6 +337,15 @@ interface ResponseMeta {
   targetLang: string;
   translated: boolean;
   voiceId: string | undefined;
+  /**
+   * The text as the user gave it to us — the typed text, or the transcript of
+   * the uploaded audio. Reported back so the client can archive what it paid
+   * to have understood; previously this was computed and then discarded, which
+   * is why Speech Studio could not write to History at all.
+   */
+  transcript: string;
+  /** The translated text when one was produced, otherwise null. */
+  translation: string | null;
 }
 
 function wavDurationMs(audio: Uint8Array): number | undefined {
@@ -344,12 +356,35 @@ function wavDurationMs(audio: Uint8Array): number | undefined {
   return Math.round((audio.byteLength / byteRate) * 1000);
 }
 
+interface SpeechDelivery {
+  /** Absent when the cache key could not be built, which forces inline audio. */
+  cacheKey: string;
+  preferBase64: boolean;
+}
+
+/**
+ * The multipart path has no JSON body to carry `preferBase64`, so it takes the
+ * opt-out as a query flag instead. Anything that does not ask for it gets the
+ * URL response.
+ */
+function wantsInlineAudio(request: Request): boolean {
+  return new URL(request.url).searchParams.get("inline") === "1";
+}
+
 function buildSpeechResponse(
   result: SpeechResult,
   meta: ResponseMeta,
+  delivery: SpeechDelivery,
 ): Response {
+  // Default to the URL. Base64 inflates the body by a third and burns CPU
+  // re-encoding bytes the client is about to decode again, so it is only
+  // inlined when the client asked for it or when there is no key to address.
+  const useUrl = !delivery.preferBase64 && delivery.cacheKey.length > 0;
+
   const response = synthesizeResponseSchema.parse({
-    audioBase64: bytesToBase64(result.audio),
+    ...(useUrl
+      ? { audioUrl: `/speech/${delivery.cacheKey}` }
+      : { audioBase64: bytesToBase64(result.audio) }),
     mime: result.mime,
     sourceLang: meta.sourceLang,
     targetLang: meta.targetLang,
@@ -358,6 +393,8 @@ function buildSpeechResponse(
     durationMs: result.mime.includes("wav")
       ? wavDurationMs(result.audio)
       : undefined,
+    transcript: meta.transcript,
+    translation: meta.translation,
   });
   return Response.json(response);
 }
@@ -365,9 +402,9 @@ function buildSpeechResponse(
 interface FinishSpeechOptions {
   spokenText: string;
   spokenLang: string;
-  gender: "male" | "female";
+  /** Undefined when the client has not chosen a gender. */
+  gender: "male" | "female" | undefined;
   voiceId: string | undefined;
-  tier: Tier;
   jwtTier: Tier;
   env: Env;
   signal: AbortSignal;
@@ -376,7 +413,14 @@ interface FinishSpeechOptions {
   sessionId: string | null;
   isPreview: boolean;
   remainingMs: () => number;
+  timings: RequestTimings;
   meta: ResponseMeta;
+  /**
+   * Set by clients that predate the URL response. When they ask for inline
+   * audio the cache write can be deferred, because nothing in the response
+   * depends on the object existing yet.
+   */
+  preferBase64: boolean;
 }
 
 async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
@@ -385,7 +429,6 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     spokenLang,
     gender,
     voiceId,
-    tier,
     jwtTier,
     env,
     signal,
@@ -394,7 +437,9 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     sessionId,
     isPreview,
     remainingMs,
+    timings,
     meta,
+    preferBase64,
   } = options;
 
   let cleanSpoken = sanitizeTranslationText(spokenText);
@@ -425,59 +470,160 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
   }
   if (signal.aborted) throw new Error(CLIENT_ABORTED);
 
-  let effectiveTier = tier;
+  // Entitlement and execution are separate facts. Entitlement comes from the
+  // JWT and is never downgraded, so a throttled Pro user is never told to
+  // upgrade. Execution may fall back to the free pool, in which case Studio
+  // degrades to the free providers' voices instead of erroring — matching the
+  // "a throttled PREMIUM request is never denied" contract in check_preflight.
+  // The selected slot decides which pipeline may serve the request, so a Pro
+  // user on Standard stays on the free pool. The budget gate can only
+  // downgrade from there.
+  // An absent voiceId means Standard. Resolved once so the tier check and the
+  // pool can never disagree about which slot is in play.
+  const slot = getVoiceSlot(voiceId) ?? getStandardSlot();
+  const slotTier = pipelineTierForSlot(slot);
+  const scope = isPreview ? "shared" : "user";
+  let executionTier: Tier = slotTier;
   let gateError: Response | null = null;
-  if (!isPreview) {
-    const reserved = await reserveSpeechGate(
-      env,
-      ctx,
-      userId,
-      jwtTier,
-      sessionId,
-      cleanSpoken.length,
-    );
-    if (reserved.ok) {
-      effectiveTier = reserved.tier;
-    } else {
-      gateError = reserved.response;
-      effectiveTier = reserved.tier;
-    }
-  }
 
-  const entitlementGate = guardVoiceEntitlement(
-    voiceId,
-    effectiveTier,
-    isPreview,
-  );
+  // The gate and the cache read are independent, and doing them in sequence put
+  // two network round trips in front of every request. Start the gate, then read
+  // the cache speculatively at the slot's tier while it is in flight.
+  //
+  // `resolveExecutionTier` collapses to FREE whenever the slot is FREE, so for
+  // the standard slot the speculative tier is always the final tier and the
+  // read is never wasted. Only a Pro slot can resolve to a different tier, and
+  // that costs one extra read — still cheaper than serialising the common case.
+  const gatePromise = isPreview
+    ? Promise.resolve<SpeechGate>({ ok: true, tier: jwtTier })
+    : reserveSpeechGate(
+        env,
+        ctx,
+        userId,
+        jwtTier,
+        sessionId,
+        cleanSpoken.length,
+      );
+
+  const speculative = timings
+    .measure("cache", async () => {
+      const key = await buildSpeechCacheKey(
+        cleanSpoken,
+        spokenLang,
+        gender,
+        voiceId,
+        userId,
+        slotTier,
+        scope,
+      );
+      // A failed read is a miss, not an absent key. Swallowing it here keeps
+      // `key` so the synthesis below still populates the cache — collapsing both
+      // failures into one empty key would make a transient KV blip permanently
+      // uncacheable for this text.
+      const hit = await readSpeechCache(env, key).catch((err) => {
+        logger.warn(
+          "[synthesize] speech cache read failed, treating as a miss",
+          {
+            error: err instanceof Error ? err.message : String(err),
+          },
+        );
+        return null;
+      });
+      return { key, hit };
+    })
+    // The key itself could not be built, so there is genuinely nothing to read
+    // or write. This also guards the unhandled rejection: the entitlement gate
+    // below can return before this promise is awaited.
+    .catch((err) => {
+      logger.warn("[synthesize] speech cache key build failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { key: "", hit: null };
+    });
+
+  const entitlementGate = guardVoiceEntitlement(voiceId, jwtTier, isPreview);
   if (entitlementGate) return entitlementGate;
 
-  const cacheKey = await buildSpeechCacheKey(
-    cleanSpoken,
-    spokenLang,
-    gender,
-    voiceId,
-    userId,
-    effectiveTier,
-  );
-  const cached = await readSpeechCache(env, cacheKey);
-  if (cached) {
-    logger.info(`[synthesize] Speech cache hit, serving free replay`);
-    return buildSpeechResponse(cached, meta);
+  const reserved = await gatePromise;
+  if (reserved.ok) {
+    executionTier = resolveExecutionTier(slotTier, reserved.tier);
+  } else {
+    gateError = reserved.response;
+    executionTier = resolveExecutionTier(slotTier, reserved.tier);
   }
+
+  let cacheKey: string;
+  let cached: SpeechResult | null;
+  if (executionTier === slotTier) {
+    const speculativeResult = await speculative;
+    cacheKey = speculativeResult.key;
+    cached = speculativeResult.hit;
+  } else {
+    // Pro slot downgraded by the gate: the speculative read used the wrong tier
+    // in the key, so it cannot be trusted.
+    //
+    // `readSpeechCache` does not swallow its own KV/R2 errors, so this path needs
+    // the same guard as the speculative read above. Without it a transient cache
+    // blip would surface as a 500 here while the standard-slot path degraded
+    // gracefully to a miss.
+    const recheck = await buildSpeechCacheKey(
+      cleanSpoken,
+      spokenLang,
+      gender,
+      voiceId,
+      userId,
+      executionTier,
+      scope,
+    ).then((key) =>
+      readSpeechCache(env, key)
+        .then((hit) => ({ key, hit }))
+        .catch((err: unknown) => {
+          logger.warn(
+            "[synthesize] speech cache recheck failed, treating as a miss",
+            { error: err instanceof Error ? err.message : String(err) },
+          );
+          return { key, hit: null };
+        }),
+    );
+    cacheKey = recheck.key;
+    cached = recheck.hit;
+  }
+
+  if (cached) {
+    logger.info(
+      `[synthesize] Speech cache hit scope=${scope} tier=${executionTier}`,
+    );
+    timings.start("encode");
+    const res = buildSpeechResponse(cached, meta, {
+      cacheKey,
+      preferBase64,
+    });
+    timings.end("encode");
+    return res;
+  }
+  logger.info(
+    `[synthesize] Speech cache miss scope=${scope} tier=${executionTier}`,
+  );
 
   if (gateError) return gateError;
 
-  const result = await runSpeechSynth({
-    text: cleanSpoken,
-    lang: spokenLang,
-    gender,
-    voiceId,
-    tier: effectiveTier,
-    env,
-    signal,
-    budgetMs: speechBudget,
-    cacheKey,
-  });
+  const result = await timings.measure("tts", () =>
+    runSpeechSynth({
+      text: cleanSpoken,
+      lang: spokenLang,
+      gender,
+      slot,
+      tier: executionTier,
+      env,
+      signal,
+      budgetMs: speechBudget,
+      cacheKey,
+      // A URL response is only useful once the bytes are actually addressable,
+      // so in that mode the write is awaited. Inline responses can keep
+      // deferring it, because the caller already has the audio in hand.
+      waitUntil: preferBase64 ? (promise) => ctx.waitUntil(promise) : undefined,
+    }),
+  );
   if (!result) {
     return Response.json(
       {
@@ -493,7 +639,10 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     trackBillableSuccess(env, userId, "speech", ctx, cleanSpoken.length);
   }
 
-  return buildSpeechResponse(result, meta);
+  timings.start("encode");
+  const res = buildSpeechResponse(result, meta, { cacheKey, preferBase64 });
+  timings.end("encode");
+  return res;
 }
 
 async function synthesizeFromText(
@@ -505,6 +654,7 @@ async function synthesizeFromText(
   sessionId: string | null,
   ctx: ExecutionContext,
   remainingMs: () => number,
+  timings: RequestTimings,
 ): Promise<Response> {
   const ctGuard = guardContentType(request);
   if (!ctGuard.allowed) return ctGuard.response;
@@ -523,6 +673,9 @@ async function synthesizeFromText(
     );
   }
   const { text, sourceLang, targetLang, gender, voiceId } = parsed.data;
+  // Absent means the client predates the URL response, which is the signal to
+  // keep inlining the audio for it.
+  const preferBase64 = parsed.data.preferBase64 === true;
 
   if (!text) {
     return Response.json(
@@ -539,7 +692,7 @@ async function synthesizeFromText(
     );
   }
 
-  const resolvedGender = gender ?? "female";
+  const resolvedGender = gender;
 
   const { isPreview, effectiveLang } = resolveEffectiveLang(
     cleanText,
@@ -552,7 +705,6 @@ async function synthesizeFromText(
       spokenLang: effectiveLang,
       gender: resolvedGender,
       voiceId,
-      tier,
       jwtTier: tier,
       env,
       signal,
@@ -561,11 +713,15 @@ async function synthesizeFromText(
       sessionId,
       isPreview: true,
       remainingMs,
+      timings,
+      preferBase64,
       meta: {
         sourceLang: sourceLang ?? targetLang,
         targetLang,
         translated: false,
         voiceId,
+        transcript: cleanText,
+        translation: null,
       },
     });
   }
@@ -634,7 +790,6 @@ async function synthesizeFromText(
     spokenLang: targetLang,
     gender: resolvedGender,
     voiceId,
-    tier,
     jwtTier: tier,
     env,
     signal,
@@ -643,11 +798,15 @@ async function synthesizeFromText(
     sessionId,
     isPreview: false,
     remainingMs,
+    timings,
+    preferBase64,
     meta: {
       sourceLang: effectiveSource,
       targetLang,
       translated,
       voiceId,
+      transcript: cleanText,
+      translation: translated ? spokenText : null,
     },
   });
 }
@@ -661,6 +820,7 @@ async function synthesizeFromAudio(
   sessionId: string | null,
   ctx: ExecutionContext,
   remainingMs: () => number,
+  timings: RequestTimings,
 ): Promise<Response> {
   const ctGuard = guardContentType(request, "multipart");
   if (!ctGuard.allowed) return ctGuard.response;
@@ -749,7 +909,9 @@ async function synthesizeFromAudio(
   const tgtGuard = guardLanguageCode(targetLang, "targetLang");
   if (!tgtGuard.allowed) return tgtGuard.response;
 
-  let resolvedGender: "male" | "female" = "female";
+  // `null` means the client has not chosen; providers supply their own neutral
+  // default, so it is passed through rather than coerced to a gender here.
+  let resolvedGender: "male" | "female" | undefined;
   if (genderRaw !== null && genderRaw !== "male" && genderRaw !== "female") {
     return Response.json(
       { error: WORKER_ERROR_CODES.INVALID_BODY },
@@ -760,7 +922,7 @@ async function synthesizeFromAudio(
 
   let voiceId: string | undefined;
   if (voiceIdRaw !== null) {
-    if (!VOICE_IDS.includes(voiceIdRaw)) {
+    if (!VOICE_SLOT_IDS.includes(voiceIdRaw)) {
       return Response.json(
         { error: WORKER_ERROR_CODES.INVALID_BODY },
         { status: 400 },
@@ -769,13 +931,8 @@ async function synthesizeFromAudio(
     voiceId = voiceIdRaw;
   }
 
-  const transcribeGate = await runPreflightGate(
-    env,
-    ctx,
-    userId,
-    tier,
-    "transcribe",
-    sessionId,
+  const transcribeGate = await timings.measure("stt.gate", () =>
+    runPreflightGate(env, ctx, userId, tier, "transcribe", sessionId),
   );
   if (!transcribeGate.ok) return transcribeGate.response;
   if (signal.aborted) throw new Error(CLIENT_ABORTED);
@@ -831,15 +988,17 @@ async function synthesizeFromAudio(
     }
 
     const isAuto = !lang || lang === "auto";
-    const result = await runTranscribe({
-      audioBlob,
-      effectiveLang: isAuto ? "auto" : lang,
-      isAuto,
-      tier: tier,
-      env,
-      signal,
-      budgetMs: Math.min(TRANSCRIBE_TOTAL_MS, remainingMs()),
-    });
+    const result = await timings.measure("stt", () =>
+      runTranscribe({
+        audioBlob,
+        effectiveLang: isAuto ? "auto" : lang,
+        isAuto,
+        tier: tier,
+        env,
+        signal,
+        budgetMs: Math.min(TRANSCRIBE_TOTAL_MS, remainingMs()),
+      }),
+    );
     if (!result) {
       return Response.json(
         { error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL },
@@ -877,18 +1036,20 @@ async function synthesizeFromAudio(
 
     if (sourceCode) {
       if (signal.aborted) throw new Error(CLIENT_ABORTED);
-      const translation = await translateStage({
-        text: preShrinkForTranslate(spokenText, tier),
-        sourceLang: sourceCode,
-        targetLang,
-        tier: tier,
-        userId,
-        env,
-        signal,
-        budgetMs: Math.min(TRANSLATE_TOTAL_MS, remainingMs()),
-        ctx,
-        sessionId,
-      });
+      const translation = await timings.measure("mt", () =>
+        translateStage({
+          text: preShrinkForTranslate(spokenText, tier),
+          sourceLang: sourceCode,
+          targetLang,
+          tier: tier,
+          userId,
+          env,
+          signal,
+          budgetMs: Math.min(TRANSLATE_TOTAL_MS, remainingMs()),
+          ctx,
+          sessionId,
+        }),
+      );
       if (!translation.ok) return translation.response;
       spokenText = translation.result.translation;
       translated = true;
@@ -903,7 +1064,6 @@ async function synthesizeFromAudio(
     spokenLang: targetLang,
     gender: resolvedGender,
     voiceId,
-    tier: tier,
     jwtTier: tier,
     env,
     signal,
@@ -912,11 +1072,15 @@ async function synthesizeFromAudio(
     sessionId,
     isPreview: false,
     remainingMs,
+    timings,
+    preferBase64: wantsInlineAudio(request),
     meta: {
       sourceLang: effectiveSource,
       targetLang,
       translated,
       voiceId,
+      transcript,
+      translation: translated ? spokenText : null,
     },
   });
 }
@@ -933,6 +1097,7 @@ export async function handleSynthesize(
   signal: AbortSignal,
   auth: SynthesizeAuthContext,
   ctx: ExecutionContext,
+  timings: RequestTimings = new RequestTimings(),
 ): Promise<Response> {
   const start = Date.now();
   const remainingMs = () => SYNTHESIZE_TOTAL_MS - (Date.now() - start);
@@ -948,6 +1113,7 @@ export async function handleSynthesize(
       auth.sessionId,
       ctx,
       remainingMs,
+      timings,
     );
   }
   return synthesizeFromText(
@@ -959,5 +1125,6 @@ export async function handleSynthesize(
     auth.sessionId,
     ctx,
     remainingMs,
+    timings,
   );
 }

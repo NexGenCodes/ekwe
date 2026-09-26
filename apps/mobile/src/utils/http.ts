@@ -140,6 +140,14 @@ export function mapWorkerError(
       return EkweError.QUOTA_EXCEEDED;
     case "EKWE_TRANSLATION_FAIL":
       return EkweError.TRANSLATION_FAIL;
+    // The worker distinguishes "we tried and every provider was down" from
+    // "your request was wrong". Collapsing them into a generic failure is
+    // what made an outage look like the user's fault.
+    case WORKER_ERROR_CODES.SPEECH_UNAVAILABLE:
+    case WORKER_ERROR_CODES.SERVICE_UNAVAILABLE:
+      return EkweError.SPEECH_UNAVAILABLE;
+    case "EKWE_SPEECH_TIMEOUT":
+      return EkweError.SPEECH_TIMEOUT;
     case WORKER_ERROR_CODES.EKWE_SERVER_ERROR:
       return EkweError.SERVER_ERROR;
     default:

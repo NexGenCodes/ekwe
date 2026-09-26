@@ -46,6 +46,7 @@ export function getCorsHeaders(
     ...(isAllowed && { "Access-Control-Allow-Credentials": "true" }),
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Expose-Headers": "Server-Timing, Retry-After",
     Vary: "Origin",
     "X-Content-Type-Options": "nosniff",
   };
@@ -54,9 +55,13 @@ export function getCorsHeaders(
 export function addCorsHeaders(
   response: Response,
   corsHeaders: Record<string, string>,
+  extraHeaders?: Record<string, string>,
 ): Response {
   const newHeaders = new Headers(response.headers);
   Object.entries(corsHeaders).forEach(([k, v]) => newHeaders.set(k, v));
+  if (extraHeaders) {
+    Object.entries(extraHeaders).forEach(([k, v]) => newHeaders.set(k, v));
+  }
   return new Response(response.body, {
     status: response.status,
     headers: newHeaders,

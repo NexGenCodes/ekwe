@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { observable } from "@legendapp/state";
 import { SyncService } from "@/services/syncService";
+import { buildUpsertOutboxPayload } from "@/services/outboxPayload";
 import { Db } from "@/services/db";
+import { supabase } from "@/services/supabase";
 
 vi.mock("@/store", () => ({
   history$: observable([]),
@@ -21,9 +23,10 @@ vi.mock("../db", () => ({
     transaction: vi.fn((fn) => fn()),
     insertHistory: vi.fn(),
     insertOutbox: vi.fn(),
-    findTranslationByDedupKey: vi.fn(() => null),
-    updateTranslationRow: vi.fn(),
+    findByCaptureId: vi.fn(() => null),
+    updateCaptureRow: vi.fn(),
     getPendingOutbox: vi.fn(() => []),
+    deleteHistory: vi.fn(),
     markOutboxInFlight: vi.fn(),
     deleteOutbox: vi.fn(),
     incrementOutboxRetry: vi.fn(),
@@ -32,6 +35,7 @@ vi.mock("../db", () => ({
 
 vi.mock("@/utils/connectivity", () => ({
   checkIsOnline: vi.fn(() => Promise.resolve(true)),
+  isDefinitelyOffline: vi.fn(() => false),
   subscribeToNetwork: vi.fn(() => vi.fn()),
 }));
 
@@ -50,6 +54,16 @@ vi.mock("../mmkv", () => ({
 vi.mock("../supabase", () => ({
   supabase: {
     from: vi.fn(),
+    channel: vi.fn(),
+    removeChannel: vi.fn(),
+    auth: {
+      getSession: vi.fn(async () => ({
+        data: { session: { access_token: "test-jwt" } },
+      })),
+    },
+    realtime: {
+      setAuth: vi.fn(async () => {}),
+    },
   },
 }));
 
@@ -69,14 +83,19 @@ describe("syncService", () => {
   it("should write history and schedule drain", async () => {
     const id = await SyncService.writeHistory(
       {
+        captureId: "cap-1",
+        origin: "echo",
+        input: "audio",
         sourceLang: "en",
         targetLang: "es",
         transcript: "hello",
         translation: "hola",
         transliteration: null,
         duration: 1.5,
-        sourceApp: "test",
-        provider: "test",
+        sourceApp: "com.whatsapp",
+        voiceId: null,
+        sttProvider: "deepgram",
+        mtProvider: "gemini",
         type: "transcription",
       },
       "user123",
@@ -84,13 +103,218 @@ describe("syncService", () => {
 
     expect(typeof id).toBe("string");
     expect(Db.transaction).toHaveBeenCalled();
-    expect(Db.insertHistory).toHaveBeenCalled();
+    expect(Db.insertHistory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        captureId: "cap-1",
+        origin: "echo",
+        input: "audio",
+        sttProvider: "deepgram",
+        mtProvider: "gemini",
+      }),
+    );
     expect(Db.insertOutbox).toHaveBeenCalled();
+  });
+
+  it("updates the existing row when the capture is written twice", async () => {
+    // The regression this replaces: a transcription row and a translation row
+    // for the same note could never dedup against each other, because the
+    // lookup keyed on entry_type and the two rows had different values. Every
+    // translated note left an orphan row behind.
+    vi.mocked(Db.findByCaptureId).mockReturnValue({
+      id: "existing-1",
+      createdAt: "2026-09-01T10:00:00.000Z",
+    } as never);
+
+    const id = await SyncService.writeHistory(
+      {
+        captureId: "cap-1",
+        origin: "echo",
+        input: "audio",
+        sourceLang: "en",
+        targetLang: "es",
+        transcript: "hello",
+        translation: "hola",
+        transliteration: null,
+        duration: 1.5,
+        sourceApp: "com.whatsapp",
+        voiceId: null,
+        sttProvider: "deepgram",
+        mtProvider: "gemini",
+        type: "translation",
+      },
+      "user123",
+    );
+
+    expect(id).toBe("existing-1");
+    expect(Db.insertHistory).not.toHaveBeenCalled();
+    expect(Db.updateCaptureRow).toHaveBeenCalledWith(
+      "existing-1",
+      expect.objectContaining({
+        translation_text: "hola",
+        mt_provider: "gemini",
+      }),
+    );
+  });
+
+  it("never matches a legacy row when the capture id is missing", async () => {
+    // Legacy rows all share a NULL capture_id, so a lookup without one must
+    // miss rather than collapse them into each other.
+    await SyncService.writeHistory(
+      {
+        captureId: "",
+        origin: "echo",
+        input: "audio",
+        sourceLang: "en",
+        targetLang: "es",
+        transcript: "hello",
+        translation: null,
+        transliteration: null,
+        duration: 1.5,
+        sourceApp: null,
+        voiceId: null,
+        sttProvider: "deepgram",
+        mtProvider: null,
+        type: "transcription",
+      },
+      "user123",
+    );
+    expect(Db.findByCaptureId).not.toHaveBeenCalled();
   });
 
   it("should retry dead outbox", async () => {
     await SyncService.retryDeadOutbox();
     expect(Db.reviveDeadOutbox).toHaveBeenCalled();
+  });
+
+  it("serializes concurrent drains instead of dropping the second call", async () => {
+    const { supabase } = await import("../supabase");
+    let active = 0;
+    let maxActive = 0;
+
+    const fakeChain = {
+      upsert: () => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        return {
+          abortSignal: () =>
+            new Promise((resolve) =>
+              setTimeout(() => {
+                active -= 1;
+                resolve({ error: null });
+              }, 5),
+            ),
+        };
+      },
+    };
+    vi.mocked(supabase.from).mockReturnValue(fakeChain as never);
+    vi.mocked(Db.getPendingOutbox).mockReturnValue([
+      {
+        id: "entry-1",
+        userId: "test-user",
+        status: "pending",
+        retries: 0,
+        lastAttempt: null,
+        createdAt: "2026-09-01T10:00:00.000Z",
+        payload: buildUpsertOutboxPayload(
+          "translation",
+          {
+            sourceLang: "en",
+            targetLang: "es",
+            transcript: "hello",
+            translation: "hola",
+            transliteration: null,
+            duration: 1,
+            sourceApp: "test",
+            voiceId: null,
+            sttProvider: "deepgram",
+            mtProvider: "gemini",
+            origin: "echo",
+            input: "audio",
+          },
+          "2026-09-01T10:00:00.000Z",
+          "cap-1",
+        ),
+      },
+    ] as never);
+
+    await Promise.all([SyncService.drain(), SyncService.drain()]);
+
+    expect(maxActive).toBe(1);
+    expect(Db.deleteOutbox).toHaveBeenCalledTimes(2);
+  });
+
+  it("reverts in-flight rows when the batch push fails", async () => {
+    const { supabase } = await import("../supabase");
+
+    const fakeChain = {
+      upsert: () => ({
+        abortSignal: () => Promise.resolve({ error: { message: "boom" } }),
+      }),
+    };
+    vi.mocked(supabase.from).mockReturnValue(fakeChain as never);
+    vi.mocked(Db.getPendingOutbox).mockReturnValue([
+      {
+        id: "entry-1",
+        userId: "test-user",
+        status: "pending",
+        retries: 0,
+        lastAttempt: null,
+        createdAt: "2026-09-01T10:00:00.000Z",
+        payload: buildUpsertOutboxPayload(
+          "translation",
+          {
+            sourceLang: "en",
+            targetLang: "es",
+            transcript: "hello",
+            translation: "hola",
+            transliteration: null,
+            duration: 1,
+            sourceApp: "test",
+            voiceId: null,
+            sttProvider: "deepgram",
+            mtProvider: "gemini",
+            origin: "echo",
+            input: "audio",
+          },
+          "2026-09-01T10:00:00.000Z",
+          "cap-1",
+        ),
+      },
+    ] as never);
+
+    await SyncService.drain();
+
+    expect(Db.incrementOutboxRetry).toHaveBeenCalledWith("entry-1");
+    expect(Db.deleteOutbox).not.toHaveBeenCalled();
+  });
+
+  it("stops the realtime listener on sign-out", async () => {
+    const { supabase } = await import("../supabase");
+
+    const channel: Record<string, unknown> = {};
+    channel.on = vi.fn(() => channel);
+    channel.subscribe = vi.fn(() => channel);
+    vi.mocked(supabase.channel).mockReturnValue(channel as never);
+
+    const emptyPage = {
+      select: () => emptyPage,
+      eq: () => emptyPage,
+      or: () => emptyPage,
+      order: () => emptyPage,
+      limit: () => Promise.resolve({ data: [], error: null }),
+    };
+    vi.mocked(supabase.from).mockReturnValue(emptyPage as never);
+
+    SyncService.onUserSignedIn("test-user");
+    // startRealtimeListener awaits auth.getSession() before joining, so flush
+    // microtasks (no fake timers in this test).
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(supabase.channel).toHaveBeenCalledWith("history:test-user");
+    expect(supabase.removeChannel).not.toHaveBeenCalled();
+
+    SyncService.onUserSignedOut();
+    expect(supabase.removeChannel).toHaveBeenCalledWith(channel);
   });
 
   it("should page cloud history with the composite (created_at, id) keyset order", async () => {
@@ -156,5 +380,508 @@ describe("syncService", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0].id).toBe("c");
     expect(orCalls).toBe(0);
+  });
+
+  describe("realtime subscription", () => {
+    type StatusHandler = (status: string, err?: Error) => void;
+
+    function mockChannel(statuses: string[]): {
+      channel: ReturnType<typeof vi.fn>;
+      emit: (i: number) => void;
+    } {
+      const handlers: StatusHandler[] = [];
+      const channel = vi.fn(() => {
+        const chain: Record<string, unknown> = {};
+        chain.on = vi.fn(() => chain);
+        chain.subscribe = vi.fn((cb: StatusHandler) => {
+          handlers.push(cb);
+          return chain;
+        });
+        return chain;
+      });
+      return {
+        channel,
+        emit: (i: number) => handlers[i]?.(statuses[i] ?? "CLOSED"),
+      };
+    }
+
+    // startRealtimeListener awaits auth.getSession() before joining, so let
+    // microtasks settle before asserting on channel construction.
+    async function join(): Promise<void> {
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      // Pin the jitter band to its upper edge so backoff assertions are exact.
+      // `scheduleRealtimeRetry` multiplies the base by
+      // `1 - 0.5 + random() * 0.5`, so random() === 1 gives the full delay.
+      vi.spyOn(Math, "random").mockReturnValue(1);
+      vi.mocked(supabase.auth.getSession).mockResolvedValue({
+        data: { session: { access_token: "test-jwt" } },
+        error: null,
+      } as never);
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    });
+
+    it("sets the realtime auth token from the session before joining", async () => {
+      const { channel } = mockChannel(["SUBSCRIBED"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      await join();
+
+      expect(supabase.realtime.setAuth).toHaveBeenCalledWith("test-jwt");
+      expect(channel).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not join at all without a session", async () => {
+      vi.mocked(supabase.auth.getSession).mockResolvedValue({
+        data: { session: null },
+        error: null,
+      } as never);
+      const { channel } = mockChannel(["SUBSCRIBED"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      await join();
+
+      expect(channel).not.toHaveBeenCalled();
+      expect(supabase.realtime.setAuth).not.toHaveBeenCalled();
+    });
+
+    it("does not retry after a successful subscribe", async () => {
+      const { channel, emit } = mockChannel(["SUBSCRIBED"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      await join();
+      expect(channel).toHaveBeenCalledTimes(1);
+
+      emit(0);
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      // Still one channel: SUBSCRIBED must not schedule a reconnect.
+      expect(channel).toHaveBeenCalledTimes(1);
+    });
+
+    it("retries with backoff after CHANNEL_ERROR", async () => {
+      const { channel, emit } = mockChannel(["CHANNEL_ERROR", "SUBSCRIBED"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      await join();
+      emit(0);
+      await join();
+
+      expect(channel).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(channel).toHaveBeenCalledTimes(1); // still backing off
+
+      await vi.advanceTimersByTimeAsync(2);
+      await join();
+      expect(channel).toHaveBeenCalledTimes(2); // re-joined
+
+      emit(1);
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(channel).toHaveBeenCalledTimes(2); // backoff counter reset
+    });
+
+    it("gives up after the retry cap", async () => {
+      const { channel, emit } = mockChannel(["CHANNEL_ERROR"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      await join();
+
+      // Each cycle: one initial attempt plus its re-join, until the cap trips.
+      for (let i = 0; i < 12; i++) {
+        emit(i);
+        await vi.advanceTimersByTimeAsync(120_000);
+        await join();
+      }
+
+      const attempts = channel.mock.calls.length;
+      expect(attempts).toBeGreaterThan(1);
+      // Cap is REALTIME_MAX_RETRIES (5) retries on top of the first attempt.
+      expect(attempts).toBeLessThanOrEqual(6);
+
+      // No further reconnects once exhausted.
+      const settled = channel.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(channel).toHaveBeenCalledTimes(settled);
+    });
+
+    it("grows the backoff across consecutive failures", async () => {
+      // This is the regression that mattered: the retry timer used to re-enter
+      // startRealtimeListener, which zeroed the counter, so every delay was the
+      // 2s base and the cap was unreachable. With the counter preserved the
+      // delays must double: 2s, 4s, 8s, 16s, 32s.
+      const { channel, emit } = mockChannel([
+        "CHANNEL_ERROR",
+        "CHANNEL_ERROR",
+        "CHANNEL_ERROR",
+        "CHANNEL_ERROR",
+        "CHANNEL_ERROR",
+      ]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      await join();
+      expect(channel).toHaveBeenCalledTimes(1);
+
+      // Attempt 1 waits 2s, attempt 2 waits 4s, attempt 3 waits 8s.
+      emit(0);
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(channel).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await join();
+      expect(channel).toHaveBeenCalledTimes(2);
+
+      emit(1);
+      await vi.advanceTimersByTimeAsync(3_999);
+      expect(channel).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      await join();
+      expect(channel).toHaveBeenCalledTimes(3);
+
+      emit(2);
+      await vi.advanceTimersByTimeAsync(7_999);
+      expect(channel).toHaveBeenCalledTimes(3);
+      await vi.advanceTimersByTimeAsync(1);
+      await join();
+      expect(channel).toHaveBeenCalledTimes(4);
+    });
+
+    it("retries after a CLOSED status", async () => {
+      // CLOSED used to fall through unmatched, so a closed channel silently
+      // downgraded the client to pull-only for the rest of the session.
+      const { channel, emit } = mockChannel(["CLOSED", "SUBSCRIBED"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      await join();
+      emit(0);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await join();
+
+      expect(channel).toHaveBeenCalledTimes(2);
+    });
+
+    it("ignores status callbacks from a superseded channel", async () => {
+      const { channel, emit } = mockChannel(["SUBSCRIBED", "CHANNEL_ERROR"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      await join();
+      expect(channel).toHaveBeenCalledTimes(1);
+
+      // Force a re-join so the first channel becomes stale.
+      SyncService.onUserSignedIn("user123");
+      await join();
+      expect(channel).toHaveBeenCalledTimes(2);
+
+      // The stale channel now reports a failure. It must neither apply events
+      // nor spend retry budget against the live channel.
+      emit(0);
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(channel).toHaveBeenCalledTimes(2);
+    });
+
+    it("a fresh sign-in drops a pending retry timer instead of letting it restart the backoff", async () => {
+      // A pending timer is only cleared on a successful SUBSCRIBED. If a second
+      // sign-in joins and fails, that timer would otherwise fire against the
+      // just-reset counter and restart the delay at the 2s floor.
+      const { channel, emit } = mockChannel(["CHANNEL_ERROR"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      await join();
+      expect(channel).toHaveBeenCalledTimes(1);
+
+      // Arm a 2s retry.
+      emit(0);
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      // A genuine sign-in supersedes it.
+      SyncService.onUserSignedIn("user123");
+      await join();
+      expect(channel).toHaveBeenCalledTimes(2);
+
+      // No new error is emitted, so nothing re-arms a timer. The superseded one
+      // must stay dead even past its original 2s mark.
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(channel).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not spend the retry budget while offline", async () => {
+      const { isDefinitelyOffline } = await import("@/utils/connectivity");
+      const { channel, emit } = mockChannel(["CHANNEL_ERROR", "CHANNEL_ERROR"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+      vi.mocked(isDefinitelyOffline).mockReturnValue(true);
+
+      SyncService.onUserSignedIn("user123");
+      await join();
+      emit(0);
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(channel).toHaveBeenCalledTimes(1);
+
+      // Back online, the same live channel failing again retries instead of
+      // finding the budget already spent. Still handler 0: no re-join happened
+      // while offline, so it is the only channel that exists.
+      vi.mocked(isDefinitelyOffline).mockReturnValue(false);
+      emit(0);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await join();
+      expect(channel).toHaveBeenCalledTimes(2);
+    });
+
+    it("stops retrying after sign-out", async () => {
+      const { channel, emit } = mockChannel(["CHANNEL_ERROR"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      await join();
+      SyncService.onUserSignedOut();
+
+      emit(0);
+      await vi.advanceTimersByTimeAsync(600_000);
+
+      expect(channel).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("realtime delete echo guard", () => {
+    type RowHandler = (payload: { old?: Record<string, unknown> }) => void;
+
+    /**
+     * Capture the postgres_changes handlers keyed by event, so the DELETE
+     * handler can be driven directly.
+     */
+    function mockDeleteChannel(): {
+      channel: ReturnType<typeof vi.fn>;
+      handlerFor: (event: string) => RowHandler | undefined;
+    } {
+      const byEvent = new Map<string, RowHandler>();
+      const channel = vi.fn(() => {
+        const chain: Record<string, unknown> = {};
+        chain.on = vi.fn(
+          (
+            _kind: string,
+            filter: { event: string },
+            cb: RowHandler,
+          ): Record<string, unknown> => {
+            byEvent.set(filter.event, cb);
+            return chain;
+          },
+        );
+        chain.subscribe = vi.fn(() => chain);
+        return chain;
+      });
+      return { channel, handlerFor: (event) => byEvent.get(event) };
+    }
+
+    beforeEach(async () => {
+      vi.mocked(supabase.auth.getSession).mockResolvedValue({
+        data: { session: { access_token: "test-jwt" } },
+        error: null,
+      } as never);
+    });
+
+    async function joinDeleteHandler(): Promise<RowHandler> {
+      const { channel, handlerFor } = mockDeleteChannel();
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+      SyncService.onUserSignedIn("user123");
+      await vi.advanceTimersByTimeAsync?.(0);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      const handler = handlerFor("DELETE");
+      if (!handler) throw new Error("DELETE handler was never registered");
+      return handler;
+    }
+
+    it("applies a remote delete when nothing is pending", async () => {
+      vi.useFakeTimers();
+      try {
+        vi.mocked(Db.getPendingOutbox).mockReturnValue([]);
+        const handler = await joinDeleteHandler();
+
+        handler({ old: { id: "row-1" } });
+        expect(Db.deleteHistory).toHaveBeenCalledWith("row-1");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("ignores the echo of our own single-row delete", async () => {
+      vi.useFakeTimers();
+      try {
+        vi.mocked(Db.getPendingOutbox).mockReturnValue([
+          {
+            id: "row-1",
+            payload: JSON.stringify({ action: "delete", id: "row-1" }),
+          },
+        ] as never);
+        const handler = await joinDeleteHandler();
+
+        handler({ old: { id: "row-1" } });
+        expect(Db.deleteHistory).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("ignores the echo of a pending clear-all", async () => {
+      // clearAllHistory enqueues ONE outbox row under a random UUID with
+      // action "delete_all", so a row-id comparison can never match it. Its
+      // own broadcast comes back for every row it removed, and the local purge
+      // has already removed them.
+      vi.useFakeTimers();
+      try {
+        vi.mocked(Db.getPendingOutbox).mockReturnValue([
+          {
+            id: "some-random-uuid",
+            payload: JSON.stringify({ action: "delete_all" }),
+          },
+        ] as never);
+        const handler = await joinDeleteHandler();
+
+        handler({ old: { id: "row-7" } });
+        handler({ old: { id: "row-8" } });
+        expect(Db.deleteHistory).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("still applies deletes for other rows while one delete is pending", async () => {
+      vi.useFakeTimers();
+      try {
+        vi.mocked(Db.getPendingOutbox).mockReturnValue([
+          {
+            id: "outbox-1",
+            payload: JSON.stringify({ action: "delete", id: "row-1" }),
+          },
+        ] as never);
+        const handler = await joinDeleteHandler();
+
+        handler({ old: { id: "row-1" } });
+        handler({ old: { id: "row-2" } });
+        expect(Db.deleteHistory).not.toHaveBeenCalledWith("row-1");
+        expect(Db.deleteHistory).toHaveBeenCalledWith("row-2");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("applies the delete when the pending payload is malformed", async () => {
+      // A payload we cannot parse cannot be proven to be ours, so the event
+      // must be honoured rather than silently dropped.
+      vi.useFakeTimers();
+      try {
+        vi.mocked(Db.getPendingOutbox).mockReturnValue([
+          { id: "outbox-1", payload: "not-json" },
+        ] as never);
+        const handler = await joinDeleteHandler();
+
+        handler({ old: { id: "row-3" } });
+        expect(Db.deleteHistory).toHaveBeenCalledWith("row-3");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe("error normalisation", () => {
+    /** Build a query chain whose `limit()` resolves to the given result. */
+    function queryReturning(result: unknown): unknown {
+      const query: Record<string, unknown> = {};
+      query.select = () => query;
+      query.eq = () => query;
+      query.or = () => query;
+      query.order = () => query;
+      query.limit = () => Promise.resolve(result);
+      return query;
+    }
+
+    it("surfaces the message from a PostgREST plain object", async () => {
+      // supabase-js rejects with a plain object, not an Error. Previously
+      // `err instanceof Error ? err.message : String(err)` produced
+      // "[object Object]" and the drain's timeout branch was unreachable,
+      // which is why failures logged as "Batch drain failed " with no reason.
+      const { supabase: sb } = await import("../supabase");
+      vi.mocked(sb.from).mockReturnValue(
+        queryReturning({
+          data: null,
+          error: {
+            message: "duplicate key value violates unique constraint",
+            code: "23505",
+            details: "Key (id)=(abc) already exists.",
+            hint: null,
+          },
+        }) as never,
+      );
+
+      await SyncService.pullFromCloud("user123");
+
+      expect(SyncService.pullError.get()).toBe(
+        "duplicate key value violates unique constraint (23505)",
+      );
+    });
+
+    it("passes a real Error through unchanged", async () => {
+      const { supabase: sb } = await import("../supabase");
+      vi.mocked(sb.from).mockReturnValue(
+        queryReturning({
+          data: null,
+          error: new Error("network is unreachable"),
+        }) as never,
+      );
+
+      await SyncService.pullFromCloud("user123");
+      expect(SyncService.pullError.get()).toBe("network is unreachable");
+    });
+
+    it("handles a non-object, non-Error rejection", async () => {
+      const { supabase: sb } = await import("../supabase");
+      const query: Record<string, unknown> = {};
+      query.select = () => query;
+      query.eq = () => query;
+      query.order = () => query;
+      query.limit = () => Promise.reject("just a string");
+      vi.mocked(sb.from).mockReturnValue(query as never);
+
+      await SyncService.pullFromCloud("user123");
+      expect(SyncService.pullError.get()).toBe("just a string");
+    });
   });
 });

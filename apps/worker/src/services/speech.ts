@@ -1,4 +1,4 @@
-import { VOICE_PREVIEW_TEXT } from "@ekwe/shared";
+import { VOICE_PREVIEW_TEXT, type VoiceSlot } from "@ekwe/shared";
 import { logger } from "@/core/logger";
 import {
   SPEECH_CACHE_TTL_SECONDS,
@@ -7,11 +7,8 @@ import {
   SPEECH_R2_CACHE_MAX_BYTES,
   SPEECH_R2_CACHE_TTL_SECONDS,
 } from "@/core/budgets";
-import {
-  getProviderModule,
-  getProviderNamesFor,
-  providerSupportsLanguage,
-} from "@/providers";
+import { getProviderModule } from "@/providers";
+import { groupCandidatesByProvider, resolveVoicePool } from "@/core/voices";
 import { hashKey } from "@/utils/keys";
 import { recordSpeechCacheEvent } from "@/utils/analytics";
 import { Env, Tier, SpeechGender, SpeechAttempt } from "@/core/types";
@@ -74,15 +71,24 @@ export interface SpeechResult {
   audio: Uint8Array;
 }
 
+/**
+ * `scope: "shared"` drops the per-user partition. A voice preview is safe to
+ * share because both its text and its language are constants, so every user
+ * would otherwise be served a byte-identical clip that they each paid to
+ * synthesize on their own. Real speech keeps its own key — it is per-user
+ * content and must never be shared.
+ */
 export async function buildSpeechCacheKey(
   text: string,
   lang: string,
-  gender: string,
+  gender: string | undefined,
   voiceId: string | undefined,
   userId: string,
   tier: "FREE" | "PREMIUM" = "FREE",
+  scope: "user" | "shared" = "user",
 ): Promise<string> {
-  return `speech:${await hashKey(userId)}:${voiceId ?? "standard"}:${gender}:${tier.toLowerCase()}:cache:${lang}:${await hashKey(text)}`;
+  const owner = scope === "shared" ? "shared" : await hashKey(userId);
+  return `speech:${owner}:${voiceId ?? "standard"}:${gender ?? "auto"}:${tier.toLowerCase()}:cache:${lang}:${await hashKey(text)}`;
 }
 
 export async function readSpeechCache(
@@ -218,44 +224,6 @@ export function resolveEffectiveLang(
   return { isPreview, effectiveLang: isPreview ? "en" : lang };
 }
 
-export function resolveProviderVoices(
-  provider: string,
-  lang: string,
-  gender: SpeechGender,
-  voiceId: string | undefined,
-): string[] {
-  const langCode = lang.split("-")[0].toLowerCase();
-  return getProviderModule(provider)?.voice?.(voiceId, langCode, gender) ?? [];
-}
-
-function voiceHonorsId(
-  provider: string,
-  voiceId: string,
-  gender: SpeechGender,
-): boolean {
-  const voice = getProviderModule(provider)?.voice;
-  if (!voice) return false;
-  const without = voice(undefined, "en", gender);
-  const withId = voice(voiceId, "en", gender);
-  if (withId.length === 0) return false;
-  if (without.length !== withId.length) return true;
-  return without.some((v, i) => v !== withId[i]);
-}
-
-function orderVoicePreferred(
-  providers: readonly string[],
-  voiceId: string | undefined,
-  gender: SpeechGender,
-): readonly string[] {
-  const preference = voiceId ?? "standard";
-  if (preference === "standard") return providers;
-  return [...providers].sort(
-    (a, b) =>
-      Number(voiceHonorsId(b, preference, gender)) -
-      Number(voiceHonorsId(a, preference, gender)),
-  );
-}
-
 function speechDownKey(provider: string, date: string): string {
   return `speech:down:${provider}:${date}`;
 }
@@ -264,11 +232,22 @@ function utcDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// "Provider is down today" flips at most once a day, so remember the ones we
+// learn about instead of re-reading KV for every provider on every request.
+const speechDownMemo = new Map<string, number>();
+
 async function isSpeechProviderDown(
   env: Env,
   provider: string,
 ): Promise<boolean> {
-  return !!(await env.EKWE_KV.get(speechDownKey(provider, utcDate())));
+  const key = speechDownKey(provider, utcDate());
+  const until = speechDownMemo.get(key);
+  if (until !== undefined && until > Date.now()) return true;
+  if (await env.EKWE_KV.get(key)) {
+    speechDownMemo.set(key, Date.now() + SPEECH_DOWN_TTL_SECONDS * 1000);
+    return true;
+  }
+  return false;
 }
 
 async function markSpeechProviderDown(
@@ -276,7 +255,9 @@ async function markSpeechProviderDown(
   provider: string,
 ): Promise<void> {
   const date = utcDate();
-  await env.EKWE_KV.put(speechDownKey(provider, date), "1", {
+  const key = speechDownKey(provider, date);
+  speechDownMemo.set(key, Date.now() + SPEECH_DOWN_TTL_SECONDS * 1000);
+  await env.EKWE_KV.put(key, "1", {
     expirationTtl: SPEECH_DOWN_TTL_SECONDS,
   });
   logger.warn(`[speech] Marked "${provider}" down for UTC ${date}`);
@@ -284,15 +265,13 @@ async function markSpeechProviderDown(
 
 async function tryProviderVoices(
   provider: string,
+  voices: string[],
   text: string,
   lang: string,
-  gender: SpeechGender,
-  voiceId: string | undefined,
   env: Env,
   signal: AbortSignal,
 ): Promise<SpeechAttempt | null> {
-  const voices = resolveProviderVoices(provider, lang, gender, voiceId);
-  if (!voices || voices.length === 0) return null;
+  if (voices.length === 0) return null;
 
   const fn = getProviderModule(provider)?.tts;
   if (!fn) return null;
@@ -302,7 +281,7 @@ async function tryProviderVoices(
   for (const voice of voices) {
     if (signal.aborted) return null;
 
-    logger.info(`[speech] Trying ${provider} voice="${voice}" (${gender})`);
+    logger.info(`[speech] Trying ${provider} voice="${voice}"`);
     const att = await fn(text, lang, env, signal, voice);
     if (att.result) return att;
 
@@ -319,73 +298,138 @@ async function tryProviderVoices(
   return last;
 }
 
+/**
+ * Concurrent requests for the same clip all miss the cache at the same moment
+ * and then all call the provider, paying for identical audio N times. Keyed by
+ * the cache key, so it can only ever collapse work whose output would have been
+ * byte-identical anyway.
+ *
+ * Deliberately in-memory rather than a Durable Object: this is per-isolate, so
+ * it is a best-effort win and not a global guarantee, but it costs no extra
+ * round trip and cannot make a request slower.
+ */
+const inflightSpeech = new Map<string, Promise<unknown>>();
+
+function singleFlightSpeech<T>(
+  cacheKey: string | null,
+  run: () => Promise<T>,
+): Promise<T> {
+  if (!cacheKey) return run();
+
+  const existing = inflightSpeech.get(cacheKey) as Promise<T> | undefined;
+  if (existing) {
+    logger.info("[speech] joining in-flight synthesis", { cacheKey });
+    return existing;
+  }
+
+  const started = run().finally(() => {
+    inflightSpeech.delete(cacheKey);
+  });
+  inflightSpeech.set(cacheKey, started);
+  return started;
+}
+
 export interface SpeechSynthOptions {
   text: string;
   lang: string;
-  gender: SpeechGender;
-  voiceId: string | undefined;
+  /** Undefined when the client has not chosen; providers supply a default. */
+  gender: SpeechGender | undefined;
+  slot: VoiceSlot | undefined;
   tier: Tier;
   env: Env;
   signal: AbortSignal;
   budgetMs: number;
   cacheKey: string | null;
+  waitUntil?: (promise: Promise<unknown>) => void;
 }
 
 export async function runSpeechSynth(
   options: SpeechSynthOptions,
 ): Promise<SpeechResult | null> {
-  const { text, lang, gender, voiceId, tier, env, signal, budgetMs, cacheKey } =
-    options;
-
-  const providers = orderVoicePreferred(
-    getProviderNamesFor("tts", tier),
-    voiceId,
+  const {
+    text,
+    lang,
     gender,
-  );
-
-  const result = await runProviderFailover<SpeechAttempt>({
-    providers,
-    signal,
-    totalMs: budgetMs,
-    route: "speech",
-    env,
+    slot,
     tier,
-    shouldSkip: async (provider) => {
-      if (await isSpeechProviderDown(env, provider)) {
-        logger.info(`[speech] Skipping "${provider}": marked down for today`);
-        return true;
-      }
-      if (await isProviderDegraded(env, provider)) {
-        logger.info(`[speech] Skipping "${provider}" (circuit open)`);
-        return true;
-      }
-      return !providerSupportsLanguage(provider, "tts", lang);
-    },
-    invoke: (provider, attemptSignal) =>
-      tryProviderVoices(
-        provider,
-        text,
-        lang,
-        gender,
-        voiceId,
-        env,
-        attemptSignal,
-      ),
-    handleAttempt: async (provider, att) => {
-      if (att?.result) {
-        await reportProviderOutcome(env, provider, true);
-        if (cacheKey) await writeSpeechCache(env, cacheKey, att.result);
-        return true;
-      }
+    env,
+    signal,
+    budgetMs,
+    cacheKey,
+    waitUntil,
+  } = options;
 
-      await reportProviderOutcome(env, provider, false);
-      if (att?.status === 429 || att?.status === 503) {
-        await markSpeechProviderDown(env, provider);
-      }
-      return false;
-    },
-    onAttemptError: (provider) => reportProviderOutcome(env, provider, false),
-  });
+  // The pool is already ordered by preference, so the failover list *is* the
+  // pool order. A provider with no voice for this language never enters the
+  // list, so it can neither be attempted nor be marked down for it.
+  const voicesByProvider = groupCandidatesByProvider(
+    resolveVoicePool(slot, gender, lang, tier),
+  );
+  const providers = [...voicesByProvider.keys()];
+  if (providers.length === 0) {
+    logger.warn(
+      `[speech] No provider can serve lang="${lang}" gender="${gender ?? "auto"}" tier=${tier}`,
+    );
+    return null;
+  }
+
+  const result = await singleFlightSpeech(cacheKey, () =>
+    runProviderFailover<SpeechAttempt>({
+      providers,
+      signal,
+      totalMs: budgetMs,
+      route: "speech",
+      env,
+      tier,
+      shouldSkip: async (provider) => {
+        // Independent lookups: running them in sequence doubled the pre-flight
+        // latency charged against the synthesis budget for no benefit.
+        const [down, degraded] = await Promise.all([
+          isSpeechProviderDown(env, provider),
+          isProviderDegraded(env, provider),
+        ]);
+        if (down) {
+          logger.info(`[speech] Skipping "${provider}": marked down for today`);
+          return true;
+        }
+        if (degraded) {
+          logger.info(`[speech] Skipping "${provider}" (circuit open)`);
+          return true;
+        }
+        return false;
+      },
+      invoke: (provider, attemptSignal) =>
+        tryProviderVoices(
+          provider,
+          voicesByProvider.get(provider) ?? [],
+          text,
+          lang,
+          env,
+          attemptSignal,
+        ),
+      handleAttempt: async (provider, att) => {
+        if (att?.result) {
+          await reportProviderOutcome(env, provider, true);
+          if (cacheKey) {
+            // The audio is already in hand; a KV/R2 round trip must not sit in
+            // front of the caller. `waitUntil` is allSettled, and the write
+            // helpers already swallow their own errors, so nothing escapes.
+            const write = writeSpeechCache(env, cacheKey, att.result);
+            if (waitUntil) waitUntil(write);
+            else await write;
+          }
+          return true;
+        }
+
+        await reportProviderOutcome(env, provider, false);
+        if (att?.status === 429 || att?.status === 503) {
+          await markSpeechProviderDown(env, provider);
+        }
+        return false;
+      },
+      onAttemptError: (provider) => reportProviderOutcome(env, provider, false),
+    }),
+  );
 
   return result?.result ?? null;
 }

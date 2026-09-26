@@ -17,6 +17,20 @@ describe("getCorsHeaders", () => {
     expect(headers["Access-Control-Allow-Credentials"]).toBe("true");
   });
 
+  it("exposes Server-Timing and Retry-After to the client", () => {
+    const req = new Request("https://api.com", {
+      headers: { Origin: "https://allowed.com" },
+    });
+    const env = {
+      ALLOWED_ORIGINS: "https://allowed.com",
+      APP_ENV: "production",
+    } as unknown as Env;
+
+    const headers = getCorsHeaders(req, env);
+    expect(headers["Access-Control-Expose-Headers"]).toContain("Server-Timing");
+    expect(headers["Access-Control-Expose-Headers"]).toContain("Retry-After");
+  });
+
   it("rejects unconfigured origin in production", () => {
     const req = new Request("https://api.com", {
       headers: { Origin: "https://evil.com" },

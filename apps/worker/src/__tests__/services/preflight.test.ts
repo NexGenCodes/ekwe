@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { checkPreflight, runPreflightGate } from "@/services/preflight";
 import { getLimits } from "@/core/limits";
-import { mockEnv, jsonResponse } from "@/__tests__/setup";
+import { mockEnv, jsonResponse, mockExecutionContext } from "@/__tests__/setup";
 import { http } from "msw";
 import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
@@ -265,7 +265,7 @@ describe("runPreflightGate (cached cooldown + quota gate)", () => {
     expect(gate.ok).toBe(true);
     expect(calls()).toBe(1);
     expect(env.EKWE_KV.put).toHaveBeenCalledWith(
-      "preflight:uid-g1",
+      "preflight:uid-g1:translate",
       expect.any(String),
       { expirationTtl: 2 },
     );
@@ -425,6 +425,109 @@ describe("runPreflightGate (cached cooldown + quota gate)", () => {
       expect(gate.response.status).toBe(401);
       const body = (await gate.response.json()) as any;
       expect(body).toMatchObject({ error: "UNAUTHORIZED" });
+    }
+  });
+
+  test("does not evict a sibling usage type's cache entry", async () => {
+    // A speech request used to delete the shared key, so a transcribe entry
+    // written milliseconds earlier was thrown away and the next transcribe had
+    // to pay for the RPC pair again.
+    const env = mockEnv();
+    const ctx = mockExecutionContext();
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+        jsonResponse({ allowed: true, tier_active: "FREE" }),
+      ),
+    );
+    const getSpy = vi
+      .spyOn(env.EKWE_KV, "get")
+      .mockResolvedValue(null as never);
+
+    await runPreflightGate(env, ctx, "uid-x", "FREE", "speech", null);
+    expect(getSpy).toHaveBeenCalledWith("preflight:uid-x:speech");
+
+    await runPreflightGate(env, ctx, "uid-x", "FREE", "transcribe", null);
+    expect(getSpy).toHaveBeenCalledWith("preflight:uid-x:transcribe");
+  });
+
+  test("issues the session and quota checks concurrently", async () => {
+    // Both are independent reads in front of every billable request, so they
+    // must not serialise into two round trips.
+    const order: string[] = [];
+    let releaseQuota: (() => void) | null = null;
+    const quotaBlocked = new Promise<void>((resolve) => {
+      releaseQuota = resolve;
+    });
+
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckSessionActive, async () => {
+        order.push("session:start");
+        await new Promise((r) => setTimeout(r, 20));
+        order.push("session:end");
+        return jsonResponse(true);
+      }),
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, async () => {
+        order.push("quota:start");
+        await quotaBlocked;
+        order.push("quota:end");
+        return jsonResponse({ allowed: true, tier_active: "FREE" });
+      }),
+    );
+
+    const env = mockEnv();
+    const ctx = mockExecutionContext();
+    vi.spyOn(env.EKWE_KV, "get").mockResolvedValue(null as never);
+
+    const gate = runPreflightGate(
+      env,
+      ctx,
+      "uid-c",
+      "FREE",
+      "speech",
+      "sess-1",
+    );
+
+    // Let the session call get going, then confirm the quota call started
+    // before the session call finished.
+    await new Promise((r) => setTimeout(r, 5));
+    expect(order).toContain("session:start");
+    expect(order).toContain("quota:start");
+    expect(order).not.toContain("session:end");
+
+    releaseQuota!();
+    const result = await gate;
+    expect(result.ok).toBe(true);
+    expect(order.indexOf("quota:start")).toBeLessThan(
+      order.indexOf("session:end"),
+    );
+  });
+
+  test("still denies on an inactive session even though the quota check ran", async () => {
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckSessionActive, () =>
+        jsonResponse(false),
+      ),
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
+        jsonResponse({ allowed: true, tier_active: "PREMIUM" }),
+      ),
+    );
+
+    const env = mockEnv();
+    const ctx = mockExecutionContext();
+    vi.spyOn(env.EKWE_KV, "get").mockResolvedValue(null as never);
+
+    const gate = await runPreflightGate(
+      env,
+      ctx,
+      "uid-d",
+      "PREMIUM",
+      "speech",
+      "sess-dead",
+    );
+
+    expect(gate.ok).toBe(false);
+    if (!gate.ok) {
+      expect(gate.response.status).toBe(401);
     }
   });
 });

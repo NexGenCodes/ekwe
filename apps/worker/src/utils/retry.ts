@@ -3,6 +3,12 @@ import { logger } from "@/core/logger";
 import { recordProviderAttempt } from "@/utils/analytics";
 import { abortableDelay } from "@/utils/fetch";
 
+/**
+ * An attempt at or above this is logged at warn with `slow: true`, so provider
+ * latency regressions surface on their own instead of hiding in the info feed.
+ */
+const SLOW_ATTEMPT_MS = 3_000;
+
 export function classifyProviderError(error: unknown): ProviderErrorClass {
   if (error instanceof Error && error.message === CLIENT_ABORTED)
     return "client";
@@ -173,6 +179,23 @@ export async function runProviderFailover<T>(
         }
         const attemptLatencyMs = Date.now() - attemptStart;
         if (await handleAttempt(provider, result)) {
+          // A success that still ate a large slice of the budget is the signal
+          // worth paging on, and it is invisible at info level once it is
+          // averaged into the routine provider chatter. Flag it so slow calls
+          // can be pulled out on their own.
+          const slow = attemptLatencyMs >= SLOW_ATTEMPT_MS;
+          const line =
+            `[${route}] ${provider} ok in ${attemptLatencyMs}ms` +
+            (attempt > 1 ? ` (attempt ${attempt})` : "") +
+            (slow ? " SLOW" : "");
+          const fields = {
+            attemptLatencyMs,
+            attempt,
+            remainingMs: attemptRemaining,
+            ...(slow ? { slow: true } : {}),
+          };
+          if (slow) logger.warn(line, fields);
+          else logger.info(line, fields);
           if (env) {
             void recordProviderAttempt(
               env,
@@ -191,10 +214,19 @@ export async function runProviderFailover<T>(
       } catch (e: unknown) {
         if (signal.aborted) throw new Error(CLIENT_ABORTED, { cause: e });
         if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
-        logger.error(`[${route}] ${provider} failed`, {
-          attempt,
-          error: e instanceof Error ? e.message : String(e),
-        });
+        const failLatencyMs = Date.now() - attemptStart;
+        const errorClass = classifyProviderError(e);
+        logger.error(
+          `[${route}] ${provider} failed in ${failLatencyMs}ms (${errorClass})`,
+          {
+            attempt,
+            attemptLatencyMs: failLatencyMs,
+            ...(failLatencyMs >= SLOW_ATTEMPT_MS ? { slow: true } : {}),
+            errorClass,
+            error: e instanceof Error ? e.message : String(e),
+            remainingMs: attemptRemaining,
+          },
+        );
         if (onAttemptError) {
           try {
             await onAttemptError(provider, e, attempt);
@@ -208,8 +240,8 @@ export async function runProviderFailover<T>(
             route,
             provider,
             "failure",
-            Date.now() - attemptStart,
-            classifyProviderError(e),
+            failLatencyMs,
+            errorClass,
             attempt,
             tier ?? "",
           );

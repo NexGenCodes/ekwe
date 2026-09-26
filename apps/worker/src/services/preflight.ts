@@ -34,8 +34,20 @@ interface PreflightGateFailure {
 
 type PreflightGateResult = PreflightGateSuccess | PreflightGateFailure;
 
-export function preflightCacheKey(userId: string): string {
-  return `preflight:${userId}`;
+/**
+ * Cache key for a preflight result.
+ *
+ * Scoped by usage type on purpose. A single key meant a speech request evicted
+ * the transcribe entry (and vice versa) within the 2s window, so a burst of
+ * mixed requests could never hit the cache and every one of them paid for the
+ * full RPC pair. The TTL is deliberately short — it exists to collapse a burst
+ * of the *same* kind of request, not to hold quota state.
+ */
+export function preflightCacheKey(
+  userId: string,
+  usageType: UsageType,
+): string {
+  return `preflight:${userId}:${usageType}`;
 }
 
 export async function runPreflightGate(
@@ -49,7 +61,7 @@ export async function runPreflightGate(
 ): Promise<PreflightGateResult> {
   type CachedPreflight = PreflightResponse & { usage_type?: UsageType };
 
-  const cacheKey = preflightCacheKey(userId);
+  const cacheKey = preflightCacheKey(userId, usageType);
   const cached = await env.EKWE_KV.get(cacheKey);
 
   let preflight: PreflightResponse;
@@ -58,8 +70,11 @@ export async function runPreflightGate(
     wasCached = true;
     try {
       const parsed = JSON.parse(cached) as CachedPreflight;
+      // The key is now type-scoped, so a hit is a hit. The `usage_type` check
+      // stays as a cheap guard against an entry written by an older deploy
+      // under the old untyped key.
       preflight =
-        parsed.usage_type === usageType
+        parsed.usage_type === undefined || parsed.usage_type === usageType
           ? parsed
           : await checkPreflight(
               env,
@@ -148,13 +163,16 @@ export async function runPreflightGate(
         ),
       };
     }
-    await recordUserEvent(
-      env,
-      "preflight",
-      userId,
-      "deny",
-      usageType,
-      preflight.reason ?? "unknown",
+    // A denied request is already the slow path; analytics must not add to it.
+    ctx.waitUntil(
+      recordUserEvent(
+        env,
+        "preflight",
+        userId,
+        "deny",
+        usageType,
+        preflight.reason ?? "unknown",
+      ).catch(() => {}),
     );
     return result;
   }
@@ -169,7 +187,13 @@ export async function runPreflightGate(
     );
   }
 
-  await recordUserEvent(env, "preflight", userId, "allow", usageType, "ok");
+  // This awaited a SHA-256 purely to format a blob, putting a hash on the
+  // critical path of every allowed request.
+  ctx.waitUntil(
+    recordUserEvent(env, "preflight", userId, "allow", usageType, "ok").catch(
+      () => {},
+    ),
+  );
 
   return { ok: true, preflight };
 }
@@ -238,7 +262,36 @@ export async function checkPreflight(
         ? premiumLimits.throttleTranscribeThreshold
         : premiumLimits.throttleTranslateThreshold;
 
-  const sessionActive = await isSessionActive(env, sessionId);
+  // Config guard first: it is synchronous, and there is no point issuing two
+  // RPCs when the service keys are missing.
+  if (!supabaseServiceHeaders(env)) {
+    return {
+      allowed: false,
+      tier_active: requestedTier,
+      reason: "PREFLIGHT_CONFIG_ERROR",
+    };
+  }
+
+  // The session check and the quota check are independent reads, and this runs
+  // in front of every billable request. Issued back to back, they cost one
+  // round trip instead of two. The session result only short-circuits; it
+  // never changes what the quota check returns.
+  const [sessionActive, quota] = await Promise.all([
+    isSessionActive(env, sessionId),
+    checkQuotaPreflight(env, {
+      userId,
+      requestedTier,
+      type,
+      freeCooldownSeconds,
+      freeDailyLimit,
+      premiumCooldownSeconds,
+      premiumDailyLimit,
+      premiumThrottleThreshold,
+      chargeChars,
+      premiumSpeechCharsLimit: premiumLimits.dailySpeechCharsLimit,
+    }),
+  ]);
+
   if (sessionActive === false) {
     return {
       allowed: false,
@@ -247,15 +300,41 @@ export async function checkPreflight(
     };
   }
 
-  try {
-    if (!supabaseServiceHeaders(env)) {
-      return {
-        allowed: false,
-        tier_active: requestedTier,
-        reason: "PREFLIGHT_CONFIG_ERROR",
-      };
-    }
+  return quota;
+}
 
+interface QuotaPreflightArgs {
+  userId: string;
+  requestedTier: Tier;
+  type: UsageType;
+  freeCooldownSeconds: number;
+  freeDailyLimit: number;
+  premiumCooldownSeconds: number;
+  premiumDailyLimit: number;
+  premiumThrottleThreshold: number;
+  chargeChars: number;
+  premiumSpeechCharsLimit: number;
+}
+
+/** The quota half of `checkPreflight`, split out so it can run concurrently. */
+async function checkQuotaPreflight(
+  env: Env,
+  args: QuotaPreflightArgs,
+): Promise<PreflightResponse> {
+  const {
+    userId,
+    requestedTier,
+    type,
+    freeCooldownSeconds,
+    freeDailyLimit,
+    premiumCooldownSeconds,
+    premiumDailyLimit,
+    premiumThrottleThreshold,
+    chargeChars,
+    premiumSpeechCharsLimit,
+  } = args;
+
+  try {
     const res = await supabasePost(env, "/rest/v1/rpc/check_preflight", {
       p_user_id: userId,
       p_type: type,
@@ -265,7 +344,7 @@ export async function checkPreflight(
       p_premium_daily_limit: premiumDailyLimit,
       p_premium_throttle_threshold: premiumThrottleThreshold,
       p_throttle_cooldown_seconds: freeCooldownSeconds,
-      p_premium_speech_chars_limit: premiumLimits.dailySpeechCharsLimit,
+      p_premium_speech_chars_limit: premiumSpeechCharsLimit,
       p_charge_chars: chargeChars,
     });
 
