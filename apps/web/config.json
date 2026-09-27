@@ -3,7 +3,7 @@
     "name": "Ekwe",
     "tagline": "Voice notes, translated instantly.",
     "description": "Record or import voice notes and get instant translations in 130+ languages. Powered by AI, built for everyone.",
-    "version": "1.2.10"
+    "version": "1.2.11"
   },
   "links": {
     "siteUrl": "https://ekwe.pages.dev",
