@@ -9,10 +9,19 @@ import { translateText } from "@/services/translateText";
 
 const getSessionMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
+const breadcrumbMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/services/supabase", () => ({
   supabase: { auth: { getSession: getSessionMock } },
 }));
+
+vi.mock("@/utils/logger", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/utils/logger")>();
+  return {
+    ...actual,
+    addSentryBreadcrumb: breadcrumbMock,
+  };
+});
 
 vi.mock("@/utils/http", () => ({
   getWorkerUrl: vi.fn(() => "https://worker.test"),
@@ -55,6 +64,7 @@ beforeEach(() => {
   vi.mocked(isOfflineNetworkError).mockReturnValue(false);
   vi.mocked(isTimeoutError).mockReturnValue(false);
   trackMock.mockClear();
+  breadcrumbMock.mockClear();
 });
 
 describe("translateText", () => {
@@ -224,5 +234,76 @@ describe("translateText", () => {
         headers: expect.objectContaining({ Authorization: "Bearer token-abc" }),
       }),
     );
+  });
+});
+
+/**
+ * scrubSentryEvent drops breadcrumb `data` before the event leaves the device,
+ * so the status and worker error code have to survive in the message or a
+ * production translation failure is undiagnosable.
+ */
+describe("translateText Sentry breadcrumbs", () => {
+  // addSentryBreadcrumb takes positional args: (category, message, data).
+  const breadcrumb = (): { category: string; message: string } => {
+    const call = breadcrumbMock.mock.calls.at(-1);
+    if (!call) throw new Error("expected a Sentry breadcrumb");
+    return { category: call[0] as string, message: call[1] as string };
+  };
+
+  it("records the status and worker error code in the message", async () => {
+    vi.mocked(fetchWithRetry).mockResolvedValue(
+      jsonResponse({ error: "EKWE_MT_UNAVAILABLE" }, 503),
+    );
+    await translateText("hola", "es", "en");
+    expect(breadcrumb().category).toBe("translate");
+    expect(breadcrumb().message).toContain("worker_error");
+    expect(breadcrumb().message).toContain("status=503");
+    expect(breadcrumb().message).toContain("errorCode=EKWE_MT_UNAVAILABLE");
+  });
+
+  it("records the language pair so a one-language outage is visible", async () => {
+    vi.mocked(fetchWithRetry).mockResolvedValue(
+      jsonResponse({ error: "EKWE_TRANSLATION_FAIL" }, 500),
+    );
+    await translateText("hola", "es", "en");
+    expect(breadcrumb().message).toContain("es->en");
+  });
+
+  it("records quota and rate-limit outcomes distinctly", async () => {
+    vi.mocked(fetchWithRetry).mockResolvedValue(
+      jsonResponse({ error: WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED }, 429),
+    );
+    await translateText("hola", "es", "en");
+    expect(breadcrumb().message).toContain("quota_exceeded");
+    expect(breadcrumb().message).toContain("status=429");
+
+    vi.mocked(fetchWithRetry).mockResolvedValue(jsonResponse({}, 429));
+    await translateText("hola", "es", "en");
+    expect(breadcrumb().message).toContain("rate_limited");
+  });
+
+  it("records the provider that returned nothing", async () => {
+    vi.mocked(fetchWithRetry).mockResolvedValue(
+      jsonResponse({ ...validResponse, translation: "   " }),
+    );
+    await translateText("hola", "es", "en");
+    expect(breadcrumb().message).toContain("empty_translation");
+    expect(breadcrumb().message).toContain("provider=openai");
+  });
+
+  it("records the rejection type but never the rejection message", async () => {
+    vi.mocked(fetchWithRetry).mockRejectedValue(
+      new TypeError("fetch failed for https://worker.test/translate?key=abc"),
+    );
+    await translateText("hola", "es", "en");
+    expect(breadcrumb().message).toContain("network_error");
+    expect(breadcrumb().message).toContain("kind=TypeError");
+    expect(breadcrumb().message).not.toContain("key=abc");
+  });
+
+  it("does not breadcrumb a successful translation", async () => {
+    vi.mocked(fetchWithRetry).mockResolvedValue(jsonResponse(validResponse));
+    await translateText("hello", "en", "es");
+    expect(breadcrumbMock).not.toHaveBeenCalled();
   });
 });

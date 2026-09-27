@@ -293,6 +293,47 @@ describe("synthesizeSpeech", () => {
     fetchSpy.mockRestore();
   });
 
+  it("rejects a 200 response whose body is not JSON", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("not json at all", { status: 200 }));
+    const result = await synthesizeSpeech("hello", "en");
+    expect(result).toEqual(err(EkweError.SPEECH_FAIL));
+    fetchSpy.mockRestore();
+  });
+
+  it("rejects when the metadata parses but the audio GET fails", async () => {
+    // The synth POST succeeded; the follow-up GET for the bytes is what failed.
+    // Synthesis is all-or-nothing here, so this must not resolve to a partial
+    // result and must not touch the transcoder.
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input) =>
+        String(input).includes("/speech/")
+          ? new Response("gone", { status: 404 })
+          : audioJsonResponse(),
+      );
+    const result = await synthesizeSpeech("hello", "en");
+    expect(result).toEqual(err(EkweError.SPEECH_FAIL));
+    expect(transcodeMock).not.toHaveBeenCalled();
+    expect(fsMock.written).toEqual([]);
+    fetchSpy.mockRestore();
+  });
+
+  it("rejects when the audio GET returns an empty body", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input) =>
+        String(input).includes("/speech/")
+          ? new Response(new Uint8Array([]), { status: 200 })
+          : audioJsonResponse(),
+      );
+    const result = await synthesizeSpeech("hello", "en");
+    expect(result).toEqual(err(EkweError.SPEECH_FAIL));
+    expect(fsMock.written).toEqual([]);
+    fetchSpy.mockRestore();
+  });
+
   it("falls back to SPEECH_FAIL on a non-ok response with a worker error body", async () => {
     const fetchSpy = mockSynthFetch("audio/wav", 500);
     const result = await synthesizeSpeech("hello", "en");
@@ -452,6 +493,43 @@ describe("synthesizeAudio", () => {
       expect(result.value.uri).toBe("file:///cache/ekwe_converted_test.ogg");
     }
     expect(transcodeMock).toHaveBeenCalledOnce();
+  });
+
+  it("reports the server-timing stages the worker returned", async () => {
+    // The upload path logs server-timing under __DEV__ so slow stages show up
+    // next to the request that caused them.
+    uploadMultipartMock.mockResolvedValue({
+      status: 200,
+      headers: { "server-timing": "stt;dur=12, synth;dur=340" },
+      body: JSON.stringify({
+        audioUrl: AUDIO_PATH,
+        mime: "audio/wav",
+        sourceLang: "en",
+        targetLang: "es",
+        translated: true,
+        voiceId: "studio",
+      }),
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(new Uint8Array([0x52, 0x49, 0x46, 0x46]), {
+        headers: { "content-type": "audio/wav" },
+      }),
+    );
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    const result = await synthesizeAudio(source, "en", "es");
+
+    expect(result.ok).toBe(true);
+    // logger.info prefixes the level, so the rendered line is the 2nd argument.
+    expect(
+      infoSpy.mock.calls.some((call) =>
+        call
+          .map(String)
+          .join(" ")
+          .includes("[Perf] synth server: stt=12 synth=340"),
+      ),
+    ).toBe(true);
+    infoSpy.mockRestore();
   });
 
   it("maps an exhausted quota (429) to QUOTA_EXCEEDED", async () => {

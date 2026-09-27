@@ -10,6 +10,7 @@ export function sanitizeLanguageCodes(
   codes: readonly string[],
   maxLanguages: number,
 ): string[] {
+  if (maxLanguages <= 0) return [];
   const seen = new Set<string>();
   const result: string[] = [];
   for (const code of codes) {

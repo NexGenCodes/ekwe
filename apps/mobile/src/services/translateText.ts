@@ -9,7 +9,7 @@ import { EkweError } from "@/constants/errors";
 import { supabase } from "@/services/supabase";
 import { Result, ok, err } from "@/types/Result";
 import { AnalyticsEvents, track } from "@/utils/analytics";
-import logger from "@/utils/logger";
+import logger, { addSentryBreadcrumb } from "@/utils/logger";
 import {
   fetchWithRetry,
   getWorkerUrl,
@@ -75,13 +75,22 @@ export async function translateText(
 
       if (response.status === 429) {
         if (errorCode === WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED) {
-          trackTranslationFailed(sourceLang, targetLang, "quota_exceeded");
+          trackTranslationFailed(sourceLang, targetLang, "quota_exceeded", {
+            status: response.status,
+            errorCode,
+          });
           return err(EkweError.QUOTA_EXCEEDED);
         }
-        trackTranslationFailed(sourceLang, targetLang, "rate_limited");
+        trackTranslationFailed(sourceLang, targetLang, "rate_limited", {
+          status: response.status,
+          errorCode,
+        });
         return err(EkweError.RATE_LIMITED);
       }
-      trackTranslationFailed(sourceLang, targetLang, "worker_error");
+      trackTranslationFailed(sourceLang, targetLang, "worker_error", {
+        status: response.status,
+        errorCode,
+      });
       return err(mapWorkerError(errorCode, EkweError.TRANSLATION_FAIL));
     }
 
@@ -99,7 +108,9 @@ export async function translateText(
     const data = parsed.data;
 
     if (data.translation.trim().length === 0) {
-      trackTranslationFailed(sourceLang, targetLang, "empty_translation");
+      trackTranslationFailed(sourceLang, targetLang, "empty_translation", {
+        provider: data.provider,
+      });
       return err(EkweError.TRANSLATION_FAIL);
     }
 
@@ -134,7 +145,14 @@ export async function translateText(
       }
       logger.warn("[translateText] FAIL:", e.message);
     }
-    trackTranslationFailed(sourceLang, targetLang, "network_error");
+    // The class name, never the message: a fetch rejection string can embed
+    // the request URL, and this value ships to Sentry.
+    trackTranslationFailed(
+      sourceLang,
+      targetLang,
+      "network_error",
+      e instanceof Error ? { kind: e.name } : { kind: typeof e },
+    );
     return err(EkweError.NETWORK_LOST);
   }
 }
@@ -143,10 +161,35 @@ function trackTranslationFailed(
   sourceLang: string,
   targetLang: string,
   reason: string,
+  detail?: Record<string, unknown>,
 ): void {
   track(AnalyticsEvents.TRANSLATION_FAILED, {
     sourceLang,
     targetLang,
     reason,
   });
+  // Every branch above returns an opaque `EkweError`, and `logger.info` /
+  // `logger.warn` are compiled out of release builds — so without this a
+  // production translation failure reaches Sentry as a bare code with nothing
+  // recording the status or provider that produced it. A breadcrumb is not an
+  // error event, so it keeps the failure diagnosable without filing expected
+  // worker outages as incidents.
+  //
+  // The diagnostic detail rides in the message rather than `data` because
+  // scrubSentryEvent strips breadcrumb payloads on the way out. Only
+  // non-transcript values (status codes, provider names) may go here.
+  const suffix = detail
+    ? ` ${Object.entries(detail)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(" ")}`
+    : "";
+  addSentryBreadcrumb(
+    "translate",
+    `${reason} ${sourceLang}->${targetLang}${suffix}`,
+    {
+      sourceLang,
+      targetLang,
+      ...detail,
+    },
+  );
 }

@@ -25,4 +25,14 @@ regexes = [
   # Empty provider-key placeholders in apps/worker/.dev.vars.example
   # (ASSEMBLYAI_KEY_1=, MISTRAL_KEY_2=, etc.) — no value, so nothing to leak.
   '''^[A-Z0-9_]+_KEY_[0-9]+=$''',
+  # Public Edge-TTS client token in apps/worker/src/providers/edge.ts. It is a
+  # fixed constant every Edge client sends, not a credential: it authorises
+  # nothing on our side and grants no access to any account or resource.
+  '''6A5AA1D4EAFF4E9FB37E23D68491D6F4''',
+]
+paths = [
+  # SHA-256 digests of applied migrations, emitted by scripts/lock-migrations.mjs.
+  # `generic-api-key` matches them because the keys are migration filenames that
+  # contain "access_token"/"push_token" and the digests clear the entropy floor.
+  '''^supabase/migrations/checksums\.json$''',
 ]

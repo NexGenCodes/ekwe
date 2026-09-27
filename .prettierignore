@@ -1,0 +1,24 @@
+# Prettier's own ignore list. The root .gitignore is read automatically
+# alongside this file, so only paths that .gitignore does not cover belong here.
+
+# Expo prebuild regenerates these native projects; they are gitignored via
+# apps/mobile/.gitignore, which Prettier does not read (it only resolves the
+# .gitignore at the repo root). Without these entries `pnpm format:check`
+# reformats Gradle/Xcode build output.
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/assets/android/
+
+# Generated sources
+apps/worker/worker-configuration.d.ts
+packages/db/dumps/
+packages/db/src/schema.ts
+
+# Third-party native code vendored into the repo
+apps/mobile/modules/ekwe-native/cpp/thirdparty/
+
+# Tooling caches and reports
+coverage/
+.turbo/
+node_modules/
+skills-lock.json
