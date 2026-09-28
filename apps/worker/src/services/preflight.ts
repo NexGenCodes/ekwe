@@ -35,21 +35,30 @@ interface PreflightGateFailure {
 type PreflightGateResult = PreflightGateSuccess | PreflightGateFailure;
 
 /**
- * Cache key for a preflight result.
+ * Quota + cooldown gate for every billable request.
  *
- * Scoped by usage type on purpose. A single key meant a speech request evicted
- * the transcribe entry (and vice versa) within the 2s window, so a burst of
- * mixed requests could never hit the cache and every one of them paid for the
- * full RPC pair. The TTL is deliberately short — it exists to collapse a burst
- * of the *same* kind of request, not to hold quota state.
+ * This deliberately does NOT cache its result, and that is load-bearing. The
+ * gate previously memoised an allow-decision in KV keyed only by user and usage
+ * type. Three separate problems made that unsafe:
+ *
+ * 1. The key omitted `chargeChars`, so a cached "allowed" for a 50-character
+ *    speech request admitted a subsequent 900-character request that the quota
+ *    check would have rejected.
+ * 2. The write used `expirationTtl: 2`. Cloudflare KV rejects any TTL below 60
+ *    with `400 Invalid expiration_ttl` in both the production runtime and
+ *    miniflare, and the error was swallowed — so the cache never populated and
+ *    every billable request paid a useless KV read plus the full RPC pair.
+ * 3. `trackBillableSuccess` deleted that same key after every successful
+ *    billable request, so even a valid TTL could never survive to a read.
+ *
+ * "Fixing" the TTL to 60 would have converted a broken cache into a live
+ * 60-second quota bypass, since 60s spans the whole FREE cooldown window and
+ * the key still omitted `chargeChars`. Do not reintroduce a cache here without
+ * an atomic reservation in the database.
+ *
+ * There is no need for one: `check_preflight` takes a row lock and enforces the
+ * cooldown in SQL, so it is already authoritative and correct under concurrency.
  */
-export function preflightCacheKey(
-  userId: string,
-  usageType: UsageType,
-): string {
-  return `preflight:${userId}:${usageType}`;
-}
-
 export async function runPreflightGate(
   env: Env,
   ctx: ExecutionContext,
@@ -59,52 +68,14 @@ export async function runPreflightGate(
   sessionId: string | null,
   chargeChars = 0,
 ): Promise<PreflightGateResult> {
-  type CachedPreflight = PreflightResponse & { usage_type?: UsageType };
-
-  const cacheKey = preflightCacheKey(userId, usageType);
-  const cached = await env.EKWE_KV.get(cacheKey);
-
-  let preflight: PreflightResponse;
-  let wasCached = false;
-  if (cached) {
-    wasCached = true;
-    try {
-      const parsed = JSON.parse(cached) as CachedPreflight;
-      // The key is now type-scoped, so a hit is a hit. The `usage_type` check
-      // stays as a cheap guard against an entry written by an older deploy
-      // under the old untyped key.
-      preflight =
-        parsed.usage_type === undefined || parsed.usage_type === usageType
-          ? parsed
-          : await checkPreflight(
-              env,
-              userId,
-              tier,
-              usageType,
-              sessionId,
-              chargeChars,
-            );
-    } catch {
-      logger.debug("[preflight] Cache parse failed, fetching fresh preflight");
-      preflight = await checkPreflight(
-        env,
-        userId,
-        tier,
-        usageType,
-        sessionId,
-        chargeChars,
-      );
-    }
-  } else {
-    preflight = await checkPreflight(
-      env,
-      userId,
-      tier,
-      usageType,
-      sessionId,
-      chargeChars,
-    );
-  }
+  const preflight = await checkPreflight(
+    env,
+    userId,
+    tier,
+    usageType,
+    sessionId,
+    chargeChars,
+  );
 
   if (!preflight.allowed) {
     let result: PreflightGateResult;
@@ -175,16 +146,6 @@ export async function runPreflightGate(
       ).catch(() => {}),
     );
     return result;
-  }
-
-  if (!wasCached) {
-    ctx.waitUntil(
-      env.EKWE_KV.put(
-        cacheKey,
-        JSON.stringify({ ...preflight, usage_type: usageType }),
-        { expirationTtl: 2 },
-      ).catch(() => {}),
-    );
   }
 
   // This awaited a SHA-256 purely to format a blob, putting a hash on the

@@ -2,7 +2,7 @@ import { Env, Tier, UsageType } from "@/core/types";
 import { getLimits } from "@/core/limits";
 import { logger } from "@/core/logger";
 import { recordUserEvent } from "@/utils/analytics";
-import { preflightCacheKey, nextUtcMidnightMs } from "@/services/preflight";
+import { nextUtcMidnightMs } from "@/services/preflight";
 import { supabasePost } from "@/services/supabase";
 import { USAGE_METER_META, usageSnapshotSchema } from "@ekwe/shared";
 import type { UsageMeterId, UsageSnapshot, PlanLimits } from "@ekwe/shared";
@@ -18,48 +18,76 @@ export function trackBillableSuccess(
   ctx.waitUntil(
     consumeUsage(env, userId, type, charCount)
       // A rejection here reaches waitUntil and kills the isolate.
-      .catch(() => {})
-      .finally(async () => {
-        try {
-          // Only this usage type's entry is stale now. Deleting the untyped key
-          // would no longer evict anything, and evicting the sibling types would
-          // throw away cache entries that are still valid.
-          await env.EKWE_KV.delete(preflightCacheKey(userId, type));
-        } catch {
-          // A stale cache entry self-expires in 2s and never blocks quota
-          // enforcement for long; swallowing here keeps the request path clean.
-        }
-      }),
+      .catch(() => {}),
   );
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Charge a billable request.
+ *
+ * `consume_usage` is a blind increment, not an idempotent set, so it must NOT be
+ * retried blindly: a request that times out or 5xxs may already have committed,
+ * and a second attempt would double-charge the user. Only 429 is retried, since
+ * a rate-limited request is by definition never applied.
+ *
+ * Every other failure is logged and dropped. That is a real (if narrow) billing
+ * hole — the user keeps the translation and the counter never moves — so these
+ * logs are the only signal that it happened. Reconciling them is a separate
+ * concern from this function; see the retry note above before changing it.
+ */
 async function consumeUsage(
   env: Env,
   userId: string,
   type: UsageType,
   charCount = 0,
 ): Promise<void> {
-  try {
-    const res = await supabasePost(env, "/rest/v1/rpc/consume_usage", {
-      p_user_id: userId,
-      p_type: type,
-      p_chars: charCount,
-    });
+  const MAX_ATTEMPTS = 3;
 
-    if (res && !res.ok) {
-      logger.error("[usage] consume_usage RPC failed", { status: res.status });
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await supabasePost(env, "/rest/v1/rpc/consume_usage", {
+        p_user_id: userId,
+        p_type: type,
+        p_chars: charCount,
+      });
+
+      if (res?.ok) {
+        await recordUserEvent(env, "usage", userId, "ok", type);
+        return;
+      }
+
+      if (res?.status === 429 && attempt < MAX_ATTEMPTS) {
+        await sleep(200 * attempt);
+        continue;
+      }
+
+      logger.error("[usage] consume_usage RPC failed", {
+        status: res?.status,
+        type,
+        attempt,
+        charged: false,
+      });
+      await recordUserEvent(
+        env,
+        "usage",
+        userId,
+        res ? "fail" : "unconfigured",
+        type,
+      );
+      return;
+    } catch (err) {
+      logger.error("[usage] consume_usage error", {
+        error: err instanceof Error ? err.message : String(err),
+        type,
+        attempt,
+        charged: false,
+      });
+      return;
     }
-    await recordUserEvent(
-      env,
-      "usage",
-      userId,
-      res ? (res.ok ? "ok" : "fail") : "unconfigured",
-      type,
-    );
-  } catch (err) {
-    logger.error("[usage] consume_usage error", {
-      error: err instanceof Error ? err.message : String(err),
-    });
   }
 }
 

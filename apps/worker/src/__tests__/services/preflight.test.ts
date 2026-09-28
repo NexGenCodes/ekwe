@@ -249,11 +249,18 @@ describe("runPreflightGate (cached cooldown + quota gate)", () => {
     return () => calls;
   }
 
-  test("runs the RPC on a cache miss and stores the gated result with its usage type", async () => {
+  test("checks the quota on every request and never reads or writes KV", async () => {
+    // Regression guard. The gate used to memoise its decision in KV. That cache
+    // could never work: `expirationTtl: 2` is below Cloudflare's 60s minimum so
+    // every write 400'd, and `trackBillableSuccess` deleted the key after every
+    // successful request. It cost a wasted KV read on every billable call and
+    // bought nothing.
     const env = mockEnv();
     const calls = rpcSpy();
+    const getSpy = vi.spyOn(env.EKWE_KV, "get");
+    const putSpy = vi.spyOn(env.EKWE_KV, "put");
 
-    const gate = await runPreflightGate(
+    const first = await runPreflightGate(
       env,
       ctx,
       "uid-g1",
@@ -261,56 +268,71 @@ describe("runPreflightGate (cached cooldown + quota gate)", () => {
       "translate",
       null,
     );
-
-    expect(gate.ok).toBe(true);
-    expect(calls()).toBe(1);
-    expect(env.EKWE_KV.put).toHaveBeenCalledWith(
-      "preflight:uid-g1:translate",
-      expect.any(String),
-      { expirationTtl: 2 },
-    );
-    const stored = JSON.parse(
-      (env.EKWE_KV.put as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1],
-    );
-    expect(stored.usage_type).toBe("translate");
-  });
-
-  test("reuses the cache on a matching usage type without re-running the RPC", async () => {
-    const env = mockEnv();
-    const calls = rpcSpy();
-
-    await runPreflightGate(env, ctx, "uid-g2", "FREE", "translate", null);
+    expect(first.ok).toBe(true);
     expect(calls()).toBe(1);
 
     const second = await runPreflightGate(
       env,
       ctx,
-      "uid-g2",
+      "uid-g1",
       "FREE",
       "translate",
       null,
     );
     expect(second.ok).toBe(true);
-    expect(calls()).toBe(1);
+    // Authoritative every time — the cooldown and quota are enforced in SQL.
+    expect(calls()).toBe(2);
+    expect(getSpy).not.toHaveBeenCalled();
+    expect(putSpy).not.toHaveBeenCalled();
   });
 
-  test("misses the cache and re-runs the RPC when the usage type differs", async () => {
+  test("never admits a request using another request's quota decision", async () => {
+    // The old cache key was scoped by user and usage type only, so a cached
+    // allow for a small request admitted a much larger one that the quota check
+    // would have rejected. Repointing the TTL at 60s would have shipped this as
+    // a live bypass spanning the whole FREE cooldown window.
     const env = mockEnv();
-    const calls = rpcSpy();
-
-    await runPreflightGate(env, ctx, "uid-g3", "FREE", "translate", null);
-    expect(calls()).toBe(1);
-
-    const second = await runPreflightGate(
-      env,
-      ctx,
-      "uid-g3",
-      "FREE",
-      "transcribe",
-      null,
+    const ctxLocal = mockExecutionContext();
+    const chargeChars: number[] = [];
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, async ({ request }) => {
+        const body = (await request.json()) as { p_charge_chars: number };
+        chargeChars.push(body.p_charge_chars);
+        return jsonResponse({
+          allowed: body.p_charge_chars <= 100,
+          tier_active: "FREE",
+          reason: body.p_charge_chars <= 100 ? undefined : "QUOTA_EXCEEDED",
+          quota_total: 100,
+          quota_remaining: body.p_charge_chars <= 100 ? 50 : 0,
+        });
+      }),
     );
-    expect(second.ok).toBe(true);
-    expect(calls()).toBe(2);
+
+    const small = await runPreflightGate(
+      env,
+      ctxLocal,
+      "uid-charge",
+      "FREE",
+      "speech",
+      null,
+      50,
+    );
+    expect(small.ok).toBe(true);
+
+    const large = await runPreflightGate(
+      env,
+      ctxLocal,
+      "uid-charge",
+      "FREE",
+      "speech",
+      null,
+      900,
+    );
+    expect(large.ok).toBe(false);
+    if (!large.ok) {
+      expect(large.response.status).toBe(429);
+    }
+    expect(chargeChars).toEqual([50, 900]);
   });
 
   test("returns a 429 EKWE_QUOTA_EXCEEDED response when the quota is exhausted", async () => {
@@ -428,28 +450,6 @@ describe("runPreflightGate (cached cooldown + quota gate)", () => {
     }
   });
 
-  test("does not evict a sibling usage type's cache entry", async () => {
-    // A speech request used to delete the shared key, so a transcribe entry
-    // written milliseconds earlier was thrown away and the next transcribe had
-    // to pay for the RPC pair again.
-    const env = mockEnv();
-    const ctx = mockExecutionContext();
-    server.use(
-      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
-        jsonResponse({ allowed: true, tier_active: "FREE" }),
-      ),
-    );
-    const getSpy = vi
-      .spyOn(env.EKWE_KV, "get")
-      .mockResolvedValue(null as never);
-
-    await runPreflightGate(env, ctx, "uid-x", "FREE", "speech", null);
-    expect(getSpy).toHaveBeenCalledWith("preflight:uid-x:speech");
-
-    await runPreflightGate(env, ctx, "uid-x", "FREE", "transcribe", null);
-    expect(getSpy).toHaveBeenCalledWith("preflight:uid-x:transcribe");
-  });
-
   test("issues the session and quota checks concurrently", async () => {
     // Both are independent reads in front of every billable request, so they
     // must not serialise into two round trips.
@@ -476,7 +476,6 @@ describe("runPreflightGate (cached cooldown + quota gate)", () => {
 
     const env = mockEnv();
     const ctx = mockExecutionContext();
-    vi.spyOn(env.EKWE_KV, "get").mockResolvedValue(null as never);
 
     const gate = runPreflightGate(
       env,
@@ -514,7 +513,6 @@ describe("runPreflightGate (cached cooldown + quota gate)", () => {
 
     const env = mockEnv();
     const ctx = mockExecutionContext();
-    vi.spyOn(env.EKWE_KV, "get").mockResolvedValue(null as never);
 
     const gate = await runPreflightGate(
       env,
