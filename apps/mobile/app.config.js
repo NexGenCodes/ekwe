@@ -304,7 +304,6 @@ module.exports = ({ config }) => {
   plugins.push(withStatusBarTheme);
 
   plugins.push(withReleaseSigning);
-  plugins.push(withSentryOptionsFileCopyDisabled);
 
   const sentryIndex = plugins.findIndex(
     (p) =>
@@ -313,7 +312,12 @@ module.exports = ({ config }) => {
   );
 
   if (sentryIndex !== -1) {
-    plugins[sentryIndex] = [
+    // `withAppBuildGradle` mods run in reverse registration order: the last
+    // plugin in the array is applied first. This one edits the line Sentry's
+    // plugin injects, so it has to be registered *before* it — pushed at the
+    // end it ran first, found no `sentry.gradle.kts` apply, and failed prebuild.
+    plugins.splice(sentryIndex, 0, withSentryOptionsFileCopyDisabled);
+    plugins[sentryIndex + 1] = [
       "@sentry/react-native/expo",
       {
         url: "https://sentry.io/",
