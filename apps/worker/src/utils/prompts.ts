@@ -1,53 +1,12 @@
+import { sanitizeProviderOutput } from "@/core/sanitize";
+
 export const ROMANIZATION_MARKER = "<|ekwe:romanization|>";
-
-const NON_LATIN_SCRIPT_CODES = new Set([
-  "zh",
-  "yue",
-  "ja",
-  "ko",
-  "ru",
-  "uk",
-  "bg",
-  "sr",
-  "mk",
-  "el",
-  "he",
-  "yi",
-  "ar",
-  "fa",
-  "ur",
-  "ug",
-  "hi",
-  "mr",
-  "ne",
-  "ks",
-  "bn",
-  "pa",
-  "gu",
-  "ta",
-  "te",
-  "ml",
-  "si",
-  "km",
-  "lo",
-  "my",
-  "th",
-  "ka",
-  "am",
-  "ti",
-  "dv",
-  "iu",
-]);
-
-export function needsRomanization(langCode: string): boolean {
-  return NON_LATIN_SCRIPT_CODES.has(langCode);
-}
 
 export function parseTranslateOutput(
   raw: string,
   transliteration: boolean | undefined,
 ): { translation: string; transliteration?: string } {
-  const trimmed = raw.trim();
+  const trimmed = sanitizeProviderOutput(raw.trim());
   if (!transliteration) return { translation: trimmed };
 
   const markerIndex = trimmed.lastIndexOf(ROMANIZATION_MARKER);

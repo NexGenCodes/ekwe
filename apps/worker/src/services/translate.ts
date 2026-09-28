@@ -4,7 +4,10 @@ import {
   translateResponseSchema,
 } from "@ekwe/shared";
 import { logger } from "@/core/logger";
-import { TRANSLATE_PER_PROVIDER_MS } from "@/core/budgets";
+import {
+  TRANSLATE_CACHE_TTL_SECONDS,
+  TRANSLATE_PER_PROVIDER_MS,
+} from "@/core/budgets";
 import { getLimits } from "@/core/limits";
 import { getProviderModule, getProviderNamesFor } from "@/providers";
 import {
@@ -23,7 +26,13 @@ import {
   TranslateResult,
 } from "@/core/types";
 
-const TRANSLATE_CACHE_TTL_SECONDS = 4 * 60 * 60;
+export function buildTranslateCacheKey(
+  userId: string,
+  tier: string,
+  textHash: string,
+): string {
+  return `trans:${userId}:${tier}:${textHash}`;
+}
 
 export interface TranslateJob {
   env: Env;

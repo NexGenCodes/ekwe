@@ -1,30 +1,37 @@
-const INJECTION_PATTERNS: RegExp[] = [
-  /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/gi,
-  /disregard\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/gi,
-  /forget\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)/gi,
-  /disregard\s+your\s+(instructions?|prompts?|rules?)/gi,
-  /you\s+are\s+(?:now\s+)?(?:a|an)\s+/gi,
-  /act\s+as\s+(a|an)\s+/gi,
-  /pretend\s+(you('re|\s+are)\s+)/gi,
-  /system\s*prompt/gi,
-  /system\s+message/gi,
-  /developer\s+message/gi,
-  /\[INST\]/gi,
-  /\[\/INST\]/gi,
-  /<\|im_start\|>/gi,
-  /<\|im_end\|>/gi,
-  /<system>/gi,
-  /<\\?system\\?>/gi,
-  /(?:now\s+)?(?:output|reply|respond)\s+(?:only\s+)?(?:in\s+)?(?:json|markdown|html)/gi,
-  /\[SYS\]/gi,
-  /\[\/SYS\]/gi,
-  /do\s+not\s+(?:follow|obey)\s+previous/gi,
-];
+const BIDI_CONTROLS = /[‪-‮⁦-⁩‎‏]/g;
 
+const STRUCTURAL_DELIMITERS =
+  /\[INST\]|\[\/INST\]|<\|im_start\|>|<\|im_end\|>|\[SYS\]|\[\/SYS\]|<\\?system\\?>|<\/?system>/gi;
+
+export function stripBidiControls(text: string): string {
+  return text.replace(BIDI_CONTROLS, "");
+}
+
+function collapse(text: string): string {
+  return text.replace(/[ \t]{3,}/g, "  ").trim();
+}
+
+/**
+ * Applied to text on its way to a provider. Only strips characters that never
+ * occur in legitimate prose: bidi overrides (which can visually reorder a
+ * translation) and chat-template delimiters (the one injection shape that is
+ * unambiguous by construction).
+ *
+ * Matching natural-language phrases such as "ignore previous instructions" was
+ * dropped on purpose. It never worked — "disregard earlier directives" and every
+ * non-English phrasing walk straight past it — while `/you are a/` mangled
+ * ordinary sentences. A blocklist is the wrong control for prompt injection;
+ * the provider prompt already delimits user text as a user turn.
+ */
 export function sanitizeTranslationText(text: string): string {
-  let sanitized = text.replace(/[\u202A-\u202E\u2066-\u2069\u200E\u200F]/g, "");
-  for (const pattern of INJECTION_PATTERNS) {
-    sanitized = sanitized.replace(pattern, "");
-  }
-  return sanitized.replace(/\s{3,}/g, "  ").trim();
+  return collapse(stripBidiControls(text).replace(STRUCTURAL_DELIMITERS, ""));
+}
+
+/**
+ * Applied to text on its way back to the client, where a third party's speech
+ * may be rendered for someone else. Structural delimiters are stripped so a
+ * downstream consumer cannot be made to read provider output as a new turn.
+ */
+export function sanitizeProviderOutput(text: string): string {
+  return sanitizeTranslationText(text);
 }

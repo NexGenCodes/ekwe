@@ -31,7 +31,7 @@ public class EkweNativeModule: Module {
   private func guardedSourcePath(_ path: String, maxAudioBytes: Int) -> SourcePathOutcome {
     let plainPath = path.hasPrefix("file://") ? String(path.dropFirst("file://".count)) : path
     let url = URL(fileURLWithPath: plainPath)
-    let limit = maxAudioBytes > 0 ? maxAudioBytes : 26_214_400
+    let limit = maxAudioBytes > 0 ? maxAudioBytes : 10_485_760
     guard
       let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
       let size = values.fileSize

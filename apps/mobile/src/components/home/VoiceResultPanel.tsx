@@ -20,7 +20,11 @@ import type { VoiceGender, VoiceSlot } from "@ekwe/shared";
 
 import { IconButton } from "@/components/IconButton";
 import { AudioWaveform } from "@/components/AudioWaveform";
-import { EditableText } from "@/components/home/EditableText";
+import {
+  EditableText,
+  type EditFieldKey,
+  type EditableField,
+} from "@/components/home/EditableText";
 
 import { Box, Pressable, Spinner, Text } from "@/components/ui";
 import {
@@ -38,7 +42,6 @@ import { formatClock } from "@/utils/formatDuration";
 export interface VoiceResultPanelProps {
   player: SharedAudioPlayer;
 
-  sourceKind: "text" | "audio";
   voice: VoiceSlot;
   voiceGender?: VoiceGender;
 
@@ -67,15 +70,16 @@ export interface VoiceResultPanelProps {
   /** True when a translation exists, so the transcript is a distinct document. */
   hasTranslation: boolean;
   isEditing: boolean;
-  /** Which text the open editor owns, for labelling. */
-  editTarget: "transcript" | "translation";
-  editBuffer: string;
+  /** False for typed input, where Back already reaches the words. */
+  canEditText: boolean;
+  /** One entry per document the editor may correct. */
+  editFields: EditableField[];
+  /** What Convert will do with the current draft. */
+  editHint: string;
   maxChars: number;
   /** Open the editor on the primary result text. */
   onEditResult: () => void;
-  /** Open the editor on the transcript. */
-  onEditTranscript: () => void;
-  onEditChange: (next: string) => void;
+  onEditFieldChange: (key: EditFieldKey, next: string) => void;
   onCancelEdit: () => void;
   onApplyEdit: () => void;
 
@@ -88,17 +92,26 @@ export interface VoiceResultPanelProps {
 
 const EMPTY_PEAKS: number[] = [];
 
+/**
+ * `quiet` is for a tertiary action that should not read as a peer of the primary
+ * button: no border, no fill, and it hugs its label instead of dividing the row
+ * evenly. The bordered `chip` look is right when two actions compete, and wrong
+ * when one sits alone under the text it modifies.
+ */
 function ActionChip({
   icon,
   label,
   onPress,
   tint,
+  variant = "chip",
 }: {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
   tint: string;
+  variant?: "chip" | "quiet";
 }): React.ReactElement {
+  const isQuiet = variant === "quiet";
   return (
     <Pressable
       onPress={onPress}
@@ -107,18 +120,19 @@ function ActionChip({
       hitSlop={8}
       style={({ pressed }) => [
         {
-          flex: 1,
-          justifyContent: "center",
           flexDirection: "row",
           alignItems: "center",
-          gap: spacing.sm,
+          justifyContent: "center",
+          gap: spacing.xs,
           minHeight: touchTarget.minimum,
-          paddingHorizontal: spacing.md,
+          paddingHorizontal: isQuiet ? 0 : spacing.md,
           borderRadius: borderRadius.xl,
-          borderWidth: 1,
+          borderWidth: isQuiet ? 0 : 1,
           borderColor: withAlpha(tint, 0.35),
-          backgroundColor: withAlpha(tint, 0.12),
+          backgroundColor: isQuiet ? "transparent" : withAlpha(tint, 0.12),
         },
+        // Only a filled chip is competing for the row, so only it flexes.
+        !isQuiet && { flex: 1 },
 
         pressed && { transform: [{ scale: 0.96 }] },
       ]}
@@ -133,7 +147,6 @@ function ActionChip({
 
 export const VoiceResultPanel = React.memo(function VoiceResultPanel({
   player,
-  sourceKind,
   voice,
   voiceGender,
   langName,
@@ -147,12 +160,12 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
   transcriptText,
   hasTranslation,
   isEditing,
-  editTarget,
-  editBuffer,
+  canEditText,
+  editFields,
+  editHint,
   maxChars,
   onEditResult,
-  onEditTranscript,
-  onEditChange,
+  onEditFieldChange,
   onCancelEdit,
   onApplyEdit,
   onClear,
@@ -162,12 +175,18 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
 }: VoiceResultPanelProps): React.ReactElement {
   const { color } = useTheme();
 
-  const isTextSource = sourceKind === "text";
-  const backLabel = isTextSource ? "Edit" : "Back";
+  // Convert renders the spoken document, so that is what gates it.
+  const primary =
+    editFields.find((f) => f.key === "translation") ?? editFields[0];
+  const canConvert = (primary?.value.trim().length ?? 0) > 0;
 
   const isPlaying = player.isPlaying;
   const hasWaveform = !!amplitudes && amplitudes.length > 0;
 
+  // The panel's own `durationSeconds` is the worker's estimate, so it is only
+  // the fallback. The player's duration is measured from the decoded clip, and
+  // progress is a fraction of this — a mismatch here shows up as a bar that
+  // stops short of its own end.
   const totalSeconds = player.duration > 0 ? player.duration : durationSeconds;
 
   const { endScrub, beginScrub } = player;
@@ -225,17 +244,11 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         }}
       >
         <Pressable
-          onPress={isEditing ? onCancelEdit : onBack}
+          onPress={onBack}
           disabled={isAudioLoading}
           accessibilityRole="button"
           accessibilityLabel={
-            isAudioLoading
-              ? "Preparing audio, please wait"
-              : isEditing
-                ? "Cancel editing"
-                : isTextSource
-                  ? "Edit source text"
-                  : "Back to recording"
+            isAudioLoading ? "Preparing audio, please wait" : "Back"
           }
           accessibilityState={{ disabled: isAudioLoading }}
           hitSlop={10}
@@ -253,19 +266,11 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         >
           {isAudioLoading ? (
             <Spinner size="sm" color={color.onBrand} />
-          ) : isEditing ? (
-            <X size={iconSize.sm} color={color.onBrand} />
-          ) : isTextSource ? (
-            <Pencil
-              size={iconSize.sm}
-              color={color.onBrand}
-              strokeWidth={2.2}
-            />
           ) : (
             <ArrowLeft size={iconSize.sm} color={color.onBrand} />
           )}
           <Text variant="label" style={{ color: color.onBrand }}>
-            {isAudioLoading ? "Preparing…" : isEditing ? "Cancel" : backLabel}
+            {isAudioLoading ? "Preparing…" : "Back"}
           </Text>
         </Pressable>
 
@@ -310,59 +315,51 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
       </Box>
 
       {}
-      {!isEditing && hasTranslation && transcriptText.trim().length > 0 && (
-        <Pressable
-          onPress={onEditTranscript}
-          accessibilityRole="button"
-          accessibilityLabel={`Edit what you said. ${transcriptText}`}
-          accessibilityHint="Correct the original words, then convert to hear them"
-          hitSlop={8}
-          style={({ pressed }) => [
-            {
-              flexDirection: "row",
-              alignItems: "flex-start",
-              gap: spacing.sm,
-              marginBottom: spacing.sm,
-            },
-            pressed && { opacity: 0.7 },
-          ]}
-        >
-          <Text
-            variant="caption"
-            numberOfLines={2}
-            style={{
-              flex: 1,
-              color: withAlpha(color.onBrand, 0.7),
-              fontStyle: "italic",
-            }}
-          >
-            {transcriptText}
-          </Text>
-          <Pencil
-            size={12}
-            color={withAlpha(color.onBrand, 0.55)}
-            strokeWidth={2}
-          />
-        </Pressable>
-      )}
-
-      {}
       <EditableText
-        text={
-          isEditing && editTarget === "transcript" ? transcriptText : resultText
-        }
-        value={editBuffer}
-        onChangeText={onEditChange}
-        onEdit={onEditResult}
+        text={resultText}
+        fields={editFields}
+        onChangeField={onEditFieldChange}
         onCancel={onCancelEdit}
         isEditing={isEditing}
-        accessibilityName={
-          isEditing && editTarget === "transcript"
-            ? "original words"
-            : "message"
-        }
+        hint={editHint}
         maxChars={maxChars}
       />
+
+      {/* Typed input needs no editor: the words on the card are the words the
+          user wrote, and Back reaches the composer holding them. A recording
+          does need one, because its transcript is the app's guess. */}
+      {!isEditing && canEditText && (
+        <Box
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            alignSelf: "flex-start",
+            marginBottom: spacing.sm,
+          }}
+        >
+          <ActionChip
+            icon={<Pencil size={iconSize.sm} color={color.onBrand} />}
+            label="Edit text"
+            onPress={onEditResult}
+            tint={color.onBrand}
+            variant="quiet"
+          />
+        </Box>
+      )}
+
+      {!isEditing && hasTranslation && transcriptText.trim().length > 0 && (
+        <Text
+          variant="caption"
+          numberOfLines={2}
+          style={{
+            color: withAlpha(color.onBrand, 0.7),
+            fontStyle: "italic",
+            marginBottom: spacing.sm,
+          }}
+        >
+          {`said: "${transcriptText}"`}
+        </Text>
+      )}
 
       {isEditing ? (
         <>
@@ -372,11 +369,11 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
           <Box style={{ height: spacing.lg }} />
           <Pressable
             onPress={onApplyEdit}
-            disabled={editBuffer.trim().length === 0}
+            disabled={!canConvert}
             accessibilityRole="button"
             accessibilityLabel="Convert"
-            accessibilityHint="Renders the edited text in your voice"
-            accessibilityState={{ disabled: editBuffer.trim().length === 0 }}
+            accessibilityHint={editHint}
+            accessibilityState={{ disabled: !canConvert }}
             hitSlop={8}
             style={({ pressed }) => [
               {
@@ -387,7 +384,7 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
                 minHeight: touchTarget.comfortable,
                 borderRadius: borderRadius.xl,
                 backgroundColor: color.onBrand,
-                opacity: editBuffer.trim().length === 0 ? 0.5 : 1,
+                opacity: canConvert ? 1 : 0.5,
               },
               pressed && { transform: [{ scale: 0.98 }], opacity: 0.92 },
             ]}

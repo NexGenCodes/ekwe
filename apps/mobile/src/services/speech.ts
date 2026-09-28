@@ -62,6 +62,12 @@ export interface SynthesizedAudio {
   transcript?: string | null;
   /** The translation that was rendered, when one was produced. */
   translation?: string | null;
+  /**
+   * True when the source was over the translate budget, so the worker
+   * translated only its opening span. `transcript` then holds that same span,
+   * not everything the user said.
+   */
+  translationTruncated?: boolean;
 }
 
 /**
@@ -173,6 +179,8 @@ export async function synthesizeSpeech(
     gender?: VoiceGender;
     sourceLang?: string;
     delivery?: SynthDelivery;
+    /** Cache-busting counter for a re-roll of identical text. */
+    reroll?: number;
   },
 ): Promise<Result<SynthesizedAudio, EkweError>> {
   const trimmed = text.trim();
@@ -213,6 +221,7 @@ export async function synthesizeSpeech(
           ...(options?.sourceLang ? { sourceLang: options.sourceLang } : {}),
           gender: options?.gender ?? resolveGenderSetting(),
           voiceId: options?.voiceId ?? settings$.voiceId.peek() ?? undefined,
+          ...(options?.reroll === undefined ? {} : { reroll: options.reroll }),
         }),
         signal: controller.signal,
       });
@@ -266,6 +275,7 @@ export async function synthesizeSpeech(
       // what the user said or typed.
       transcript: parsed.data.transcript ?? null,
       translation: parsed.data.translation ?? null,
+      translationTruncated: parsed.data.translationTruncated ?? false,
     });
   } catch (e: unknown) {
     if (e instanceof Error && e.name === "AbortError") {
@@ -410,6 +420,7 @@ export async function synthesizeAudio(
       translated: data.translated,
       transcript: data.transcript ?? null,
       translation: data.translation ?? null,
+      translationTruncated: data.translationTruncated ?? false,
     });
   } catch (e: unknown) {
     if (isTimeoutError(e)) {

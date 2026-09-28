@@ -37,27 +37,10 @@ type PreflightGateResult = PreflightGateSuccess | PreflightGateFailure;
 /**
  * Quota + cooldown gate for every billable request.
  *
- * This deliberately does NOT cache its result, and that is load-bearing. The
- * gate previously memoised an allow-decision in KV keyed only by user and usage
- * type. Three separate problems made that unsafe:
- *
- * 1. The key omitted `chargeChars`, so a cached "allowed" for a 50-character
- *    speech request admitted a subsequent 900-character request that the quota
- *    check would have rejected.
- * 2. The write used `expirationTtl: 2`. Cloudflare KV rejects any TTL below 60
- *    with `400 Invalid expiration_ttl` in both the production runtime and
- *    miniflare, and the error was swallowed — so the cache never populated and
- *    every billable request paid a useless KV read plus the full RPC pair.
- * 3. `trackBillableSuccess` deleted that same key after every successful
- *    billable request, so even a valid TTL could never survive to a read.
- *
- * "Fixing" the TTL to 60 would have converted a broken cache into a live
- * 60-second quota bypass, since 60s spans the whole FREE cooldown window and
- * the key still omitted `chargeChars`. Do not reintroduce a cache here without
- * an atomic reservation in the database.
- *
- * There is no need for one: `check_preflight` takes a row lock and enforces the
- * cooldown in SQL, so it is already authoritative and correct under concurrency.
+ * Deliberately uncached. The old KV cache could never work: `expirationTtl: 2`
+ * is under Cloudflare's 60s minimum so every write 400'd, and the key omitted
+ * `chargeChars`, so raising the TTL to 60 would make it a live quota bypass.
+ * `check_preflight` locks the row and enforces the cooldown in SQL.
  */
 export async function runPreflightGate(
   env: Env,
@@ -67,6 +50,7 @@ export async function runPreflightGate(
   usageType: UsageType,
   sessionId: string | null,
   chargeChars = 0,
+  skipCooldown = false,
 ): Promise<PreflightGateResult> {
   const preflight = await checkPreflight(
     env,
@@ -75,6 +59,7 @@ export async function runPreflightGate(
     usageType,
     sessionId,
     chargeChars,
+    skipCooldown,
   );
 
   if (!preflight.allowed) {
@@ -194,13 +179,15 @@ export async function checkPreflight(
   type: UsageType,
   sessionId: string | null,
   chargeChars = 0,
+  skipCooldown = false,
 ): Promise<PreflightResponse> {
   const isTranscribe = type === "transcribe";
   const isSpeech = type === "speech";
   const isStream = type === "stream";
   const freeLimits = getLimits("FREE");
   const premiumLimits = getLimits("PREMIUM");
-  const freeCooldownSeconds = freeLimits.cooldownSeconds;
+  const freeCooldownSeconds = skipCooldown ? 0 : freeLimits.cooldownSeconds;
+  const throttleCooldownSeconds = freeLimits.cooldownSeconds;
   const freeDailyLimit = isSpeech
     ? freeLimits.dailySpeechCharsLimit
     : isStream
@@ -208,7 +195,9 @@ export async function checkPreflight(
       : isTranscribe
         ? freeLimits.dailyTranscribeLimit
         : freeLimits.dailyTranslateLimit;
-  const premiumCooldownSeconds = premiumLimits.cooldownSeconds;
+  const premiumCooldownSeconds = skipCooldown
+    ? 0
+    : premiumLimits.cooldownSeconds;
   const premiumDailyLimit = isSpeech
     ? premiumLimits.dailySpeechCharsLimit
     : isStream
@@ -250,6 +239,7 @@ export async function checkPreflight(
       premiumThrottleThreshold,
       chargeChars,
       premiumSpeechCharsLimit: premiumLimits.dailySpeechCharsLimit,
+      throttleCooldownSeconds,
     }),
   ]);
 
@@ -275,6 +265,7 @@ interface QuotaPreflightArgs {
   premiumThrottleThreshold: number;
   chargeChars: number;
   premiumSpeechCharsLimit: number;
+  throttleCooldownSeconds: number;
 }
 
 /** The quota half of `checkPreflight`, split out so it can run concurrently. */
@@ -293,6 +284,7 @@ async function checkQuotaPreflight(
     premiumThrottleThreshold,
     chargeChars,
     premiumSpeechCharsLimit,
+    throttleCooldownSeconds,
   } = args;
 
   try {
@@ -304,7 +296,7 @@ async function checkQuotaPreflight(
       p_premium_cooldown_seconds: premiumCooldownSeconds,
       p_premium_daily_limit: premiumDailyLimit,
       p_premium_throttle_threshold: premiumThrottleThreshold,
-      p_throttle_cooldown_seconds: freeCooldownSeconds,
+      p_throttle_cooldown_seconds: throttleCooldownSeconds,
       p_premium_speech_chars_limit: premiumSpeechCharsLimit,
       p_charge_chars: chargeChars,
     });

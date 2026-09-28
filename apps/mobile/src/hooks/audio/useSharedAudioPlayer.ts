@@ -159,6 +159,22 @@ export const useSharedAudioPlayer = (
 
   const status = useAudioPlayerStatus(player);
 
+  /**
+   * The duration of the file that is actually loaded.
+   *
+   * `durationMsOverride` comes back with the artifact, so it is the only
+   * number available before the clip is decoded and is a reasonable estimate
+   * of it. It is not, however, the length of the audio being played: providers
+   * round, and a remuxed CAF can drift a few hundred ms either way. Progress is
+   * measured against this, so trusting the estimate once the real length is
+   * known is what leaves the waveform parked just short of the end on a clip
+   * that played all the way through.
+   */
+  const resolvedDuration =
+    status.isLoaded && status.duration > 0
+      ? status.duration
+      : (knownDuration ?? status.duration);
+
   const isPlayingSV = useSharedValue(false);
   const isScrubbingSV = useSharedValue(false);
   const durationSV = useSharedValue(0);
@@ -231,21 +247,26 @@ export const useSharedAudioPlayer = (
   );
 
   useEffect(() => {
-    const dur = knownDuration ?? status.duration;
+    const dur = resolvedDuration;
     setDuration(dur);
-    setProgress(status.currentTime);
     durationSV.value = dur;
-    progressSV.value = status.currentTime;
     if (status.didJustFinish) {
+      // The integrated counter is clamped to duration, so it lands exactly on
+      // the end; the reported currentTime can stop a frame or two short of it
+      // and leave the bar looking unfinished after the audio has stopped.
+      progressSV.value = dur > 0 ? dur : status.currentTime;
+      setProgress(status.currentTime);
       triggerHaptic();
+      return;
     }
+    setProgress(status.currentTime);
+    progressSV.value = status.currentTime;
   }, [
     status.currentTime,
-    status.duration,
     status.didJustFinish,
     progressSV,
     durationSV,
-    knownDuration,
+    resolvedDuration,
   ]);
 
   useEffect(() => {
@@ -264,7 +285,7 @@ export const useSharedAudioPlayer = (
       await setIsAudioActiveAsync(true);
       player.setPlaybackRate(playbackRate);
 
-      const dur = knownDuration ?? player.duration;
+      const dur = resolvedDuration || player.duration;
       const atEnd =
         isEndedRef.current ||
         didJustFinishRef.current ||
@@ -284,7 +305,7 @@ export const useSharedAudioPlayer = (
     } catch (error) {
       logger.error("[SharedAudioPlayer] Play failed:", error);
     }
-  }, [player, progressSV, knownDuration, playbackRate]);
+  }, [player, progressSV, resolvedDuration, playbackRate]);
 
   const playFromStart = useCallback(async (): Promise<void> => {
     if (releasedRef.current) return;
@@ -386,7 +407,7 @@ export const useSharedAudioPlayer = (
   const endScrub = useCallback(
     async (seconds: number): Promise<void> => {
       if (releasedRef.current) return;
-      const dur = knownDuration ?? player.duration;
+      const dur = resolvedDuration || player.duration;
       const clampedPos = Math.max(0, Math.min(seconds, dur));
       const atEnd = dur > 0 && clampedPos >= dur - SEEK_END_EPSILON;
       const wasPlaying = resumeAfterScrubRef.current;
@@ -413,7 +434,14 @@ export const useSharedAudioPlayer = (
       }
       setScrubbing(false);
     },
-    [player, progressSV, setScrubbing, knownDuration, waitForSeekSettle, play],
+    [
+      player,
+      progressSV,
+      setScrubbing,
+      resolvedDuration,
+      waitForSeekSettle,
+      play,
+    ],
   );
 
   /**

@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect, vi, type Mock } from "vitest";
 
 vi.mock("@/providers/edge", () => ({
   tts: vi.fn(async () => ({ result: null, status: null })),
@@ -11,7 +11,12 @@ import {
   mockExecutionContext,
   jsonResponse,
 } from "@/__tests__/setup";
-import { VOICE_PREVIEW_TEXT } from "@ekwe/shared";
+import {
+  VOICE_PREVIEW_TEXT,
+  TRANSLATE_EXPANSION_CUSHION,
+  PREMIUM_LIMITS,
+  STUDIO_VOICE_ID,
+} from "@ekwe/shared";
 import { http } from "msw";
 import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
@@ -690,5 +695,79 @@ describe("handleSynthesize — audio branch", () => {
     );
     expect(res.status).toBe(403);
     expect(env.AI.run).not.toHaveBeenCalled();
+  });
+});
+
+describe("transcript and translation stay consistent", () => {
+  test("reports the same span it translated when the source is over the limit", async () => {
+    gateOk("PREMIUM", 5000, 5000);
+    server.use(
+      http.post(PROVIDER_URLS.geminiTtsGenerate, () =>
+        jsonResponse({ error: { code: 429, message: "throttled" } }, 429),
+      ),
+      http.post(PROVIDER_URLS.deepgramSpeak, () => mp3Response()),
+      http.post(PROVIDER_URLS.witaiSynthesize, () => mp3Response()),
+    );
+
+    const env = mockEnv();
+    const ai = env.AI as unknown as { run: Mock };
+    const baseImpl = ai.run.getMockImplementation();
+    ai.run.mockImplementation(async (model: string, input: unknown) => {
+      if (model === "@cf/zai-org/glm-4.7-flash") {
+        return { choices: [{ message: { content: "hola" } }] };
+      }
+      return (baseImpl as ((m: string, i: unknown) => unknown) | undefined)?.(
+        model,
+        input,
+      );
+    });
+
+    const limit = Math.floor(
+      PREMIUM_LIMITS.maxTextChars / TRANSLATE_EXPANSION_CUSHION,
+    );
+    const long = "a".repeat(limit + 100);
+    const res = await handle(
+      textRequest({ text: long, sourceLang: "en", targetLang: "es" }),
+      env,
+      "PREMIUM",
+    );
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as {
+      transcript?: string;
+      translation?: string | null;
+    };
+    expect(body.translation).toBe("hola");
+    expect(body.transcript).toBe(long.slice(0, limit));
+  });
+});
+
+describe("premium voice entitlement", () => {
+  test("a FREE user asking for a Studio voice never reaches the preflight gate", async () => {
+    let preflightCalls = 0;
+    server.use(
+      http.post(PROVIDER_URLS.supabaseCheckPreflight, () => {
+        preflightCalls++;
+        return jsonResponse({
+          allowed: true,
+          tier_active: "FREE",
+          quota_total: 5000,
+          quota_remaining: 5000,
+        });
+      }),
+    );
+
+    const res = await handle(
+      textRequest({
+        text: "hola",
+        sourceLang: "es",
+        targetLang: "es",
+        voiceId: STUDIO_VOICE_ID,
+      }),
+      aiMp3Env(),
+      "FREE",
+    );
+    expect(res.status).toBe(403);
+    expect(preflightCalls).toBe(0);
   });
 });

@@ -15,11 +15,13 @@ import { BackHandler, Keyboard } from "react-native";
 import Animated, { LinearTransition } from "react-native-reanimated";
 
 import { ExpressiveInput } from "@/components/home/ExpressiveInput";
+import type { EditableField } from "@/components/home/EditableText";
+import { planEdit } from "@/components/home/editPlan";
 import { VoicePickerSheet } from "@/components/home/VoicePickerSheet";
 import { VoiceResultPanel } from "@/components/home/VoiceResultPanel";
 
 import { Box } from "@/components/ui";
-import { EkweError } from "@/constants/errors";
+import { EkweError, ErrorMessages } from "@/constants/errors";
 import { getLanguageName } from "@/constants/languages";
 import { spacing } from "@/constants/spacing";
 import { usePermissions, useVoiceDictation } from "@/hooks";
@@ -33,6 +35,10 @@ import { auth$, settings$, settingsActions } from "@/store";
 import { triggerHaptic } from "@/utils";
 import { cleanAudioArtifacts } from "@/utils/audioCache";
 import { useSessionAudioFiles } from "@/utils/sessionAudioFiles";
+import {
+  DEFAULT_LANGUAGES,
+  sanitizeLanguageCodes,
+} from "@/utils/languageUtils";
 import { normalizeAmplitudes } from "@/utils/waveform";
 import { resolveVoiceSelection, type VoiceSelection } from "@/utils/voices";
 import { AppToast } from "@/utils/toast";
@@ -99,17 +105,26 @@ export const VoiceStudioInterface = forwardRef<
   const voiceId = useValue(() => settings$.voiceId.get());
   const voiceGender = useValue(() => settings$.voiceGender.get());
 
+  const knownLanguages = sanitizeLanguageCodes(
+    selectedLanguages.length > 0 ? selectedLanguages : DEFAULT_LANGUAGES,
+    permissions.maxSelectedLanguages,
+  );
+  // Independently defaulting these let the two disagree: source was pinned to
+  // the first selected language while target could be anything, so the worker
+  // was asked to translate from a language the user never chose. Source is now
+  // always a real selection, and target is always a different one.
   const initialSourceLang = permissions.autoLanguageDetect
     ? "auto"
-    : (selectedLanguages[0] ?? "en");
+    : (knownLanguages[0] ?? "en");
+  const initialTargetLang = ((): string => {
+    if (defaultTargetLang && defaultTargetLang !== initialSourceLang) {
+      return defaultTargetLang;
+    }
+    return knownLanguages.find((code) => code !== initialSourceLang) ?? "en";
+  })();
 
   const [sourceLang, setSourceLang] = useState(initialSourceLang);
-  const [targetLang, setTargetLang] = useState(() => {
-    const fallback = selectedLanguages[0] ?? "en";
-    return defaultTargetLang && selectedLanguages.includes(defaultTargetLang)
-      ? defaultTargetLang
-      : fallback;
-  });
+  const [targetLang, setTargetLang] = useState(initialTargetLang);
   const [sourceText, setSourceText] = useState("");
 
   const [stage, setStage] = useState<Stage>("composer");
@@ -123,25 +138,11 @@ export const VoiceStudioInterface = forwardRef<
    * artifact, and the only field the result lets you edit.
    */
   const [translation, setTranslation] = useState<string | null>(null);
-  /** Buffer while the user is editing; null when they are not. */
-  const [editBuffer, setEditBuffer] = useState<string | null>(null);
-  /**
-   * Which of the two texts the open editor is correcting.
-   *
-   * A result can carry both a transcript and a translation, and they are
-   * different documents: the transcript is what was said, the translation is
-   * what it should read. Editing one must not silently rewrite the other, so the
-   * editor is told which one it owns rather than inferring it from whichever
-   * happens to be on screen.
-   */
-  const [editTarget, setEditTarget] = useState<"transcript" | "translation">(
-    "translation",
-  );
-  /**
-   * The committed value the editor opened on, so Convert can tell "the user
-   * changed something" from "the user opened it and put it back".
-   */
-  const [editOriginal, setEditOriginal] = useState("");
+  /** The open editor's working copies, keyed by document. Null when closed. */
+  const [editDraft, setEditDraft] = useState<{
+    transcript: string;
+    translation: string;
+  } | null>(null);
   /** What was last archived for this capture, so edits can be compared. */
   const [artifactUri, setArtifactUri] = useState<string | null>(null);
   const [artifactDurationMs, setArtifactDurationMs] = useState(0);
@@ -202,7 +203,7 @@ export const VoiceStudioInterface = forwardRef<
   const draftTranscriptRef = useRef("");
   const draftTranslationRef = useRef("");
   const resolvedSourceLangRef = useRef(sourceLang);
-  const resolvedTargetLangRef = useRef(sourceLang);
+  const resolvedTargetLangRef = useRef(targetLang);
 
   const {
     status: dictationStatus,
@@ -296,9 +297,7 @@ export const VoiceStudioInterface = forwardRef<
     setSourceText("");
     setTranscript("");
     setTranslation(null);
-    setEditBuffer(null);
-    setEditOriginal("");
-    setEditTarget("translation");
+    setEditDraft(null);
     savedRef.current = false;
     draftTranscriptRef.current = "";
     draftTranslationRef.current = "";
@@ -413,6 +412,7 @@ export const VoiceStudioInterface = forwardRef<
    * and a visible countdown on a button the user is holding down reads as a
    * glitch rather than a limit.
    */
+  const rerollRef = useRef(0);
   const renderCooldownUntilRef = useRef(0);
   const renderCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -477,8 +477,7 @@ export const VoiceStudioInterface = forwardRef<
     }): void => {
       setTranscript(args.transcript);
       setTranslation(args.translation);
-      setEditBuffer(null);
-      setEditOriginal("");
+      setEditDraft(null);
       resolvedSourceLangRef.current = args.sourceLang;
       resolvedTargetLangRef.current = args.targetLang;
       draftTranscriptRef.current = args.transcript;
@@ -505,7 +504,7 @@ export const VoiceStudioInterface = forwardRef<
       const targetSpeechLang = wantsTranslation ? targetLang : sourceSpeechLang;
 
       if ("audio" in source) {
-        const { uri, durationMs, waveform } = source.audio;
+        const { uri, durationMs } = source.audio;
         setTranscript("");
         setTranslation(null);
         setAmplitudes(undefined);
@@ -533,14 +532,33 @@ export const VoiceStudioInterface = forwardRef<
         if (!result.ok && result.error === EkweError.INTERRUPTED) return;
 
         if (!result.ok) {
-          logger.warn(
-            "[VoiceStudio] audio synthesis unavailable, keeping recording:",
-            result.error,
+          // The whole chain is one request, so a failure here means the
+          // transcript was never produced. Replaying the recording would look
+          // like a successful convert while showing the user's own voice.
+          logger.warn("[VoiceStudio] audio convert failed:", result.error);
+          const entitlement = result.error === EkweError.PREMIUM_REQUIRED;
+          const throttled = result.error === EkweError.RATE_LIMITED;
+          AppToast.error(
+            entitlement
+              ? "Pro voice required"
+              : throttled
+                ? "Please wait"
+                : "Convert failed",
+            {
+              description: entitlement
+                ? "Switch to a free voice and try again."
+                : throttled
+                  ? ErrorMessages[EkweError.RATE_LIMITED]
+                  : "Your recording was not converted. Please try again.",
+              action: entitlement
+                ? {
+                    label: "Change voice",
+                    onClick: (): void => setIsPickerVisible(true),
+                  }
+                : undefined,
+            },
           );
-          setArtifactDurationMs(durationMs);
-          setAmplitudes(normalizeAmplitudes(waveform));
-          commitArtifact(uri);
-          setArtifactUri(uri);
+          setStage("composer");
           return;
         }
 
@@ -601,15 +619,23 @@ export const VoiceStudioInterface = forwardRef<
 
       if (!result.ok) {
         // A provider outage is not the user's fault and is worth another go, so
-        // it gets its own wording and a retry. Everything else is reported as a
-        // plain failure.
+        // it gets its own wording and a retry. A free-tier cooldown is neither
+        // an outage nor a failure, and reporting it as one left the user with
+        // no idea that waiting was the fix.
+        const throttled = result.error === EkweError.RATE_LIMITED;
         const outage = result.error === EkweError.SPEECH_UNAVAILABLE;
         AppToast.error(
-          outage ? "Voice temporarily unavailable" : "Speech Unavailable",
+          throttled
+            ? "Please wait"
+            : outage
+              ? "Voice temporarily unavailable"
+              : "Speech Unavailable",
           {
-            description: outage
-              ? "Every voice provider is busy right now. Try again in a moment."
-              : "Failed to generate speech.",
+            description: throttled
+              ? ErrorMessages[EkweError.RATE_LIMITED]
+              : outage
+                ? "Every voice provider is busy right now. Try again in a moment."
+                : "Failed to generate speech.",
             action: outage
               ? { label: "Retry", onClick: (): void => void runConvert(source) }
               : undefined,
@@ -693,9 +719,7 @@ export const VoiceStudioInterface = forwardRef<
   }, [sourceAudio, sourceText, runConvert]);
 
   const closeEditor = useCallback((): void => {
-    setEditBuffer(null);
-    setEditOriginal("");
-    setEditTarget("translation");
+    setEditDraft(null);
     setStage("ready");
   }, []);
 
@@ -740,17 +764,18 @@ export const VoiceStudioInterface = forwardRef<
   /** The text the result presents as the artifact, and therefore sends. */
   const resultText = translation?.trim() || transcript.trim();
 
-  const handleEdit = useCallback(
-    (target: "transcript" | "translation") => {
-      void triggerHaptic();
-      const initial = target === "translation" ? resultText : transcript;
-      if (!initial) return;
-      setEditTarget(target);
-      setEditOriginal(initial);
-      setEditBuffer(initial);
-      setStage("editing");
+  const handleEditResult = useCallback(() => {
+    void triggerHaptic();
+    if (!resultText) return;
+    setEditDraft({ transcript, translation: translation ?? "" });
+    setStage("editing");
+  }, [resultText, transcript, translation]);
+
+  const handleEditFieldChange = useCallback(
+    (key: "transcript" | "translation", next: string): void => {
+      setEditDraft((prev) => (prev ? { ...prev, [key]: next } : prev));
     },
-    [resultText, transcript],
+    [],
   );
 
   const handleCancelEdit = useCallback(() => {
@@ -773,13 +798,31 @@ export const VoiceStudioInterface = forwardRef<
    * result is a correction of the transcript, and recording it as a
    * translation would be a lie the History screen cannot represent.
    */
+  /** Re-renders the result from the editor's draft. See planEdit. */
   const renderInVoice = useCallback(
     async (
-      text: string,
-      target: "transcript" | "translation",
+      draft: {
+        transcript: string;
+        translation: string;
+      },
+      options?: { force?: boolean },
     ): Promise<void> => {
-      const rendered = text.trim();
-      if (!rendered) return;
+      const spokenLang = resolvedTargetLangRef.current;
+      const hasTranslation = !!translation?.trim();
+      const plan = planEdit({
+        draftTranscript: draft.transcript,
+        draftTranslation: draft.translation,
+        transcript,
+        translation,
+      });
+      const retranslate = plan.kind === "retranslate";
+      const spokenText = plan.kind === "unchanged" ? "" : plan.text;
+      // Regenerate speaks the text already on screen, which `planEdit` reports
+      // as unchanged; only `force` lets that through to a re-roll.
+      if (!spokenText && !options?.force) return;
+      const textToSpeak =
+        spokenText || draft.translation.trim() || draft.transcript.trim();
+      if (!textToSpeak) return;
       // Refused silently. The tap did nothing, and a toast explaining that is
       // worse than the pause it interrupts: Regenerate is a re-roll, and a user
       // who taps it twice is asking for two attempts, not being told off for
@@ -797,17 +840,32 @@ export const VoiceStudioInterface = forwardRef<
       convertAbortRef.current = controller;
       const seq = ++convertSeqRef.current;
 
+      // The artifact is dropped below and is not recoverable, so keep it.
+      const prevArtifactUri = artifactUri;
+      const prevDurationMs = artifactDurationMs;
+      const prevAmplitudes = amplitudes;
+
       setStage("converting");
       setArtifactUri(null);
       setArtifactDurationMs(0);
       setAmplitudes(undefined);
 
-      const spokenLang = resolvedTargetLangRef.current;
+      const restore = (): void => {
+        setArtifactUri(prevArtifactUri);
+        setArtifactDurationMs(prevDurationMs);
+        setAmplitudes(prevAmplitudes);
+        setStage("editing");
+      };
+
       const renderSpan = startSpan("studio.synth.render");
-      const result = await synthesizeSpeech(rendered, spokenLang, {
+      const result = await synthesizeSpeech(textToSpeak, spokenLang, {
         signal: controller.signal,
         voiceId: voice.slot.id,
         gender: voice.gender,
+        ...(retranslate ? { sourceLang: resolvedSourceLangRef.current } : {}),
+        ...(options?.force
+          ? { reroll: (rerollRef.current = (rerollRef.current + 1) % 1000) }
+          : {}),
       });
       renderSpan.end();
 
@@ -815,27 +873,35 @@ export const VoiceStudioInterface = forwardRef<
         if (result.ok) void cleanAudioArtifacts(result.value.uri);
         return;
       }
-      if (!result.ok && result.error === EkweError.INTERRUPTED) return;
+      if (!result.ok && result.error === EkweError.INTERRUPTED) {
+        restore();
+        return;
+      }
 
       if (!result.ok) {
+        const throttled = result.error === EkweError.RATE_LIMITED;
         const outage = result.error === EkweError.SPEECH_UNAVAILABLE;
         AppToast.error(
-          outage ? "Voice temporarily unavailable" : "Speech Unavailable",
+          throttled
+            ? "Please wait"
+            : outage
+              ? "Voice temporarily unavailable"
+              : "Speech Unavailable",
           {
-            description: outage
-              ? "Every voice provider is busy right now. Try again in a moment."
-              : "Failed to generate speech.",
+            description: throttled
+              ? ErrorMessages[EkweError.RATE_LIMITED]
+              : outage
+                ? "Every voice provider is busy right now. Try again in a moment."
+                : "Failed to generate speech.",
             action: outage
               ? {
                   label: "Retry",
-                  onClick: (): void => void renderInVoice(rendered, target),
+                  onClick: (): void => void renderInVoice(draft),
                 }
               : undefined,
           },
         );
-        setEditBuffer(null);
-        setEditOriginal("");
-        setStage("ready");
+        restore();
         return;
       }
 
@@ -844,12 +910,24 @@ export const VoiceStudioInterface = forwardRef<
       commitArtifact(result.value.uri);
       setArtifactUri(result.value.uri);
 
-      // Only the field under the editor moves. Correcting a translation must
-      // not rewrite the transcript, and the reverse is equally wrong: the two
-      // are separate documents, and the audio being re-rendered is whichever
-      // one the user was reading.
-      const nextTranslation = target === "translation" ? rendered : translation;
-      const nextTranscript = target === "transcript" ? rendered : transcript;
+      const nextTranscript = draft.transcript.trim();
+      const nextTranslation = retranslate
+        ? result.value.translation?.trim() || null
+        : hasTranslation
+          ? draft.translation.trim()
+          : null;
+
+      // A re-translate that came back with no translation means the audio is of
+      // words the card cannot show. Committing the old translation would put the
+      // wrong words under the right audio, so refuse and keep what was there.
+      if (retranslate && !nextTranslation) {
+        void cleanAudioArtifacts(result.value.uri);
+        restore();
+        AppToast.error("Could not update the translation", {
+          description: "Your wording is unchanged. Try again in a moment.",
+        });
+        return;
+      }
 
       publishResult({
         transcript: nextTranscript,
@@ -857,6 +935,13 @@ export const VoiceStudioInterface = forwardRef<
         sourceLang: resolvedSourceLangRef.current,
         targetLang: spokenLang,
       });
+
+      if (result.value.translationTruncated) {
+        AppToast.info("Only part was translated", {
+          description:
+            "This was longer than one pass allows, so the voice covers the beginning. Shorten it, or send it as shorter messages.",
+        });
+      }
 
       savedRef.current = true;
       recordStudioCapture({
@@ -871,8 +956,7 @@ export const VoiceStudioInterface = forwardRef<
         spokenLang,
       });
 
-      setEditBuffer(null);
-      setEditOriginal("");
+      setEditDraft(null);
       setStage("ready");
     },
     [
@@ -880,6 +964,8 @@ export const VoiceStudioInterface = forwardRef<
       voice,
       commitArtifact,
       getCaptureId,
+      artifactUri,
+      amplitudes,
       publishResult,
       recordStudioCapture,
       sourceAudio,
@@ -891,17 +977,19 @@ export const VoiceStudioInterface = forwardRef<
   );
 
   const handleApplyEdit = useCallback(async () => {
-    const edited = (editBuffer ?? "").trim();
-    if (!edited) return;
-    // Compared against the value the editor opened on, not against the result
-    // text: the editor may be correcting the transcript while the result shows
-    // the translation, and "unchanged" has to mean unchanged for *this* field.
-    if (edited === editOriginal) {
+    if (!editDraft) return;
+    const plan = planEdit({
+      draftTranscript: editDraft.transcript,
+      draftTranslation: editDraft.translation,
+      transcript,
+      translation,
+    });
+    if (plan.kind === "unchanged") {
       closeEditor();
       return;
     }
-    await renderInVoice(edited, editTarget);
-  }, [editBuffer, editOriginal, editTarget, renderInVoice, closeEditor]);
+    await renderInVoice(editDraft);
+  }, [editDraft, transcript, translation, renderInVoice, closeEditor]);
 
   /**
    * Re-roll the render of what is on screen.
@@ -915,10 +1003,17 @@ export const VoiceStudioInterface = forwardRef<
     void triggerHaptic();
     const text = resultText.trim();
     if (text) {
-      // Names the field explicitly rather than inheriting whatever the editor
-      // last used: with no translation the result *is* the transcript, and
-      // re-rolling it must not be recorded as a translation.
-      void renderInVoice(text, translation ? "translation" : "transcript");
+      // Re-rolls whatever is on screen. With a translation that is the
+      // translation, and the transcript is left alone; without one the result
+      // *is* the transcript, so re-rolling it must not be recorded as a
+      // translation.
+      void renderInVoice(
+        {
+          transcript: translation ? transcript : text,
+          translation: translation ? text : "",
+        },
+        { force: true },
+      );
       return;
     }
     if (sourceAudio) {
@@ -929,6 +1024,7 @@ export const VoiceStudioInterface = forwardRef<
     if (typed) void runConvert({ text: typed });
   }, [
     resultText,
+    transcript,
     translation,
     sourceAudio,
     sourceText,
@@ -1021,6 +1117,9 @@ export const VoiceStudioInterface = forwardRef<
 
   const handleSourceChange = useCallback((lang: string) => {
     setSourceLang(lang);
+    // Picking your own language as the target would ask the worker to translate
+    // a language into itself.
+    setTargetLang((prev) => (prev === lang ? "" : prev));
   }, []);
 
   const handleTargetChange = useCallback((lang: string) => {
@@ -1073,6 +1172,40 @@ export const VoiceStudioInterface = forwardRef<
       ? sourceLabel
       : `${sourceLabel} → ${getLanguageName(targetLang)}`;
 
+  /** One field per document that exists, so a recording with a translation has two. */
+  const editFields = useMemo<EditableField[]>(() => {
+    const draft = editDraft ?? {
+      transcript,
+      translation: translation ?? "",
+    };
+    const fields: EditableField[] = [];
+    if (translation?.trim()) {
+      fields.push({
+        key: "translation",
+        label: getLanguageName(targetLang),
+        a11yLabel: "Translation",
+        value: draft.translation,
+      });
+    }
+    fields.push({
+      key: "transcript",
+      label: sourceAudio ? "What you said" : "What you typed",
+      value: draft.transcript,
+    });
+    return fields;
+  }, [editDraft, transcript, translation, sourceAudio, targetLang]);
+
+  const editHint = useMemo(() => {
+    if (!translation?.trim()) return "Renders these words in your voice";
+    if (!editDraft) return "";
+    if (editDraft.translation.trim() !== (translation ?? "").trim()) {
+      return "Speaks your wording in your voice";
+    }
+    return editDraft.transcript.trim() !== transcript.trim()
+      ? "Re-translates and re-renders in your voice"
+      : "Renders these words in your voice";
+  }, [translation, editDraft, transcript]);
+
   return (
     <Animated.View
       layout={LinearTransition.springify()}
@@ -1082,7 +1215,13 @@ export const VoiceStudioInterface = forwardRef<
         marginBottom: spacing["7xl"],
       }}
     >
-      <Box style={stage === "ready" ? { display: "none" } : undefined}>
+      <Box
+        style={
+          stage === "ready" || stage === "editing"
+            ? { display: "none" }
+            : undefined
+        }
+      >
         <ExpressiveInput
           value={sourceText}
           onChangeText={handleInputChange}
@@ -1125,7 +1264,6 @@ export const VoiceStudioInterface = forwardRef<
       {(stage === "ready" || stage === "editing") && (
         <VoiceResultPanel
           player={player}
-          sourceKind={sourceAudio ? "audio" : "text"}
           voice={voice.slot}
           voiceGender={voice.gender}
           langName={langLabel}
@@ -1137,18 +1275,18 @@ export const VoiceStudioInterface = forwardRef<
           amplitudes={amplitudes}
           isAudioLoading={isReturnAudioLoading}
           // The result is a document, not a player: the text is the artifact
-          // being sent and the audio is its read-aloud. Tapping it is how you
-          // correct the words.
+          // being sent and the audio is its read-aloud. The card's single
+          // "Edit text" action is how you correct the wording.
           resultText={resultText}
           transcriptText={transcript}
           hasTranslation={!!translation?.trim()}
-          editTarget={editTarget}
-          onEditResult={() => handleEdit("translation")}
-          onEditTranscript={() => handleEdit("transcript")}
+          editFields={editFields}
+          editHint={editHint}
+          onEditResult={handleEditResult}
           isEditing={stage === "editing"}
-          editBuffer={editBuffer ?? ""}
+          canEditText={sourceAudio !== null}
           maxChars={permissions.textTranslationMaxChars}
-          onEditChange={setEditBuffer}
+          onEditFieldChange={handleEditFieldChange}
           onCancelEdit={handleCancelEdit}
           onApplyEdit={() => void handleApplyEdit()}
           onBack={handleBack}

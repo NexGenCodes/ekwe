@@ -58,6 +58,7 @@
     "20260926000000_publish_history_to_realtime.sql": "0eec6d313c460b8f5e7eece1dfd48147ce10344ba957dce6512a2449bbf8813e",
     "20260926010000_add_history_origin.sql": "4b8daa9fc145b1a2eb6bb2dd1d6d1961c561add91b1dd05ef60294159f1901c7",
     "20260926120000_rename_studio_origin.sql": "4d962d05fb45648bb0b1519c7300ff7c876928f5bc72f975ced7c161eb6abada",
-    "20260926130000_fix_history_source_app_default.sql": "342310d7f7623d2e1dbd473835de11e5d9a63f897f748f2f26920287be36d6bd"
+    "20260926130000_fix_history_source_app_default.sql": "342310d7f7623d2e1dbd473835de11e5d9a63f897f748f2f26920287be36d6bd",
+    "20260926140000_align_voice_notes_bucket_cap.sql": "7e691e159dc9b0adbfd95811e3304d44ae2cd63bb6d04b07a2ecc57985d1e2cd"
   }
 }

@@ -12,8 +12,67 @@ import {
   guardStreamingAllowed,
   guardStreamDuration,
   tooManyRequests,
+  readLimitedBody,
 } from "@/core/guards";
 import { FREE_LIMITS, PREMIUM_LIMITS } from "@/core/limits";
+
+describe("readLimitedBody", () => {
+  function bodyRequest(bytes: Uint8Array, headers: HeadersInit = {}) {
+    return new Request("https://example.com", {
+      method: "POST",
+      body: bytes as unknown as BodyInit,
+      headers: { "Content-Length": String(bytes.length), ...headers },
+    });
+  }
+
+  it("reads a body with an accurate Content-Length", async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    const out = await readLimitedBody(bodyRequest(bytes), 1024);
+    expect(out).toEqual(bytes);
+  });
+
+  it("reads a body with no Content-Length", async () => {
+    const bytes = new Uint8Array(300).map((_, i) => i % 256);
+    const out = await readLimitedBody(
+      bodyRequest(bytes, { "Content-Length": "" }),
+      1024,
+    );
+    expect(out).toEqual(bytes);
+  });
+
+  it("truncates when Content-Length over-reports the body", async () => {
+    const bytes = new Uint8Array([9, 8, 7]);
+    const out = await readLimitedBody(
+      bodyRequest(bytes, { "Content-Length": "64" }),
+      1024,
+    );
+    expect(out).toEqual(bytes);
+  });
+
+  it("does not overrun the buffer when Content-Length under-reports", async () => {
+    const bytes = new Uint8Array(1000).map((_, i) => i % 256);
+    const out = await readLimitedBody(
+      bodyRequest(bytes, { "Content-Length": "10" }),
+      1024,
+    );
+    expect(out).toEqual(bytes);
+  });
+
+  it("rejects a body over the limit", async () => {
+    const bytes = new Uint8Array(64);
+    const out = await readLimitedBody(bodyRequest(bytes), 32);
+    expect(out).toBeNull();
+  });
+
+  it("rejects an oversized Content-Length before reading", async () => {
+    const req = new Request("https://example.com", {
+      method: "POST",
+      body: new Uint8Array(8),
+      headers: { "Content-Length": "9999" },
+    });
+    expect(await readLimitedBody(req, 32)).toBeNull();
+  });
+});
 
 describe("guardContentType", () => {
   it("allows valid JSON", () => {

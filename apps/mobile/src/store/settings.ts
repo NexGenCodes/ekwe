@@ -8,7 +8,7 @@ import {
   isSupportedPaymentCurrency,
 } from "@ekwe/shared/money";
 import type { FlutterwaveCurrency } from "@ekwe/shared/money";
-import { PLAN_LIMITS } from "@/constants/billing";
+import { PLAN_FEATURES, PLAN_LIMITS } from "@/constants/billing";
 import {
   mirrorSettingsToShared,
   SharedPreferences,
@@ -75,17 +75,23 @@ const initialSettings: SettingsState = {
 
 export const settings$ = observable<SettingsState>(initialSettings);
 
+function isAutoCopyAllowed(): boolean {
+  return PLAN_FEATURES[isProProvider() ? "pro" : "free"].autoCopy;
+}
+
 export function buildSettingsSharedPrefs(
   overrides?: Partial<
     Pick<SharedPreferences, "selectedLanguages" | "autoCopy">
   >,
 ): SharedPreferences {
+  const isPro = isProProvider();
   return {
     selectedLanguages:
       overrides?.selectedLanguages ?? settings$.selectedLanguages.peek(),
-    autoCopy: overrides?.autoCopy ?? settings$.autoCopy.peek(),
-    autoDetectAllowed:
-      PLAN_LIMITS[isProProvider() ? "pro" : "free"].autoDetectAllowed,
+    autoCopy:
+      (overrides?.autoCopy ?? settings$.autoCopy.peek()) &&
+      PLAN_FEATURES[isPro ? "pro" : "free"].autoCopy,
+    autoDetectAllowed: PLAN_LIMITS[isPro ? "pro" : "free"].autoDetectAllowed,
   };
 }
 
@@ -158,8 +164,11 @@ export const settingsActions = {
     settings$.onboardingCompleted.set(val);
   },
   setAutoCopy: (val: boolean): void => {
-    settings$.autoCopy.set(val);
-    mirrorSettingsToShared(buildSettingsSharedPrefs({ autoCopy: val }));
+    // Pro-only: keep the observable itself from holding an unauthorized `true`,
+    // which the Echo flow, result screen and share extension all trust.
+    const next = val && isAutoCopyAllowed();
+    settings$.autoCopy.set(next);
+    mirrorSettingsToShared(buildSettingsSharedPrefs({ autoCopy: next }));
   },
   setHapticsEnabled: (val: boolean): void => {
     settings$.hapticsEnabled.set(val);

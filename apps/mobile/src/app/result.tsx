@@ -9,7 +9,7 @@ import { ResultProcessingIndicator } from "@/components/result";
 import { Box, Pressable } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useResultPipeline, useTheme } from "@/hooks";
+import { usePermissions, useResultPipeline, useTheme } from "@/hooks";
 import { CopyService } from "@/services/copyOutService";
 import { SyncService } from "@/services/syncService";
 import { auth$, history$, settings$, HistoryEntry } from "@/store";
@@ -47,7 +47,9 @@ export default function ResultScreen(): React.JSX.Element {
 
   const { color } = useTheme();
 
-  const autoCopy = useValue(() => settings$.autoCopy.get());
+  const permissions = usePermissions();
+  const autoCopySetting = useValue(() => settings$.autoCopy.get());
+  const autoCopy = permissions.autoCopy && autoCopySetting;
   const lastAutoCopiedRef = useRef<string | null>(null);
 
   useEffect(() => {

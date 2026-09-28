@@ -250,11 +250,6 @@ describe("runPreflightGate (cached cooldown + quota gate)", () => {
   }
 
   test("checks the quota on every request and never reads or writes KV", async () => {
-    // Regression guard. The gate used to memoise its decision in KV. That cache
-    // could never work: `expirationTtl: 2` is below Cloudflare's 60s minimum so
-    // every write 400'd, and `trackBillableSuccess` deleted the key after every
-    // successful request. It cost a wasted KV read on every billable call and
-    // bought nothing.
     const env = mockEnv();
     const calls = rpcSpy();
     const getSpy = vi.spyOn(env.EKWE_KV, "get");
@@ -287,10 +282,6 @@ describe("runPreflightGate (cached cooldown + quota gate)", () => {
   });
 
   test("never admits a request using another request's quota decision", async () => {
-    // The old cache key was scoped by user and usage type only, so a cached
-    // allow for a small request admitted a much larger one that the quota check
-    // would have rejected. Repointing the TTL at 60s would have shipped this as
-    // a live bypass spanning the whole FREE cooldown window.
     const env = mockEnv();
     const ctxLocal = mockExecutionContext();
     const chargeChars: number[] = [];

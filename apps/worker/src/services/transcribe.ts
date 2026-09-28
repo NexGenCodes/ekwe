@@ -7,6 +7,7 @@ import {
 } from "@/providers";
 import { PROVIDER_SKIP_AUTO, PROVIDER_TIMEOUT } from "@/core/providers";
 import { TRANSCRIBE_CACHE_TTL_SECONDS } from "@/core/budgets";
+import { sanitizeProviderOutput } from "@/core/sanitize";
 import { getLimits } from "@/core/limits";
 import { d1Get, d1Put } from "@/services/d1-cache";
 import { runProviderFailover } from "@/utils/retry";
@@ -64,17 +65,33 @@ export async function writeTranscribeCache(
   }
 }
 
+export interface TranscribeCacheKeyParts {
+  userId: string;
+  tier: string;
+  audioHash: string;
+  lang: string | null;
+}
+
+export function buildTranscribeCacheKey({
+  userId,
+  tier,
+  audioHash,
+  lang,
+}: TranscribeCacheKeyParts): string {
+  return `transcribe:${userId}:${tier}:${audioHash}:${lang || "auto"}`;
+}
+
 export function stripTranscriptLanguage(
   result: TranscribeResult,
   tier: Tier,
 ): TranscribeResult {
   const limits = getLimits(tier);
-  if (!limits.autoDetectAllowed && "language" in result) {
-    const r = { ...result };
+  const text = sanitizeProviderOutput(result.text);
+  const r: TranscribeResult = { ...result, text };
+  if (!limits.autoDetectAllowed && "language" in r) {
     delete r.language;
-    return r;
   }
-  return result;
+  return r;
 }
 
 interface PipelineEntry {

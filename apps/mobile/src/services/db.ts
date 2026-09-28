@@ -136,6 +136,11 @@ ensureTables();
 // ---------------------------------------------------------------------------
 // Prepared statements — parse SQL once, bind params on each call.
 // This saves ~0.2–0.5ms per call on the JS thread.
+//
+// Run these with `.run()` / `.all()` / `.get()`. Never `.execute()`: on the
+// sync (expo-sqlite) driver it returns an `ExecuteResultSync` thunk that only
+// touches the database when materialized, so a `delete`/`update` written that
+// way parses and throws nothing while doing absolutely nothing.
 // ---------------------------------------------------------------------------
 
 const _recentHistoryStmt = db
@@ -256,7 +261,7 @@ export const Db = {
   },
 
   deleteHistory: (id: string): void => {
-    _deleteHistoryStmt.execute({ id });
+    _deleteHistoryStmt.run({ id });
   },
 
   /**
@@ -421,7 +426,7 @@ export const Db = {
   },
 
   deleteOutbox: (id: string): void => {
-    _deleteOutboxStmt.execute({ id });
+    _deleteOutboxStmt.run({ id });
   },
 
   deleteOutboxForHistory: (id: string): void => {
@@ -480,25 +485,23 @@ export const Db = {
   },
 
   markOutboxInFlight: (id: string): void => {
-    _markInFlightStmt.execute({ id });
+    _markInFlightStmt.run({ id });
   },
 
   reviveInFlight: (): number => {
-    const res = _reviveInFlightStmt.execute();
-    return (res as { changes?: number }).changes ?? 0;
+    return _reviveInFlightStmt.run().changes;
   },
 
   reviveDeadOutbox: (): number => {
-    const res = _reviveDeadStmt.execute();
-    return (res as { changes?: number }).changes ?? 0;
+    return _reviveDeadStmt.run().changes;
   },
 
   purgeUserHistory: (userId: string): void => {
-    _purgeHistoryStmt.execute({ userId });
+    _purgeHistoryStmt.run({ userId });
   },
 
   purgeUserOutbox: (userId: string): void => {
-    _purgeOutboxStmt.execute({ userId });
+    _purgeOutboxStmt.run({ userId });
   },
 
   vacuum: (): void => {

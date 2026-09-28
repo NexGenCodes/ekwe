@@ -87,9 +87,11 @@ export async function buildSpeechCacheKey(
   userId: string,
   tier: "FREE" | "PREMIUM" = "FREE",
   scope: "user" | "shared" = "user",
+  reroll?: number,
 ): Promise<string> {
   const owner = scope === "shared" ? "shared" : await hashKey(userId);
-  return `speech:${owner}:${voiceId ?? "standard"}:${gender ?? "auto"}:${tier.toLowerCase()}:cache:${lang}:${await hashKey(text)}`;
+  const variant = reroll === undefined ? "" : `:r${reroll}`;
+  return `speech:${owner}:${voiceId ?? "standard"}:${gender ?? "auto"}:${tier.toLowerCase()}:cache:${lang}:${await hashKey(text)}${variant}`;
 }
 
 export async function readSpeechCache(
@@ -248,6 +250,10 @@ function utcDate(): string {
 
 // "Provider is down today" flips at most once a day, so remember the ones we
 // learn about instead of re-reading KV for every provider on every request.
+// Only the down verdict is memoized. Caching "healthy" was tried and is not
+// worth it: it makes the memo a cache of absence, so the first request after a
+// provider dies still routes to it, and any writer that does not go through
+// `markSpeechProviderDown` becomes invisible to every reader.
 const speechDownMemo = new Map<string, number>();
 
 async function isSpeechProviderDown(

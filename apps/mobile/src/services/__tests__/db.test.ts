@@ -1,6 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Db } from "@/services/db";
 import { openDatabaseSync } from "expo-sqlite";
+import * as drizzleExpoSqlite from "drizzle-orm/expo-sqlite";
+
+type PreparedSpy = {
+  all: ReturnType<typeof vi.fn>;
+  run: ReturnType<typeof vi.fn>;
+  execute: ReturnType<typeof vi.fn>;
+};
+
+const preparedStatements = (
+  drizzleExpoSqlite as unknown as { __preparedStatements: PreparedSpy[] }
+).__preparedStatements;
 
 describe("Db service", () => {
   beforeEach(() => {
@@ -65,5 +76,35 @@ describe("Db service", () => {
   it("should clean up expired history", () => {
     const res = Db.cleanupExpiredHistory(7);
     expect(typeof res).toBe("number");
+  });
+
+  // `execute()` on a sync prepared statement only materializes an
+  // `ExecuteResultSync` thunk, so a delete or update routed through it parses,
+  // throws nothing, and never reaches SQLite. That is what left the outbox
+  // re-pushing the same rows forever: every drain "succeeded" and deleted
+  // nothing.
+  it("should run prepared mutations instead of deferring them", () => {
+    Db.deleteHistory("row-1");
+    Db.deleteOutbox("row-1");
+    Db.markOutboxInFlight("row-1");
+    Db.reviveInFlight();
+    Db.reviveDeadOutbox();
+    Db.purgeUserHistory("user_123");
+    Db.purgeUserOutbox("user_123");
+
+    const deferred = preparedStatements.filter(
+      (stmt) => stmt.execute.mock.calls.length > 0,
+    );
+    expect(deferred).toEqual([]);
+
+    const ran = preparedStatements.filter(
+      (stmt) => stmt.run.mock.calls.length > 0,
+    );
+    expect(ran).toHaveLength(7);
+  });
+
+  it("should report how many outbox rows a revive touched", () => {
+    expect(Db.reviveInFlight()).toBe(0);
+    expect(Db.reviveDeadOutbox()).toBe(0);
   });
 });

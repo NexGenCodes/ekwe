@@ -1,6 +1,5 @@
-import { Pencil } from "lucide-react-native";
 import React from "react";
-import { Pressable, TextInput, View } from "react-native";
+import { TextInput, View } from "react-native";
 
 import { Text } from "@/components/ui";
 import { borderRadius, spacing } from "@/constants";
@@ -9,87 +8,57 @@ import { withAlpha } from "@/utils/color";
 
 import type { ReactElement } from "react";
 
-export interface EditableTextProps {
-  /** The committed text. Hidden while editing, but kept for the a11y value. */
-  text: string;
-  /** Draft contents, owned by the parent so Cancel is a plain state reset. */
+export type EditFieldKey = "transcript" | "translation";
+
+export interface EditableField {
+  key: EditFieldKey;
+  /** Names the document on screen. */
+  label: string;
+  /** Spoken name. Defaults to `label`; set it when the visible text is not a name. */
+  a11yLabel?: string;
   value: string;
-  onChangeText: (next: string) => void;
-  onEdit: () => void;
-  onCancel: () => void;
-  isEditing: boolean;
-  isApplying?: boolean;
-  /**
-   * Names the text being corrected, for the label and hint. "original words" vs
-   * "message" is the difference a screen reader user needs to know *which* of
-   * the two documents they are in.
-   */
-  accessibilityName: string;
-  maxChars: number;
 }
 
-/**
- * The result's text, which becomes its editor in place.
- *
- * There is deliberately no modal and no separate screen: the words being
- * corrected are already the largest thing on the card, so moving them
- * elsewhere would be motion without purpose. The field borrows the chip
- * treatment (translucent fill over the brand card, hairline border) so it reads
- * as part of the card rather than a form dropped on top of it.
- *
- * The over-cap counter signals with weight rather than colour — `error` on
- * `brand` is roughly 1.5:1, which is not readable, so the state is carried by
- * the type ramp instead.
- */
+export interface EditableTextProps {
+  /** The committed text, shown collapsed. */
+  text: string;
+  /** One entry per document the user may correct. */
+  fields: EditableField[];
+  onChangeField: (key: EditFieldKey, next: string) => void;
+  onCancel: () => void;
+  isEditing: boolean;
+  maxChars: number;
+  /** What Convert will do, so a correction is never a surprise. */
+  hint: string;
+}
+
+/** Read-only when collapsed; one labelled field per document when editing. */
 function EditableTextComponent({
   text,
-  value,
-  onChangeText,
-  onEdit,
+  fields,
+  onChangeField,
   onCancel,
   isEditing,
-  isApplying = false,
-  accessibilityName,
   maxChars,
+  hint,
 }: EditableTextProps): ReactElement {
   const { color } = useTheme();
   const onBrand = color.onBrand;
-  const trimmed = value.trim();
-  const canApply = trimmed.length > 0 && !isApplying;
 
   if (!isEditing) {
     return (
-      <View>
-        <Pressable
-          onPress={onEdit}
-          accessibilityRole="button"
-          accessibilityLabel={`Edit the ${accessibilityName}. ${text}`}
-          style={({ pressed }) => [
-            { paddingVertical: spacing.xs },
-            pressed && { opacity: 0.7 },
-          ]}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "flex-start",
-              gap: spacing.sm,
-            }}
-          >
-            <Text
-              variant="heading2"
-              style={{ color: onBrand, flex: 1 }}
-              numberOfLines={4}
-            >
-              {text}
-            </Text>
-            <Pencil size={14} color={withAlpha(onBrand, 0.6)} strokeWidth={2} />
-          </View>
-        </Pressable>
-        <View style={{ height: spacing.sm }} />
+      <View style={{ paddingVertical: spacing.xs }}>
+        <Text variant="heading2" style={{ color: onBrand }} numberOfLines={4}>
+          {text}
+        </Text>
       </View>
     );
   }
+
+  // The spoken document is what gets rendered, so that is the one that gates
+  // Convert.
+  const primary = fields.find((f) => f.key === "translation") ?? fields[0];
+  const canApply = (primary?.value.trim().length ?? 0) > 0;
 
   return (
     <View>
@@ -111,61 +80,77 @@ function EditableTextComponent({
         </Text>
       </View>
 
-      <View
-        style={{
-          borderRadius: borderRadius.xl,
-          borderWidth: 1,
-          borderColor: withAlpha(onBrand, 0.35),
-          backgroundColor: withAlpha(onBrand, 0.12),
-          paddingHorizontal: spacing.md,
-          paddingVertical: spacing.sm,
-        }}
-      >
-        <TextInput
-          accessibilityLabel={`Edit the ${accessibilityName}`}
-          accessibilityHint={`Correct the ${accessibilityName}, then convert to hear them.`}
-          style={{
-            color: onBrand,
-            fontSize: 18,
-            lineHeight: 27,
-            minHeight: 54,
-            textAlignVertical: "top",
-          }}
-          value={value}
-          onChangeText={onChangeText}
-          multiline
-          maxLength={maxChars}
-          selectionColor={onBrand}
-          placeholderTextColor={withAlpha(onBrand, 0.6)}
-          editable={!isApplying}
-        />
-      </View>
+      {fields.map((field, index) => {
+        const over = field.value.length >= maxChars;
+        return (
+          <View key={field.key} style={{ marginBottom: spacing.sm }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: spacing.xs,
+              }}
+            >
+              <Text
+                variant="caption"
+                style={{ color: withAlpha(onBrand, 0.7) }}
+                numberOfLines={1}
+              >
+                {field.label}
+              </Text>
+              <Text
+                variant="caption"
+                style={{
+                  color: withAlpha(onBrand, 0.7),
+                  // `error` on `brand` is ~1.5:1, so weight carries this.
+                  fontFamily: over ? "Outfit-Medium" : undefined,
+                }}
+                accessibilityLiveRegion="polite"
+              >
+                {field.value.length}/{maxChars}
+              </Text>
+            </View>
+            <View
+              style={{
+                borderRadius: borderRadius.xl,
+                borderWidth: 1,
+                borderColor: withAlpha(onBrand, 0.35),
+                backgroundColor: withAlpha(onBrand, 0.12),
+                paddingHorizontal: spacing.md,
+                paddingVertical: spacing.sm,
+              }}
+            >
+              <TextInput
+                accessibilityLabel={`Edit the ${field.a11yLabel ?? field.label}`}
+                style={{
+                  color: onBrand,
+                  fontSize: index === 0 ? 18 : 15,
+                  lineHeight: index === 0 ? 27 : 21,
+                  minHeight: index === 0 ? 54 : 40,
+                  textAlignVertical: "top",
+                }}
+                value={field.value}
+                onChangeText={(next) => onChangeField(field.key, next)}
+                multiline
+                maxLength={maxChars}
+                selectionColor={onBrand}
+                placeholderTextColor={withAlpha(onBrand, 0.6)}
+              />
+            </View>
+          </View>
+        );
+      })}
 
-      <View
+      <Text
+        variant="caption"
         style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginTop: spacing.xs,
+          color: withAlpha(onBrand, 0.6),
+          textAlign: "right",
         }}
       >
-        <Text
-          variant="caption"
-          style={{
-            // Weight carries the over-cap state; see the note above.
-            color: withAlpha(onBrand, 0.7),
-            fontFamily: value.length >= maxChars ? "Outfit-Medium" : undefined,
-          }}
-          accessibilityLiveRegion="polite"
-        >
-          {value.length}/{maxChars}
-        </Text>
-        <Text variant="caption" style={{ color: withAlpha(onBrand, 0.6) }}>
-          {canApply
-            ? `Convert re-renders the ${accessibilityName} in your voice`
-            : "Type something to convert"}
-        </Text>
-      </View>
+        {canApply ? hint : "Type something to convert"}
+      </Text>
     </View>
   );
 }

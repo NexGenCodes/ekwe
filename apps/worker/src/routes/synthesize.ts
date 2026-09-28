@@ -18,26 +18,23 @@ import {
 } from "@/core/budgets";
 import { getLimits } from "@/core/limits";
 import {
-  guardAudioDuration,
-  guardAudioSize,
   guardAutoDetect,
   guardContentType,
   guardJsonSize,
   guardLanguageCode,
-  guardMultipartSize,
-  MULTIPART_OVERHEAD,
   MAX_JSON_BODY_BYTES,
-  readLimitedBody,
   safeParseJSON,
 } from "@/core/guards";
 import { sanitizeTranslationText } from "@/core/sanitize";
-import { hashBytes, hashKey } from "@/utils/keys";
-import { sniffAudioMime } from "@/utils/mime";
+import { hashKey } from "@/utils/keys";
+import { signSpeechUrl } from "@/utils/speech-url";
+import { ingestAudioUpload } from "@/services/audio";
 import { detectTextLanguage } from "@/services/auto-detect";
 import { runPreflightGate } from "@/services/preflight";
-import { runTranslateJob } from "@/services/translate";
+import { buildTranslateCacheKey, runTranslateJob } from "@/services/translate";
 import { trackBillableSuccess } from "@/services/usage";
 import {
+  buildTranscribeCacheKey,
   readTranscribeCache,
   runTranscribe,
   stripTranscriptLanguage,
@@ -52,14 +49,17 @@ import {
 } from "@/services/speech";
 import { CLIENT_ABORTED, Env, Tier, TranslateResult } from "@/core/types";
 
-function preShrinkForTranslate(text: string, tier: Tier): string {
+function preShrinkForTranslate(
+  text: string,
+  tier: Tier,
+): { text: string; truncated: boolean } {
   const maxChars = getLimits(tier).maxTextChars;
   const limit = Math.floor(maxChars / TRANSLATE_EXPANSION_CUSHION);
-  if (text.length <= limit) return text;
+  if (text.length <= limit) return { text, truncated: false };
   logger.warn(
     `[synthesize] Pre-shrinking transcript from ${text.length} to ${limit} chars before translate`,
   );
-  return text.slice(0, limit);
+  return { text: text.slice(0, limit), truncated: true };
 }
 
 interface SpeechGateOk {
@@ -82,7 +82,10 @@ async function reserveSpeechGate(
   jwtTier: Tier,
   sessionId: string | null,
   chargeChars: number,
+  gateCharge: { skipCooldown: () => boolean; markCharged: () => void },
 ): Promise<SpeechGate> {
+  const skipCooldown = gateCharge.skipCooldown();
+  gateCharge.markCharged();
   const gate = await runPreflightGate(
     env,
     ctx,
@@ -91,6 +94,7 @@ async function reserveSpeechGate(
     "speech",
     sessionId,
     chargeChars,
+    skipCooldown,
   );
   if (!gate.ok) {
     return {
@@ -135,6 +139,7 @@ interface TranslateStageOptions {
   budgetMs: number;
   ctx: ExecutionContext;
   sessionId: string | null;
+  gateCharge: { skipCooldown: () => boolean; markCharged: () => void };
 }
 
 type TranslateStageOutcome =
@@ -154,8 +159,11 @@ async function translateStage(
     budgetMs,
     ctx,
     sessionId,
+    gateCharge,
   } = options;
 
+  const skipCooldown = gateCharge.skipCooldown();
+  gateCharge.markCharged();
   const gate = await runPreflightGate(
     env,
     ctx,
@@ -163,6 +171,8 @@ async function translateStage(
     tier,
     "translate",
     sessionId,
+    0,
+    skipCooldown,
   );
   if (!gate.ok) return { ok: false, response: gate.response };
   if (signal.aborted) throw new Error(CLIENT_ABORTED);
@@ -171,7 +181,7 @@ async function translateStage(
   let textHash = "";
   try {
     textHash = await hashKey(`${text}_${sourceLang || "auto"}_${targetLang}`);
-    cacheKey = `trans:${userId}:${tier}:${textHash}`;
+    cacheKey = buildTranslateCacheKey(userId, tier, textHash);
   } catch (err) {
     logger.error(`[synthesize] translate cache key error (continuing)`, {
       error: String(err),
@@ -221,6 +231,8 @@ interface ResponseMeta {
   transcript: string;
   /** The translated text when one was produced, otherwise null. */
   translation: string | null;
+  /** True when `transcript` covers only the opening span of what was said. */
+  translationTruncated: boolean;
 }
 
 function wavDurationMs(audio: Uint8Array): number | undefined {
@@ -231,13 +243,14 @@ function wavDurationMs(audio: Uint8Array): number | undefined {
   return Math.round((audio.byteLength / byteRate) * 1000);
 }
 
-function buildSpeechResponse(
+async function buildSpeechResponse(
+  env: Env,
   result: SpeechResult,
   meta: ResponseMeta,
   cacheKey: string,
-): Response {
+): Promise<Response> {
   const response = synthesizeResponseSchema.parse({
-    audioUrl: `/speech/${cacheKey}`,
+    audioUrl: `/speech/${await signSpeechUrl(env, cacheKey)}`,
     mime: result.mime,
     sourceLang: meta.sourceLang,
     targetLang: meta.targetLang,
@@ -248,6 +261,7 @@ function buildSpeechResponse(
       : undefined,
     transcript: meta.transcript,
     translation: meta.translation,
+    translationTruncated: meta.translationTruncated,
   });
   return Response.json(response);
 }
@@ -265,9 +279,12 @@ interface FinishSpeechOptions {
   userId: string;
   sessionId: string | null;
   isPreview: boolean;
+  /** Distinguishes successive renders of identical text; absent is a normal request. */
+  reroll?: number;
   remainingMs: () => number;
   timings: RequestTimings;
   meta: ResponseMeta;
+  gateCharge: { skipCooldown: () => boolean; markCharged: () => void };
 }
 
 async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
@@ -283,9 +300,11 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     userId,
     sessionId,
     isPreview,
+    reroll,
     remainingMs,
     timings,
     meta,
+    gateCharge,
   } = options;
 
   let cleanSpoken = sanitizeTranslationText(spokenText);
@@ -340,6 +359,9 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
   // the standard slot the speculative tier is always the final tier and the
   // read is never wasted. Only a Pro slot can resolve to a different tier, and
   // that costs one extra read — still cheaper than serialising the common case.
+  const entitlementGate = guardVoiceEntitlement(voiceId, jwtTier, isPreview);
+  if (entitlementGate) return entitlementGate;
+
   const gatePromise = isPreview
     ? Promise.resolve<SpeechGate>({ ok: true, tier: jwtTier })
     : reserveSpeechGate(
@@ -349,6 +371,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
         jwtTier,
         sessionId,
         cleanSpoken.length,
+        gateCharge,
       );
 
   const speculative = timings
@@ -361,6 +384,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
         userId,
         slotTier,
         scope,
+        reroll,
       );
       // A failed read is a miss, not an absent key. Swallowing it here keeps
       // `key` so the synthesis below still populates the cache — collapsing both
@@ -378,17 +402,13 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
       return { key, hit };
     })
     // The key itself could not be built, so there is genuinely nothing to read
-    // or write. This also guards the unhandled rejection: the entitlement gate
-    // below can return before this promise is awaited.
+    // or write.
     .catch((err) => {
       logger.warn("[synthesize] speech cache key build failed", {
         error: err instanceof Error ? err.message : String(err),
       });
       return { key: "", hit: null };
     });
-
-  const entitlementGate = guardVoiceEntitlement(voiceId, jwtTier, isPreview);
-  if (entitlementGate) return entitlementGate;
 
   const reserved = await gatePromise;
   if (reserved.ok) {
@@ -420,6 +440,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
       userId,
       executionTier,
       scope,
+      reroll,
     ).then((key) =>
       readSpeechCache(env, key)
         .then((hit) => ({ key, hit }))
@@ -440,7 +461,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
       `[synthesize] Speech cache hit scope=${scope} tier=${executionTier}`,
     );
     timings.start("encode");
-    const res = buildSpeechResponse(cached, meta, cacheKey);
+    const res = await buildSpeechResponse(env, cached, meta, cacheKey);
     timings.end("encode");
     return res;
   }
@@ -482,7 +503,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
   }
 
   timings.start("encode");
-  const res = buildSpeechResponse(result, meta, cacheKey);
+  const res = await buildSpeechResponse(env, result, meta, cacheKey);
   timings.end("encode");
   return res;
 }
@@ -497,6 +518,7 @@ async function synthesizeFromText(
   ctx: ExecutionContext,
   remainingMs: () => number,
   timings: RequestTimings,
+  gateCharge: { skipCooldown: () => boolean; markCharged: () => void },
 ): Promise<Response> {
   const ctGuard = guardContentType(request);
   if (!ctGuard.allowed) return ctGuard.response;
@@ -514,7 +536,7 @@ async function synthesizeFromText(
       { status: 400 },
     );
   }
-  const { text, sourceLang, targetLang, gender, voiceId } = parsed.data;
+  const { text, sourceLang, targetLang, gender, voiceId, reroll } = parsed.data;
 
   if (!text) {
     return Response.json(
@@ -553,6 +575,7 @@ async function synthesizeFromText(
       isPreview: true,
       remainingMs,
       timings,
+      gateCharge,
       meta: {
         sourceLang: sourceLang ?? targetLang,
         targetLang,
@@ -560,6 +583,7 @@ async function synthesizeFromText(
         voiceId,
         transcript: cleanText,
         translation: null,
+        translationTruncated: false,
       },
     });
   }
@@ -567,6 +591,10 @@ async function synthesizeFromText(
   let spokenText = cleanText;
   let translated = false;
   let effectiveSource = sourceLang ?? targetLang;
+  // The transcript reported back must describe the same span the translation
+  // covers, or the pair contradicts the response schema's own contract.
+  let reportedText = cleanText;
+  let translationTruncated = false;
 
   const needsTranslate =
     sourceLang !== undefined &&
@@ -574,8 +602,11 @@ async function synthesizeFromText(
     sourceLang !== targetLang;
 
   if (needsTranslate) {
+    const shrunk = preShrinkForTranslate(cleanText, tier);
+    reportedText = shrunk.text;
+    translationTruncated = shrunk.truncated;
     const translation = await translateStage({
-      text: preShrinkForTranslate(cleanText, tier),
+      text: shrunk.text,
       sourceLang,
       targetLang,
       tier,
@@ -585,6 +616,7 @@ async function synthesizeFromText(
       budgetMs: Math.min(TRANSLATE_TOTAL_MS, remainingMs()),
       ctx,
       sessionId,
+      gateCharge,
     });
     if (!translation.ok) return translation.response;
     spokenText = translation.result.translation;
@@ -601,8 +633,11 @@ async function synthesizeFromText(
       logger.error(`[synthesize] auto-detect failed: ${String(err)}`);
     }
     if (detected && detected !== targetLang) {
+      const shrunk = preShrinkForTranslate(cleanText, tier);
+      reportedText = shrunk.text;
+      translationTruncated = shrunk.truncated;
       const translation = await translateStage({
-        text: preShrinkForTranslate(cleanText, tier),
+        text: shrunk.text,
         sourceLang: detected,
         targetLang,
         tier,
@@ -612,6 +647,7 @@ async function synthesizeFromText(
         budgetMs: Math.min(TRANSLATE_TOTAL_MS, remainingMs()),
         ctx,
         sessionId,
+        gateCharge,
       });
       if (!translation.ok) return translation.response;
       spokenText = translation.result.translation;
@@ -635,15 +671,18 @@ async function synthesizeFromText(
     userId,
     sessionId,
     isPreview: false,
+    reroll,
     remainingMs,
     timings,
+    gateCharge,
     meta: {
       sourceLang: effectiveSource,
       targetLang,
       translated,
       voiceId,
-      transcript: cleanText,
+      transcript: reportedText,
       translation: translated ? spokenText : null,
+      translationTruncated,
     },
   });
 }
@@ -658,75 +697,19 @@ async function synthesizeFromAudio(
   ctx: ExecutionContext,
   remainingMs: () => number,
   timings: RequestTimings,
+  gateCharge: { skipCooldown: () => boolean; markCharged: () => void },
 ): Promise<Response> {
-  const ctGuard = guardContentType(request, "multipart");
-  if (!ctGuard.allowed) return ctGuard.response;
+  const ingest = await ingestAudioUpload(request, tier);
+  if (!ingest.ok) return ingest.response;
+  const { audio, audioHash, durationMs, form } = ingest.value;
 
-  const sizePreGuard = guardMultipartSize(request, tier);
-  if (!sizePreGuard.allowed) return sizePreGuard.response;
-
-  let formData: FormData;
-  try {
-    const maxBodyBytes = getLimits(tier).maxAudioBytes + MULTIPART_OVERHEAD;
-    const bodyBytes = await readLimitedBody(request, maxBodyBytes);
-    if (bodyBytes === null) {
-      return Response.json(
-        {
-          error: WORKER_ERROR_CODES.FILE_TOO_LARGE,
-          message: "Audio file too large. Try a shorter recording.",
-        },
-        { status: 413 },
-      );
-    }
-    formData = await new Response(bodyBytes, {
-      headers: {
-        "Content-Type":
-          request.headers.get("Content-Type") || "multipart/form-data",
-      },
-    }).formData();
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.error(`[synthesize] formData() FAILED: ${msg}`);
-    return Response.json(
-      {
-        error: WORKER_ERROR_CODES.EKWE_TRANSCRIPTION_FAIL,
-        message: "Failed to parse request body.",
-      },
-      { status: 500 },
-    );
-  }
-
-  const file = formData.get("file") as File | null;
-  const lang = formData.get("lang") as string | null;
-  const targetLang = formData.get("targetLang") as string | null;
-  const durationRaw = formData.get("duration") as string | null;
-  const durationMs = durationRaw ? Number(durationRaw) : undefined;
-  const genderRaw = formData.get("gender") as string | null;
-  const voiceIdRaw = formData.get("voiceId") as string | null;
+  const lang = form.get("lang") as string | null;
+  const targetLang = form.get("targetLang") as string | null;
+  const genderRaw = form.get("gender") as string | null;
+  const voiceIdRaw = form.get("voiceId") as string | null;
   logger.info(
-    `[synthesize] file=${!!file} lang=${lang} targetLang=${targetLang} duration=${durationMs} fileType=${file?.type} fileName=${file?.name} fileSize=${file?.size}`,
+    `[synthesize] lang=${lang} targetLang=${targetLang} duration=${durationMs} mime=${ingest.value.mimeType} size=${audio.size}`,
   );
-
-  if (!file)
-    return Response.json(
-      { error: WORKER_ERROR_CODES.MISSING_FILE },
-      { status: 400 },
-    );
-
-  if (file.size === 0)
-    return Response.json(
-      {
-        error: WORKER_ERROR_CODES.EKWE_EMPTY_TRANSCRIPT,
-        message: "Audio file is empty.",
-      },
-      { status: 400 },
-    );
-
-  const sizeGuard = guardAudioSize(file.size, tier);
-  if (!sizeGuard.allowed) return sizeGuard.response;
-
-  const durationGuard = guardAudioDuration(durationMs, tier);
-  if (!durationGuard.allowed) return durationGuard.response;
 
   const autoGuard = guardAutoDetect(lang, tier);
   if (!autoGuard.allowed) return autoGuard.response;
@@ -768,35 +751,33 @@ async function synthesizeFromAudio(
     voiceId = voiceIdRaw;
   }
 
+  const transcribeSkip = gateCharge.skipCooldown();
+  gateCharge.markCharged();
   const transcribeGate = await timings.measure("stt.gate", () =>
-    runPreflightGate(env, ctx, userId, tier, "transcribe", sessionId),
+    runPreflightGate(
+      env,
+      ctx,
+      userId,
+      tier,
+      "transcribe",
+      sessionId,
+      0,
+      transcribeSkip,
+    ),
   );
   if (!transcribeGate.ok) return transcribeGate.response;
   if (signal.aborted) throw new Error(CLIENT_ABORTED);
-
-  let audioBuffer: ArrayBuffer;
-  let mimeType: string;
-  try {
-    audioBuffer = await file.arrayBuffer();
-    mimeType = sniffAudioMime(new Uint8Array(audioBuffer), file.type);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.error(`[synthesize] file.arrayBuffer() FAILED: ${msg}`);
-    return Response.json(
-      {
-        error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL,
-        message: "Failed to read audio file.",
-      },
-      { status: 503 },
-    );
-  }
 
   let cacheKey: string | null = null;
   let transcript: string | null = null;
   let detectedLang: string | null = null;
   try {
-    const audioHash = await hashBytes(audioBuffer);
-    cacheKey = `transcribe:${userId}:${tier}:${audioHash}:${lang || "auto"}`;
+    cacheKey = buildTranscribeCacheKey({
+      userId,
+      tier,
+      audioHash,
+      lang,
+    });
 
     const cached = await readTranscribeCache(env, cacheKey);
     if (cached) {
@@ -809,25 +790,10 @@ async function synthesizeFromAudio(
   }
 
   if (transcript === null) {
-    let audioBlob: Blob;
-    try {
-      audioBlob = new Blob([audioBuffer], { type: mimeType });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error(`[synthesize] Blob creation FAILED: ${msg}`);
-      return Response.json(
-        {
-          error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL,
-          message: "Failed to process audio file.",
-        },
-        { status: 500 },
-      );
-    }
-
     const isAuto = !lang || lang === "auto";
     const result = await timings.measure("stt", () =>
       runTranscribe({
-        audioBlob,
+        audioBlob: audio,
         effectiveLang: isAuto ? "auto" : lang,
         isAuto,
         tier: tier,
@@ -863,6 +829,8 @@ async function synthesizeFromAudio(
 
   let translated = false;
   let effectiveSource = lang ?? targetLang;
+  let reportedTranscript = spokenText;
+  let translationTruncated = false;
 
   if (lang !== targetLang) {
     const isAuto = !lang || lang === "auto";
@@ -873,9 +841,12 @@ async function synthesizeFromAudio(
 
     if (sourceCode) {
       if (signal.aborted) throw new Error(CLIENT_ABORTED);
+      const shrunk = preShrinkForTranslate(spokenText, tier);
+      reportedTranscript = shrunk.text;
+      translationTruncated = shrunk.truncated;
       const translation = await timings.measure("mt", () =>
         translateStage({
-          text: preShrinkForTranslate(spokenText, tier),
+          text: shrunk.text,
           sourceLang: sourceCode,
           targetLang,
           tier: tier,
@@ -885,6 +856,7 @@ async function synthesizeFromAudio(
           budgetMs: Math.min(TRANSLATE_TOTAL_MS, remainingMs()),
           ctx,
           sessionId,
+          gateCharge,
         }),
       );
       if (!translation.ok) return translation.response;
@@ -910,13 +882,15 @@ async function synthesizeFromAudio(
     isPreview: false,
     remainingMs,
     timings,
+    gateCharge,
     meta: {
       sourceLang: effectiveSource,
       targetLang,
       translated,
       voiceId,
-      transcript,
+      transcript: reportedTranscript,
       translation: translated ? spokenText : null,
+      translationTruncated,
     },
   });
 }
@@ -924,6 +898,26 @@ async function synthesizeFromAudio(
 export interface SynthesizeAuthContext {
   userId: string;
   sessionId: string | null;
+}
+
+/**
+ * One per request. A combined request charges the cooldown on its first gate
+ * and passes `true` to the rest.
+ *
+ * This must never be module-level: a Worker isolate handles requests
+ * concurrently, so shared state would let one request skip another's cooldown.
+ */
+function createGateCharge(): {
+  skipCooldown: () => boolean;
+  markCharged: () => void;
+} {
+  let charged = false;
+  return {
+    skipCooldown: (): boolean => charged,
+    markCharged: (): void => {
+      charged = true;
+    },
+  };
 }
 
 export async function handleSynthesize(
@@ -937,6 +931,7 @@ export async function handleSynthesize(
 ): Promise<Response> {
   const start = Date.now();
   const remainingMs = () => SYNTHESIZE_TOTAL_MS - (Date.now() - start);
+  const gateCharge = createGateCharge();
 
   const ct = request.headers.get("Content-Type") || "";
   if (ct.includes("multipart/form-data")) {
@@ -950,6 +945,7 @@ export async function handleSynthesize(
       ctx,
       remainingMs,
       timings,
+      gateCharge,
     );
   }
   return synthesizeFromText(
@@ -962,5 +958,6 @@ export async function handleSynthesize(
     ctx,
     remainingMs,
     timings,
+    gateCharge,
   );
 }

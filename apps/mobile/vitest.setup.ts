@@ -66,10 +66,25 @@ vi.mock("expo-sqlite", () => ({
 }));
 
 vi.mock("drizzle-orm/expo-sqlite", () => {
-  const mockPrepared = () => ({
-    all: vi.fn(() => []),
-    execute: vi.fn(() => ({ changes: 0 })),
-  });
+  // Mirrors the real driver: `prepare()` hands back a statement whose
+  // `execute()` is a lazy `ExecuteResultSync` thunk that only touches the
+  // database once materialized. A mock that ran eagerly inside `execute()`
+  // would hide a caller that forgets to materialize it.
+  const prepared = [] as {
+    all: ReturnType<typeof vi.fn>;
+    run: ReturnType<typeof vi.fn>;
+    execute: ReturnType<typeof vi.fn>;
+  }[];
+
+  const mockPrepared = () => {
+    const stmt = {
+      all: vi.fn(() => []),
+      run: vi.fn(() => ({ changes: 0, lastInsertRowId: 0 })),
+      execute: vi.fn(() => ({ sync: vi.fn(() => ({ changes: 0 })) })),
+    };
+    prepared.push(stmt);
+    return stmt;
+  };
 
   const mockLimit = () => ({
     all: vi.fn(() => []),
@@ -96,6 +111,7 @@ vi.mock("drizzle-orm/expo-sqlite", () => {
   });
 
   return {
+    __preparedStatements: prepared,
     drizzle: vi.fn(() => ({
       insert: vi.fn(() => ({
         values: vi.fn(() => ({

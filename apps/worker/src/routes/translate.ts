@@ -2,7 +2,8 @@ import { WORKER_ERROR_CODES, translateRequestSchema } from "@ekwe/shared";
 import { logger } from "@/core/logger";
 import { TRANSLATE_TOTAL_MS } from "@/core/budgets";
 import { getLimits } from "@/core/limits";
-import { needsRomanization } from "@/utils/prompts";
+import { needsRomanization } from "@ekwe/shared/languages";
+import { buildTranslateCacheKey } from "@/services/translate";
 import {
   guardTextLength,
   guardAutoDetect,
@@ -104,7 +105,7 @@ export async function handleTranslate(
     textHash = await hashKey(
       `${cleanText}_${sourceLang || "auto"}_${targetLang}`,
     );
-    cacheKey = `trans:${userId}:${tier}:${textHash}`;
+    cacheKey = buildTranslateCacheKey(userId, tier, textHash);
   } catch (err) {
     logger.error(`[translate] cache key error (continuing)`, {
       error: String(err),

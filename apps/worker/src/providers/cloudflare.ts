@@ -1,4 +1,4 @@
-import { bytesToBase64 } from "@/utils/base64";
+import { blobToBase64 } from "@/utils/base64";
 import {
   CLIENT_ABORTED,
   Env,
@@ -29,7 +29,7 @@ export async function stt(
     // object, but the Whisper endpoint expects /audio to be a base64
     // string. Encode explicitly so the shape matches what the API
     // actually accepts (verified against the live binding).
-    const audio = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+    const audio = await blobToBase64(blob);
 
     const isAuto = !lang || lang === "auto";
     const input = isAuto

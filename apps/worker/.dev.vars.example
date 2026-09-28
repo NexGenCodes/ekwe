@@ -12,6 +12,14 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 # so its per-IP rate-limit buckets key on each client instead of the worker egress IP.
 SUPABASE_SECRET_KEY=your-secret-key
 
+# ─── Speech cache URLs ─────────────────────────────────────────────────
+# Signs the `/speech/:key` capability URL so a cache key cannot be recomputed
+# from the text and language alone. Any random 32+ byte value; the worker only
+# ever HMACs with it. Falls back to SUPABASE_SERVICE_ROLE_KEY when unset, so
+# setting this is recommended but not required.
+# Deploy with: wrangler secret put SPEECH_URL_SECRET
+SPEECH_URL_SECRET=
+
 # ─── Cloudflare Turnstile ─────────────────────────────────────────────
 # Optional: for web clients on /auth/otp (OTP send). Widget "ekwe-app" (managed
 # mode) in Cloudflare dashboard. Paste its SECRET key here.

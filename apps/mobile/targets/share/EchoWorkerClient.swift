@@ -168,8 +168,9 @@ final class EchoUserPreferences {
     }()
 
     lazy var autoCopy: Bool = {
-        // Opt-in copy is the safe default when the file is missing.
-        decode()?.autoCopy ?? true
+        // Fails closed: the app mirrors the tier-gated value, so a missing or
+        // unreadable file must not enable it.
+        decode()?.autoCopy ?? false
     }()
 
     /// Whether the signed-in user may pick "Auto-Detect" (gated by the app's

@@ -73,22 +73,47 @@ export async function readLimitedBody(
   if (!isNaN(parsedLength) && parsedLength > maxBytes) return null;
 
   const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
+
+  // Fill one right-sized buffer when Content-Length is present, instead of
+  // holding every chunk and then copying them into a contiguous one.
+  let direct: Uint8Array<ArrayBuffer> | null =
+    !isNaN(parsedLength) && parsedLength > 0
+      ? new Uint8Array(parsedLength)
+      : null;
+  let chunks: Uint8Array[] | null = null;
   let total = 0;
+
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
+
+    if (total + value.byteLength > maxBytes) {
       await reader.cancel().catch(() => {});
       return null;
     }
-    chunks.push(value);
+
+    if (direct && total + value.byteLength <= direct.length) {
+      direct.set(value, total);
+    } else {
+      // Content-Length under-reported. Accumulate instead of writing past the
+      // buffer, so we neither truncate a legitimate upload nor overrun.
+      if (!chunks) {
+        chunks = direct ? [direct.subarray(0, total)] : [];
+        direct = null;
+      }
+      chunks.push(value);
+    }
+    total += value.byteLength;
+  }
+
+  if (direct) {
+    // Over-reported Content-Length: return only what arrived.
+    return total === direct.length ? direct : direct.slice(0, total);
   }
 
   const out = new Uint8Array(total);
   let offset = 0;
-  for (const chunk of chunks) {
+  for (const chunk of chunks!) {
     out.set(chunk, offset);
     offset += chunk.byteLength;
   }

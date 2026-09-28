@@ -490,34 +490,29 @@ export default function ProfileScreen(): React.JSX.Element {
               icon={Copy}
               sfIcon="doc.on.doc.fill"
               iconColor={color.foreground}
-              title="Auto-copy to Clipboard"
+              title="Auto-copy"
               subtitle="Copy translation automatically"
               locked={!isPro}
               navigateToBilling
               onPress={async () => {
-                // Was the only Smart Feature row that flipped the setting for
-                // free users: the switch rendered and toggled regardless of
-                // tier, so the gate on the pipeline was the only thing stopping
-                // a paid behaviour. It now advertises the gate and routes to
-                // billing, like Live Transcription.
-                if (isPro) {
-                  await triggerHaptic();
-                  setAutoCopy(!autoCopy);
-                }
+                if (!isPro) return;
+                await triggerHaptic();
+                setAutoCopy(!autoCopy);
               }}
               trailing={
                 isPro ? (
-                  <Switch
-                    value={autoCopy}
-                    onValueChange={(val) => {
-                      setAutoCopy(val);
-                    }}
-                    trackColor={{
-                      true: color.brand,
-                      false: color.border,
-                    }}
-                    thumbColor={color.card}
-                  />
+                  // Indicator only — the row above is the toggle. A live Switch
+                  // here also fired the row press, toggling twice.
+                  <Box pointerEvents="none">
+                    <Switch
+                      value={autoCopy}
+                      trackColor={{
+                        true: color.brand,
+                        false: color.border,
+                      }}
+                      thumbColor={color.card}
+                    />
+                  </Box>
                 ) : undefined
               }
             />

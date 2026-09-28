@@ -2,19 +2,10 @@ import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { error } from "@/core/http";
 import type { RouteHandler } from "@/core/pipeline";
 import { readSpeechCache } from "@/services/speech";
+import { verifySpeechUrl } from "@/utils/speech-url";
 
-/**
- * Cache keys are built from hashed inputs, so this route is addressed by
- * content rather than by anything a client could enumerate. It is deliberately
- * unauthenticated and ungated: the bytes are already paid for, and an
- * `<audio src>` fetch cannot carry a bearer token.
- *
- * The key is a colon-delimited composite — see `buildSpeechCacheKey` — so this
- * mirrors its shape rather than assuming a bare digest. Pinning every segment
- * keeps a crafted path from reaching the bucket with an arbitrary name.
- */
 const CACHE_KEY_RE =
-  /^speech:(?:shared|[a-f0-9]{64}):[A-Za-z0-9_-]+:(?:male|female|auto):(?:free|premium):cache:[A-Za-z-]+:[a-f0-9]{64}$/;
+  /^speech:(?:shared|[a-f0-9]{64}):[A-Za-z0-9_-]+:(?:male|female|auto):(?:free|premium):cache:[A-Za-z-]+:[a-f0-9]{64}\.[a-f0-9]{32}$/;
 
 /**
  * Serves previously synthesised audio out of the speech cache.
@@ -30,7 +21,12 @@ export const speechAudioHandler: RouteHandler = async ({ params, env }) => {
     return error(WORKER_ERROR_CODES.INVALID_BODY, 400);
   }
 
-  const hit = await readSpeechCache(env, key);
+  const cacheKey = await verifySpeechUrl(env, key);
+  if (!cacheKey) {
+    return error(WORKER_ERROR_CODES.NOT_FOUND, 404);
+  }
+
+  const hit = await readSpeechCache(env, cacheKey);
   if (!hit) {
     // Either the write has not landed yet, or the entry aged out. The client
     // treats a miss here as a cache miss and falls back to the inline payload.

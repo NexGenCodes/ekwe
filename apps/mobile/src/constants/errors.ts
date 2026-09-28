@@ -2,6 +2,7 @@ import { FREE_LIMITS, PREMIUM_LIMITS, WORKER_ERROR_CODES } from "@ekwe/shared";
 
 const FREE_MAX_MIN = Math.round(FREE_LIMITS.dictationDurationMs / 60000);
 const PRO_MAX_MIN = Math.round(PREMIUM_LIMITS.dictationDurationMs / 60000);
+const PRO_MAX_MB = Math.round(PREMIUM_LIMITS.maxAudioBytes / 1_048_576);
 
 export const EkweError = {
   NO_SPEECH: "EKWE_NO_SPEECH",
@@ -29,6 +30,8 @@ export const EkweError = {
   FILE_TOO_LARGE: WORKER_ERROR_CODES.FILE_TOO_LARGE,
   AUDIO_TOO_LONG: WORKER_ERROR_CODES.AUDIO_TOO_LONG,
   SPEECH_FAIL: "EKWE_SPEECH_FAIL",
+  /** A free account asked for a Pro voice. */
+  PREMIUM_REQUIRED: WORKER_ERROR_CODES.PREMIUM_FEATURE_REQUIRED,
   /** Every speech provider was down or rate limited. Worth a retry later. */
   SPEECH_UNAVAILABLE: WORKER_ERROR_CODES.SPEECH_UNAVAILABLE,
   SPEECH_TIMEOUT: "EKWE_SPEECH_TIMEOUT",
@@ -65,7 +68,7 @@ export const ErrorMessages: Record<EkweError, string> = {
   [EkweError.TRANSCRIBE_TIMEOUT]:
     "Request timed out. The audio might be too complex or long.",
   [EkweError.TRANSLATION_FAIL]: "Translation failed. Please try again.",
-  [EkweError.RATE_LIMITED]: "Service is busy. Trying another provider.",
+  [EkweError.RATE_LIMITED]: "Please wait a moment before trying again.",
   [EkweError.QUOTA_EXCEEDED]:
     "You've reached today's limit. It resets at midnight.",
   [EkweError.ALL_PROVIDERS_FAIL]:
@@ -73,10 +76,10 @@ export const ErrorMessages: Record<EkweError, string> = {
   [EkweError.AUDIO_RECORD_FAIL]: "Could not start recording. Please try again.",
   [EkweError.AUDIO_EMPTY]:
     "No audio was captured. Make sure the voice note is audible.",
-  [EkweError.FILE_TOO_LARGE]:
-    "This file is too large to process. Maximum size is 25MB.",
+  [EkweError.FILE_TOO_LARGE]: `This file is too large to process. Maximum size is ${PRO_MAX_MB}MB.`,
   [EkweError.AUDIO_TOO_LONG]: `This audio is too long for your plan. Free: ${FREE_MAX_MIN} min per file · Pro: ${PRO_MAX_MIN} min.`,
   [EkweError.SPEECH_FAIL]: "Speech failed. Please try again.",
+  [EkweError.PREMIUM_REQUIRED]: "This voice requires Ekwe Pro.",
   [EkweError.SPEECH_UNAVAILABLE]:
     "Voice is temporarily unavailable. Please try again shortly.",
   [EkweError.SPEECH_TIMEOUT]:

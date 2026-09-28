@@ -612,6 +612,22 @@ describe("synthesizeResponseSchema", () => {
     ).toBe(true);
   });
 
+  test("carries translationTruncated when the source was over budget", () => {
+    const parsed = synthesizeResponseSchema.safeParse({
+      audioUrl: "/speech/speech:abc:standard:auto:free:cache:en:def",
+      mime: "audio/wav",
+      sourceLang: "en",
+      targetLang: "es",
+      translated: true,
+      voiceId: "standard",
+      transcript: "the opening span",
+      translation: "le début",
+      translationTruncated: true,
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.translationTruncated).toBe(true);
+  });
+
   test("rejects a missing translated flag", () => {
     expect(
       synthesizeResponseSchema.safeParse({

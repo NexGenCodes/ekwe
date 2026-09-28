@@ -4,6 +4,7 @@ interface Env {
   FIREBASE_PROJECT_NUMBER?: string;
   REQUIRE_APP_CHECK?: string;
   SUPABASE_SECRET_KEY?: string;
+  SPEECH_URL_SECRET?: string;
   SENTRY_DSN?: string;
   UPDATE_NOTIFY_SECRET?: string;
   FLUTTERWAVE_SECRET?: string;

@@ -29,15 +29,10 @@ function sleep(ms: number): Promise<void> {
 /**
  * Charge a billable request.
  *
- * `consume_usage` is a blind increment, not an idempotent set, so it must NOT be
- * retried blindly: a request that times out or 5xxs may already have committed,
- * and a second attempt would double-charge the user. Only 429 is retried, since
- * a rate-limited request is by definition never applied.
- *
- * Every other failure is logged and dropped. That is a real (if narrow) billing
- * hole — the user keeps the translation and the counter never moves — so these
- * logs are the only signal that it happened. Reconciling them is a separate
- * concern from this function; see the retry note above before changing it.
+ * `consume_usage` is a blind increment, not an idempotent set, so only 429 is
+ * retried — a rate-limited request was never applied. Retrying a timeout or 5xx
+ * would risk double-charging. Other failures are logged with `charged: false`
+ * and dropped; those logs are the only signal the charge was missed.
  */
 async function consumeUsage(
   env: Env,

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
   buildTranslatePrompt,
-  needsRomanization,
   parseTranslateOutput,
   ROMANIZATION_MARKER,
 } from "@/utils/prompts";
+import { needsRomanization } from "@ekwe/shared/languages";
 
 describe("needsRomanization", () => {
   test("true for non-Latin script targets", () => {

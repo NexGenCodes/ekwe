@@ -140,6 +140,10 @@ export function mapWorkerError(
       return EkweError.QUOTA_EXCEEDED;
     case "EKWE_TRANSLATION_FAIL":
       return EkweError.TRANSLATION_FAIL;
+    // Without this a free account asking for a Pro voice gets a generic failure
+    // and no idea the voice is the problem.
+    case WORKER_ERROR_CODES.PREMIUM_FEATURE_REQUIRED:
+      return EkweError.PREMIUM_REQUIRED;
     // The worker distinguishes "we tried and every provider was down" from
     // "your request was wrong". Collapsing them into a generic failure is
     // what made an outage look like the user's fault.

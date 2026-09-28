@@ -34,15 +34,15 @@ describe("TelemetrySource", () => {
 
 describe("edit re-render cost", () => {
   /**
-   * `synthesizeSpeech` treats a present `sourceLang` as "translate this", and
-   * an omitted one as "speak this". The result editor re-renders text the user
-   * has already written the final wording for, so it must omit it — otherwise
-   * every edit pays for a machine translation of their own words.
+   * `synthesizeSpeech` treats a present `sourceLang` as "translate this" and an
+   * omitted one as "speak this". The editor only wants the former when the app
+   * misheard the user and the translation must follow the correction; every
+   * other edit is text the user has already written the final wording for, and
+   * translating it would charge them for a translation of their own words.
    *
-   * This is a structural check rather than a behavioural one: the assertion
-   * lives here so the reason survives refactors of the editor, and the call
-   * site in VoiceStudioInterface.handleApplyEdit is where the omission must
-   * not be "helpfully" added back.
+   * The decision itself is covered behaviourally in
+   * `components/home/__tests__/editPlan.test.ts` — this block is kept only for
+   * the reasoning, which should survive the next refactor of the editor.
    */
   const needsTranslate = (
     sourceLang: string | undefined,
@@ -56,7 +56,7 @@ describe("edit re-render cost", () => {
     expect(needsTranslate("en", "fr")).toBe(true);
   });
 
-  it("skips translation when the source language is omitted, as the editor does", () => {
+  it("skips translation when the source language is omitted, as a speak-only render does", () => {
     expect(needsTranslate(undefined, "fr")).toBe(false);
   });
 });

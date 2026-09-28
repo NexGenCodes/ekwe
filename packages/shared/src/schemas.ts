@@ -129,6 +129,7 @@ export const synthesizeRequestSchema = z.object({
   targetLang: z.enum(LANG_CODES),
   gender: z.enum(["male", "female"]).optional(),
   voiceId: z.enum(VOICE_SLOT_IDS).optional(),
+  reroll: z.number().int().min(0).max(1_000).optional(),
 });
 export type SynthesizeRequest = z.infer<typeof synthesizeRequestSchema>;
 
@@ -155,6 +156,15 @@ export const synthesizeResponseSchema = z.object({
    */
   transcript: z.string().optional(),
   translation: z.string().nullable().optional(),
+  /**
+   * Set when the source text was longer than the translate budget allows, so the
+   * worker translated only its opening span. `transcript` then describes that
+   * same span rather than everything the user said, and this flag lets the
+   * client say so instead of silently showing a partial translation.
+   *
+   * Optional so an older worker paired with a newer client still validates.
+   */
+  translationTruncated: z.boolean().optional(),
 });
 export type SynthesizeResponse = z.infer<typeof synthesizeResponseSchema>;
 

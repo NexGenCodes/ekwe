@@ -78,7 +78,7 @@ export const FREE_LIMITS: PlanLimits = {
 };
 
 export const PREMIUM_LIMITS: PlanLimits = {
-  maxAudioBytes: 26_214_400,
+  maxAudioBytes: 10_485_760,
   maxTextChars: 2400,
   autoDetectAllowed: true,
   dictationDurationMs: 1_800_000,
@@ -101,7 +101,7 @@ export const PREMIUM_LIMITS: PlanLimits = {
 };
 
 export const FREE_FEATURES: PlanFeatures = {
-  autoCopy: true,
+  autoCopy: false,
 };
 
 export const PREMIUM_FEATURES: PlanFeatures = {

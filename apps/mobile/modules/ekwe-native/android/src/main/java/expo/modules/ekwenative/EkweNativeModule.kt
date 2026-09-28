@@ -66,7 +66,7 @@ class EkweNativeModule : Module() {
     // Authoritative limit lives in @ekwe/shared/plans (PREMIUM_LIMITS.
     // maxAudioBytes); JS passes it in at call time so native never hardcodes it.
     // This is only a defensive default if a caller omits the argument.
-    private const val DEFAULT_MAX_AUDIO_BYTES = 26_214_400L
+    private const val DEFAULT_MAX_AUDIO_BYTES = 10_485_760L
 
     init {
       System.loadLibrary("ekwe_native_jni")

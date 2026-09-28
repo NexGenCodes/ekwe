@@ -11,7 +11,7 @@ namespace ekwe {
 // pass the shared limit explicitly. The authoritative value lives in
 // @ekwe/shared/plans (PREMIUM_LIMITS.maxAudioBytes) and is passed down from JS
 // through the native bridges at call time.
-constexpr size_t kDefaultMaxAudioBytes = 25 * 1024 * 1024; // 26,214,400
+constexpr size_t kDefaultMaxAudioBytes = 10 * 1024 * 1024; // 10,485,760
 
 // Hard ceiling on decoded audio *duration*, independent of sample rate.
 // Expressed in time rather than sample count so a 48 kHz source cannot consume
