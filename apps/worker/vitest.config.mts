@@ -18,8 +18,8 @@ export default defineConfig({
         "src/types.ts",
         // Covered by the workers integration tests (tests/durable/), not the
         // Node unit suite: it only runs against the `cloudflare:workers` mock.
-        "src/stream-do.ts",
-        "src/throttle-do.ts",
+        "src/durable/stream-do.ts",
+        "src/durable/throttle-do.ts",
       ],
       thresholds: {
         lines: 66,
