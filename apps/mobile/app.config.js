@@ -87,6 +87,43 @@ if (keystorePropertiesFile.exists()) {
 // editing the generated folder directly.
 
 /**
+ * Silences `sentry.options.json not found in app root` on every Android build.
+ *
+ * `@sentry/react-native`'s sentry.gradle.kts registers a
+ * `copySentryJsonConfiguration` task that looks for a `sentry.options.json`
+ * next to `android/` and warns when it is absent. That file is only for
+ * overriding options that cannot be set from `Sentry.init` — this app is
+ * configured through the Expo config plugin and `EXPO_PUBLIC_SENTRY_DSN`
+ * (see `src/utils/logger.ts`), so there is nothing for it to copy. The task
+ * is skipped through `shouldCopySentryOptionsFile`, the override point the
+ * gradle script documents; it must be a Closure because the script casts
+ * that extra property to one before calling it.
+ */
+function withSentryOptionsFileCopyDisabled(config) {
+  return withAppBuildGradle(config, (cfg) => {
+    const marker = "sentry.gradle.kts";
+    if (!cfg.modResults.contents.includes(marker)) {
+      throw new Error(
+        "Could not find the sentry.gradle.kts apply in app/build.gradle",
+      );
+    }
+    if (cfg.modResults.contents.includes("shouldCopySentryOptionsFile")) {
+      return cfg;
+    }
+
+    const contents = cfg.modResults.contents;
+    const lineEnd = contents.indexOf("\n", contents.indexOf(marker));
+    cfg.modResults.contents =
+      contents.slice(0, lineEnd + 1) +
+      "\n// Sentry is configured from app.config.js + EXPO_PUBLIC_SENTRY_DSN, so there\n" +
+      "// is no sentry.options.json to copy. See withSentryOptionsFileCopyDisabled.\n" +
+      "project.ext.shouldCopySentryOptionsFile = { -> false }\n" +
+      contents.slice(lineEnd + 1);
+    return cfg;
+  });
+}
+
+/**
  * Makes the Android system (status + navigation) bars use the correct icon
  * color for the active theme: dark icons on light windows, light icons on
  * dark. expo-status-bar's runtime flag can be reset (screen transitions,
@@ -267,6 +304,7 @@ module.exports = ({ config }) => {
   plugins.push(withStatusBarTheme);
 
   plugins.push(withReleaseSigning);
+  plugins.push(withSentryOptionsFileCopyDisabled);
 
   const sentryIndex = plugins.findIndex(
     (p) =>

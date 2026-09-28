@@ -13,29 +13,11 @@ import {
 } from "@/utils/fetch";
 import { mimeToExt } from "@/utils/mime";
 import { logger } from "@/core/logger";
+import { isLanguageSupported } from "@ekwe/shared/languageCapabilities";
 
 const COHERE_CHAT = "https://api.cohere.ai/v2/chat";
 const COHERE_TRANSCRIBE = "https://api.cohere.com/v2/audio/transcriptions";
 const COHERE_MODEL = "cohere-transcribe-03-2026";
-
-const COHERE_LANGUAGES = new Set([
-  "en",
-  "fr",
-  "de",
-  "it",
-  "es",
-  "pt",
-  "el",
-  "nl",
-  "pl",
-  "zh",
-  "ja",
-  "ko",
-  "vi",
-  "ar",
-]);
-
-export const supportedLanguages = COHERE_LANGUAGES;
 
 export async function translate(
   text: string,
@@ -120,7 +102,7 @@ export async function stt(
   env: Env,
   signal: AbortSignal,
 ): Promise<TranscribeResult | null> {
-  if (lang && lang !== "auto" && !COHERE_LANGUAGES.has(lang)) {
+  if (lang && lang !== "auto" && !isLanguageSupported("cohere", "stt", lang)) {
     logger.info(`[cohere] Skipping transcribe — unsupported language: ${lang}`);
     return null;
   }

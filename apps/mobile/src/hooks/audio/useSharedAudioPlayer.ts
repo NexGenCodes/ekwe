@@ -4,7 +4,6 @@ import {
   setAudioModeAsync,
   setIsAudioActiveAsync,
 } from "expo-audio";
-import { File } from "expo-file-system";
 import { triggerHaptic } from "@/utils/haptics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -14,7 +13,6 @@ import {
 } from "react-native-reanimated";
 
 import { AudioTranscoder } from "@/services/audioTranscoder";
-import { cleanEchoCache } from "@/utils/audioCache";
 import { isIOS } from "@/utils/platform";
 import logger from "@/utils/logger";
 import { createAudioFocus } from "@/hooks/audio/audioFocus";
@@ -59,22 +57,13 @@ export const useSharedAudioPlayer = (
 
   const [duration, setDuration] = useState(0);
 
-  const { isOggSource, cafSiblingUri } = useMemo(() => {
-    const isOgg = isIOS && !!uri && /\.(ogg|opus)$/i.test(uri);
-    return {
-      isOggSource: isOgg,
-      cafSiblingUri:
-        isOgg && uri ? uri.replace(/\.(ogg|opus)$/i, ".caf") : null,
-    };
-  }, [uri]);
-  const hasCafSibling = useMemo(
-    () => (cafSiblingUri ? new File(cafSiblingUri).exists : false),
-    [cafSiblingUri],
+  const isOggSource = useMemo(
+    () => isIOS && !!uri && /\.(ogg|opus)$/i.test(uri),
+    [uri],
   );
   const [playableSource, setPlayableSource] = useState<string | null>(
-    hasCafSibling ? cafSiblingUri : isOggSource ? null : uri,
+    isOggSource ? null : uri,
   );
-  const decodedTempRef = useRef<string | null>(null);
   /** The `uri` whose source is installed in the player right now. */
   const boundUriRef = useRef<string | null>(null);
   /** The `uri` that most recently completed a load. */
@@ -85,11 +74,6 @@ export const useSharedAudioPlayer = (
     let cancelled = false;
 
     if (!uri) {
-      const previous = decodedTempRef.current;
-      if (previous) {
-        decodedTempRef.current = null;
-        setTimeout(() => cleanEchoCache(previous), 1000);
-      }
       setPlayableSource(null);
       boundUriRef.current = null;
       return;
@@ -101,39 +85,25 @@ export const useSharedAudioPlayer = (
       return;
     }
 
-    if (hasCafSibling && cafSiblingUri) {
-      const previous = decodedTempRef.current;
-      if (previous) {
-        decodedTempRef.current = null;
-        setTimeout(() => cleanEchoCache(previous), 1000);
-      }
-      setPlayableSource(cafSiblingUri);
-      boundUriRef.current = uri;
-      return;
-    }
-
     setPlayableSource(null);
     boundUriRef.current = null;
 
-    const commitTemp = (temp: string): void => {
-      const previous = decodedTempRef.current;
-      if (previous && previous !== temp) {
-        setTimeout(() => cleanEchoCache(previous), 1000);
-      }
-      decodedTempRef.current = temp;
-      setPlayableSource(temp);
+    const commitDerived = (derivedUri: string): void => {
+      if (cancelled) return;
+      setPlayableSource(derivedUri);
       boundUriRef.current = uri;
     };
 
+    // iOS has no native Ogg Opus player, so an Ogg source needs a CAF copy
+    // derived on demand. remuxToCafForPlayback() caches that per source path,
+    // so repeat plays of the same clip reuse the file instead of remuxing it
+    // again. The derived file is left in place for the cache sweeper to reap.
     const fallbackToWav = (reason: string): void => {
       logger.error("[SharedAudioPlayer] iOS Ogg remux-to-CAF failed:", reason);
       AudioTranscoder.decodeToWav(uri).then((wavResult) => {
-        if (cancelled) {
-          if (wavResult.ok) cleanEchoCache(wavResult.value.uri);
-          return;
-        }
+        if (cancelled) return;
         if (wavResult.ok) {
-          commitTemp(wavResult.value.uri);
+          commitDerived(wavResult.value.uri);
         } else {
           logger.error(
             "[SharedAudioPlayer] iOS Ogg decode fallback failed:",
@@ -145,14 +115,11 @@ export const useSharedAudioPlayer = (
       });
     };
 
-    AudioTranscoder.remuxToCaf(uri)
+    AudioTranscoder.remuxToCafForPlayback(uri)
       .then((result) => {
-        if (cancelled) {
-          if (result.ok) cleanEchoCache(result.value.uri);
-          return;
-        }
+        if (cancelled) return;
         if (result.ok) {
-          commitTemp(result.value.uri);
+          commitDerived(result.value);
         } else {
           fallbackToWav(result.error);
         }
@@ -165,15 +132,7 @@ export const useSharedAudioPlayer = (
     return (): void => {
       cancelled = true;
     };
-  }, [uri, isOggSource, cafSiblingUri, hasCafSibling]);
-
-  useEffect(() => {
-    return (): void => {
-      const temp = decodedTempRef.current;
-      decodedTempRef.current = null;
-      if (temp) cleanEchoCache(temp);
-    };
-  }, []);
+  }, [uri, isOggSource]);
 
   const [isEnded, setIsEnded] = useState(false);
 
@@ -457,13 +416,19 @@ export const useSharedAudioPlayer = (
     [player, progressSV, setScrubbing, knownDuration, waitForSeekSettle, play],
   );
 
+  /**
+   * Idempotent teardown.
+   *
+   * A player has more than one owner: the hook releases it on unmount, and
+   * `Echo` also releases it on dismiss — which is always followed by an
+   * unmount. Every other caller may hold the controller for the length of a
+   * render. So a repeat call is the expected shape of this API, not a bug, and
+   * is a no-op rather than a log line. What is worth logging is a *first*
+   * release whose `remove()` threw, because that means the player was not torn
+   * down by us.
+   */
   const release = useCallback((): void => {
-    if (releasedRef.current) {
-      logger.debug(
-        "[SharedAudioPlayer] release() called twice — already released",
-      );
-      return;
-    }
+    if (releasedRef.current) return;
     releasedRef.current = true;
 
     if (focusClaimedRef.current) {
@@ -476,7 +441,7 @@ export const useSharedAudioPlayer = (
       player.remove();
     } catch (error) {
       logger.debug(
-        "[SharedAudioPlayer] remove during release skipped (already released)",
+        "[SharedAudioPlayer] remove() threw during release:",
         error instanceof Error ? error.name : String(error),
       );
     }

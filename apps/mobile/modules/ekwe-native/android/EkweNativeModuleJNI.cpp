@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <string>
 #include <vector>
+#include <utility>
 #include <cstring>
 #include <mutex>
 #include <atomic>
@@ -176,7 +177,6 @@ Java_expo_modules_ekwenative_EkweNativeModule_nativeInitCapture(
             static_cast<uint32_t>(sampleRate),
             static_cast<uint16_t>(channels),
             output,
-            std::string(), // caf path — Android plays Ogg natively, no CAF
             mode,
             true
         );
@@ -247,19 +247,36 @@ Java_expo_modules_ekwenative_EkweNativeModule_nativeStopCapture(
 
     try {
         ALOG("nativeStopCapture");
-        std::lock_guard<std::mutex> lock(g_capture_mutex);
-        if (!g_capture) {
-            ALOG("nativeStopCapture: no capture");
-            return JNI_FALSE;
+
+        ekwe::CaptureController* capture = nullptr;
+        {
+            // Claim the controller under the lock, then release it: stop()
+            // re-decodes the finished Ogg to derive the waveform, and holding
+            // g_capture_mutex across that decode would block amplitude polling
+            // and every other JNI call for the duration. Safe because
+            // g_capture is nulled inside the lock, so no other thread can reach
+            // the controller and this one owns it exclusively until delete.
+            std::lock_guard<std::mutex> lock(g_capture_mutex);
+            if (!g_capture) {
+                ALOG("nativeStopCapture: no capture");
+                return JNI_FALSE;
+            }
+            capture = g_capture;
+            g_capture = nullptr;
         }
 
-        g_capture->stop();
-        g_last_waveform = g_capture->get_waveform(60);
-        delete g_capture;
-        g_capture = nullptr;
-        g_current_rms.store(0.0f, std::memory_order_relaxed);
+        capture->stop();
+        std::vector<float> waveform = capture->waveform();
+        delete capture;
 
-        ALOG("nativeStopCapture: SUCCESS (waveform=%zu)", g_last_waveform.size());
+        const size_t waveform_bins = waveform.size();
+        {
+            std::lock_guard<std::mutex> lock(g_capture_mutex);
+            g_last_waveform = std::move(waveform);
+            g_current_rms.store(0.0f, std::memory_order_relaxed);
+        }
+
+        ALOG("nativeStopCapture: SUCCESS (waveform=%zu)", waveform_bins);
         return JNI_TRUE;
     } catch (const std::exception& e) {
         ALOG("nativeStopCapture EXCEPTION: %s", e.what());

@@ -458,9 +458,6 @@ importers:
       jose:
         specifier: ^6.2.3
         version: 6.2.12
-      libopus-wasm:
-        specifier: ^0.2.0
-        version: 0.2.0
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: 0.20.0
@@ -5971,10 +5968,6 @@ packages:
   levn@0.4.1:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
-
-  libopus-wasm@0.2.0:
-    resolution: {integrity: sha512-x/2Gu1/C6L3IICY09zyfp984AWiOYjn53u4WfdY3yh+3KTzMN8Xkm77q3lenWMVIk5SnSzjGEkQT+VQMFHLBHQ==}
-    engines: {node: '>=20'}
 
   lighthouse-logger@1.4.2:
     resolution: {integrity: sha512-gPWxznF6TKmUHrOQjlVo2UbaL2EJ71mb2CCeRs/2qBpi4L/g4LUVc9+3lKQ6DTUZwJswfM7ainGrLO1+fOqa2g==}
@@ -14506,8 +14499,6 @@ snapshots:
     dependencies:
       prelude-ls: 1.2.1
       type-check: 0.4.0
-
-  libopus-wasm@0.2.0: {}
 
   lighthouse-logger@1.4.2(supports-color@10.2.2):
     dependencies:

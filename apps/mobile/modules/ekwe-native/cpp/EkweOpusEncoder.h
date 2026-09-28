@@ -10,6 +10,13 @@ namespace ekwe {
 
 class OpusStreamEncoder {
 public:
+    // complexity: Opus search effort (0-10). Left to the default at every call
+    // site on purpose — the recorder, the file transcode path, and the CAF
+    // fallback all encode through this one default so an imported file and a
+    // recording of the same audio come out with identical encoder settings.
+    // Overriding it at a call site is what previously made transcodes quietly
+    // differ from recordings.
+    //
     // enable_fec/packet_loss_perc: optional in-band FEC for lossy transports
     // (e.g. RTP/UDP). Off by default — the live path here streams over TCP
     // WebSocket with a decoder that never passes the FEC flag, so enabling it

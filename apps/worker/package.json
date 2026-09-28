@@ -37,8 +37,7 @@
     "@ekwe/shared": "workspace:*",
     "@sentry/cloudflare": "^10.70.0",
     "franc": "^6.2.0",
-    "jose": "^6.2.3",
-    "libopus-wasm": "^0.2.0"
+    "jose": "^6.2.3"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.20.0",

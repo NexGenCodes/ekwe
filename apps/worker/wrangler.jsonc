@@ -6,13 +6,6 @@
   "compatibility_flags": ["nodejs_compat"],
 
   // WASM module bundling
-  "rules": [
-    {
-      "type": "CompiledWasm",
-      "globs": ["**/*.wasm"],
-      "fallthrough": true
-    }
-  ],
 
   // Daily history retention cleanup (free: 30d, pro: 365d) — calls
   // cleanup_expired_history via the service role in the `scheduled` handler.

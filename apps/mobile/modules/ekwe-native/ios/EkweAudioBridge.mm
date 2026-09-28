@@ -3,6 +3,8 @@
 #import "../cpp/EkweCaptureController.h"
 #include "../cpp/HybridEkweAudio.hpp"
 #include <string>
+#include <vector>
+#include <utility>
 #include <mutex>
 #include <atomic>
 
@@ -93,25 +95,14 @@ namespace ekwe {
     std::string path([outputPath UTF8String]);
     ekwe::CaptureMode mode = isLive ? ekwe::CaptureMode::LIVE : ekwe::CaptureMode::FILE;
 
-    // Recorded audio gets a sibling Opus-in-CAF file (same packets, CAF
-    // container) so iOS can play it natively without a remux. Live mode has no
-    // file output, so no CAF.
-    std::string caf_path;
-    if (!isLive) {
-        caf_path = path;
-        std::string::size_type pos = caf_path.rfind(".ogg");
-        if (pos != std::string::npos) {
-            caf_path.replace(pos, 4, ".caf");
-        } else {
-            caf_path += ".caf";
-        }
-    }
-
+    // One recorded artifact: the Ogg Opus file. The Opus-in-CAF copy that iOS
+    // needs for native playback is derived on demand at play time
+    // (remux_audio_to_caf) and cached alongside it, so capture does not pay to
+    // write every packet twice and no sibling file is orphaned on crash.
     auto* capture = new ekwe::CaptureController(
         static_cast<uint32_t>(sampleRate),
         static_cast<uint16_t>(channels),
         path,
-        caf_path,
         mode,
         true
     );
@@ -185,13 +176,21 @@ namespace ekwe {
         g_capture = nullptr;
         g_opusPacketBlock = nil;
         g_vadSilenceBlock = nil;
-        // Tear down the controller while holding the mutex: stop(), the final
-        // waveform read, and the delete all touch the object no other thread can
-        // reach now that g_capture was nulled above. This keeps g_last_waveform
-        // writes fully synchronized with the lastWaveform() reader.
-        capture->stop();
-        g_last_waveform = capture->get_waveform(60);
-        delete capture;
+    }
+
+    // Deliberately outside g_mutex: stop() now re-decodes the finished Ogg to
+    // derive the waveform, which is disk I/O plus a full decode. Holding the
+    // global lock across that would stall amplitude polling and every other
+    // bridge call for the duration. This is safe because g_capture was already
+    // nulled above, so no other thread can reach the controller — the object is
+    // exclusively owned from here until the delete.
+    capture->stop();
+    std::vector<float> waveform = capture->waveform();
+    delete capture;
+
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        g_last_waveform = std::move(waveform);
         g_current_rms.store(0.0f, std::memory_order_relaxed);
     }
     return YES;

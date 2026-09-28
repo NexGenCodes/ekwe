@@ -27,7 +27,8 @@ export interface RecordingResult {
   waveform?: number[];
 }
 
-export interface OpusPacket {
+/** One PCM16 LE frame from the capture session, ready for the socket. */
+export interface PcmChunk {
   data: ArrayBuffer;
   sessionId: string;
 }
@@ -37,7 +38,7 @@ class AudioCaptureClass {
   private currentMeteringData: number[] = [];
   private currentRecordingPath: string | null = null;
   private listeners: ((amplitude: number) => void)[] = [];
-  private opusPacketListeners: ((packet: OpusPacket) => void)[] = [];
+  private pcmChunkListeners: ((packet: PcmChunk) => void)[] = [];
   private statusListeners: ((status: "started" | "stopped") => void)[] = [];
   private onAutoStopCallback: (() => void) | null = null;
   private amplitudeRafId: number | null = null;
@@ -180,8 +181,8 @@ class AudioCaptureClass {
           packet: ArrayBuffer,
           _amplitude: number,
         ): void => {
-          const opusPacket: OpusPacket = { data: packet, sessionId: sid };
-          this.opusPacketListeners.forEach((l) => l(opusPacket));
+          const pcm: PcmChunk = { data: packet, sessionId: sid };
+          this.pcmChunkListeners.forEach((l) => l(pcm));
         };
       }
       ekweAudio.onVadSilence = (): void => {
@@ -330,16 +331,6 @@ class AudioCaptureClass {
       } catch {
         // best-effort cleanup
       }
-      if (isIOS && /\.ogg$/i.test(path)) {
-        const cafPath = path.replace(/\.ogg$/i, ".caf");
-        if (cafPath !== path) {
-          try {
-            await EkweNative.deleteFile(cafPath);
-          } catch {
-            // best-effort cleanup
-          }
-        }
-      }
     }
 
     return ok(null);
@@ -379,10 +370,10 @@ class AudioCaptureClass {
     };
   }
 
-  addOpusPacketListener(callback: (packet: OpusPacket) => void): () => void {
-    this.opusPacketListeners.push(callback);
+  addPcmChunkListener(callback: (chunk: PcmChunk) => void): () => void {
+    this.pcmChunkListeners.push(callback);
     return () => {
-      this.opusPacketListeners = this.opusPacketListeners.filter(
+      this.pcmChunkListeners = this.pcmChunkListeners.filter(
         (l) => l !== callback,
       );
     };

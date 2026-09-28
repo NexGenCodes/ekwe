@@ -227,12 +227,12 @@ export const dictationActions = {
             dictation$.finalText.set((prev) => prev + " " + event.text);
           }
         });
-        const removeOpus = AudioCapture.addOpusPacketListener((packet) => {
-          StreamTranscriber.sendOpus(packet.data);
+        const removePcm = AudioCapture.addPcmChunkListener((chunk) => {
+          StreamTranscriber.sendPcm(chunk.data);
         });
         streamUnsub = (): void => {
           removeCb();
-          removeOpus();
+          removePcm();
         };
       }
 

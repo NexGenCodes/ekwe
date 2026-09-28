@@ -389,8 +389,7 @@ export const useEchoFlow = (
         convertedDurationMs ?? Math.round(durationSeconds * 1000);
       dispatch({ type: "SET_AUDIO_DURATION", payload: durationMs / 1000 });
       logger.info(
-        "[EchoFlow] Initiating transcription (lang: %s)",
-        state.selectedLang,
+        `[EchoFlow] Initiating transcription (lang: ${state.selectedLang})`,
       );
 
       if (!audioUri) return;
@@ -555,7 +554,7 @@ export const useEchoFlow = (
       return;
     }
 
-    logger.info("[EchoFlow] Translating %s → %s", sourceLang, target);
+    logger.info(`[EchoFlow] Translating ${sourceLang} → ${target}`);
 
     lastOpRef.current = "translate";
 

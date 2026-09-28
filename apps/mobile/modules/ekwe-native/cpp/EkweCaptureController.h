@@ -6,11 +6,9 @@
 #include <array>
 #include <functional>
 #include <atomic>
-#include <memory>
 
 #include "EkweOpusEncoder.h"
 #include "EkweOggMuxer.h"
-#include "EkweCafMuxer.h"
 
 namespace ekwe {
 
@@ -37,14 +35,13 @@ using CaptureCallback = std::function<void(const CaptureEventData&)>;
 
 class CaptureController {
 public:
-    // output_path: Ogg Opus destination. caf_output_path: optional sibling
-    // Opus-in-CAF destination (iOS-native playback) — when non-empty and mode
-    // is FILE, every packet is also written into the CAF container. Android
-    // passes an empty string (ExoPlayer plays Ogg natively).
+    // output_path: Ogg Opus destination (the single recorded artifact). In FILE
+    // mode every packet is written into it and nothing else is produced — iOS
+    // derives its own Opus-in-CAF copy for playback on demand via
+    // remux_audio_to_caf(), so no sibling file is written during capture.
     CaptureController(uint32_t sample_rate,
                       uint16_t channels,
                       const std::string& output_path,
-                      const std::string& caf_output_path,
                       CaptureMode mode,
                       bool enable_dc_filter = true);
     ~CaptureController();
@@ -61,7 +58,10 @@ public:
 
     float rms() const { return current_rms_; }
 
-    std::vector<float> get_waveform(size_t num_bins) const;
+    // Waveform of the finished recording, derived in stop() by decoding the
+    // finalized Ogg through the same code the shared/imported path uses. Empty
+    // when nothing was captured, or in LIVE mode where no file is written.
+    const std::vector<float>& waveform() const { return waveform_; }
 
     CaptureController(const CaptureController&) = delete;
     CaptureController& operator=(const CaptureController&) = delete;
@@ -81,29 +81,32 @@ private:
     // computed granule adds this base to the elapsed output.
     int64_t granule_base_48k_;
     std::atomic<float> current_rms_;
-    std::array<float, 9000> rms_history_;
-    size_t rms_count_;
+    std::vector<float> waveform_;
 
     bool dc_filter_enabled_;
     double dc_blocker_prev_in_;
     double dc_blocker_prev_out_;
 
-    // VAD state (both modes)
+    // VAD state, for the file-mode auto-stop
+    static constexpr double kVadThreshold = 600.0;  // ~1.8% RMS, tuned for generator/street noise
     bool vad_silence_detected_;
     int consecutive_silence_frames_;
     int silence_frame_threshold_;
 
-    // VAD hysteresis for live mode (Nigerian noise conditions)
-    static constexpr int kSpeechDebounceMax = 1;   // 20ms — start as soon as speech is detected
-    static constexpr int kHangoverMax = 15;         // 300ms — natural conversational pause buffer
-    static constexpr double kVadThreshold = 600.0;  // ~1.8% RMS, tuned for generator/street noise
-    int vad_speech_debounce_;
-    int vad_hangover_;
-    bool vad_speech_active_;
+    // Leading-silence gate. FILE mode holds frames instead of encoding them
+    // until the same kVadThreshold hears speech, so a recording does not open
+    // with dead air. The ring keeps enough audio to preserve the onset of the
+    // word that tripped it, and the lead-in bound stops a quiet speaker from
+    // losing their whole take.
+    static constexpr int kPrerollMs = 500;
+    static constexpr int kLeadInMaxMs = 2000;
+    std::vector<int16_t> preroll_;
+    int preroll_frames_;
+    bool speech_started_;
+
 
     OpusStreamEncoder opus_encoder_;
     OggMuxer ogg_muxer_;
-    std::unique_ptr<CafMuxer> caf_muxer_;
 
     CaptureCallback callback_;
 
@@ -114,6 +117,13 @@ private:
     void apply_dc_blocker(int16_t* data, size_t num_samples);
     void normalize_volume(int16_t* data, size_t num_samples);
     void process_frame(const int16_t* frame_data, size_t frame_samples);
+    void encode_frame_to_ogg(const int16_t* data, size_t total);
+    void flush_preroll();
+    void process_staged_frames();
+    // Compacts the staging buffer so at least `needed` samples fit, and reports
+    // how many actually do. Callers loop on this instead of clipping their
+    // input, so a call larger than the buffer is consumed rather than truncated.
+    size_t reserve_staging(size_t needed);
     void emit_event(CaptureEvent event, const uint8_t* data = nullptr, size_t size = 0);
 };
 

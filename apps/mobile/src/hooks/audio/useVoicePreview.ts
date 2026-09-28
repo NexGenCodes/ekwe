@@ -125,6 +125,12 @@ export const useVoicePreview = ({
       const result = await synthesizeSpeech(VOICE_PREVIEW_TEXT, lang, {
         voiceId: selection.slot.id,
         gender: selection.gender,
+        // A preview is only ever played: there is no share target in
+        // `TELEMETRY_KEY` for it, and the clip is cached under the same key for
+        // every later tap. Ogg normalisation is for the voice-note contract
+        // WhatsApp and Telegram impose on shared audio, which does not apply
+        // here, so the provider's own container is handed to the player as is.
+        delivery: "playback",
       });
 
       if (seq !== seqRef.current) {

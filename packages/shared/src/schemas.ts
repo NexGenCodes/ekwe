@@ -237,31 +237,87 @@ export const sharedHistoryRecordSchema = z.object({
 });
 export type SharedHistoryRecord = z.infer<typeof sharedHistoryRecordSchema>;
 
+/** The wire contract for live dictation, in both directions. */
+
+export const STREAM_AUDIO_FORMAT = "pcm_s16le" as const;
+export const STREAM_SAMPLE_RATE = 16_000 as const;
+export const STREAM_CHANNELS = 1 as const;
+/** 20 ms device frames coalesced to 80 ms, inside every route's window. */
+export const STREAM_FRAME_MS = 20 as const;
+export const STREAM_CHUNK_MS = 80 as const;
+
 export const streamTranscriptEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("interim"),
     text: z.string(),
     provider: z.string(),
+    language: z.string().optional(),
   }),
   z.object({
     type: z.literal("final"),
     text: z.string(),
     provider: z.string(),
+    /** Carried on the final so the language arrives with its text. */
+    language: z.string().optional(),
   }),
 ]);
 export type StreamTranscriptEvent = z.infer<typeof streamTranscriptEventSchema>;
 
 export const streamControlMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ping") }),
+  z.object({ type: z.literal("pong") }),
   z.object({ type: z.literal("config_ack"), status: z.string() }),
+  z.object({ type: z.literal("stop") }),
   z.object({
     type: z.literal("config_request"),
-    codec: z.string(),
+    format: z.string(),
     sampleRate: z.number(),
+    channels: z.number(),
     frameSizeMs: z.number(),
+  }),
+  /** The provider socket is open. `config_ack` only means it was understood. */
+  z.object({
+    type: z.literal("ready"),
+    route: z.string(),
+    provider: z.string(),
+    format: z.string(),
+    sampleRate: z.number(),
+    channels: z.number(),
+  }),
+  z.object({
+    type: z.literal("language_detected"),
+    language: z.string(),
+    provider: z.string(),
+  }),
+  /** `languageReset`: failover dropped the pin, so detection starts afresh. */
+  z.object({
+    type: z.literal("provider_switch"),
+    from: z.string(),
+    to: z.string(),
+    reason: z.string(),
+    languageReset: z.boolean().optional(),
   }),
 ]);
 export type StreamControlMessage = z.infer<typeof streamControlMessageSchema>;
+
+/** What the client may send the worker, in a shape the worker parses. */
+export const streamClientMessageSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("config"),
+    lang: z.string(),
+    format: z.string(),
+    sampleRate: z.number(),
+    channels: z.number(),
+    frameSizeMs: z.number(),
+  }),
+  /** The device's voice-activity gate; a failover waits for the next false. */
+  z.object({ type: z.literal("vad"), active: z.boolean() }),
+  /** The user released the button, or a native silence timer fired. */
+  z.object({ type: z.literal("force_endpoint") }),
+  z.object({ type: z.literal("stop") }),
+  z.object({ type: z.literal("pong") }),
+]);
+export type StreamClientMessage = z.infer<typeof streamClientMessageSchema>;
 
 export const streamErrorSchema = z.object({
   error: z.string(),

@@ -3,11 +3,47 @@ export * from "./token";
 export { type Logger, makeLogEntry, scrubSentryEvent } from "./observability";
 export {
   LANGUAGES,
+  LANGUAGE_CODES,
+  LANGUAGE_CODE_SET,
   languageName,
   getLanguageName,
   getLanguageFlag,
+  needsRomanization,
 } from "./languages";
-export type { Language } from "./languages";
+export type { Language, LanguageCode } from "./languages";
+export {
+  canonicalLanguageFromName,
+  catalogNameCollisions,
+} from "./languageNames";
+export {
+  LANGUAGE_CAPABILITIES,
+  STREAM_ROUTES,
+  STREAM_ROUTE_IDS,
+  isLanguageSupported,
+  supportsLanguage,
+  toProviderCode,
+  languagesForCapability,
+  providerIdsForCapability,
+  unsupportedLanguages,
+  streamRouteById,
+  streamRoutesFor,
+  streamLanguages,
+  autoDetectLanguages,
+  unsupportedStreamLanguages,
+  streamSkipReason,
+  skipReason,
+  pinLanguage,
+  languageTier,
+  hasNativeVoice,
+} from "./languageCapabilities";
+export type {
+  ProviderId,
+  LanguageCapability,
+  LanguageCapabilitySpec,
+  LanguageTier,
+  StreamRoute,
+  WireFormat,
+} from "./languageCapabilities";
 export {
   VOICE_SLOTS,
   VOICE_SLOT_IDS,

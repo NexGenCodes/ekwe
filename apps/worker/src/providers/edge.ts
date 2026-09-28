@@ -134,6 +134,15 @@ const EDGE_VOICES: Record<string, EdgeVoiceSet> = {
 };
 
 /**
+ * The locales Edge actually has Neural voices for.
+ *
+ * This is the source of truth the shared capability list has to agree with. A
+ * locale missing from here is not a lesser voice, it is the English
+ * multilingual fallback, so it must not be advertised as Edge coverage.
+ */
+export const EDGE_LOCALE_CODES: readonly string[] = Object.keys(EDGE_VOICES);
+
+/**
  * Index 0 is the Clear voice and index 1 the Warm voice, matching the persona
  * contract the slot pools assume. Most locales list only one voice per gender,
  * so the Warm persona simply has no Edge candidate there and the resolver skips
@@ -294,32 +303,33 @@ function parseTextHeaders(textFrame: string): Record<string, string[]> {
   return headers;
 }
 
-function extractAudioSegments(data: Uint8Array): Uint8Array[] {
-  const segments: Uint8Array[] = [];
-  let offset = 0;
-  const decoder = new TextDecoder();
+const HEADER_DECODER = new TextDecoder();
 
-  // Every protocol frame is `uint16 headerLen | header | uint16 bodyLen | body`.
-  // Advancing by the header alone and treating the whole remainder as the body
-  // happened to work only while Microsoft shipped exactly one audio segment per
-  // binary frame; a second segment in the same frame replayed the tail.
-  while (offset + 2 <= data.length) {
-    const headerLength = (data[offset] << 8) | data[offset + 1];
-    const headerEnd = offset + 2 + headerLength;
-    if (headerEnd + 2 > data.length) break;
-    const header = decoder.decode(data.subarray(offset + 2, headerEnd));
-    const contentType = parseTextHeaders(header)["Content-Type"]?.[0];
-    if (!contentType || !contentType.includes("audio/mpeg")) break;
+/**
+ * A binary frame is `uint16 headerLength | header text | CRLF | body`, where the
+ * length counts its own two-byte prefix and the body runs to the end of the
+ * frame — there is no body-length field. Treating the MP3's leading `ff f3`
+ * frame sync as one decodes as a 65523-byte length, so the parse overshoots and
+ * yields nothing.
+ */
+export function extractAudioSegment(data: Uint8Array): Uint8Array | null {
+  if (data.length < 4) return null;
 
-    const bodyLength = (data[headerEnd] << 8) | data[headerEnd + 1];
-    const bodyEnd = headerEnd + 2 + bodyLength;
-    if (bodyEnd > data.length) break;
+  const headerLength = (data[0] << 8) | data[1];
+  if (headerLength < 2) return null;
 
-    offset = bodyEnd;
-    if (bodyLength === 0) continue;
-    segments.push(data.subarray(headerEnd + 2, bodyEnd));
-  }
-  return segments;
+  // 2 (own prefix) + (headerLength - 2) (text) + 2 (CRLF)
+  const bodyStart = headerLength + 2;
+  if (bodyStart > data.length) return null;
+
+  const headers = parseTextHeaders(
+    HEADER_DECODER.decode(data.subarray(2, bodyStart - 2)),
+  );
+  if (headers["Path"]?.[0] !== "audio") return null;
+  if (!headers["Content-Type"]?.[0]?.includes("audio/mpeg")) return null;
+
+  const body = data.subarray(bodyStart);
+  return body.length > 0 ? body : null;
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
@@ -762,8 +772,8 @@ async function synthOnce(
               break;
             }
           } else if (frame.opcode === OPCODE_BINARY) {
-            const segments = extractAudioSegments(frame.payload);
-            for (const segment of segments) {
+            const segment = extractAudioSegment(frame.payload);
+            if (segment) {
               bytes += segment.length;
               if (bytes > MAX_SPEECH_BYTES) {
                 logger.warn("[speech:edge] Output exceeds size cap");

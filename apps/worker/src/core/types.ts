@@ -28,8 +28,13 @@ export interface JWTPayloadWithMeta extends JWTPayload {
 
 export const CLIENT_ABORTED = "CLIENT_ABORTED";
 
-export type ProviderCapability =
-  "translate" | "tts" | "stt" | "sttStream" | "ttsStream";
+// A language-gated capability is exactly the shared registry's capability
+// union, so the two cannot drift: adding a capability to the registry without
+// teaching the worker about it is a compile error rather than a silent gap.
+type LanguageGatedCapability =
+  import("@ekwe/shared/languageCapabilities").LanguageCapability;
+
+export type ProviderCapability = LanguageGatedCapability | "ttsStream";
 
 export type SpeechGender = "male" | "female";
 
@@ -42,6 +47,17 @@ export type SttFn = (
 
 export type SttStreamFn = (
   env: Env,
+  /**
+   * The route to open. A provider can serve more than one streaming model, and
+   * the route carries the static half of the request: model name, language set,
+   * wire format.
+   */
+  route: import("@ekwe/shared").StreamRoute,
+  /**
+   * The language resolved for this session, or "auto". Dynamic, and different
+   * from the route's own list, because it may have been pinned by an earlier
+   * provider before this one was attached.
+   */
   lang: string,
   clientWs: WebSocket,
   signal: AbortSignal,
@@ -78,7 +94,13 @@ type VoiceListFn = (
 export interface ProviderModule {
   name: string;
   capabilities: readonly ProviderCapability[];
-  supportedLanguages?: ReadonlySet<string>;
+  /**
+   * Streaming is keyed on a route id rather than a capability name, because one
+   * provider can serve several streaming models with different language
+   * coverage. Declaring an id here is how a provider claims a route; the
+   * pipeline only ever offers routes some module claims.
+   */
+  streamRoutes?: readonly string[];
   stt?: SttFn;
   sttStream?: SttStreamFn;
   translate?: TranslateFn;

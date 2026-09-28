@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "1.0.0",
+  "provider": "edge",
+  "operation": "tts",
+  "recordedAt": "2026-09-27T20:02:22.425Z",
+  "note": "Real binary frame from speech.platform.bing.com readaloud edge/v1, captured verbatim over TLS. The uint16 headerLength counts its own 2-byte prefix, and there is no body-length field: the body runs to the end of the frame.",
+  "frame": {
+    "byteLength": 850,
+    "base64": "AIBYLVJlcXVlc3RJZDphOTVjZTY5ZTllOWU0MTNkYTZjZTkzNDBmYzgzNTdmMQ0KQ29udGVudC1UeXBlOmF1ZGlvL21wZWcNClgtU3RyZWFtSWQ6OEY0QzEyNUE2NUMxNDY3RkE0NzI4MjVDNURFOUQzMzcNClBhdGg6YXVkaW8NCv/zZMQAEshGNBbCRgAEk1GEPWAToAwSIABEd3dw4twcCAIAgCAPg+D4Pg4CHD4PhcHwICAABAEA/Lh8HCinf5AAP//+csKZ/VDBCLvl3Kd/9YfzivV6vwwqACCkuN/+YNS7YkTKKrFw3ji1CEb6r7kaS6RZKTJoNlQKVexjCIufMhoBQMocsXJIamwUXQ1qVP/zZMQ3FQgSTZzAhADswtgpNpubQjue9Fdxi3ra9HRsmiEnUZaTVZqiZVUGv+lKoD2yIF9ad0KFVYuJ4KCeaxgLonaoRARakAEDAoYgIAMMyJBGRCwoIA+BsLj4ogKNmoeTsrCYQQiDEGzDziBYDrCkMve0ftd/M/aIyEIzvf5ne09KEwGs+8/6k8e8Dzjusv/zZMRlHmnSTPSSTHwIsFCwAWgenU/t/cxSx7l/jNd/J0oApSSFQlnpEoJHvuPZRRbicrv8cBzQSEBXbozEmWXYLJqAFk1ZTWFOQCMTEBwFpoA11/BcPuXRvvC1MEeEkEbFAUd0D0iE4O0L4UJjk4J2azjfOz8RkVWPFBhUQS6HSmwvzzBnhG0QDACsJQqQ6P/zZMRuMrKSYlzDzVQwRY0k0NRODQYVAfhcGTLWabukhbFQnxvg5xY0wQhacC/mXbUBEEkQtgVhd1szA6FOhcRgaHIgiyh8ZtEMRinfCx5hDO0e7v8gQdO3ffyb2k25dd0o5wYcxxzVplIz//EacrGcVTwXtlJtWRMBmVGzhcwrBQ5ESjZf0jtTafjxRkENBv/zZMQmJMpGiMpj2RCW00AUgtoEQcEE3U+r37dEjv/TeX7/G5fIyMK0nWzpsWUi0eqSDrtRrjRevYQnHlDjjCxytLISqJDEsrn5kDiGWoSQDRqAfDOAaxCKq4vpqrVdpggUJ3KL3IllHKTr7kEDgYW5hvKa3olBv/d31XtqAthlO0Xv5DwUKnPJnQtESVRxYA==",
+    "headerLength": 128,
+    "headerText": "X-RequestId:a95ce69e9e9e413da6ce9340fc8357f1\r\nContent-Type:audio/mpeg\r\nX-StreamId:8F4C125A65C1467FA472825C5DE9D337\r\nPath:audio",
+    "bodyByteLength": 720,
+    "bodyFirstBytesHex": "fff364c4"
+  }
+}

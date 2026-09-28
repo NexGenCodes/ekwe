@@ -19,6 +19,7 @@ import { synthesizeSpeech } from "@/services/speech";
 import { claimSpeechFocus, releaseSpeechFocus } from "@/hooks/audio/audioFocus";
 
 import { Box, Text, Pressable, Spinner } from "@/components/ui";
+import { EkweError } from "@/constants/errors";
 import { LANGUAGES, getLanguageFlag } from "@/constants/languages";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
@@ -175,9 +176,25 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
         } else {
           setIsSpeechLoading(false);
           releaseSpeechFocus();
-          AppToast.error("Speech Unavailable", {
-            description: "Failed to generate speech for this language.",
-          });
+          // A provider outage is transient and not the user's fault, so it gets
+          // its own wording and a retry. Reporting it as a generic failure —
+          // which is what this did — told the user their language was the
+          // problem and offered no way out of a busy provider.
+          const outage = result.error === EkweError.SPEECH_UNAVAILABLE;
+          AppToast.error(
+            outage ? "Voice temporarily unavailable" : "Speech Unavailable",
+            {
+              description: outage
+                ? "Every voice provider is busy right now. Try again in a moment."
+                : "Failed to generate speech.",
+              action: outage
+                ? {
+                    label: "Retry",
+                    onClick: (): void => void handleSpeakToggle(),
+                  }
+                : undefined,
+            },
+          );
         }
       } catch (err) {
         setIsSpeechLoading(false);

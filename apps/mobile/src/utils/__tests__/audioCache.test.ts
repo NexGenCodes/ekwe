@@ -2,14 +2,36 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Directory, File } from "expo-file-system";
 
 const cacheDeletes: string[] = [];
+const nativeDeletes: string[] = [];
 const mockDirEntries: unknown[] = [];
 let dirListThrows = false;
+let deleteThrows = false;
+let isAndroidPlatform = false;
+// URIs whose expo-side delete should fail, standing in for a file the native
+// recorder still holds open.
+const undeletableUris = new Set<string>();
 
 vi.mock("@/utils", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock("@/utils/platform", () => ({ isIOS: false, isAndroid: false }));
+vi.mock("@/utils/platform", () => ({
+  get isIOS() {
+    return false;
+  },
+  get isAndroid() {
+    return isAndroidPlatform;
+  },
+}));
+
+vi.mock("../../../modules/ekwe-native", () => ({
+  default: {
+    deleteFile: vi.fn(async (uri: string) => {
+      if (deleteThrows) throw new Error("native delete failed");
+      nativeDeletes.push(uri);
+    }),
+  },
+}));
 
 vi.mock("expo-file-system", () => ({
   File: class {
@@ -24,6 +46,7 @@ vi.mock("expo-file-system", () => ({
       return true;
     }
     delete(): void {
+      if (undeletableUris.has(this.uri)) throw new Error("delete failed");
       cacheDeletes.push(this.uri);
     }
   },
@@ -44,8 +67,12 @@ import {
 
 beforeEach(() => {
   cacheDeletes.length = 0;
+  nativeDeletes.length = 0;
   mockDirEntries.length = 0;
   dirListThrows = false;
+  deleteThrows = false;
+  isAndroidPlatform = false;
+  undeletableUris.clear();
 });
 
 describe("cleanEchoCache", () => {
@@ -57,6 +84,50 @@ describe("cleanEchoCache", () => {
   it("refuses to touch files outside the cache", async () => {
     await cleanEchoCache("file:///elsewhere/artifact.mp3");
     expect(cacheDeletes).toEqual([]);
+  });
+
+  describe("on Android", () => {
+    it("deletes a cache file once, not through both APIs", async () => {
+      isAndroidPlatform = true;
+
+      await cleanEchoCache("file:///mock/cache/ekwe_recording_1.ogg");
+
+      // Regression guard: the native module resolves to the same
+      // java.io.File.delete() as expo, so running both deleted every cache
+      // recording twice.
+      expect(cacheDeletes).toEqual(["file:///mock/cache/ekwe_recording_1.ogg"]);
+      expect(nativeDeletes).toEqual([]);
+    });
+
+    it("falls back to the native module when the JS delete fails", async () => {
+      isAndroidPlatform = true;
+      undeletableUris.add("file:///mock/cache/locked.ogg");
+
+      // The sweeper and session purge both rely on this surviving a file that
+      // the recorder still holds open.
+      await cleanEchoCache("file:///mock/cache/locked.ogg");
+
+      expect(cacheDeletes).toEqual([]);
+      expect(nativeDeletes).toEqual(["file:///mock/cache/locked.ogg"]);
+    });
+
+    it("still reaches the native module for paths outside the cache", async () => {
+      isAndroidPlatform = true;
+
+      await cleanEchoCache("file:///elsewhere/artifact.mp3");
+
+      expect(cacheDeletes).toEqual([]);
+      expect(nativeDeletes).toEqual(["file:///elsewhere/artifact.mp3"]);
+    });
+
+    it("never throws when the native delete fails", async () => {
+      isAndroidPlatform = true;
+      deleteThrows = true;
+
+      await expect(
+        cleanEchoCache("file:///elsewhere/artifact.mp3"),
+      ).resolves.toBeUndefined();
+    });
   });
 });
 

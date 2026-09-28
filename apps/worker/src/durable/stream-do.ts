@@ -1,11 +1,19 @@
-import { WORKER_ERROR_CODES } from "@ekwe/shared";
+import {
+  pinLanguage,
+  streamRoutesFor,
+  streamSkipReason,
+  STREAM_AUDIO_FORMAT,
+  STREAM_CHANNELS,
+  STREAM_FRAME_MS,
+  STREAM_SAMPLE_RATE,
+  WORKER_ERROR_CODES,
+  type StreamRoute,
+} from "@ekwe/shared";
 import { DurableObject } from "cloudflare:workers";
 import { logger } from "@/core/logger";
-import {
-  getProviderModule,
-  getProviderNamesFor,
-  providerSupportsLanguage,
-} from "@/providers";
+import { getProviderModule, getStreamRoutes } from "@/providers";
+import { isProviderDegraded } from "@/services/health";
+import { canonicalLanguageFromName } from "@ekwe/shared/languageNames";
 import { getLimits } from "@/core/limits";
 import { runPreflightGate } from "@/services/preflight";
 import { trackBillableSuccess } from "@/services/usage";
@@ -14,7 +22,6 @@ import {
   guardStreamDuration,
   guardWebSocketUpgrade,
 } from "@/core/guards";
-import { initOpusDecoder } from "@/utils/opus";
 import { Env, SttStreamFn, Tier } from "@/core/types";
 
 const WS_CLOSE = {
@@ -30,28 +37,27 @@ const CONFIG_NEGOTIATION_TIMEOUT_MS = 5_000;
 const CONFIG_NEGOTIATION_TOTAL_MS = CONFIG_NEGOTIATION_TIMEOUT_MS * 3;
 const IDLE_RESET_INTERVAL_MS = 15_000;
 
-interface StreamPipelineEntry {
-  name: string;
-  skipOnAuto: boolean;
+/** How long a failover waits for a device silence boundary before forcing on. */
+const FAILOVER_SEAM_WAIT_MS = 1_500;
+
+/** Replayed into a replacement provider so it is not starting mid-word. */
+const FAILOVER_PRIMING_MS = 2_000;
+const PRIME_BYTES_PER_MS = (STREAM_SAMPLE_RATE * 2) / 1000;
+
+interface RouteEntry {
+  route: StreamRoute;
   sttStream: SttStreamFn;
 }
 
-const STREAMING_SKIP_AUTO: Record<string, boolean> = {
-  deepgram: false,
-  witai: true,
-  assemblyai: false,
-  gladia: false,
-};
-
-const STREAMING_PIPELINE: StreamPipelineEntry[] = getProviderNamesFor(
-  "sttStream",
-  "PREMIUM",
-).map((name) => ({
-  name,
-  skipOnAuto: STREAMING_SKIP_AUTO[name] ?? false,
-  sttStream:
-    getProviderModule(name)?.sttStream ?? (() => Promise.resolve(false)),
-}));
+/** Only routes a provider module can actually serve. */
+const STREAM_PIPELINE: RouteEntry[] = getStreamRoutes()
+  .map((route) => ({
+    route,
+    sttStream:
+      getProviderModule(route.provider)?.sttStream ??
+      ((): Promise<boolean> => Promise.resolve(false)),
+  }))
+  .filter((e) => typeof e.sttStream === "function");
 
 interface SessionState {
   startTime: number;
@@ -60,26 +66,54 @@ interface SessionState {
   configReceived: boolean;
   configRequested: boolean;
   providerStarted: boolean;
+  /** Sticky: a provider has run in this session at least once. */
+  providerEverStarted: boolean;
+  /** What the client asked for: a concrete code, or "auto". */
   lang: string;
+  /** Language a provider has claimed, or "auto" while unresolved. */
+  pinnedLang: string;
+  langCommitted: boolean;
+  /** The device's own voice-activity gate, used to find a safe failover seam. */
+  vadActive: boolean;
+  /** When a deferred failover stops waiting, or null when none is pending. */
+  failoverDeadlineAt: number | null;
   tier: Tier;
   maxAudioBytes: number;
   lastIdleResetAt: number;
+  /** True once any usage has been reported for this session. */
   billed: boolean;
+  /** Units reported so far, so each report is an increment rather than a total. */
+  billedMinutes: number;
+  /** Start of the stretch not yet reported, so sub-minute time is not lost. */
+  billedSince: number;
 }
 
 interface StreamConnection {
   adapter: ClientWsAdapter;
   abortController: AbortController;
-  pipelinePromise: Promise<void> | undefined;
+  /** True only while a route is being dialled, not for the provider's lifetime. */
+  dialing: boolean;
   resumed: boolean;
+  /** Route currently attached, for the provider_switch event. */
+  activeRouteId: string | null;
+  /** Rolling audio tail: primes a replacement and holds pre-attach frames. */
+  priming: Uint8Array[];
+  primingBytes: number;
+  /** A failover that arrived mid-utterance, waiting for a silence boundary. */
+  pendingFailover: boolean;
+  triedRoutes: string[];
 }
 
 class ClientWsAdapter {
   private handlers = new Map<string, Set<(...args: unknown[]) => void>>();
-  private buffered: unknown[] = [];
+  private buffered: Uint8Array[] = [];
+  private bufferedBytes = 0;
   private readonly realWs: WebSocket;
 
   onFinalTranscript?: (ws: WebSocket, text: string) => void;
+  onOutbound?: (data: string) => void;
+  /** Read by the interceptor so a provider dying does not close the client. */
+  onProviderGone?: (reason: "close" | "error") => void;
 
   constructor(realWs: WebSocket) {
     this.realWs = realWs;
@@ -91,6 +125,7 @@ class ClientWsAdapter {
     if (type === "message" && this.buffered.length > 0) {
       const queued = this.buffered;
       this.buffered = [];
+      this.bufferedBytes = 0;
       for (const data of queued) this.emit("message", data);
     }
   }
@@ -112,8 +147,19 @@ class ClientWsAdapter {
           /* handler errors must not kill the session */
         }
       }
-    } else if (type === "message" && this.buffered.length < 256) {
-      this.buffered.push(data);
+      return;
+    }
+    if (type !== "message") return;
+    // Bounded tail: covers a slow attach without unbounded growth.
+    const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : null;
+    if (!bytes || bytes.byteLength === 0) return;
+    this.buffered.push(bytes);
+    this.bufferedBytes += bytes.byteLength;
+    while (
+      this.bufferedBytes > FAILOVER_PRIMING_MS * PRIME_BYTES_PER_MS &&
+      this.buffered.length > 1
+    ) {
+      this.bufferedBytes -= this.buffered.shift()!.byteLength;
     }
   }
 
@@ -137,6 +183,7 @@ class ClientWsAdapter {
         }
       }
       this.realWs.send(data as string | ArrayBuffer);
+      if (typeof data === "string") this.onOutbound?.(data);
     }
   }
 
@@ -204,28 +251,41 @@ export class StreamDurableObject extends DurableObject<Env> {
       configReceived: false,
       configRequested: false,
       providerStarted: false,
+      providerEverStarted: false,
       lang,
+      pinnedLang: lang === "auto" ? "auto" : lang,
+      langCommitted: false,
+      vadActive: true,
+      failoverDeadlineAt: null,
       tier,
       maxAudioBytes: limits.maxAudioBytes,
       lastIdleResetAt: Date.now(),
       billed: false,
+      billedMinutes: 0,
+      billedSince: Date.now(),
     };
     server.serializeAttachment(state);
 
     const adapter = new ClientWsAdapter(server);
     adapter.onFinalTranscript = (sock) => {
-      this.billSessionIfNeeded(sock);
+      this.billStint(sock);
     };
-    this.connections.set(server, {
+    adapter.onOutbound = (data) => this.onProviderMessage(server, data);
+    const conn: StreamConnection = {
       adapter,
       abortController: new AbortController(),
-      pipelinePromise: undefined,
+      dialing: false,
       resumed: false,
-    });
+      activeRouteId: null,
+      priming: [],
+      primingBytes: 0,
+      pendingFailover: false,
+      triedRoutes: [],
+    };
+    adapter.onProviderGone = () => this.onProviderGone(server, conn);
+    this.connections.set(server, conn);
 
     this.ctx.acceptWebSocket(server);
-
-    void initOpusDecoder();
 
     await this.ctx.storage.setAlarm(Date.now() + CONFIG_NEGOTIATION_TIMEOUT_MS);
 
@@ -257,19 +317,41 @@ export class StreamDurableObject extends DurableObject<Env> {
         /* not JSON — treat as opaque string for the interceptor */
       }
 
-      if (msg && msg.type === "config" && msg.codec === "opus") {
+      if (msg?.type === "config") {
         state.configReceived = true;
         let langChanged = false;
         if (typeof msg.lang === "string" && msg.lang.trim() !== "") {
           const langGuard = guardLanguageCode(msg.lang.trim(), "lang");
-          if (langGuard.allowed && msg.lang.trim() !== state.lang) {
-            state.lang = msg.lang.trim();
+          if (!langGuard.allowed) {
+            this.safeSend(ws, JSON.stringify(langGuard.response));
+            this.closeSession(ws, WS_CLOSE.NORMAL, "Invalid language");
+            return;
+          }
+          const requested = msg.lang.trim();
+          if (requested !== state.lang) {
+            state.lang = requested;
+            state.pinnedLang = requested === "auto" ? "auto" : requested;
+            state.langCommitted = false;
             langChanged = true;
-            logger.info("[stream-do] Config negotiated language", {
-              lang: state.lang,
-            });
           }
         }
+
+        const skip = streamSkipReason(state.lang);
+        if (skip) {
+          this.safeSend(
+            ws,
+            JSON.stringify({
+              error: WORKER_ERROR_CODES.LANGUAGE_UNSUPPORTED,
+              message:
+                skip === "auto-detect"
+                  ? "No streaming provider can detect the language."
+                  : `No streaming provider handles ${state.lang}.`,
+            }),
+          );
+          this.closeSession(ws, WS_CLOSE.NO_PROVIDER, "Unsupported language");
+          return;
+        }
+
         ws.serializeAttachment(state);
         this.safeSend(
           ws,
@@ -281,8 +363,12 @@ export class StreamDurableObject extends DurableObject<Env> {
           if (conn) {
             conn.abortController.abort();
             conn.abortController = new AbortController();
-            conn.pipelinePromise = undefined;
+            conn.dialing = false;
+            conn.activeRouteId = null;
+            conn.triedRoutes = [];
+            conn.pendingFailover = false;
             state.providerStarted = false;
+            state.failoverDeadlineAt = null;
             ws.serializeAttachment(state);
           }
         }
@@ -297,8 +383,33 @@ export class StreamDurableObject extends DurableObject<Env> {
         return;
       }
 
+      if (msg && msg.type === "vad" && typeof msg.active === "boolean") {
+        const conn = this.connections.get(ws);
+        state.vadActive = msg.active;
+        ws.serializeAttachment(state);
+        // Swap providers at the silence seam, with no speech in the gap.
+        if (conn && conn.pendingFailover && !msg.active) {
+          conn.pendingFailover = false;
+          state.failoverDeadlineAt = null;
+          conn.abortController.abort();
+          conn.abortController = new AbortController();
+          conn.dialing = false;
+          this.startProviderPipeline(ws, state);
+        }
+        return;
+      }
+
       if (msg && msg.type === "stop") {
         this.closeSession(ws, WS_CLOSE.NORMAL, "stop");
+        return;
+      }
+
+      if (msg && msg.type === "force_endpoint") {
+        const conn = this.connections.get(ws);
+        // Wit is an HTTP pipe and cannot be told to end a turn.
+        if (conn?.activeRouteId && conn.activeRouteId !== "witai") {
+          conn.adapter.emit("control", "force_endpoint");
+        }
         return;
       }
 
@@ -339,6 +450,7 @@ export class StreamDurableObject extends DurableObject<Env> {
     if (now - state.lastIdleResetAt >= IDLE_RESET_INTERVAL_MS) {
       ws.serializeAttachment(state);
     }
+    this.recordPriming(this.getOrCreateConnection(ws), message);
     this.forwardToAdapter(ws, message);
     await this.resetIdleAlarm(ws, state, now);
     this.startProviderPipeline(ws, state);
@@ -351,6 +463,7 @@ export class StreamDurableObject extends DurableObject<Env> {
     wasClean: boolean,
   ): Promise<void> {
     logger.info("[stream-do] Client disconnected", { code, reason, wasClean });
+    this.billStint(ws, true);
     const conn = this.connections.get(ws);
     if (conn) {
       conn.adapter.emit("close", { code, reason, wasClean });
@@ -362,7 +475,7 @@ export class StreamDurableObject extends DurableObject<Env> {
       this.connections.delete(ws);
     }
     this.sessionBytes.delete(ws);
-    this.billSessionIfNeeded(ws);
+    this.billStint(ws, true);
     if (this.ctx.getWebSockets().length === 0) {
       await this.ctx.storage.deleteAlarm();
     }
@@ -381,7 +494,7 @@ export class StreamDurableObject extends DurableObject<Env> {
       this.connections.delete(ws);
     }
     this.sessionBytes.delete(ws);
-    this.billSessionIfNeeded(ws);
+    this.billStint(ws, true);
   }
 
   async alarm(): Promise<void> {
@@ -403,9 +516,10 @@ export class StreamDurableObject extends DurableObject<Env> {
             ws,
             JSON.stringify({
               type: "config_request",
-              codec: "opus",
-              sampleRate: 16000,
-              frameSizeMs: 20,
+              format: STREAM_AUDIO_FORMAT,
+              sampleRate: STREAM_SAMPLE_RATE,
+              channels: STREAM_CHANNELS,
+              frameSizeMs: STREAM_FRAME_MS,
             }),
           );
           const next =
@@ -425,6 +539,17 @@ export class StreamDurableObject extends DurableObject<Env> {
         continue;
       }
 
+      if (
+        state.failoverDeadlineAt !== null &&
+        now >= state.failoverDeadlineAt
+      ) {
+        // No silence boundary arrived in time, so take the seam anyway.
+        state.failoverDeadlineAt = null;
+        ws.serializeAttachment(state);
+        const conn = this.connections.get(ws);
+        if (conn?.pendingFailover) this.startProviderPipeline(ws, state);
+      }
+
       const idleDeadline = state.lastIdleResetAt + IDLE_TIMEOUT_MS;
       if (now >= idleDeadline) {
         this.closeSession(ws, WS_CLOSE.IDLE_TIMEOUT, "Idle timeout");
@@ -433,6 +558,9 @@ export class StreamDurableObject extends DurableObject<Env> {
           needsReschedule === null
             ? idleDeadline
             : Math.min(needsReschedule, idleDeadline);
+        if (state.failoverDeadlineAt !== null) {
+          needsReschedule = Math.min(needsReschedule, state.failoverDeadlineAt);
+        }
       }
     }
 
@@ -450,46 +578,115 @@ export class StreamDurableObject extends DurableObject<Env> {
     if (!force && now - state.lastIdleResetAt < IDLE_RESET_INTERVAL_MS) return;
     state.lastIdleResetAt = now;
     ws.serializeAttachment(state);
-    await this.ctx.storage.setAlarm(now + IDLE_TIMEOUT_MS);
+    await this.scheduleNextAlarm(state);
+  }
+
+  /** Arms the alarm for whichever deadline comes first. */
+  private async scheduleNextAlarm(state: SessionState): Promise<void> {
+    const deadlines = [state.lastIdleResetAt + IDLE_TIMEOUT_MS];
+    if (state.failoverDeadlineAt !== null) {
+      deadlines.push(state.failoverDeadlineAt);
+    }
+    await this.ctx.storage.setAlarm(Math.min(...deadlines));
   }
 
   private getOrCreateConnection(ws: WebSocket): StreamConnection {
-    let conn = this.connections.get(ws);
-    if (!conn) {
-      conn = {
-        adapter: new ClientWsAdapter(ws),
-        abortController: new AbortController(),
-        pipelinePromise: undefined,
-        resumed: true,
-      };
-      conn.adapter.onFinalTranscript = (sock, _text) => {
-        this.billSessionIfNeeded(sock);
-      };
-      this.connections.set(ws, conn);
-    }
+    const existing = this.connections.get(ws);
+    if (existing) return existing;
+
+    const adapter = new ClientWsAdapter(ws);
+    const conn: StreamConnection = {
+      adapter,
+      abortController: new AbortController(),
+      dialing: false,
+      resumed: true,
+      activeRouteId: null,
+      priming: [],
+      primingBytes: 0,
+      pendingFailover: false,
+      triedRoutes: [],
+    };
+    adapter.onFinalTranscript = (sock) => this.billStint(sock);
+    adapter.onOutbound = (data) => this.onProviderMessage(ws, data);
+    // Set before any provider socket exists.
+    adapter.onProviderGone = () => this.onProviderGone(ws, conn);
+    this.connections.set(ws, conn);
     return conn;
   }
 
-  private billSessionIfNeeded(ws: WebSocket): void {
+  /** Pins the language from the first provider that asserts one. */
+  private onProviderMessage(ws: WebSocket, data: string): void {
+    const state = ws.deserializeAttachment() as SessionState | null;
+    if (!state || state.pinnedLang !== "auto") return;
+
+    let msg: { type?: string; language?: string; provider?: string };
+    try {
+      msg = JSON.parse(data) as { type?: string; language?: string };
+    } catch {
+      return;
+    }
+    if (msg.type !== "final" || !msg.language) return;
+
+    const code = canonicalLanguageFromName(msg.language);
+    if (!code) return;
+
+    const next = pinLanguage(null, code, state.langCommitted);
+    if (!next) return;
+
+    state.pinnedLang = next;
+    state.langCommitted = true;
+    ws.serializeAttachment(state);
+    logger.info("[stream-do] Language pinned", {
+      language: next,
+      route: this.connections.get(ws)?.activeRouteId,
+    });
+    this.safeSend(
+      ws,
+      JSON.stringify({
+        type: "language_detected",
+        language: next,
+        provider: this.connections.get(ws)?.activeRouteId ?? "",
+      }),
+    );
+  }
+
+  /**
+   * Reports usage accrued since the last call, in whole minutes. The remainder
+   * carries forward; the closing call rounds up, so a real session bills >= 1.
+   */
+  private billStint(ws: WebSocket, closing = false): void {
     try {
       const state = ws.deserializeAttachment() as SessionState | null;
-      if (!state || state.billed) return;
+      if (!state) return;
+      if (!state.providerEverStarted) return;
 
-      if (state.cumulativeBytes === 0 && !state.providerStarted) return;
+      const now = Date.now();
+      const elapsedMs = now - state.billedSince;
+      const wholeMinutes = Math.floor(elapsedMs / 60_000);
+      const remainderMs = elapsedMs % 60_000;
 
-      const elapsedMs = Date.now() - state.startTime;
-      const billedMinutes = Math.max(1, Math.ceil(elapsedMs / 60000));
+      const minutes = closing
+        ? wholeMinutes + (remainderMs > 0 ? 1 : 0)
+        : wholeMinutes;
+      state.billedSince =
+        closing || remainderMs === 0 ? now : now - remainderMs;
 
-      state.billed = true;
+      if (minutes > 0) {
+        state.billed = true;
+        state.billedMinutes += minutes;
+        logger.info("[stream-do] Billing stream usage", {
+          minutes,
+          total: state.billedMinutes,
+        });
+        trackBillableSuccess(
+          this.env,
+          this.ctx.id.name ?? "",
+          "stream",
+          this.ctx as unknown as ExecutionContext,
+          minutes,
+        );
+      }
       ws.serializeAttachment(state);
-      logger.info("[stream-do] Billing stream session", { billedMinutes });
-      trackBillableSuccess(
-        this.env,
-        this.ctx.id.name ?? "",
-        "stream",
-        this.ctx as unknown as ExecutionContext,
-        billedMinutes,
-      );
     } catch (err) {
       logger.error("[stream-do] Stream billing failed", {
         error: err instanceof Error ? err.message : String(err),
@@ -503,20 +700,39 @@ export class StreamDurableObject extends DurableObject<Env> {
 
   private startProviderPipeline(ws: WebSocket, state: SessionState): void {
     const conn = this.getOrCreateConnection(ws);
-    if (conn.pipelinePromise) return;
+    if (conn.dialing) return;
 
-    if (conn.resumed && state.providerStarted) {
+    if (conn.resumed) {
+      // A woken DO has no provider socket, whatever the attachment claims.
+      conn.resumed = false;
       state.providerStarted = false;
       ws.serializeAttachment(state);
+    } else if (state.providerStarted) {
+      return;
     }
-    conn.resumed = false;
 
-    const pipeline = this.runProviderPipeline(ws, state, conn).finally(() => {
-      if (conn.pipelinePromise === pipeline) {
-        conn.pipelinePromise = undefined;
-      }
+    conn.dialing = true;
+    void this.runProviderPipeline(ws, state, conn).finally(() => {
+      conn.dialing = false;
     });
-    conn.pipelinePromise = pipeline;
+  }
+
+  /** A pin wins; with no route to take it, the pin is released to auto. */
+  private resolveNextLanguage(state: SessionState): {
+    lang: string;
+    languageReset: boolean;
+  } {
+    if (state.pinnedLang === "auto")
+      return { lang: "auto", languageReset: false };
+    if (streamRoutesFor(state.pinnedLang).length > 0) {
+      return { lang: state.pinnedLang, languageReset: false };
+    }
+    logger.warn("[stream-do] No route covers the pinned language", {
+      pinned: state.pinnedLang,
+    });
+    state.pinnedLang = "auto";
+    state.langCommitted = false;
+    return { lang: "auto", languageReset: true };
   }
 
   private async runProviderPipeline(
@@ -524,57 +740,83 @@ export class StreamDurableObject extends DurableObject<Env> {
     state: SessionState,
     conn: StreamConnection,
   ): Promise<void> {
-    const signal = conn.abortController.signal;
+    const previousRoute = conn.activeRouteId;
+    const { lang, languageReset } = this.resolveNextLanguage(state);
+    const effectiveLang = lang === "auto" ? state.lang : lang;
     let providerFound = false;
 
-    for (const entry of STREAMING_PIPELINE) {
-      if (entry.skipOnAuto && state.lang === "auto") {
-        logger.info("[stream-do] Skipping provider (auto-detect unsupported)", {
-          name: entry.name,
-        });
-        continue;
-      }
-      if (
-        state.lang !== "auto" &&
-        !providerSupportsLanguage(entry.name, "sttStream", state.lang)
-      ) {
-        logger.info("[stream-do] Skipping provider (unsupported language)", {
-          name: entry.name,
-          lang: state.lang,
+    for (const entry of STREAM_PIPELINE) {
+      if (conn.triedRoutes.includes(entry.route.id)) continue;
+      if (!streamRoutesFor(effectiveLang).includes(entry.route)) continue;
+      if (await isProviderDegraded(this.env, entry.route.provider)) {
+        logger.info("[stream-do] Skipping route (circuit open)", {
+          route: entry.route.id,
         });
         continue;
       }
 
-      logger.info("[stream-do] Trying provider", {
-        name: entry.name,
-        lang: state.lang,
+      conn.triedRoutes.push(entry.route.id);
+      logger.info("[stream-do] Opening route", {
+        route: entry.route.id,
+        lang: effectiveLang,
       });
+
+      let handled = false;
       try {
-        const handled = await entry.sttStream(
+        handled = await entry.sttStream(
           this.env,
-          state.lang,
+          entry.route,
+          effectiveLang,
           conn.adapter as unknown as WebSocket,
-          signal,
+          conn.abortController.signal,
         );
-        if (handled) {
-          providerFound = true;
-          state.providerStarted = true;
-          ws.serializeAttachment(state);
-          logger.info("[stream-do] Provider handling session", {
-            name: entry.name,
-          });
-          break;
-        }
       } catch (err) {
-        logger.error("[stream-do] Provider threw", {
-          name: entry.name,
+        logger.error("[stream-do] Route threw", {
+          route: entry.route.id,
           error: err instanceof Error ? err.message : String(err),
         });
+      }
+
+      if (!handled) {
+        logger.warn("[stream-do] Route unavailable", { route: entry.route.id });
         continue;
       }
-      logger.warn("[stream-do] Provider unavailable, skipping", {
-        name: entry.name,
-      });
+
+      providerFound = true;
+      conn.activeRouteId = entry.route.id;
+      // The dial above awaited, so `state` predates it. Re-read before writing,
+      // or this copy reverts whatever was written while the dial was in flight.
+      const latest =
+        (ws.deserializeAttachment() as SessionState | null) ?? state;
+      latest.providerStarted = true;
+      latest.providerEverStarted = true;
+      ws.serializeAttachment(latest);
+
+      this.safeSend(
+        ws,
+        JSON.stringify({
+          type: "ready",
+          route: entry.route.id,
+          provider: entry.route.provider,
+          format: entry.route.wire,
+          sampleRate: STREAM_SAMPLE_RATE,
+          channels: 1,
+        }),
+      );
+
+      if (previousRoute && previousRoute !== entry.route.id) {
+        this.safeSend(
+          ws,
+          JSON.stringify({
+            type: "provider_switch",
+            from: previousRoute,
+            to: entry.route.id,
+            reason: "route-failover",
+            ...(languageReset ? { languageReset: true } : {}),
+          }),
+        );
+      }
+      break;
     }
 
     if (!providerFound) {
@@ -586,22 +828,76 @@ export class StreamDurableObject extends DurableObject<Env> {
         }),
       );
       this.closeSession(ws, WS_CLOSE.NO_PROVIDER, "No provider");
+    }
+  }
+
+  /** A provider ending is not the end of the session: failover instead. */
+  private onProviderGone(ws: WebSocket, conn: StreamConnection): void {
+    const state = ws.deserializeAttachment() as SessionState | null;
+    if (!state) return;
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (!conn.dialing && !state.providerStarted) return;
+
+    const failed = conn.activeRouteId;
+    logger.warn("[stream-do] Provider ended, attempting failover", {
+      route: failed,
+      speech: state.vadActive,
+    });
+
+    state.providerStarted = false;
+    conn.activeRouteId = null;
+    conn.abortController.abort();
+    conn.abortController = new AbortController();
+    conn.dialing = false;
+    // `triedRoutes` survives so a dead route is not retried on every failover.
+    ws.serializeAttachment(state);
+
+    this.primeReplacement(conn);
+    this.billStint(ws);
+
+    if (state.vadActive) {
+      conn.pendingFailover = true;
+      state.failoverDeadlineAt = Date.now() + FAILOVER_SEAM_WAIT_MS;
+      ws.serializeAttachment(state);
+      void this.scheduleNextAlarm(state);
       return;
     }
+    state.failoverDeadlineAt = null;
+    ws.serializeAttachment(state);
+    this.startProviderPipeline(ws, state);
+  }
 
-    await new Promise<void>((resolve) => {
-      const done = (): void => {
-        ws.removeEventListener("close", done);
-        signal.removeEventListener("abort", done);
-        resolve();
-      };
-      if (signal.aborted) {
-        resolve();
-        return;
-      }
-      ws.addEventListener("close", done);
-      signal.addEventListener("abort", done, { once: true });
+  /** Replays the audio tail so the replacement does not start cold. */
+  private primeReplacement(conn: StreamConnection): void {
+    const tail = conn.priming
+      .map((p) => p.byteLength)
+      .reduce((a, b) => a + b, 0);
+    if (tail === 0) return;
+    const merged = new Uint8Array(tail);
+    let at = 0;
+    for (const part of conn.priming) {
+      merged.set(part, at);
+      at += part.byteLength;
+    }
+    conn.priming = [];
+    conn.primingBytes = 0;
+    conn.adapter.emit("message", merged.buffer);
+    logger.info("[stream-do] Primed replacement provider", {
+      bytes: tail,
+      ms: Math.round(tail / PRIME_BYTES_PER_MS),
     });
+  }
+
+  /** Keeps the rolling tail that failover primes from. */
+  private recordPriming(conn: StreamConnection, data: ArrayBuffer): void {
+    const bytes = new Uint8Array(data);
+    if (bytes.byteLength === 0) return;
+    conn.priming.push(bytes);
+    conn.primingBytes += bytes.byteLength;
+    const cap = FAILOVER_PRIMING_MS * PRIME_BYTES_PER_MS;
+    while (conn.primingBytes > cap && conn.priming.length > 1) {
+      conn.primingBytes -= conn.priming.shift()!.byteLength;
+    }
   }
 
   private safeSend(ws: WebSocket, data: string): void {
@@ -613,6 +909,7 @@ export class StreamDurableObject extends DurableObject<Env> {
   }
 
   private closeSession(ws: WebSocket, code: number, reason: string): void {
+    this.billStint(ws, true);
     try {
       ws.close(code, reason);
     } catch {

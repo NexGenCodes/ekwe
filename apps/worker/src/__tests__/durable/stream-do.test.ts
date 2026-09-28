@@ -104,7 +104,16 @@ describe("StreamDurableObject", () => {
       "config-user",
       "?tier=PREMIUM&lang=en",
     );
-    ws.send(JSON.stringify({ type: "config", codec: "opus", lang: "en" }));
+    ws.send(
+      JSON.stringify({
+        type: "config",
+        lang: "en",
+        format: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+        frameSizeMs: 20,
+      }),
+    );
 
     const ack = await waitFor(messages, (m) => m.includes("config_ack"));
     expect(JSON.parse(ack).status).toBe("ready");
@@ -200,8 +209,14 @@ describe("StreamDurableObject", () => {
 });
 
 describe("StreamDurableObject — provider WebSocket boundary", () => {
-  const DEEPGRAM_LINK = "wss://api.deepgram.com/v1/listen";
+  // Flux is dialled first, so the default mock is the v2 turn-detection socket.
+  const DEEPGRAM_LINK = "wss://api.deepgram.com/v2/listen";
+  const DEEPGRAM_NOVA_LINK = "wss://api.deepgram.com/v1/listen";
   const DEEPGRAM_KEY = "mock-deepgram-key-stream-abc";
+
+  function withAssemblyAiKey(): void {
+    (env as any).ASSEMBLYAI_KEY_1 = "mock-assemblyai-key-stream-abc";
+  }
 
   function withDeepgramKey(): void {
     (env as any).DEEPGRAM_KEY_1 = DEEPGRAM_KEY;
@@ -209,20 +224,25 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
 
   function deepgramLink(reply: (count: number, client: any) => void): {
     connected: () => boolean;
+    /** Distinct outbound sockets accepted, not frames forwarded. */
+    sockets: () => number;
   } {
     let connected = false;
+    let socketCount = 0;
     let messageCount = 0;
-    const link = ws.link(DEEPGRAM_LINK);
     network.use(
-      link.addEventListener("connection", ({ client }: any) => {
-        connected = true;
-        client.addEventListener("message", () => {
-          messageCount++;
-          reply(messageCount, client);
-        });
-      }),
+      ws
+        .link(DEEPGRAM_LINK)
+        .addEventListener("connection", ({ client }: any) => {
+          connected = true;
+          socketCount++;
+          client.addEventListener("message", () => {
+            messageCount++;
+            reply(messageCount, client);
+          });
+        }),
     );
-    return { connected: () => connected };
+    return { connected: () => connected, sockets: () => socketCount };
   }
 
   async function waitForFlag(
@@ -240,7 +260,28 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
+  /** A completed Flux turn: the whole turn's text plus the languages in it. */
   function deepgramResult(transcript: string, isFinal: boolean): string {
+    return JSON.stringify({
+      type: "TurnInfo",
+      event: isFinal ? "EndOfTurn" : "Update",
+      transcript,
+      languages: ["en"],
+    });
+  }
+
+  function assemblyResult(transcript: string, isFinal: boolean): string {
+    return JSON.stringify({
+      type: "Turn",
+      text: transcript,
+      end_of_turn: isFinal,
+      turn_is_formatted: true,
+      language_code: "en",
+    });
+  }
+
+  /** The older per-segment shape Nova-3 still uses. */
+  function novaResult(transcript: string, isFinal: boolean): string {
     return JSON.stringify({
       type: "Results",
       channel: { alternatives: [{ transcript }] },
@@ -265,7 +306,14 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     expect(alarmBefore! - Date.now()).toBeLessThan(10_000);
 
     clientWs.send(
-      JSON.stringify({ type: "config", codec: "opus", lang: "en" }),
+      JSON.stringify({
+        type: "config",
+        lang: "en",
+        format: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+        frameSizeMs: 20,
+      }),
     );
     await waitFor(messages, (m) => m.includes("config_ack"));
     await waitForFlag(mock.connected);
@@ -295,7 +343,14 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       closes,
     } = await openSession("dg-final", "?tier=PREMIUM&lang=en");
     clientWs.send(
-      JSON.stringify({ type: "config", codec: "opus", lang: "en" }),
+      JSON.stringify({
+        type: "config",
+        lang: "en",
+        format: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+        frameSizeMs: 20,
+      }),
     );
     await waitFor(messages, (m) => m.includes("config_ack"));
 
@@ -309,6 +364,8 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       type: "final",
       text: "streaming transcript",
       provider: "deepgram",
+      // Flux reports the languages in the turn, which is what pins the language.
+      language: "en",
     });
 
     clientWs.send(JSON.stringify({ type: "stop" }));
@@ -333,7 +390,14 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       closes,
     } = await openSession("dg-interim", "?tier=PREMIUM&lang=en");
     clientWs.send(
-      JSON.stringify({ type: "config", codec: "opus", lang: "en" }),
+      JSON.stringify({
+        type: "config",
+        lang: "en",
+        format: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+        frameSizeMs: 20,
+      }),
     );
     await waitFor(messages, (m) => m.includes("config_ack"));
     await waitForFlag(mock.connected);
@@ -346,6 +410,7 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       type: "interim",
       text: "interim result",
       provider: "deepgram",
+      language: "en",
     });
 
     clientWs.send(new ArrayBuffer(8));
@@ -354,6 +419,7 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       type: "final",
       text: "final result",
       provider: "deepgram",
+      language: "en",
     });
 
     clientWs.send(JSON.stringify({ type: "stop" }));
@@ -361,44 +427,10 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     await settle();
   });
 
-  it("moves on when the first provider's WebSocket fails to connect", async () => {
-    const link = ws.link(DEEPGRAM_LINK);
-    network.use(
-      link.addEventListener("connection", ({ client }: any) => {
-        client.close();
-      }),
-    );
-
-    withDeepgramKey();
-    const {
-      ws: clientWs,
-      messages,
-      closes,
-    } = await openSession("dg-refused", "?tier=PREMIUM&lang=en");
-    clientWs.send(
-      JSON.stringify({ type: "config", codec: "opus", lang: "en" }),
-    );
-    await waitFor(messages, (m) => m.includes("config_ack"));
-
-    const err = await waitFor(messages, (m) =>
-      m.includes("NO_PROVIDER_AVAILABLE"),
-    );
-    expect(JSON.parse(err).error).toBe("NO_PROVIDER_AVAILABLE");
-    await waitForClose(closes, 4004);
-    await settle();
-  });
-
   it("restarts the provider pipeline after DO hibernation", async () => {
-    let connections = 0;
-    const link = ws.link(DEEPGRAM_LINK);
-    network.use(
-      link.addEventListener("connection", ({ client }: any) => {
-        connections++;
-        client.addEventListener("message", () => {
-          client.send(deepgramResult("post-hibernation", true));
-        });
-      }),
-    );
+    const mock = deepgramLink((_count, client) => {
+      client.send(deepgramResult("post-hibernation", true));
+    });
 
     withDeepgramKey();
     const {
@@ -407,10 +439,17 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       closes,
     } = await openSession("hibernation-restart", "?tier=PREMIUM&lang=en");
     clientWs.send(
-      JSON.stringify({ type: "config", codec: "opus", lang: "en" }),
+      JSON.stringify({
+        type: "config",
+        lang: "en",
+        format: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+        frameSizeMs: 20,
+      }),
     );
     await waitFor(messages, (m) => m.includes("config_ack"));
-    await waitForFlag(() => connections === 1);
+    await waitForFlag(() => mock.sockets() === 1);
 
     await runInDurableObject(
       getStub("hibernation-restart"),
@@ -422,7 +461,7 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     );
 
     clientWs.send(new ArrayBuffer(8));
-    await waitForFlag(() => connections === 2);
+    await waitForFlag(() => mock.sockets() === 2);
     const msg = await waitFor(messages, (m) => m.includes("post-hibernation"));
     expect(JSON.parse(msg).provider).toBe("deepgram");
 
@@ -432,16 +471,9 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
   });
 
   it("does not open a second provider socket per audio frame", async () => {
-    let connections = 0;
-    const link = ws.link(DEEPGRAM_LINK);
-    network.use(
-      link.addEventListener("connection", ({ client }: any) => {
-        connections++;
-        client.addEventListener("message", () => {
-          client.send(deepgramResult("frame transcript", false));
-        });
-      }),
-    );
+    const mock = deepgramLink((_count, client) => {
+      client.send(deepgramResult("frame transcript", false));
+    });
 
     withDeepgramKey();
     const {
@@ -450,10 +482,17 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       closes,
     } = await openSession("no-duplicate-conn", "?tier=PREMIUM&lang=en");
     clientWs.send(
-      JSON.stringify({ type: "config", codec: "opus", lang: "en" }),
+      JSON.stringify({
+        type: "config",
+        lang: "en",
+        format: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+        frameSizeMs: 20,
+      }),
     );
     await waitFor(messages, (m) => m.includes("config_ack"));
-    await waitForFlag(() => connections === 1);
+    await waitForFlag(() => mock.sockets() === 1);
 
     clientWs.send(new ArrayBuffer(8));
     clientWs.send(new ArrayBuffer(8));
@@ -461,7 +500,179 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     await waitFor(messages, (m) => m.includes("frame transcript"));
 
     await new Promise((r) => setTimeout(r, 100));
-    expect(connections).toBe(1);
+    expect(mock.sockets()).toBe(1);
+
+    clientWs.send(JSON.stringify({ type: "stop" }));
+    await waitForClose(closes, 1000);
+    await settle();
+  });
+
+  it("abandons a pending failover when the device never reports silence", async () => {
+    // Flux answers the first frame, then dies. No `vad` message ever arrives, so
+    // the seam can only be given up by time.
+    let fluxSockets = 0;
+    network.use(
+      ws
+        .link(DEEPGRAM_LINK)
+        .addEventListener("connection", ({ client }: any) => {
+          fluxSockets++;
+          client.addEventListener("message", () => {
+            client.close();
+          });
+        }),
+    );
+    network.use(
+      ws
+        .link("wss://streaming.assemblyai.com/v3/ws")
+        .addEventListener("connection", ({ client }: any) => {
+          client.close();
+        }),
+    );
+    network.use(
+      ws
+        .link(DEEPGRAM_NOVA_LINK)
+        .addEventListener("connection", ({ client }: any) => {
+          client.addEventListener("message", () => {
+            client.send(novaResult("after failover", true));
+          });
+        }),
+    );
+
+    withDeepgramKey();
+    withAssemblyAiKey();
+    const {
+      stub,
+      ws: clientWs,
+      messages,
+      closes,
+    } = await openSession("seam-timeout", "?tier=PREMIUM&lang=en");
+    clientWs.send(
+      JSON.stringify({
+        type: "config",
+        lang: "en",
+        format: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+        frameSizeMs: 20,
+      }),
+    );
+    await waitFor(messages, (m) => m.includes("config_ack"));
+    await waitForFlag(() => fluxSockets > 0);
+
+    clientWs.send(new ArrayBuffer(8));
+    await settle();
+
+    // The failover is now parked on a silence boundary that will never come.
+    const deadline = await runInDurableObject(stub, async (_i, state) => {
+      const [sock] = state.getWebSockets();
+      return (
+        sock.deserializeAttachment() as { failoverDeadlineAt: number | null }
+      ).failoverDeadlineAt;
+    });
+    expect(deadline).not.toBeNull();
+
+    // Pull the deadline forward instead of waiting it out, then run the alarm
+    // that was armed for it.
+    await runInDurableObject(stub, async (_instance, state) => {
+      const [sock] = state.getWebSockets();
+      const attached = sock.deserializeAttachment() as {
+        failoverDeadlineAt: number | null;
+        lastIdleResetAt: number;
+      };
+      attached.failoverDeadlineAt = Date.now() - 1;
+      attached.lastIdleResetAt = Date.now();
+      sock.serializeAttachment(attached);
+    });
+    await runDurableObjectAlarm(stub);
+
+    clientWs.send(new ArrayBuffer(8));
+    const msg = await waitFor(messages, (m) => m.includes("after failover"));
+    expect(JSON.parse(msg).provider).toBe("deepgram");
+    expect(closes).toHaveLength(0);
+
+    clientWs.send(JSON.stringify({ type: "stop" }));
+    await waitForClose(closes, 1000);
+    await settle();
+  });
+
+  it("bills the stretch after a failover instead of only the first", async () => {
+    // The first provider completes a turn, then dies on the next frame, so the
+    // session has two billable stints rather than one.
+    let fluxMessages = 0;
+    network.use(
+      ws
+        .link(DEEPGRAM_LINK)
+        .addEventListener("connection", ({ client }: any) => {
+          client.addEventListener("message", () => {
+            fluxMessages++;
+            if (fluxMessages === 1) {
+              client.send(deepgramResult("first stint", true));
+            } else {
+              client.close();
+            }
+          });
+        }),
+    );
+    network.use(
+      ws
+        .link("wss://streaming.assemblyai.com/v3/ws")
+        .addEventListener("connection", ({ client }: any) => {
+          client.addEventListener("message", () => {
+            client.send(assemblyResult("second stint", true));
+          });
+        }),
+    );
+
+    withDeepgramKey();
+    const {
+      stub,
+      ws: clientWs,
+      messages,
+      closes,
+    } = await openSession("billing-failover", "?tier=PREMIUM&lang=en");
+
+    const readBilling = async (): Promise<{
+      billedMinutes: number;
+      billedSince: number;
+    }> =>
+      runInDurableObject(stub, async (_i, state) => {
+        const [sock] = state.getWebSockets();
+        return sock.deserializeAttachment() as {
+          billedMinutes: number;
+          billedSince: number;
+        };
+      });
+
+    clientWs.send(
+      JSON.stringify({
+        type: "config",
+        lang: "en",
+        format: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+        frameSizeMs: 20,
+      }),
+    );
+    await waitFor(messages, (m) => m.includes("config_ack"));
+
+    clientWs.send(new ArrayBuffer(8));
+    await waitFor(messages, (m) => m.includes("first stint"));
+    // Sub-second in, so there is no whole minute to report yet.
+    expect((await readBilling()).billedMinutes).toBe(0);
+
+    // Rewind the unbilled stretch so the second stint contains a whole minute.
+    await runInDurableObject(stub, async (_instance, state) => {
+      const [sock] = state.getWebSockets();
+      const attached = sock.deserializeAttachment() as { billedSince: number };
+      attached.billedSince = Date.now() - 61_000;
+      sock.serializeAttachment(attached);
+    });
+
+    clientWs.send(new ArrayBuffer(8));
+    await waitFor(messages, (m) => m.includes("second stint"));
+
+    // The second provider's minute is reported on top of the first, not instead.
+    expect((await readBilling()).billedMinutes).toBeGreaterThanOrEqual(1);
 
     clientWs.send(JSON.stringify({ type: "stop" }));
     await waitForClose(closes, 1000);
@@ -478,7 +689,14 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       closes,
     } = await openSession("idle-alarm-extend", "?tier=PREMIUM&lang=en");
     clientWs.send(
-      JSON.stringify({ type: "config", codec: "opus", lang: "en" }),
+      JSON.stringify({
+        type: "config",
+        lang: "en",
+        format: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+        frameSizeMs: 20,
+      }),
     );
     await waitFor(messages, (m) => m.includes("config_ack"));
     await waitForFlag(deepgram.connected);
@@ -520,7 +738,14 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       closes,
     } = await openSession("idle-alarm-close", "?tier=PREMIUM&lang=en");
     clientWs.send(
-      JSON.stringify({ type: "config", codec: "opus", lang: "en" }),
+      JSON.stringify({
+        type: "config",
+        lang: "en",
+        format: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+        frameSizeMs: 20,
+      }),
     );
     await waitFor(messages, (m) => m.includes("config_ack"));
     await waitForFlag(deepgram.connected);
@@ -537,6 +762,119 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     const ran = await runDurableObjectAlarm(stub);
     expect(ran).toBe(true);
     await waitForClose(closes, 4002);
+    await settle();
+  });
+  // Last in the file: MSW handlers persist for the life of the run, and this
+  // one refuses every route, so nothing after it could connect.
+  it("fails over to the next route for the language and keeps the client open", async () => {
+    // Flux and u3-rt-pro are refused, so the session must land on Nova-3, which
+    // is the next route covering English and uses the older Results shape.
+    for (const link of [
+      DEEPGRAM_LINK,
+      "wss://streaming.assemblyai.com/v3/ws",
+    ]) {
+      network.use(
+        ws.link(link).addEventListener("connection", ({ client }: any) => {
+          client.close();
+        }),
+      );
+    }
+    let novaSockets = 0;
+    network.use(
+      ws
+        .link(DEEPGRAM_NOVA_LINK)
+        .addEventListener("connection", ({ client }: any) => {
+          novaSockets++;
+          client.addEventListener("message", () => {
+            client.send(novaResult("nova fallback", true));
+          });
+        }),
+    );
+
+    withDeepgramKey();
+    withAssemblyAiKey();
+    const {
+      ws: clientWs,
+      messages,
+      closes,
+    } = await openSession("dg-failover", "?tier=PREMIUM&lang=en");
+    clientWs.send(
+      JSON.stringify({
+        type: "config",
+        lang: "en",
+        format: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+        frameSizeMs: 20,
+      }),
+    );
+    await waitFor(messages, (m) => m.includes("config_ack"));
+    await waitFor(messages, (m) => m.includes("deepgram-nova-3"));
+    expect(novaSockets).toBe(1);
+
+    clientWs.send(new ArrayBuffer(8));
+    const finalMsg = await waitFor(messages, (m) =>
+      m.includes("nova fallback"),
+    );
+    expect(JSON.parse(finalMsg)).toEqual({
+      type: "final",
+      text: "nova fallback",
+      provider: "deepgram",
+    });
+    expect(closes).toHaveLength(0);
+
+    clientWs.send(JSON.stringify({ type: "stop" }));
+    await waitForClose(closes, 1000);
+    await settle();
+  });
+
+  it("moves on when the first provider's WebSocket fails to connect", async () => {
+    network.use(
+      ws
+        .link(DEEPGRAM_LINK)
+        .addEventListener("connection", ({ client }: any) => {
+          client.close();
+        }),
+    );
+    // u3-rt-pro is next in the pipeline for English, so it must be refused too
+    // for the session to exhaust its routes.
+    for (const link of [
+      "wss://streaming.assemblyai.com/v3/ws",
+      DEEPGRAM_NOVA_LINK,
+      "wss://api.gladia.io/v2/live",
+      "https://api.wit.ai/dictation",
+    ]) {
+      network.use(
+        ws.link(link).addEventListener("connection", ({ client }: any) => {
+          client.close();
+        }),
+      );
+    }
+
+    withDeepgramKey();
+    withAssemblyAiKey();
+    const {
+      ws: clientWs,
+      messages,
+      closes,
+    } = await openSession("dg-refused", "?tier=PREMIUM&lang=en");
+    clientWs.send(
+      JSON.stringify({
+        type: "config",
+        lang: "en",
+        format: "pcm_s16le",
+        sampleRate: 16000,
+        channels: 1,
+        frameSizeMs: 20,
+      }),
+    );
+    await waitFor(messages, (m) => m.includes("config_ack"));
+
+    const err = await waitFor(messages, (m) =>
+      m.includes("NO_PROVIDER_AVAILABLE"),
+    );
+    expect(JSON.parse(err).error).toBe("NO_PROVIDER_AVAILABLE");
+    await waitForClose(closes, 4004);
     await settle();
   });
 });

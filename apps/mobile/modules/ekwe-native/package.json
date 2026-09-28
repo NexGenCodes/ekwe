@@ -4,7 +4,8 @@
   "description": "Custom native module for Ekwe",
   "main": "index.ts",
   "scripts": {
-    "nitro-codegen": "nitrogen"
+    "nitro-codegen": "nitrogen",
+    "test:cpp": "bash cpp/tests/run-tests.sh"
   },
   "peerDependencies": {
     "react-native-nitro-modules": ">=0.20.0"

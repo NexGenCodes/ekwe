@@ -210,11 +210,11 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
 
   const ai = {
     run: vi.fn(async (_model: string, inputs: Record<string, unknown>) => {
-      if (_model === "@cf/openai/whisper") {
-        const text =
-          typeof inputs?.audio === "string" || Array.isArray(inputs?.audio)
-            ? "mock whisper transcription"
-            : "";
+      if (_model === "@cf/openai/whisper-large-v3-turbo") {
+        // The provider sends audio as a base64 string; the Whisper
+        // binding rejects the { body, contentType } object form.
+        const audio = inputs?.audio as string | undefined;
+        const text = audio ? "mock whisper transcription" : "";
         return { text };
       }
       if (_model === "@cf/zai-org/glm-4.7-flash") {

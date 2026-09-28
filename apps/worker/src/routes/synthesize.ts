@@ -3,22 +3,17 @@ import {
   TRANSLATE_EXPANSION_CUSHION,
   synthesizeRequestSchema,
   synthesizeResponseSchema,
-  translateResponseSchema,
   VOICE_SLOT_IDS,
   getStandardSlot,
   getVoiceSlot,
-  getLanguageName,
 } from "@ekwe/shared";
 import { logger } from "@/core/logger";
 import { RequestTimings } from "@/core/timing";
-import { getProviderModule, getProviderNamesFor } from "@/providers";
 import { pipelineTierForSlot, resolveExecutionTier } from "@/core/voices";
 import {
   SPEECH_PIPELINE_TOTAL_MS,
   SYNTHESIZE_TOTAL_MS,
   TRANSCRIBE_TOTAL_MS,
-  TRANSLATE_CACHE_TTL_SECONDS,
-  TRANSLATE_PER_PROVIDER_MS,
   TRANSLATE_TOTAL_MS,
 } from "@/core/budgets";
 import { getLimits } from "@/core/limits";
@@ -38,11 +33,9 @@ import {
 import { sanitizeTranslationText } from "@/core/sanitize";
 import { hashBytes, hashKey } from "@/utils/keys";
 import { sniffAudioMime } from "@/utils/mime";
-import { d1Get, d1Put } from "@/services/d1-cache";
 import { detectTextLanguage } from "@/services/auto-detect";
-import { runProviderFailover } from "@/utils/retry";
-import { isProviderDegraded, reportProviderOutcome } from "@/services/health";
 import { runPreflightGate } from "@/services/preflight";
+import { runTranslateJob } from "@/services/translate";
 import { trackBillableSuccess } from "@/services/usage";
 import {
   readTranscribeCache,
@@ -57,13 +50,7 @@ import {
   runSpeechSynth,
   type SpeechResult,
 } from "@/services/speech";
-import {
-  CLIENT_ABORTED,
-  Env,
-  Tier,
-  TranslateFn,
-  TranslateResult,
-} from "@/core/types";
+import { CLIENT_ABORTED, Env, Tier, TranslateResult } from "@/core/types";
 
 function preShrinkForTranslate(text: string, tier: Tier): string {
   const maxChars = getLimits(tier).maxTextChars;
@@ -181,142 +168,31 @@ async function translateStage(
   if (signal.aborted) throw new Error(CLIENT_ABORTED);
 
   let cacheKey: string | null = null;
+  let textHash = "";
   try {
-    const textHash = await hashKey(
-      `${text}_${sourceLang || "auto"}_${targetLang}`,
-    );
+    textHash = await hashKey(`${text}_${sourceLang || "auto"}_${targetLang}`);
     cacheKey = `trans:${userId}:${tier}:${textHash}`;
-    const cached = await d1Get(env.EKWE_D1, "cache_translation", cacheKey);
-    if (cached) {
-      const cachedResult = JSON.parse(cached) as TranslateResult;
-      const shapeCheck = translateResponseSchema.safeParse(cachedResult);
-      if (shapeCheck.success) {
-        logger.info(`[synthesize] translate cache hit (${textHash})`);
-        return { ok: true, result: cachedResult };
-      }
-      logger.warn(
-        `[synthesize] translate cache entry failed validation (ignoring)`,
-      );
-    }
   } catch (err) {
-    logger.error(`[synthesize] translate cache lookup error (continuing)`, {
+    logger.error(`[synthesize] translate cache key error (continuing)`, {
       error: String(err),
     });
   }
 
-  const pipeline = getProviderNamesFor("translate", tier);
-  const limits = getLimits(tier);
-
-  const isAuto = !sourceLang || sourceLang === "auto";
-  let detectedLang: string | null = null;
-  if (isAuto) {
-    try {
-      detectedLang = await detectTextLanguage(text, env.EKWE_D1, signal);
-    } catch {
-      /* noop */
-    }
-    if (signal.aborted) throw new Error(CLIENT_ABORTED);
-  }
-
-  const byName = new Map(
-    pipeline.map((name) => [
-      name,
-      getProviderModule(name)?.translate ?? (() => Promise.resolve(null)),
-    ]),
-  );
-  const entry = (name: string): { name: string; fn: TranslateFn } => {
-    const fn = byName.get(name);
-    if (!fn) throw new Error(`[translate] Unknown provider: ${name}`);
-    return { name, fn };
-  };
-
-  const result = await runProviderFailover<TranslateResult>({
-    providers: pipeline,
-    signal,
-    totalMs: budgetMs,
-    route: "translate",
+  const result = await runTranslateJob({
     env,
     tier,
-    attemptTimeoutMs: () => TRANSLATE_PER_PROVIDER_MS,
-    shouldSkip: async (name) => {
-      if (await isProviderDegraded(env, name)) {
-        logger.info(`[translate] Skipping ${name} (circuit open)`);
-        return true;
-      }
-      return false;
-    },
-    invoke: (name, attemptSignal) => {
-      const targetName = getLanguageName(targetLang);
-      const sourceName = isAuto
-        ? detectedLang
-          ? getLanguageName(detectedLang)
-          : undefined
-        : getLanguageName(sourceLang);
-      return entry(name).fn(
-        text,
-        targetName,
-        sourceName,
-        env,
-        attemptSignal,
-        false,
-      );
-    },
-    handleAttempt: async (name, attempt) => {
-      if (!attempt) {
-        await reportProviderOutcome(env, name, false);
-        return false;
-      }
-
-      const shapeCheck = translateResponseSchema.safeParse(attempt);
-      if (!shapeCheck.success) {
-        logger.warn(`[translate] ${name} returned a malformed result`, {
-          issues: shapeCheck.error.issues.map((i) => ({
-            path: i.path.join("."),
-            message: i.message,
-          })),
-        });
-        return false;
-      }
-
-      logger.info(`[translate] Success: ${name}`, {
-        provider: attempt.provider,
-      });
-
-      const r = attempt as unknown as Record<string, unknown>;
-      if (!limits.transliterationAllowed && "transliteration" in r) {
-        delete r.transliteration;
-      }
-      if (limits.autoDetectAllowed && detectedLang) {
-        attempt.language = detectedLang;
-      } else if (!limits.autoDetectAllowed && "language" in r) {
-        delete r.language;
-      }
-
-      try {
-        if (env.EKWE_D1 && cacheKey) {
-          await d1Put(
-            env.EKWE_D1,
-            "cache_translation",
-            cacheKey,
-            userId,
-            tier,
-            JSON.stringify(attempt),
-            TRANSLATE_CACHE_TTL_SECONDS,
-          );
-        }
-      } catch (err) {
-        logger.error(`[synthesize] translate cache write error`, {
-          error: String(err),
-        });
-      }
-
-      trackBillableSuccess(env, userId, "translate", ctx);
-
-      await reportProviderOutcome(env, name, true);
-
-      return true;
-    },
-    onAttemptError: (name) => reportProviderOutcome(env, name, false),
+    userId,
+    ctx,
+    signal,
+    text,
+    sourceLang,
+    targetLang,
+    // Synthesis speaks the target script, so a romanization is never wanted.
+    wantTransliteration: false,
+    cacheKey,
+    textHash,
+    budgetMs,
+    logPrefix: "[synthesize]",
   });
 
   if (!result) {

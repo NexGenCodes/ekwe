@@ -15,10 +15,10 @@ import {
   verifyTransaction,
 } from "@/services/flutterwave";
 
-const refreshSessionMock = vi.hoisted(() => vi.fn());
+const getUserMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/services/supabase", () => ({
-  supabase: { auth: { refreshSession: refreshSessionMock } },
+  supabase: { auth: { getUser: getUserMock } },
 }));
 
 vi.mock("@/utils/http", () => ({
@@ -60,7 +60,7 @@ beforeEach(() => {
   authActions.setEntitlementSynced(false);
   settingsActions.setCurrency(DEFAULT_PAYMENT_CURRENCY);
   vi.mocked(getWorkerUrl).mockReturnValue("https://worker.test");
-  refreshSessionMock.mockReset();
+  getUserMock.mockReset();
 });
 
 afterEach(() => {
@@ -249,36 +249,36 @@ describe("verifyTransaction", () => {
 
 describe("reconcileFlutterwaveStatus", () => {
   it("returns true when a refreshed session reports is_pro", async () => {
-    refreshSessionMock.mockResolvedValueOnce({
-      data: { session: { user: { app_metadata: { is_pro: true } } } },
+    getUserMock.mockResolvedValueOnce({
+      data: { user: { app_metadata: { is_pro: true } } },
       error: null,
     });
     await expect(reconcileFlutterwaveStatus()).resolves.toBe(true);
-    expect(supabase.auth.refreshSession).toHaveBeenCalledTimes(1);
+    expect(supabase.auth.getUser).toHaveBeenCalledTimes(1);
   });
 
   it("polls POLL_ATTEMPTS times and gives up when still free", async () => {
     vi.useFakeTimers();
-    refreshSessionMock.mockResolvedValue({
-      data: { session: { user: { app_metadata: { is_pro: false } } } },
+    getUserMock.mockResolvedValue({
+      data: { user: { app_metadata: { is_pro: false } } },
       error: null,
     });
 
     const promise = reconcileFlutterwaveStatus();
     await vi.advanceTimersByTimeAsync(2_500 * 20);
     await expect(promise).resolves.toBe(false);
-    expect(supabase.auth.refreshSession).toHaveBeenCalledTimes(20);
+    expect(supabase.auth.getUser).toHaveBeenCalledTimes(20);
   });
 
   it("throws when the refresh reports an error", async () => {
-    refreshSessionMock.mockResolvedValue({
-      data: { session: null },
+    getUserMock.mockResolvedValue({
+      data: { user: null },
       error: new Error("refresh failed"),
     });
 
     await expect(reconcileFlutterwaveStatus()).rejects.toThrow(
       "refresh failed",
     );
-    expect(supabase.auth.refreshSession).toHaveBeenCalledTimes(1);
+    expect(supabase.auth.getUser).toHaveBeenCalledTimes(1);
   });
 });

@@ -600,3 +600,90 @@ describe("synthesizeAudio", () => {
     expect(result).toEqual(err(EkweError.SPEECH_FAIL));
   });
 });
+
+describe("synthesizeSpeech delivery", () => {
+  it("returns the provider's own file for playback, without transcoding", async () => {
+    // A preview clip is only ever played. The Ogg conversion exists for the
+    // voice-note contract WhatsApp and Telegram impose on shared audio, which
+    // does not apply to a local preview, so paying for the transcode here would
+    // be latency for no benefit.
+    const fetchSpy = mockSynthFetch("audio/mpeg");
+
+    const result = await synthesizeSpeech("hello", "en", {
+      delivery: "playback",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(transcodeMock).not.toHaveBeenCalled();
+    if (result.ok) {
+      expect(result.value.uri).toMatch(
+        /^file:\/\/\/cache\/ekwe_speech_.*\.mp3$/,
+      );
+    }
+    fetchSpy.mockRestore();
+  });
+
+  it("keeps the default shareable path on Ogg/Opus", async () => {
+    // Echo and Voice Studio hand this URI to the share sheet, so the container
+    // has to already satisfy the shared-voice-note contract.
+    const fetchSpy = mockSynthFetch("audio/wav");
+
+    const result = await synthesizeSpeech("hello", "en");
+
+    expect(transcodeMock).toHaveBeenCalled();
+    if (result.ok) {
+      expect(result.value.uri).toBe("file:///cache/ekwe_converted_test.ogg");
+    }
+    fetchSpy.mockRestore();
+  });
+
+  it("treats an explicit shareable request like the default", async () => {
+    const fetchSpy = mockSynthFetch("audio/wav");
+
+    await synthesizeSpeech("hello", "en", { delivery: "shareable" });
+
+    expect(transcodeMock).toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it("does not ask the worker for anything delivery-specific", async () => {
+    // Delivery is a client-side post-processing choice; the worker returns the
+    // same artifact either way.
+    const fetchSpy = mockSynthFetch("audio/mpeg");
+
+    await synthesizeSpeech("hello", "en", { delivery: "playback" });
+
+    expect(fetchBody().delivery).toBeUndefined();
+    fetchSpy.mockRestore();
+  });
+
+  it("gives playback the provider duration when one is reported", async () => {
+    const fetchSpy = mockSynthFetch("audio/mpeg", 200, { durationMs: 2468 });
+
+    const result = await synthesizeSpeech("hello", "en", {
+      delivery: "playback",
+    });
+
+    if (result.ok) expect(result.value.durationMs).toBe(2468);
+    fetchSpy.mockRestore();
+  });
+
+  it("names an Ogg provider file with a .ogg extension", async () => {
+    // Deepgram now answers `audio/ogg;codecs=opus`. The extension comes off the
+    // mime, so without the Ogg branch this would be written as an unknown
+    // container and the share sheet would not recognise it as a voice note.
+    const fetchSpy = mockSynthFetch("audio/ogg;codecs=opus");
+
+    const result = await synthesizeSpeech("hello", "en", {
+      delivery: "playback",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.uri).toMatch(
+        /^file:\/\/\/cache\/ekwe_speech_.*\.ogg$/,
+      );
+    }
+    fetchSpy.mockRestore();
+  });
+});

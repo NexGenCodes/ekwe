@@ -13,14 +13,14 @@ const capture = vi.hoisted(() => ({
   stopRecording: vi.fn(),
   cancelRecording: vi.fn(),
   isRecording: vi.fn(),
-  addOpusPacketListener: vi.fn(() => () => undefined),
+  addPcmChunkListener: vi.fn(() => () => undefined),
 }));
 
 const stream = vi.hoisted(() => ({
   connect: vi.fn(),
   disconnect: vi.fn(),
   addCallback: vi.fn(() => () => undefined),
-  sendOpus: vi.fn(),
+  sendPcm: vi.fn(),
 }));
 
 const batch = vi.hoisted(() => ({
@@ -179,7 +179,7 @@ describe("startDictation", () => {
       serverUrl: "wss://worker/kw",
       getToken: auth.getToken,
     });
-    expect(capture.addOpusPacketListener).toHaveBeenCalledTimes(1);
+    expect(capture.addPcmChunkListener).toHaveBeenCalledTimes(1);
   });
 });
 

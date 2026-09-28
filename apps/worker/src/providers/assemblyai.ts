@@ -3,8 +3,13 @@ import { rotateKeys } from "@/utils/keys";
 import { isHallucination } from "@/utils/hallucination";
 import { fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
 import { pollUntilReady } from "@/utils/poll";
-import { rotateWsKeys, createOpusDecodingInterceptor } from "@/utils/stream";
+import { rotateWsKeys, createStreamInterceptor } from "@/utils/stream";
 import { logger } from "@/core/logger";
+import {
+  toProviderCode,
+  type StreamRoute,
+} from "@ekwe/shared/languageCapabilities";
+import { canonicalLanguageFromName } from "@ekwe/shared/languageNames";
 
 const ASSEMBLYAI_UPLOAD = "https://api.assemblyai.com/v2/upload";
 const ASSEMBLYAI_TRANSCRIPT = "https://api.assemblyai.com/v2/transcript";
@@ -70,7 +75,7 @@ export async function stt(
       if (isAuto) {
         createBody.language_detection = true;
       } else {
-        createBody.language_code = lang;
+        createBody.language_code = toProviderCode("assemblyai", "stt", lang);
       }
 
       const createRes = await fetchWithTimeout(
@@ -153,69 +158,89 @@ export async function stt(
   }>();
   const durationMs = finalData.duration ? finalData.duration * 1000 : undefined;
   if (!isHallucination(finalData.text, durationMs)) {
+    // Folded through the shared resolver like every other provider, so the
+    // field is a canonical code or absent rather than whatever spelling the
+    // provider used.
+    const detected = canonicalLanguageFromName(finalData.language);
     return {
       text: finalData.text,
       provider: "assemblyai",
       duration: finalData.duration,
-      language: finalData.language,
+      ...(detected ? { language: detected } : {}),
     };
   }
 
   return null;
 }
 
+interface AssemblyAiMessage {
+  type?: string;
+  text?: string;
+  end_of_turn?: boolean;
+  turn_is_formatted?: boolean;
+  language_code?: string;
+}
+
+/**
+ * AssemblyAI `/v3/ws` with `u3-rt-pro`, which takes `pcm_s16le` directly and
+ * covers six languages. A turn completes only when `end_of_turn` *and*
+ * `turn_is_formatted` are both true; the first final alone is unformatted.
+ */
 export async function sttStream(
   env: Env,
+  route: StreamRoute,
   lang: string,
   clientWs: WebSocket,
   signal: AbortSignal,
 ): Promise<boolean> {
+  const params = new URLSearchParams({
+    speech_model: route.model,
+    encoding: "pcm_s16le",
+    sample_rate: "16000",
+    // Low enough that a clause boundary does not split an utterance, high
+    // enough that a user who has stopped talking still sees their text.
+    min_turn_silence: "200",
+    max_turn_silence: "1600",
+  });
+  if (lang && lang !== "auto") {
+    params.set("language_code", toProviderCode("assemblyai", "stt", lang));
+  }
+
   const aaiWs = await rotateWsKeys(env, "ASSEMBLYAI_KEY_", (key) => {
-    const params = new URLSearchParams({
-      sample_rate: "16000",
-      token: key,
-    });
-    if (lang && lang !== "auto") params.set("language_code", lang);
-    return `wss://api.assemblyai.com/v2/realtime/ws?${params}`;
+    const withKey = new URLSearchParams(params);
+    withKey.set("token", key);
+    return `wss://streaming.assemblyai.com/v3/ws?${withKey}`;
   });
   if (!aaiWs) return false;
 
-  createOpusDecodingInterceptor(
+  createStreamInterceptor(
     clientWs,
     aaiWs,
     (data) => {
       try {
-        const payload = JSON.parse(data) as {
-          message_type?: string;
-          text?: string;
-        };
-        if (
-          payload.message_type === "PartialTranscript" ||
-          payload.message_type === "FinalTranscript"
-        ) {
-          const text = payload.text;
-          const isFinal = payload.message_type === "FinalTranscript";
-
-          if (text && !isHallucination(text)) {
-            clientWs.send(
-              JSON.stringify({
-                type: isFinal ? "final" : "interim",
-                text,
-                provider: "assemblyai",
-              }),
-            );
-          }
-        }
+        const payload = JSON.parse(data) as AssemblyAiMessage;
+        if (payload.type !== "Turn") return;
+        const isFinal =
+          payload.end_of_turn === true && payload.turn_is_formatted !== false;
+        if (!isFinal) return;
+        const text = payload.text;
+        if (!text || isHallucination(text)) return;
+        clientWs.send(
+          JSON.stringify({
+            type: "final",
+            text,
+            provider: "assemblyai",
+            ...(payload.language_code
+              ? { language: canonicalLanguageFromName(payload.language_code) }
+              : {}),
+          }),
+        );
       } catch {
         /* ignore parse errors */
       }
     },
-    false,
-    16000,
-    signal,
+    { signal },
   );
 
   return true;
 }
-
-export { ALL_LANGUAGES as supportedLanguages } from "@/core/languages";

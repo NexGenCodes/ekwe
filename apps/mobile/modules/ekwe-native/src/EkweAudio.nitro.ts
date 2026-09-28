@@ -5,7 +5,8 @@ export interface EkweAudio extends HybridObject<{
   android: "c++";
 }> {
   // Callbacks — set from JS, invoked from native capture thread
-  onOpusPacket: (packet: ArrayBuffer, amplitude: number) => void;
+  // Named for its original role; live capture now delivers PCM16 LE frames.
+  onOpusPacket: (pcm: ArrayBuffer, amplitude: number) => void;
   onVadSilence: () => void;
 
   // Sync amplitude read — called from JS thread at 60fps via rAF

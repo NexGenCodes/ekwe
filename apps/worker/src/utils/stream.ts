@@ -1,9 +1,7 @@
 import { Env } from "@/core/types";
 import { logger } from "@/core/logger";
 import { withTimeout } from "@/utils/timeout";
-import { decodeOpusFrame, isOpusDecoderReady } from "@/utils/opus";
-import { pcmToWav } from "@/utils/wav";
-import { mergePcmFrames } from "@/utils/pcm";
+import { providerKeys } from "@/utils/keys";
 
 const WS_OPEN_TIMEOUT_MS = 5_000;
 
@@ -43,29 +41,10 @@ export async function rotateWsKeys(
   prefix: string,
   buildUrl: (key: string) => string,
 ): Promise<WebSocket | null> {
-  const keys = Object.keys(env)
-    .filter((k) => k.startsWith(prefix))
-    .map((k) => {
-      const v = env[k];
-      return typeof v === "string" ? v.replace(/[^\x20-\x7E]/g, "").trim() : "";
-    })
-    .filter((k) => k.length > 10);
-
-  if (keys.length === 0) return null;
-
-  const arr = new Uint32Array(keys.length);
-  crypto.getRandomValues(arr);
-  const shuffled = keys
-    .map((k, i) => ({ k, r: arr[i] }))
-    .sort((a, b) => a.r - b.r)
-    .map(({ k }) => k);
-
-  for (const key of shuffled) {
-    const url = buildUrl(key);
-    const ws = await openWebSocket(url);
+  for (const key of providerKeys(env, prefix)) {
+    const ws = await openWebSocket(buildUrl(key));
     if (ws) return ws;
   }
-
   return null;
 }
 
@@ -87,9 +66,10 @@ function createInterceptor(
     handleClientBytes?: (data: Uint8Array) => void;
     flush?: () => void;
     signal?: AbortSignal;
+    onProviderGone?: (reason: "close" | "error") => void;
   } = {},
 ): () => void {
-  const { handleClientBytes, flush, signal } = hooks;
+  const { handleClientBytes, flush, signal, onProviderGone } = hooks;
   let isClosed = false;
 
   function closeBoth(): void {
@@ -114,9 +94,14 @@ function createInterceptor(
   const forwardBytes = (data: Uint8Array): void => {
     if (handleClientBytes) {
       handleClientBytes(data);
-    } else {
-      providerWs.send(data.buffer as ArrayBuffer);
+      return;
     }
+    // A view can be a window onto a larger buffer: only the window is audio.
+    const wholeBuffer =
+      data.byteOffset === 0 && data.byteLength === data.buffer.byteLength;
+    providerWs.send(
+      (wholeBuffer ? data.buffer : data.slice().buffer) as ArrayBuffer,
+    );
   };
 
   const handleClientMessage = (event: MessageEvent): void => {
@@ -129,6 +114,15 @@ function createInterceptor(
         });
       } else if (event.data instanceof ArrayBuffer) {
         forwardBytes(new Uint8Array(event.data));
+      } else if (ArrayBuffer.isView(event.data)) {
+        // A client adapter replays held frames as views, not buffers.
+        forwardBytes(
+          new Uint8Array(
+            event.data.buffer,
+            event.data.byteOffset,
+            event.data.byteLength,
+          ),
+        );
       } else if (typeof event.data === "string") {
         try {
           const payload = JSON.parse(event.data) as { type?: string };
@@ -164,11 +158,26 @@ function createInterceptor(
     }
   };
 
+  /** Detaches only the provider; the client socket stays open for failover. */
+  const detachProvider = (): void => {
+    clientWs.removeEventListener("message", onClientMessage);
+    clientWs.removeEventListener("close", onClientClose);
+    clientWs.removeEventListener("error", onClientError);
+    providerWs.removeEventListener("message", onProviderMessageEvent);
+    providerWs.removeEventListener("close", onProviderClose);
+    providerWs.removeEventListener("error", onProviderError);
+    signal?.removeEventListener("abort", abortProviderOnly);
+  };
+
   const onProviderClose = (): void => {
     drain();
-    closeBoth();
+    detachProvider();
+    onProviderGone?.("close");
   };
-  const onProviderError = (): void => closeBoth();
+  const onProviderError = (): void => {
+    detachProvider();
+    onProviderGone?.("error");
+  };
 
   clientWs.addEventListener("message", onClientMessage);
   clientWs.addEventListener("close", onClientClose);
@@ -220,57 +229,43 @@ function createInterceptor(
   };
 }
 
-export function createOpusDecodingInterceptor(
-  clientWs: WebSocket,
-  providerWs: WebSocket,
-  onProviderMessage: (data: string) => void,
-  wrapInWav: boolean = false,
-  sampleRate: number = 16000,
-  signal?: AbortSignal,
-): () => void {
-  let pcmBuffer: Int16Array[] = [];
-
-  const flushPcm = (): void => {
-    if (pcmBuffer.length === 0) return;
-
-    const merged = mergePcmFrames(pcmBuffer);
-    pcmBuffer = [];
-
-    if (wrapInWav) {
-      const wav = pcmToWav(merged, sampleRate);
-      providerWs.send(wav.buffer as ArrayBuffer);
-    } else {
-      providerWs.send(merged.buffer as ArrayBuffer);
-    }
-  };
-
-  return createInterceptor(clientWs, providerWs, onProviderMessage, {
-    handleClientBytes: (data) => {
-      if (isOpusDecoderReady()) {
-        const pcm = decodeOpusFrame(data, sampleRate);
-        if (pcm) {
-          pcmBuffer.push(pcm);
-
-          if (pcmBuffer.length >= 10) {
-            flushPcm();
-          }
-        }
-      } else {
-        providerWs.send(data);
-      }
-    },
-    flush: flushPcm,
-    signal,
-  });
-}
-
+/**
+ * Pumps client audio to the provider and provider events back, both plain PCM16.
+ * `headerPrefix` is sent once per session; per flush it would concatenate.
+ */
 export function createStreamInterceptor(
   clientWs: WebSocket,
   providerWs: WebSocket,
   onProviderMessage: (data: string) => void,
-  signal?: AbortSignal,
+  options: {
+    signal?: AbortSignal;
+    headerPrefix?: Uint8Array;
+    onProviderGone?: (reason: "close" | "error") => void;
+  } = {},
 ): () => void {
+  const { signal, headerPrefix, onProviderGone } = options;
+  let headerSent = false;
+
+  const sendAudio = (data: Uint8Array): void => {
+    if (headerPrefix && !headerSent) {
+      headerSent = true;
+      providerWs.send(headerPrefix.buffer as ArrayBuffer);
+    }
+    // A view can be a window onto a larger buffer: only the window is audio.
+    const wholeBuffer =
+      data.byteOffset === 0 && data.byteLength === data.buffer.byteLength;
+    providerWs.send(
+      (wholeBuffer ? data.buffer : data.slice().buffer) as ArrayBuffer,
+    );
+  };
+
   return createInterceptor(clientWs, providerWs, onProviderMessage, {
+    handleClientBytes: sendAudio,
     signal,
+    // The client end may be a buffering adapter rather than a real socket.
+    onProviderGone:
+      onProviderGone ??
+      (clientWs as { onProviderGone?: (r: "close" | "error") => void })
+        .onProviderGone,
   });
 }

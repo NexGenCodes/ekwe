@@ -226,7 +226,41 @@ describe("createStreamInterceptor", () => {
     cleanup();
   });
 
-  test("closes both sockets when the provider closes", () => {
+  test("leaves the client open and reports the provider gone when it closes", () => {
+    const { client, provider } = makePair();
+    const onProviderGone = vi.fn();
+    const cleanup = createStreamInterceptor(
+      client as unknown as WebSocket,
+      provider as unknown as WebSocket,
+      vi.fn(),
+      { onProviderGone },
+    );
+
+    provider.emit("close", {});
+
+    expect(onProviderGone).toHaveBeenCalledWith("close");
+    expect(client.closed).toBe(false);
+    cleanup();
+  });
+
+  test("reports the provider gone on a provider error", () => {
+    const { client, provider } = makePair();
+    const onProviderGone = vi.fn();
+    const cleanup = createStreamInterceptor(
+      client as unknown as WebSocket,
+      provider as unknown as WebSocket,
+      vi.fn(),
+      { onProviderGone },
+    );
+
+    provider.emit("error", {});
+
+    expect(onProviderGone).toHaveBeenCalledWith("error");
+    expect(client.closed).toBe(false);
+    cleanup();
+  });
+
+  test("forwards only the window of a view payload, as a replaying adapter sends", () => {
     const { client, provider } = makePair();
     const cleanup = createStreamInterceptor(
       client as unknown as WebSocket,
@@ -234,10 +268,28 @@ describe("createStreamInterceptor", () => {
       vi.fn(),
     );
 
-    provider.emit("close", {});
+    const backing = new Uint8Array([9, 9, 1, 2, 3, 4, 9, 9]);
+    client.emit("message", { data: backing.subarray(2, 6) });
 
-    expect(client.closed).toBe(true);
-    expect(provider.closed).toBe(true);
+    expect(Array.from(new Uint8Array(provider.sent[0] as ArrayBuffer))).toEqual(
+      [1, 2, 3, 4],
+    );
+    cleanup();
+  });
+
+  test("stops forwarding once the provider is gone", () => {
+    const { client, provider } = makePair();
+    const cleanup = createStreamInterceptor(
+      client as unknown as WebSocket,
+      provider as unknown as WebSocket,
+      vi.fn(),
+      { onProviderGone: vi.fn() },
+    );
+
+    provider.emit("close", {});
+    client.emit("message", { data: new ArrayBuffer(4) });
+
+    expect(provider.sent).toHaveLength(0);
     cleanup();
   });
 });

@@ -269,13 +269,12 @@ class SyncServiceClass {
         type: translation ? "translation" : "transcription",
       });
 
-      this.pushToCloud(existing.id, userId).catch((err) =>
-        logger.error(
-          "[Sync] pushToCloud (capture update) failed",
-          existing.id,
-          err,
-        ),
-      );
+      // Through the batch drain, never a private single-row push. `pushToCloud`
+      // read the pending outbox independently of `runDrain`, so a capture
+      // rewritten while a batch was in flight was pushed twice, and its
+      // failure path could bump the retry counter on a row the batch had
+      // already deleted. Both writers now go through one serialized queue.
+      this.scheduleDrain();
 
       return existing.id;
     }
@@ -415,9 +414,7 @@ class SyncServiceClass {
 
     history$[entry.id].set(entry);
 
-    this.pushToCloud(entry.id, userId).catch((err) =>
-      logger.error("[Sync] pushToCloud for restore failed", entry.id, err),
-    );
+    this.scheduleDrain();
   }
 
   purgeLocalHistory(userId: string): void {
@@ -467,74 +464,6 @@ class SyncServiceClass {
     }, 500);
   }
 
-  private async pushToCloud(id: string, userId: string): Promise<void> {
-    try {
-      const online = await checkIsOnline();
-      if (!online) return;
-
-      const rows = Db.getPendingOutbox(userId);
-      const row = rows.find((r) => r.id === id);
-      if (!row) return;
-
-      Db.markOutboxInFlight(id);
-
-      const parsed = historyOutboxPayloadSchema.safeParse(
-        JSON.parse(row.payload),
-      );
-      if (!parsed.success) {
-        throw new Error(
-          `Invalid outbox payload: ${
-            parsed.error.issues[0]?.message ?? "unknown validation error"
-          }`,
-        );
-      }
-      const payload = parsed.data;
-
-      if (payload.action === "delete") {
-        const targetId = payload.id || row.id;
-        const { error } = await supabase
-          .from("history")
-          .delete()
-          .eq("id", targetId);
-        if (error) throw toError(error);
-      } else if (payload.action === "delete_all") {
-        const { error } = await supabase
-          .from("history")
-          .delete()
-          .eq("user_id", row.userId);
-        if (error) throw toError(error);
-      } else {
-        const { error } = await supabase.from("history").upsert({
-          id: row.id,
-          user_id: row.userId,
-          type: payload.type,
-          capture_id: payload.capture_id ?? null,
-          origin: payload.origin ?? "echo",
-          input: payload.input ?? "audio",
-          source_lang: payload.source_lang,
-          target_lang: payload.target_lang,
-          transcript: payload.transcript,
-          translation_text: payload.translation_text,
-          transliteration_text: payload.transliteration_text,
-          duration: payload.duration,
-          source_app: payload.source_app ?? "",
-          voice_id: payload.voice_id ?? null,
-          stt_provider: payload.stt_provider ?? "",
-          mt_provider: payload.mt_provider ?? null,
-          created_at: payload.created_at,
-        });
-        if (error) throw toError(error);
-      }
-
-      Db.deleteOutbox(id);
-      logger.info("[Sync] Pushed entry/delete to cloud", id);
-    } catch (err) {
-      Db.incrementOutboxRetry(id);
-      this.refreshDeadCount();
-      logger.error("[Sync] Push failed for entry", id, err);
-    }
-  }
-
   drain(): Promise<void> {
     const next = this.drainQueue.then(
       () => this.runDrain(),
@@ -550,6 +479,14 @@ class SyncServiceClass {
   private async runDrain(): Promise<void> {
     let entries: OutboxRow[] = [];
     const attempted = new Set<string>();
+    /**
+     * Rows whose payload we could not read. They are counted in `entries` but
+     * must not be deleted on success: the row may be a truncated write rather
+     * than a corrupt one, and deleting it would drop the capture with no
+     * record that it ever existed. They go back through the retry path and end
+     * up `dead` — visible to the user — instead of vanishing.
+     */
+    const unparsed = new Set<string>();
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), DRAIN_TIMEOUT_MS);
 
@@ -620,6 +557,7 @@ class SyncServiceClass {
           }
         } catch (e) {
           logger.error("[Sync] Invalid payload in outbox", entry.id, e);
+          unparsed.add(entry.id);
           Db.incrementOutboxRetry(entry.id);
         }
       }
@@ -651,6 +589,7 @@ class SyncServiceClass {
       }
 
       for (const entry of entries) {
+        if (unparsed.has(entry.id)) continue;
         Db.deleteOutbox(entry.id);
       }
       logger.info(
@@ -660,6 +599,20 @@ class SyncServiceClass {
         toDelete.length,
         "deletes.",
       );
+
+      // What is still queued after a *successful* push is either a row that
+      // arrived mid-drain or a row that keeps being re-enqueued. Logging the
+      // ids is the only way to tell those two apart from the outside, and it
+      // is what turns "the drain log repeats" into an answerable question.
+      const remaining = Db.getPendingOutbox(userId).filter(
+        (row) => !unparsed.has(row.id),
+      );
+      if (remaining.length > 0) {
+        logger.info(
+          "[Sync] Outbox still queued after drain:",
+          remaining.map((row) => row.id),
+        );
+      }
     } catch (rawErr) {
       const err = toError(rawErr);
       const isTimeout = err.name === "AbortError";

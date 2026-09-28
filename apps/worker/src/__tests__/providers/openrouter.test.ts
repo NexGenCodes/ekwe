@@ -31,6 +31,52 @@ describe("OpenRouter provider", () => {
       expect(result!.duration).toBe(3.0);
     });
 
+    test("folds a detected language name back to a canonical code", async () => {
+      // OpenRouter proxies the same Whisper model Groq does and mirrors its
+      // verbose_json shape, so the detected language arrives as an English name.
+      // Unverified against the live API (the test account has no audio credit),
+      // which is exactly why it is pinned here: a name reaching storage
+      // unresolved would mislabel the transcript.
+      server.use(
+        http.post(PROVIDER_URLS.openrouterTranscriptions, () =>
+          jsonResponse({
+            text: "Bonjour le monde",
+            duration: 2.0,
+            language: "French",
+          }),
+        ),
+      );
+
+      const result = await openrouter.stt(
+        makeAudioBlob(),
+        "auto",
+        mockEnv(),
+        mockSignal(),
+      );
+      expect(result?.language).toBe("fr");
+    });
+
+    test("omits a detected language we do not carry", async () => {
+      server.use(
+        http.post(PROVIDER_URLS.openrouterTranscriptions, () =>
+          jsonResponse({
+            text: "a greeting nobody catalogued",
+            duration: 1.0,
+            language: "Fijian",
+          }),
+        ),
+      );
+
+      const result = await openrouter.stt(
+        makeAudioBlob(),
+        "auto",
+        mockEnv(),
+        mockSignal(),
+      );
+      expect(result).not.toBeNull();
+      expect(result).not.toHaveProperty("language");
+    });
+
     test("returns null on HTTP error", async () => {
       server.use(
         http.post(PROVIDER_URLS.openrouterTranscriptions, () =>

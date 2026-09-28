@@ -16,17 +16,20 @@ export function trackBillableSuccess(
 ): void {
   if (!ctx) return;
   ctx.waitUntil(
-    consumeUsage(env, userId, type, charCount).finally(async () => {
-      try {
-        // Only this usage type's entry is stale now. Deleting the untyped key
-        // would no longer evict anything, and evicting the sibling types would
-        // throw away cache entries that are still valid.
-        await env.EKWE_KV.delete(preflightCacheKey(userId, type));
-      } catch {
-        // A stale cache entry self-expires in 2s and never blocks quota
-        // enforcement for long; swallowing here keeps the request path clean.
-      }
-    }),
+    consumeUsage(env, userId, type, charCount)
+      // A rejection here reaches waitUntil and kills the isolate.
+      .catch(() => {})
+      .finally(async () => {
+        try {
+          // Only this usage type's entry is stale now. Deleting the untyped key
+          // would no longer evict anything, and evicting the sibling types would
+          // throw away cache entries that are still valid.
+          await env.EKWE_KV.delete(preflightCacheKey(userId, type));
+        } catch {
+          // A stale cache entry self-expires in 2s and never blocks quota
+          // enforcement for long; swallowing here keeps the request path clean.
+        }
+      }),
   );
 }
 

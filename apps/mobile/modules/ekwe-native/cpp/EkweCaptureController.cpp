@@ -1,4 +1,5 @@
 #include "EkweCaptureController.h"
+#include "EkweAudioDecoder.h"
 
 #include <algorithm>
 #include <cmath>
@@ -17,7 +18,6 @@ namespace ekwe {
 CaptureController::CaptureController(uint32_t sample_rate,
                                      uint16_t channels,
                                      const std::string& output_path,
-                                     const std::string& caf_output_path,
                                      CaptureMode mode,
                                      bool enable_dc_filter)
     : ok_(false)
@@ -37,22 +37,18 @@ CaptureController::CaptureController(uint32_t sample_rate,
     , vad_silence_detected_(false)
     , consecutive_silence_frames_(0)
     , silence_frame_threshold_(400) // 8s at 20ms frames
-    , vad_speech_debounce_(0)
-    , vad_hangover_(0)
-    , vad_speech_active_(false)
+    , preroll_frames_(0)
+    , speech_started_(false)
     , opus_encoder_(sample_rate, channels, 10)
     , ogg_muxer_(output_path, sample_rate, 1)
-    , caf_muxer_(nullptr)
-    , rms_count_(0)
     , staging_read_pos_(0)
     , staging_write_pos_(0)
 {
     ALOG("constructor: sr=%d ch=%d mode=%d", sample_rate, channels, (int)mode);
-    if (!opus_encoder_.is_ok()) {
+    if (mode_ == CaptureMode::FILE && !opus_encoder_.is_ok()) {
         ALOG("constructor: opus encoder not ok");
         return;
     }
-    ALOG("constructor: opus encoder ok");
     if (mode_ == CaptureMode::FILE && !ogg_muxer_.is_ok()) {
         ALOG("constructor: ogg muxer not ok");
         return;
@@ -79,21 +75,6 @@ CaptureController::CaptureController(uint32_t sample_rate,
             return;
         }
         ALOG("constructor: comment written");
-
-        // Sibling Opus-in-CAF for native iOS playback. Non-fatal: a failed CAF
-        // just falls back to the remux path in JS (no .caf file → sibling check
-        // misses). Pre-skip is expressed in 48 kHz samples for the CAF cookie.
-        if (!caf_output_path.empty()) {
-            const int caf_pre_skip =
-                static_cast<int>(static_cast<uint64_t>(opus_encoder_.lookahead()) * 48000 / sample_rate_);
-            caf_muxer_.reset(new CafMuxer(caf_output_path, 48000, channels));
-            if (!caf_muxer_->write_opus_header(channels, caf_pre_skip, sample_rate_)) {
-                ALOG("constructor: caf write_opus_header failed — continuing without CAF");
-                caf_muxer_.reset();
-            } else {
-                ALOG("constructor: caf header written");
-            }
-        }
     }
 
     active_ = true;
@@ -107,110 +88,137 @@ CaptureController::~CaptureController() {
     }
 }
 
-bool CaptureController::feed_pcm(const int16_t* data, size_t num_samples) {
-    if (!ok_ || !active_) return false;
-
-    if (num_samples > staging_buffer_.size()) {
-        num_samples = staging_buffer_.size();
+size_t CaptureController::reserve_staging(size_t needed) {
+    if (needed > staging_buffer_.size()) {
+        needed = staging_buffer_.size();
     }
-    
-    size_t unread = staging_write_pos_ - staging_read_pos_;
-    if (staging_write_pos_ + num_samples > staging_buffer_.size()) {
+
+    const size_t unread = staging_write_pos_ - staging_read_pos_;
+    if (staging_write_pos_ + needed > staging_buffer_.size()) {
         if (unread > 0) {
-            std::memmove(staging_buffer_.data(), staging_buffer_.data() + staging_read_pos_, unread * sizeof(int16_t));
+            std::memmove(staging_buffer_.data(),
+                         staging_buffer_.data() + staging_read_pos_,
+                         unread * sizeof(int16_t));
         }
         staging_read_pos_ = 0;
         staging_write_pos_ = unread;
     }
-    
-    // If it still doesn't fit, clip it (buffer overflow protection)
-    if (staging_write_pos_ + num_samples > staging_buffer_.size()) {
-        num_samples = staging_buffer_.size() - staging_write_pos_;
-    }
 
-    std::memcpy(staging_buffer_.data() + staging_write_pos_, data, num_samples * sizeof(int16_t));
-    staging_write_pos_ += num_samples;
+    return staging_buffer_.size() - staging_write_pos_;
+}
 
-    // Process complete frames
-    size_t samples_per_frame = frame_size_ * channels_;
+void CaptureController::process_staged_frames() {
+    const size_t samples_per_frame = frame_size_ * channels_;
     while (staging_write_pos_ - staging_read_pos_ >= samples_per_frame) {
         process_frame(staging_buffer_.data() + staging_read_pos_, frame_size_);
         // If process_frame called stop() (e.g. VAD auto-stop), the buffer was
         // already consumed — exit immediately to avoid UB on invalid iterators.
-        if (!active_) break;
+        if (!active_) return;
         staging_read_pos_ += samples_per_frame;
     }
+}
 
-    return true;
+bool CaptureController::feed_pcm(const int16_t* data, size_t num_samples) {
+    if (!ok_ || !active_) return false;
+
+    // Loop rather than clipping: a caller may hand over more than the staging
+    // buffer holds (a whole buffer from the platform callback, or a test
+    // feeding a long take), and dropping the remainder would silently lose
+    // audio mid-recording.
+    while (num_samples > 0 && active_) {
+        const size_t room = reserve_staging(num_samples);
+        if (room == 0) break;
+
+        const size_t chunk = num_samples < room ? num_samples : room;
+        std::memcpy(staging_buffer_.data() + staging_write_pos_, data,
+                    chunk * sizeof(int16_t));
+        staging_write_pos_ += chunk;
+        data += chunk;
+        num_samples -= chunk;
+
+        process_staged_frames();
+    }
+
+    return active_;
 }
 
 bool CaptureController::feed_pcm_float(const float* data, size_t num_samples) {
     if (!active_) return false;
-    
-    if (num_samples > staging_buffer_.size()) {
-        num_samples = staging_buffer_.size();
-    }
-    
-    size_t unread = staging_write_pos_ - staging_read_pos_;
-    if (staging_write_pos_ + num_samples > staging_buffer_.size()) {
-        if (unread > 0) {
-            std::memmove(staging_buffer_.data(), staging_buffer_.data() + staging_read_pos_, unread * sizeof(int16_t));
+
+    while (num_samples > 0 && active_) {
+        const size_t room = reserve_staging(num_samples);
+        if (room == 0) break;
+
+        const size_t chunk = num_samples < room ? num_samples : room;
+        int16_t* dest = staging_buffer_.data() + staging_write_pos_;
+        for (size_t i = 0; i < chunk; ++i) {
+            float sample = data[i];
+            if (sample > 1.0f) sample = 1.0f;
+            else if (sample < -1.0f) sample = -1.0f;
+            dest[i] = sample >= 0.0f
+                ? static_cast<int16_t>(sample * 32767.0f)
+                : static_cast<int16_t>(sample * 32768.0f);
         }
-        staging_read_pos_ = 0;
-        staging_write_pos_ = unread;
-    }
-    
-    // If it still doesn't fit, clip it (buffer overflow protection)
-    if (staging_write_pos_ + num_samples > staging_buffer_.size()) {
-        num_samples = staging_buffer_.size() - staging_write_pos_;
+        staging_write_pos_ += chunk;
+        data += chunk;
+        num_samples -= chunk;
+
+        process_staged_frames();
     }
 
-    int16_t* dest = staging_buffer_.data() + staging_write_pos_;
-    for (size_t i = 0; i < num_samples; ++i) {
-        float sample = data[i];
-        if (sample > 1.0f) sample = 1.0f;
-        else if (sample < -1.0f) sample = -1.0f;
-        dest[i] = sample >= 0.0f ? 
-            static_cast<int16_t>(sample * 32767.0f) : 
-            static_cast<int16_t>(sample * 32768.0f);
-    }
-    staging_write_pos_ += num_samples;
-
-    // Process complete frames
-    size_t samples_per_frame = frame_size_ * channels_;
-    while (staging_write_pos_ - staging_read_pos_ >= samples_per_frame) {
-        process_frame(staging_buffer_.data() + staging_read_pos_, frame_size_);
-        if (!active_) break;
-        staging_read_pos_ += samples_per_frame;
-    }
-
-    return true;
+    return active_;
 }
 
 bool CaptureController::stop() {
     if (!active_) return false;
     active_ = false;
 
-    // Flush remaining staging buffer (pad with silence)
-    size_t unread = staging_write_pos_ - staging_read_pos_;
-    if (unread > 0) {
-        size_t samples_per_frame = frame_size_ * channels_;
-        size_t padding = (samples_per_frame - (unread % samples_per_frame)) % samples_per_frame;
-        if (padding > 0) {
-             std::memset(staging_buffer_.data() + staging_write_pos_, 0, padding * sizeof(int16_t));
-             staging_write_pos_ += padding;
-        }
-        while (staging_write_pos_ - staging_read_pos_ >= samples_per_frame) {
-             process_frame(staging_buffer_.data() + staging_read_pos_, frame_size_);
-             staging_read_pos_ += samples_per_frame;
-        }
+    // Flush the staging buffer, zero-padding the last partial frame.
+    const size_t samples_per_frame = frame_size_ * channels_;
+    while (staging_write_pos_ - staging_read_pos_ >= samples_per_frame) {
+        process_frame(staging_buffer_.data() + staging_read_pos_, frame_size_);
+        staging_read_pos_ += samples_per_frame;
+    }
+
+    const size_t tail = staging_write_pos_ - staging_read_pos_;
+    if (tail > 0) {
+        // Pad into scratch rather than into staging_buffer_. A call that fills
+        // the buffer and leaves a partial frame behind leaves no room there, and
+        // writing the pad in place overflows the array.
+        std::vector<int16_t> padded(samples_per_frame, 0);
+        std::memcpy(padded.data(),
+                    staging_buffer_.data() + staging_read_pos_,
+                    tail * sizeof(int16_t));
+        process_frame(padded.data(), frame_size_);
+        staging_read_pos_ = staging_write_pos_;
     }
 
     if (mode_ == CaptureMode::FILE) {
+        // A take that never reached speech would finalize an Ogg with no
+        // packets, which iOS cannot remux. Write the buffered lead-in so the
+        // artifact is valid even when it is only silence.
+        if (!speech_started_ && !preroll_.empty()) {
+            flush_preroll();
+        }
         ogg_muxer_.finalize();
-        if (caf_muxer_) {
-            caf_muxer_->finalize();
-            caf_muxer_.reset();
+
+        // Derive the waveform from the file we just finished writing, using the
+        // same decode + waveform code the shared/imported path uses. The old
+        // approach accumulated a per-frame RMS history during capture and
+        // approximated a waveform from it, which cannot match a decoded file:
+        // it blended peak and mean, floored every bin at 0.02, and was capped by
+        // a fixed 9000-entry buffer that silently dropped the start of any long
+        // recording. Re-reading the artifact is slower by one decode but is the
+        // only way both paths can agree.
+        //
+        // A failure here is not fatal to the recording: the Ogg is already
+        // finalized and valid, so stop() reports the waveform as unavailable
+        // rather than discarding the user's audio.
+        const DecodeResult analysis = analyze_audio_file(ogg_muxer_.path());
+        if (analysis.success) {
+            waveform_ = analysis.waveform;
+        } else {
+            ALOG("stop: waveform analysis failed: %s", analysis.error_message.c_str());
         }
     }
 
@@ -232,17 +240,6 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
         sum_sq += s * s;
     }
     current_rms_ = static_cast<float>(std::sqrt(sum_sq / total) / 32768.0);
-    if (rms_count_ < 9000) {
-        rms_history_[rms_count_++] = current_rms_;
-    }
-
-    if (rms_count_ >= 9000) {
-        size_t write_idx = 0;
-        for (size_t i = 0; i < 8999; i += 2) {
-            rms_history_[write_idx++] = std::max(rms_history_[i], rms_history_[i+1]);
-        }
-        rms_count_ = write_idx;
-    }
 
     // Apply DC blocker and Normalize in a reusable local buffer
     static thread_local std::vector<int16_t> scratch_buffer;
@@ -254,7 +251,7 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
     }
     normalize_volume(scratch_buffer.data(), total);
 
-    // VAD: energy-based with hysteresis (both modes)
+    // VAD: energy-based silence detection for the file-mode auto-stop
     double frame_energy = 0.0;
     for (size_t i = 0; i < total; ++i) {
         double s = static_cast<double>(std::abs(scratch_buffer[i]));
@@ -277,56 +274,71 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
         } else {
             consecutive_silence_frames_ = 0;
         }
-    } else {
-        // Live mode VAD: hysteresis to suppress silence during Nigerian noise
-        if (is_speech_frame) {
-            if (vad_speech_debounce_ < kSpeechDebounceMax) {
-                vad_speech_debounce_++;
-            }
-            vad_hangover_ = kHangoverMax;
-        } else {
-            if (vad_speech_debounce_ > 0) {
-                vad_speech_debounce_--;
-            }
-            if (vad_hangover_ > 0) {
-                vad_hangover_--;
-            }
-        }
-
-        vad_speech_active_ = vad_speech_debounce_ >= kSpeechDebounceMax;
-
-        if (!vad_speech_active_ && vad_hangover_ <= 0) {
-            // Still encode to maintain encoder lookahead continuity, but suppress emit
-            std::vector<uint8_t> dummy;
-            opus_encoder_.encode_frame(scratch_buffer.data(), total, dummy);
-            total_samples_encoded_ += frame_samples;
-            granule_position_ = granule_base_48k_ + static_cast<int64_t>(total_samples_encoded_) * 48000 / sample_rate_;
-            return;
-        }
     }
 
+    if (mode_ == CaptureMode::LIVE) {
+        // The worker speaks PCM16 LE, and the capture session is already 16 kHz
+        // mono, so the frame is forwarded as-is.
+        emit_event(CaptureEvent::AUDIO_DATA,
+                   reinterpret_cast<const uint8_t*>(scratch_buffer.data()),
+                   total * sizeof(int16_t));
+        return;
+    }
+
+    // FILE mode: hold the opening silence until the VAD hears speech.
+    if (!speech_started_) {
+        preroll_.insert(preroll_.end(), scratch_buffer.begin(),
+                        scratch_buffer.begin() + total);
+        preroll_frames_++;
+
+        // The ring only needs to carry the onset, so anything older than
+        // kPrerollMs is dropped as it arrives. Without this the whole lead-in
+        // would be encoded whenever speech lands before the bound.
+        const size_t cap = static_cast<size_t>(kPrerollMs) * sample_rate_ / 1000 * channels_;
+        if (preroll_.size() > cap) {
+            preroll_.erase(preroll_.begin(),
+                           preroll_.begin() + (preroll_.size() - cap));
+        }
+
+        const int frame_ms = static_cast<int>(frame_samples * 1000 / sample_rate_);
+        const bool onset_heard = is_speech_frame;
+        const bool lead_in_spent =
+            preroll_frames_ * frame_ms >= kLeadInMaxMs;
+
+        if (!onset_heard && !lead_in_spent) return;
+
+        // Either speech started, or we waited long enough that dropping the
+        // silence is worth more than risking a clipped onset. Flush what the
+        // ring kept, which carries the first syllable.
+        flush_preroll();
+        return;
+    }
+
+    encode_frame_to_ogg(scratch_buffer.data(), total);
+}
+
+void CaptureController::flush_preroll() {
+    const size_t per_frame = frame_size_ * channels_;
+    size_t offset = 0;
+    while (offset + per_frame <= preroll_.size()) {
+        encode_frame_to_ogg(preroll_.data() + offset, per_frame);
+        offset += per_frame;
+    }
+    preroll_.clear();
+    speech_started_ = true;
+}
+
+void CaptureController::encode_frame_to_ogg(const int16_t* data, size_t total) {
     std::vector<uint8_t> opus_packet;
-    if (!opus_encoder_.encode_frame(scratch_buffer.data(), total, opus_packet)) {
+    if (!opus_encoder_.encode_frame(data, total, opus_packet)) {
         emit_event(CaptureEvent::ERROR);
         return;
     }
 
-    total_samples_encoded_ += frame_samples;
     // Ogg Opus granule position must be in 48kHz sample units per RFC 6716
+    total_samples_encoded_ += total / channels_;
     granule_position_ = granule_base_48k_ + static_cast<int64_t>(total_samples_encoded_) * 48000 / sample_rate_;
-
-    if (mode_ == CaptureMode::FILE) {
-        ogg_muxer_.write_packet(opus_packet.data(), opus_packet.size(), granule_position_);
-        if (caf_muxer_) {
-            // Each packet covers exactly one 20ms frame; in 48 kHz units that's
-            // frame_size * 48000 / sample_rate (960 at 16 kHz).
-            const uint64_t caf_frames =
-                static_cast<uint64_t>(frame_size_) * 48000 / sample_rate_;
-            caf_muxer_->write_packet(opus_packet.data(), opus_packet.size(), caf_frames);
-        }
-    } else {
-        emit_event(CaptureEvent::AUDIO_DATA, opus_packet.data(), opus_packet.size());
-    }
+    ogg_muxer_.write_packet(opus_packet.data(), opus_packet.size(), granule_position_);
 }
 
 void CaptureController::emit_event(CaptureEvent event, const uint8_t* data, size_t size) {
@@ -392,37 +404,6 @@ void CaptureController::normalize_volume(int16_t* data, size_t num_samples) {
         }
         data[i] = static_cast<int16_t>(sample);
     }
-}
-
-std::vector<float> CaptureController::get_waveform(size_t num_bins) const {
-    std::vector<float> waveform;
-    const size_t total_rms = rms_count_;
-    if (total_rms == 0 || num_bins == 0) return waveform;
-
-    if (num_bins > total_rms) {
-        num_bins = total_rms;
-    }
-    
-    waveform.resize(num_bins);
-    float mx = 0.001f;
-    for (size_t i = 0; i < num_bins; i++) {
-        size_t lo = (i * total_rms) / num_bins;
-        size_t hi = std::max(lo + 1, ((i + 1) * total_rms) / num_bins);
-        if (hi > total_rms) hi = total_rms;
-        float sum = 0, pk = 0;
-        for (size_t j = lo; j < hi; j++) {
-            float v = rms_history_[j];
-            sum += v;
-            if (v > pk) pk = v;
-        }
-        float blended = (pk + sum / (float)(hi - lo)) / 2.0f;
-        if (blended > mx) mx = blended;
-        waveform[i] = blended;
-    }
-    for (auto& v : waveform) {
-        v = std::min(1.0f, std::max(0.02f, v / mx));
-    }
-    return waveform;
 }
 
 } // namespace ekwe

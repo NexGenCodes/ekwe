@@ -22,6 +22,7 @@ OggMuxer::OggMuxer(const std::string& output_path, uint32_t sample_rate, int ser
     : ok_(false)
     , finalized_(false)
     , file_(nullptr)
+    , output_path_(output_path)
     , serial_number_(serial_number)
     , page_number_(0)
     , page_log_counter_(0)

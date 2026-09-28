@@ -41,6 +41,7 @@ add_library(ekwe_opus_util STATIC
     ../cpp/EkweOpusEncoder.cpp
     ../cpp/EkweOggMuxer.cpp
     ../cpp/EkweCafMuxer.cpp
+    ../cpp/EkweWaveform.cpp
 )
 target_include_directories(ekwe_opus_util PUBLIC
     ../cpp
@@ -64,16 +65,19 @@ target_include_directories(ekwe_audio_decoder PUBLIC
 target_link_libraries(ekwe_audio_decoder PRIVATE opusfile ekwe_opus_util)
 
 # Capture engine (CaptureController)
+# Links ekwe_audio_decoder because stop() re-decodes the finished Ogg to derive
+# the waveform through the same code the shared/imported path uses.
 add_library(ekwe_capture_engine STATIC
     ../cpp/EkweCaptureController.cpp
 )
 target_include_directories(ekwe_capture_engine PUBLIC
     ../cpp
     ../cpp/thirdparty
+    ../cpp/thirdparty/opusfile/include
     ../cpp/thirdparty/opus/include
     ../cpp/thirdparty/libogg/include
 )
-target_link_libraries(ekwe_capture_engine PRIVATE ekwe_opus_util)
+target_link_libraries(ekwe_capture_engine PRIVATE ekwe_opus_util ekwe_audio_decoder)
 
 # JNI Interface — define the target BEFORE including the Nitrogen autolinking
 # cmake, which calls target_sources() / target_link_libraries() on it.

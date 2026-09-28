@@ -10,7 +10,8 @@ import { isHallucination } from "@/utils/hallucination";
 import { mimeToExt } from "@/utils/mime";
 import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
 import { logger } from "@/core/logger";
-import { toWhisperCode, ALL_LANGUAGES } from "@/core/languages";
+import { toProviderCode } from "@ekwe/shared/languageCapabilities";
+import { canonicalLanguageFromName } from "@ekwe/shared/languageNames";
 
 const OPENROUTER_TRANSCRIBE =
   "https://openrouter.ai/api/v1/audio/transcriptions";
@@ -38,7 +39,7 @@ export async function stt(
 
       const isAuto = !lang || lang === "auto";
       if (!isAuto) {
-        body.append("language", toWhisperCode(lang));
+        body.append("language", toProviderCode("openrouter", "stt", lang));
         body.append("response_format", "json");
       } else {
         body.append("response_format", "verbose_json");
@@ -72,17 +73,22 @@ export async function stt(
     language?: string;
   }>();
   const durationMs = data.duration ? data.duration * 1000 : undefined;
+  // Same `verbose_json` shape Groq serves, from the same Whisper model: the
+  // detected language arrives as an English name and has to be folded back to a
+  // canonical code before anything compares it against franc.
+  const detected = canonicalLanguageFromName(data.language);
 
   if (data.text && !isHallucination(data.text, durationMs)) {
     logger.info("[openrouter] Transcription success", {
       length: data.text.length,
-      lang: data.language,
+      lang: detected,
     });
     return {
       text: data.text,
       provider: "openrouter",
       duration: data.duration,
-      language: data.language,
+      // Absent when unresolved — never substitute a default language.
+      ...(detected ? { language: detected } : {}),
     };
   }
 
@@ -173,5 +179,3 @@ export async function translate(
     return null;
   }
 }
-
-export const supportedLanguages = ALL_LANGUAGES;

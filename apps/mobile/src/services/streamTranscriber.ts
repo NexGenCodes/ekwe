@@ -60,8 +60,9 @@ class StreamTranscriberClass {
         this.sendJson({
           type: "config",
           lang: config.lang,
-          codec: "opus",
+          format: "pcm_s16le",
           sampleRate: 16000,
+          channels: 1,
           frameSizeMs: 20,
         });
 
@@ -107,8 +108,9 @@ class StreamTranscriberClass {
                 this.sendJson({
                   type: "config",
                   lang: this.config?.lang,
-                  codec: "opus",
+                  format: "pcm_s16le",
                   sampleRate: 16000,
+                  channels: 1,
                   frameSizeMs: 20,
                 });
               }
@@ -169,9 +171,9 @@ class StreamTranscriberClass {
     }
   }
 
-  sendOpus(data: ArrayBuffer): void {
+  sendPcm(chunk: ArrayBuffer): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(data);
+      this.ws.send(chunk);
     }
   }
 

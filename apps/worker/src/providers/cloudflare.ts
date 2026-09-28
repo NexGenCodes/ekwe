@@ -1,3 +1,4 @@
+import { bytesToBase64 } from "@/utils/base64";
 import {
   CLIENT_ABORTED,
   Env,
@@ -7,8 +8,13 @@ import {
 import { buildTranslatePrompt, parseTranslateOutput } from "@/utils/prompts";
 import { isHallucination } from "@/utils/hallucination";
 import { logger } from "@/core/logger";
-import { toWhisperCode } from "@/core/languages";
-import { bytesToBase64 } from "@/utils/base64";
+import { toProviderCode } from "@ekwe/shared/languageCapabilities";
+import { canonicalLanguageFromName } from "@ekwe/shared/languageNames";
+
+// The turbo build is the current large-v3 Whisper on Workers AI. The older
+// `@cf/openai/whisper` binding model is no longer served reliably and fails
+// outright on the audio we send, so it must not be used here.
+const WHISPER_MODEL = "@cf/openai/whisper-large-v3-turbo";
 
 export async function stt(
   blob: Blob,
@@ -18,20 +24,41 @@ export async function stt(
 ): Promise<TranscribeResult | null> {
   try {
     if (signal.aborted) throw new Error(CLIENT_ABORTED);
+
+    // The Workers AI binding serializes Blob/ArrayBuffer into a JSON
+    // object, but the Whisper endpoint expects /audio to be a base64
+    // string. Encode explicitly so the shape matches what the API
+    // actually accepts (verified against the live binding).
     const audio = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
-    const input =
-      lang && lang !== "auto"
-        ? { audio, language: toWhisperCode(lang) }
-        : { audio };
+
+    const isAuto = !lang || lang === "auto";
+    const input = isAuto
+      ? { audio }
+      : { audio, language: toProviderCode("cloudflare", "stt", lang) };
+
     const result = await env.AI.run(
-      "@cf/openai/whisper",
-      input as unknown as Ai_Cf_Openai_Whisper_Input,
+      WHISPER_MODEL,
+      input as unknown as Ai_Cf_Openai_Whisper_Large_V3_Turbo_Input,
     );
     if (signal.aborted) throw new Error(CLIENT_ABORTED);
     const text = typeof result?.text === "string" ? result.text : "";
 
     if (text && !isHallucination(text)) {
-      return { text, provider: "cloudflare" };
+      // turbo reports what it detected under transcription_info rather than a
+      // top-level field. Only trust it for auto detection; when the caller named
+      // a language we already know it, and a provider-side disagreement would
+      // just be noise. Folded through the shared resolver like every other
+      // provider's reported language, so the field is a canonical code or
+      // nothing — never a name or a guess.
+      const detected = canonicalLanguageFromName(
+        isAuto ? result?.transcription_info?.language : undefined,
+      );
+
+      return {
+        text,
+        provider: "cloudflare",
+        ...(detected ? { language: detected } : {}),
+      };
     }
   } catch (e) {
     if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
@@ -89,5 +116,3 @@ export async function translate(
 
   return null;
 }
-
-export { ALL_LANGUAGES as supportedLanguages } from "@/core/languages";

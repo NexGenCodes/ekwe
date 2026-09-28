@@ -21,17 +21,34 @@ export const cleanEchoCache = async (
 ): Promise<void> => {
   if (!uri) return;
 
+  // expo-file-system can address anything inside the cache on both platforms, so
+  // it is the primary path. The native module is a *fallback*, not an addition:
+  // on Android it resolves to the very same java.io.File.delete(), and the
+  // recorder writes through it, so an open AudioRecord handle can keep the file
+  // alive long enough for the JS-side delete to fail. Running both
+  // unconditionally deleted every cache file twice through two different APIs.
+  let needsNativeFallback = isAndroid;
+
   try {
     if (isCacheUri(uri)) {
       const f = new File(uri);
-      if (f.exists) f.delete();
-    }
-
-    if (isAndroid) {
-      await EkweNative.deleteFile(uri);
+      if (f.exists) {
+        f.delete();
+      }
+      needsNativeFallback = false;
     }
   } catch (err) {
+    // Leave the fallback armed so Android still gets a second attempt through
+    // the module that created the file.
     logger.error("[AudioCache] Cache cleanup failed:", err);
+  }
+
+  if (needsNativeFallback) {
+    try {
+      await EkweNative.deleteFile(uri);
+    } catch (err) {
+      logger.error("[AudioCache] Native cleanup failed:", err);
+    }
   }
 };
 

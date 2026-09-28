@@ -22,14 +22,18 @@ import {
 } from "@/core/voices";
 import {
   SPEECH_KV_CACHE_MAX_BYTES,
+  SPEECH_PER_PROVIDER_MS,
+  SPEECH_PIPELINE_TOTAL_MS,
   SPEECH_R2_CACHE_MAX_BYTES,
 } from "@/core/budgets";
 import { mockEnv, jsonResponse } from "@/__tests__/setup";
 import { hashKey } from "@/utils/keys";
 import { http } from "msw";
+import type { HttpResponseResolver } from "msw";
 import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 import { getVoiceSlot, VOICE_PREVIEW_TEXT } from "@ekwe/shared";
+import { LANGUAGE_CODES } from "@ekwe/shared/languages";
 
 function mp3Response(): Response {
   const mp3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00, 0x00]);
@@ -410,6 +414,37 @@ describe("speech engine (services/speech.ts)", () => {
       expect(result.isPreview).toBe(false);
       expect(result.effectiveLang).toBe("fr");
     });
+
+    test("previews in English for every catalog language, on purpose", () => {
+      // A deliberate product decision, not a gap: the sample sentence is fixed
+      // English, so pinning it keeps one cached clip per voice instead of one
+      // per language. Lifting it needs real per-language sample sentences.
+      for (const code of LANGUAGE_CODES) {
+        expect(
+          resolveEffectiveLang(VOICE_PREVIEW_TEXT, code).effectiveLang,
+        ).toBe("en");
+      }
+    });
+
+    test("mints one preview clip per voice, not per language", async () => {
+      // The cache key includes the language, so a preview that followed the
+      // selection would duplicate the same audio once per catalog language.
+      const keys = new Set(
+        await Promise.all(
+          LANGUAGE_CODES.map(async (code) => {
+            const effective = resolveEffectiveLang(VOICE_PREVIEW_TEXT, code);
+            return buildSpeechCacheKey(
+              VOICE_PREVIEW_TEXT,
+              effective.effectiveLang,
+              "female",
+              "studio",
+              "user-1",
+            );
+          }),
+        ),
+      );
+      expect(keys.size).toBe(1);
+    });
   });
 
   describe("resolveProviderVoices", () => {
@@ -728,5 +763,58 @@ describe("speech engine (services/speech.ts)", () => {
 
       expect(result).toBeNull();
     });
+
+    // A provider that accepts the request and never answers is the case that
+    // used to end every synthesis in a 503: with no per-attempt cap the first
+    // provider inherited the whole 20s budget, so the remaining providers were
+    // never tried. Real time is unavoidable here — AbortSignal.timeout is a
+    // native timer that fake timers do not drive — so this one is slow by
+    // design rather than slept to a fixed duration.
+    test("a provider that hangs is bounded and the next provider still answers", async () => {
+      // Fresh module graph on purpose: the failover cases above deliberately
+      // mark providers down, and "down" is memoized for the life of the
+      // process. Sharing the top-level import would let this case skip the
+      // provider under test and pass without ever hanging anything.
+      vi.resetModules();
+      const { runSpeechSynth: runUnpoisoned } =
+        await import("@/services/speech");
+
+      const env = mockEnv();
+      const hangUntilAborted: HttpResponseResolver = ({ request }) =>
+        new Promise<Response>((_resolve, reject) => {
+          request.signal.addEventListener("abort", () =>
+            reject(
+              request.signal.reason instanceof Error
+                ? request.signal.reason
+                : new Error("aborted"),
+            ),
+          );
+        });
+      server.use(
+        http.post(PROVIDER_URLS.geminiTtsGenerate, hangUntilAborted),
+        http.post(PROVIDER_URLS.deepgramSpeak, () => mp3Response()),
+      );
+
+      const startedAt = Date.now();
+      const result = await runUnpoisoned({
+        text: "hello",
+        lang: "en",
+        gender: "female",
+        slot: getVoiceSlot("studio"),
+        tier: "PREMIUM",
+        env,
+        signal: new AbortController().signal,
+        budgetMs: SPEECH_PIPELINE_TOTAL_MS,
+        cacheKey: null,
+      });
+      const elapsedMs = Date.now() - startedAt;
+
+      // The hanging provider is bounded at one attempt window rather than
+      // consuming the pipeline, and what it leaves behind is enough for the
+      // next provider to answer.
+      expect(result?.provider).toBe("deepgram");
+      expect(elapsedMs).toBeGreaterThanOrEqual(SPEECH_PER_PROVIDER_MS);
+      expect(elapsedMs).toBeLessThan(SPEECH_PIPELINE_TOTAL_MS);
+    }, 25_000);
   });
 });

@@ -84,6 +84,24 @@ export interface RotateKeysDetailedResult {
   lastStatus: number | null;
 }
 
+/**
+ * Usable keys for a provider, in random order so every session does not hammer
+ * the first one until it rate-limits.
+ */
+export function providerKeys(env: Env, prefix: string): string[] {
+  const keys = Object.keys(env)
+    .filter((k) => k.startsWith(prefix))
+    .map((k) => sanitizeKey(env[k]))
+    .filter((k) => k.length > 10);
+
+  const order = new Uint32Array(keys.length);
+  crypto.getRandomValues(order);
+  return keys
+    .map((k, i) => ({ k, r: order[i] }))
+    .sort((a, b) => a.r - b.r)
+    .map(({ k }) => k);
+}
+
 export async function rotateKeysDetailed(
   env: Env,
   prefix: string,

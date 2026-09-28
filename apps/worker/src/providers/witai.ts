@@ -1,11 +1,13 @@
 import { logger } from "@/core/logger";
+import { STREAM_CHUNK_MS } from "@ekwe/shared";
+import type { StreamRoute } from "@ekwe/shared/languageCapabilities";
 import {
   Env,
   CLIENT_ABORTED,
   TranscribeResult,
   SpeechAttempt,
 } from "@/core/types";
-import { sanitizeKey, rotateKeysDetailed } from "@/utils/keys";
+import { sanitizeKey } from "@/utils/keys";
 import { getWitSecretKey } from "@/utils/wit-pools";
 import { isHallucination } from "@/utils/hallucination";
 import {
@@ -15,15 +17,11 @@ import {
   TIMEOUT_SLOW,
   TIMEOUT_FAST,
 } from "@/utils/fetch";
-import { decodeOpusFrame, isOpusDecoderReady } from "@/utils/opus";
-import { pcmToWav } from "@/utils/wav";
+import { wavHeader } from "@/utils/wav";
 import { mergePcmFrames } from "@/utils/pcm";
-import { clientMessageToBytes } from "@/utils/stream";
 
 const WITAI_DICTATION = "https://api.wit.ai/dictation?v=20240304";
 const WITAI_SYNTH_URL = "https://api.wit.ai/synthesize?v=20240304";
-
-export const MAX_PENDING_OPUS_FRAMES = 512;
 
 export async function stt(
   blob: Blob,
@@ -100,8 +98,14 @@ async function parseStream(res: Response): Promise<{ text: string } | null> {
   return parseJsonStream(raw);
 }
 
+/**
+ * Wit's dictation endpoint is a chunked POST answered with newline-delimited
+ * JSON, not a socket, so it does not fit the interceptor and is the only route
+ * needing a RIFF header. It has no auto-detection: one key per language.
+ */
 export async function sttStream(
   env: Env,
+  _route: StreamRoute,
   lang: string,
   clientWs: WebSocket,
   signal: AbortSignal,
@@ -113,89 +117,60 @@ export async function sttStream(
 
   logger.info("[witai:stream] Starting dictation session", { lang });
 
-  let pcmFrames: Int16Array[] = [];
+  const header = wavHeader(16000);
+  let chunk: Int16Array[] = [];
   let lastFlush = Date.now();
   let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
-  let pendingFrames: Uint8Array[] = [];
+  let headerSent = false;
 
-  const flushPcm = (): void => {
-    if (pcmFrames.length === 0) return;
-    const merged = mergePcmFrames(pcmFrames);
-    pcmFrames = [];
-    const wav = pcmToWav(merged, 16000);
-    controllerRef?.enqueue(wav);
+  const flush = (): void => {
+    if (chunk.length === 0 || !controllerRef) return;
+    const merged = mergePcmFrames(chunk);
+    chunk = [];
+    if (!headerSent) {
+      headerSent = true;
+      controllerRef.enqueue(header);
+    }
+    controllerRef.enqueue(new Uint8Array(merged.buffer as ArrayBuffer));
   };
 
-  const handleMessage = async (event: MessageEvent): Promise<void> => {
-    const data = await clientMessageToBytes(event);
-    if (!data) return;
-
-    if (isOpusDecoderReady()) {
-      const frames = [...pendingFrames, data];
-      pendingFrames = [];
-      for (const frame of frames) {
-        const pcm = decodeOpusFrame(frame, 16000);
-        if (pcm) {
-          pcmFrames.push(pcm);
-          const now = Date.now();
-          if (now - lastFlush > 500 || pcmFrames.length >= 25) {
-            flushPcm();
-            lastFlush = now;
-          }
-        }
-      }
-    } else {
-      pendingFrames.push(data);
-      if (pendingFrames.length > MAX_PENDING_OPUS_FRAMES) {
-        pendingFrames.splice(0, pendingFrames.length - MAX_PENDING_OPUS_FRAMES);
-        logger.warn(
-          "[witai] Opus decoder late; dropping earliest pending frames",
-        );
-      }
+  const closeBody = (): void => {
+    flush();
+    if (!controllerRef) return;
+    try {
+      controllerRef.close();
+    } catch {
+      /* already closed */
     }
   };
 
   const onMessage = (event: MessageEvent): void => {
-    void handleMessage(event).catch((e) => {
-      logger.error("[witai] Stream message handler error", {
-        error: e instanceof Error ? e.message : String(e),
-      });
-    });
-  };
-
-  const onClose = (): void => {
-    flushPcm();
-    if (controllerRef) {
-      try {
-        controllerRef.close();
-      } catch {
-        /* already closed */
-      }
+    if (!(event.data instanceof ArrayBuffer)) return;
+    const data = new Uint8Array(event.data);
+    if (data.byteLength < 2) return;
+    chunk.push(
+      new Int16Array(data.buffer, data.byteOffset, data.byteLength >> 1),
+    );
+    const now = Date.now();
+    if (now - lastFlush >= STREAM_CHUNK_MS || chunk.length >= 25) {
+      flush();
+      lastFlush = now;
     }
   };
 
   const detach = (): void => {
     clientWs.removeEventListener("message", onMessage);
-    clientWs.removeEventListener("close", onClose);
+    clientWs.removeEventListener("close", closeBody);
   };
 
-  const audioStream = new ReadableStream({
+  const audioStream = new ReadableStream<Uint8Array>({
     start(controller) {
       controllerRef = controller;
-
       clientWs.addEventListener("message", onMessage);
-      clientWs.addEventListener("close", onClose);
-
+      clientWs.addEventListener("close", closeBody);
       signal.addEventListener("abort", () => {
-        flushPcm();
         detach();
-        if (controllerRef) {
-          try {
-            controllerRef.close();
-          } catch {
-            /* ignore */
-          }
-        }
+        closeBody();
       });
     },
   });
@@ -208,6 +183,7 @@ export async function sttStream(
         headers: {
           Authorization: `Bearer ${witKey}`,
           "Content-Type": "audio/wav",
+          "User-Agent": getUserAgent(),
         },
         body: audioStream,
         duplex: "half",
@@ -233,19 +209,16 @@ export async function sttStream(
     const decoder = new TextDecoder();
     let buffer = "";
 
-    while (true) {
+    for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-
       buffer += decoder.decode(value, { stream: true });
-
       const parts = buffer.split("\n");
       buffer = parts.pop() || "";
 
       for (const part of parts) {
         const trimmed = part.replace(/\r$/, "").trim();
         if (!trimmed) continue;
-
         try {
           const data = JSON.parse(trimmed) as {
             text?: string;
@@ -253,24 +226,22 @@ export async function sttStream(
             is_final?: boolean;
             error?: string;
           };
-
           if (data.error) {
             logger.error("[witai:stream] Error in stream", {
               error: data.error,
             });
             continue;
           }
-
-          if (data.text && !isHallucination(data.text)) {
-            const isFinal = data.type === "final" || data.is_final === true;
-            clientWs.send(
-              JSON.stringify({
-                type: isFinal ? "final" : "interim",
-                text: data.text,
-                provider: "witai",
-              }),
-            );
-          }
+          if (!data.text || isHallucination(data.text)) continue;
+          const isFinal = data.type === "final" || data.is_final === true;
+          clientWs.send(
+            JSON.stringify({
+              type: isFinal ? "final" : "interim",
+              text: data.text,
+              provider: "witai",
+              language: lang,
+            }),
+          );
         } catch {
           /* incomplete JSON, wait for more data */
         }
@@ -516,9 +487,46 @@ export function voices(
   return [...WITAI_VOICE_POOL.default];
 }
 
+/**
+ * Escapes a text node for the `<lang>` element below.
+ *
+ * The synthesis endpoint takes a bare `<lang xml:lang="..">` child rather than a
+ * full SSML document, so the text lands directly inside a tag and any angle
+ * bracket in user text would otherwise be parsed as markup. `&` and `'` are
+ * escaped too so the same helper is safe if the text is ever placed in an
+ * attribute.
+ */
+const escapeXmlText = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+
+/**
+ * Wraps text in the language hint that makes Wit speak it.
+ *
+ * Wit resolves a synthesis request's language from the API key, and only
+ * `WIT_KEY_EN` is accepted — every other per-language key answers
+ * `400 Unsupported language for synthesize`. English is therefore the only
+ * language that needs no hint, and is left as plain text.
+ *
+ * For anything else the hint is load-bearing rather than cosmetic. Probed with
+ * a three-sentence Tamil passage: sent plain, the endpoint returns 576 bytes of
+ * near-silence; sent wrapped, 39 KB of correctly voiced audio. A well-formed
+ * `<speak><lang>` wrapper does *not* work — the endpoint wants the bare
+ * element, and rejects the document form the same way.
+ */
+const withLanguageHint = (text: string, lang: string): string => {
+  const normalized = lang.toLowerCase().split("-")[0];
+  if (!normalized || normalized === "en") return text;
+  return `<lang xml:lang="${normalized}">${escapeXmlText(text)}</lang>`;
+};
+
 export async function tts(
   text: string,
-  _lang: string,
+  lang: string,
   env: Env,
   signal: AbortSignal,
   voice?: string,
@@ -529,37 +537,47 @@ export async function tts(
 
   const resolvedVoice =
     voice && WITAI_VOICES.has(voice) ? voice : WITAI_VOICE_POOL.default[0];
+
+  // Not rotated. The synthesis endpoint accepts only the English key, so every
+  // other key in the pool is a guaranteed 400 that rotation would walk past one
+  // at a time — about 66 wasted requests per call, against a 240/min budget
+  // shared with dictation. `getWitSecretKey` looks up the language it is given,
+  // so asking for "EN" twice also rules out borrowing another language's key,
+  // and a missing English key skips synthesis rather than trying a substitute.
+  // Dictation still rotates: there the per-language keys are the whole mechanism.
+  const witKey = sanitizeKey(await getWitSecretKey(env, "EN", "EN"));
+  if (!witKey) {
+    logger.warn("[witai:tts] Skipping: no English Wit key in the environment");
+    return { result: null, status: null };
+  }
+
   try {
-    const rotation = await rotateKeysDetailed(
-      env,
-      "WIT_KEY_",
-      (key) =>
-        fetchWithTimeout(
-          WITAI_SYNTH_URL,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${key}`,
-              Accept: "audio/mpeg",
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: new URLSearchParams({
-              q: text,
-              voice: resolvedVoice,
-              style: "default",
-              speed: "100",
-              pitch: "100",
-              fformat: "mp3",
-            }).toString(),
-          },
-          TIMEOUT_FAST,
-          signal,
-        ),
+    const response = await fetchWithTimeout(
+      WITAI_SYNTH_URL,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${witKey}`,
+          Accept: "audio/mpeg",
+          // The endpoint rejects form encoding outright with
+          // `unsupported-content-type`, and ignores `fformat` on the JSON body —
+          // `Accept` is what actually selects the container.
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          q: withLanguageHint(text, lang),
+          voice: resolvedVoice,
+          style: "default",
+          speed: "100",
+          pitch: "100",
+        }),
+      },
+      TIMEOUT_FAST,
       signal,
     );
 
-    if (!rotation.response) {
-      const status = rotation.lastStatus;
+    if (!response.ok) {
+      const status = response.status;
       if (
         status === 429 ||
         status === 503 ||
@@ -572,7 +590,7 @@ export async function tts(
       return { result: null, status: null };
     }
 
-    const bytes = new Uint8Array(await rotation.response.arrayBuffer());
+    const bytes = new Uint8Array(await response.arrayBuffer());
     if (bytes.byteLength === 0 || bytes.byteLength > MAX_SPEECH_BYTES) {
       logger.warn("[witai:tts] Output over hard cap", {
         bytes: bytes.byteLength,

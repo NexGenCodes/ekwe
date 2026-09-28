@@ -1,5 +1,10 @@
 import type { Tier } from "@/core/limits";
 
+import {
+  LANGUAGE_CAPABILITIES,
+  isLanguageSupported,
+} from "@ekwe/shared/languageCapabilities";
+
 type TranscribeProvider =
   | "witai"
   | "cohere"
@@ -26,9 +31,9 @@ const PROVIDER_PIPELINES = {
     ] as readonly TranscribeProvider[],
     PREMIUM: [
       "witai",
+      "assemblyai",
       "deepgram",
       "gladia",
-      "assemblyai",
       "groq",
       "openrouter",
       "cloudflare",
@@ -92,22 +97,19 @@ export function getSpeechProviderNames(tier: Tier): readonly string[] {
   );
 }
 
-const SPEECH_LANGUAGE_SUPPORT: Readonly<
-  Record<SpeechProvider, readonly string[] | "all">
-> = {
-  gemini: "all",
-  edge: "all",
-  deepgram: ["en", "es", "de", "fr", "nl", "it", "ja"],
-  witai: "all",
-};
-
+/**
+ * Synthesis coverage is declared once, in the shared language registry, so the
+ * picker and the router cannot disagree about which languages a voice exists
+ * for. Edge and Gemini are marked unbounded there rather than listed as "all",
+ * and Wit is bounded to its real 132-language set instead of being treated as
+ * language-agnostic.
+ */
 export function speechProviderSupports(
   provider: string,
   lang: string,
 ): boolean {
-  const supported = SPEECH_LANGUAGE_SUPPORT[provider as SpeechProvider];
-  if (!supported) return false;
-  return supported === "all" || supported.includes(lang);
+  if (!(provider in LANGUAGE_CAPABILITIES)) return false;
+  return isLanguageSupported(provider as SpeechProvider, "tts", lang);
 }
 
 export const PROVIDER_TIMEOUT = {

@@ -31,6 +31,23 @@ export interface SpeechAudioSource {
   durationMs: number;
 }
 
+/**
+ * What the caller intends to do with the clip.
+ *
+ * `shareable` is the default and means the artifact must be Ogg/Opus, because
+ * that is the only thing WhatsApp and Telegram accept as a voice note — see
+ * `shareOutService.ts`, which derives the outgoing MIME from the file
+ * extension and never transcodes.
+ *
+ * `playback` is for a clip that is only ever played back. It skips the
+ * re-encode and hands back the provider's own bytes, which every platform
+ * plays natively, so a short clip costs a download and nothing else. It is for
+ * voice previews: never shared, and the same clip is cached after the first
+ * request, so the transcode would be paid once per voice to produce a file
+ * nothing looks at again.
+ */
+export type SynthDelivery = "shareable" | "playback";
+
 export interface SynthesizedAudio {
   uri: string;
   waveform?: number[];
@@ -71,8 +88,20 @@ async function fetchSynthAudio(audioUrl: string): Promise<Uint8Array | null> {
   return bytes.byteLength > 0 ? bytes : null;
 }
 
-const getExtension = (mime: string): string =>
-  /audio\/wav|audio\/x-wav|audio\/wave/i.test(mime) ? "wav" : "mp3";
+/**
+ * File extension for a response's MIME type.
+ *
+ * The share path derives the outgoing MIME from this extension, and WhatsApp
+ * only renders a PTT voice note for `audio/ogg; codecs=opus` — so this must
+ * track the container, not just the two formats the worker used to return.
+ * Writing Opus bytes under a `.mp3` name would make the share arrive as an
+ * ordinary attachment, and would also bypass the transcoder's Ogg fast path.
+ */
+const getExtension = (mime: string): string => {
+  if (/audio\/ogg/i.test(mime)) return "ogg";
+  if (/audio\/wav|audio\/x-wav|audio\/wave/i.test(mime)) return "wav";
+  return "mp3";
+};
 
 const resolveGenderSetting = (): VoiceGender | undefined => {
   const value = settings$.voiceGender.peek();
@@ -143,6 +172,7 @@ export async function synthesizeSpeech(
     voiceId?: string;
     gender?: VoiceGender;
     sourceLang?: string;
+    delivery?: SynthDelivery;
   },
 ): Promise<Result<SynthesizedAudio, EkweError>> {
   const trimmed = text.trim();
@@ -218,7 +248,14 @@ export async function synthesizeSpeech(
     const rawUri = await writeAudioFile(audioBytes, parsed.data.mime);
     if (!rawUri) return err(EkweError.SPEECH_FAIL);
 
-    const normalized = await normalizeSynthAudio(rawUri);
+    // A playback-only clip keeps the provider's container. The bytes are
+    // already on disk and playable, so re-encoding them would buy nothing and
+    // would leave a shorter clip in the cache than the user will ever hear.
+    const normalized =
+      options?.delivery === "playback"
+        ? { uri: rawUri, durationMs: parsed.data.durationMs ?? 0 }
+        : await normalizeSynthAudio(rawUri);
+
     return ok({
       ...normalized,
       sourceLang: parsed.data.sourceLang,

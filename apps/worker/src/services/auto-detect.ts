@@ -9,6 +9,10 @@ const SHORT_TEXT_THRESHOLD = 10;
 const CONFIDENCE_GAP = 0.15;
 const FRANC_MAX_CHARS = 200;
 
+// ISO 639-3 "undetermined". franc returns this as its "I could not decide"
+// answer instead of failing, so it must never be treated as a language.
+const UNDETERMINED = "und";
+
 const ISO639_3_TO_1: Record<string, string> = {
   eng: "en",
   spa: "es",
@@ -119,8 +123,13 @@ function normalizeLangCode(code: string): string {
   return code.trim().toLowerCase().split(/[-_]/)[0] || "";
 }
 
+// Returns a language code only when the script gives an unambiguous signal,
+// and "" when it cannot tell. It deliberately does not fall back to "en":
+// Latin-script, numeric, or punctuation-only text says nothing about the
+// language, and reporting "en" for it mislabels every unknown clip. Callers
+// decide how to treat an unresolved result.
 function detectWithUnicode(text: string): string {
-  if (!text.trim()) return "en";
+  if (!text.trim()) return "";
 
   let cjk = 0,
     kana = 0,
@@ -144,7 +153,7 @@ function detectWithUnicode(text: string): string {
     else if (code >= 0x0e00 && code <= 0x0e7f) thai++;
   }
 
-  if (total === 0) return "en";
+  if (total === 0) return "";
 
   const cjkPct = (cjk + hangul) / total;
   const kanaPct = kana / total;
@@ -161,15 +170,19 @@ function detectWithUnicode(text: string): string {
   if (cyrillicPct > 0.5) return "ru";
   if (arabicPct > 0.5) return "ar";
   if (devanagariPct > 0.5) return "hi";
-  return "en";
+  return "";
 }
 
+// Resolves the language of `text`, or "" when it genuinely cannot be
+// determined. Callers treat "" as "unresolved" and must not substitute a
+// default: every call site already branches on the value being truthy, so an
+// honest empty result propagates instead of mislabelling the text.
 export async function detectTextLanguage(
   text: string,
   db: D1Database,
   signal: AbortSignal,
 ): Promise<string> {
-  if (!text?.trim()) return "en";
+  if (!text?.trim()) return "";
 
   const input = text.slice(0, MAX_CHARS);
 
@@ -181,7 +194,7 @@ export async function detectTextLanguage(
   const fromCache = await d1GetLang(db, key);
   if (fromCache) return fromCache;
 
-  if (signal.aborted) return "en";
+  if (signal.aborted) return "";
 
   let detected: string;
 
@@ -189,35 +202,40 @@ export async function detectTextLanguage(
     detected = detectWithUnicode(input);
   } else {
     try {
+      // franc always returns at least one row — it answers [["und", 1]] when it
+      // cannot decide rather than returning an empty list, so there is no
+      // empty-result case to guard.
       const ranked = francAll(input);
-      if (ranked.length === 0) {
-        detected = detectWithUnicode(input);
+      const [topCode, topScore] = ranked[0];
+      const secondScore = ranked.length > 1 ? ranked[1][1] : 0;
+      const gap = topScore - secondScore;
+
+      // "und" is franc declining to answer, not a language.
+      const francLang =
+        topCode === UNDETERMINED ? undefined : iso6393to1(topCode);
+      const unicodeLang = detectWithUnicode(input);
+
+      if (francLang && gap >= CONFIDENCE_GAP) {
+        detected = francLang;
+      } else if (francLang && unicodeLang && francLang === unicodeLang) {
+        detected = francLang;
+      } else if (unicodeLang) {
+        detected = unicodeLang;
+      } else if (francLang) {
+        detected = francLang;
       } else {
-        const [topCode, topScore] = ranked[0];
-        const secondScore = ranked.length > 1 ? ranked[1][1] : 0;
-        const gap = topScore - secondScore;
-
-        const francLang = iso6393to1(topCode);
-        const unicodeLang = detectWithUnicode(input);
-
-        if (francLang && gap >= CONFIDENCE_GAP) {
-          detected = francLang;
-        } else if (francLang && unicodeLang && francLang === unicodeLang) {
-          detected = francLang;
-        } else if (unicodeLang && unicodeLang !== "en") {
-          detected = unicodeLang;
-        } else if (francLang) {
-          detected = francLang;
-        } else {
-          detected = "en";
-        }
+        detected = "";
       }
     } catch {
       detected = detectWithUnicode(input);
     }
   }
 
-  await d1PutLang(db, key, detected, CACHE_TTL);
+  // Only a real answer is worth caching; storing "" would turn every unknown
+  // clip into a permanent cache hit that still resolves to nothing.
+  if (detected) {
+    await d1PutLang(db, key, detected, CACHE_TTL);
+  }
 
   return detected;
 }
@@ -230,14 +248,14 @@ export function validateTranscriptLanguage(
 
   try {
     const ranked = francAll(text.slice(0, FRANC_MAX_CHARS));
-    if (ranked.length === 0) return true;
-
     const [topCode, topScore] = ranked[0];
     const secondScore = ranked.length > 1 ? ranked[1][1] : 0;
     const gap = topScore - secondScore;
 
     if (gap < CONFIDENCE_GAP) return true;
 
+    // "und" (and any code we do not map) leaves nothing to compare against, so
+    // there is no mismatch to report.
     const francLang = iso6393to1(topCode);
     if (!francLang) return true;
 

@@ -76,6 +76,25 @@ describe("Worker Router (index.ts)", () => {
         },
       });
 
+      // Cloudflare AI is the only provider this file leaves unmocked, so the
+      // request reaches it. The pipeline now rejects an answer that is not in
+      // the requested language, so the shared English placeholder would fail
+      // the request instead of exercising the auth path it is here to test.
+      const aiRun = env.AI.run;
+      env.AI.run = (async (model: string) =>
+        model === "@cf/zai-org/glm-4.7-flash"
+          ? {
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    content: "Bonjour, ceci est une traduction en français.",
+                  },
+                },
+              ],
+            }
+          : {}) as unknown as typeof env.AI.run;
+
       const req = new Request("http://localhost/translate", {
         method: "POST",
         headers: {
@@ -92,6 +111,7 @@ describe("Worker Router (index.ts)", () => {
         waitUntil: vi.fn(),
         passThroughOnException: () => {},
       } as any);
+      env.AI.run = aiRun;
 
       expect(res.status).toBe(200);
     });

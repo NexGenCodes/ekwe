@@ -9,6 +9,8 @@ import { isHallucination } from "@/utils/hallucination";
 import { fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
 import { rotateWsKeys, createStreamInterceptor } from "@/utils/stream";
 import { logger } from "@/core/logger";
+import { canonicalLanguageFromName } from "@ekwe/shared/languageNames";
+import type { StreamRoute } from "@ekwe/shared/languageCapabilities";
 
 const DEEPGRAM_URL = "https://api.deepgram.com/v1/listen";
 
@@ -24,7 +26,16 @@ export async function stt(
     type: blob.type,
   });
   const params = new URLSearchParams({ model: "nova-3" });
-  if (lang && lang !== "auto") params.set("language", lang);
+  if (lang && lang !== "auto") {
+    params.set("language", lang);
+  } else {
+    // In auto mode Deepgram does not look at the language at all unless this is
+    // set, so the request was effectively "transcribe with no language hint" and
+    // detected_language never came back. Asking explicitly costs nothing when
+    // the caller already knows the language, and is the only way the auto path
+    // can report what was detected.
+    params.set("detect_language", "true");
+  }
 
   const res = await rotateKeys(
     env,
@@ -59,16 +70,21 @@ export async function stt(
 
   const data = await res.json<DeepgramResponse>();
   const transcript = data.results?.channels?.[0]?.alternatives?.[0]?.transcript;
-  const detectedLang = data.results?.channels?.[0]?.detected_language;
   const duration = data.metadata?.duration;
   const durationMs = duration ? duration * 1000 : undefined;
+  // Folded through the shared resolver like every other provider: an
+  // unresolved detection is an absent field, not a guessed default — "en" here
+  // would silently mislabel every unknown-language clip.
+  const detectedLang = canonicalLanguageFromName(
+    data.results?.channels?.[0]?.detected_language,
+  );
 
   if (transcript && !isHallucination(transcript, durationMs)) {
     return {
       text: transcript,
       provider: "deepgram",
-      duration,
-      language: detectedLang,
+      ...(duration ? { duration } : {}),
+      ...(detectedLang ? { language: detectedLang } : {}),
     };
   }
 
@@ -84,43 +100,6 @@ interface DeepgramResponse {
   };
   metadata?: { duration?: number };
 }
-
-const DEEPGRAM_LANGUAGES = new Set([
-  "bg",
-  "ca",
-  "zh",
-  "cs",
-  "da",
-  "nl",
-  "en",
-  "et",
-  "fi",
-  "fr",
-  "de",
-  "el",
-  "hi",
-  "hu",
-  "id",
-  "it",
-  "ja",
-  "ko",
-  "lv",
-  "lt",
-  "ms",
-  "no",
-  "pl",
-  "pt",
-  "ro",
-  "ru",
-  "sk",
-  "es",
-  "sv",
-  "th",
-  "tr",
-  "uk",
-  "vi",
-]);
-export { DEEPGRAM_LANGUAGES as supportedLanguages };
 
 const DEEPGRAM_SPEAK_URL = "https://api.deepgram.com/v1/speak";
 
@@ -178,6 +157,29 @@ export function voices(
   return [...(set[langCode] ?? set.default)];
 }
 
+/**
+ * Asks Aura for Ogg Opus rather than its default MP3.
+ *
+ * Two reasons, both measured against this app's client. It is the only
+ * upstream here that can emit Opus at all, and mono Opus is the one container
+ * the device reuses byte-for-byte instead of re-encoding, so a clip that
+ * arrives in this format costs the phone no transcoding on the share paths. At
+ * the default bitrate it is also roughly a quarter the size of the MP3 it
+ * replaces.
+ *
+ * `bit_rate` is deliberately left alone: the device's reuse check compares
+ * channel count, not bitrate, so there is nothing to match, and the measured
+ * default was already smaller than the phone's own 24 kbps encode target.
+ */
+const DEEPGRAM_SPEAK_ENCODING: Readonly<Record<string, string>> = {
+  encoding: "opus",
+  container: "ogg",
+};
+
+const SPEAK_QUERY = new URLSearchParams({
+  ...DEEPGRAM_SPEAK_ENCODING,
+}).toString();
+
 export async function tts(
   text: string,
   lang: string,
@@ -200,13 +202,13 @@ export async function tts(
       "DEEPGRAM_KEY_",
       (key) =>
         fetchWithTimeout(
-          `${DEEPGRAM_SPEAK_URL}?model=${encodeURIComponent(model)}`,
+          `${DEEPGRAM_SPEAK_URL}?model=${encodeURIComponent(model)}&${SPEAK_QUERY}`,
           {
             method: "POST",
             headers: {
               Authorization: `Token ${key}`,
               "Content-Type": "application/json",
-              Accept: "audio/mpeg",
+              Accept: "audio/ogg;codecs=opus",
             },
             body: JSON.stringify({ text }),
           },
@@ -241,31 +243,129 @@ export async function tts(
   return {
     result: {
       audio: bytes,
-      mime: "audio/mpeg",
+      mime: "audio/ogg;codecs=opus",
       provider: "deepgram",
     },
     status: null,
   };
 }
 
+/** Serves both Deepgram streaming routes; they share keys and rotation. */
 export async function sttStream(
   env: Env,
+  route: StreamRoute,
   lang: string,
   clientWs: WebSocket,
   signal: AbortSignal,
 ): Promise<boolean> {
+  if (route.id === "deepgram-flux-multi") {
+    return fluxStream(env, route, lang, clientWs, signal);
+  }
+  if (route.id === "deepgram-nova-3") {
+    return nova3Stream(env, route, lang, clientWs, signal);
+  }
+  return false;
+}
+
+function emit(
+  clientWs: WebSocket,
+  isFinal: boolean,
+  text: string,
+  language?: string,
+): void {
+  if (!text || isHallucination(text)) return;
+  clientWs.send(
+    JSON.stringify({
+      type: isFinal ? "final" : "interim",
+      text,
+      provider: "deepgram",
+      ...(language ? { language } : {}),
+    }),
+  );
+}
+
+/**
+ * `/v2/listen` with `flux-general-multi`. The language is a hint, not a selector:
+ * Flux rejects `language=`, so a wrong hint costs accuracy, not the session.
+ */
+async function fluxStream(
+  env: Env,
+  route: StreamRoute,
+  lang: string,
+  clientWs: WebSocket,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const params = new URLSearchParams({
+    encoding: "linear16",
+    sample_rate: "16000",
+    channels: "1",
+    model: route.model,
+    // Long enough not to split a mid-thought pause, short enough to end.
+    eot_threshold: "0.7",
+    eot_timeout_ms: "5000",
+  });
+  if (lang && lang !== "auto") params.append("language_hint", lang);
+
   const dgWs = await rotateWsKeys(env, "DEEPGRAM_KEY_", (key) => {
-    const params = new URLSearchParams({
-      access_token: key,
-      encoding: "opus",
-      sample_rate: "16000",
-      channels: "1",
-      model: "nova-3",
-      interim_results: "true",
-      smart_format: "true",
-    });
-    if (lang && lang !== "auto") params.set("language", lang);
-    return `wss://api.deepgram.com/v1/listen?${params}`;
+    const withKey = new URLSearchParams(params);
+    withKey.set("access_token", key);
+    return `wss://api.deepgram.com/v2/listen?${withKey}`;
+  });
+  if (!dgWs) return false;
+
+  createStreamInterceptor(
+    clientWs,
+    dgWs,
+    (data) => {
+      try {
+        const payload = JSON.parse(data) as {
+          type?: string;
+          event?: string;
+          transcript?: string;
+          languages?: string[];
+        };
+        if (payload.type !== "TurnInfo" || !payload.transcript) return;
+        // Primary language first, so entry 0 is the one to pin.
+        emit(
+          clientWs,
+          payload.event === "EndOfTurn",
+          payload.transcript,
+          payload.languages?.[0],
+        );
+      } catch {
+        /* ignore parse errors */
+      }
+    },
+    { signal },
+  );
+
+  return true;
+}
+
+/** `/v1/listen` with `nova-3`: no turn model, so endpointing is a threshold. */
+async function nova3Stream(
+  env: Env,
+  route: StreamRoute,
+  lang: string,
+  clientWs: WebSocket,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const params = new URLSearchParams({
+    encoding: "linear16",
+    sample_rate: "16000",
+    channels: "1",
+    model: route.model,
+    interim_results: "true",
+    smart_format: "true",
+    endpointing: "500",
+  });
+  if (lang && lang !== "auto") params.set("language", lang);
+  else params.set("detect_language", "true");
+
+  const dgWs = await rotateWsKeys(env, "DEEPGRAM_KEY_", (key) => {
+    const withKey = new URLSearchParams(params);
+    withKey.set("access_token", key);
+    return `wss://api.deepgram.com/v1/listen?${withKey}`;
   });
   if (!dgWs) return false;
 
@@ -278,31 +378,27 @@ export async function sttStream(
           type?: string;
           channel?: { alternatives?: Array<{ transcript?: string }> };
           is_final?: boolean;
+          detected_language?: string;
         };
         const alternatives = payload.channel?.alternatives;
         if (
-          payload.type === "Results" &&
-          alternatives &&
-          alternatives.length > 0
+          payload.type !== "Results" ||
+          !alternatives ||
+          alternatives.length === 0
         ) {
-          const text = alternatives[0].transcript;
-          const isFinal = payload.is_final === true;
-
-          if (text && !isHallucination(text)) {
-            clientWs.send(
-              JSON.stringify({
-                type: isFinal ? "final" : "interim",
-                text,
-                provider: "deepgram",
-              }),
-            );
-          }
+          return;
         }
+        emit(
+          clientWs,
+          payload.is_final === true,
+          alternatives[0].transcript ?? "",
+          payload.detected_language,
+        );
       } catch {
         /* ignore parse errors */
       }
     },
-    signal,
+    { signal },
   );
 
   return true;

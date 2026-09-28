@@ -29,7 +29,15 @@ const NAME_OVERRIDES: Record<
   yue: { englishName: "Cantonese", nativeName: "粵語" },
 };
 
-const LANGUAGE_CODES = [
+/**
+ * The canonical language catalog: every language the product knows about.
+ *
+ * These are always ISO 639-1-ish codes in *our* spelling, never a provider's.
+ * A provider that spells something differently (Whisper's `jw` for our `jv`)
+ * is expressed as an alias in languageCapabilities.ts, so this list stays the
+ * one vocabulary that storage, UI, and the database all speak.
+ */
+export const LANGUAGE_CODES = [
   "en",
   "es",
   "it",
@@ -169,7 +177,12 @@ const LANGUAGE_CODES = [
   "ug",
   "ve",
   "wo",
-] as const;
+] as const satisfies readonly string[];
+
+/** Union of the canonical catalog, for narrowing a plain `string` code. */
+export type LanguageCode = (typeof LANGUAGE_CODES)[number];
+
+export const LANGUAGE_CODE_SET: ReadonlySet<string> = new Set(LANGUAGE_CODES);
 
 export const LANGUAGES: Language[] = LANGUAGE_CODES.map((code) => {
   const lib = countryLanguages[code as keyof typeof countryLanguages];
@@ -322,6 +335,65 @@ const LANG_TO_COUNTRY: Record<string, TCountryCode> = {
   ve: "ZA",
   wo: "SN",
 };
+
+/**
+ * Languages written in a script a reader who does not know the language
+ * cannot pronounce from the text alone. A transliteration is therefore worth
+ * generating for these, and only these.
+ *
+ * This used to live in the worker's prompt builder, which meant the client
+ * could not ask whether to offer a transliteration without duplicating the
+ * list. It is a property of the language, not of a provider, so it belongs
+ * beside the catalog.
+ */
+const NON_LATIN_SCRIPT_CODES: ReadonlySet<string> = new Set([
+  "zh",
+  "yue",
+  "ja",
+  "ko",
+  "ru",
+  "uk",
+  "bg",
+  "sr",
+  "mk",
+  "el",
+  "he",
+  "yi",
+  "ar",
+  "fa",
+  "ur",
+  "ug",
+  "hi",
+  "mr",
+  "ne",
+  "ks",
+  "bn",
+  "pa",
+  "gu",
+  "ta",
+  "te",
+  "ml",
+  "si",
+  "km",
+  "lo",
+  "my",
+  "th",
+  "ka",
+  "am",
+  "ti",
+  "dv",
+  "iu",
+]);
+
+/**
+ * Whether a translation into `langCode` should carry a romanized companion.
+ *
+ * False for `auto` and for every code outside the catalog, so a caller never
+ * has to check the input first.
+ */
+export function needsRomanization(langCode: string): boolean {
+  return NON_LATIN_SCRIPT_CODES.has(langCode);
+}
 
 const FLAG_OVERRIDES: Record<string, string> = {
   auto: "🌐",

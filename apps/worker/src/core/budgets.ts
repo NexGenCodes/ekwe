@@ -8,6 +8,13 @@ export const TRANSLATE_CACHE_TTL_SECONDS = 4 * 60 * 60;
 export const SYNTHESIZE_TOTAL_MS = 25_000;
 
 export const SPEECH_PIPELINE_TOTAL_MS = 20_000;
+// Per-attempt cap for the TTS leg. Without it the first provider inherits the
+// whole 20s pipeline budget, so one provider that never answers spends every
+// millisecond the failover has and the remaining providers are never tried —
+// the request then ends in a 503 that looks like "all providers busy" when only
+// one was. 8s still leaves room for two more providers inside the budget, and
+// matches the other pipelines' per-attempt caps (see TRANSLATE_PER_PROVIDER_MS).
+export const SPEECH_PER_PROVIDER_MS = 8_000;
 // Deliberately not extended for previews even though they are shared and
 // immutable: a slot can fail over to a different provider at runtime, so a long
 // TTL would pin a degraded clip for every user until it expired. 24h bounds

@@ -39,9 +39,13 @@ OpusStreamEncoder::OpusStreamEncoder(uint32_t sample_rate,
     }
     ALOG("constructor: encoder created, configuring...");
 
-    opus_encoder_ctl(encoder_, OPUS_SET_BITRATE(64000));
+    // 24 kbps target for speech at 16 kHz mono. Roughly a 2.7x reduction from the
+    // previous 64 kbps CBR setting, which was well above what dictation needs.
+    // VBR spends bits on the frames that carry speech and gives silence back,
+    // so the average lands below the target during natural pauses.
+    opus_encoder_ctl(encoder_, OPUS_SET_BITRATE(24000));
     opus_encoder_ctl(encoder_, OPUS_SET_COMPLEXITY(complexity));
-    opus_encoder_ctl(encoder_, OPUS_SET_VBR(0));
+    opus_encoder_ctl(encoder_, OPUS_SET_VBR(1));
     opus_encoder_ctl(encoder_, OPUS_SET_INBAND_FEC(enable_fec ? 1 : 0));
     opus_encoder_ctl(encoder_, OPUS_SET_PACKET_LOSS_PERC(enable_fec ? packet_loss_perc : 0));
     opus_encoder_ctl(encoder_, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));

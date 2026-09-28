@@ -38,6 +38,12 @@ export const WORKER_ERROR_CODES = {
   STREAM_PRO_ONLY: "STREAM_PRO_ONLY",
   CONFIG_TIMEOUT: "CONFIG_TIMEOUT",
   NO_PROVIDER_AVAILABLE: "NO_PROVIDER_AVAILABLE",
+  /**
+   * The language is valid in the catalog but no streaming route can serve it,
+   * which is a different problem from an unknown code: batch may still handle
+   * it, so the client is told to fall back rather than to change language.
+   */
+  LANGUAGE_UNSUPPORTED: "LANGUAGE_UNSUPPORTED",
   TOO_MANY_CONNECTIONS: "TOO_MANY_CONNECTIONS",
 
   WEBHOOK_SIGNATURE_INVALID: "WEBHOOK_SIGNATURE_INVALID",

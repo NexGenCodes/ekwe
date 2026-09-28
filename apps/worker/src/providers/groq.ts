@@ -10,7 +10,8 @@ import { isHallucination } from "@/utils/hallucination";
 import { mimeToExt } from "@/utils/mime";
 import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
 import { logger } from "@/core/logger";
-import { toWhisperCode } from "@/core/languages";
+import { toProviderCode } from "@ekwe/shared/languageCapabilities";
+import { canonicalLanguageFromName } from "@ekwe/shared/languageNames";
 
 const GROQ_TRANSCRIBE = "https://api.groq.com/openai/v1/audio/transcriptions";
 const GROQ_CHAT = "https://api.groq.com/openai/v1/chat/completions";
@@ -30,8 +31,18 @@ export async function stt(
       const body = new FormData();
       body.append("file", blob, `audio.${mimeToExt(blob.type)}`);
       body.append("model", "whisper-large-v3");
-      if (lang && lang !== "auto") body.append("language", toWhisperCode(lang));
-      body.append("response_format", "json");
+
+      const isAuto = !lang || lang === "auto";
+      if (!isAuto) {
+        body.append("language", toProviderCode("groq", "stt", lang));
+        body.append("response_format", "json");
+      } else {
+        // Groq's plain `json` format returns only `text`; `language` and
+        // `duration` come back exclusively with `verbose_json`. The auto path
+        // needs the detected language to report it, so it must ask for the
+        // verbose shape. This mirrors the OpenRouter provider.
+        body.append("response_format", "verbose_json");
+      }
       body.append("temperature", "0");
 
       return fetchWithTimeout(
@@ -61,17 +72,22 @@ export async function stt(
     language?: string;
   }>();
   const durationMs = data.duration ? data.duration * 1000 : undefined;
+  // `verbose_json` spells the language out in English ("French"), so it has to
+  // be folded back to a canonical code before anything compares it against
+  // franc. Left unresolved when it names something we do not carry.
+  const detected = canonicalLanguageFromName(data.language);
 
   if (data.text && !isHallucination(data.text, durationMs)) {
     logger.info("[groq] Transcription success", {
       length: data.text.length,
-      lang: data.language,
+      lang: detected,
     });
     return {
       text: data.text,
       provider: "groq",
-      duration: data.duration,
-      language: data.language,
+      ...(data.duration ? { duration: data.duration } : {}),
+      // Absent when unresolved — never substitute a default language.
+      ...(detected ? { language: detected } : {}),
     };
   }
 
@@ -158,5 +174,3 @@ export async function translate(
     return null;
   }
 }
-
-export { ALL_LANGUAGES as supportedLanguages } from "@/core/languages";

@@ -1,11 +1,15 @@
 import {
-  getStreamingProviderNames,
   getTranscribeProviderNames,
   getTranslateProviderNames,
   getSpeechProviderNames,
   speechProviderSupports,
 } from "@/core/providers";
-import { ASSEMBLYAI_STREAM_LANGUAGES } from "@/core/languages";
+import {
+  isLanguageSupported,
+  STREAM_ROUTES,
+  type ProviderId,
+  type StreamRoute,
+} from "@ekwe/shared/languageCapabilities";
 import type {
   Env,
   ProviderCapability,
@@ -52,8 +56,8 @@ function ttsWithLang(
 export const PROVIDER_MODULES: Readonly<Record<string, ProviderModule>> = {
   witai: {
     name: "witai",
-    capabilities: ["stt", "sttStream", "tts"],
-    supportedLanguages: witai.supportedLanguages,
+    capabilities: ["stt", "tts"],
+    streamRoutes: ["witai"],
     stt: witai.stt,
     sttStream: witai.sttStream,
     tts: ttsWithLang(witai.tts),
@@ -62,42 +66,40 @@ export const PROVIDER_MODULES: Readonly<Record<string, ProviderModule>> = {
   groq: {
     name: "groq",
     capabilities: ["stt", "translate"],
-    supportedLanguages: groq.supportedLanguages,
     stt: groq.stt,
     translate: groq.translate,
   },
   cloudflare: {
     name: "cloudflare",
     capabilities: ["stt", "translate"],
-    supportedLanguages: cloudflare.supportedLanguages,
     stt: cloudflare.stt,
     translate: cloudflare.translate,
   },
   gladia: {
     name: "gladia",
-    capabilities: ["stt", "sttStream"],
-    supportedLanguages: gladia.supportedLanguages,
+    capabilities: ["stt"],
+    streamRoutes: ["gladia-solaria"],
     stt: gladia.stt,
     sttStream: gladia.sttStream,
   },
   openrouter: {
     name: "openrouter",
     capabilities: ["stt", "translate"],
-    supportedLanguages: openrouter.supportedLanguages,
     stt: openrouter.stt,
     translate: openrouter.translate,
   },
   cohere: {
     name: "cohere",
     capabilities: ["stt", "translate"],
-    supportedLanguages: cohere.supportedLanguages,
     stt: cohere.stt,
     translate: cohere.translate,
   },
   deepgram: {
     name: "deepgram",
-    capabilities: ["stt", "sttStream", "tts"],
-    supportedLanguages: deepgram.supportedLanguages,
+    capabilities: ["stt", "tts"],
+    // One module serves two routes: Flux is the turn-detection model and
+    // Nova-3 is the wider-coverage fallback. Same keys, two endpoints.
+    streamRoutes: ["deepgram-flux-multi", "deepgram-nova-3"],
     stt: deepgram.stt,
     sttStream: deepgram.sttStream,
     tts: ttsWithLang(deepgram.tts),
@@ -105,8 +107,8 @@ export const PROVIDER_MODULES: Readonly<Record<string, ProviderModule>> = {
   },
   assemblyai: {
     name: "assemblyai",
-    capabilities: ["stt", "sttStream"],
-    supportedLanguages: assemblyai.supportedLanguages,
+    capabilities: ["stt"],
+    streamRoutes: ["assemblyai-u3-rt-pro"],
     stt: assemblyai.stt,
     sttStream: assemblyai.sttStream,
   },
@@ -134,7 +136,6 @@ const CAPABILITY_TO_PIPELINE: Readonly<
   Record<ProviderCapability, (tier: Tier) => readonly string[]>
 > = {
   stt: getTranscribeProviderNames,
-  sttStream: () => getStreamingProviderNames(),
   translate: getTranslateProviderNames,
   tts: getSpeechProviderNames,
   ttsStream: () => [],
@@ -160,6 +161,21 @@ export function getProviderNamesFor(
   );
 }
 
+/**
+ * The routes some provider module has actually claimed, in preference order.
+ *
+ * Filtering the shared table by what the worker implements means a route can
+ * never be offered to a user before the code to serve it exists, and a route
+ * whose provider is removed drops out of the pipeline without a second edit.
+ */
+export function getStreamRoutes(): readonly StreamRoute[] {
+  const claimed = new Set<string>();
+  for (const mod of Object.values(PROVIDER_MODULES)) {
+    for (const id of mod.streamRoutes ?? []) claimed.add(id);
+  }
+  return STREAM_ROUTES.filter((route) => claimed.has(route.id));
+}
+
 export function providerSupportsLanguage(
   name: string,
   capability: ProviderCapability,
@@ -167,17 +183,12 @@ export function providerSupportsLanguage(
 ): boolean {
   const mod = PROVIDER_MODULES[name];
   if (!mod || !supportsCapability(name, capability)) return false;
-  switch (capability) {
-    case "translate":
-      return true;
-    case "tts":
-      return speechProviderSupports(name, lang);
-    case "sttStream":
-      if (name === "assemblyai") return ASSEMBLYAI_STREAM_LANGUAGES.has(lang);
-      return mod.supportedLanguages?.has(lang) ?? false;
-    case "stt":
-      return mod.supportedLanguages?.has(lang) ?? false;
-    case "ttsStream":
-      return false;
-  }
+  if (capability === "ttsStream") return false;
+  // "auto" means the provider detects the language itself, so a language gate
+  // does not apply — only the provider having the capability does.
+  if (lang === "auto") return true;
+  if (capability === "tts") return speechProviderSupports(name, lang);
+  // File-shaped coverage, including provider-specific code spellings, comes from
+  // the shared registry. Streaming has its own route table.
+  return isLanguageSupported(name as ProviderId, capability, lang);
 }

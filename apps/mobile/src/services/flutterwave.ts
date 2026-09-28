@@ -130,10 +130,19 @@ export async function verifyTransaction(
 
 async function pollForProStatus(): Promise<boolean> {
   for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
-    const { data: sessionData, error } = await supabase.auth.refreshSession();
+    // `getUser()` asks the auth server who we are with the token we already
+    // hold, so it sees a freshly written `is_pro` claim without minting a new
+    // access token. `refreshSession()` also worked, but it fired a
+    // TOKEN_REFRESHED auth event on every tick — 20 of them per checkout — and
+    // each one rewrote the session store and re-mirrored the session to the
+    // shared container.
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
     if (error) throw error;
 
-    if (sessionData.session?.user?.app_metadata?.is_pro === true) {
+    if (user?.app_metadata?.is_pro === true) {
       return true;
     }
 

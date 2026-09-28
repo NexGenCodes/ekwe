@@ -30,6 +30,11 @@ public:
 
     bool finalize();
 
+    // Destination this muxer writes to. Exposed so the capture controller can
+    // re-open the finished file to derive its waveform, instead of keeping a
+    // parallel metering history that would not match the decoded audio.
+    const std::string& path() const { return output_path_; }
+
     OggMuxer(const OggMuxer&) = delete;
     OggMuxer& operator=(const OggMuxer&) = delete;
 
@@ -37,6 +42,7 @@ private:
     bool ok_;
     bool finalized_;
     std::FILE* file_;
+    std::string output_path_;
     int serial_number_;
     int page_number_;
     int page_log_counter_;

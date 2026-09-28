@@ -42,6 +42,67 @@ describe("Deepgram provider", () => {
     expect(result!.duration).toBe(3.5);
   });
 
+  test("asks for language detection in auto mode", async () => {
+    // Regression guard: without detect_language=true Deepgram does not look at
+    // the language at all, so detected_language never came back and the auto
+    // path silently had no language to report.
+    let seenUrl: string | null = null;
+    server.use(
+      http.post(PROVIDER_URLS.deepgram, ({ request }) => {
+        seenUrl = request.url;
+        return jsonResponse({
+          results: {
+            channels: [
+              {
+                alternatives: [{ transcript: "Bonjour", confidence: 0.99 }],
+                detected_language: "fr",
+              },
+            ],
+          },
+        });
+      }),
+    );
+
+    const result = await deepgram.stt(
+      makeAudioBlob(),
+      "auto",
+      mockEnv(),
+      mockSignal(),
+    );
+
+    expect(seenUrl).toContain("detect_language=true");
+    expect(seenUrl).not.toContain("language=fr");
+    expect(result?.language).toBe("fr");
+  });
+
+  test("sends the requested language and no detection flag when known", async () => {
+    let seenUrl: string | null = null;
+    server.use(
+      http.post(PROVIDER_URLS.deepgram, ({ request }) => {
+        seenUrl = request.url;
+        return jsonResponse({
+          results: {
+            channels: [
+              { alternatives: [{ transcript: "Bonjour", confidence: 0.99 }] },
+            ],
+          },
+        });
+      }),
+    );
+
+    const result = await deepgram.stt(
+      makeAudioBlob(),
+      "fr",
+      mockEnv(),
+      mockSignal(),
+    );
+
+    expect(seenUrl).toContain("language=fr");
+    expect(seenUrl).not.toContain("detect_language");
+    // Unresolved detection is an absent field, never a guessed default.
+    expect(result).not.toHaveProperty("language");
+  });
+
   test("returns null on empty transcript", async () => {
     server.use(
       http.post(PROVIDER_URLS.deepgram, () =>

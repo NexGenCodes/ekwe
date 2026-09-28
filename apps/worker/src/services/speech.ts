@@ -4,6 +4,7 @@ import {
   SPEECH_CACHE_TTL_SECONDS,
   SPEECH_DOWN_TTL_SECONDS,
   SPEECH_KV_CACHE_MAX_BYTES,
+  SPEECH_PER_PROVIDER_MS,
   SPEECH_R2_CACHE_MAX_BYTES,
   SPEECH_R2_CACHE_TTL_SECONDS,
 } from "@/core/budgets";
@@ -12,7 +13,7 @@ import { groupCandidatesByProvider, resolveVoicePool } from "@/core/voices";
 import { hashKey } from "@/utils/keys";
 import { recordSpeechCacheEvent } from "@/utils/analytics";
 import { Env, Tier, SpeechGender, SpeechAttempt } from "@/core/types";
-import { runProviderFailover } from "@/utils/retry";
+import { classifyProviderError, runProviderFailover } from "@/utils/retry";
 import { isProviderDegraded, reportProviderOutcome } from "@/services/health";
 
 const R2_EXPIRES_AT_META = "expiresAt";
@@ -216,6 +217,19 @@ async function writeR2SpeechCache(
   }
 }
 
+/**
+ * Recognises the voice-preview sample and pins it to English.
+ *
+ * A preview is a fixed sentence chosen to show off the voice, not user content,
+ * so it is rendered by the English voice on purpose. Using the selected
+ * language's voice to read the English sample would only add an accent to text
+ * the user never wrote, and the cache key includes the language, so it would
+ * also mint a separate clip per language for no benefit.
+ *
+ * Changing this needs real per-language sample sentences, not just passing the
+ * selected language through — otherwise the sample is mispronounced rather than
+ * demonstrated.
+ */
 export function resolveEffectiveLang(
   text: string,
   lang: string,
@@ -378,6 +392,9 @@ export async function runSpeechSynth(
       providers,
       signal,
       totalMs: budgetMs,
+      // Bound each attempt rather than letting the first provider inherit the
+      // whole budget. See SPEECH_PER_PROVIDER_MS.
+      attemptTimeoutMs: () => SPEECH_PER_PROVIDER_MS,
       route: "speech",
       env,
       tier,
@@ -428,6 +445,15 @@ export async function runSpeechSynth(
         return false;
       },
       onAttemptError: (provider) => reportProviderOutcome(env, provider, false),
+      // A timed-out provider has already spent its full attempt window without
+      // answering. The generic policy would retry that same provider once more,
+      // which costs another SPEECH_PER_PROVIDER_MS and leaves the remaining
+      // budget too thin for the providers that might actually answer — the
+      // request then fails having tried only the one broken provider. Spend the
+      // rest of the budget on the next provider instead. `onAttemptError` has
+      // already recorded the failure with the health tracker.
+      shouldRetryOnError: (_provider, error) =>
+        classifyProviderError(error) !== "timeout",
     }),
   );
 
