@@ -38,12 +38,14 @@ All notable changes to the Ekwe Android app are documented here.
 - Re-renders are rate-limited to one every 2.5s, and a refused re-render is now
   silent. Regenerate is a re-roll; explaining that a tap did nothing interrupted
   the pause it was meant to protect.
-- Echo now shares the voice note itself instead of only its text. The audio was
-  already in memory and was being dropped on the way to the result screen.
+- Echo's translated result now plays the original voice note alongside the
+  read-aloud translation, so the source can be re-checked without leaving the
+  result. The result's share control was removed; sharing remains available
+  from History and Speech Studio.
 - `ShareOutService.shareArtifact` is now the single send path. It prefers the
   audio file, falls back to text, and reports failure instead of opening an
-  empty share sheet. History, Echo, and Speech Studio no longer call a share
-  sheet directly.
+  empty share sheet. History and Speech Studio no longer call a share sheet
+  directly.
 - `CopyService` now owns the share signature for every copy. Five call sites
   used to decide independently, so the same result pasted from the History row
   came out unsigned while the same text copied from the result screen was

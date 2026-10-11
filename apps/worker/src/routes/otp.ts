@@ -1,11 +1,8 @@
 import { logger } from "@/core/logger";
 import { Env } from "@/core/types";
-import {
-  safeParseJSON,
-  tooManyRequests,
-  guardContentType,
-} from "@/core/guards";
-import { supabaseOtpHeaders, supabasePost } from "@/services/supabase";
+import { tooManyRequests } from "@/core/guards";
+import type { z } from "zod";
+
 import { otpRequestSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
@@ -138,6 +135,30 @@ async function verifyTurnstile(
   }
 }
 
+function getOtpHeaders(
+  env: Env,
+  clientIp: string,
+): Record<string, string> | null {
+  if (
+    !env.SUPABASE_URL ||
+    (!env.SUPABASE_SECRET_KEY && !env.SUPABASE_SERVICE_ROLE_KEY)
+  ) {
+    return null;
+  }
+  if (!env.SUPABASE_SECRET_KEY) {
+    return {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+    };
+  }
+  return {
+    apikey: env.SUPABASE_SECRET_KEY,
+    "Sb-Forwarded-For": clientIp,
+    "Content-Type": "application/json",
+  };
+}
+
 async function throttled(
   env: Env,
   key: string,
@@ -192,31 +213,11 @@ async function throttled(
 }
 
 export async function handleSendOtp(
+  body: z.infer<typeof otpRequestSchema>,
   request: Request,
   env: Env,
 ): Promise<Response> {
-  const ctGuard = guardContentType(request);
-  if (!ctGuard.allowed) return ctGuard.response;
-
-  const parsed = await safeParseJSON<unknown>(request);
-  if (!parsed.ok) return parsed.response;
-
-  const body = otpRequestSchema.safeParse(parsed.data);
-  if (!body.success) {
-    const firstPath = body.error.issues[0]?.path[0];
-    if (firstPath === "email") {
-      return Response.json(
-        { error: WORKER_ERROR_CODES.INVALID_EMAIL },
-        { status: 400 },
-      );
-    }
-    return Response.json(
-      { error: WORKER_ERROR_CODES.INVALID_BODY },
-      { status: 400 },
-    );
-  }
-
-  const { email, turnstileToken, appCheckToken } = body.data;
+  const { email, turnstileToken, appCheckToken } = body;
   const clientIp = request.headers.get("CF-Connecting-IP") || "unknown";
 
   const headerAppCheck = request.headers.get("X-Firebase-AppCheck");
@@ -256,16 +257,27 @@ export async function handleSendOtp(
   }
 
   try {
-    const res = await supabasePost(
-      env,
-      "/auth/v1/otp",
-      {
-        email,
-        create_user: true,
-      },
-      undefined,
-      supabaseOtpHeaders(env, clientIp),
-    );
+    const headers = getOtpHeaders(env, clientIp);
+    if (!headers) {
+      return Response.json(
+        { error: WORKER_ERROR_CODES.OTP_SEND_FAILED },
+        { status: 502 },
+      );
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    let res: Response | null = null;
+    try {
+      res = await fetch(`${env.SUPABASE_URL}/auth/v1/otp`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ email, create_user: true }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!res || !res.ok) {
       const upstreamBody = res

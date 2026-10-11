@@ -43,8 +43,9 @@ function readConfig() {
   return config;
 }
 
-function renderTemplate(html, config) {
+function renderTemplate(html, config, fileEnv) {
   const year = new Date().getFullYear();
+  const postHogKey = process.env.POSTHOG_API_KEY || fileEnv?.POSTHOG_API_KEY || "";
   return html
     .replace(/\{\{APP_NAME\}\}/g, config.app.name)
     .replace(/\{\{APP_TAGLINE\}\}/g, config.app.tagline)
@@ -52,6 +53,7 @@ function renderTemplate(html, config) {
     .replace(/\{\{APP_VERSION\}\}/g, config.app.version)
     .replace(/\{\{DOWNLOAD_URL\}\}/g, config.links.download)
     .replace(/\{\{SITE_URL\}\}/g, config.links.siteUrl)
+    .replace(/\{\{POSTHOG_API_KEY\}\}/g, postHogKey)
 
     .replace(/\{\{CONTACT_EMAIL\}\}/g, config.contact.email)
     .replace(/\{\{COMPANY_NAME\}\}/g, config.legal.companyName)
@@ -130,6 +132,7 @@ function renderRobots(siteUrl) {
 
 function build() {
   const config = readConfig();
+  const fileEnv = loadEnvFile();
   ensureDir(dist);
   ensureDir(join(dist, "css"));
   ensureDir(join(dist, "js"));
@@ -155,7 +158,7 @@ function build() {
 
 for (const page of pages) {
     let html = readFileSync(join(src, page), "utf8");
-    let rendered = renderTemplate(html, config);
+    let rendered = renderTemplate(html, config, fileEnv);
 
     if (page === "changelog.html") {
       const list = renderChangelogList(join(__dirname, "../../CHANGELOG.md"));

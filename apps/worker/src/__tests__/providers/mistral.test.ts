@@ -13,10 +13,13 @@ describe("Mistral provider", () => {
       ),
     );
 
-    const result = await mistral.translate(
+    const result = await mistral.ttt(
       "Hello world",
-      "Italian",
-      "English",
+      {
+        targetLang: "it",
+        sourceLang: "en",
+        transliteration: false,
+      },
       mockEnv(),
       mockSignal(),
     );
@@ -31,10 +34,13 @@ describe("Mistral provider", () => {
         jsonResponse({ error: "rate limited" }, 429),
       ),
     );
-    const result = await mistral.translate(
+    const result = await mistral.ttt(
       "Hello",
-      "Italian",
-      "English",
+      {
+        targetLang: "it",
+        sourceLang: "en",
+        transliteration: false,
+      },
       mockEnv(),
       mockSignal(),
     );
@@ -45,10 +51,13 @@ describe("Mistral provider", () => {
     server.use(
       http.post(PROVIDER_URLS.mistralChat, () => jsonResponse({ choices: [] })),
     );
-    const result = await mistral.translate(
+    const result = await mistral.ttt(
       "Hello",
-      "Italian",
-      "English",
+      {
+        targetLang: "it",
+        sourceLang: "en",
+        transliteration: false,
+      },
       mockEnv(),
       mockSignal(),
     );

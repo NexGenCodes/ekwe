@@ -1,8 +1,19 @@
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { error } from "@/core/http";
-import type { RouteHandler } from "@/core/pipeline";
 import { readSpeechCache } from "@/services/speech";
 import { verifySpeechUrl } from "@/utils/speech-url";
+import type { Env } from "@/core/types";
+import type { RequestTimings } from "@/core/timing";
+
+interface RouteContext {
+  request: Request;
+  env: Env;
+  ctx: ExecutionContext;
+  params: Record<string, string>;
+  timings: RequestTimings;
+}
+
+type RouteHandler = (rctx: RouteContext) => Response | Promise<Response>;
 
 const CACHE_KEY_RE =
   /^speech:(?:shared|[a-f0-9]{64}):[A-Za-z0-9_-]+:(?:male|female|auto):(?:free|premium):cache:[A-Za-z-]+:[a-f0-9]{64}\.[a-f0-9]{32}$/;

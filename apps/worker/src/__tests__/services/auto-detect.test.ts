@@ -159,7 +159,7 @@ describe("validateTranscriptLanguage", () => {
   });
 
   test("accepts a provider-reported name once it is a canonical code", () => {
-    // This is the seam the whole design depends on. A Whisper-family provider
+    // This is the join the whole design depends on. A Whisper-family provider
     // answers "French"; the provider folds that to `fr` via
     // canonicalLanguageFromName; this check then has to agree with franc. If
     // either half drifts — the folding, or the comparison — a correct

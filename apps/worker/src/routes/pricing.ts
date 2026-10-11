@@ -11,7 +11,9 @@ import type { FlutterwaveCurrency } from "@ekwe/shared/money";
 import { LocalPrice, LOCAL_PRICES } from "@ekwe/shared/plans";
 import { storePricingResponseSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
 import { withCache } from "@/core/cache";
-import { supabaseGet } from "@/services/supabase";
+import { describeError, retryOnConnectionLoss } from "@/db/retry";
+import { appConfig } from "@ekwe/db/schema";
+import { eq } from "drizzle-orm";
 
 export interface LocalPlanPrices {
   currency: FlutterwaveCurrency;
@@ -21,22 +23,12 @@ export interface LocalPlanPrices {
   annualUsd: number;
 }
 
-interface SubscriptionConfigRow {
-  base_price_usd?: number | null;
-  discount_percent?: number | null;
-  annual_discount_percent?: number | null;
-  local_prices?: unknown;
-}
-
 interface SubscriptionConfig {
   basePriceUsd: number;
   discountPercent: number;
   annualDiscountPercent: number;
   localPrices: Record<string, LocalPrice>;
 }
-
-const APP_CONFIG_PATH =
-  "/rest/v1/app_config?id=eq.1&select=base_price_usd,discount_percent,annual_discount_percent,local_prices";
 
 const CONFIG_CACHE_TTL_MS = 10_000;
 
@@ -96,42 +88,34 @@ async function loadSubscriptionConfig(
 
   let load: ConfigLoad;
   try {
-    const res = await supabaseGet(env, APP_CONFIG_PATH);
-    if (!res || !res.ok) {
-      logger.warn("[pricing] App config unavailable", {
-        status: res?.status ?? "unconfigured",
-      });
-      load = { kind: "unreachable" };
+    const [row] = await retryOnConnectionLoss(
+      (client) => client.select().from(appConfig).where(eq(appConfig.id, 1)),
+      env,
+    );
+
+    if (!row) {
+      logger.warn("[pricing] No app_config row");
+      load = { kind: "missing" };
     } else {
-      const rows: SubscriptionConfigRow[] = await res.json();
-      const row = rows[0];
-      if (!row) {
-        logger.warn("[pricing] No app_config row");
-        load = { kind: "missing" };
-      } else {
-        load = {
-          kind: "loaded",
-          config: {
-            basePriceUsd: toFinite(
-              row.base_price_usd,
-              DEFAULT_CONFIG.basePriceUsd,
-            ),
-            discountPercent: toFinite(
-              row.discount_percent,
-              DEFAULT_CONFIG.discountPercent,
-            ),
-            annualDiscountPercent: toFinite(
-              row.annual_discount_percent,
-              DEFAULT_CONFIG.annualDiscountPercent,
-            ),
-            localPrices: parseLocalPrices(row.local_prices),
-          },
-        };
-      }
+      load = {
+        kind: "loaded",
+        config: {
+          basePriceUsd: toFinite(row.basePriceUsd, DEFAULT_CONFIG.basePriceUsd),
+          discountPercent: toFinite(
+            row.discountPercent,
+            DEFAULT_CONFIG.discountPercent,
+          ),
+          annualDiscountPercent: toFinite(
+            row.annualDiscountPercent,
+            DEFAULT_CONFIG.annualDiscountPercent,
+          ),
+          localPrices: parseLocalPrices(row.localPrices),
+        },
+      };
     }
   } catch (error) {
     logger.error("[pricing] Failed to load subscription config", {
-      error: error instanceof Error ? error.message : String(error),
+      error: describeError(error),
     });
     load = { kind: "unreachable" };
   }

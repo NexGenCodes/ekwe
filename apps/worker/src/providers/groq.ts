@@ -1,6 +1,7 @@
 import {
   CLIENT_ABORTED,
   Env,
+  TttRequest,
   TranscribeResult,
   TranslateResult,
 } from "@/core/types";
@@ -97,15 +98,16 @@ export async function stt(
   return null;
 }
 
-export async function translate(
+export async function ttt(
   text: string,
-  targetLang: string,
-  sourceLang: string | undefined,
+  request: TttRequest,
   env: Env,
   signal: AbortSignal,
-  transliteration: boolean = false,
 ): Promise<TranslateResult | null> {
-  logger.info("[groq] Requesting translation", { targetLang, sourceLang });
+  logger.info("[groq] Requesting translation", {
+    targetLang: request.targetLang,
+    sourceLang: request.sourceLang,
+  });
 
   try {
     const { response: res, lastStatus } = await rotateKeysDetailed(
@@ -127,9 +129,9 @@ export async function translate(
                 {
                   role: "system",
                   content: buildTranslatePrompt(
-                    targetLang,
-                    sourceLang,
-                    transliteration,
+                    request.targetLang,
+                    request.sourceLang,
+                    request.transliteration,
                   ),
                 },
                 { role: "user", content: text },
@@ -159,7 +161,7 @@ export async function translate(
 
     const { translation, transliteration: romanized } = parseTranslateOutput(
       content,
-      transliteration,
+      request.transliteration,
     );
     return {
       translation,

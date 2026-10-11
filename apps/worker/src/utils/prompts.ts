@@ -1,3 +1,4 @@
+import { getLanguageName } from "@ekwe/shared";
 import { sanitizeProviderOutput } from "@/core/sanitize";
 
 export const ROMANIZATION_MARKER = "<|ekwe:romanization|>";
@@ -22,11 +23,21 @@ export function parseTranslateOutput(
   return { translation, transliteration: romanized };
 }
 
+/**
+ * Takes canonical codes and resolves them here, so a provider can pin the
+ * language it must write without knowing our catalog's spelling of it.
+ */
 export function buildTranslatePrompt(
   targetLang: string,
   sourceLang?: string,
   transliteration?: boolean,
 ): string {
+  const targetName = getLanguageName(targetLang);
+  const sourceName =
+    sourceLang && sourceLang !== "auto"
+      ? getLanguageName(sourceLang)
+      : undefined;
+
   const outputRule = transliteration
     ? `4. Output the translation first, then — ONLY if the target script differs from the Latin alphabet — a blank line, then exactly the marker ${ROMANIZATION_MARKER}, then the romanized pronunciation guide in Latin letters, then nothing else.
 5. The romanized guide must cover the full translation word-for-word and contain only Latin alphabet characters.
@@ -34,7 +45,7 @@ export function buildTranslatePrompt(
     : `4. Output ONLY the final translated text and nothing else.`;
 
   return `You are an expert, highly accurate professional translator.
-Your sole task is to translate the user's text${sourceLang ? ` from ${sourceLang}` : ""} into fluent, natural-sounding ${targetLang}.
+Your sole task is to translate the user's text${sourceName ? ` from ${sourceName}` : ""} into fluent, natural-sounding ${targetName}.
 Rules:
 1. Preserve the original tone, context, and formatting exactly.
 2. Do not add any explanations, conversational text, notes, or preambles.

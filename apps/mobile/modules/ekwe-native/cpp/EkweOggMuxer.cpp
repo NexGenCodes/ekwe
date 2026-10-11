@@ -130,23 +130,29 @@ bool OggMuxer::write_packet(const uint8_t* opus_data, size_t opus_size, int64_t 
         ALOG("write_packet: not ok");
         return false;
     }
-    ALOG("write_packet: size=%zu gp=%lld", opus_size, (long long)granule_position);
     last_granule_position_ = granule_position;
     OggPage page = make_page(opus_data, opus_size, granule_position, false, false);
     return write_page(page);
 }
 
 bool OggMuxer::finalize() {
-    if (!ok_ || finalized_) {
-        ALOG("finalize: skipped ok=%d finalized=%d", ok_, finalized_);
-        return false;
-    }
+    if (!ok_) return false;
+    // A JS-initiated stop can race the VAD auto-stop, which calls stop() from
+    // inside process_frame. Both reach here, so only the first may emit the EOS
+    // page; a second would write a duplicate terminator.
+    if (finalized_.exchange(true)) return false;
     ALOG("finalize: last_gp=%lld", (long long)last_granule_position_);
-    finalized_ = true;
 
-    // Write an empty page with EOS flag to properly terminate the Ogg stream
-    // Per RFC 7845, the final page must have the EOS flag set
-    OggPage page = make_page(nullptr, 0, last_granule_position_, false, true);
+    // Write an empty page with the EOS flag to terminate the stream.
+    //
+    // Its granule position must be -1, not the previous page's value: this page
+    // completes no packet, and a real sample count here asserts that samples
+    // finished on a page that carries none. Lenient readers (libopusfile,
+    // ffmpeg) ignore that and stream the file fine, but a reader that walks
+    // pages to build an amplitude envelope — which is exactly what a messaging
+    // client does to draw a voice note waveform — can take the assertion as a
+    // corrupt stream and come back with nothing to plot.
+    OggPage page = make_page(nullptr, 0, -1, false, true);
     write_page(page);
 
     if (file_) {
@@ -243,9 +249,12 @@ OggPage OggMuxer::make_page(const uint8_t* data, size_t size, int64_t granule_po
         remaining -= seg_size;
     }
 
-    // Packet data
-    size_t offset = OGG_PAGE_HEADER_SIZE + page.segment_count;
-    std::memcpy(&page.data[offset], data, size);
+    // Packet data. The EOS page passes a null pointer with size 0, and
+    // memcpy from null is undefined even for a zero length.
+    if (size > 0 && data != nullptr) {
+        const size_t offset = OGG_PAGE_HEADER_SIZE + page.segment_count;
+        std::memcpy(&page.data[offset], data, size);
+    }
 
     // Calculate and write checksum
     auto checksum = calculate_checksum(page);

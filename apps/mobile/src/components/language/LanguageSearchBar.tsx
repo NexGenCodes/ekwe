@@ -52,7 +52,11 @@ export function LanguageSearchBar({
         autoCorrect={false}
       />
       {value.length > 0 && (
-        <Pressable onPress={() => onChangeText("")} hitSlop={8}>
+        <Pressable
+          onPress={() => onChangeText("")}
+          accessibilityLabel="Clear language search"
+          hitSlop={8}
+        >
           <X size={16} color={color.muted} />
         </Pressable>
       )}

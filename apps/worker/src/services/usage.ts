@@ -3,7 +3,10 @@ import { getLimits } from "@/core/limits";
 import { logger } from "@/core/logger";
 import { recordUserEvent } from "@/utils/analytics";
 import { nextUtcMidnightMs } from "@/services/preflight";
-import { supabasePost } from "@/services/supabase";
+import { getDb } from "@/db";
+import { describeError, retryOnConnectionLoss } from "@/db/retry";
+import { userDailyUsage } from "@ekwe/db/schema";
+import { eq, and, sql } from "drizzle-orm";
 import { USAGE_METER_META, usageSnapshotSchema } from "@ekwe/shared";
 import type { UsageMeterId, UsageSnapshot, PlanLimits } from "@ekwe/shared";
 
@@ -22,8 +25,40 @@ export function trackBillableSuccess(
   );
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+export function releaseUsage(
+  env: Env,
+  userId: string,
+  type: UsageType,
+  ctx: ExecutionContext | undefined,
+  charCount = 0,
+): void {
+  if (!ctx) return;
+  ctx.waitUntil(
+    refundUsage(env, userId, type, charCount)
+      // A rejection here reaches waitUntil and kills the isolate.
+      .catch(() => {}),
+  );
+}
+
+async function refundUsage(
+  env: Env,
+  userId: string,
+  type: UsageType,
+  charCount = 0,
+): Promise<void> {
+  try {
+    const db = getDb(env);
+    await db.execute(
+      sql`SELECT refund_usage(${userId}, ${type}, ${charCount})`,
+    );
+    await recordUserEvent(env, "usage", userId, "ok", type);
+  } catch (err) {
+    logger.error("[usage] refund_usage error", {
+      error: describeError(err),
+      type,
+    });
+    await recordUserEvent(env, "usage", userId, "fail", type);
+  }
 }
 
 /**
@@ -40,49 +75,22 @@ async function consumeUsage(
   type: UsageType,
   charCount = 0,
 ): Promise<void> {
-  const MAX_ATTEMPTS = 3;
+  try {
+    const db = getDb(env);
+    // Not wrapped in retryOnConnectionLoss: this is a +1 counter, so a replay
+    // after a lost response would charge twice. Under-charging is cheaper.
+    await db.execute(
+      sql`SELECT consume_usage(${userId}, ${type}, ${charCount})`,
+    );
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const res = await supabasePost(env, "/rest/v1/rpc/consume_usage", {
-        p_user_id: userId,
-        p_type: type,
-        p_chars: charCount,
-      });
-
-      if (res?.ok) {
-        await recordUserEvent(env, "usage", userId, "ok", type);
-        return;
-      }
-
-      if (res?.status === 429 && attempt < MAX_ATTEMPTS) {
-        await sleep(200 * attempt);
-        continue;
-      }
-
-      logger.error("[usage] consume_usage RPC failed", {
-        status: res?.status,
-        type,
-        attempt,
-        charged: false,
-      });
-      await recordUserEvent(
-        env,
-        "usage",
-        userId,
-        res ? "fail" : "unconfigured",
-        type,
-      );
-      return;
-    } catch (err) {
-      logger.error("[usage] consume_usage error", {
-        error: err instanceof Error ? err.message : String(err),
-        type,
-        attempt,
-        charged: false,
-      });
-      return;
-    }
+    await recordUserEvent(env, "usage", userId, "ok", type);
+  } catch (err) {
+    logger.error("[usage] consume_usage error", {
+      error: describeError(err),
+      type,
+      charged: false,
+    });
+    await recordUserEvent(env, "usage", userId, "fail", type);
   }
 }
 
@@ -92,23 +100,24 @@ export async function fetchUsageSnapshot(
   tier: Tier,
 ): Promise<UsageSnapshot | null> {
   try {
-    const res = await supabasePost(env, "/rest/v1/rpc/get_daily_usage", {
-      p_user_id: userId,
-    });
-    if (!res) return null;
-    if (!res.ok) {
-      logger.error("[usage] get_daily_usage RPC failed", {
-        status: res.status,
-      });
-      return null;
-    }
+    const day = new Date().toISOString().slice(0, 10);
+    const [row] = await retryOnConnectionLoss(
+      (client) =>
+        client
+          .select()
+          .from(userDailyUsage)
+          .where(
+            and(eq(userDailyUsage.userId, userId), eq(userDailyUsage.day, day)),
+          ),
+      env,
+    );
 
-    const data: {
-      day: string;
-      translate: number;
-      transcribe: number;
-      speech: number;
-    } = await res.json();
+    const data = {
+      day,
+      translate: row?.translateCount ?? 0,
+      transcribe: row?.transcribeCount ?? 0,
+      speech: row?.speechChars ?? 0,
+    };
 
     const limits = getLimits(tier);
 
@@ -147,7 +156,7 @@ export async function fetchUsageSnapshot(
     return parsed.data;
   } catch (err) {
     logger.error("[usage] get_daily_usage error", {
-      error: err instanceof Error ? err.message : String(err),
+      error: describeError(err),
     });
     return null;
   }

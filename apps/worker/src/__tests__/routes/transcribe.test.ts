@@ -1,6 +1,13 @@
 import { describe, test, expect, vi } from "vitest";
 import { handleTranscribe } from "@/routes/transcribe";
-import { mockEnv, makeAudioBlob, jsonResponse } from "@/__tests__/setup";
+import {
+  aiStub,
+  jsonBody,
+  jsonResponse,
+  kvStub,
+  makeAudioBlob,
+  mockEnv,
+} from "@/__tests__/setup";
 import { http } from "msw";
 import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
@@ -11,6 +18,7 @@ function makeRequest(lang?: string): Request {
   const blob = makeAudioBlob();
   const form = new FormData();
   form.append("file", blob, "test.wav");
+  form.append("duration", "1000");
   if (lang) form.append("lang", lang);
   return new Request("http://test/transcribe", {
     method: "POST",
@@ -44,11 +52,38 @@ describe("handleTranscribe pipeline", () => {
       makeRequest("en"),
       mockEnv(),
       "FREE",
+      "FREE",
       new AbortController().signal,
       "test-user",
     );
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.text).toBe("wit result");
+  });
+
+  test("empty transcript from witai fails over to the next provider", async () => {
+    const calls: string[] = [];
+    server.use(
+      http.post(PROVIDER_URLS.witaiDictation, ({ request }) => {
+        calls.push(request.url);
+        return jsonResponse({ text: "", is_final: true });
+      }),
+      http.post(PROVIDER_URLS.groqTranscriptions, () =>
+        jsonResponse({ text: "groq result" }),
+      ),
+    );
+
+    const res = await handleTranscribe(
+      makeRequest("en"),
+      mockEnv(),
+      "FREE",
+      "FREE",
+      new AbortController().signal,
+      "test-user",
+    );
+    const body = await jsonBody(res);
+    expect(body.text).toBe("groq result");
+    expect(body.provider).toBe("groq");
+    expect(calls).toHaveLength(1);
   });
 
   test("skipOnAuto skips witai when lang is auto", async () => {
@@ -81,10 +116,11 @@ describe("handleTranscribe pipeline", () => {
         GLADIA_KEY_5: "",
       }),
       "PREMIUM",
+      "PREMIUM",
       new AbortController().signal,
       "test-user",
     );
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(witCalled).toBe(false);
     expect(body.text).toBe("gladia result");
   }, 15000);
@@ -99,6 +135,7 @@ describe("handleTranscribe pipeline", () => {
     const res = await handleTranscribe(
       req,
       mockEnv(),
+      "FREE",
       "FREE",
       new AbortController().signal,
       "test-user",
@@ -116,16 +153,13 @@ describe("handleTranscribe pipeline", () => {
     );
 
     const env = mockEnv({
-      AI: {
-        run: async () => {
-          return {};
-        },
-      },
-    } as any);
+      AI: aiStub(async () => ({})),
+    });
 
     const res = await handleTranscribe(
       makeRequest("ig"),
       env,
+      "FREE",
       "FREE",
       new AbortController().signal,
       "test-user",
@@ -145,34 +179,32 @@ describe("handleTranscribe pipeline", () => {
 
     const env = mockEnv({
       WIT_KEY_ES: "",
-      AI: {
-        run: async () => {
-          return {};
-        },
-      },
-    } as any);
+      AI: aiStub(async () => ({})),
+    });
 
     const res = await handleTranscribe(
       makeRequest("es"),
       env,
       "FREE",
+      "FREE",
       new AbortController().signal,
       "test-user",
     );
     expect(cohereCalled).toBe(true);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.text).toBe("cohere result");
   });
 
   test("returns 503 when all providers fail", async () => {
     const env = mockEnv({
       WIT_KEY_EN: "",
-      AI: { run: vi.fn().mockRejectedValue(new Error("fail")) },
-    } as any);
+      AI: aiStub(vi.fn().mockRejectedValue(new Error("fail"))),
+    });
 
     const res = await handleTranscribe(
       makeRequest("en"),
       env,
+      "FREE",
       "FREE",
       new AbortController().signal,
       "test-user",
@@ -191,25 +223,59 @@ describe("handleTranscribe pipeline", () => {
       req,
       mockEnv(),
       "FREE",
+      "FREE",
       new AbortController().signal,
       "test-user",
     );
     expect(res.status).toBe(413);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("FILE_TOO_LARGE");
   });
 
   test("returns 413 AUDIO_TOO_LONG when duration exceeds the plan limit", async () => {
+    // The upload has to be big enough to actually hold the declared duration:
+    // the guard cross-checks the declared duration against the byte size, so a
+    // tiny file claiming 30 minutes is treated as a false declaration instead.
+    const durationMs = 1_801_000;
+    const blob = new Uint8Array(
+      Math.ceil((4_000 * durationMs) / 8000 / 1024) * 1024,
+    );
+    const form = new FormData();
+    form.append("file", new Blob([blob], { type: "audio/ogg" }), "long.ogg");
+    form.append("duration", String(durationMs));
+
     const res = await handleTranscribe(
-      makeDurationRequest(1_801_000, "en"),
+      new Request("http://test/transcribe", { method: "POST", body: form }),
       mockEnv(),
+      "PREMIUM",
       "PREMIUM",
       new AbortController().signal,
       "test-user",
     );
     expect(res.status).toBe(413);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("AUDIO_TOO_LONG");
+  });
+
+  test("ignores a declared duration the upload cannot physically hold", async () => {
+    // 30 minutes of speech cannot fit in a few KB. Honouring the declaration
+    // would let a caller state any duration they liked, which is what the
+    // duration guard exists to prevent.
+    server.use(
+      http.post(PROVIDER_URLS.witaiDictation, () =>
+        jsonResponse({ text: "wit result" }),
+      ),
+    );
+
+    const res = await handleTranscribe(
+      makeDurationRequest(1_801_000, "en"),
+      mockEnv(),
+      "PREMIUM",
+      "PREMIUM",
+      new AbortController().signal,
+      "test-user",
+    );
+    expect(res.status).toBe(200);
   });
 
   test("allows duration within the plan limit", async () => {
@@ -224,6 +290,7 @@ describe("handleTranscribe pipeline", () => {
     const res = await handleTranscribe(
       makeDurationRequest(60_000, "en"),
       mockEnv(),
+      "FREE",
       "FREE",
       new AbortController().signal,
       "test-user",
@@ -242,23 +309,24 @@ describe("handleTranscribe pipeline", () => {
       req,
       mockEnv(),
       "FREE",
+      "FREE",
       new AbortController().signal,
       "test-user",
     );
     expect(res.status).toBe(415);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("INVALID_CONTENT_TYPE");
   });
 
   test("fails open to providers when KV cache lookup fails", async () => {
     const env = mockEnv({
-      EKWE_KV: {
+      EKWE_KV: kvStub({
         get: async () => {
           throw new Error("kv down");
         },
         put: async () => {},
-      },
-    } as any);
+      }),
+    });
     server.use(
       http.post(PROVIDER_URLS.witaiDictation, () =>
         jsonResponse({ text: "wit result" }),
@@ -268,11 +336,12 @@ describe("handleTranscribe pipeline", () => {
       makeRequest("en"),
       env,
       "FREE",
+      "FREE",
       new AbortController().signal,
       "test-user",
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.text).toBe("wit result");
   });
 
@@ -302,14 +371,15 @@ describe("handleTranscribe pipeline", () => {
     const res = await handleTranscribe(
       makeRequest("auto"),
       mockEnv({
-        AI: { run: vi.fn().mockRejectedValue(new Error("fail")) },
-      } as any),
+        AI: aiStub(vi.fn().mockRejectedValue(new Error("fail"))),
+      }),
+      "PREMIUM",
       "PREMIUM",
       new AbortController().signal,
       "test-user",
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.text).toContain("automatic transcription");
   });
 
@@ -341,8 +411,9 @@ describe("handleTranscribe pipeline", () => {
     const res = await handleTranscribe(
       makeRequest("auto"),
       mockEnv({
-        AI: { run: vi.fn().mockRejectedValue(new Error("fail")) },
-      } as any),
+        AI: aiStub(vi.fn().mockRejectedValue(new Error("fail"))),
+      }),
+      "PREMIUM",
       "PREMIUM",
       new AbortController().signal,
       "test-user",
@@ -386,12 +457,96 @@ describe("handleTranscribe pipeline", () => {
       makeRequest("en"),
       mockEnv(),
       "PREMIUM",
+      "PREMIUM",
       new AbortController().signal,
       "test-user",
     );
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.text).toBe("wit result");
     expect(providerOrder[0]).toBe("witai");
     expect(providerOrder).not.toContain("deepgram");
+  });
+});
+
+function makeSizedRequest(totalBytes: number, lang?: string): Request {
+  const buffer = new ArrayBuffer(totalBytes);
+  const view = new DataView(buffer);
+  const writeStr = (offset: number, s: string) => {
+    for (let i = 0; i < s.length; i++)
+      view.setUint8(offset + i, s.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, totalBytes - 8, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 8000, true);
+  view.setUint32(28, 16000, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, "data");
+  view.setUint32(40, totalBytes - 44, true);
+
+  const form = new FormData();
+  form.append("file", new Blob([buffer], { type: "audio/wav" }), "test.wav");
+  form.append("duration", "1000");
+  if (lang) form.append("lang", lang);
+  return new Request("http://test/transcribe", { method: "POST", body: form });
+}
+
+describe("throttled entitlement split", () => {
+  const signal = () => new AbortController().signal;
+
+  test("a throttled Pro keeps Pro size limits while running the FREE pipeline", async () => {
+    server.use(
+      http.post(PROVIDER_URLS.witaiDictation, () =>
+        jsonResponse({ text: "wit result" }),
+      ),
+    );
+
+    const throttled = await handleTranscribe(
+      makeSizedRequest(6 * 1024 * 1024, "en"),
+      mockEnv(),
+      "PREMIUM",
+      "FREE",
+      signal(),
+      "test-user",
+    );
+    expect(throttled.status).toBe(200);
+    expect((await jsonBody(throttled)).text).toBe("wit result");
+  });
+
+  test("a throttled Pro keeps auto-detect while running the FREE pipeline", async () => {
+    server.use(
+      http.post(PROVIDER_URLS.groqTranscriptions, () =>
+        jsonResponse({ text: "groq result" }),
+      ),
+    );
+
+    const freeEntitled = await handleTranscribe(
+      makeRequest("auto"),
+      mockEnv(),
+      "FREE",
+      "FREE",
+      signal(),
+      "test-user",
+    );
+    expect(freeEntitled.status).toBe(403);
+    expect((await jsonBody(freeEntitled)).error).toBe(
+      "AUTO_DETECT_UNAVAILABLE",
+    );
+
+    const throttled = await handleTranscribe(
+      makeRequest("auto"),
+      mockEnv(),
+      "PREMIUM",
+      "FREE",
+      signal(),
+      "test-user",
+    );
+    expect(throttled.status).toBe(200);
+    expect((await jsonBody(throttled)).provider).toBe("groq");
   });
 });

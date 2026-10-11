@@ -2,6 +2,7 @@ import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import React, { useCallback } from "react";
 import { StyleSheet } from "react-native";
 
+import { useTabBarTotalHeight } from "@/components/CustomTabBar";
 import { HistoryEntryRow } from "@/components";
 import { Box, Text, Spinner } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
@@ -19,6 +20,7 @@ export interface HistoryListSectionProps {
   isSearching: boolean;
   hasMore: boolean;
   isFetchingNextPage: boolean;
+  isInitialLoading?: boolean;
   onLoadMore?: () => void;
   handleEntryPress: (entry: HistoryEntry) => void;
   onDeleteEntry: (entryId: string) => void;
@@ -32,11 +34,13 @@ export const HistoryListSection = React.memo(function HistoryListSection({
   isSearching,
   hasMore,
   isFetchingNextPage,
+  isInitialLoading = false,
   onLoadMore,
   handleEntryPress,
   onDeleteEntry,
 }: HistoryListSectionProps): React.ReactElement {
   const { color } = useTheme();
+  const tabBarHeight = useTabBarTotalHeight();
 
   const renderListItem = useCallback(
     ({ item }: { item: ListItem }): React.ReactElement => {
@@ -128,19 +132,92 @@ export const HistoryListSection = React.memo(function HistoryListSection({
         }
         getItemType={(item) => item.type}
         ListFooterComponent={listFooter}
+        ListEmptyComponent={
+          isInitialLoading ? <HistorySkeleton color={color} /> : null
+        }
         onEndReached={!isSearching && hasMore ? onLoadMore : undefined}
         onEndReachedThreshold={0.5}
         refreshing={isRefreshing}
         onRefresh={onRefresh}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: tabBarHeight + spacing.xl },
+        ]}
         contentInsetAdjustmentBehavior="automatic"
       />
     </Box>
   );
 });
 
+const SKELETON_ROWS = 6;
+
+function HistorySkeleton({
+  color,
+}: {
+  color: ReturnType<typeof useTheme>["color"];
+}): React.ReactElement {
+  const surface = withAlpha(color.foreground, 0.06);
+  const muted = withAlpha(color.foreground, 0.04);
+
+  return (
+    <Box
+      accessibilityRole="progressbar"
+      accessibilityLabel="Loading history"
+      style={styles.skeletonContainer}
+    >
+      {Array.from({ length: SKELETON_ROWS }, (_, index) => (
+        <Box
+          key={index}
+          style={[
+            styles.skeletonRow,
+            { backgroundColor: surface, borderColor: color.border },
+          ]}
+        >
+          <Box style={[styles.skeletonIcon, { backgroundColor: muted }]} />
+          <Box style={{ flex: 1, gap: spacing.sm }}>
+            <Box
+              style={[
+                styles.skeletonLine,
+                { backgroundColor: muted, width: "72%" },
+              ]}
+            />
+            <Box
+              style={[
+                styles.skeletonLine,
+                { backgroundColor: muted, width: "45%" },
+              ]}
+            />
+          </Box>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 const styles = StyleSheet.create({
+  skeletonContainer: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    gap: spacing.md,
+  },
+  skeletonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+  },
+  skeletonIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.lg,
+  },
+  skeletonLine: {
+    height: 10,
+    borderRadius: borderRadius.full,
+  },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -171,7 +248,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingTop: spacing.sm,
-    paddingBottom: spacing["6xl"],
   },
   listFooter: {
     paddingVertical: spacing.xl,

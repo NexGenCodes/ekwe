@@ -101,6 +101,23 @@
     }
   ],
 
+  // Postgres connection pool for Supabase. The worker speaks the Postgres wire
+  // protocol, so it cannot use the Neon HTTP driver: Hyperdrive keeps a warm,
+  // pooled connection set to Supavisor at the Cloudflare edge, which avoids the
+  // TCP+TLS handshake that short-lived isolates would otherwise pay on every
+  // query. Create the config once with:
+  //   wrangler hyperdrive create ekwe-db \
+  //     --connection-string "postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres"
+  // then paste the returned id below. `localConnectionString` is only read by
+  // `wrangler dev`; it points at `supabase start` (local Supabase, port 54322).
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "53b7e8f069ce4817978a5dcc70f114ec",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+    }
+  ],
+
   // Analytics Engine dataset for provider-pipeline telemetry (per-attempt
   // outcomes, latency, error class, preflight/usage events). The dataset is
   // created automatically on the first write from a deployed Worker — no

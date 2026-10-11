@@ -2,7 +2,10 @@ import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { logger } from "@/core/logger";
 import type { Env } from "@/core/types";
 import { registerProvider, ProviderResult } from "@/services/billing";
-import { supabasePost } from "@/services/supabase";
+import { claimFlutterwaveTransaction } from "@/services/flutterwave-claim";
+import { describeError, retryOnConnectionLoss } from "@/db/retry";
+import { sql, inArray, eq } from "drizzle-orm";
+import { usersInAuth, flutterwaveTransactionClaims } from "@ekwe/db/schema";
 import { toLowestUnit, resolvePaymentCurrency } from "@ekwe/shared/money";
 import { getAuthoritativePlanPrices } from "@/routes/pricing";
 
@@ -142,19 +145,17 @@ export function computeProExpiry(
   return new Date(now + graceMs).toISOString();
 }
 
+function parseEndDate(endDate: string | null | undefined): string | null {
+  if (!endDate) return null;
+  const parsed = new Date(endDate);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 function resolveProExpiry(
   endDate: string | null | undefined,
   plan: BillingPlanPeriod,
-): string | null {
-  if (endDate) {
-    const parsed = new Date(endDate);
-    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
-  }
-  return computeProExpiry(plan);
-}
-
-function isPermanentFailure(status: number): boolean {
-  return status >= 400 && status < 500;
+): string {
+  return parseEndDate(endDate) ?? computeProExpiry(plan);
 }
 
 function ackResult(
@@ -164,7 +165,7 @@ function ackResult(
   return { response, fullyApplied: applied.ok || applied.permanent };
 }
 
-async function setProStatus(
+export async function setProStatus(
   env: Env,
   identifier: { email?: string; userId?: string },
   isPro: boolean,
@@ -173,42 +174,31 @@ async function setProStatus(
   paymentRef?: string | null,
 ): Promise<ProStatusResult> {
   try {
-    const res = await supabasePost(env, "/rest/v1/rpc/set_pro_status", {
-      p_email: identifier.email || null,
-      p_user_id: identifier.userId || null,
-      p_is_pro: isPro,
-      p_expires_at: expiresAt ?? null,
-      p_provider: provider,
-      p_payment_ref: paymentRef ?? null,
-    });
+    // Absolute set, so a retry lands on the same state.
+    const result = await retryOnConnectionLoss(
+      (client) =>
+        client.execute(sql`SELECT * FROM set_pro_status(
+      ${identifier.email || null},
+      ${identifier.userId || null},
+      ${isPro},
+      ${expiresAt ?? null},
+      ${provider},
+      ${paymentRef ?? null}
+    )`),
+      env,
+    );
 
-    if (!res) {
-      logger.error(
-        "[flutterwave] Missing Supabase credentials to update subscription",
-      );
-      return { ok: false, permanent: false };
-    }
-    if (!res.ok) {
-      const body = (await res.text().catch(() => "")).slice(0, 300);
-      const permanent = isPermanentFailure(res.status);
-      logger.error("[flutterwave] set_pro_status RPC failed", {
-        status: res.status,
-        body,
-        permanent,
-      });
-      return { ok: false, permanent };
-    }
-    return { ok: true, permanent: false };
+    const row = result[0] as { permanent?: boolean } | undefined;
+    return { ok: true, permanent: row?.permanent === true };
   } catch (err) {
     logger.error("[flutterwave] set_pro_status error", {
-      error: err instanceof Error ? err.message : String(err),
+      error: describeError(err),
     });
     return { ok: false, permanent: false };
   }
 }
 
 function resolveUser(
-  env: Env,
   email: string | null,
   txRef: string | null,
 ): { email?: string; userId?: string } | null {
@@ -225,6 +215,40 @@ function parsePlanFromTxRef(txRef: string | null): BillingPlanPeriod | null {
   const plan = txRef.split("_")[2];
   if (plan === "monthly" || plan === "annual") return plan;
   return null;
+}
+
+function userIdFromTxRef(txRef: string | null): string | null {
+  const match = txRef?.match(/ekwe_([a-f0-9-]+)_/);
+  return match ? match[1] : null;
+}
+
+async function resolveUserIdForClaim(
+  env: Env,
+  txRef: string | null,
+  email: string | null,
+): Promise<string | null> {
+  const fromTxRef = userIdFromTxRef(txRef);
+  if (fromTxRef) return fromTxRef;
+  if (!email) return null;
+
+  try {
+    const rows = await retryOnConnectionLoss(
+      (client) =>
+        client
+          .select({ id: usersInAuth.id })
+          .from(usersInAuth)
+          .where(eq(usersInAuth.email, email.toLowerCase()))
+          .limit(1),
+      env,
+    );
+    return rows[0]?.id ?? null;
+  } catch (err) {
+    logger.error("[reconciliation] Failed to resolve user id by email", {
+      email,
+      error: describeError(err),
+    });
+    return null;
+  }
 }
 
 function planFromMeta(plan?: string): BillingPlanPeriod | null {
@@ -316,7 +340,7 @@ async function processFlutterwaveEvent(
 
   const email = data.customer?.email ?? null;
   const txRef = data.tx_ref ?? null;
-  const identifier = resolveUser(env, email, txRef);
+  const identifier = resolveUser(email, txRef);
 
   if (!identifier) {
     logger.warn("[flutterwave] Could not resolve user from event", {
@@ -388,14 +412,9 @@ async function processFlutterwaveEvent(
   }
 
   if (eventType === "invoice.updated") {
-    const sub = data.subscription;
-    if (sub?.end_date) {
-      const applied = await setProStatus(
-        env,
-        identifier,
-        true,
-        new Date(sub.end_date).toISOString(),
-      );
+    const renewedUntil = parseEndDate(data.subscription?.end_date);
+    if (renewedUntil) {
+      const applied = await setProStatus(env, identifier, true, renewedUntil);
       logger.info("[flutterwave] Subscription renewed via invoice", {
         email,
         tx_ref: txRef,
@@ -405,6 +424,11 @@ async function processFlutterwaveEvent(
         applied,
       );
     }
+    logger.warn("[flutterwave] invoice.updated carried no usable end_date", {
+      email,
+      tx_ref: txRef,
+      end_date: data.subscription?.end_date ?? null,
+    });
     return {
       response: Response.json({ received: true, action: "skipped" }),
       fullyApplied: true,
@@ -424,12 +448,12 @@ async function processFlutterwaveEvent(
   }
 
   if (eventType === "subscription.completed") {
-    const plan = parsePlanFromTxRef(txRef);
-    const expiresAt = resolveProExpiry(
-      data.subscription?.end_date,
-      plan ?? "monthly",
+    const applied = await setProStatus(
+      env,
+      identifier,
+      true,
+      parseEndDate(data.subscription?.end_date),
     );
-    const applied = await setProStatus(env, identifier, true, expiresAt);
     logger.info("[flutterwave] Subscription completed", {
       email,
       tx_ref: txRef,
@@ -441,18 +465,14 @@ async function processFlutterwaveEvent(
   }
 
   if (eventType === "subscription.cancelled") {
-    const plan = parsePlanFromTxRef(txRef);
-    const expiresAt = resolveProExpiry(
-      data.subscription?.end_date,
-      plan ?? "monthly",
-    );
-    const applied = await setProStatus(env, identifier, true, expiresAt);
+    const retainedUntil = parseEndDate(data.subscription?.end_date);
+    const applied = await setProStatus(env, identifier, true, retainedUntil);
     logger.info(
       "[flutterwave] Subscription cancelled (retained until expiry)",
       {
         email,
         tx_ref: txRef,
-        expires_at: expiresAt,
+        expires_at: retainedUntil,
       },
     );
     return ackResult(
@@ -552,20 +572,24 @@ export async function getMissingTransactions(
 ): Promise<string[]> {
   if (flwRefs.length === 0) return [];
 
-  const res = await supabasePost(
-    env,
-    "/rest/v1/rpc/get_missing_flutterwave_transactions",
-    { p_flw_refs: flwRefs },
-  );
+  try {
+    const existing = await retryOnConnectionLoss(
+      (client) =>
+        client
+          .select({ ref: flutterwaveTransactionClaims.flwRef })
+          .from(flutterwaveTransactionClaims)
+          .where(inArray(flutterwaveTransactionClaims.flwRef, flwRefs)),
+      env,
+    );
 
-  if (!res || !res.ok) {
+    const existingRefs = new Set(existing.map((e) => e.ref));
+    return flwRefs.filter((ref) => !existingRefs.has(ref));
+  } catch (err) {
     throw new Error(
-      `[reconciliation] Failed to fetch missing transactions (status: ${res?.status ?? "no response"})`,
+      `[reconciliation] Failed to fetch missing transactions: ${describeError(err)}`,
+      { cause: err },
     );
   }
-
-  const data: Array<{ missing_ref: string }> = await res.json();
-  return data.map((d) => d.missing_ref);
 }
 
 export async function processMissingTransaction(
@@ -574,7 +598,7 @@ export async function processMissingTransaction(
 ): Promise<boolean> {
   const email = data.customer?.email ?? null;
   const txRef = data.tx_ref ?? null;
-  const identifier = resolveUser(env, email, txRef);
+  const identifier = resolveUser(email, txRef);
 
   if (!identifier) {
     logger.warn("[reconciliation] Could not resolve user from transaction", {
@@ -596,20 +620,53 @@ export async function processMissingTransaction(
   }
 
   const plan = parsePlanFromTxRef(txRef);
-  const expiresAt = resolveProExpiry(
-    data.subscription?.end_date,
-    plan ?? "monthly",
-  );
+  const period = plan ?? "monthly";
+
+  const userId = await resolveUserIdForClaim(env, txRef, email);
+  if (!userId) {
+    logger.warn("[reconciliation] No user id to attribute transaction to", {
+      email,
+      tx_ref: txRef,
+      flw_ref: data.flw_ref,
+    });
+    return false;
+  }
+
+  const claim = await claimFlutterwaveTransaction(env, {
+    flwRef: data.flw_ref ?? "",
+    userId,
+    txRef: txRef ?? "",
+    amount: data.amount ?? null,
+    currency: data.currency ?? null,
+    period,
+  });
+
+  if (!claim) {
+    logger.error("[reconciliation] Claim RPC failed; will retry", {
+      tx_ref: txRef,
+      flw_ref: data.flw_ref,
+    });
+    return false;
+  }
+
+  if (!claim.shouldActivate) {
+    logger.info("[reconciliation] Transaction already redeemed", {
+      email,
+      tx_ref: txRef,
+      flw_ref: data.flw_ref,
+    });
+    return true;
+  }
 
   const applied = await setProStatus(
     env,
     identifier,
     true,
-    expiresAt,
+    claim.expiresAt,
     "flutterwave",
     data.flw_ref,
   );
-  if (applied.ok && identifier.userId && data.amount) {
+  if (applied.ok) {
     logger.info("[reconciliation] Successfully processed missing transaction", {
       email,
       tx_ref: txRef,
@@ -664,7 +721,7 @@ export async function reconcileFlutterwaveTransactions(
         retryableFailures++;
         logger.error(
           `[reconciliation] Failed to process missing ref ${missingRef}`,
-          { error: err instanceof Error ? err.message : String(err) },
+          { error: describeError(err) },
         );
       }
     }

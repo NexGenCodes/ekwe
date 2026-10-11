@@ -1,7 +1,6 @@
 export * from "@/hooks/audio";
 export * from "@/hooks/echo";
 export * from "@/hooks/auth";
-export { useTranslation } from "@/hooks/useTranslation";
 export { useResultPipeline } from "@/hooks/useResultPipeline";
 export * from "@/hooks/ui";
 export { useHistory } from "@/hooks/useHistory";

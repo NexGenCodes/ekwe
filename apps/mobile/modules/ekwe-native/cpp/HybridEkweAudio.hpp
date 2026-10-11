@@ -1,10 +1,20 @@
 #pragma once
 
+#include "EkweCallbackSlot.hpp"
 #include "HybridEkweAudioSpec.hpp"
 #include <memory>
-#include <mutex>
 
 namespace margelo::nitro::ekwe {
+
+// Thin Nitro-facing adapter over ekwe::CallbackSlot, which holds the
+// capture-thread handoff and is testable on the host without Nitro or JSI.
+struct ArrayBufferTraits {
+    using Packet = std::shared_ptr<ArrayBuffer>;
+    // The one copy per packet, and it cannot be avoided: the bytes belong to the
+    // capture frame, but the ArrayBuffer outlives the dispatch call because JS
+    // receives it asynchronously.
+    static Packet make(const uint8_t* data, size_t size) { return ArrayBuffer::copy(data, size); }
+};
 
 class HybridEkweAudio : public HybridEkweAudioSpec {
 public:
@@ -26,11 +36,11 @@ public:
     static void dispatchVadSilence();
 
 private:
-    std::function<void(const std::shared_ptr<ArrayBuffer>&, double)> _onOpusPacket;
-    std::function<void()> _onVadSilence;
+    using Slot = ::ekwe::CallbackSlot<ArrayBufferTraits>;
 
-    static HybridEkweAudio* g_instance;
-    static std::mutex g_instanceMutex;
+    // Shared so the static registry can hold a strong reference: a capture
+    // thread that has already loaded the slot must not have it freed underneath.
+    std::shared_ptr<Slot> _slot;
 };
 
 } // namespace margelo::nitro::ekwe

@@ -49,6 +49,13 @@ const setStatus = (next: Partial<FakeStatus>): void => {
 
 const replaceCalls: (string | null)[] = [];
 const playCalls: string[] = [];
+/** Seeks requested but not yet applied. Drains itself on the next microtask. */
+let pendingSeeks: (() => void)[] = [];
+const drainSeeks = (): void => {
+  const seeks = pendingSeeks;
+  pendingSeeks = [];
+  seeks.forEach((run) => run());
+};
 /** Work queued by the fake's async source install, released by `flushPreloads`. */
 let pendingInstalls: (() => void)[] = [];
 /** The media element reporting ready, which lands a tick after `replace()`. */
@@ -78,16 +85,32 @@ const fakePlayer = {
     return playerStatus;
   },
   play: () => {
-    playCalls.push(playerStatus.isLoaded ? "ready" : "not-ready");
+    playCalls.push(playerStatus.currentTime === 0 ? "from-start" : "mid");
     setStatus({ playing: true });
   },
   pause: () => setStatus({ playing: false }),
   remove: () => {},
-  seekTo: () => {},
+  /**
+   * Upstream returns a promise and applies the seek asynchronously, so `play()`
+   * called without awaiting this lands at the pre-seek position.
+   */
+  seekTo: (to: number) => {
+    pendingSeeks.push(() => setStatus({ currentTime: to }));
+    // Settles on the next microtask, like the real async seek.
+    return Promise.resolve().then(() => {
+      drainSeeks();
+    });
+  },
   setPlaybackRate: () => {},
   setAudioSamplingEnabled: () => {},
-  currentTime: 0,
-  duration: 1,
+  // Mirrors expo-audio, where these read through to the underlying player
+  // rather than being snapshots taken at mount.
+  get currentTime() {
+    return playerStatus.currentTime;
+  },
+  get duration() {
+    return playerStatus.duration;
+  },
 };
 
 vi.mock("expo-audio", async () => {
@@ -135,10 +158,21 @@ vi.mock("expo-file-system", () => ({
   },
   Paths: { cache: { uri: "file:///mock/cache/" } },
 }));
-vi.mock("react-native-reanimated", () => ({
-  useSharedValue: (initial: number) => ({ value: initial }),
-  useFrameCallback: () => ({ setActive: vi.fn() }),
-}));
+vi.mock("react-native-reanimated", async () => {
+  const react = await import("react");
+
+  return {
+    // Stable per call site, like the real hook. A fresh object each render
+    // would re-run every effect listing a shared value in its deps, resetting
+    // the playback state these tests assert on.
+    useSharedValue: (initial: number) => {
+      const ref = react.useRef({ value: initial });
+      ref.current.value = initial;
+      return ref.current;
+    },
+    useFrameCallback: () => ({ setActive: vi.fn() }),
+  };
+});
 
 import { useSharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
 
@@ -158,6 +192,7 @@ beforeEach(() => {
   playCalls.length = 0;
   pendingInstalls = [];
   pendingLoads = [];
+  pendingSeeks = [];
 });
 
 describe("useSharedAudioPlayer readiness", () => {
@@ -218,6 +253,83 @@ describe("useSharedAudioPlayer readiness", () => {
     // wrong clip; readiness is the value that must be consulted.
     expect(result.current.isLoaded).toBe(true);
     expect(result.current.isReady).toBe(false);
+  });
+
+  it("restarts a finished clip from the beginning", async () => {
+    const { result } = renderHook(() => useSharedAudioPlayer("file:///a.ogg"));
+    await settle();
+    await flushPreloads();
+    playCalls.length = 0;
+
+    // The clip played to its end.
+    await act(async () => {
+      setStatus({ currentTime: 12, didJustFinish: true, playing: false });
+      await Promise.resolve();
+    });
+    expect(result.current.isEnded).toBe(true);
+
+    await act(async () => {
+      await result.current.play();
+    });
+
+    // `play` must await the seek before starting, or the second tap resumes
+    // from the end and stops again immediately.
+    expect(playCalls).toEqual(["from-start"]);
+  });
+
+  it("restarts from the beginning when replayed from the end mid-clip", async () => {
+    const { result } = renderHook(() => useSharedAudioPlayer("file:///a.ogg"));
+    await settle();
+    await flushPreloads();
+    playCalls.length = 0;
+
+    // Not flagged as finished, but parked on the last frame.
+    await act(async () => {
+      setStatus({ currentTime: 11.999, duration: 12, playing: false });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.play();
+    });
+
+    expect(playCalls).toEqual(["from-start"]);
+  });
+
+  it("plays from the current position when not at the end", async () => {
+    const { result } = renderHook(() => useSharedAudioPlayer("file:///a.ogg"));
+    await settle();
+    await flushPreloads();
+    playCalls.length = 0;
+
+    await act(async () => {
+      setStatus({ currentTime: 4, duration: 12, playing: false });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.play();
+    });
+
+    expect(playCalls).toEqual(["mid"]);
+  });
+
+  it("seeks to zero before playing on playFromStart", async () => {
+    const { result } = renderHook(() => useSharedAudioPlayer("file:///a.ogg"));
+    await settle();
+    await flushPreloads();
+    playCalls.length = 0;
+
+    await act(async () => {
+      setStatus({ currentTime: 9, duration: 12, playing: false });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.playFromStart();
+    });
+
+    expect(playCalls).toEqual(["from-start"]);
   });
 
   it("falls back to reported readiness when no false transition arrives", async () => {

@@ -29,6 +29,11 @@ import {
   initNetworkMonitoring,
   stopNetworkMonitoring,
 } from "@/services/networkMonitor";
+import {
+  loadBootServices,
+  loadHistoryService,
+  runDeferredCacheSweep,
+} from "@/services/bootServices";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -66,7 +71,6 @@ function InnerLayout(): React.ReactElement {
 
   useEffect(() => {
     markPerformance("First React frame committed");
-    SplashScreen.hideAsync();
   }, []);
 
   const theme = useMemo(
@@ -84,8 +88,7 @@ function InnerLayout(): React.ReactElement {
     if (isInitialized) {
       SplashScreen.hideAsync();
       if (sessionLoaded) {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { HistoryService } = require("@/services/historyService");
+        const HistoryService = loadHistoryService();
         HistoryService.importSharedEchoHistory(auth$.session.peek()).catch(
           (err: unknown) =>
             logger.error("[RootLayout] importSharedEchoHistory failed", err),
@@ -137,14 +140,6 @@ function InnerLayout(): React.ReactElement {
                     }}
                   />
                   <Stack.Screen
-                    name="share"
-                    options={{
-                      presentation: "transparentModal",
-                      headerShown: false,
-                      contentStyle: { backgroundColor: "transparent" },
-                    }}
-                  />
-                  <Stack.Screen
                     name="billing"
                     options={{
                       headerShown: true,
@@ -175,40 +170,24 @@ function InnerLayout(): React.ReactElement {
 
 function RootLayout(): React.ReactElement {
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { initAuth, cleanupAuth } = require("@/services/auth");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { initializeMMKV } = require("@/services/mmkv");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { SyncService } = require("@/services/syncService");
     const {
+      initAuth,
+      cleanupAuth,
+      initializeMMKV,
+      SyncService,
       silentUpdateCheck,
       checkForApkUpdate,
       resolveUpdateChannel,
-    } = require("@/services/otaUpdates"); // eslint-disable-line @typescript-eslint/no-require-imports
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { update$ } = require("@/store/update");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { AppAlert } = require("@/utils/alert");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Linking } = require("react-native");
-    const {
+      update$,
+      AppAlert,
+      Linking,
       registerForPushNotifications,
       setupNotificationTapListener,
-    } = require("@/services/notifications"); // eslint-disable-line @typescript-eslint/no-require-imports
+    } = loadBootServices();
 
     initNetworkMonitoring();
 
-    setTimeout((): void => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { sweepStaleAudioCache } = require("@/utils/audioCache");
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { clearStalePreviewCache } = require("@/utils/voicePreviewCache");
-      void sweepStaleAudioCache();
-      // Memoized previews are not transient, so they outlive the sweep above
-      // and are retired by version instead.
-      void clearStalePreviewCache();
-    }, 4000);
+    setTimeout(runDeferredCacheSweep, 4000);
 
     silentUpdateCheck().catch((error: unknown): void => {
       logger.warn("[OTA] Non-blocking silent update check failed:", error);

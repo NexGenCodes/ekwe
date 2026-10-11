@@ -42,12 +42,14 @@ export function useHistoryQuery(userId: string | undefined): {
   loadMore: () => Promise<void>;
   hasMore: boolean;
   isFetchingNextPage: boolean;
+  isInitialLoading: boolean;
   refetch: () => Promise<void>;
 } {
   const [isFetchingNextPage, setIsFetchingNextPage] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [isInitialLoading, setIsInitialLoading] = useState(false);
   const currentCursor = useRef<HistoryCursor | null>(null);
-  const initialFetchDone = useRef(false);
+  const fetchedForUser = useRef<string | null>(null);
 
   const fetchPage = useCallback(
     async (cursor: HistoryCursor | null): Promise<HistoryEntry[]> => {
@@ -118,21 +120,29 @@ export function useHistoryQuery(userId: string | undefined): {
     if (!userId) return;
     currentCursor.current = null;
     setHasMore(true);
-    await fetchPage(null);
+    setIsInitialLoading(true);
+    try {
+      await fetchPage(null);
+    } finally {
+      setIsInitialLoading(false);
+    }
   }, [userId, fetchPage]);
 
-  // Initial load
   useEffect(() => {
-    if (userId && !initialFetchDone.current) {
-      initialFetchDone.current = true;
-      refetch();
+    if (!userId) {
+      fetchedForUser.current = null;
+      return;
     }
+    if (fetchedForUser.current === userId) return;
+    fetchedForUser.current = userId;
+    void refetch();
   }, [userId, refetch]);
 
   return {
     loadMore,
     hasMore,
     isFetchingNextPage,
+    isInitialLoading,
     refetch,
   };
 }

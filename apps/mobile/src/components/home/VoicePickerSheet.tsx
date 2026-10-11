@@ -70,6 +70,8 @@ function VoiceCard({
       onPress={onPress}
       accessibilityLabel={`${slot.name}, ${slot.tagline}`}
       accessibilityHint={locked ? "Requires Ekwe Pro subscription" : undefined}
+      accessibilityState={{ selected }}
+      accessible={false}
       style={({ pressed }) => [
         {
           flexDirection: "row",
@@ -168,11 +170,12 @@ function VoiceCard({
       </Box>
 
       {}
-      {onPreview && !locked && (
+      {onPreview && (
         <Pressable
           onPress={onPreview}
           disabled={previewPhase === "loading"}
           hitSlop={8}
+          accessible
           accessibilityRole="button"
           accessibilityState={{ busy: previewPhase === "loading" }}
           accessibilityLabel={
@@ -341,7 +344,7 @@ export function VoicePickerSheet({
                   if (!locked) onSelect(selection);
                 }}
                 onPreview={
-                  onPreview && !locked
+                  onPreview
                     ? (): void => {
                         onPreview(selection);
                       }

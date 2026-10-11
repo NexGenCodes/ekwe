@@ -1,13 +1,10 @@
 /**
  * Per-provider language capability, in one place.
  *
- * Before this module the same knowledge lived in five places that had to be
- * edited together: the shared catalog, the worker's ALL_LANGUAGES, each
- * provider's own `supportedLanguages`, SPEECH_LANGUAGE_SUPPORT (TTS), and
- * ASSEMBLYAI_STREAM_LANGUAGES (streaming STT). They drifted — Javanese and
- * Norwegian Bokmal are spelled `jw`/`no` by the Whisper family but `jv`/`nb`
- * everywhere else, and only three of five call sites applied that mapping, so
- * AssemblyAI and Gladia were sent codes their APIs do not accept.
+ * This knowledge was previously duplicated across the catalog, the worker and
+ * each provider, and drifted: the Whisper family spells Javanese and Norwegian
+ * Bokmal `jw`/`no` where everything else uses `jv`/`nb`, and a missed mapping
+ * sent AssemblyAI and Gladia codes their APIs do not accept.
  *
  * Rules this module enforces by construction:
  *
@@ -31,6 +28,7 @@ export type ProviderId =
   | "cohere"
   | "deepgram"
   | "edge"
+  | "elevenlabs"
   | "gemini"
   | "gladia"
   | "groq"
@@ -38,8 +36,12 @@ export type ProviderId =
   | "openrouter"
   | "witai";
 
-/** A file-shaped capability: one request, one transcript. */
-export type LanguageCapability = "stt" | "tts" | "translate";
+/**
+ * A file-shaped capability: one request, one transcript. Named by I/O shape,
+ * not product intent, so it stays distinct from the product vocabulary that
+ * names the same operation (`transcribe`, `speech`, `translate`).
+ */
+export type LanguageCapability = "stt" | "tts" | "ttt";
 
 /**
  * How faithfully a provider can speak a language.
@@ -196,6 +198,56 @@ const WHISPER_ALIASES: Readonly<Record<string, string>> = {
  * Wit's documented speech-to-text set. Note it is NOT the whole catalog: `ba`,
  * `haw`, `lb`, `nn`, `oc`, `tk` and `yue` are absent, which is why TTS gating
  * must use this list rather than treating Wit as language-agnostic.
+ */
+const WIT_STT_LANGUAGES: readonly string[] = [
+  "ar",
+  "bn",
+  "ca",
+  "de",
+  "en",
+  "es",
+  "fi",
+  "fr",
+  "hi",
+  "id",
+  "it",
+  "ja",
+  "kn",
+  "ko",
+  "ml",
+  "mr",
+  "ms",
+  "my",
+  "nl",
+  "pl",
+  "pt",
+  "ru",
+  "si",
+  "sv",
+  "ta",
+  "te",
+  "th",
+  "tl",
+  "tr",
+  "ur",
+  "vi",
+  "zh",
+];
+
+/**
+ * Languages Wit's *synthesis* endpoint accepts. Far wider than {@link
+ * WIT_STT_LANGUAGES}, and deliberately kept separate from it.
+ *
+ * Wit publishes one list for both capabilities, which is why the dictation
+ * endpoint looked like it covered 130-odd languages. Probing every key against
+ * `/dictation` shows only the 32 above actually transcribe; the other hundred
+ * answer `400 Speech recognition is not supported for language: xx`. Synthesis
+ * genuinely does speak the wider set, so merging the two lists back together
+ * would break transcription to keep a true statement about synthesis.
+ *
+ * The gap costs us the Nigerian languages — `yo`, `ig` and `ha` are all
+ * unsupportable here — which is why the STT pools must reach a Whisper-family
+ * provider instead of relying on Wit for African speech.
  */
 const WIT_LANGUAGES: readonly string[] = [
   "af",
@@ -528,7 +580,7 @@ const ASSEMBLYAI_U3_RT_PRO_LANGUAGES: readonly string[] = [
   "pt",
 ];
 
-/** Gladia `solaria-1` on `/v2/live`, probed 2026-09-27. See the findings doc. */
+/** Gladia `solaria-1` on `/v2/live`, probed 2026-09-27. */
 const GLADIA_STREAM_LANGUAGES: readonly string[] = [
   "af",
   "am",
@@ -636,6 +688,257 @@ const whisper = (): LanguageCapabilitySpec => ({
   codes: WHISPER_LANGUAGES,
   aliases: WHISPER_ALIASES,
 });
+
+/**
+ * ElevenLabs Scribe v2. It accepts ISO 639-1 or 639-3, but the published
+ * language table is spelled in 639-3, so every call sends that form: a code
+ * with no 639-1 equivalent (Cantonese `yue`) or a different one (Filipino
+ * `fil`, or `zho` for our `zh`) stays unambiguous. Only languages our catalog
+ * and Scribe both carry are listed.
+ */
+const SCRIBE_LANGUAGES: readonly string[] = [
+  "af",
+  "am",
+  "ar",
+  "as",
+  "az",
+  "be",
+  "bg",
+  "bn",
+  "bs",
+  "ca",
+  "cs",
+  "cy",
+  "da",
+  "de",
+  "el",
+  "en",
+  "es",
+  "et",
+  "fa",
+  "ff",
+  "fi",
+  "fr",
+  "ga",
+  "gl",
+  "gu",
+  "ha",
+  "he",
+  "hi",
+  "hr",
+  "hu",
+  "hy",
+  "id",
+  "ig",
+  "is",
+  "it",
+  "ja",
+  "jv",
+  "ka",
+  "kk",
+  "km",
+  "kn",
+  "ko",
+  "ku",
+  "ky",
+  "lb",
+  "lg",
+  "ln",
+  "lo",
+  "lt",
+  "lv",
+  "mi",
+  "mk",
+  "ml",
+  "mn",
+  "mr",
+  "ms",
+  "mt",
+  "my",
+  "nb",
+  "ne",
+  "nl",
+  "no",
+  "ny",
+  "oc",
+  "or",
+  "pa",
+  "pl",
+  "ps",
+  "pt",
+  "ro",
+  "ru",
+  "sd",
+  "si",
+  "sk",
+  "sl",
+  "sn",
+  "so",
+  "sr",
+  "sv",
+  "sw",
+  "ta",
+  "te",
+  "tg",
+  "th",
+  "tl",
+  "tr",
+  "uk",
+  "ur",
+  "uz",
+  "vi",
+  "wo",
+  "xh",
+  "yo",
+  "yue",
+  "zh",
+  "zu",
+];
+
+const SCRIBE_ALIASES: Readonly<Record<string, string>> = {
+  af: "afr",
+  am: "amh",
+  ar: "ara",
+  as: "asm",
+  az: "aze",
+  be: "bel",
+  bg: "bul",
+  bn: "ben",
+  bs: "bos",
+  ca: "cat",
+  cs: "ces",
+  cy: "cym",
+  da: "dan",
+  de: "deu",
+  el: "ell",
+  en: "eng",
+  es: "spa",
+  et: "est",
+  fa: "fas",
+  ff: "ful",
+  fi: "fin",
+  fr: "fra",
+  ga: "gle",
+  gl: "glg",
+  gu: "guj",
+  ha: "hau",
+  he: "heb",
+  hi: "hin",
+  hr: "hrv",
+  hu: "hun",
+  hy: "hye",
+  id: "ind",
+  ig: "ibo",
+  is: "isl",
+  it: "ita",
+  ja: "jpn",
+  jv: "jav",
+  ka: "kat",
+  kk: "kaz",
+  km: "khm",
+  kn: "kan",
+  ko: "kor",
+  ku: "kur",
+  ky: "kir",
+  lb: "ltz",
+  lg: "lug",
+  ln: "lin",
+  lo: "lao",
+  lt: "lit",
+  lv: "lav",
+  mi: "mri",
+  mk: "mkd",
+  ml: "mal",
+  mn: "mon",
+  mr: "mar",
+  ms: "msa",
+  mt: "mlt",
+  my: "mya",
+  nb: "nor",
+  ne: "nep",
+  nl: "nld",
+  no: "nor",
+  ny: "nya",
+  oc: "oci",
+  or: "ori",
+  pa: "pan",
+  pl: "pol",
+  ps: "pus",
+  pt: "por",
+  ro: "ron",
+  ru: "rus",
+  sd: "snd",
+  si: "sin",
+  sk: "slk",
+  sl: "slv",
+  sn: "sna",
+  so: "som",
+  sr: "srp",
+  sv: "swe",
+  sw: "swa",
+  ta: "tam",
+  te: "tel",
+  tg: "tgk",
+  th: "tha",
+  tl: "fil",
+  tr: "tur",
+  uk: "ukr",
+  ur: "urd",
+  uz: "uzb",
+  vi: "vie",
+  wo: "wol",
+  xh: "xho",
+  yo: "yor",
+  yue: "yue",
+  zh: "zho",
+  zu: "zul",
+};
+
+const scribe = (): LanguageCapabilitySpec => ({
+  codes: SCRIBE_LANGUAGES,
+  aliases: SCRIBE_ALIASES,
+});
+
+/**
+ * ElevenLabs Flash v2.5: the 29 languages of Multilingual v2 plus Hungarian,
+ * Norwegian and Vietnamese. Enumerated because the set is published and closed
+ * — and because it excludes every Nigerian language, which is the whole reason
+ * this cannot be `unbounded()`.
+ */
+const FLASH_TTS_LANGUAGES: readonly string[] = [
+  "ar",
+  "bg",
+  "cs",
+  "da",
+  "de",
+  "el",
+  "en",
+  "es",
+  "fi",
+  "fr",
+  "hi",
+  "hr",
+  "hu",
+  "id",
+  "it",
+  "ja",
+  "ko",
+  "ms",
+  "nl",
+  "no",
+  "pl",
+  "pt",
+  "ro",
+  "ru",
+  "sk",
+  "sv",
+  "ta",
+  "tl",
+  "tr",
+  "uk",
+  "vi",
+  "zh",
+];
 
 /**
  * An upstream engine that accepts any language and is sent no language
@@ -748,7 +1051,7 @@ export const STREAM_ROUTES: readonly StreamRoute[] = [
     provider: "witai",
     model: "wit-dictation",
     priority: 90,
-    codes: WIT_LANGUAGES,
+    codes: WIT_STT_LANGUAGES,
     // One key per language, so the endpoint cannot be asked to detect anything.
     autoDetect: false,
     reportsLanguage: false,
@@ -817,31 +1120,6 @@ export const streamSkipReason = (
 };
 
 /**
- * The single gate every provider pipeline asks before spending a request.
- *
- * Returns a reason when the provider must be skipped for this language, and
- * `null` when it may be tried. For streaming the unit is a route; for the
- * file-shaped capabilities it is the provider, because there a provider really
- * does have one language set per capability.
- */
-export const skipReason = (
-  id: string,
-  capability: LanguageCapability,
-  lang: string,
-): "language" | "auto-detect" | null => {
-  if (
-    capability === "stt" ||
-    capability === "tts" ||
-    capability === "translate"
-  ) {
-    return isLanguageSupported(id as ProviderId, capability, lang)
-      ? null
-      : "language";
-  }
-  return streamSkipReason(lang);
-};
-
-/**
  * First report wins, and a committed language is final.
  *
  * `auto` means nobody has claimed a language yet, which is the only value that
@@ -875,13 +1153,13 @@ export const LANGUAGE_CAPABILITIES: Readonly<
   },
   cloudflare: {
     stt: whisper(),
-    translate: unbounded(),
+    ttt: unbounded(),
   },
   cohere: {
     stt: { codes: COHERE_LANGUAGES },
     // An LLM, like the four below it, so gating it to fourteen languages only
     // meant Cohere was skipped for languages nothing else was short on.
-    translate: unbounded(),
+    ttt: unbounded(),
   },
   deepgram: {
     stt: { codes: DEEPGRAM_LANGUAGES },
@@ -896,28 +1174,39 @@ export const LANGUAGE_CAPABILITIES: Readonly<
   edge: {
     tts: { codes: LANGUAGE_CODES, native: EDGE_TTS_LANGUAGES },
   },
+  elevenlabs: {
+    stt: scribe(),
+    // Flash v2.5 speaks 32 languages and none of them are Nigerian, so this is
+    // an enumerated set rather than unbounded. Yoruba and Igbo have no native
+    // voice here, and claiming them would route a user to audio that cannot say
+    // their language. (STT is the reverse: Scribe covers yo and ig.)
+    tts: { codes: FLASH_TTS_LANGUAGES },
+  },
   gemini: {
     // Gemini takes no language on its speech request at all, so every language
     // it is asked for is by definition cross-lingual.
     tts: unbounded(),
-    translate: unbounded(),
+    ttt: unbounded(),
   },
   gladia: {
     stt: whisper(),
   },
   groq: {
     stt: whisper(),
-    translate: unbounded(),
+    ttt: unbounded(),
   },
   mistral: {
-    translate: unbounded(),
+    ttt: unbounded(),
   },
   openrouter: {
-    stt: whisper(),
-    translate: unbounded(),
+    ttt: unbounded(),
   },
   witai: {
-    stt: { codes: WIT_LANGUAGES },
+    // Dictation only, which is a strict subset of what Wit synthesizes. Using
+    // the wide list here sent every Yoruba or Igbo request to a provider that
+    // answers 400 for it, and Wit leads both STT pools — so the miss cost a
+    // failed round-trip before the pool moved on.
+    stt: { codes: WIT_STT_LANGUAGES },
     tts: { codes: WIT_LANGUAGES, native: WIT_TTS_NATIVE_LANGUAGES },
   },
 };

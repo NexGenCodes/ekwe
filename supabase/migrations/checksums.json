@@ -59,6 +59,13 @@
     "20260926010000_add_history_origin.sql": "4b8daa9fc145b1a2eb6bb2dd1d6d1961c561add91b1dd05ef60294159f1901c7",
     "20260926120000_rename_studio_origin.sql": "4d962d05fb45648bb0b1519c7300ff7c876928f5bc72f975ced7c161eb6abada",
     "20260926130000_fix_history_source_app_default.sql": "342310d7f7623d2e1dbd473835de11e5d9a63f897f748f2f26920287be36d6bd",
-    "20260926140000_align_voice_notes_bucket_cap.sql": "7e691e159dc9b0adbfd95811e3304d44ae2cd63bb6d04b07a2ecc57985d1e2cd"
+    "20260926140000_align_voice_notes_bucket_cap.sql": "7e691e159dc9b0adbfd95811e3304d44ae2cd63bb6d04b07a2ecc57985d1e2cd",
+    "20261001000000_claim_flutterwave_transaction.sql": "50a81568bc2008915cd7125b4bd572c4f7c3d7ce8031aa6e1fd83e2fd235c10f",
+    "20261002000000_history_revision.sql": "631a4924e718525a33e7f8b7491124cdc6bfad5da884cc347f6e673aeb4479d1",
+    "20261003000000_history_tombstones.sql": "e6f64ff0af939e3f8adcb4d782a9c5b7990fe51d26c0a67c1bc2ef6c6cd5cb15",
+    "20261004000000_lock_flutterwave_transaction_claims.sql": "98977691a8506b2bcff553ad2c2f7f00ae1da875cd2536879b419aa8cc0c50c6",
+    "20261006000000_reserve_usage_at_preflight.sql": "6062eb31cebdfda13a4c42fbad1d6bc86ebcf8ca0e42d4deb31e14cb9c4aca59",
+    "20261007000000_narrow_welcome_email_payload.sql": "0c6a48f73c3398e1d24407c28603b59fe13cc72fd04b8f3b3db9aeee9cc54c71",
+    "20261008000000_rotate_welcome_email_secret.sql": "225464dd474302cfe2d7825ffabfd1ebcf579479eaf2836dfe7dba491fdf1579"
   }
 }

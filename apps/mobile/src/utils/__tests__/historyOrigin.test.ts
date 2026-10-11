@@ -67,7 +67,7 @@ describe("originProvenanceLabel", () => {
 
   it("names the voice by descriptor, with the tier prefix dropped", () => {
     // The surface already names itself, so repeating the tier would read
-    // "Speech Studio · Studio · Clear".
+    // "Studio · Studio · Clear".
     expect(
       originProvenanceLabel(
         entry({
@@ -76,12 +76,12 @@ describe("originProvenanceLabel", () => {
           voiceId: "standard",
         }),
       ),
-    ).toBe("Speech Studio · Standard");
+    ).toBe("Studio · Standard");
     expect(
       originProvenanceLabel(
         entry({ origin: "speech-studio", sourceApp: null, voiceId: "studio" }),
       ),
-    ).toBe("Speech Studio · Clear");
+    ).toBe("Studio · Clear");
     expect(
       originProvenanceLabel(
         entry({
@@ -90,7 +90,7 @@ describe("originProvenanceLabel", () => {
           voiceId: "studio-2",
         }),
       ),
-    ).toBe("Speech Studio · Warm");
+    ).toBe("Studio · Warm");
   });
 
   it("omits the voice when the row has none recorded", () => {
@@ -98,7 +98,7 @@ describe("originProvenanceLabel", () => {
       originProvenanceLabel(
         entry({ origin: "speech-studio", sourceApp: null, voiceId: null }),
       ),
-    ).toBe("Speech Studio");
+    ).toBe("Studio");
   });
 
   it("falls back to the origin alone when the app is unknown", () => {
@@ -119,7 +119,7 @@ describe("originProvenanceLabel", () => {
 
 describe("originLabel", () => {
   it("returns the display name", () => {
-    expect(originLabel("speech-studio")).toBe("Speech Studio");
+    expect(originLabel("speech-studio")).toBe("Studio");
     expect(originLabel("echo")).toBe("Echo");
     expect(originLabel("orb")).toBe("Orb");
   });

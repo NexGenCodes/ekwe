@@ -31,12 +31,7 @@ export interface SharedAudioPlayer {
   duration: number;
   isDecoding: boolean;
   isLoaded: boolean;
-  /**
-   * `isLoaded` for the *currently requested* `uri`, which is stricter than
-   * `isLoaded` on its own. Callers that swap `uri` must gate on this, because
-   * expo-audio replaces the source asynchronously and `isLoaded` keeps
-   * reporting the previous clip as ready during that window.
-   */
+  /** True when the requested `uri` is loaded, stricter than `isLoaded` during source swaps. */
   isReady: boolean;
   playbackRate: number;
   isEnded: boolean;
@@ -94,10 +89,7 @@ export const useSharedAudioPlayer = (
       boundUriRef.current = uri;
     };
 
-    // iOS has no native Ogg Opus player, so an Ogg source needs a CAF copy
-    // derived on demand. remuxToCafForPlayback() caches that per source path,
-    // so repeat plays of the same clip reuse the file instead of remuxing it
-    // again. The derived file is left in place for the cache sweeper to reap.
+    // iOS lacks native Ogg Opus playback; remux to CAF with disk caching.
     const fallbackToWav = (reason: string): void => {
       logger.error("[SharedAudioPlayer] iOS Ogg remux-to-CAF failed:", reason);
       AudioTranscoder.decodeToWav(uri).then((wavResult) => {
@@ -134,6 +126,16 @@ export const useSharedAudioPlayer = (
     };
   }, [uri, isOggSource]);
 
+  // Reset playback state when the audio source changes so stale
+  // "ended" flags from a previous clip cannot block replay.
+  useEffect(() => {
+    setIsEnded(false);
+    isEndedRef.current = false;
+    didJustFinishRef.current = false;
+    progressSV.value = 0;
+    setProgress(0);
+  }, [uri, progressSV]);
+
   const [isEnded, setIsEnded] = useState(false);
 
   const knownDuration =
@@ -160,15 +162,7 @@ export const useSharedAudioPlayer = (
   const status = useAudioPlayerStatus(player);
 
   /**
-   * The duration of the file that is actually loaded.
-   *
-   * `durationMsOverride` comes back with the artifact, so it is the only
-   * number available before the clip is decoded and is a reasonable estimate
-   * of it. It is not, however, the length of the audio being played: providers
-   * round, and a remuxed CAF can drift a few hundred ms either way. Progress is
-   * measured against this, so trusting the estimate once the real length is
-   * known is what leaves the waveform parked just short of the end on a clip
-   * that played all the way through.
+   * The actual duration of the loaded audio, falling back to the override estimate.
    */
   const resolvedDuration =
     status.isLoaded && status.duration > 0
@@ -194,14 +188,7 @@ export const useSharedAudioPlayer = (
 
   const isPlaying = status.playing;
 
-  /**
-   * `isLoaded` is per-source, but expo-audio installs the new source
-   * asynchronously (after `preloadAsync` resolves), so a `uri` change is
-   * observable for a window while `isLoaded` still reports the *previous* clip
-   * as ready. Only a false -> true transition is attributed to whichever `uri`
-   * is bound at that moment, which keeps a new clip from autoplaying on the old
-   * clip's readiness.
-   */
+  /** Attributes `isLoaded` transitions to the correct URI during async source swaps. */
   useEffect(() => {
     const loaded = status.isLoaded;
     if (loaded && !wasLoadedRef.current) {
@@ -212,9 +199,7 @@ export const useSharedAudioPlayer = (
     wasLoadedRef.current = loaded;
   }, [status.isLoaded]);
 
-  // If a platform never reports the intermediate `isLoaded: false`, readiness
-  // would stall forever, so fall back to the reported flag once the swap has had
-  // time to land. Bounded so a genuinely slow load still gets a chance.
+  // Fallback timer for platforms that don't report intermediate `isLoaded: false`.
   useEffect(() => {
     if (!status.isLoaded || !uri || loadedUri === uri) return;
     const timer = setTimeout(() => {
@@ -250,10 +235,8 @@ export const useSharedAudioPlayer = (
     const dur = resolvedDuration;
     setDuration(dur);
     durationSV.value = dur;
-    if (status.didJustFinish) {
-      // The integrated counter is clamped to duration, so it lands exactly on
-      // the end; the reported currentTime can stop a frame or two short of it
-      // and leave the bar looking unfinished after the audio has stopped.
+    // Only clamp to end when audio finished and is not actively playing.
+    if (status.didJustFinish && !status.playing && !didJustFinishRef.current) {
       progressSV.value = dur > 0 ? dur : status.currentTime;
       setProgress(status.currentTime);
       triggerHaptic();
@@ -264,6 +247,7 @@ export const useSharedAudioPlayer = (
   }, [
     status.currentTime,
     status.didJustFinish,
+    status.playing,
     progressSV,
     durationSV,
     resolvedDuration,
@@ -281,7 +265,10 @@ export const useSharedAudioPlayer = (
     try {
       focusRef.current.claim(() => pauseRef.current());
       focusClaimedRef.current = true;
-      await setAudioModeAsync({ interruptionMode: "doNotMix" });
+      await setAudioModeAsync({
+        interruptionMode: "doNotMix",
+        playsInSilentMode: true,
+      });
       await setIsAudioActiveAsync(true);
       player.setPlaybackRate(playbackRate);
 
@@ -295,8 +282,9 @@ export const useSharedAudioPlayer = (
       isEndedRef.current = false;
       didJustFinishRef.current = false;
 
+      // Seek before play to prevent the replay-from-end bug.
       if (atEnd) {
-        player.seekTo(0);
+        await player.seekTo(0);
         progressSV.value = 0;
         setProgress(0);
       }
@@ -320,9 +308,16 @@ export const useSharedAudioPlayer = (
       }
       focusRef.current.claim(() => pauseRef.current());
       focusClaimedRef.current = true;
-      await setAudioModeAsync({ interruptionMode: "doNotMix" });
+      await setAudioModeAsync({
+        interruptionMode: "doNotMix",
+        playsInSilentMode: true,
+      });
       await setIsAudioActiveAsync(true);
-      player.seekTo(0);
+      try {
+        await player.seekTo(0);
+      } catch (error) {
+        logger.warn("[SharedAudioPlayer] seekTo(0) failed:", error);
+      }
       progressSV.value = 0;
       setProgress(0);
       player.play();
@@ -444,17 +439,7 @@ export const useSharedAudioPlayer = (
     ],
   );
 
-  /**
-   * Idempotent teardown.
-   *
-   * A player has more than one owner: the hook releases it on unmount, and
-   * `Echo` also releases it on dismiss — which is always followed by an
-   * unmount. Every other caller may hold the controller for the length of a
-   * render. So a repeat call is the expected shape of this API, not a bug, and
-   * is a no-op rather than a log line. What is worth logging is a *first*
-   * release whose `remove()` threw, because that means the player was not torn
-   * down by us.
-   */
+  /** Idempotent teardown. Safe to call multiple times across hook and parent lifetimes. */
   const release = useCallback((): void => {
     if (releasedRef.current) return;
     releasedRef.current = true;

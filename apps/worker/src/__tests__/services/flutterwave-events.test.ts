@@ -1,20 +1,14 @@
-import { describe, test, expect, beforeEach, vi, type Mock } from "vitest";
-
-vi.mock("@/services/supabase", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@/services/supabase")>();
-  return { ...mod, supabasePost: vi.fn() };
-});
+import { describe, test, expect, beforeEach, vi } from "vitest";
 
 import { processWebhookEvent } from "@/services/billing";
 import "@/services/flutterwave";
 import { resetPricingCache } from "@/routes/pricing";
-import { mockEnv } from "@/__tests__/setup";
-import { supabasePost } from "@/services/supabase";
-import { http } from "msw";
-import { server } from "@/__tests__/msw/server";
-import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
-
-const mockedSupabasePost = supabasePost as Mock;
+import {
+  executeQueryChunks,
+  jsonBody,
+  mockDb,
+  mockEnv,
+} from "@/__tests__/setup";
 
 const SEEDED_CONFIG = {
   id: 1,
@@ -40,27 +34,49 @@ const SEEDED_CONFIG = {
 };
 
 function serveSeededConfig() {
-  server.use(
-    http.get(PROVIDER_URLS.supabaseAppConfig, () =>
-      Response.json([SEEDED_CONFIG]),
-    ),
-  );
+  // mockDb.where is used by billing config lookup
+  mockDb.where.mockResolvedValue([
+    {
+      id: 1,
+      basePriceUsd: 2.23,
+      discountPercent: 0,
+      annualDiscountPercent: 20,
+      localPrices: SEEDED_CONFIG.local_prices,
+    },
+  ]);
 }
 
 function successRpc() {
-  mockedSupabasePost.mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: async () => ({}),
+  mockDb.execute.mockImplementation(async (_query) => {
+    return [{ permanent: false }];
   });
 }
 
 function failRpc(status = 500) {
-  mockedSupabasePost.mockResolvedValue({
-    ok: false,
-    status,
-    text: async () => "Internal error",
+  mockDb.execute.mockImplementation(async (_query) => {
+    if (status >= 400 && status < 500) {
+      return [{ permanent: true }];
+    }
+    throw new Error("Internal error");
   });
+}
+
+function getSetProStatusCall() {
+  const calls = mockDb.execute.mock.calls;
+  const setProStatusCall = calls.find((c) =>
+    JSON.stringify(c[0]).includes("set_pro_status"),
+  );
+  if (!setProStatusCall) return null;
+
+  const chunks = executeQueryChunks(setProStatusCall[0]);
+  return {
+    email: chunks[1],
+    userId: chunks[3],
+    isPro: chunks[5],
+    expiresAt: chunks[7],
+    provider: chunks[9],
+    paymentRef: chunks[11],
+  };
 }
 
 function buildEvent(overrides: Record<string, unknown> = {}) {
@@ -122,17 +138,13 @@ describe("Flutterwave Event Processor", () => {
 
       expect(result.fullyApplied).toBe(true);
       expect(result.response.status).toBe(200);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("activated");
 
-      expect(mockedSupabasePost).toHaveBeenCalledWith(
-        env,
-        "/rest/v1/rpc/set_pro_status",
-        expect.objectContaining({
-          p_email: "test@example.com",
-          p_is_pro: true,
-        }),
-      );
+      const callArgs = getSetProStatusCall();
+      expect(callArgs).toBeDefined();
+      expect(callArgs?.email).toBe("test@example.com");
+      expect(callArgs?.isPro).toBe(true);
     });
 
     test("sets expires_at from subscription.end_date", async () => {
@@ -149,13 +161,8 @@ describe("Flutterwave Event Processor", () => {
 
       await processWebhookEvent("flutterwave", event, env);
 
-      expect(mockedSupabasePost).toHaveBeenCalledWith(
-        env,
-        "/rest/v1/rpc/set_pro_status",
-        expect.objectContaining({
-          p_expires_at: endDate.toISOString(),
-        }),
-      );
+      const callArgs = getSetProStatusCall();
+      expect(callArgs?.expiresAt).toBe(endDate.toISOString());
     });
 
     test("grants Pro for NGN charge at the NGN price", async () => {
@@ -175,24 +182,23 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("activated");
     });
 
     test("rejects a charge at the bundled-map price when Supabase prices it lower", async () => {
-      server.use(
-        http.get(PROVIDER_URLS.supabaseAppConfig, () =>
-          Response.json([
-            {
-              ...SEEDED_CONFIG,
-              local_prices: {
-                ...SEEDED_CONFIG.local_prices,
-                NGN: { monthly: 2500, annual: 24000 },
-              },
-            },
-          ]),
-        ),
-      );
+      mockDb.where.mockResolvedValue([
+        {
+          id: 1,
+          basePriceUsd: 2.23,
+          discountPercent: 0,
+          annualDiscountPercent: 20,
+          localPrices: {
+            ...SEEDED_CONFIG.local_prices,
+            NGN: { monthly: 2500, annual: 24000 },
+          },
+        },
+      ]);
       resetPricingCache();
 
       const event = buildEvent({
@@ -211,25 +217,24 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("rejected");
-      expect(mockedSupabasePost).not.toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeNull();
     });
 
     test("grants at the Supabase row price when it differs from the bundled map", async () => {
-      server.use(
-        http.get(PROVIDER_URLS.supabaseAppConfig, () =>
-          Response.json([
-            {
-              ...SEEDED_CONFIG,
-              local_prices: {
-                ...SEEDED_CONFIG.local_prices,
-                NGN: { monthly: 2500, annual: 24000 },
-              },
-            },
-          ]),
-        ),
-      );
+      mockDb.where.mockResolvedValue([
+        {
+          id: 1,
+          basePriceUsd: 2.23,
+          discountPercent: 0,
+          annualDiscountPercent: 20,
+          localPrices: {
+            ...SEEDED_CONFIG.local_prices,
+            NGN: { monthly: 2500, annual: 24000 },
+          },
+        },
+      ]);
       resetPricingCache();
 
       const event = buildEvent({
@@ -248,16 +253,12 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("activated");
     });
 
     test("retries without granting when Supabase cannot confirm the price", async () => {
-      server.use(
-        http.get(PROVIDER_URLS.supabaseAppConfig, () =>
-          Response.json({ error: "Internal Server Error" }, { status: 500 }),
-        ),
-      );
+      mockDb.where.mockRejectedValue(new Error("Internal Server Error"));
       resetPricingCache();
 
       const result = await processWebhookEvent(
@@ -267,9 +268,9 @@ describe("Flutterwave Event Processor", () => {
       );
 
       expect(result.fullyApplied).toBe(false);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("unverified");
-      expect(mockedSupabasePost).not.toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeNull();
     });
 
     test("rejects charge with amount mismatch (server-derived price)", async () => {
@@ -287,9 +288,9 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("rejected");
-      expect(mockedSupabasePost).not.toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeNull();
     });
 
     test("rejects tampered payment where meta echoes the wrong amount", async () => {
@@ -309,9 +310,9 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("rejected");
-      expect(mockedSupabasePost).not.toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeNull();
     });
 
     test("rejects charge in a currency checkout never authorizes", async () => {
@@ -331,9 +332,9 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("rejected");
-      expect(mockedSupabasePost).not.toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeNull();
     });
 
     test("rejects annual plan charged at the monthly price", async () => {
@@ -353,9 +354,9 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("rejected");
-      expect(mockedSupabasePost).not.toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeNull();
     });
 
     test("grants Pro for annual charge at the annual price", async () => {
@@ -375,7 +376,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("activated");
     });
 
@@ -398,9 +399,9 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("rejected");
-      expect(mockedSupabasePost).not.toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeNull();
     });
 
     test("rejects underpayment where an unresolvable plan echoes its own meta amount", async () => {
@@ -422,9 +423,9 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("rejected");
-      expect(mockedSupabasePost).not.toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeNull();
     });
 
     test("rejects a charge with no meta.amount at all (unconditional grant hole)", async () => {
@@ -446,9 +447,9 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("rejected");
-      expect(mockedSupabasePost).not.toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeNull();
     });
 
     test("skips event with missing data", async () => {
@@ -457,7 +458,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("skipped");
     });
   });
@@ -469,17 +470,12 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("deactivated");
 
-      expect(mockedSupabasePost).toHaveBeenCalledWith(
-        env,
-        "/rest/v1/rpc/set_pro_status",
-        expect.objectContaining({
-          p_is_pro: false,
-          p_expires_at: null,
-        }),
-      );
+      const callArgs = getSetProStatusCall();
+      expect(callArgs?.isPro).toBe(false);
+      expect(callArgs?.expiresAt).toBeNull();
     });
   });
 
@@ -500,17 +496,12 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("retained");
 
-      expect(mockedSupabasePost).toHaveBeenCalledWith(
-        env,
-        "/rest/v1/rpc/set_pro_status",
-        expect.objectContaining({
-          p_is_pro: true,
-          p_expires_at: endDate.toISOString(),
-        }),
-      );
+      const callArgs = getSetProStatusCall();
+      expect(callArgs?.isPro).toBe(true);
+      expect(callArgs?.expiresAt).toBe(endDate.toISOString());
     });
   });
 
@@ -531,17 +522,12 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("retained");
 
-      expect(mockedSupabasePost).toHaveBeenCalledWith(
-        env,
-        "/rest/v1/rpc/set_pro_status",
-        expect.objectContaining({
-          p_is_pro: true,
-          p_expires_at: endDate.toISOString(),
-        }),
-      );
+      const callArgs = getSetProStatusCall();
+      expect(callArgs?.isPro).toBe(true);
+      expect(callArgs?.expiresAt).toBe(endDate.toISOString());
     });
   });
 
@@ -552,17 +538,12 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("deactivated");
 
-      expect(mockedSupabasePost).toHaveBeenCalledWith(
-        env,
-        "/rest/v1/rpc/set_pro_status",
-        expect.objectContaining({
-          p_is_pro: false,
-          p_expires_at: null,
-        }),
-      );
+      const callArgs = getSetProStatusCall();
+      expect(callArgs?.isPro).toBe(false);
+      expect(callArgs?.expiresAt).toBeNull();
     });
   });
 
@@ -583,17 +564,12 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("renewed");
 
-      expect(mockedSupabasePost).toHaveBeenCalledWith(
-        env,
-        "/rest/v1/rpc/set_pro_status",
-        expect.objectContaining({
-          p_is_pro: true,
-          p_expires_at: newEndDate.toISOString(),
-        }),
-      );
+      const callArgs = getSetProStatusCall();
+      expect(callArgs?.isPro).toBe(true);
+      expect(callArgs?.expiresAt).toBe(newEndDate.toISOString());
     });
 
     test("skips invoice without end_date", async () => {
@@ -611,7 +587,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("skipped");
     });
   });
@@ -629,17 +605,12 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("deactivated");
 
-      expect(mockedSupabasePost).toHaveBeenCalledWith(
-        env,
-        "/rest/v1/rpc/set_pro_status",
-        expect.objectContaining({
-          p_is_pro: false,
-          p_expires_at: null,
-        }),
-      );
+      const callArgs = getSetProStatusCall();
+      expect(callArgs?.isPro).toBe(false);
+      expect(callArgs?.expiresAt).toBeNull();
     });
 
     test("revokes Pro on charge.refunded", async () => {
@@ -654,9 +625,9 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("deactivated");
-      expect(mockedSupabasePost).toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeDefined();
     });
 
     test("ignores pending refunds (no auth change yet)", async () => {
@@ -671,9 +642,9 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("ignored");
-      expect(mockedSupabasePost).not.toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeNull();
     });
   });
 
@@ -695,9 +666,9 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("ignored");
-      expect(mockedSupabasePost).not.toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeNull();
     });
   });
 
@@ -708,7 +679,7 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("unknown");
     });
   });
@@ -733,7 +704,7 @@ describe("Flutterwave Event Processor", () => {
     });
 
     test("returns not fullyApplied on network error", async () => {
-      mockedSupabasePost.mockRejectedValue(new Error("Network error"));
+      mockDb.execute.mockRejectedValue(new Error("Network error"));
       const event = buildEvent();
 
       const result = await processWebhookEvent("flutterwave", event, env);
@@ -748,14 +719,9 @@ describe("Flutterwave Event Processor", () => {
 
       await processWebhookEvent("flutterwave", event, env);
 
-      expect(mockedSupabasePost).toHaveBeenCalledWith(
-        env,
-        "/rest/v1/rpc/set_pro_status",
-        expect.objectContaining({
-          p_email: "test@example.com",
-          p_user_id: null,
-        }),
-      );
+      const callArgs = getSetProStatusCall();
+      expect(callArgs?.email).toBe("test@example.com");
+      expect(callArgs?.userId).toBeNull();
     });
 
     test("resolves user by tx_ref when email missing", async () => {
@@ -770,14 +736,9 @@ describe("Flutterwave Event Processor", () => {
 
       await processWebhookEvent("flutterwave", event, env);
 
-      expect(mockedSupabasePost).toHaveBeenCalledWith(
-        env,
-        "/rest/v1/rpc/set_pro_status",
-        expect.objectContaining({
-          p_email: null,
-          p_user_id: userId,
-        }),
-      );
+      const callArgs = getSetProStatusCall();
+      expect(callArgs?.email).toBeNull();
+      expect(callArgs?.userId).toBe(userId);
     });
 
     test("skips when neither email nor tx_ref available", async () => {
@@ -788,9 +749,9 @@ describe("Flutterwave Event Processor", () => {
       const result = await processWebhookEvent("flutterwave", event, env);
 
       expect(result.fullyApplied).toBe(true);
-      const body = (await result.response.json()) as any;
+      const body = await jsonBody(result.response);
       expect(body.action).toBe("skipped");
-      expect(mockedSupabasePost).not.toHaveBeenCalled();
+      expect(getSetProStatusCall()).toBeNull();
     });
   });
 });

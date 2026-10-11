@@ -15,7 +15,7 @@ export interface VoiceSlot {
    * `name` is the picker label and carries the tier ("Studio · Clear"), which
    * is what the industry does for a voice-quality tier. Provenance lines need
    * only the descriptor, because the surface already names itself there — with
-   * both, a Speech Studio row read "Speech Studio · Studio · Clear".
+   * both, a Studio row read "Studio · Studio · Clear".
    */
   readonly shortName: string;
   readonly tier: VoiceTier;
@@ -32,7 +32,7 @@ export const VOICE_PREVIEW_TEXT = "Hi, this is how I sound.";
  * fail over at runtime, so a cached preview can drift from what a slot now
  * produces. Bumping this retires the old files on next launch.
  */
-export const VOICE_PREVIEW_VERSION = 1;
+export const VOICE_PREVIEW_VERSION = 3;
 
 export const STANDARD_VOICE_ID = "standard";
 export const STUDIO_VOICE_ID = "studio";

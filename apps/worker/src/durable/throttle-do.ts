@@ -22,7 +22,7 @@ export class ThrottleBucket extends DurableObject<Env> {
       !Number.isInteger(windowSec) ||
       windowSec <= 0
     ) {
-      return Response.json({ allowed: true }, { status: 400 });
+      return Response.json({ allowed: false }, { status: 400 });
     }
     const allowed = await this.allow(key, limit, windowSec);
     return Response.json({ allowed });

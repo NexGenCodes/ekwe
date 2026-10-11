@@ -24,9 +24,6 @@ interface EchoFinalResultProps {
   activeTab: ResultTab;
   onTabChange: (tab: ResultTab) => void;
   audioPlayer: WaveformPlaybackController | null;
-  /** The received voice note, so the result can share it rather than only its text. */
-  audioUri: string | null;
-
   copied?: boolean;
 }
 
@@ -146,9 +143,9 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
           lead={isTranslated ? "Translation" : "Transcription"}
           lang={activeLang}
           withCheck
-          showShare={isTranslated}
           copied={isTranslated ? copied : false}
           audioPlayer={isTranslated ? null : audioPlayer}
+          allowTts={isTranslated}
         />
 
         <Box style={{ flexDirection: "row", gap: spacing.md }}>

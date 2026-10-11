@@ -12,9 +12,6 @@ export interface VoiceCandidate {
   voice: string;
 }
 
-/**
- * A slot's tier is the only thing that decides which pipeline it may draw from.
- */
 export function pipelineTierForSlot(slot: VoiceSlot | undefined): Tier {
   return slot?.tier === "pro" ? "PREMIUM" : "FREE";
 }
@@ -66,17 +63,36 @@ const SLOT_POOLS: Readonly<
     male: [ref("edge"), ref("edge", 1), ref("witai")],
   },
   studio: {
-    female: [ref("gemini"), ref("deepgram"), ref("edge"), ref("witai")],
-    male: [ref("gemini"), ref("deepgram"), ref("edge"), ref("witai")],
+    female: [
+      ref("gemini"),
+      ref("deepgram"),
+      ref("elevenlabs"),
+      ref("edge"),
+      ref("witai"),
+    ],
+    male: [
+      ref("gemini"),
+      ref("deepgram"),
+      ref("elevenlabs"),
+      ref("edge"),
+      ref("witai"),
+    ],
   },
   "studio-2": {
     female: [
       ref("gemini", 1),
       ref("deepgram", 1),
+      ref("elevenlabs", 1),
       ref("edge"),
       ref("witai", 1),
     ],
-    male: [ref("gemini", 1), ref("deepgram", 1), ref("edge"), ref("witai", 1)],
+    male: [
+      ref("gemini", 1),
+      ref("deepgram", 1),
+      ref("elevenlabs", 1),
+      ref("edge"),
+      ref("witai", 1),
+    ],
   },
 };
 

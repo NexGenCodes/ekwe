@@ -1,113 +1,11 @@
 import { describe, test, expect } from "vitest";
 import * as openrouter from "@/providers/openrouter";
-import {
-  mockEnv,
-  makeAudioBlob,
-  jsonResponse,
-  mockSignal,
-} from "@/__tests__/setup";
+import { mockEnv, jsonResponse, mockSignal } from "@/__tests__/setup";
 import { http } from "msw";
 import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 
 describe("OpenRouter provider", () => {
-  describe("stt", () => {
-    test("returns result on success", async () => {
-      server.use(
-        http.post(PROVIDER_URLS.openrouterTranscriptions, () =>
-          jsonResponse({ text: "Hello world", duration: 3.0, language: "en" }),
-        ),
-      );
-
-      const result = await openrouter.stt(
-        makeAudioBlob(),
-        "en",
-        mockEnv(),
-        mockSignal(),
-      );
-      expect(result).not.toBeNull();
-      expect(result!.text).toBe("Hello world");
-      expect(result!.provider).toBe("openrouter");
-      expect(result!.duration).toBe(3.0);
-    });
-
-    test("folds a detected language name back to a canonical code", async () => {
-      // OpenRouter proxies the same Whisper model Groq does and mirrors its
-      // verbose_json shape, so the detected language arrives as an English name.
-      // Unverified against the live API (the test account has no audio credit),
-      // which is exactly why it is pinned here: a name reaching storage
-      // unresolved would mislabel the transcript.
-      server.use(
-        http.post(PROVIDER_URLS.openrouterTranscriptions, () =>
-          jsonResponse({
-            text: "Bonjour le monde",
-            duration: 2.0,
-            language: "French",
-          }),
-        ),
-      );
-
-      const result = await openrouter.stt(
-        makeAudioBlob(),
-        "auto",
-        mockEnv(),
-        mockSignal(),
-      );
-      expect(result?.language).toBe("fr");
-    });
-
-    test("omits a detected language we do not carry", async () => {
-      server.use(
-        http.post(PROVIDER_URLS.openrouterTranscriptions, () =>
-          jsonResponse({
-            text: "a greeting nobody catalogued",
-            duration: 1.0,
-            language: "Fijian",
-          }),
-        ),
-      );
-
-      const result = await openrouter.stt(
-        makeAudioBlob(),
-        "auto",
-        mockEnv(),
-        mockSignal(),
-      );
-      expect(result).not.toBeNull();
-      expect(result).not.toHaveProperty("language");
-    });
-
-    test("returns null on HTTP error", async () => {
-      server.use(
-        http.post(PROVIDER_URLS.openrouterTranscriptions, () =>
-          jsonResponse({ error: "unauthorized" }, 401),
-        ),
-      );
-      const result = await openrouter.stt(
-        makeAudioBlob(),
-        "en",
-        mockEnv(),
-        mockSignal(),
-      );
-      expect(result).toBeNull();
-    });
-
-    test("returns null on hallucination", async () => {
-      server.use(
-        http.post(PROVIDER_URLS.openrouterTranscriptions, () =>
-          jsonResponse({ text: "Thanks for watching", duration: 1.0 }),
-        ),
-      );
-      const result = await openrouter.stt(
-        makeAudioBlob(),
-        "en",
-        mockEnv(),
-        mockSignal(),
-      );
-      expect(result).toBeNull();
-    });
-  });
-
   describe("translate", () => {
     test("returns translation on success and sends referer/title headers", async () => {
       let seenHeaders: Record<string, string> = {};
@@ -120,10 +18,13 @@ describe("OpenRouter provider", () => {
         }),
       );
 
-      const result = await openrouter.translate(
+      const result = await openrouter.ttt(
         "Hello world",
-        "Spanish",
-        "English",
+        {
+          targetLang: "es",
+          sourceLang: "en",
+          transliteration: false,
+        },
         mockEnv(),
         mockSignal(),
       );
@@ -140,10 +41,13 @@ describe("OpenRouter provider", () => {
           jsonResponse({ error: "unauthorized" }, 401),
         ),
       );
-      const result = await openrouter.translate(
+      const result = await openrouter.ttt(
         "Hello",
-        "Spanish",
-        "English",
+        {
+          targetLang: "es",
+          sourceLang: "en",
+          transliteration: false,
+        },
         mockEnv(),
         mockSignal(),
       );
@@ -156,10 +60,13 @@ describe("OpenRouter provider", () => {
           jsonResponse({ choices: [] }),
         ),
       );
-      const result = await openrouter.translate(
+      const result = await openrouter.ttt(
         "Hello",
-        "Spanish",
-        "English",
+        {
+          targetLang: "es",
+          sourceLang: "en",
+          transliteration: false,
+        },
         mockEnv(),
         mockSignal(),
       );

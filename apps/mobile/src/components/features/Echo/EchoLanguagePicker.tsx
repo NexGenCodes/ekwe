@@ -3,6 +3,7 @@ import Globe from "lucide-react-native/icons/globe";
 import React, { useMemo } from "react";
 
 import { LanguageFlag } from "@/components/language";
+import { ProBadge } from "@/components/ProBadge";
 import { Box, Pressable, Text } from "@/components/ui";
 import { ECHO_CONSTANTS, STEP_METADATA } from "@/constants/echo";
 import { LANGUAGES, type Language } from "@/constants/languages";
@@ -20,7 +21,7 @@ export interface EchoLanguagePickerProps {
 interface PickerOption {
   code: string;
   label: string;
-  disabled: boolean;
+  locked: boolean;
   dashed: boolean;
   icon: React.ReactNode;
   onPress?: () => void;
@@ -59,7 +60,6 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
         <Pressable
           key={option.code}
           feedback="scale"
-          disabled={option.disabled}
           onPress={() => {
             triggerHaptic();
             if (option.onPress) {
@@ -70,12 +70,12 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
           }}
           accessibilityLabel={`${option.label}${
             isSelected ? ", selected" : ""
-          }`}
+          }${option.locked ? ", premium feature" : ""}`}
           accessibilityRole="button"
-          accessibilityState={{
-            selected: isSelected,
-            disabled: option.disabled,
-          }}
+          accessibilityHint={
+            option.locked ? "Double tap to learn about Ekwe Pro" : undefined
+          }
+          accessibilityState={{ selected: isSelected }}
           style={{
             flexBasis: "30%",
             maxWidth: "30%",
@@ -89,7 +89,7 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
             padding: spacing.md,
             backgroundColor: isSelected ? color.brand : color.background,
             borderColor: isSelected ? color.brand : color.border,
-            opacity: option.disabled ? opacity.disabled : 1,
+            opacity: option.locked ? opacity.disabled : 1,
           }}
         >
           <Box
@@ -112,6 +112,11 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
           >
             {option.label}
           </Text>
+          {option.locked ? (
+            <Box style={{ marginTop: spacing.xs }}>
+              <ProBadge size="sm" />
+            </Box>
+          ) : null}
         </Pressable>
       );
     };
@@ -119,7 +124,7 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
     const autoOption: PickerOption = {
       code: "auto",
       label: "Auto-Detect",
-      disabled: !canUseAuto,
+      locked: !canUseAuto,
       dashed: true,
       icon: (
         <Globe
@@ -149,7 +154,7 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
             renderCard({
               code: lang!.code,
               label: lang!.englishName,
-              disabled: false,
+              locked: false,
               dashed: false,
               icon: <LanguageFlag code={lang!.code} size="md" />,
             }),

@@ -22,7 +22,7 @@ export interface AudioState {
   duration: number | null;
 }
 
-const initialAudioState: AudioState = {
+export const initialAudioState: AudioState = {
   recordingState: RecordingState.Idle,
   transcriptBuffer: "",
   isSaved: false,

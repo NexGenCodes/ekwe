@@ -1,4 +1,4 @@
-import { VOICE_PREVIEW_TEXT, type VoiceSlot } from "@ekwe/shared";
+import { type VoiceSlot } from "@ekwe/shared";
 import { logger } from "@/core/logger";
 import {
   SPEECH_CACHE_TTL_SECONDS,
@@ -14,7 +14,11 @@ import { hashKey } from "@/utils/keys";
 import { recordSpeechCacheEvent } from "@/utils/analytics";
 import { Env, Tier, SpeechGender, SpeechAttempt } from "@/core/types";
 import { classifyProviderError, runProviderFailover } from "@/utils/retry";
-import { isProviderDegraded, reportProviderOutcome } from "@/services/health";
+import {
+  isProviderDegraded,
+  reportProviderNeutral,
+  reportProviderOutcome,
+} from "@/services/health";
 
 const R2_EXPIRES_AT_META = "expiresAt";
 
@@ -73,11 +77,8 @@ export interface SpeechResult {
 }
 
 /**
- * `scope: "shared"` drops the per-user partition. A voice preview is safe to
- * share because both its text and its language are constants, so every user
- * would otherwise be served a byte-identical clip that they each paid to
- * synthesize on their own. Real speech keeps its own key — it is per-user
- * content and must never be shared.
+ * Generates a cache key.
+ * `shared` scope omits user partition for globally identical preview clips.
  */
 export async function buildSpeechCacheKey(
   text: string,
@@ -219,27 +220,6 @@ async function writeR2SpeechCache(
   }
 }
 
-/**
- * Recognises the voice-preview sample and pins it to English.
- *
- * A preview is a fixed sentence chosen to show off the voice, not user content,
- * so it is rendered by the English voice on purpose. Using the selected
- * language's voice to read the English sample would only add an accent to text
- * the user never wrote, and the cache key includes the language, so it would
- * also mint a separate clip per language for no benefit.
- *
- * Changing this needs real per-language sample sentences, not just passing the
- * selected language through — otherwise the sample is mispronounced rather than
- * demonstrated.
- */
-export function resolveEffectiveLang(
-  text: string,
-  lang: string,
-): { isPreview: boolean; effectiveLang: string } {
-  const isPreview = text === VOICE_PREVIEW_TEXT;
-  return { isPreview, effectiveLang: isPreview ? "en" : lang };
-}
-
 function speechDownKey(provider: string, date: string): string {
   return `speech:down:${provider}:${date}`;
 }
@@ -248,12 +228,8 @@ function utcDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// "Provider is down today" flips at most once a day, so remember the ones we
-// learn about instead of re-reading KV for every provider on every request.
-// Only the down verdict is memoized. Caching "healthy" was tried and is not
-// worth it: it makes the memo a cache of absence, so the first request after a
-// provider dies still routes to it, and any writer that does not go through
-// `markSpeechProviderDown` becomes invisible to every reader.
+// Memoizes the "down" verdict per provider for the day to avoid repeated KV lookups.
+// Healthy states are not cached to ensure immediate recovery visibility.
 const speechDownMemo = new Map<string, number>();
 
 async function isSpeechProviderDown(
@@ -319,14 +295,8 @@ async function tryProviderVoices(
 }
 
 /**
- * Concurrent requests for the same clip all miss the cache at the same moment
- * and then all call the provider, paying for identical audio N times. Keyed by
- * the cache key, so it can only ever collapse work whose output would have been
- * byte-identical anyway.
- *
- * Deliberately in-memory rather than a Durable Object: this is per-isolate, so
- * it is a best-effort win and not a global guarantee, but it costs no extra
- * round trip and cannot make a request slower.
+ * Collapses concurrent identical requests to avoid redundant provider calls.
+ * Works per-isolate in memory for best-effort deduping without latency penalty.
  */
 const inflightSpeech = new Map<string, Promise<unknown>>();
 
@@ -379,9 +349,7 @@ export async function runSpeechSynth(
     waitUntil,
   } = options;
 
-  // The pool is already ordered by preference, so the failover list *is* the
-  // pool order. A provider with no voice for this language never enters the
-  // list, so it can neither be attempted nor be marked down for it.
+  // Failover list matches the pool's preference order; unsupported languages are excluded upfront.
   const voicesByProvider = groupCandidatesByProvider(
     resolveVoicePool(slot, gender, lang, tier),
   );
@@ -405,8 +373,7 @@ export async function runSpeechSynth(
       env,
       tier,
       shouldSkip: async (provider) => {
-        // Independent lookups: running them in sequence doubled the pre-flight
-        // latency charged against the synthesis budget for no benefit.
+        // Parallel health checks to minimize pre-flight latency.
         const [down, degraded] = await Promise.all([
           isSpeechProviderDown(env, provider),
           isProviderDegraded(env, provider),
@@ -434,9 +401,7 @@ export async function runSpeechSynth(
         if (att?.result) {
           await reportProviderOutcome(env, provider, true);
           if (cacheKey) {
-            // The audio is already in hand; a KV/R2 round trip must not sit in
-            // front of the caller. `waitUntil` is allSettled, and the write
-            // helpers already swallow their own errors, so nothing escapes.
+            // Write to cache asynchronously without blocking the client response.
             const write = writeSpeechCache(env, cacheKey, att.result);
             if (waitUntil) waitUntil(write);
             else await write;
@@ -444,20 +409,16 @@ export async function runSpeechSynth(
           return true;
         }
 
-        await reportProviderOutcome(env, provider, false);
         if (att?.status === 429 || att?.status === 503) {
+          await reportProviderOutcome(env, provider, false);
           await markSpeechProviderDown(env, provider);
+        } else {
+          reportProviderNeutral(provider);
         }
         return false;
       },
       onAttemptError: (provider) => reportProviderOutcome(env, provider, false),
-      // A timed-out provider has already spent its full attempt window without
-      // answering. The generic policy would retry that same provider once more,
-      // which costs another SPEECH_PER_PROVIDER_MS and leaves the remaining
-      // budget too thin for the providers that might actually answer — the
-      // request then fails having tried only the one broken provider. Spend the
-      // rest of the budget on the next provider instead. `onAttemptError` has
-      // already recorded the failure with the health tracker.
+      // Do not retry timeouts on the same provider to preserve budget for alternatives.
       shouldRetryOnError: (_provider, error) =>
         classifyProviderError(error) !== "timeout",
     }),

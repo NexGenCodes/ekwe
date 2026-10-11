@@ -167,10 +167,13 @@ describe("Groq provider", () => {
         ),
       );
 
-      const result = await groq.translate(
+      const result = await groq.ttt(
         "Hello world",
-        "Spanish",
-        "English",
+        {
+          targetLang: "es",
+          sourceLang: "en",
+          transliteration: false,
+        },
         mockEnv(),
         mockSignal(),
       );
@@ -185,10 +188,13 @@ describe("Groq provider", () => {
           jsonResponse({ error: "unauthorized" }, 401),
         ),
       );
-      const result = await groq.translate(
+      const result = await groq.ttt(
         "Hello",
-        "Spanish",
-        "English",
+        {
+          targetLang: "es",
+          sourceLang: "en",
+          transliteration: false,
+        },
         mockEnv(),
         mockSignal(),
       );
@@ -199,10 +205,13 @@ describe("Groq provider", () => {
       server.use(
         http.post(PROVIDER_URLS.groqChat, () => jsonResponse({ choices: [] })),
       );
-      const result = await groq.translate(
+      const result = await groq.ttt(
         "Hello",
-        "Spanish",
-        "English",
+        {
+          targetLang: "es",
+          sourceLang: "en",
+          transliteration: false,
+        },
         mockEnv(),
         mockSignal(),
       );

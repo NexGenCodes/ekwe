@@ -1,8 +1,8 @@
 Pod::Spec.new do |s|
   s.name           = 'EkweNative'
   s.version        = '1.0.0'
-  s.summary        = 'Ekwe native audio capture, Opus/Ogg encoding and Opus-in-CAF remuxing'
-  s.description    = 'Native C++ audio pipeline: capture + Ogg Opus recording, and an iOS Opus-in-CAF decoder so AVPlayer can play Ogg Opus recordings without a WAV round-trip.'
+  s.summary        = 'Ekwe native audio capture, Opus/Ogg and Vorbis/Ogg encoding and Opus-in-CAF remuxing'
+  s.description    = 'Native C++ audio pipeline: capture + Ogg Opus recording, Vorbis-in-Ogg encoding for the Wit.ai upload path, and an iOS Opus-in-CAF decoder so AVPlayer can play Ogg Opus recordings without a WAV round-trip.'
   s.author         = 'Ekwe'
   s.homepage       = 'https://ekwe.pages.dev'
   s.platforms      = {
@@ -26,6 +26,9 @@ Pod::Spec.new do |s|
   # opusfile: only the four pure-codec sources (info/internal/opusfile/stream).
   # http.c and wincerts.c pull in HTTP/SSL deps we don't need.
   #
+  # libvorbis needs no generated config.h: the only reference to it sits
+  # behind HAVE_CONFIG_H in its os.h, which is never defined here.
+  #
   # Only the ekwe C++ core headers live at cpp/ root; the vendored thirdparty
   # headers are discovered via HEADER_SEARCH_PATHS and are NOT in source_files
   # (avoids bundling thousands of vendored headers into the pod's header phase).
@@ -37,7 +40,11 @@ Pod::Spec.new do |s|
     "cpp/thirdparty/opus/silk/*.c",
     "cpp/thirdparty/opus/silk/float/*.c",
     "cpp/thirdparty/opus/src/*.c",
-    "cpp/thirdparty/opusfile/src/{info,internal,opusfile,stream}.c"
+    "cpp/thirdparty/opusfile/src/{info,internal,opusfile,stream}.c",
+    # libvorbis: everything except vorbisfile.c, the streaming *read* API —
+    # this build only ever writes. The same list is spelled out in
+    # android/CMakeLists.txt so both platforms compile identical objects.
+    "cpp/thirdparty/libvorbis/lib/{analysis,bitrate,block,codebook,envelope,floor0,floor1,info,lookup,lpc,lsp,mapping0,mdct,psy,registry,res0,sharedbook,smallft,synthesis,vorbisenc,window}.c"
 
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = {
@@ -57,6 +64,8 @@ Pod::Spec.new do |s|
       '$(PODS_TARGET_SRCROOT)/cpp/thirdparty/opus/silk/float',
       '$(PODS_TARGET_SRCROOT)/cpp/thirdparty/opusfile/include',
       '$(PODS_TARGET_SRCROOT)/cpp/thirdparty/libogg/include',
+      '$(PODS_TARGET_SRCROOT)/cpp/thirdparty/libvorbis/include',
+      '$(PODS_TARGET_SRCROOT)/cpp/thirdparty/libvorbis/lib',
     ].join(' '),
 
     # Replace libopus's generated config.h: no HAVE_CONFIG_H, stack allocation

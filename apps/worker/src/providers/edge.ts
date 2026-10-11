@@ -359,7 +359,9 @@ interface WsFrame {
 }
 
 class FrameReader {
-  private pending = new Uint8Array(0);
+  private chunks: Uint8Array[] = [];
+  private totalBytes = 0;
+
   private constructor(
     private reader: ReadableStreamDefaultReader<Uint8Array>,
   ) {}
@@ -370,43 +372,59 @@ class FrameReader {
     return new FrameReader(reader);
   }
 
-  private async pull(): Promise<boolean> {
-    const { value, done } = await this.reader.read();
-    if (done) return false;
-    const next = new Uint8Array(this.pending.length + value.length);
-    next.set(this.pending);
-    next.set(value, this.pending.length);
-    this.pending = next;
-    return true;
-  }
+  async readExact(bytes: number): Promise<Uint8Array | null> {
+    while (this.totalBytes < bytes) {
+      const { value, done } = await this.reader.read();
+      if (done || !value) {
+        if (this.totalBytes === 0) return null;
+        break;
+      }
+      this.chunks.push(value);
+      this.totalBytes += value.length;
+    }
+    if (this.totalBytes < bytes) return null;
 
-  async readUpTo(n: number): Promise<Uint8Array> {
-    if (this.pending.length < n) await this.pull();
-    const take = Math.min(this.pending.length, n);
-    const out = this.pending.subarray(0, take);
-    this.pending = this.pending.subarray(take);
+    const out = new Uint8Array(bytes);
+    let outOffset = 0;
+
+    while (outOffset < bytes) {
+      const chunk = this.chunks[0];
+      const needed = bytes - outOffset;
+      if (chunk.length <= needed) {
+        out.set(chunk, outOffset);
+        outOffset += chunk.length;
+        this.totalBytes -= chunk.length;
+        this.chunks.shift();
+      } else {
+        out.set(chunk.subarray(0, needed), outOffset);
+        outOffset += needed;
+        this.chunks[0] = chunk.subarray(needed);
+        this.totalBytes -= needed;
+      }
+    }
     return out;
   }
 
-  async readExact(n: number): Promise<Uint8Array | null> {
-    while (this.pending.length < n) {
-      if (!(await this.pull())) return null;
+  async readUpTo(maxBytes: number): Promise<Uint8Array> {
+    if (this.totalBytes > 0) {
+      return this.readExact(
+        Math.min(maxBytes, this.totalBytes),
+      ) as Promise<Uint8Array>;
     }
-    const out = this.pending.subarray(0, n);
-    this.pending = this.pending.subarray(n);
+    const { value, done } = await this.reader.read();
+    if (done || !value) return new Uint8Array(0);
+    if (value.length <= maxBytes) return value;
+
+    const out = value.subarray(0, maxBytes);
+    this.chunks.push(value.subarray(maxBytes));
+    this.totalBytes += value.length - maxBytes;
     return out;
   }
 
   prepend(data: Uint8Array<ArrayBuffer>): void {
     if (data.length === 0) return;
-    if (this.pending.length === 0) {
-      this.pending = data;
-      return;
-    }
-    const next = new Uint8Array(data.length + this.pending.length);
-    next.set(data);
-    next.set(this.pending, data.length);
-    this.pending = next;
+    this.chunks.unshift(data);
+    this.totalBytes += data.length;
   }
 
   release(): void {

@@ -9,11 +9,9 @@ import {
   isLanguageSupported,
   isLanguageUnbounded,
   hasNativeVoice,
-  languagesForCapability,
   languageTier,
   pinLanguage,
   providerIdsForCapability,
-  skipReason,
   streamRouteById,
   streamRoutesFor,
   streamSkipReason,
@@ -26,7 +24,7 @@ import {
   type ProviderId,
 } from "../languageCapabilities";
 
-const CAPABILITIES: LanguageCapability[] = ["stt", "tts", "translate"];
+const CAPABILITIES: LanguageCapability[] = ["stt", "tts", "ttt"];
 
 const specs = (): Array<
   [ProviderId, LanguageCapability, LanguageCapabilitySpec]
@@ -77,10 +75,55 @@ describe("language capability registry", () => {
     }
   });
 
-  it("leaves no catalog language without transcription coverage", () => {
-    const covered = new Set(languagesForCapability("stt"));
-    const orphans = LANGUAGE_CODES.filter((c) => !covered.has(c));
-    expect(orphans).toEqual([]);
+  it("names the languages no provider can transcribe", () => {
+    // Wit used to be credited with ~130 languages, which made this empty. Probing
+    // every Wit key against /dictation showed it transcribes 32 and rejects the
+    // rest, so the orphans below were always a runtime 400 rather than coverage.
+    // Asserting the exact set keeps both halves honest: a provider regaining a
+    // language and a language being added to the catalog both show up here.
+    expect(unsupportedLanguages("stt")).toEqual([
+      "ak",
+      "ay",
+      "ci",
+      "ck",
+      "dv",
+      "eo",
+      "fy",
+      "gd",
+      "gn",
+      "iu",
+      "kl",
+      "ks",
+      "li",
+      "nr",
+      "om",
+      "qu",
+      "rm",
+      "rw",
+      "sc",
+      "se",
+      "ss",
+      "st",
+      "ti",
+      "tn",
+      "ts",
+      "ug",
+      "ve",
+    ]);
+  });
+
+  it("never claims a language no provider can transcribe", () => {
+    // The invariant this suite exists to protect: nothing in the catalog may be
+    // advertised for transcription unless a provider really serves it. Wit's
+    // over-broad list broke exactly this.
+    for (const code of unsupportedLanguages("stt")) {
+      for (const provider of providerIdsForCapability("stt")) {
+        expect(
+          isLanguageSupported(provider, "stt", code),
+          `${provider} claims ${code}`,
+        ).toBe(false);
+      }
+    }
   });
 
   it("maps Javanese and Norwegian only for the Whisper family", () => {
@@ -89,7 +132,6 @@ describe("language capability registry", () => {
       "cloudflare",
       "gladia",
       "groq",
-      "openrouter",
     ] as ProviderId[];
 
     for (const provider of whisperStt) {
@@ -129,6 +171,37 @@ describe("language capability registry", () => {
     expect(isLanguageSupported("deepgram", "tts", "ja")).toBe(true);
   });
 
+  it("narrows ElevenLabs the same way, and keeps it honest about Nigeria", () => {
+    // Scribe transcribes Yoruba and Igbo, so STT must accept them...
+    for (const code of ["yo", "ig", "ha", "en", "fr", "es"]) {
+      expect(isLanguageSupported("elevenlabs", "stt", code)).toBe(true);
+    }
+    // ...while Flash v2.5 speaks none of the Nigerian languages. Claiming them
+    // for TTS would route a paying user to audio that cannot say their language,
+    // which is the exact failure an enumerated registry exists to prevent.
+    for (const code of ["yo", "ig", "ha"]) {
+      expect(isLanguageSupported("elevenlabs", "tts", code)).toBe(false);
+    }
+    expect(isLanguageSupported("elevenlabs", "tts", "en")).toBe(true);
+    expect(isLanguageSupported("elevenlabs", "tts", "fr")).toBe(true);
+    // A language outside both the catalog and Flash's 32.
+    expect(isLanguageSupported("elevenlabs", "tts", "zu")).toBe(false);
+    // Multilingual v2's 29 plus the three Flash adds.
+    expect(isLanguageSupported("elevenlabs", "tts", "hu")).toBe(true);
+    expect(isLanguageSupported("elevenlabs", "tts", "vi")).toBe(true);
+    expect(isLanguageSupported("elevenlabs", "tts", "no")).toBe(true);
+  });
+
+  it("keeps the Scribe wire spelling out of the canonical catalog", () => {
+    // The registry speaks canonical codes; the 639-3 form is only ever what we
+    // put on the wire, so it must not leak back as a language of its own.
+    expect(LANGUAGE_CODE_SET.has("eng")).toBe(false);
+    expect(toProviderCode("elevenlabs", "stt", "en")).toBe("eng");
+    expect(toProviderCode("elevenlabs", "stt", "yo")).toBe("yor");
+    // No 639-1 code exists for Cantonese, so it is sent unchanged.
+    expect(toProviderCode("elevenlabs", "stt", "yue")).toBe("yue");
+  });
+
   it("treats language-agnostic providers as supporting any code", () => {
     for (const provider of ["edge", "gemini"] as ProviderId[]) {
       expect(isLanguageSupported(provider, "tts", "yue")).toBe(true);
@@ -140,7 +213,7 @@ describe("language capability registry", () => {
     // "Can I use this at all" — an undeclared capability must not read as a
     // yes, or a routing gate would send work to a provider that cannot do it.
     expect(isLanguageSupported("assemblyai", "tts", "en")).toBe(false);
-    expect(isLanguageSupported("gladia", "translate", "en")).toBe(false);
+    expect(isLanguageSupported("gladia", "ttt", "en")).toBe(false);
     expect(providerIdsForCapability("tts")).not.toContain("assemblyai");
     expect(providerIdsForCapability("stt")).not.toContain("gemini");
   });
@@ -149,13 +222,13 @@ describe("language capability registry", () => {
     // It used to be pinned to fourteen codes while Groq, Gemini, Mistral,
     // OpenRouter and Workers AI were all unbounded, so Cohere was skipped for
     // languages the pipeline could otherwise serve.
-    expect(isLanguageSupported("cohere", "translate", "sw")).toBe(true);
+    expect(isLanguageSupported("cohere", "ttt", "sw")).toBe(true);
     expect(isLanguageSupported("cohere", "stt", "sw")).toBe(false);
   });
 
   it("keeps translate coverage separate from transcription coverage", () => {
-    expect(isLanguageSupported("gladia", "translate", "sw")).toBe(false);
-    expect(isLanguageSupported("groq", "translate", "sw")).toBe(true);
+    expect(isLanguageSupported("gladia", "ttt", "sw")).toBe(false);
+    expect(isLanguageSupported("groq", "ttt", "sw")).toBe(true);
   });
 
   it("covers every capability in the registry", () => {
@@ -168,18 +241,20 @@ describe("language capability registry", () => {
   });
 
   it("reports nothing unsupported while an unbounded provider exists", () => {
-    expect(isLanguageUnbounded("translate")).toBe(true);
-    expect(unsupportedLanguages("translate")).toEqual([]);
-    // Transcription is fully enumerated, so it has a real boundary.
+    expect(isLanguageUnbounded("ttt")).toBe(true);
+    expect(unsupportedLanguages("ttt")).toEqual([]);
+    // Transcription is fully enumerated, so it has a real boundary. It is not
+    // an empty one: 27 catalog languages have no transcription provider, which
+    // is what lets a picker hide them instead of offering a guaranteed failure.
     expect(isLanguageUnbounded("stt")).toBe(false);
-    expect(unsupportedLanguages("stt")).toEqual([]);
+    expect(unsupportedLanguages("stt").length).toBe(27);
   });
 
   it("distinguishes an unbounded capability from one that supports nothing", () => {
     // Groq translates anything...
-    expect(isLanguageSupported("groq", "translate", "sw")).toBe(true);
+    expect(isLanguageSupported("groq", "ttt", "sw")).toBe(true);
     // ...but AssemblyAI cannot translate at all.
-    expect(isLanguageSupported("assemblyai", "translate", "sw")).toBe(false);
+    expect(isLanguageSupported("assemblyai", "ttt", "sw")).toBe(false);
   });
 });
 
@@ -283,20 +358,59 @@ describe("stream routes", () => {
     // Swahili is in neither Flux's ten nor AssemblyAI's six nor Deepgram's
     // thirty-three, so the language-aware order lands on Gladia immediately
     // rather than trying four providers that would each be skipped.
-    expect(streamRoutesFor("sw").map((r) => r.id)).toEqual([
-      "gladia-solaria",
-      "witai",
+    expect(streamRoutesFor("sw").map((r) => r.id)).toEqual(["gladia-solaria"]);
+  });
+
+  it("leaves only languages no route can carry", () => {
+    // Wider than the batch orphan list: streaming also needs a route whose own
+    // language set covers the code, and several routes are narrower than the
+    // batch providers that serve those languages. Gladia is the one route that
+    // still reaches Yoruba, Igbo and Hausa.
+    expect(unsupportedStreamLanguages()).toEqual([
+      "ak",
+      "ay",
+      "ci",
+      "ck",
+      "dv",
+      "eo",
+      "ff",
+      "fy",
+      "ga",
+      "gd",
+      "gn",
+      "ig",
+      "iu",
+      "kl",
+      "ks",
+      "ku",
+      "ky",
+      "lg",
+      "li",
+      "nr",
+      "ny",
+      "om",
+      "or",
+      "qu",
+      "rm",
+      "rw",
+      "sc",
+      "se",
+      "ss",
+      "st",
+      "ti",
+      "tn",
+      "ts",
+      "ug",
+      "ve",
+      "wo",
+      "xh",
+      "yue",
+      "zu",
     ]);
   });
 
-  it("leaves only Cantonese without a streaming route", () => {
-    // Batch covers it through the Whisper family. Asserted explicitly so a
-    // future route table change cannot quietly drop a language.
-    expect(unsupportedStreamLanguages()).toEqual(["yue"]);
-  });
-
-  it("covers every catalog language but one for explicit streaming", () => {
-    expect(streamLanguages().length).toBe(138);
+  it("covers a hundred languages for explicit streaming", () => {
+    expect(streamLanguages().length).toBe(100);
   });
 
   it("detects a hundred languages on its own", () => {
@@ -339,31 +453,13 @@ describe("stream routes", () => {
   });
 });
 
-describe("skipReason", () => {
-  it("refuses a file-shaped provider that does not list the language", () => {
-    expect(skipReason("gladia", "translate", "sw")).toBe("language");
-    expect(skipReason("groq", "translate", "sw")).toBeNull();
-    expect(skipReason("cohere", "stt", "sw")).toBe("language");
-    expect(skipReason("cohere", "stt", "fr")).toBeNull();
-  });
-
-  it("refuses a capability the provider never declared", () => {
-    expect(skipReason("assemblyai", "tts", "en")).toBe("language");
-  });
-
-  it("answers auto from what the routes can detect, not from a provider", () => {
+describe("streamSkipReason", () => {
+  it("answers auto from what the routes can detect", () => {
     expect(streamSkipReason("auto")).toBeNull();
-    // Translation is an LLM capability, so auto is not a language question at
-    // all — only the streaming routes need a detector.
-    expect(skipReason("groq", "translate", "auto")).toBeNull();
-    // A provider that never declared the capability is skipped whatever the
-    // language, Wit does not translate.
-    expect(skipReason("witai", "translate", "auto")).toBe("language");
   });
 
   it("names a language nothing can route", () => {
     expect(streamSkipReason("zzz")).toBe("language");
-    expect(skipReason("groq", "stt", "zzz")).toBe("language");
   });
 });
 

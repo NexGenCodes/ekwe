@@ -32,7 +32,7 @@ export function mirrorSessionToSharedContainer(
     if (session) {
       const content = JSON.stringify(session);
       void EkweNative.writeSharedFile(SESSION_FILE, content).then(
-        (ok) => {
+        (ok: boolean) => {
           if (!ok) {
             logger.error(
               "[SharedContainer] hardened write of session file failed (returned false)",
@@ -64,7 +64,7 @@ export function mirrorSettingsToShared(prefs: SharedPreferences): void {
   try {
     const content = JSON.stringify(prefs);
     void EkweNative.writeSharedFile(SETTINGS_FILE, content).then(
-      (ok) => {
+      (ok: boolean) => {
         if (!ok) {
           logger.error(
             "[SharedContainer] hardened write of settings file failed (returned false)",

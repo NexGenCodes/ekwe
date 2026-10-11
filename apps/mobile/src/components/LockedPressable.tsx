@@ -54,6 +54,9 @@ export const LockedPressable = forwardRef<
       hitSlop = 8,
       accessibilityLabel,
       accessibilityHint,
+      accessibilityRole,
+      accessibilityState,
+      accessible,
       ...props
     },
     ref,
@@ -109,11 +112,21 @@ export const LockedPressable = forwardRef<
           resolvedStyle,
           animatedStyle,
         ]}
+        accessible={accessible}
+        accessibilityRole={accessibilityRole ?? "button"}
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={
           locked ? "Requires Ekwe Pro subscription" : accessibilityHint
         }
-        accessibilityState={{ disabled: locked }}
+        accessibilityState={{
+          disabled: locked,
+          ...(accessibilityState?.selected !== undefined
+            ? { selected: accessibilityState.selected }
+            : {}),
+          ...(accessibilityState?.checked !== undefined
+            ? { checked: accessibilityState.checked }
+            : {}),
+        }}
       >
         <Box
           style={[

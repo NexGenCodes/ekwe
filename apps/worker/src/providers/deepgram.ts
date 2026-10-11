@@ -29,11 +29,7 @@ export async function stt(
   if (lang && lang !== "auto") {
     params.set("language", lang);
   } else {
-    // In auto mode Deepgram does not look at the language at all unless this is
-    // set, so the request was effectively "transcribe with no language hint" and
-    // detected_language never came back. Asking explicitly costs nothing when
-    // the caller already knows the language, and is the only way the auto path
-    // can report what was detected.
+    // Force detect_language when language is unknown; without it Deepgram ignores detection in auto mode.
     params.set("detect_language", "true");
   }
 
@@ -72,9 +68,7 @@ export async function stt(
   const transcript = data.results?.channels?.[0]?.alternatives?.[0]?.transcript;
   const duration = data.metadata?.duration;
   const durationMs = duration ? duration * 1000 : undefined;
-  // Folded through the shared resolver like every other provider: an
-  // unresolved detection is an absent field, not a guessed default — "en" here
-  // would silently mislabel every unknown-language clip.
+  // An unresolved detection remains undefined to avoid mislabeling unknown languages.
   const detectedLang = canonicalLanguageFromName(
     data.results?.channels?.[0]?.detected_language,
   );
@@ -113,16 +107,8 @@ function resolveModelName(voice: string | undefined, lang: string): string {
 type VoiceGender = "male" | "female";
 
 /**
- * Aura-2 voices per language, ordered so index 0 is the Clear persona and
- * index 1 the Warm persona. Characteristics are Deepgram's own
- * (developers.deepgram.com/docs/tts-models). Accent is baked into the voice
- * identity — `aura-2-draco-en` is British, `aura-2-hyperion-en` Australian — so
- * no non-`en-us` voice appears in a pool unless that is deliberate.
- *
- * Coverage is uneven: French publishes one voice per gender, so the Warm
- * persona legitimately has no Deepgram candidate there. Lists are short on
- * purpose — the pool walks at most one voice per provider, and a long list
- * only spends the synthesis budget on requests that already failed.
+ * Aura-2 voices per language, ordered by persona (0 = Clear, 1 = Warm).
+ * Lists are kept minimal to avoid wasting budget on failing fallback requests.
  */
 const DEEPGRAM_FEMALE: Record<string, string[]> = {
   default: ["vesta", "hera"],
@@ -158,18 +144,8 @@ export function voices(
 }
 
 /**
- * Asks Aura for Ogg Opus rather than its default MP3.
- *
- * Two reasons, both measured against this app's client. It is the only
- * upstream here that can emit Opus at all, and mono Opus is the one container
- * the device reuses byte-for-byte instead of re-encoding, so a clip that
- * arrives in this format costs the phone no transcoding on the share paths. At
- * the default bitrate it is also roughly a quarter the size of the MP3 it
- * replaces.
- *
- * `bit_rate` is deliberately left alone: the device's reuse check compares
- * channel count, not bitrate, so there is nothing to match, and the measured
- * default was already smaller than the phone's own 24 kbps encode target.
+ * Requests Ogg Opus audio.
+ * Opus is the only container iOS reuses byte-for-byte without transcoding, reducing client overhead.
  */
 const DEEPGRAM_SPEAK_ENCODING: Readonly<Record<string, string>> = {
   encoding: "opus",
@@ -285,8 +261,8 @@ function emit(
 }
 
 /**
- * `/v2/listen` with `flux-general-multi`. The language is a hint, not a selector:
- * Flux rejects `language=`, so a wrong hint costs accuracy, not the session.
+ * Connects to `/v2/listen` using `flux-general-multi`.
+ * Language is provided as a hint to maintain session stability even on mismatch.
  */
 async function fluxStream(
   env: Env,

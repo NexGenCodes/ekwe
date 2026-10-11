@@ -13,29 +13,31 @@ type TranscribeProvider =
   | "groq"
   | "deepgram"
   | "assemblyai"
-  | "openrouter";
+  | "elevenlabs";
 type StreamProvider = "deepgram" | "witai" | "assemblyai" | "gladia";
 type TranslateProvider =
   "groq" | "gemini" | "cohere" | "openrouter" | "cloudflare" | "mistral";
-type SpeechProvider = "gemini" | "edge" | "deepgram" | "witai";
+type SpeechProvider = "gemini" | "edge" | "deepgram" | "witai" | "elevenlabs";
 
 const PROVIDER_PIPELINES = {
   pipelines: {
+    // OpenRouter is translate-only: its audio endpoint answers 402 on a free
+    // account and it publishes no `:free` STT model, so it implements no
+    // transcription capability and stays out of every pool here.
     FREE: [
       "witai",
       "groq",
       "cloudflare",
       "gladia",
-      "openrouter",
       "cohere",
     ] as readonly TranscribeProvider[],
     PREMIUM: [
       "witai",
       "assemblyai",
       "deepgram",
+      "elevenlabs",
       "gladia",
       "groq",
-      "openrouter",
       "cloudflare",
     ] as readonly TranscribeProvider[],
     STREAMING: [
@@ -45,19 +47,29 @@ const PROVIDER_PIPELINES = {
       "gladia",
     ] as readonly StreamProvider[],
     TRANSLATE: {
+      // Groq leads the free pool on throughput rather than quality: its key pool
+      // absorbs the volume, and Gemini is held back at second-to-last so the
+      // languages it is actually best at are not spent on requests Groq could
+      // have answered. OpenRouter is the deliberate last resort — free but the
+      // weakest, so a user only reaches it after everything else failed.
       FREE: [
         "groq",
-        "gemini",
-        "cohere",
-        "openrouter",
         "cloudflare",
+        "cohere",
+        "gemini",
+        "openrouter",
       ] as readonly TranslateProvider[],
+      // Gemini first: it is the strongest translator we have for the Nigerian
+      // languages and the European ones alike, so a premium request should meet
+      // its best answer before any fallback. Mistral follows as a fast (~650ms)
+      // second opinion. OpenRouter is absent here on purpose — it is a
+      // free-tier model, so letting a paying user fall through to it would be a
+      // worse answer than the last resort the free pool already gets.
       PREMIUM: [
         "gemini",
         "cohere",
         "mistral",
         "groq",
-        "openrouter",
         "cloudflare",
       ] as readonly TranslateProvider[],
     },
@@ -66,6 +78,7 @@ const PROVIDER_PIPELINES = {
       PREMIUM: [
         "gemini",
         "deepgram",
+        "elevenlabs",
         "edge",
         "witai",
       ] as readonly SpeechProvider[],
@@ -117,10 +130,15 @@ export const PROVIDER_TIMEOUT = {
   cohere: { premium: 8_000, free: 12_000 },
   gladia: { premium: 8_000, free: 12_000 },
   assemblyai: { premium: 8_000, free: 15_000 },
+  elevenlabs: { premium: 10_000, free: 15_000 },
   witai: { premium: 10_000, free: 15_000 },
   groq: { premium: 8_000, free: 12_000 },
-  openrouter: { premium: 10_000, free: 15_000 },
   cloudflare: { premium: 10_000, free: 15_000 },
+  // Text-to-text only. Mistral is the fast second opinion, so it gets a tight
+  // budget; OpenRouter is the last resort and slow, so it gets the whole one.
+  gemini: { premium: 8_000, free: 12_000 },
+  mistral: { premium: 6_000, free: 10_000 },
+  openrouter: { premium: 12_000, free: 15_000 },
 } as const;
 
 export const PROVIDER_SKIP_AUTO: Record<string, boolean> = {
@@ -128,8 +146,8 @@ export const PROVIDER_SKIP_AUTO: Record<string, boolean> = {
   cohere: true,
   gladia: false,
   assemblyai: false,
+  elevenlabs: false,
   witai: true,
   groq: false,
-  openrouter: false,
   cloudflare: false,
 };

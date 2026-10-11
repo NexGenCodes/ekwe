@@ -65,10 +65,13 @@ describe("Cohere provider", () => {
       ),
     );
 
-    const result = await cohere.translate(
+    const result = await cohere.ttt(
       "Hello world",
-      "French",
-      "English",
+      {
+        targetLang: "fr",
+        sourceLang: "en",
+        transliteration: false,
+      },
       mockEnv(),
       mockSignal(),
     );
@@ -83,10 +86,13 @@ describe("Cohere provider", () => {
         jsonResponse({ error: "unauthorized" }, 401),
       ),
     );
-    const result = await cohere.translate(
+    const result = await cohere.ttt(
       "Hello",
-      "French",
-      "English",
+      {
+        targetLang: "fr",
+        sourceLang: "en",
+        transliteration: false,
+      },
       mockEnv(),
       mockSignal(),
     );
@@ -99,10 +105,13 @@ describe("Cohere provider", () => {
         jsonResponse({ message: { content: [] } }),
       ),
     );
-    const result = await cohere.translate(
+    const result = await cohere.ttt(
       "Hello",
-      "French",
-      "English",
+      {
+        targetLang: "fr",
+        sourceLang: "en",
+        transliteration: false,
+      },
       mockEnv(),
       mockSignal(),
     );
@@ -111,10 +120,13 @@ describe("Cohere provider", () => {
 
   test("returns null on missing message", async () => {
     server.use(http.post(PROVIDER_URLS.cohereChat, () => jsonResponse({})));
-    const result = await cohere.translate(
+    const result = await cohere.ttt(
       "Hello",
-      "French",
-      "English",
+      {
+        targetLang: "fr",
+        sourceLang: "en",
+        transliteration: false,
+      },
       mockEnv(),
       mockSignal(),
     );

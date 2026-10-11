@@ -8,7 +8,7 @@ import Share from "lucide-react-native/icons/share";
 import Wand from "lucide-react-native/icons/wand";
 import X from "lucide-react-native/icons/x";
 import React, { useCallback, useRef, useState } from "react";
-import { StyleProp, ViewStyle } from "react-native";
+import { ActivityIndicator, StyleProp, ViewStyle } from "react-native";
 import Animated, {
   FadeIn,
   runOnJS,
@@ -52,7 +52,13 @@ export interface VoiceResultPanelProps {
   amplitudes?: number[];
   onBack: () => void;
   onChangeVoice: () => void;
-  onRegenerate: () => void;
+  onConvert: () => void;
+  /**
+   * Whether the selected voice differs from the one on screen. Convert is only
+   * meaningful then, and enabling it unconditionally invited a tap that spent
+   * quota to produce the identical clip.
+   */
+  canConvert: boolean;
   onShare: () => void;
 
   /**
@@ -70,8 +76,6 @@ export interface VoiceResultPanelProps {
   /** True when a translation exists, so the transcript is a distinct document. */
   hasTranslation: boolean;
   isEditing: boolean;
-  /** False for typed input, where Back already reaches the words. */
-  canEditText: boolean;
   /** One entry per document the editor may correct. */
   editFields: EditableField[];
   /** What Convert will do with the current draft. */
@@ -87,6 +91,7 @@ export interface VoiceResultPanelProps {
   onTogglePlay: () => void;
 
   isAudioLoading?: boolean;
+  isConverting?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -104,21 +109,28 @@ function ActionChip({
   onPress,
   tint,
   variant = "chip",
+  disabled = false,
+  busy = false,
 }: {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
   tint: string;
   variant?: "chip" | "quiet";
+  disabled?: boolean;
+  busy?: boolean;
 }): React.ReactElement {
   const isQuiet = variant === "quiet";
   return (
     <Pressable
-      onPress={onPress}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled, busy }}
       hitSlop={8}
       style={({ pressed }) => [
+        disabled && { opacity: 0.4 },
         {
           flexDirection: "row",
           alignItems: "center",
@@ -154,13 +166,13 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
   amplitudes,
   onBack,
   onChangeVoice,
-  onRegenerate,
+  onConvert,
+  canConvert: voiceChanged,
   onShare,
   resultText,
   transcriptText,
   hasTranslation,
   isEditing,
-  canEditText,
   editFields,
   editHint,
   maxChars,
@@ -171,14 +183,16 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
   onClear,
   onTogglePlay,
   isAudioLoading = false,
+  isConverting = false,
   style,
 }: VoiceResultPanelProps): React.ReactElement {
   const { color } = useTheme();
 
-  // Convert renders the spoken document, so that is what gates it.
+  // Convert renders the spoken document, so that is what gates it — and it only
+  // differs from what is on screen once the voice has changed.
   const primary =
     editFields.find((f) => f.key === "translation") ?? editFields[0];
-  const canConvert = (primary?.value.trim().length ?? 0) > 0;
+  const canConvert = voiceChanged && (primary?.value.trim().length ?? 0) > 0;
 
   const isPlaying = player.isPlaying;
   const hasWaveform = !!amplitudes && amplitudes.length > 0;
@@ -230,6 +244,7 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
           borderCurve: "continuous",
           padding: spacing.lg,
           backgroundColor: color.brand,
+          overflow: "hidden",
         },
         style,
       ]}
@@ -325,10 +340,7 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         maxChars={maxChars}
       />
 
-      {/* Typed input needs no editor: the words on the card are the words the
-          user wrote, and Back reaches the composer holding them. A recording
-          does need one, because its transcript is the app's guess. */}
-      {!isEditing && canEditText && (
+      {!isEditing && (
         <Box
           style={{
             flexDirection: "row",
@@ -352,7 +364,7 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
           variant="caption"
           numberOfLines={2}
           style={{
-            color: withAlpha(color.onBrand, 0.7),
+            color: color.onBrand,
             fontStyle: "italic",
             marginBottom: spacing.sm,
           }}
@@ -506,10 +518,18 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
               tint={color.onBrand}
             />
             <ActionChip
-              icon={<RefreshCw size={iconSize.sm} color={color.onBrand} />}
-              label="Regenerate"
-              onPress={onRegenerate}
+              icon={
+                isConverting ? (
+                  <ActivityIndicator size="small" color={color.onBrand} />
+                ) : (
+                  <RefreshCw size={iconSize.sm} color={color.onBrand} />
+                )
+              }
+              label={isConverting ? "Converting…" : "Convert"}
+              onPress={onConvert}
               tint={color.onBrand}
+              disabled={!canConvert || isConverting}
+              busy={isConverting}
             />
           </Box>
 

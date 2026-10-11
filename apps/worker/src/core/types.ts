@@ -34,7 +34,8 @@ export const CLIENT_ABORTED = "CLIENT_ABORTED";
 type LanguageGatedCapability =
   import("@ekwe/shared/languageCapabilities").LanguageCapability;
 
-export type ProviderCapability = LanguageGatedCapability | "ttsStream";
+export type ProviderCapability =
+  LanguageGatedCapability | "ttsStream" | "sttStream";
 
 export type SpeechGender = "male" | "female";
 
@@ -63,14 +64,24 @@ export type SttStreamFn = (
   signal: AbortSignal,
 ) => Promise<boolean>;
 
-export type TranslateFn = (
+export type TttFn = (
   text: string,
-  targetLang: string,
-  sourceLang: string | undefined,
+  request: TttRequest,
   env: Env,
   signal: AbortSignal,
-  transliteration: boolean,
 ) => Promise<TranslateResult | null>;
+
+/**
+ * Languages are canonical codes, never display names: the provider maps them
+ * into whatever its API wants, as an `stt` provider does. `transliteration` is
+ * resolved request shape, not policy — anything a plan restricts is stripped
+ * from the result after the fact.
+ */
+export interface TttRequest {
+  readonly targetLang: string;
+  readonly sourceLang?: string;
+  readonly transliteration: boolean;
+}
 
 export type TtsFn = (
   text: string,
@@ -103,7 +114,7 @@ export interface ProviderModule {
   streamRoutes?: readonly string[];
   stt?: SttFn;
   sttStream?: SttStreamFn;
-  translate?: TranslateFn;
+  ttt?: TttFn;
   tts?: TtsFn;
   voices?: VoiceListFn;
 }

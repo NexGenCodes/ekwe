@@ -41,8 +41,7 @@ export function hasSharedTranslation(
  * The extension runs the full pipeline natively, so every record it produces is
  * an `echo` capture. `sessionKey` is the extension's own in-file dedup key and
  * is a stable identifier for the capture, which is exactly what the history
- * layer now needs — so it is promoted to `captureId` rather than discarded as
- * it used to be.
+ * layer needs, so it is promoted to `captureId`.
  */
 export function mapSharedRecordToEntry(
   record: SharedHistoryRecord,

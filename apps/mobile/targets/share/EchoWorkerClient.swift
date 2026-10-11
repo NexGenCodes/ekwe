@@ -242,6 +242,7 @@ final class EchoWorkerClient {
         fileURL: URL,
         lang: String,
         accessToken: String,
+        durationMs: Int? = nil,
         onProgress: @escaping (Float) -> Void
     ) async throws -> Transcript {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
@@ -262,7 +263,8 @@ final class EchoWorkerClient {
             boundary: boundary,
             filename: filename,
             lang: lang,
-            mimeType: mimeType(for: filename)
+            mimeType: mimeType(for: filename),
+            durationMs: durationMs
         )
         defer { try? FileManager.default.removeItem(at: bodyURL) }
         onProgress(0.1)
@@ -368,7 +370,8 @@ final class EchoWorkerClient {
         boundary: String,
         filename: String,
         lang: String,
-        mimeType: String
+        mimeType: String,
+        durationMs: Int?
     ) throws -> URL {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("multipart-\(UUID().uuidString)")
@@ -383,6 +386,11 @@ final class EchoWorkerClient {
         try handle.write(string: "--\(boundary)\r\n")
         try handle.write(string: "Content-Disposition: form-data; name=\"timestamp_granularities\"\r\n\r\n")
         try handle.write(string: "word\r\n")
+        if let durationMs {
+            try handle.write(string: "--\(boundary)\r\n")
+            try handle.write(string: "Content-Disposition: form-data; name=\"duration\"\r\n\r\n")
+            try handle.write(string: "\(durationMs)\r\n")
+        }
         try handle.write(string: "--\(boundary)\r\n")
         try handle.write(string: "Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n")
         try handle.write(string: "Content-Type: \(mimeType)\r\n\r\n")

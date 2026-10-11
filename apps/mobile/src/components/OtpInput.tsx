@@ -9,7 +9,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { Box } from "@/components/ui";
-import { borderRadius } from "@/constants/sizes";
+import { borderRadius, touchTarget } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks";
@@ -66,8 +66,10 @@ const OtpDigitBox = memo(function OtpDigitBox({
     <Animated.View
       style={[
         {
-          width: 48,
-          height: 56,
+          flex: 1,
+          maxWidth: 56,
+          aspectRatio: 48 / 56,
+          minHeight: touchTarget.minimum,
           borderRadius: borderRadius.lg,
           backgroundColor: cardColor,
           borderWidth: 2,
@@ -143,14 +145,14 @@ export const OtpInput = memo(function OtpInput({
   const handleBlur = useCallback(() => setIsFocused(false), []);
 
   return (
-    <Box>
+    <Box style={{ alignSelf: "stretch" }}>
       <Animated.View style={shakeStyle}>
         {}
         <Box
           pointerEvents="none"
           style={{
             flexDirection: "row",
-            gap: spacing.sm,
+            gap: spacing.xs,
             justifyContent: "center",
           }}
         >

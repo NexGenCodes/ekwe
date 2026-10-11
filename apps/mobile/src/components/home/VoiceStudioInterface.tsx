@@ -55,30 +55,14 @@ export interface VoiceStudioInterfaceRef {
 }
 
 /**
- * `editing` is a mode of the result, not a step: the result card is showing
- * the artifact and the user is correcting the words it will be sent as. There
- * is no position to indicate, so no stepper — the card itself changes.
+ * `editing` shows the result card while the user edits the translated text.
+ * It is a state of the result, not a separate step.
  */
-type Stage = "composer" | "converting" | "editing" | "ready";
+type Stage = "composer" | "converting" | "editing" | "ready" | "re-rendering";
 
 /**
- * Long enough to collapse a browse across several cards, short enough that a
- * deliberate single tap still feels immediate.
- */
-const CONVERT_DEBOUNCE_MS = 700;
-
-/**
- * Floor between two re-renders of the same input.
- *
- * Distinct from `CONVERT_DEBOUNCE_MS`, which collapses a burst of *taps* into
- * one conversion. This one limits *rendered output*: a user who dislikes a
- * voice and taps Regenerate the moment it lands would otherwise spend a quota
- * per attempt.
- *
- * Applied only to re-renders, never to a first conversion. The first render is
- * already debounced, and a fresh input — a new recording, new text, or a
- * different voice — is a new intent, not a repeat, so gating it would block
- * the legitimate "didn't like that voice, try another" loop.
+ * Cooldown between re-renders to prevent rapid sequential conversions.
+ * Applied only to re-renders, not to new inputs.
  */
 const RENDER_COOLDOWN_MS = 2500;
 
@@ -109,10 +93,7 @@ export const VoiceStudioInterface = forwardRef<
     selectedLanguages.length > 0 ? selectedLanguages : DEFAULT_LANGUAGES,
     permissions.maxSelectedLanguages,
   );
-  // Independently defaulting these let the two disagree: source was pinned to
-  // the first selected language while target could be anything, so the worker
-  // was asked to translate from a language the user never chose. Source is now
-  // always a real selection, and target is always a different one.
+  // Ensure source and target languages are explicitly different.
   const initialSourceLang = permissions.autoLanguageDetect
     ? "auto"
     : (knownLanguages[0] ?? "en");
@@ -132,18 +113,14 @@ export const VoiceStudioInterface = forwardRef<
     null,
   );
   const [transcript, setTranscript] = useState("");
-  /**
-   * The translation the current audio was rendered from, or null when no
-   * target language was chosen. This is the text the result presents as the
-   * artifact, and the only field the result lets you edit.
-   */
+  /** The translation matching the rendered audio, editable by the user. */
   const [translation, setTranslation] = useState<string | null>(null);
-  /** The open editor's working copies, keyed by document. Null when closed. */
+  /** The open editor's working copies. Null when closed. */
   const [editDraft, setEditDraft] = useState<{
     transcript: string;
     translation: string;
   } | null>(null);
-  /** What was last archived for this capture, so edits can be compared. */
+  /** URI of the last archived capture for comparison. */
   const [artifactUri, setArtifactUri] = useState<string | null>(null);
   const [artifactDurationMs, setArtifactDurationMs] = useState(0);
   const [amplitudes, setAmplitudes] = useState<number[] | undefined>(undefined);
@@ -155,18 +132,20 @@ export const VoiceStudioInterface = forwardRef<
     [voiceId, voiceGender],
   );
 
+  /**
+   * The voice key the current clip was rendered with.
+   * Marking as dirty avoids re-synthesizing instantly on voice change.
+   */
+  const [renderedVoiceKey, setRenderedVoiceKey] = useState<string | null>(null);
+  const currentVoiceKey = `${voice.slot.id}_${voice.gender}`;
+  const isVoiceDirty =
+    renderedVoiceKey !== null && renderedVoiceKey !== currentVoiceKey;
+
   const dictatingRef = useRef(false);
   const convertSeqRef = useRef(0);
-  /**
-   * Aborts the conversion in flight. Without a real signal a superseded
-   * request still ran to completion on the worker and was billed for, even
-   * though its result was discarded.
-   */
+  /** Aborts in-flight conversions. */
   const convertAbortRef = useRef<AbortController | null>(null);
-  /**
-   * Defers the conversion a voice change triggers, so auditioning several
-   * voices in a row costs one conversion instead of one per tap.
-   */
+  /** Defers voice-change conversions. */
   const convertDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelScheduledConvert = useCallback((): void => {
     if (convertDebounceRef.current) {
@@ -181,13 +160,8 @@ export const VoiceStudioInterface = forwardRef<
     };
   }, [cancelScheduledConvert]);
   /**
-   * Identifies the capture being converted, so regenerating with a different
-   * voice updates the existing history row instead of appending a new one for
-   * what is really the same utterance.
-   *
-   * Reset whenever the user supplies new input — otherwise "clear", then type
-   * something different, would overwrite the previous note's history row
-   * instead of adding a new one.
+   * The capture ID being converted.
+   * Updated on new inputs to prevent overwriting existing history rows.
    */
   const captureIdRef = useRef<string | null>(null);
   const getCaptureId = useCallback((): string => {
@@ -198,8 +172,7 @@ export const VoiceStudioInterface = forwardRef<
     captureIdRef.current = null;
   }, []);
 
-  // Mirrors of the draft text, so the archive-on-leave path can read the
-  // current values without taking every state change as a dependency.
+  // Mirrors of the draft text to avoid state dependency loops in archiving.
   const draftTranscriptRef = useRef("");
   const draftTranslationRef = useRef("");
   const resolvedSourceLangRef = useRef(sourceLang);
@@ -234,9 +207,9 @@ export const VoiceStudioInterface = forwardRef<
   const sourceSpeechLang = sourceLang === "auto" ? "en" : sourceLang;
 
   const files = useSessionAudioFiles();
-  const handlePreviewError = useCallback((): void => {
+  const handlePreviewError = useCallback((error: EkweError): void => {
     AppToast.error("Preview Unavailable", {
-      description: "Failed to load voice preview.",
+      description: ErrorMessages[error],
     });
   }, []);
   const preview = useVoicePreview({
@@ -338,13 +311,8 @@ export const VoiceStudioInterface = forwardRef<
   }, [capturedUri, cancelDictation, deleteSessionFile]);
 
   /**
-   * Archive a Studio capture.
-   *
-   * The synthesized audio is deliberately not kept — it is a rendering of text
-   * we already hold, and it is deleted when the session ends. What is worth
-   * keeping is the text: what the user said or typed, and its translation if
-   * one was produced. Both come back from the same `/synthesize` call that
-   * generated the audio, so this costs no extra inference.
+   * Archives a Studio capture's text content.
+   * Audio is not kept as it is a temporary render of the archived text.
    */
   const recordStudioCapture = useCallback(
     (args: {
@@ -390,28 +358,12 @@ export const VoiceStudioInterface = forwardRef<
   );
 
   /**
-   * Archive whatever text we hold, once per capture.
-   *
-   * `runConvert` writes as soon as a full `/synthesize` round trip lands, but
-   * the user can now leave from a non-terminal step — or never render speech at
-   * all — and the words they produced are the part worth keeping. Without this
-   * the text would exist only in local state. The guard keeps it to one write
-   * per capture, and `SyncService` upserts on `captureId`, so a later call with
-   * a translation updates the same row rather than adding another.
+   * Archives text once per capture.
+   * Prevents duplicate history rows via `SyncService` upserts.
    */
   const savedRef = useRef(false);
 
-  /**
-   * Rate limit for re-renders.
-   *
-   * TTS is metered work, and a user who is not happy with a voice will tap
-   * Convert or Regenerate several times in a few seconds. The in-flight guard
-   * stops a double submission within one tap; this stops the burst.
-   *
-   * Silent by design: `stage` already shows a spinner for the in-flight case,
-   * and a visible countdown on a button the user is holding down reads as a
-   * glitch rather than a limit.
-   */
+  /** Silent rate limit for re-renders to prevent rapid API calls. */
   const rerollRef = useRef(0);
   const renderCooldownUntilRef = useRef(0);
   const renderCooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -459,15 +411,7 @@ export const VoiceStudioInterface = forwardRef<
     });
   }, [sourceAudio, artifactDurationMs, recordStudioCapture, getCaptureId]);
 
-  /**
-   * Publish what the conversion produced and mark it archived.
-   *
-   * The worker computes the transcript and the translation on every call and
-   * hands both back; before this they were read only to build the history row
-   * and thrown away, which is why the result could not show the words it was
-   * sending. They are now the result's content, and the single source the
-   * editor starts from.
-   */
+  /** Publishes conversion results and marks them archived. */
   const publishResult = useCallback(
     (args: {
       transcript: string;
@@ -494,10 +438,13 @@ export const VoiceStudioInterface = forwardRef<
 
       const seq = ++convertSeqRef.current;
       Keyboard.dismiss();
-      setStage("converting");
-      setArtifactUri(null);
-      setArtifactDurationMs(0);
-      setAmplitudes(undefined);
+      const isReRender = stage === "ready" || stage === "editing";
+      setStage(isReRender ? "re-rendering" : "converting");
+      if (!isReRender) {
+        setArtifactUri(null);
+        setArtifactDurationMs(0);
+        setAmplitudes(undefined);
+      }
 
       const wantsTranslation =
         !!targetLang && targetLang !== "none" && targetLang !== "auto";
@@ -527,15 +474,11 @@ export const VoiceStudioInterface = forwardRef<
           return;
         }
 
-        // A newer conversion owns the screen now, so this one must not restore
-        // anything — the abort is ours, not a failure worth reporting.
+        // Ignore aborts for superseded requests.
         if (!result.ok && result.error === EkweError.INTERRUPTED) return;
 
         if (!result.ok) {
-          // The whole chain is one request, so a failure here means the
-          // transcript was never produced. Replaying the recording would look
-          // like a successful convert while showing the user's own voice.
-          logger.warn("[VoiceStudio] audio convert failed:", result.error);
+          // Log audio conversion failures without failing back to source replay.
           const entitlement = result.error === EkweError.PREMIUM_REQUIRED;
           const throttled = result.error === EkweError.RATE_LIMITED;
           AppToast.error(
@@ -566,10 +509,9 @@ export const VoiceStudioInterface = forwardRef<
         setAmplitudes(normalizeAmplitudes(result.value.waveform ?? []));
         commitArtifact(result.value.uri);
         setArtifactUri(result.value.uri);
+        setRenderedVoiceKey(currentVoiceKey);
 
-        // A worker that predates the transcript field leaves it null, in which
-        // case there is nothing meaningful to archive or show, so we keep the
-        // recording as the result rather than store a blank row.
+        // Discard results with empty transcripts.
         const heardText = result.value.transcript?.trim();
         if (!heardText) return;
 
@@ -618,10 +560,7 @@ export const VoiceStudioInterface = forwardRef<
       if (!result.ok && result.error === EkweError.INTERRUPTED) return;
 
       if (!result.ok) {
-        // A provider outage is not the user's fault and is worth another go, so
-        // it gets its own wording and a retry. A free-tier cooldown is neither
-        // an outage nor a failure, and reporting it as one left the user with
-        // no idea that waiting was the fix.
+        // Provide specific error feedback based on failure reasons.
         const throttled = result.error === EkweError.RATE_LIMITED;
         const outage = result.error === EkweError.SPEECH_UNAVAILABLE;
         AppToast.error(
@@ -649,6 +588,7 @@ export const VoiceStudioInterface = forwardRef<
       setAmplitudes(normalizeAmplitudes(result.value.waveform ?? []));
       commitArtifact(result.value.uri);
       setArtifactUri(result.value.uri);
+      setRenderedVoiceKey(currentVoiceKey);
 
       const typedText = result.value.transcript?.trim() || text.trim();
       if (!typedText) return;
@@ -681,7 +621,9 @@ export const VoiceStudioInterface = forwardRef<
       sourceSpeechLang,
       sourceLang,
       targetLang,
+      stage,
       voice,
+      currentVoiceKey,
       commitArtifact,
       getCaptureId,
       recordStudioCapture,
@@ -690,21 +632,12 @@ export const VoiceStudioInterface = forwardRef<
   );
 
   useEffect(() => {
-    if (stage !== "converting" || !artifactUri) return;
+    if ((stage !== "converting" && stage !== "re-rendering") || !artifactUri)
+      return;
     if (player.isReady && !player.isDecoding) {
       setStage("ready");
     }
   }, [stage, artifactUri, player.isReady, player.isDecoding]);
-
-  useEffect(() => {
-    if (stage !== "converting" || !artifactUri) return;
-    const timer = setTimeout(() => {
-      setStage((prev) => (prev === "converting" ? "ready" : prev));
-    }, 5000);
-    return (): void => {
-      clearTimeout(timer);
-    };
-  }, [stage, artifactUri]);
 
   const handleConvert = useCallback(() => {
     if (sourceAudio) {
@@ -728,8 +661,7 @@ export const VoiceStudioInterface = forwardRef<
     void triggerHaptic();
     playerRef.current.pause();
     sourcePlayerRef.current.pause();
-    // Leaving the result behind is the one place text can be lost, so archive
-    // before the composer takes the screen back.
+    // Archive text before navigating back.
     archiveIfUnsaved();
     setStage("composer");
   }, [isReturnAudioLoading, archiveIfUnsaved]);
@@ -737,7 +669,7 @@ export const VoiceStudioInterface = forwardRef<
   useEffect(() => {
     if (stage !== "ready" && stage !== "editing") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      // Back inside the editor means "put the words back", not "leave".
+      // Close editor instead of navigating away.
       if (stage === "editing") {
         closeEditor();
         return true;
@@ -783,22 +715,7 @@ export const VoiceStudioInterface = forwardRef<
     closeEditor();
   }, [closeEditor]);
 
-  /**
-   * Render `text` in the current voice and make it the on-screen result.
-   *
-   * Deliberately omits `sourceLang`, so the service speaks the text instead of
-   * translating it. Callers here are the editor and Regenerate, and in both
-   * cases the text is already in its final language: the user either typed the
-   * final wording, or is re-rolling a render of it. Passing a source language
-   * would pay for a machine translation of the user's own words.
-   *
-   * `asTranslation` decides what the capture records. An edit to a translated
-   * result is a correction of the translation, so the original transcript is
-   * left alone and the result stays idempotent; an edit to a transcript-only
-   * result is a correction of the transcript, and recording it as a
-   * translation would be a lie the History screen cannot represent.
-   */
-  /** Re-renders the result from the editor's draft. See planEdit. */
+  /** Re-renders the result from the editor's draft. */
   const renderInVoice = useCallback(
     async (
       draft: {
@@ -817,22 +734,16 @@ export const VoiceStudioInterface = forwardRef<
       });
       const retranslate = plan.kind === "retranslate";
       const spokenText = plan.kind === "unchanged" ? "" : plan.text;
-      // Regenerate speaks the text already on screen, which `planEdit` reports
-      // as unchanged; only `force` lets that through to a re-roll.
+      // Ignore regenerates of unchanged text unless forced.
       if (!spokenText && !options?.force) return;
       const textToSpeak =
         spokenText || draft.translation.trim() || draft.transcript.trim();
       if (!textToSpeak) return;
-      // Refused silently. The tap did nothing, and a toast explaining that is
-      // worse than the pause it interrupts: Regenerate is a re-roll, and a user
-      // who taps it twice is asking for two attempts, not being told off for
-      // asking. The cooldown expires in under three seconds.
+      // Rate limit renders silently.
       if (startRenderCooldown()) return;
 
       void triggerHaptic();
-      // The current artifact is about to be superseded, and commitArtifact
-      // deletes the old file on a delay — stop the player before that happens
-      // or playback dies mid-note.
+      // Pause player before artifact file is deleted.
       player.pause();
 
       convertAbortRef.current?.abort();
@@ -845,10 +756,8 @@ export const VoiceStudioInterface = forwardRef<
       const prevDurationMs = artifactDurationMs;
       const prevAmplitudes = amplitudes;
 
-      setStage("converting");
-      setArtifactUri(null);
-      setArtifactDurationMs(0);
-      setAmplitudes(undefined);
+      setStage("re-rendering");
+      // Keep existing artifact info on screen instead of wiping it
 
       const restore = (): void => {
         setArtifactUri(prevArtifactUri);
@@ -909,6 +818,7 @@ export const VoiceStudioInterface = forwardRef<
       setAmplitudes(normalizeAmplitudes(result.value.waveform ?? []));
       commitArtifact(result.value.uri);
       setArtifactUri(result.value.uri);
+      setRenderedVoiceKey(currentVoiceKey);
 
       const nextTranscript = draft.transcript.trim();
       const nextTranslation = retranslate
@@ -917,9 +827,7 @@ export const VoiceStudioInterface = forwardRef<
           ? draft.translation.trim()
           : null;
 
-      // A re-translate that came back with no translation means the audio is of
-      // words the card cannot show. Committing the old translation would put the
-      // wrong words under the right audio, so refuse and keep what was there.
+      // Keep previous translation on failed re-translate.
       if (retranslate && !nextTranslation) {
         void cleanAudioArtifacts(result.value.uri);
         restore();
@@ -962,6 +870,7 @@ export const VoiceStudioInterface = forwardRef<
     [
       player,
       voice,
+      currentVoiceKey,
       commitArtifact,
       getCaptureId,
       artifactUri,
@@ -991,22 +900,21 @@ export const VoiceStudioInterface = forwardRef<
     await renderInVoice(editDraft);
   }, [editDraft, transcript, translation, renderInVoice, closeEditor]);
 
-  /**
-   * Re-roll the render of what is on screen.
-   *
-   * Re-running the full conversion from `transcript` would have quietly undone
-   * an edit: the edited text is not in the transcript when a translation is in
-   * play, so Regenerate threw the user's wording away and replaced it with a
-   * fresh machine translation. Re-rendering the displayed text cannot lose work.
-   */
-  const handleReConvert = useCallback(() => {
+  const handleApplyEditWrapped = useCallback(() => {
+    void handleApplyEdit();
+  }, [handleApplyEdit]);
+
+  const handleOpenVoicePicker = useCallback(() => {
+    void triggerHaptic();
+    setIsPickerVisible(true);
+  }, []);
+
+  /** Re-speaks displayed text with the selected voice. */
+  const handleConvertInVoice = useCallback(() => {
     void triggerHaptic();
     const text = resultText.trim();
     if (text) {
-      // Re-rolls whatever is on screen. With a translation that is the
-      // translation, and the transcript is left alone; without one the result
-      // *is* the transcript, so re-rolling it must not be recorded as a
-      // translation.
+      // Re-render draft translation or transcript based on current state.
       void renderInVoice(
         {
           transcript: translation ? transcript : text,
@@ -1058,39 +966,9 @@ export const VoiceStudioInterface = forwardRef<
     clearVoicePreview();
   }, [clearVoicePreview]);
 
-  const runConvertRef = useRef(runConvert);
-  useEffect(() => {
-    runConvertRef.current = runConvert;
-  });
-  const scheduleConvert = useCallback(
-    (source: { text?: string } | { audio: CommittedRecording }): void => {
-      // Retire any in-flight conversion now rather than when the debounce
-      // fires, otherwise a slow reply for the previous voice can land during
-      // the delay and overwrite the voice the user just picked.
-      convertAbortRef.current?.abort();
-      convertAbortRef.current = null;
-      convertSeqRef.current += 1;
-      cancelScheduledConvert();
-      // Show progress straight away so the tap feels acknowledged instead of
-      // leaving the previous result on screen for the length of the debounce.
-      Keyboard.dismiss();
-      setStage("converting");
-      setArtifactUri(null);
-      setArtifactDurationMs(0);
-      setAmplitudes(undefined);
-      convertDebounceRef.current = setTimeout((): void => {
-        convertDebounceRef.current = null;
-        // Read through the ref so the timer cannot apply a stale voice.
-        void runConvertRef.current(source);
-      }, CONVERT_DEBOUNCE_MS);
-    },
-    [cancelScheduledConvert],
-  );
-
   const handleGenderChange = useCallback(
     (next: VoiceGender) => {
-      // Stop anything sounding before the tab moves, so a preview of the
-      // gender being left cannot start playing under the new one.
+      // Cancel active previews before changing gender.
       preview.cancel();
       settingsActions.setVoiceGender(next);
     },
@@ -1104,21 +982,14 @@ export const VoiceStudioInterface = forwardRef<
       settingsActions.setVoiceGender(selected.gender);
       setIsPickerVisible(false);
       clearVoicePreview();
-      if (stage !== "ready") return;
-      if (sourceAudio) {
-        scheduleConvert({ audio: sourceAudio });
-      } else {
-        const text = transcript.trim();
-        if (text) scheduleConvert({ text });
-      }
+      // Avoid immediate re-synthesis; relies on the 'Convert' button.
     },
-    [stage, sourceAudio, transcript, scheduleConvert, clearVoicePreview],
+    [clearVoicePreview],
   );
 
   const handleSourceChange = useCallback((lang: string) => {
     setSourceLang(lang);
-    // Picking your own language as the target would ask the worker to translate
-    // a language into itself.
+    // Clear target language if it matches the new source.
     setTargetLang((prev) => (prev === lang ? "" : prev));
   }, []);
 
@@ -1172,7 +1043,7 @@ export const VoiceStudioInterface = forwardRef<
       ? sourceLabel
       : `${sourceLabel} → ${getLanguageName(targetLang)}`;
 
-  /** One field per document that exists, so a recording with a translation has two. */
+  /** Render edit fields based on available text data. */
   const editFields = useMemo<EditableField[]>(() => {
     const draft = editDraft ?? {
       transcript,
@@ -1206,6 +1077,44 @@ export const VoiceStudioInterface = forwardRef<
       : "Renders these words in your voice";
   }, [translation, editDraft, transcript]);
 
+  /**
+   * ExpressiveInput is memoised, so this has to be a stable reference: a fresh
+   * object literal here would re-render the whole dictation tree on every
+   * Studio render, even when nothing it reads changed.
+   */
+  const dictationState = useMemo(
+    () => ({
+      status: dictationStatus,
+      amplitude,
+      elapsedMs,
+      maxDurationMs,
+      capturedDurationMs,
+      onStop: stopDictation,
+      onConfirm: handleConfirmDictation,
+      onCancel: handleCancelDictation,
+      capturedUri,
+      meteringData,
+      interimText,
+      finalText,
+      isLive,
+    }),
+    [
+      dictationStatus,
+      amplitude,
+      elapsedMs,
+      maxDurationMs,
+      capturedDurationMs,
+      stopDictation,
+      handleConfirmDictation,
+      handleCancelDictation,
+      capturedUri,
+      meteringData,
+      interimText,
+      finalText,
+      isLive,
+    ],
+  );
+
   return (
     <Animated.View
       layout={LinearTransition.springify()}
@@ -1217,7 +1126,7 @@ export const VoiceStudioInterface = forwardRef<
     >
       <Box
         style={
-          stage === "ready" || stage === "editing"
+          stage === "ready" || stage === "editing" || stage === "re-rendering"
             ? { display: "none" }
             : undefined
         }
@@ -1236,21 +1145,7 @@ export const VoiceStudioInterface = forwardRef<
           onDeleteAudio={handleDeleteAudio}
           isConverting={stage === "converting"}
           isDormant={stage === "ready"}
-          dictationState={{
-            status: dictationStatus,
-            amplitude,
-            elapsedMs,
-            maxDurationMs,
-            capturedDurationMs,
-            onStop: stopDictation,
-            onConfirm: handleConfirmDictation,
-            onCancel: handleCancelDictation,
-            capturedUri,
-            meteringData,
-            interimText,
-            finalText,
-            isLive,
-          }}
+          dictationState={dictationState}
           sourceLang={sourceLang}
           targetLang={targetLang}
           onSwap={handleSwap}
@@ -1261,7 +1156,9 @@ export const VoiceStudioInterface = forwardRef<
         />
       </Box>
 
-      {(stage === "ready" || stage === "editing") && (
+      {(stage === "ready" ||
+        stage === "editing" ||
+        stage === "re-rendering") && (
         <VoiceResultPanel
           player={player}
           voice={voice.slot}
@@ -1284,20 +1181,18 @@ export const VoiceStudioInterface = forwardRef<
           editHint={editHint}
           onEditResult={handleEditResult}
           isEditing={stage === "editing"}
-          canEditText={sourceAudio !== null}
           maxChars={permissions.textTranslationMaxChars}
           onEditFieldChange={handleEditFieldChange}
           onCancelEdit={handleCancelEdit}
-          onApplyEdit={() => void handleApplyEdit()}
+          onApplyEdit={handleApplyEditWrapped}
           onBack={handleBack}
-          onChangeVoice={() => {
-            void triggerHaptic();
-            setIsPickerVisible(true);
-          }}
-          onRegenerate={handleReConvert}
+          onChangeVoice={handleOpenVoicePicker}
+          onConvert={handleConvertInVoice}
+          canConvert={isVoiceDirty}
           onShare={handleShare}
           onClear={handleClearSession}
           onTogglePlay={handleTogglePlay}
+          isConverting={stage === "re-rendering"}
         />
       )}
 

@@ -1,6 +1,6 @@
 {
   "name": "@ekwe/db",
-  "version": "1.0.0",
+  "version": "1.2.12",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
@@ -14,13 +14,13 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "0.45.3"
   },
   "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.20.2",
     "drizzle-kit": "^0.31.10",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "0.45.3",
     "expo-sqlite": "~57.0.2",
     "typescript": "^6.0.3"
   }

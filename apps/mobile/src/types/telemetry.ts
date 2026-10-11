@@ -10,8 +10,6 @@
  * domain enum free to be renamed at any time, while `TelemetrySource` is only
  * ever added to. Renaming a domain value is a refactor; renaming a telemetry
  * value is a data migration with no code benefit.
- *
- * See docs/naming.md.
  */
 export type TelemetrySource = "studio" | "echo" | "history" | "result";
 

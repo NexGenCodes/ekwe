@@ -7,12 +7,18 @@ import {
 
 const RUN_INTEGRATION = process.env.RUN_INTEGRATION_TESTS === "true";
 
-function summarize(results: any[]) {
-  const passed = results.filter((r: any) => r.ok).length;
-  const failed = results.filter((r: any) => !r.ok);
-  const lines = failed.map(
-    (r: any) => `  FAIL  ${r.label}: ${r.error || r.status}`,
-  );
+/** Shape returned by the `check-providers.mjs` helpers. */
+interface ProviderCheckResult {
+  label: string;
+  ok: boolean;
+  status?: number;
+  error?: string;
+}
+
+function summarize(results: ProviderCheckResult[]) {
+  const passed = results.filter((r) => r.ok).length;
+  const failed = results.filter((r) => !r.ok);
+  const lines = failed.map((r) => `  FAIL  ${r.label}: ${r.error || r.status}`);
   return { passed, failedCount: failed.length, total: results.length, lines };
 }
 

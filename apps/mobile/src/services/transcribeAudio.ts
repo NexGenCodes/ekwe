@@ -7,6 +7,7 @@ import {
 } from "@ekwe/shared/plans";
 import { EkweError } from "@/constants/errors";
 import { ProcessedAudio } from "@/services/audioProcessor";
+import { AudioTranscoder } from "@/services/audioTranscoder";
 import { getMimeType, uploadMultipart } from "@/services/uploadMultipart";
 import { supabase } from "@/services/supabase";
 import { Result, ok, err } from "@/types/Result";
@@ -14,6 +15,7 @@ import { resolveDetectedLanguage } from "@/utils/languageUtils";
 import logger from "@/utils/logger";
 import { isDefinitelyOffline } from "@/utils/connectivity";
 import { getWorkerUrl, mapWorkerError, isTimeoutError } from "@/utils/http";
+import EkweNative from "../../modules/ekwe-native";
 
 export interface TranscriptionResult {
   transcript: string;
@@ -30,6 +32,8 @@ export async function transcribeAudio(
   signal?: AbortSignal,
   onProgress?: (fraction: number) => void,
 ): Promise<Result<TranscriptionResult, EkweError>> {
+  let convertedPath: string | null = null;
+
   try {
     const file = new ExpoFile(audio.uri);
     if (!file.exists) {
@@ -61,7 +65,12 @@ export async function transcribeAudio(
       return err(EkweError.NETWORK_LOST);
     }
 
-    const extension = audio.uri.split(".").pop()?.toLowerCase() || "m4a";
+    const artifact = await AudioTranscoder.prepareUploadArtifact(
+      audio.uri,
+      audio.durationMs,
+      sourceLang,
+    );
+    convertedPath = artifact.isTemporary ? artifact.uri : null;
 
     const {
       data: { session },
@@ -69,7 +78,7 @@ export async function transcribeAudio(
     const token = session?.access_token;
 
     const uploadResult = await uploadMultipart(
-      file,
+      new ExpoFile(artifact.uri),
       `${workerUrl}/transcribe`,
       {
         parameters: {
@@ -78,7 +87,7 @@ export async function transcribeAudio(
             ? String(Math.round(audio.durationMs))
             : "0",
         },
-        mimeType: getMimeType(extension),
+        mimeType: getMimeType(artifact.extension),
         token: token ?? null,
         signal,
         onProgress,
@@ -156,6 +165,14 @@ export async function transcribeAudio(
       logger.error("[transcribeAudio] FAIL: unknown error", String(e));
     }
     return err(EkweError.NETWORK_LOST);
+  } finally {
+    if (convertedPath) {
+      try {
+        await EkweNative.deleteFile(convertedPath);
+      } catch {
+        /* stale cache entries are reclaimed by sweepStaleAudioCache() */
+      }
+    }
   }
 }
 

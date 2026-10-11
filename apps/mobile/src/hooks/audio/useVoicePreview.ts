@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { VOICE_PREVIEW_TEXT } from "@ekwe/shared";
 
+import { EkweError } from "@/constants/errors";
 import { useSharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
 import { synthesizeSpeech } from "@/services/speech";
 import { addSentryBreadcrumb } from "@/utils/logger";
@@ -9,11 +10,7 @@ import type { SessionAudioFiles } from "@/utils/sessionAudioFiles";
 import type { VoiceSelection } from "@/utils/voices";
 import { getCachedPreviewUri, persistPreview } from "@/utils/voicePreviewCache";
 
-/**
- * `loading` while the clip is being fetched and decoded, `playing` once it is
- * audible. A card is never idle while it owns the preview, which is what keeps
- * the button from flashing back to its resting state between the two.
- */
+/** Loading while clip is fetching/decoding, playing once audible. */
 export type PreviewPhase = "loading" | "playing";
 
 export interface VoicePreviewController {
@@ -28,8 +25,8 @@ export interface VoicePreviewController {
   reset: () => void;
 }
 
-const previewKey = (slotId: string, gender: string): string =>
-  `${slotId}_${gender}`;
+const previewKey = (slotId: string, gender: string, lang: string): string =>
+  `${slotId}_${gender}_${lang}`;
 
 export const useVoicePreview = ({
   lang,
@@ -38,7 +35,7 @@ export const useVoicePreview = ({
 }: {
   lang: string;
   files: SessionAudioFiles;
-  onError: () => void;
+  onError: (error: EkweError) => void;
 }): VoicePreviewController => {
   const [uri, setUri] = useState<string | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -50,18 +47,11 @@ export const useVoicePreview = ({
     playerRef.current = player;
   });
 
-  /**
-   * Invalidates the request in flight. Anything that resolves against a stale
-   * sequence number is dropped, which is what stops a preview of the previous
-   * gender from starting once the tab has moved on.
-   */
+  /** Invalidates in-flight requests by incrementing the sequence number. */
   const seqRef = useRef(0);
   const activeKeyRef = useRef<string | null>(null);
   const loadingKeyRef = useRef<string | null>(null);
-  /**
-   * The session temp file behind the current clip. It becomes the memo once
-   * `persistPreview` moves it, so this is the only path `reset` may delete.
-   */
+  /** The session temp file URI for the current clip. */
   const tempUriRef = useRef<string | null>(null);
   useEffect(() => {
     activeKeyRef.current = activeKey;
@@ -103,7 +93,7 @@ export const useVoicePreview = ({
 
   const runPreview = useCallback(
     async (selection: VoiceSelection): Promise<void> => {
-      const key = previewKey(selection.slot.id, selection.gender);
+      const key = previewKey(selection.slot.id, selection.gender, lang);
       const seq = ++seqRef.current;
 
       // Whatever was sounding stops, so two voices never overlap.
@@ -125,12 +115,10 @@ export const useVoicePreview = ({
       const result = await synthesizeSpeech(VOICE_PREVIEW_TEXT, lang, {
         voiceId: selection.slot.id,
         gender: selection.gender,
-        // A preview is only ever played: there is no share target in
-        // `TELEMETRY_KEY` for it, and the clip is cached under the same key for
-        // every later tap. Ogg normalisation is for the voice-note contract
-        // WhatsApp and Telegram impose on shared audio, which does not apply
-        // here, so the provider's own container is handed to the player as is.
+        // Use playback delivery to skip Ogg normalization for non-shared previews.
         delivery: "playback",
+        // Omit reroll for stable cache keys and one-time provider cost.
+        isPreview: true,
       });
 
       if (seq !== seqRef.current) {
@@ -142,7 +130,7 @@ export const useVoicePreview = ({
       if (!result.ok) {
         setLoadingKey(null);
         setActiveKey(null);
-        onError();
+        onError(result.error);
         return;
       }
 
@@ -172,7 +160,7 @@ export const useVoicePreview = ({
 
   const preview = useCallback(
     (selection: VoiceSelection): void => {
-      const key = previewKey(selection.slot.id, selection.gender);
+      const key = previewKey(selection.slot.id, selection.gender, lang);
       const isActive = activeKeyRef.current === key;
       if (isActive && (isPlaying || loadingKeyRef.current === key)) {
         stopAndClear();
@@ -180,7 +168,7 @@ export const useVoicePreview = ({
       }
       void runPreview(selection);
     },
-    [runPreview, stopAndClear, isPlaying],
+    [runPreview, stopAndClear, isPlaying, lang],
   );
 
   const cancel = useCallback((): void => {

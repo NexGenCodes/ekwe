@@ -26,6 +26,7 @@ class StreamTranscriberClass {
   private statusCallbacks: Set<StreamStatusCallback> = new Set();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 3;
+  private droppedPcmChunks = 0;
 
   private static readonly NON_RETRYABLE_CLOSE_CODES = new Set([
     1000, 4004, 4005,
@@ -37,7 +38,7 @@ class StreamTranscriberClass {
 
   connect(config: StreamConfig): void {
     if (!config) return;
-    this.disconnect();
+    this.teardown(false);
     this.config = config;
     this.startTime = Date.now();
     this.notifyStatus("connecting");
@@ -55,6 +56,7 @@ class StreamTranscriberClass {
       this.ws.onopen = (): void => {
         logger.info("[StreamTranscriber] Connected");
         this.reconnectAttempts = 0;
+        this.droppedPcmChunks = 0;
         this.notifyStatus("connected");
 
         this.sendJson({
@@ -163,6 +165,14 @@ class StreamTranscriberClass {
               this.connect(this.config);
             }
           }, 1000 * this.reconnectAttempts);
+        } else {
+          logger.error(
+            `[StreamTranscriber] Giving up after ${this.reconnectAttempts} reconnect attempts`,
+          );
+          this.notifyCallbacks({
+            error: "WS_CLOSED",
+            message: "Lost the transcription connection",
+          });
         }
       };
     } catch (err) {
@@ -174,10 +184,29 @@ class StreamTranscriberClass {
   sendPcm(chunk: ArrayBuffer): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(chunk);
+      return;
     }
+    if (this.droppedPcmChunks === 0) {
+      logger.warn(
+        "[StreamTranscriber] Dropping audio while the socket is not open",
+      );
+    }
+    this.droppedPcmChunks++;
   }
 
   disconnect(): void {
+    this.teardown(true);
+  }
+
+  /**
+   * Close the socket and cancel its timers.
+   *
+   * `notify` is false for a reconnect, which must not look like a
+   * user-initiated disconnect or look like a clean stop. Resetting
+   * `reconnectAttempts` on that path is what made maxReconnectAttempts
+   * unreachable and turned a dead endpoint into an endless 1s reconnect loop.
+   */
+  private teardown(notify: boolean): void {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -196,8 +225,11 @@ class StreamTranscriberClass {
       this.ws = null;
     }
     this.config = null;
-    this.reconnectAttempts = 0;
-    this.notifyStatus("disconnected");
+    this.droppedPcmChunks = 0;
+    if (notify) {
+      this.reconnectAttempts = 0;
+      this.notifyStatus("disconnected");
+    }
   }
 
   isConnected(): boolean {

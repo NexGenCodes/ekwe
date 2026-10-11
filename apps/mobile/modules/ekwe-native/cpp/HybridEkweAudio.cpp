@@ -7,18 +7,20 @@ namespace ekwe {
 
 namespace margelo::nitro::ekwe {
 
-HybridEkweAudio* HybridEkweAudio::g_instance = nullptr;
-std::mutex HybridEkweAudio::g_instanceMutex;
+// Dispatch runs on the capture queue (iOS) or the AudioRecord worker (Android),
+// never the JS thread. Nitro already moves the JS invocation onto the JS thread
+// via its CallInvoker-backed Dispatcher — a void-returning callback is wrapped in
+// an AsyncJSCallback, so calling it here only enqueues onto that Dispatcher.
+// What still runs here is the snapshot load and the copy, and neither may wait
+// on the JS thread.
 
-HybridEkweAudio::HybridEkweAudio() : HybridObject(TAG) {
-    std::lock_guard<std::mutex> lock(g_instanceMutex);
-    g_instance = this;
+HybridEkweAudio::HybridEkweAudio() : HybridObject(TAG), _slot(std::make_shared<Slot>()) {
+    Slot::setActive(_slot);
 }
 
 HybridEkweAudio::~HybridEkweAudio() {
-    std::lock_guard<std::mutex> lock(g_instanceMutex);
-    if (g_instance == this) {
-        g_instance = nullptr;
+    if (Slot::active() == _slot) {
+        Slot::setActive(nullptr);
     }
 }
 
@@ -27,44 +29,30 @@ double HybridEkweAudio::getAmplitude() {
 }
 
 std::function<void(const std::shared_ptr<ArrayBuffer>&, double)> HybridEkweAudio::getOnOpusPacket() {
-    std::lock_guard<std::mutex> lock(g_instanceMutex);
-    return _onOpusPacket;
+    auto snapshot = _slot->get();
+    if (!snapshot || !snapshot->onPacket) return {};
+    return snapshot->onPacket;
 }
 
 void HybridEkweAudio::setOnOpusPacket(const std::function<void(const std::shared_ptr<ArrayBuffer>&, double)>& onOpusPacket) {
-    std::lock_guard<std::mutex> lock(g_instanceMutex);
-    _onOpusPacket = onOpusPacket;
+    _slot->setPacketCallback(onOpusPacket);
 }
 
 std::function<void()> HybridEkweAudio::getOnVadSilence() {
-    std::lock_guard<std::mutex> lock(g_instanceMutex);
-    return _onVadSilence;
+    auto snapshot = _slot->get();
+    return snapshot ? snapshot->onEvent : std::function<void()>();
 }
 
 void HybridEkweAudio::setOnVadSilence(const std::function<void()>& onVadSilence) {
-    std::lock_guard<std::mutex> lock(g_instanceMutex);
-    _onVadSilence = onVadSilence;
+    _slot->setEventCallback(onVadSilence);
 }
 
 void HybridEkweAudio::dispatchOpusPacket(const uint8_t* data, size_t size, float rms) {
-    std::function<void(const std::shared_ptr<ArrayBuffer>&, double)> callback;
-    {
-        std::lock_guard<std::mutex> lock(g_instanceMutex);
-        if (!g_instance || !g_instance->_onOpusPacket) return;
-        callback = g_instance->_onOpusPacket;
-    }
-    auto buffer = ArrayBuffer::copy(data, size);
-    callback(buffer, static_cast<double>(rms));
+    Slot::dispatchPacket(data, size, static_cast<double>(rms));
 }
 
 void HybridEkweAudio::dispatchVadSilence() {
-    std::function<void()> callback;
-    {
-        std::lock_guard<std::mutex> lock(g_instanceMutex);
-        if (!g_instance || !g_instance->_onVadSilence) return;
-        callback = g_instance->_onVadSilence;
-    }
-    callback();
+    Slot::dispatchEvent();
 }
 
 } // namespace margelo::nitro::ekwe

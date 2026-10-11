@@ -2,6 +2,7 @@ import AVFoundation
 import Combine
 import Foundation
 import UIKit
+import EkweAudioCodec
 
 /// Mirrors `EKWE_SHARE_SIGNATURE` in the RN app (src/constants/share.ts).
 /// The string is shared by both directions — Echo copies with it, and Studio
@@ -160,27 +161,125 @@ final class EchoShareModel: NSObject, ObservableObject {
         }
 
         do {
-            // Decode off the main actor so a large voice note can't stall the
-            // extension UI or trip a Jetsam kill. `analyze` is pure/ nonisolated.
-            let buckets = bucketCount
-            let (fileDuration, waveform) = try await Task.detached(priority: .userInitiated) {
-                try EchoShareModel.analyze(from: url, buckets: buckets)
-            }.value
+            let accessingPath = url.path
 
-            // AVPlayer streams from disk instead of buffering the decoded PCM
-            // in memory the way AVAudioPlayer does — important inside a share
-            // extension, where the Jetsam limit is a few tens of MB.
-            let player = AVPlayer(url: url)
+            // Duration gate on the ORIGINAL audio, before any decode work.
+            // The C++ probe covers Ogg/WAV/MP3/FLAC; MP4/M4A fall back to
+            // AVURLAsset's duration.
+            let probed = EkweAudioCodecBridge.probeAudioDurationMs(accessingPath)
+            let duration: Double
+            if probed >= 0 {
+                duration = Double(probed) / 1000.0
+            } else {
+                let asset = AVURLAsset(url: url)
+                duration = CMTimeGetSeconds(asset.duration)
+            }
+            if duration.isFinite, duration > 0,
+               Int64(duration * 1000) > EchoEnvironment.maxAudioDurationMs {
+                step = .failed("This audio is longer than your plan allows.")
+                return
+            }
+
+            let durationMs = Int64(duration * 1000)
+            let isUnderWitCap = durationMs > 0 && durationMs <= EchoEnvironment.witVorbisMaxDurationMs
+
+            // Output paths
+            let opusURL = Self.temporaryURL(withExtension: "opus")
+            let vorbisURL = Self.temporaryURL(withExtension: "ogg")
+
+            var activeResult: [Any] = []
+            var success = false
+            var durationMs = 0
+            var waveArr: [Double] = []
+            var opusPathForCaf = opusURL.path
+            var vorbisPathForUpload: String?
+
+            if isUnderWitCap {
+                // ≤ 296s: single decode, dual encode (Opus for playback, Vorbis for upload)
+                let dualResult = await Task.detached(priority: .userInitiated) {
+                    EkweAudioCodecBridge.transcodeToDualWithWaveform(
+                        accessingPath,
+                        opusOutputPath: opusURL.path,
+                        vorbisOutputPath: vorbisURL.path,
+                        maxAudioBytes: UInt(EchoEnvironment.maxAudioBytes))
+                }.value
+                let opusResult = dualResult[0] as! [Any]
+                let vorbisResult = dualResult[1] as! [Any]
+                let opusSuccess = (opusResult[0] as? NSNumber)?.boolValue ?? false
+                let vorbisSuccess = (vorbisResult[0] as? NSNumber)?.boolValue ?? false
+
+                if opusSuccess && vorbisSuccess {
+                    success = true
+                    durationMs = (opusResult[2] as? NSNumber)?.intValue ?? 0
+                    waveArr = (opusResult[3] as? [NSNumber])?.map { $0.doubleValue } ?? []
+                    vorbisPathForUpload = vorbisURL.path
+                }
+            } else {
+                // > 296s or unknown duration: Opus only (Wit rejects Vorbis anyway)
+                let opusResult = await Task.detached(priority: .userInitiated) {
+                    EkweAudioCodecBridge.transcodeToOpusWithWaveform(accessingPath, outputPath: opusURL.path)
+                }.value
+                var activeResult = opusResult
+                var success = (opusResult[0] as? NSNumber)?.boolValue ?? false
+                if !success {
+                    // AAC/M4A/AMR/3GP — fall back to AVAssetReader, then feed
+                    // raw PCM into the shared C++ Opus encoder.
+                    do {
+                        let pcm = try await Self.decodeToPcmFile(url: url)
+                        let fallback = await Task.detached(priority: .userInitiated) {
+                            EkweAudioCodecBridge.encodePcmToOpus(
+                                pcm.data,
+                                sampleRate: pcm.sampleRate,
+                                channels: pcm.channels,
+                                outputPath: opusURL.path)
+                        }.value
+                        success = (fallback[0] as? NSNumber)?.boolValue ?? false
+                        activeResult = fallback
+                    } catch {
+                        step = .failed(error.localizedDescription)
+                        return
+                    }
+                }
+
+                if !success {
+                    let msg = activeResult[1] as? String ?? "Couldn't transcode this audio file."
+                    step = .failed(msg)
+                    return
+                }
+
+                durationMs = (activeResult[2] as? NSNumber)?.intValue ?? 0
+                waveArr = (activeResult[3] as? [NSNumber])?.map { $0.doubleValue } ?? []
+            }
+
+            if !success {
+                let msg = activeResult[1] as? String ?? "Couldn't transcode this audio file."
+                step = .failed(msg)
+                return
+            }
+
+            // AVPlayer has no Ogg support — remux the Opus stream into CAF.
+            let cafURL = Self.temporaryURL(withExtension: "caf")
+            let remuxed = await Task.detached(priority: .userInitiated) {
+                EkweAudioCodecBridge.remuxToCafWithSourcePath(
+                    opusURL.path,
+                    outputPath: cafURL.path,
+                    maxAudioBytes: UInt(EchoEnvironment.maxAudioBytes))
+            }.value
+            let didRemux = (remuxed[0] as? NSNumber)?.boolValue ?? false
+
+            let player = AVPlayer(url: didRemux ? cafURL : url)
             player.actionAtItemEnd = .pause
             self.player = player
             addEndOfPlaybackObserver(for: player)
             scheduleProgressTimer()
 
-            sourceURL = url
+            // For upload: Vorbis when under Wit cap, Opus otherwise.
+            // Playback always uses the Opus copy remuxed to CAF above.
+            sourceURL = URL(fileURLWithPath: vorbisPathForUpload ?? opusURL.path)
             fileName = url.lastPathComponent
             fileSizeText = EchoShareModel.fileByteCountString(from: url)
-            duration = fileDuration
-            peaks = waveform
+            self.duration = Double(max(durationMs, 0)) / 1000.0
+            peaks = waveArr
             step = .pickingLanguage
         } catch {
             step = .failed("Couldn't open this audio file.")
@@ -224,10 +323,18 @@ final class EchoShareModel: NSObject, ObservableObject {
         guard let player else { return }
         if isPlaying {
             player.pause()
-        } else {
-            player.rate = Float(rate)
+            isPlaying = false
+            return
         }
-        isPlaying = player.timeControlStatus == .playing
+        activateAudioSession()
+        player.rate = Float(rate)
+        isPlaying = true
+    }
+
+    private func activateAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        try? session.setActive(true)
     }
 
     func cycleRate() {
@@ -308,7 +415,8 @@ final class EchoShareModel: NSObject, ObservableObject {
             let transcript = try await worker.transcribe(
                 fileURL: sourceURL,
                 lang: selectedLang,
-                accessToken: accessToken
+                accessToken: accessToken,
+                durationMs: Int(duration * 1000)
             ) { [weak self] fraction in
                 Task { @MainActor in
                     guard let self else { return }
@@ -450,52 +558,70 @@ final class EchoShareModel: NSObject, ObservableObject {
         return "Something went wrong. Please try again."
     }
 
-    // MARK: - Static analysis
-
-    nonisolated private static func analyze(from url: URL, buckets: Int) throws -> (duration: Double, peaks: [Double]) {
-        let file = try AVAudioFile(forReading: url)
-        let format = file.processingFormat
-        let totalFrames = AVAudioFrameCount(file.length)
-        guard totalFrames > 0 else { throw EchoWorkerClient.WorkerError.decodeFailed }
-
-        let channels = min(Int(format.channelCount), 2)
-        var peaks = Array(repeating: Float(0), count: buckets)
-        var maxPeak: Float = 0
-
-        let capacity = AVAudioFrameCount(min(4096, totalFrames))
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
-            throw EchoWorkerClient.WorkerError.decodeFailed
-        }
-
-        var framesRead: AVAudioFrameCount = 0
-        while framesRead < totalFrames {
-            let readCount = min(capacity, totalFrames - framesRead)
-            try file.read(into: buffer, frameCount: readCount)
-            let frames = Int(buffer.frameLength)
-            guard frames > 0, let channelData = buffer.floatChannelData else { break }
-
-            for frame in 0..<frames {
-                let bucketIndex = Int(Double(framesRead + AVAudioFrameCount(frame)) / Double(totalFrames) * Double(buckets))
-                let bucket = min(buckets - 1, bucketIndex)
-                var peak: Float = 0
-                for channel in 0..<channels {
-                    let magnitude = abs(channelData[channel][frame])
-                    if magnitude > peak { peak = magnitude }
-                }
-                if peak > peaks[bucket] { peaks[bucket] = peak }
-                if peak > maxPeak { maxPeak = peak }
-            }
-            framesRead += AVAudioFrameCount(frames)
-        }
-
-        let fileDuration = Double(file.length) / format.sampleRate
-        guard maxPeak > 0 else { return (fileDuration, Array(repeating: 0, count: buckets)) }
-        return (fileDuration, peaks.map { Double($0 / maxPeak) })
-    }
+    // MARK: - Helpers
 
     private static func fileByteCount(from url: URL) -> Int64 {
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
         return (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+    }
+
+    private static func temporaryURL(withExtension ext: String) -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("ekwe-\(UUID().uuidString)")
+            .appendingPathExtension(ext)
+    }
+
+    private struct PcmSlice {
+        let data: Data
+        let sampleRate: Int
+        let channels: Int
+    }
+
+    /// Decodes AAC/M4A/AMR/3GP containers the C++ decoder cannot parse into
+    /// raw 16-bit interleaved PCM (mono, 16 kHz). Throws when the asset has
+    /// no audio track or fails to decode.
+    private static func decodeToPcmFile(url: URL) async throws -> PcmSlice {
+        let asset = AVURLAsset(url: url)
+        guard let track = asset.tracks(withMediaType: .audio).first else {
+            throw NSError(
+                domain: "EchoShareModel", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "No audio track in this file."])
+        }
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 16_000,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsNonInterleavedKey: false,
+        ])
+        output.alwaysCopiesSampleData = false
+        reader.add(output)
+        guard reader.startReading() else {
+            throw reader.error ?? NSError(
+                domain: "EchoShareModel", code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Couldn't decode this audio file."])
+        }
+        var data = Data()
+        while let sample = output.copyNextSampleBuffer() {
+            defer { CMSampleBufferInvalidate(sample) }
+            if let block = CMSampleBufferGetDataBuffer(sample) {
+                var length = 0
+                var ptr: UnsafeMutablePointer<Int8>?
+                CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length, dataPointerOut: &ptr)
+                if let ptr, length > 0 {
+                    data.append(ptr, count: length)
+                }
+            }
+        }
+        if reader.status == .failed {
+            throw reader.error ?? NSError(
+                domain: "EchoShareModel", code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Couldn't decode this audio file."])
+        }
+        return PcmSlice(data: data, sampleRate: 16_000, channels: 1)
     }
 
     private static func fileByteCountString(from url: URL) -> String {

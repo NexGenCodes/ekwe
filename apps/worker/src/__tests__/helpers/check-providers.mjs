@@ -64,66 +64,92 @@ export async function checkWithResult(label, url, options) {
   }
 }
 
+/**
+ * Run thunks with a fixed concurrency ceiling.
+ *
+ * Launching every provider check at once (the previous `Promise.all(checks)`)
+ * flooded the network: AssemblyAI and Gladia drop excess connections and Wit
+ * times out, so healthy keys were reported FAIL. A bounded pool keeps each
+ * probe under the provider's tolerance and makes the result trustworthy.
+ */
+export async function runPool(tasks, limit = 6) {
+  const results = new Array(tasks.length);
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const index = next++;
+      if (index >= tasks.length) return;
+      results[index] = await tasks[index]();
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(limit, tasks.length)) }, worker),
+  );
+  return results;
+}
+
 export async function testTranslateProviders(env, { groq = false } = {}) {
-  const checks = [];
+  const tasks = [];
+
+  const push = (label, url, options) =>
+    tasks.push(() => checkWithResult(label, url, options));
 
   if (groq) {
     for (const key of getMultiKeys(env, 'GROQ_KEY_')) {
-      checks.push(checkWithResult(
-        `Groq`, 'https://api.groq.com/openai/v1/models',
-        { headers: { Authorization: `Bearer ${key}` } },
-      ));
+      push('Groq', 'https://api.groq.com/openai/v1/models', {
+        headers: { Authorization: `Bearer ${key}` },
+      });
     }
   }
   for (const key of getMultiKeys(env, 'GEMINI_KEY_')) {
-    checks.push(checkWithResult(
-      `Gemini`,
-      `https://generativelanguage.googleapis.com/v1beta/models`,
-      { headers: { 'x-goog-api-key': key } },
-    ));
+    push('Gemini', 'https://generativelanguage.googleapis.com/v1beta/models', {
+      headers: { 'x-goog-api-key': key },
+    });
   }
   for (const key of getMultiKeys(env, 'COHERE_KEY_')) {
-    checks.push(checkWithResult(
-      `Cohere`, 'https://api.cohere.ai/v1/models',
-      { headers: { Authorization: `Bearer ${key}` } },
-    ));
+    push('Cohere', 'https://api.cohere.ai/v1/models', {
+      headers: { Authorization: `Bearer ${key}` },
+    });
   }
   for (const key of getMultiKeys(env, 'MISTRAL_KEY_')) {
-    checks.push(checkWithResult(
-      `Mistral`, 'https://api.mistral.ai/v1/models',
-      { headers: { Authorization: `Bearer ${key}` } },
-    ));
+    push('Mistral', 'https://api.mistral.ai/v1/models', {
+      headers: { Authorization: `Bearer ${key}` },
+    });
   }
   for (const key of getMultiKeys(env, 'OPENROUTER_KEY_')) {
-    checks.push(checkWithResult(
-      'OpenRouter', 'https://openrouter.ai/api/v1/auth/key',
-      { headers: { Authorization: `Bearer ${key}` } },
-    ));
+    push('OpenRouter', 'https://openrouter.ai/api/v1/auth/key', {
+      headers: { Authorization: `Bearer ${key}` },
+    });
   }
 
-  return Promise.all(checks);
+  return runPool(tasks);
 }
 
 export async function testTranscribeProviders(env) {
-  const checks = [];
+  const tasks = [];
+
+  const push = (label, url, options) =>
+    tasks.push(() => checkWithResult(label, url, options));
 
   for (const key of getMultiKeys(env, 'DEEPGRAM_KEY_')) {
-    checks.push(checkWithResult(
-      `Deepgram`, 'https://api.deepgram.com/v1/projects',
-      { headers: { Authorization: `Token ${key}` } },
-    ));
+    push('Deepgram', 'https://api.deepgram.com/v1/projects', {
+      headers: { Authorization: `Token ${key}` },
+    });
   }
   for (const key of getMultiKeys(env, 'ASSEMBLYAI_KEY_')) {
-    checks.push(checkWithResult(
-      `AssemblyAI`, 'https://api.assemblyai.com/v2/account',
-      { headers: { Authorization: key } },
-    ));
+    push('AssemblyAI', 'https://api.assemblyai.com/v2/account', {
+      headers: { Authorization: key },
+    });
   }
   for (const key of getMultiKeys(env, 'GLADIA_KEY_')) {
-    checks.push(checkWithResult(
-      `Gladia`, 'https://api.gladia.io/v2/live',
-      { headers: { 'x-gladia-key': key } },
-    ));
+    push('Gladia', 'https://api.gladia.io/v2/live', {
+      headers: { 'x-gladia-key': key },
+    });
+  }
+  for (const key of getMultiKeys(env, 'ELEVENLABS_KEY_')) {
+    push('ElevenLabs', 'https://api.elevenlabs.io/v1/models', {
+      headers: { 'xi-api-key': key },
+    });
   }
 
   const witLangs = ['EN', 'FR', 'ES', 'PT', 'DE', 'IT', 'ZH', 'IG', 'YO', 'HA',
@@ -143,17 +169,15 @@ export async function testTranscribeProviders(env) {
   for (const lang of witLangs) {
     const key = env[`WIT_KEY_${lang}`];
     if (!key) {
-      checks.push(Promise.resolve({ label: `Wit.ai ${lang}`, ok: false, error: 'no key configured' }));
+      tasks.push(() => Promise.resolve({ label: `Wit.ai ${lang}`, ok: false, error: 'no key configured' }));
       continue;
     }
-    checks.push(checkWithResult(
-      `Wit.ai ${lang}`,
-      `https://api.wit.ai/message?v=20240304&q=hello`,
-      { headers: { Authorization: `Bearer ${key}` } },
-    ));
+    push(`Wit.ai ${lang}`, `https://api.wit.ai/message?v=20240304&q=hello`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
   }
 
-  return Promise.all(checks);
+  return runPool(tasks);
 }
 
 

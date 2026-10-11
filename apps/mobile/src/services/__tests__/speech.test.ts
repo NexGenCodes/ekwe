@@ -9,6 +9,7 @@ const getSessionMock = vi.hoisted(() => vi.fn());
 const getWorkerUrlMock = vi.hoisted(() => vi.fn());
 const uploadMultipartMock = vi.hoisted(() => vi.fn());
 const transcodeMock = vi.hoisted(() => vi.fn());
+const prepareUploadArtifactMock = vi.hoisted(() => vi.fn());
 
 const fsMock = vi.hoisted(() => ({
   exists: true,
@@ -45,7 +46,10 @@ vi.mock("expo-file-system", () => {
 });
 
 vi.mock("@/services/audioTranscoder", () => ({
-  AudioTranscoder: { transcodeToOpus: transcodeMock },
+  AudioTranscoder: {
+    transcodeToOpus: transcodeMock,
+    prepareUploadArtifact: prepareUploadArtifactMock,
+  },
 }));
 
 vi.mock("@/services/supabase", () => ({
@@ -159,6 +163,12 @@ beforeEach(() => {
       waveform: [0.12, 0.4, 0.8],
     },
   });
+  prepareUploadArtifactMock.mockReset();
+  prepareUploadArtifactMock.mockResolvedValue({
+    uri: "file:///cache/recording.ogg",
+    extension: "ogg",
+    isTemporary: false,
+  });
   fsMock.exists = true;
   fsMock.size = 1024;
   (Paths.cache as { uri: string }).uri = "file:///cache/";
@@ -217,19 +227,20 @@ describe("synthesizeSpeech", () => {
     fetchSpy.mockRestore();
   });
 
-  it("falls back to the raw provider file when normalization fails", async () => {
+  it("surfaces an error when normalisation fails instead of sharing the provider file", async () => {
+    // A non-Ogg artifact reaches WhatsApp as `audio/mpeg`, which renders as a
+    // file attachment rather than a voice note, and nothing downstream repairs
+    // it — so a transcode failure has to fail the call rather than hand the
+    // caller the provider's container.
     transcodeMock.mockResolvedValue({
       ok: false,
       error: EkweError.PROCESSOR_FAIL,
     });
     const fetchSpy = mockSynthFetch("audio/wav");
     const result = await synthesizeSpeech("hello", "en");
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.uri).toMatch(
-        /^file:\/\/\/cache\/ekwe_speech_.*\.wav$/,
-      );
-      expect(result.value.waveform).toBeUndefined();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe(EkweError.PROCESSOR_FAIL);
     }
     fetchSpy.mockRestore();
   });
@@ -470,7 +481,7 @@ describe("synthesizeAudio", () => {
 
     expect(uploadMultipartMock).toHaveBeenCalledTimes(1);
     const [file, url, opts] = uploadMultipartMock.mock.calls[0];
-    expect(file.uri).toBe("file:///tmp/rec.m4a");
+    expect(file.uri).toBe("file:///cache/recording.ogg");
     expect(url).toBe("https://worker.test/synthesize");
     expect(opts.parameters).toMatchObject({
       lang: "en",
@@ -654,6 +665,38 @@ describe("synthesizeSpeech delivery", () => {
     await synthesizeSpeech("hello", "en", { delivery: "playback" });
 
     expect(fetchBody().delivery).toBeUndefined();
+    fetchSpy.mockRestore();
+  });
+
+  it("declares a voice preview so the worker can serve it free of quota", async () => {
+    const fetchSpy = mockSynthFetch("audio/mpeg");
+
+    await synthesizeSpeech("hello", "en", {
+      delivery: "playback",
+      isPreview: true,
+    });
+
+    expect(fetchBody().isPreview).toBe(true);
+    fetchSpy.mockRestore();
+  });
+
+  it("sends no preview flag for ordinary synthesis", async () => {
+    const fetchSpy = mockSynthFetch("audio/mpeg");
+
+    await synthesizeSpeech("hello", "en");
+
+    expect(fetchBody().isPreview).toBeUndefined();
+    fetchSpy.mockRestore();
+  });
+
+  it("sends no reroll for a preview, so its cache key stays shared", async () => {
+    // A per-tap reroll made every preview its own cache entry, so each user
+    // paid the provider again for a clip identical to everyone else's.
+    const fetchSpy = mockSynthFetch("audio/mpeg");
+
+    await synthesizeSpeech("hello", "en", { isPreview: true });
+
+    expect(fetchBody().reroll).toBeUndefined();
     fetchSpy.mockRestore();
   });
 

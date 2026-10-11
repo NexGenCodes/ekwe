@@ -77,6 +77,8 @@ const TRANSIENT_CACHE_PREFIXES = [
   "ekwe_converted_",
   "ekwe_decoded_",
   "ekwe_remuxed_",
+  "ekwe_opus_",
+  "ekwe_vorbis_",
   // Outgoing share copies made by ShareOutService.prepareShareFile.
   "ekwe-voice-",
 ];

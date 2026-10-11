@@ -45,6 +45,7 @@ describe("buildUpsertOutboxPayload", () => {
       stt_provider: "deepgram",
       mt_provider: "gemini",
       created_at: "2026-08-13T10:00:00.000Z",
+      base_revision: null,
     });
   });
 
@@ -100,14 +101,121 @@ describe("buildUpsertOutboxPayload", () => {
     expect(empty.translation_text).toBeNull();
     expect(empty.transliteration_text).toBeNull();
   });
+
+  test("defaults base_revision to null so an unacknowledged row sends no revision", () => {
+    const payload = JSON.parse(
+      buildUpsertOutboxPayload(
+        "transcription",
+        {
+          sourceLang: "en",
+          targetLang: "fr",
+          transcript: "hello",
+          translation: null,
+          transliteration: null,
+          duration: 0,
+          sourceApp: null,
+          voiceId: null,
+          sttProvider: "groq",
+          mtProvider: null,
+          origin: "echo",
+          input: "audio",
+        },
+        "2026-08-13T10:00:00.000Z",
+        "cap-3",
+      ),
+    );
+    expect(payload.base_revision).toBeNull();
+  });
+
+  test("carries the revision the edit was based on", () => {
+    const payload = JSON.parse(
+      buildUpsertOutboxPayload(
+        "translation",
+        {
+          sourceLang: "en",
+          targetLang: "fr",
+          transcript: "hello",
+          translation: "bonjour",
+          transliteration: null,
+          duration: 3,
+          sourceApp: null,
+          voiceId: null,
+          sttProvider: "groq",
+          mtProvider: "gemini",
+          origin: "echo",
+          input: "audio",
+        },
+        "2026-08-13T10:00:00.000Z",
+        "cap-4",
+        7,
+      ),
+    );
+    expect(payload.base_revision).toBe(7);
+  });
 });
 
 describe("buildDeleteOutboxPayload", () => {
-  test("carries the target history id", () => {
+  test("carries the target history id and no revision", () => {
     expect(JSON.parse(buildDeleteOutboxPayload("abc-123"))).toEqual({
       action: "delete",
       id: "abc-123",
+      base_revision: null,
     });
+  });
+
+  test("carries the revision the delete was based on", () => {
+    expect(JSON.parse(buildDeleteOutboxPayload("abc-123", 7))).toEqual({
+      action: "delete",
+      id: "abc-123",
+      base_revision: 7,
+    });
+  });
+});
+
+describe("buildUpsertOutboxPayload restore flag", () => {
+  const fields = {
+    sourceLang: "en",
+    targetLang: "es",
+    transcript: "hello",
+    translation: "hola",
+    transliteration: null,
+    duration: 1,
+    sourceApp: null,
+    voiceId: null,
+    sttProvider: "whisper",
+    mtProvider: "deepl",
+    origin: "echo" as const,
+    input: "audio" as const,
+  };
+
+  test("omits restore on an ordinary write", () => {
+    const parsed = JSON.parse(
+      buildUpsertOutboxPayload(
+        "translation",
+        fields,
+        "2026-01-01T00:00:00Z",
+        "cap-1",
+        3,
+      ),
+    );
+    expect("restore" in parsed).toBe(false);
+  });
+
+  test("sets restore for an undo of a delete", () => {
+    // Without this the server treats the tombstone as final and refuses the
+    // write, so undo would silently do nothing.
+    const parsed = JSON.parse(
+      buildUpsertOutboxPayload(
+        "translation",
+        fields,
+        "2026-01-01T00:00:00Z",
+        "cap-1",
+        3,
+        true,
+      ),
+    );
+    expect(parsed.restore).toBe(true);
+    expect(parsed.base_revision).toBe(3);
   });
 });
 

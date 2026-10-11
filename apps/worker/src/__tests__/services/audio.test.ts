@@ -6,9 +6,11 @@ function multipart(
   file: Blob | null,
   fields: Record<string, string> = {},
   boundary = "----testboundary1234",
+  includeDuration = true,
 ): Request {
   const parts: BlobPart[] = [];
-  for (const [k, v] of Object.entries(fields)) {
+  const allFields = includeDuration ? { duration: "1000", ...fields } : fields;
+  for (const [k, v] of Object.entries(allFields)) {
     parts.push(
       new TextEncoder().encode(
         `--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`,
@@ -125,6 +127,30 @@ describe("ingestAudioUpload", () => {
     if (!res.ok) return;
     expect(res.value.durationMs).toBe(1234);
     expect(res.value.form.get("lang")).toBe("en");
+  });
+
+  it("rejects a missing duration with 400", async () => {
+    const res = await ingestAudioUpload(
+      multipart(OGG, { lang: "en" }, "----nodur", false),
+      "PREMIUM",
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.response.status).toBe(400);
+    const body = (await res.response.json()) as { error?: string };
+    expect(body.error).toBe("MISSING_DURATION");
+  });
+
+  it("rejects a zero duration with 400", async () => {
+    const res = await ingestAudioUpload(
+      multipart(OGG, { duration: "0", lang: "en" }),
+      "PREMIUM",
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.response.status).toBe(400);
+    const body = (await res.response.json()) as { error?: string };
+    expect(body.error).toBe("MISSING_DURATION");
   });
 
   it("rejects a non-multipart content type with 415", async () => {

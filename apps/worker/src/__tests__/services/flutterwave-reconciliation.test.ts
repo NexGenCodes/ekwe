@@ -8,10 +8,7 @@ import {
   type Mock,
 } from "vitest";
 
-vi.mock("@/services/supabase", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@/services/supabase")>();
-  return { ...mod, supabasePost: vi.fn() };
-});
+import { mockDb } from "@/__tests__/setup";
 
 vi.mock("@/services/flutterwave", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@/services/flutterwave")>();
@@ -24,11 +21,10 @@ import {
   reconcileFlutterwaveTransactions,
   processMissingTransaction,
 } from "@/services/flutterwave";
-import { supabasePost } from "@/services/supabase";
+
 import { mockEnv } from "@/__tests__/setup";
 import type { Env } from "@/core/types";
 
-const mockedSupabasePost = supabasePost as Mock;
 const mockProcessMissing = processMissingTransaction as Mock;
 
 const TX = {
@@ -72,19 +68,13 @@ function stubFlwFetch(...pages: unknown[][]): Mock {
 }
 
 function okRpc(missingRefs: string[]): void {
-  mockedSupabasePost.mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: async () => missingRefs.map((missing_ref) => ({ missing_ref })),
-  });
+  mockDb.where.mockResolvedValueOnce(
+    missingRefs.map((providerRef) => ({ providerRef })),
+  );
 }
 
-function failRpc(status = 500): void {
-  mockedSupabasePost.mockResolvedValue({
-    ok: false,
-    status,
-    text: async () => "RPC error",
-  });
+function failRpc(_status = 500): void {
+  mockDb.where.mockRejectedValueOnce(new Error("Database error"));
 }
 
 beforeEach(() => {
@@ -126,36 +116,27 @@ describe("fetchRecentSuccessfulTransactions", () => {
 });
 
 describe("getMissingTransactions", () => {
-  test("returns [] without calling the RPC when there are no refs", async () => {
+  test("returns [] without calling the db when there are no refs", async () => {
     const missing = await getMissingTransactions(env(), []);
 
     expect(missing).toEqual([]);
-    expect(mockedSupabasePost).not.toHaveBeenCalled();
+    expect(mockDb.select).not.toHaveBeenCalled();
   });
 
-  test("maps missing_ref results from the RPC", async () => {
-    mockedSupabasePost.mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => [{ missing_ref: "flw_1" }, { missing_ref: "flw_2" }],
-    });
+  test("maps providerRef results from the db", async () => {
+    mockDb.where.mockResolvedValueOnce([
+      { providerRef: "flw_1" },
+      { providerRef: "flw_2" },
+    ]);
 
     const missing = await getMissingTransactions(env(), ["flw_1", "flw_2"]);
 
     expect(missing).toEqual(["flw_1", "flw_2"]);
-    expect(mockedSupabasePost).toHaveBeenCalledWith(
-      expect.anything(),
-      "/rest/v1/rpc/get_missing_flutterwave_transactions",
-      { p_flw_refs: ["flw_1", "flw_2"] },
-    );
+    expect(mockDb.select).toHaveBeenCalled();
   });
 
   test("throws when the RPC fails so the queue consumer can retry", async () => {
-    mockedSupabasePost.mockResolvedValue({
-      ok: false,
-      status: 500,
-      text: async () => "RPC error",
-    });
+    mockDb.where.mockRejectedValueOnce(new Error("Database error"));
 
     await expect(getMissingTransactions(env(), ["flw_1"])).rejects.toThrow(
       "Failed to fetch missing transactions",
@@ -173,11 +154,7 @@ describe("reconcileFlutterwaveTransactions", () => {
       reconcileFlutterwaveTransactions(env(), processMissingTransaction),
     ).resolves.toBeUndefined();
 
-    expect(mockedSupabasePost).toHaveBeenCalledWith(
-      expect.anything(),
-      "/rest/v1/rpc/get_missing_flutterwave_transactions",
-      { p_flw_refs: ["flw_123"] },
-    );
+    expect(mockDb.select).toHaveBeenCalled();
     expect(mockProcessMissing).toHaveBeenCalledTimes(1);
   });
 
@@ -188,7 +165,7 @@ describe("reconcileFlutterwaveTransactions", () => {
       reconcileFlutterwaveTransactions(env(), processMissingTransaction),
     ).resolves.toBeUndefined();
 
-    expect(mockedSupabasePost).not.toHaveBeenCalled();
+    expect(mockDb.select).not.toHaveBeenCalled();
     expect(mockProcessMissing).not.toHaveBeenCalled();
   });
 

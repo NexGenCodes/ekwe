@@ -129,6 +129,7 @@ export function ProPlanCard({
       <Box style={styles.priceBlock}>
         {isPending ? (
           <Box
+            accessible
             accessibilityRole="progressbar"
             accessibilityLabel="Loading prices"
           >

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { StreamDurableObject } from "@/durable/stream-do";
 import { ws } from "msw";
 import { network } from "@/__tests__/msw/network";
+import { jsonBody } from "@/__tests__/setup";
 
 interface CloseInfo {
   code: number;
@@ -138,7 +139,7 @@ describe("StreamDurableObject", () => {
       }),
     );
     expect(res.status).toBe(429);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("TOO_MANY_CONNECTIONS");
   });
 
@@ -215,14 +216,22 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
   const DEEPGRAM_KEY = "mock-deepgram-key-stream-abc";
 
   function withAssemblyAiKey(): void {
-    (env as any).ASSEMBLYAI_KEY_1 = "mock-assemblyai-key-stream-abc";
+    (env as unknown as Record<string, string>).ASSEMBLYAI_KEY_1 =
+      "mock-assemblyai-key-stream-abc";
   }
 
   function withDeepgramKey(): void {
-    (env as any).DEEPGRAM_KEY_1 = DEEPGRAM_KEY;
+    (env as unknown as Record<string, string>).DEEPGRAM_KEY_1 = DEEPGRAM_KEY;
   }
 
-  function deepgramLink(reply: (count: number, client: any) => void): {
+  /** Only `send` is needed to drive the mocked upstream socket. */
+  interface UpstreamSocket {
+    send(data: string): void;
+  }
+
+  function deepgramLink(
+    reply: (count: number, client: UpstreamSocket) => void,
+  ): {
     connected: () => boolean;
     /** Distinct outbound sockets accepted, not frames forwarded. */
     sockets: () => number;
@@ -231,16 +240,14 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     let socketCount = 0;
     let messageCount = 0;
     network.use(
-      ws
-        .link(DEEPGRAM_LINK)
-        .addEventListener("connection", ({ client }: any) => {
-          connected = true;
-          socketCount++;
-          client.addEventListener("message", () => {
-            messageCount++;
-            reply(messageCount, client);
-          });
-        }),
+      ws.link(DEEPGRAM_LINK).addEventListener("connection", ({ client }) => {
+        connected = true;
+        socketCount++;
+        client.addEventListener("message", () => {
+          messageCount++;
+          reply(messageCount, client);
+        });
+      }),
     );
     return { connected: () => connected, sockets: () => socketCount };
   }
@@ -509,29 +516,27 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
 
   it("abandons a pending failover when the device never reports silence", async () => {
     // Flux answers the first frame, then dies. No `vad` message ever arrives, so
-    // the seam can only be given up by time.
+    // the swap can only happen once the deadline passes.
     let fluxSockets = 0;
     network.use(
-      ws
-        .link(DEEPGRAM_LINK)
-        .addEventListener("connection", ({ client }: any) => {
-          fluxSockets++;
-          client.addEventListener("message", () => {
-            client.close();
-          });
-        }),
+      ws.link(DEEPGRAM_LINK).addEventListener("connection", ({ client }) => {
+        fluxSockets++;
+        client.addEventListener("message", () => {
+          client.close();
+        });
+      }),
     );
     network.use(
       ws
         .link("wss://streaming.assemblyai.com/v3/ws")
-        .addEventListener("connection", ({ client }: any) => {
+        .addEventListener("connection", ({ client }) => {
           client.close();
         }),
     );
     network.use(
       ws
         .link(DEEPGRAM_NOVA_LINK)
-        .addEventListener("connection", ({ client }: any) => {
+        .addEventListener("connection", ({ client }) => {
           client.addEventListener("message", () => {
             client.send(novaResult("after failover", true));
           });
@@ -545,7 +550,7 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       ws: clientWs,
       messages,
       closes,
-    } = await openSession("seam-timeout", "?tier=PREMIUM&lang=en");
+    } = await openSession("deadline-timeout", "?tier=PREMIUM&lang=en");
     clientWs.send(
       JSON.stringify({
         type: "config",
@@ -600,23 +605,21 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     // session has two billable stints rather than one.
     let fluxMessages = 0;
     network.use(
-      ws
-        .link(DEEPGRAM_LINK)
-        .addEventListener("connection", ({ client }: any) => {
-          client.addEventListener("message", () => {
-            fluxMessages++;
-            if (fluxMessages === 1) {
-              client.send(deepgramResult("first stint", true));
-            } else {
-              client.close();
-            }
-          });
-        }),
+      ws.link(DEEPGRAM_LINK).addEventListener("connection", ({ client }) => {
+        client.addEventListener("message", () => {
+          fluxMessages++;
+          if (fluxMessages === 1) {
+            client.send(deepgramResult("first stint", true));
+          } else {
+            client.close();
+          }
+        });
+      }),
     );
     network.use(
       ws
         .link("wss://streaming.assemblyai.com/v3/ws")
-        .addEventListener("connection", ({ client }: any) => {
+        .addEventListener("connection", ({ client }) => {
           client.addEventListener("message", () => {
             client.send(assemblyResult("second stint", true));
           });
@@ -774,7 +777,7 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       "wss://streaming.assemblyai.com/v3/ws",
     ]) {
       network.use(
-        ws.link(link).addEventListener("connection", ({ client }: any) => {
+        ws.link(link).addEventListener("connection", ({ client }) => {
           client.close();
         }),
       );
@@ -783,7 +786,7 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
     network.use(
       ws
         .link(DEEPGRAM_NOVA_LINK)
-        .addEventListener("connection", ({ client }: any) => {
+        .addEventListener("connection", ({ client }) => {
           novaSockets++;
           client.addEventListener("message", () => {
             client.send(novaResult("nova fallback", true));
@@ -830,11 +833,9 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
 
   it("moves on when the first provider's WebSocket fails to connect", async () => {
     network.use(
-      ws
-        .link(DEEPGRAM_LINK)
-        .addEventListener("connection", ({ client }: any) => {
-          client.close();
-        }),
+      ws.link(DEEPGRAM_LINK).addEventListener("connection", ({ client }) => {
+        client.close();
+      }),
     );
     // u3-rt-pro is next in the pipeline for English, so it must be refused too
     // for the session to exhaust its routes.
@@ -845,7 +846,7 @@ describe("StreamDurableObject — provider WebSocket boundary", () => {
       "https://api.wit.ai/dictation",
     ]) {
       network.use(
-        ws.link(link).addEventListener("connection", ({ client }: any) => {
+        ws.link(link).addEventListener("connection", ({ client }) => {
           client.close();
         }),
       );

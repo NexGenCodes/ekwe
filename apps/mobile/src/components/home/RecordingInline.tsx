@@ -92,31 +92,14 @@ export function RecordingInline({
     onReadyChange?.(isPreview && previewReady);
   }, [isPreview, previewReady, onReadyChange]);
 
-  const history = useSharedValue<number[]>(new Array(BARS).fill(0));
-
-  useAnimatedReaction(
-    () => amplitude.value,
-    (val) => {
-      const oldArr = history.value;
-      const newArr = new Array(BARS);
-      for (let i = 0; i < BARS - 1; i++) {
-        newArr[i] = oldArr[i + 1];
-      }
-      newArr[BARS - 1] = val;
-      history.value = newArr;
-    },
-    [amplitude, history],
-  );
-
   const dotOp = useSharedValue(1);
   useEffect(() => {
     if (isRecording) {
       dotOp.value = withRepeat(withTiming(0.2, { duration: 600 }), -1, true);
-      history.value = new Array(BARS).fill(0);
     } else {
       dotOp.value = 1;
     }
-  }, [isRecording, dotOp, history]);
+  }, [isRecording, dotOp]);
   const dotStyle = useAnimatedStyle(() => ({ opacity: dotOp.value }));
 
   const widthSV = useSharedValue(200);
@@ -330,7 +313,8 @@ export function RecordingInline({
               </Text>
             ) : (
               <AudioWaveform
-                amplitudes={history}
+                amplitudes={amplitude}
+                barCount={BARS}
                 interactive={false}
                 activeColor={color.brand}
                 inactiveColor={color.foreground}

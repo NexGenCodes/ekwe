@@ -13,10 +13,6 @@ public class EkweNativeModule: Module {
   /// feed order so the staging buffer sees samples monotonically.
   private let audioQueue = DispatchQueue(label: "com.ekwe.app.audio.capture")
 
-  // Authoritative limit lives in @ekwe/shared/plans (PREMIUM_LIMITS.
-  // maxAudioBytes); JS passes it in at call time so native never hardcodes it.
-  // This is only a defensive default if a caller omits the argument.
-
   /// Outcome of a share-path size guard, so callers can distinguish a genuine
   /// "over the cap" rejection (terminal FILE_TOO_LARGE) from an unreadable or
   /// missing file (generic failure) instead of mislabeling every stat error.
@@ -31,6 +27,9 @@ public class EkweNativeModule: Module {
   private func guardedSourcePath(_ path: String, maxAudioBytes: Int) -> SourcePathOutcome {
     let plainPath = path.hasPrefix("file://") ? String(path.dropFirst("file://".count)) : path
     let url = URL(fileURLWithPath: plainPath)
+    // The authoritative limit is PREMIUM_LIMITS.maxAudioBytes in
+    // @ekwe/shared/plans, passed in per call; this is a fallback for a caller
+    // that omits it.
     let limit = maxAudioBytes > 0 ? maxAudioBytes : 10_485_760
     guard
       let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
@@ -130,6 +129,77 @@ public class EkweNativeModule: Module {
           "waveform": result[3] as! [Float],
         ]
       }
+    }
+
+    // Same decode → waveform shape as transcodeToOpusWithWaveform, but the
+    // artifact written to `outputPath` is Vorbis-in-Ogg, which Wit.ai parses
+    // (see apps/worker/src/providers/witai.ts). Input guarding is identical;
+    // only the encoder differs.
+    AsyncFunction("transcodeToVorbisWithWaveform") { (inputPath: String, outputPath: String, maxAudioBytes: Int) -> [String: Any] in
+      switch self.guardedSourcePath(inputPath, maxAudioBytes: maxAudioBytes) {
+      case .tooLarge:
+        return [
+          "success": false,
+          "error": "FILE_TOO_LARGE",
+          "durationMs": 0,
+          "waveform": [] as [Float],
+        ]
+      case .invalid:
+        return [
+          "success": false,
+          "error": "INVALID_INPUT_FILE",
+          "durationMs": 0,
+          "waveform": [] as [Float],
+        ]
+      case .ok(let sourcePath):
+        let result = EkweAudioBridge.transcodeToVorbisWithWaveform(
+          sourcePath, outputPath: outputPath, maxAudioBytes: UInt(max(0, maxAudioBytes)))
+        return [
+          "success": result[0] as! Bool,
+          "error": result[1] as! String,
+          "durationMs": result[2] as! Int,
+          "waveform": result[3] as! [Float],
+        ]
+      }
+    }
+
+    AsyncFunction("transcodeToDualWithWaveform") { (inputPath: String, opusOutputPath: String, vorbisOutputPath: String, maxAudioBytes: Int) -> [String: Any] in
+      switch self.guardedSourcePath(inputPath, maxAudioBytes: maxAudioBytes) {
+      case .tooLarge:
+        return [
+          "opus": ["success": false, "error": "FILE_TOO_LARGE", "durationMs": 0, "waveform": [] as [Float]],
+          "vorbis": ["success": false, "error": "FILE_TOO_LARGE", "durationMs": 0, "waveform": [] as [Float]],
+        ]
+      case .invalid:
+        return [
+          "opus": ["success": false, "error": "INVALID_INPUT_FILE", "durationMs": 0, "waveform": [] as [Float]],
+          "vorbis": ["success": false, "error": "INVALID_INPUT_FILE", "durationMs": 0, "waveform": [] as [Float]],
+        ]
+      case .ok(let sourcePath):
+        let result = EkweAudioBridge.transcodeToDualWithWaveform(
+          sourcePath,
+          opusOutputPath: opusOutputPath,
+          vorbisOutputPath: vorbisOutputPath,
+          maxAudioBytes: UInt(max(0, maxAudioBytes)))
+        return [
+          "opus": [
+            "success": result[0][0] as! Bool,
+            "error": result[0][1] as! String,
+            "durationMs": result[0][2] as! Int,
+            "waveform": result[0][3] as! [Float],
+          ],
+          "vorbis": [
+            "success": result[1][0] as! Bool,
+            "error": result[1][1] as! String,
+            "durationMs": result[1][2] as! Int,
+            "waveform": result[1][3] as! [Float],
+          ],
+        ]
+      }
+    }
+
+    AsyncFunction("probeAudioDurationMs") { (inputPath: String) -> Int in
+      EkweAudioBridge.probeAudioDurationMs(inputPath)
     }
 
     // Decodes any audio file to a standalone WAV (see cpp::decode_audio_to_wav).

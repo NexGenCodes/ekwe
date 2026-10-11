@@ -1,14 +1,5 @@
 /**
  * Per-request stage timings surfaced as a `Server-Timing` response header.
- *
- * This exists to make the synth/convert pipeline observable: without it there
- * is no way to tell whether a slow request was spent in auth, quota gating, a
- * cache miss, or the actual AI calls.
- *
- * Emission is gated on `APP_ENV !== "production"` because the stage names
- * describe our internal pipeline shape. Production latency is already captured
- * by `recordRequestEvent` into Analytics Engine, so nothing is lost by keeping
- * the header out of production responses.
  */
 export class RequestTimings {
   private readonly started = new Map<string, number>();

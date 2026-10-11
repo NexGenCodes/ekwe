@@ -4,6 +4,7 @@ import {
   text,
   uuid,
   real,
+  integer,
   timestamp,
   index,
   foreignKey,
@@ -15,6 +16,7 @@ export const authSchema = pgSchema("auth");
 
 export const usersInAuth = authSchema.table("users", {
   id: uuid("id").primaryKey(),
+  email: text("email"),
 });
 
 export const history = pgTable(
@@ -72,6 +74,23 @@ export const history = pgTable(
      * whether a translation exists is derivable from `translation_text`.
      */
     type: text("type").default("transcription").notNull(),
+    /**
+     * Server-assigned monotonic version, bumped on every applied write.
+     *
+     * This is what makes sync conflict-safe. A client sends the revision it
+     * based its edit on as `base_revision`; the server refuses the write if the
+     * stored revision has moved on, so a device that was offline cannot
+     * overwrite a newer edit just by syncing late.
+     */
+    revision: integer("revision").default(1).notNull(),
+    /**
+     * Set when the row is deleted; the row is kept as a tombstone.
+     *
+     * A hard delete left no record that the row had existed, so another device's
+     * next write found it missing and re-inserted it, silently undoing the
+     * user's delete. Every read filters `deleted_at is null`.
+     */
+    deletedAt: timestamp("deleted_at", { withTimezone: true, mode: "string" }),
   },
   (table) => [
     index("idx_history_created_at").using(
@@ -82,6 +101,13 @@ export const history = pgTable(
       "btree",
       table.updatedAt.desc().nullsFirst().op("timestamptz_ops"),
     ),
+    index("idx_history_live_user")
+      .using(
+        "btree",
+        table.userId.asc().op("uuid_ops"),
+        table.createdAt.desc().op("timestamptz_ops"),
+      )
+      .where(sql`${table.deletedAt} IS NULL`),
     index("idx_history_user_id").using(
       "btree",
       table.userId.asc().nullsLast().op("uuid_ops"),

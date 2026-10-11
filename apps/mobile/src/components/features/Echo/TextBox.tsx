@@ -1,7 +1,4 @@
-import { triggerHaptic } from "@/utils/haptics";
-
 import CheckCircle2 from "lucide-react-native/icons/circle-check";
-import ShareIcon from "lucide-react-native/icons/share-2";
 import Volume2 from "lucide-react-native/icons/volume-2";
 import VolumeX from "lucide-react-native/icons/volume-x";
 import React, { useCallback, useEffect, useState } from "react";
@@ -13,12 +10,11 @@ import { IconButton } from "@/components/IconButton";
 
 import { useSharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
 import type { WaveformPlaybackController } from "@/hooks/audio/useAudioWaveformPlayback";
-import { ShareOutService } from "@/services/shareOutService";
 import { synthesizeSpeech } from "@/services/speech";
 
 import { claimSpeechFocus, releaseSpeechFocus } from "@/hooks/audio/audioFocus";
 
-import { Box, Text, Pressable, Spinner } from "@/components/ui";
+import { Box, Text, Spinner } from "@/components/ui";
 import { EkweError } from "@/constants/errors";
 import { LANGUAGES, getLanguageFlag } from "@/constants/languages";
 import { spacing } from "@/constants/spacing";
@@ -45,16 +41,14 @@ interface TextBoxProps {
 
   withCheck?: boolean;
 
-  showShare?: boolean;
-
   audioPlayer?: WaveformPlaybackController | null;
 
   /**
-   * The received voice note. When present, the share sheet hands on the audio
-   * itself instead of only its text — Echo already has the file in memory, so
-   * there is nothing to look up and nothing to regenerate.
+   * Shows the read-aloud control even when a source-audio player is present,
+   * so a result can offer both the original voice note and its synthesized
+   * translation.
    */
-  audioUri?: string | null;
+  allowTts?: boolean;
 
   copied?: boolean;
 }
@@ -69,14 +63,14 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
     lang,
     showFlag = false,
     withCheck = false,
-    showShare = false,
     audioPlayer,
-    audioUri = null,
+    allowTts,
     copied = false,
   }) => {
     const { color } = useTheme();
 
-    const isSourceMode = !!audioPlayer;
+    const hasSource = !!audioPlayer;
+    const hasTts = (allowTts ?? !hasSource) && !!lang;
 
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [isSpeechLoading, setIsSpeechLoading] = useState(false);
@@ -115,7 +109,7 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
     const flag = lang ? getLanguageFlag(lang) : null;
 
     useEffect(() => {
-      if (isSourceMode) return;
+      if (!hasTts) return;
       if (isSpeaking || isSpeechLoading) {
         speechPlayer.pause();
         releaseSpeechFocus();
@@ -124,7 +118,7 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
       }
 
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isSourceMode, text, lang]);
+    }, [hasTts, text, lang]);
 
     useEffect(() => {
       return (): void => {
@@ -139,16 +133,16 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [speechAudioUri]);
 
-    const handleSpeakToggle = useCallback(async (): Promise<void> => {
-      if (isSourceMode) {
-        if (!audioPlayer) return;
-        if (audioPlayer.isPlaying) {
-          audioPlayer.pause();
-        } else {
-          await audioPlayer.playFromStart();
-        }
-        return;
+    const handleSourceToggle = useCallback(async (): Promise<void> => {
+      if (!audioPlayer) return;
+      if (audioPlayer.isPlaying) {
+        audioPlayer.pause();
+      } else {
+        await audioPlayer.playFromStart();
       }
+    }, [audioPlayer]);
+
+    const handleSpeakToggle = useCallback(async (): Promise<void> => {
       if (isSpeechLoading || isSpeaking) return;
       if (!text || !lang) {
         logger.warn("[TextBox] Speech skipped: no text or language");
@@ -206,37 +200,17 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
             "Your device does not support text-to-speech for this language.",
         });
       }
-    }, [
-      isSourceMode,
-      isSpeechLoading,
-      isSpeaking,
-      text,
-      lang,
-      audioPlayer,
-      speechPlayer,
-    ]);
-
-    const handleShare = useCallback(async (): Promise<void> => {
-      if (!text?.trim()) return;
-      triggerHaptic("selection");
-      // The service signs, tracks, and falls back to text if the audio cannot
-      // be handed over — so this no longer needs its own try/catch.
-      await ShareOutService.shareArtifact(audioUri, text, "echo");
-    }, [audioUri, text]);
+    }, [isSpeechLoading, isSpeaking, text, lang, speechPlayer]);
 
     const labelColor = withCheck ? color.brand : color.foreground;
 
     const stopSpeaking = useCallback(async (): Promise<void> => {
-      if (isSourceMode) {
-        audioPlayer?.pause();
-        return;
-      }
       if (!isSpeaking) return;
       speechPlayer.pause();
       releaseSpeechFocus();
       setIsSpeaking(false);
       setIsSpeechLoading(false);
-    }, [isSourceMode, isSpeaking, audioPlayer, speechPlayer]);
+    }, [isSpeaking, speechPlayer]);
 
     return (
       <ScrollableTextBox
@@ -299,45 +273,44 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
                 marginLeft: spacing.md,
               }}
             >
-              {(lang || isSourceMode) && (
+              {hasSource && (
                 <IconButton
                   accessibilityLabel={
-                    isSourceMode
-                      ? audioPlayer?.isPlaying
-                        ? "Stop playing source audio"
-                        : "Play source audio"
-                      : isSpeaking
-                        ? "Stop speaking"
-                        : "Listen to result"
+                    audioPlayer?.isPlaying
+                      ? "Stop playing source audio"
+                      : "Play source audio"
                   }
-                  onPress={
-                    isSourceMode
-                      ? handleSpeakToggle
-                      : isSpeaking
-                        ? stopSpeaking
-                        : handleSpeakToggle
-                  }
+                  onPress={handleSourceToggle}
                   size={36}
                   backgroundColor={
-                    isSourceMode
-                      ? audioPlayer?.isPlaying
-                        ? color.brand
-                        : withAlpha(color.foreground, 0.06)
-                      : isSpeaking
-                        ? color.brand
-                        : withAlpha(color.foreground, 0.06)
+                    audioPlayer?.isPlaying
+                      ? color.brand
+                      : withAlpha(color.foreground, 0.06)
                   }
                   icon={
-                    isSourceMode ? (
-                      audioPlayer?.isDecoding ||
-                      audioPlayer?.isReady === false ? (
-                        <Spinner size="sm" color={color.brand} />
-                      ) : audioPlayer?.isPlaying ? (
-                        <VolumeX size={18} color={color.onBrand} />
-                      ) : (
-                        <Volume2 size={18} color={color.foreground} />
-                      )
-                    ) : isSpeechLoading ? (
+                    audioPlayer?.isDecoding ||
+                    audioPlayer?.isReady === false ? (
+                      <Spinner size="sm" color={color.brand} />
+                    ) : audioPlayer?.isPlaying ? (
+                      <VolumeX size={18} color={color.onBrand} />
+                    ) : (
+                      <Volume2 size={18} color={color.foreground} />
+                    )
+                  }
+                />
+              )}
+              {hasTts && (
+                <IconButton
+                  accessibilityLabel={
+                    isSpeaking ? "Stop speaking" : "Listen to result"
+                  }
+                  onPress={isSpeaking ? stopSpeaking : handleSpeakToggle}
+                  size={36}
+                  backgroundColor={
+                    isSpeaking ? color.brand : withAlpha(color.foreground, 0.06)
+                  }
+                  icon={
+                    isSpeechLoading ? (
                       <Spinner size="sm" color={color.brand} />
                     ) : isSpeaking ? (
                       <VolumeX size={18} color={color.onBrand} />
@@ -361,25 +334,6 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
                   backgroundColor: withAlpha(color.foreground, 0.06),
                 }}
               />
-              {showShare && (
-                <Pressable
-                  feedback="opacity"
-                  accessibilityRole="button"
-                  accessibilityLabel="Share result"
-                  onPress={handleShare}
-                  hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: withAlpha(color.foreground, 0.06),
-                  }}
-                >
-                  <ShareIcon size={18} color={color.foreground} />
-                </Pressable>
-              )}
             </Box>
           </Box>
         }

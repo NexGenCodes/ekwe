@@ -1,5 +1,5 @@
 import React from "react";
-import { TextInput, View } from "react-native";
+import { TextInput, View, Pressable } from "react-native";
 
 import { Text } from "@/components/ui";
 import { borderRadius, spacing } from "@/constants";
@@ -70,14 +70,23 @@ function EditableTextComponent({
           marginBottom: spacing.sm,
         }}
       >
-        <Text
-          variant="label"
-          style={{ color: withAlpha(onBrand, 0.85) }}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Cancel edit"
           onPress={onCancel}
-          suppressHighlighting
+          hitSlop={8}
+          style={({ pressed }) => [
+            {
+              paddingVertical: spacing.xs,
+              paddingRight: spacing.md,
+            },
+            pressed && { opacity: 0.7 },
+          ]}
         >
-          Cancel
-        </Text>
+          <Text variant="label" style={{ color: onBrand }}>
+            Cancel
+          </Text>
+        </Pressable>
       </View>
 
       {fields.map((field, index) => {
@@ -94,7 +103,7 @@ function EditableTextComponent({
             >
               <Text
                 variant="caption"
-                style={{ color: withAlpha(onBrand, 0.7) }}
+                style={{ color: onBrand }}
                 numberOfLines={1}
               >
                 {field.label}
@@ -102,8 +111,7 @@ function EditableTextComponent({
               <Text
                 variant="caption"
                 style={{
-                  color: withAlpha(onBrand, 0.7),
-                  // `error` on `brand` is ~1.5:1, so weight carries this.
+                  color: onBrand,
                   fontFamily: over ? "Outfit-Medium" : undefined,
                 }}
                 accessibilityLiveRegion="polite"
@@ -145,7 +153,7 @@ function EditableTextComponent({
       <Text
         variant="caption"
         style={{
-          color: withAlpha(onBrand, 0.6),
+          color: onBrand,
           textAlign: "right",
         }}
       >

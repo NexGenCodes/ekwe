@@ -64,6 +64,7 @@ export function SwapButton({
       accessibilityLabel="Swap languages"
       accessibilityState={{ disabled: isSwapDisabled }}
       onPress={handlePress}
+      hitSlop={6}
       style={({ pressed }) => [
         {
           width: 40,

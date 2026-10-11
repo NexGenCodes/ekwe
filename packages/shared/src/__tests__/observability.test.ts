@@ -86,11 +86,15 @@ describe("scrubSentryEvent", () => {
     };
 
     const scrubbed = scrubSentryEvent(event);
-    expect((scrubbed.breadcrumbs as any)[0]).toEqual({
+    const breadcrumbs = scrubbed.breadcrumbs as {
+      message: string;
+      category: string;
+    }[];
+    expect(breadcrumbs[0]).toEqual({
       message: "Started",
       category: "auth",
     });
-    expect((scrubbed.breadcrumbs as any)[1]).toEqual({
+    expect(breadcrumbs[1]).toEqual({
       message: "Login",
       category: "auth",
     });

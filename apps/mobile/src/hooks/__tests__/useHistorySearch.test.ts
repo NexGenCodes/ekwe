@@ -22,13 +22,13 @@ vi.mock("@/store", () => ({
 
 vi.mock("@/services/db", () => ({
   Db: {
-    searchHistory: vi.fn(() => []),
+    searchHistoryAsync: vi.fn(() => Promise.resolve([])),
   },
 }));
 
 import { Db } from "@/services/db";
 
-const mockSearchHistory = Db.searchHistory as Mock;
+const mockSearchHistory = Db.searchHistoryAsync as Mock;
 
 function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
   return {
@@ -52,7 +52,7 @@ function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
   };
 }
 
-/** A DB row as `Db.searchHistory` returns it. */
+/** A DB row as `Db.searchHistoryAsync` resolves it. */
 function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: "found",
@@ -79,7 +79,8 @@ function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
 describe("useHistorySearch", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    mockSearchHistory.mockClear();
+    mockSearchHistory.mockReset();
+    mockSearchHistory.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -132,7 +133,7 @@ describe("useHistorySearch", () => {
   });
 
   it("debounces the query and delegates to the DB search", async () => {
-    mockSearchHistory.mockReturnValue([row()]);
+    mockSearchHistory.mockResolvedValue([row()]);
 
     const { result } = await renderHook(() => useHistorySearch([]));
 
@@ -141,7 +142,9 @@ describe("useHistorySearch", () => {
     expect(result.current.debouncedQuery).toBe("");
     expect(mockSearchHistory).not.toHaveBeenCalled();
 
-    await act(() => vi.advanceTimersByTime(301));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(301);
+    });
 
     expect(result.current.debouncedQuery).toBe("hola");
     expect(result.current.isSearching).toBe(true);
@@ -159,7 +162,9 @@ describe("useHistorySearch", () => {
     const { result } = await renderHook(() => useHistorySearch([]));
 
     await act(() => result.current.setQuery("hola"));
-    await act(() => vi.advanceTimersByTime(301));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(301);
+    });
 
     expect(mockSearchHistory).not.toHaveBeenCalled();
     expect(result.current.isSearching).toBe(true);
@@ -167,13 +172,15 @@ describe("useHistorySearch", () => {
   });
 
   it("applies the origin filter to search results too", async () => {
-    mockSearchHistory.mockReturnValue([row({ origin: "echo" })]);
+    mockSearchHistory.mockResolvedValue([row({ origin: "echo" })]);
 
     const { result } = await renderHook(() => useHistorySearch([]));
 
     await act(() => result.current.setQuery("hello"));
     await act(() => result.current.setFilter("orb"));
-    await act(() => vi.advanceTimersByTime(301));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(301);
+    });
 
     expect(result.current.filteredEntries).toEqual([]);
   });

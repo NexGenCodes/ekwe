@@ -1,3 +1,5 @@
+import { logger } from "@/core/logger";
+
 export async function withCache(
   request: Request,
   ctx: ExecutionContext,
@@ -21,7 +23,14 @@ export async function withCache(
 
   const cacheRes = new Response(res.body, { ...res, headers });
 
-  ctx.waitUntil(cache.put(request, cacheRes.clone()));
+  ctx.waitUntil(
+    cache.put(request, cacheRes.clone()).catch((err) => {
+      logger.warn("[cache] write failed", {
+        url: request.url,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }),
+  );
 
   return cacheRes;
 }

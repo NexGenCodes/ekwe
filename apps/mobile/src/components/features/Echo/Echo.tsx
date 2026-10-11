@@ -92,9 +92,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   );
 
   const playerActive =
-    step === "Preview" ||
-    step === "TranscribeResult" ||
-    (step === "FullResult" && resultTab === "Original");
+    step === "Preview" || step === "TranscribeResult" || step === "FullResult";
 
   const player = useAudioWaveformPlayback(audioUri || null, convertedWaveform, {
     active: playerActive,
@@ -104,6 +102,14 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   useEffect(() => {
     playerReleaseRef.current = player.release;
   }, [player.release]);
+
+  const handleTabChange = useCallback(
+    (tab: "Translated" | "Original"): void => {
+      player.pause();
+      setResultTab(tab);
+    },
+    [player, setResultTab],
+  );
 
   const storedSelectedLanguages =
     useValue(() => settings$.selectedLanguages.get()) || [];
@@ -279,11 +285,8 @@ export const Echo = (props: EchoProps): React.ReactElement => {
             setStep={setStep}
             handleClose={handleClose}
             activeTab={resultTab}
-            onTabChange={setResultTab}
+            onTabChange={handleTabChange}
             audioPlayer={player}
-            // The share sheet can hand on the voice note itself, not just its
-            // text — the audio is already in memory here and was being dropped.
-            audioUri={audioUri ?? null}
             copied={autoCopied}
           />
         );

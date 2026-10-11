@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <string>
 #include <vector>
+#include <atomic>
 #include <utility>
 
 namespace ekwe {
@@ -45,7 +46,7 @@ public:
 
 private:
     bool ok_;
-    bool finalized_;
+    std::atomic<bool> finalized_;
     std::string output_path_;
     uint16_t channels_;
     uint64_t pre_skip_;

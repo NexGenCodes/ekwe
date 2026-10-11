@@ -4,12 +4,16 @@ vi.mock("@/providers/edge", () => ({
   tts: vi.fn(async () => ({ result: null, status: null })),
   voices: () => [],
 }));
-import { handleSynthesize } from "@/routes/synthesize";
+import { synthesizeFromAudio, synthesizeFromText } from "@/routes/synthesize";
 import {
-  mockEnv,
-  makeAudioBlob,
-  mockExecutionContext,
+  executeQueryChunks,
+  executeQueryToSql,
+  jsonBody,
   jsonResponse,
+  makeAudioBlob,
+  mockDb,
+  mockEnv,
+  mockExecutionContext,
 } from "@/__tests__/setup";
 import {
   VOICE_PREVIEW_TEXT,
@@ -46,30 +50,44 @@ function aiMp3Env(): Env {
 }
 
 function gateOk(tier: Tier, quotaTotal: number, quotaRemaining: number): void {
-  server.use(
-    http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
-      jsonResponse({
-        allowed: true,
-        tier_active: tier,
-        quota_total: quotaTotal,
-        quota_remaining: quotaRemaining,
-      }),
-    ),
-  );
+  mockDb.execute.mockImplementation(async (query) => {
+    const queryStr = executeQueryToSql(query);
+    if (queryStr.includes("check_preflight")) {
+      return [
+        {
+          preflight: {
+            allowed: true,
+            tier_active: tier,
+            quota_total: quotaTotal,
+            quota_remaining: quotaRemaining,
+          },
+        },
+      ];
+    }
+    const { defaultMockDbExecute } = await import("@/__tests__/setup");
+    return defaultMockDbExecute(query);
+  });
 }
 
 function gateExhausted(): void {
-  server.use(
-    http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
-      jsonResponse({
-        allowed: false,
-        reason: "QUOTA_EXCEEDED",
-        tier_active: "PREMIUM",
-        quota_total: 5000,
-        quota_remaining: 0,
-      }),
-    ),
-  );
+  mockDb.execute.mockImplementation(async (query) => {
+    const queryStr = executeQueryToSql(query);
+    if (queryStr.includes("check_preflight")) {
+      return [
+        {
+          preflight: {
+            allowed: false,
+            reason: "QUOTA_EXCEEDED",
+            tier_active: "PREMIUM",
+            quota_total: 5000,
+            quota_remaining: 0,
+          },
+        },
+      ];
+    }
+    const { defaultMockDbExecute } = await import("@/__tests__/setup");
+    return defaultMockDbExecute(query);
+  });
 }
 
 function textRequest(body: Record<string, unknown>): Request {
@@ -83,6 +101,7 @@ function textRequest(body: Record<string, unknown>): Request {
 function audioRequest(fields: Record<string, string> = {}): Request {
   const form = new FormData();
   form.append("file", makeAudioBlob(), "test.wav");
+  form.append("duration", "1000");
   for (const [key, value] of Object.entries(fields)) form.append(key, value);
   return new Request("http://test/synthesize", {
     method: "POST",
@@ -90,15 +109,61 @@ function audioRequest(fields: Record<string, string> = {}): Request {
   });
 }
 
-function handle(request: Request, env: Env, tier: Tier): Promise<Response> {
-  return handleSynthesize(
-    request,
-    env,
-    tier,
-    new AbortController().signal,
-    { userId: "uid-syn", sessionId: null },
-    mockExecutionContext(),
-  );
+import { RequestTimings } from "@/core/timing";
+import { SYNTHESIZE_TOTAL_MS } from "@/core/budgets";
+import { createGateCharge } from "@/routes/synthesize";
+import { synthesizeRequestSchema } from "@ekwe/shared";
+
+function handle(
+  request: Request,
+  env: Env,
+  tier: Tier,
+  signal: AbortSignal = new AbortController().signal,
+  authContext: { userId: string; sessionId: string | null } = {
+    userId: "uid-syn",
+    sessionId: null,
+  },
+  ctx: ExecutionContext = mockExecutionContext(),
+): Promise<Response> {
+  const start = Date.now();
+  const remainingMs = () => SYNTHESIZE_TOTAL_MS - (Date.now() - start);
+  const timings = new RequestTimings();
+  const gateCharge = createGateCharge();
+  const contentType = request.headers.get("content-type") || "";
+
+  if (contentType.includes("multipart/form-data")) {
+    return synthesizeFromAudio(
+      request,
+      env,
+      tier,
+      signal,
+      authContext.userId,
+      authContext.sessionId,
+      ctx,
+      remainingMs,
+      timings,
+      gateCharge,
+    );
+  }
+
+  return request.json().then((body) => {
+    const parsed = synthesizeRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return Response.json({ error: "INVALID_BODY" }, { status: 400 });
+    }
+    return synthesizeFromText(
+      parsed.data,
+      env,
+      tier,
+      signal,
+      authContext.userId,
+      authContext.sessionId,
+      ctx,
+      remainingMs,
+      timings,
+      gateCharge,
+    );
+  });
 }
 
 async function awaitWaitUntil(
@@ -118,25 +183,32 @@ describe("handleSynthesize — gate/cache overlap", () => {
       releaseGate = resolve;
     });
 
-    server.use(
-      http.post(PROVIDER_URLS.supabaseCheckPreflight, async () => {
+    mockDb.execute.mockImplementation(async (query) => {
+      const queryStr = executeQueryToSql(query);
+      if (queryStr.includes("check_preflight")) {
         order.push("gate:start");
         await gateBlocked;
         order.push("gate:end");
-        return jsonResponse({
-          allowed: true,
-          tier_active: "PREMIUM",
-          quota_total: 5000,
-          quota_remaining: 5000,
-        });
-      }),
-    );
+        return [
+          {
+            preflight: {
+              allowed: true,
+              tier_active: "PREMIUM",
+              quota_total: 5000,
+              quota_remaining: 5000,
+            },
+          },
+        ];
+      }
+      const { defaultMockDbExecute } = await import("@/__tests__/setup");
+      return defaultMockDbExecute(query);
+    });
 
     const env = aiMp3Env();
     const getSpy = vi.spyOn(env.EKWE_KV, "get");
     const ctx = mockExecutionContext();
 
-    const pending = handleSynthesize(
+    const pending = handle(
       textRequest({ text: "Overlap me", sourceLang: "en", targetLang: "en" }),
       env,
       "PREMIUM",
@@ -165,23 +237,30 @@ describe("handleSynthesize — gate/cache overlap", () => {
     // gate can still downgrade to FREE, so trusting that read would serve audio
     // cached under the wrong tier — and a cache "hit" would skip the gate
     // entirely on the next request.
-    server.use(
-      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
-        jsonResponse({
-          allowed: true,
-          tier_active: "FREE",
-          throttled: true,
-          quota_total: 5000,
-          quota_remaining: 5000,
-        }),
-      ),
-    );
+    mockDb.execute.mockImplementation(async (query) => {
+      const queryStr = executeQueryToSql(query);
+      if (queryStr.includes("check_preflight")) {
+        return [
+          {
+            preflight: {
+              allowed: true,
+              tier_active: "FREE",
+              throttled: true,
+              quota_total: 5000,
+              quota_remaining: 5000,
+            },
+          },
+        ];
+      }
+      const { defaultMockDbExecute } = await import("@/__tests__/setup");
+      return defaultMockDbExecute(query);
+    });
 
     const env = aiMp3Env();
     const getSpy = vi.spyOn(env.EKWE_KV, "get");
     const ctx = mockExecutionContext();
 
-    const res = await handleSynthesize(
+    const res = await handle(
       textRequest({
         text: "Downgrade me",
         sourceLang: "en",
@@ -214,7 +293,7 @@ describe("handleSynthesize — text branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
 
     expect(body.translated).toBe(false);
 
@@ -270,16 +349,31 @@ describe("handleSynthesize — text branch", () => {
     const env = aiMp3Env();
 
     let sentChars = -1;
-    server.use(
-      http.post(PROVIDER_URLS.supabaseConsumeUsage, async ({ request }) => {
-        const data = (await request.json()) as any;
-        sentChars = data.p_chars;
-        return jsonResponse({});
-      }),
-    );
+    mockDb.execute.mockImplementation(async (query) => {
+      const queryStr = executeQueryToSql(query);
+      if (queryStr.includes("check_preflight")) {
+        // SELECT check_preflight(<userId>, <type>, ..., <chargeChars>) — the
+        // gate now reserves the speech charge, so the character count rides on
+        // the `speech` gate instead of a separate consume_usage call.
+        const chunks = executeQueryChunks(query);
+        if (chunks[3] === "speech") sentChars = chunks[19] as number;
+        return [
+          {
+            preflight: {
+              allowed: true,
+              tier_active: "PREMIUM",
+              quota_total: 5000,
+              quota_remaining: 5000,
+            },
+          },
+        ];
+      }
+      const { defaultMockDbExecute } = await import("@/__tests__/setup");
+      return defaultMockDbExecute(query);
+    });
 
     const ctx = mockExecutionContext();
-    const res = await handleSynthesize(
+    const res = await handle(
       textRequest({ text: "Hello world", targetLang: "es" }),
       env,
       "PREMIUM",
@@ -312,7 +406,7 @@ describe("handleSynthesize — text branch", () => {
     );
     expect(res.status).toBe(429);
     expect(res.headers.get("Retry-After")).toBeTruthy();
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("EKWE_QUOTA_EXCEEDED");
     expect(body.quota_total).toBe(5000);
 
@@ -339,7 +433,7 @@ describe("handleSynthesize — text branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.translated).toBe(true);
     expect(body.sourceLang).toBe("en");
     expect(body.targetLang).toBe("es");
@@ -366,7 +460,7 @@ describe("handleSynthesize — text branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.translated).toBe(false);
     expect(body.sourceLang).toBe("es");
     expect(body.targetLang).toBe("es");
@@ -407,7 +501,7 @@ describe("handleSynthesize — text branch", () => {
       "FREE",
     );
     expect(res.status).toBe(403);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("AUTO_DETECT_UNAVAILABLE");
   });
 
@@ -418,7 +512,7 @@ describe("handleSynthesize — text branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("INVALID_BODY");
   });
 
@@ -429,7 +523,7 @@ describe("handleSynthesize — text branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("EKWE_EMPTY_TRANSCRIPT");
   });
 
@@ -440,7 +534,7 @@ describe("handleSynthesize — text branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("INVALID_BODY");
   });
 
@@ -451,7 +545,7 @@ describe("handleSynthesize — text branch", () => {
       "PREMIUM",
     );
     expect(textRes.status).toBe(400);
-    expect(((await textRes.json()) as any).error).toBe("INVALID_BODY");
+    expect((await jsonBody(textRes)).error).toBe("INVALID_BODY");
 
     const audioRes = await handle(
       audioRequest({ gender: "neutral", lang: "en", targetLang: "es" }),
@@ -459,7 +553,7 @@ describe("handleSynthesize — text branch", () => {
       "PREMIUM",
     );
     expect(audioRes.status).toBe(400);
-    expect(((await audioRes.json()) as any).error).toBe("INVALID_BODY");
+    expect((await jsonBody(audioRes)).error).toBe("INVALID_BODY");
   });
 
   test("rejects text over the speech character cap", async () => {
@@ -469,21 +563,24 @@ describe("handleSynthesize — text branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("INVALID_BODY");
   });
 
   test("preview text is free: no gate, no charge, pinned to en", async () => {
     const ctx = mockExecutionContext();
     let consumeCalls = 0;
-    server.use(
-      http.post(PROVIDER_URLS.supabaseConsumeUsage, () => {
+    mockDb.execute.mockImplementation(async (query) => {
+      const queryStr = executeQueryToSql(query);
+      if (queryStr.includes("consume_usage")) {
         consumeCalls++;
-        return jsonResponse({});
-      }),
-    );
+        return [];
+      }
+      const { defaultMockDbExecute } = await import("@/__tests__/setup");
+      return defaultMockDbExecute(query);
+    });
 
-    const res = await handleSynthesize(
+    const res = await handle(
       textRequest({
         text: VOICE_PREVIEW_TEXT,
         sourceLang: "es",
@@ -497,7 +594,7 @@ describe("handleSynthesize — text branch", () => {
     );
     await awaitWaitUntil(ctx);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.translated).toBe(false);
 
     expect(body.sourceLang).toBe("es");
@@ -514,7 +611,7 @@ describe("handleSynthesize — text branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(503);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("SPEECH_UNAVAILABLE");
   });
 });
@@ -544,7 +641,7 @@ describe("handleSynthesize — audio branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.translated).toBe(true);
     expect(body.sourceLang).toBe("en");
     expect(body.targetLang).toBe("es");
@@ -576,7 +673,7 @@ describe("handleSynthesize — audio branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.translated).toBe(false);
     expect(body.sourceLang).toBe("es");
     expect(body.targetLang).toBe("es");
@@ -619,7 +716,7 @@ describe("handleSynthesize — audio branch", () => {
 
     const second = await handle(audioRequest(fields), env, "PREMIUM");
     expect(second.status).toBe(200);
-    const body = (await second.json()) as any;
+    const body = await jsonBody(second);
     expect(body.translated).toBe(true);
 
     expect(witCalls).toBe(1);
@@ -640,7 +737,7 @@ describe("handleSynthesize — audio branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("MISSING_FILE");
   });
 
@@ -651,7 +748,7 @@ describe("handleSynthesize — audio branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("INVALID_TARGET_LANGUAGE");
   });
 
@@ -662,7 +759,7 @@ describe("handleSynthesize — audio branch", () => {
       "PREMIUM",
     );
     expect(res.status).toBe(400);
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body.error).toBe("INVALID_BODY");
   });
 
@@ -745,17 +842,24 @@ describe("transcript and translation stay consistent", () => {
 describe("premium voice entitlement", () => {
   test("a FREE user asking for a Studio voice never reaches the preflight gate", async () => {
     let preflightCalls = 0;
-    server.use(
-      http.post(PROVIDER_URLS.supabaseCheckPreflight, () => {
+    mockDb.execute.mockImplementation(async (query) => {
+      const queryStr = executeQueryToSql(query);
+      if (queryStr.includes("check_preflight")) {
         preflightCalls++;
-        return jsonResponse({
-          allowed: true,
-          tier_active: "FREE",
-          quota_total: 5000,
-          quota_remaining: 5000,
-        });
-      }),
-    );
+        return [
+          {
+            preflight: {
+              allowed: true,
+              tier_active: "FREE",
+              quota_total: 5000,
+              quota_remaining: 5000,
+            },
+          },
+        ];
+      }
+      const { defaultMockDbExecute } = await import("@/__tests__/setup");
+      return defaultMockDbExecute(query);
+    });
 
     const res = await handle(
       textRequest({
@@ -769,5 +873,63 @@ describe("premium voice entitlement", () => {
     );
     expect(res.status).toBe(403);
     expect(preflightCalls).toBe(0);
+  });
+});
+
+describe("throttled pipeline downgrade", () => {
+  test("a throttled Pro runs the STT and translate stages on the FREE pipeline", async () => {
+    mockDb.execute.mockImplementation(async (query) => {
+      const queryStr = executeQueryToSql(query);
+      if (queryStr.includes("check_preflight")) {
+        return [
+          {
+            preflight: {
+              allowed: true,
+              tier_active: "PREMIUM",
+              throttled: true,
+              quota_total: 0,
+              quota_remaining: 0,
+            },
+          },
+        ];
+      }
+      const { defaultMockDbExecute } = await import("@/__tests__/setup");
+      return defaultMockDbExecute(query);
+    });
+
+    const stt: string[] = [];
+    const mt: string[] = [];
+    server.use(
+      http.post(PROVIDER_URLS.groqTranscriptions, () => {
+        stt.push("groq");
+        return jsonResponse({ text: "groq result" });
+      }),
+      http.post(PROVIDER_URLS.assemblyaiUpload, () => {
+        stt.push("assemblyai");
+        return jsonResponse({ error: "premium-only" }, 500);
+      }),
+      http.post(PROVIDER_URLS.groqChat, () => {
+        mt.push("groq");
+        return jsonResponse({
+          choices: [{ message: { content: "Hola mundo" } }],
+        });
+      }),
+      http.post(PROVIDER_URLS.mistralChat, () => {
+        mt.push("mistral");
+        return jsonResponse({ error: "premium-only" }, 500);
+      }),
+    );
+
+    const res = await handle(
+      audioRequest({ lang: "en", targetLang: "es" }),
+      aiMp3Env(),
+      "PREMIUM",
+    );
+
+    expect(res.status).toBe(200);
+    expect(stt).toContain("groq");
+    expect(stt).not.toContain("assemblyai");
+    expect(mt).toContain("groq");
+    expect(mt).not.toContain("mistral");
   });
 });

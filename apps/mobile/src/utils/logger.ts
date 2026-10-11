@@ -6,7 +6,9 @@ const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN;
 
 const noop = (): void => {};
 
-let sentryCaptureException: ((err: unknown) => void) | null = null;
+let sentryCaptureException:
+  ((err: unknown, hint?: { extra?: Record<string, unknown> }) => void) | null =
+  null;
 let sentryAddBreadcrumb:
   | ((breadcrumb: {
       category: string;
@@ -16,10 +18,6 @@ let sentryAddBreadcrumb:
     }) => void)
   | null = null;
 let sentrySetTag: ((key: string, value: string) => void) | null = null;
-let sentrySetContext:
-  ((key: string, data: Record<string, unknown>) => void) | null = null;
-let sentryCaptureMessage: ((message: string, level?: string) => void) | null =
-  null;
 let sentrySetUser: ((user: { id: string } | null) => void) | null = null;
 
 if (!IS_DEV && SENTRY_DSN && SENTRY_DSN.startsWith("https://")) {
@@ -38,12 +36,34 @@ if (!IS_DEV && SENTRY_DSN && SENTRY_DSN.startsWith("https://")) {
     sentryCaptureException = Sentry.captureException;
     sentryAddBreadcrumb = Sentry.addBreadcrumb;
     sentrySetTag = Sentry.setTag;
-    sentrySetContext = Sentry.setContext;
-    sentryCaptureMessage = Sentry.captureMessage;
     sentrySetUser = Sentry.setUser;
   } catch {
     // Sentry not available, continue without it
   }
+}
+
+/**
+ * Maps `logger.error(...args)` to the error Sentry should file. Without this,
+ * `logger.error("[Sync] ...", cause)` filed the joined message as a
+ * stackless issue and dropped the real Error's stack.
+ */
+export function toSentryCapture(args: unknown[]): {
+  error: Error;
+  extra: { logArgs: string[] } | Record<string, never>;
+} {
+  const cause = args.find((a) => a instanceof Error);
+  if (cause) {
+    const rest = args.filter((a) => a !== cause).map((a) => String(a));
+    return {
+      error: cause,
+      extra: rest.length > 0 ? { logArgs: rest } : {},
+    };
+  }
+  const message = args.map(String).join(" ");
+  return {
+    error: new Error(message || "logger.error() with no message"),
+    extra: {},
+  };
 }
 
 export function setSentryUser(user: { id: string } | null): void {
@@ -52,17 +72,6 @@ export function setSentryUser(user: { id: string } | null): void {
 
 export function setSentryTag(key: string, value: string): void {
   sentrySetTag?.(key, value);
-}
-
-export function setSentryContext(
-  key: string,
-  data: Record<string, unknown>,
-): void {
-  sentrySetContext?.(key, data);
-}
-
-export function captureSentryMessage(message: string, level?: string): void {
-  sentryCaptureMessage?.(message, level ?? "info");
 }
 
 /**
@@ -110,12 +119,8 @@ const logger: Logger = {
       });
     }
     if (sentryCaptureException) {
-      const first = args[0];
-      if (first instanceof Error) {
-        sentryCaptureException(first);
-      } else {
-        sentryCaptureException(args.map(String).join(" "));
-      }
+      const { error, extra } = toSentryCapture(args);
+      sentryCaptureException(error, { extra });
     }
   },
 };

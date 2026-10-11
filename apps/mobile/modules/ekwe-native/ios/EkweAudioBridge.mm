@@ -8,6 +8,21 @@
 #include <mutex>
 #include <atomic>
 
+static NSArray *resultArray(const ekwe::DecodeResult &result) {
+    NSArray<NSNumber *> *waveformArray = [NSArray array];
+    if (!result.waveform.empty()) {
+        NSMutableArray<NSNumber *> *w = [NSMutableArray arrayWithCapacity:result.waveform.size()];
+        for (float val : result.waveform) {
+            [w addObject:@(val)];
+        }
+        waveformArray = w;
+    }
+    return @[@(result.success),
+             [NSString stringWithUTF8String:result.error_message.c_str()],
+             @(result.duration_ms),
+             waveformArray];
+}
+
 static std::mutex g_mutex;
 static std::atomic<float> g_current_rms{0.0f};
 static ekwe::CaptureController* g_capture = nullptr;
@@ -29,17 +44,18 @@ namespace ekwe {
     std::string output([outputPath UTF8String]);
 
     ekwe::DecodeResult result = ekwe::transcode_audio_to_opus(input, output);
+    return resultArray(result);
+}
 
-    NSNumber *success = @(result.success);
-    NSString *errorStr = [NSString stringWithUTF8String:result.error_message.c_str()];
-    NSNumber *duration = @(result.duration_ms);
++ (NSArray *)transcodeToVorbisWithWaveform:(NSString *)sourcePath
+                                outputPath:(NSString *)outputPath
+                             maxAudioBytes:(NSUInteger)maxAudioBytes {
+    std::string input([sourcePath UTF8String]);
+    std::string output([outputPath UTF8String]);
 
-    NSMutableArray<NSNumber *> *waveformArray = [NSMutableArray arrayWithCapacity:result.waveform.size()];
-    for (float val : result.waveform) {
-        [waveformArray addObject:@(val)];
-    }
-
-    return @[success, errorStr, duration, waveformArray];
+    ekwe::DecodeResult result =
+        ekwe::transcode_audio_to_vorbis(input, output, static_cast<size_t>(maxAudioBytes));
+    return resultArray(result);
 }
 
 + (NSArray *)decodeToWavWithSourcePath:(NSString *)sourcePath
@@ -49,17 +65,25 @@ namespace ekwe {
     std::string output([outputPath UTF8String]);
 
     ekwe::DecodeResult result = ekwe::decode_audio_to_wav(input, output, static_cast<size_t>(maxAudioBytes));
+    return resultArray(result);
+}
 
-    NSNumber *success = @(result.success);
-    NSString *errorStr = [NSString stringWithUTF8String:result.error_message.c_str()];
-    NSNumber *duration = @(result.duration_ms);
++ (NSArray *)transcodeToDualWithWaveform:(NSString *)sourcePath
+                             opusOutputPath:(NSString *)opusOutputPath
+                          vorbisOutputPath:(NSString *)vorbisOutputPath
+                             maxAudioBytes:(NSUInteger)maxAudioBytes {
+    std::string input([sourcePath UTF8String]);
+    std::string opus_output([opusOutputPath UTF8String]);
+    std::string vorbis_output([vorbisOutputPath UTF8String]);
 
-    NSMutableArray<NSNumber *> *waveformArray = [NSMutableArray arrayWithCapacity:result.waveform.size()];
-    for (float val : result.waveform) {
-        [waveformArray addObject:@(val)];
-    }
+    ekwe::DualTranscodeResult result = ekwe::transcode_audio_to_dual(
+        input, opus_output, vorbis_output, static_cast<size_t>(maxAudioBytes));
 
-    return @[success, errorStr, duration, waveformArray];
+    return @[resultArray(result.opus), resultArray(result.vorbis)];
+}
+
++ (NSInteger)probeAudioDurationMs:(NSString *)path {
+    return ekwe::probe_audio_duration_ms(std::string([path UTF8String]));
 }
 
 + (NSArray *)remuxToCafWithSourcePath:(NSString *)sourcePath
@@ -112,14 +136,14 @@ namespace ekwe {
             switch (event.event) {
                 case ekwe::CaptureEvent::AUDIO_DATA:
                     // Nitro path — zero-copy ArrayBuffer dispatch
-                    if (!event.data.empty()) {
+                    if (event.data.size > 0) {
                         margelo::nitro::ekwe::HybridEkweAudio::dispatchOpusPacket(
-                            event.data.data(), event.data.size(), event.rms);
+                            event.data.data, event.data.size, event.rms);
                     }
                     // Legacy Expo event path (backward compat)
-                    if (packetBlock && !event.data.empty()) {
-                        NSData *packet = [NSData dataWithBytes:event.data.data()
-                                                        length:event.data.size()];
+                    if (packetBlock && event.data.size > 0) {
+                        NSData *packet = [NSData dataWithBytes:event.data.data
+                                                        length:event.data.size];
                         packetBlock(packet, event.rms);
                     }
                     break;

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { handleWebhook } from "@/routes/webhook";
-import { mockEnv } from "@/__tests__/setup";
+import { jsonBody, mockEnv } from "@/__tests__/setup";
 import { processWebhookEvent } from "@/services/billing";
 
 vi.mock("@/services/billing", () => ({
@@ -98,7 +98,7 @@ describe("Webhook Endpoint", () => {
 
       const res = await handleWebhook(req, env, ctx);
       expect(res.status).toBe(401);
-      expect(((await res.json()) as any).error).toBe(
+      expect((await jsonBody(res)).error).toBe(
         WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
       );
     });
@@ -129,7 +129,7 @@ describe("Webhook Endpoint", () => {
 
       const res = await handleWebhook(req, env, ctx);
       expect(res.status).toBe(200);
-      expect((await res.json()) as any).toEqual(responseBody);
+      expect(await jsonBody(res)).toEqual(responseBody);
       expect(mockedProcessWebhookEvent).toHaveBeenCalledWith(
         "flutterwave",
         {
@@ -165,7 +165,7 @@ describe("Webhook Endpoint", () => {
         env,
         ctx,
       );
-      const body = (await res2.json()) as any;
+      const body = await jsonBody(res2);
       expect(body.action).toBe("duplicate");
       expect(mockedProcessWebhookEvent).not.toHaveBeenCalled();
     });

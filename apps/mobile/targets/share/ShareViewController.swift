@@ -73,8 +73,13 @@ final class ShareViewController: UIViewController {
                 if let sourceURL = item as? URL {
                     url = sourceURL
                 } else if let data = item as? Data {
+                    // The raw bytes carry no filename hint — pick the extension
+                    // from the provider's declared type so the file round-trips
+                    // through AVURLAsset without a forced ".m4a" lie.
+                    let ext = typeIdentifierBestExtension(
+                        attachment.registeredTypeIdentifiers) ?? "m4a"
                     let tempURL = FileManager.default.temporaryDirectory
-                        .appendingPathComponent(UUID().uuidString + ".m4a")
+                        .appendingPathComponent(UUID().uuidString + ".\(ext)")
                     do {
                         try data.write(to: tempURL)
                         url = tempURL
@@ -89,13 +94,14 @@ final class ShareViewController: UIViewController {
                     return
                 }
 
-                // Guard: reject files that exceed the plan limit before the
-                // full decode — the extension's memory budget is ~120 MB.
+                // Reject pathological files before the full decode. The tier
+                // cap applies to the transcoded output; inputs can be much
+                // larger and still transcode to a few MB of Opus.
                 do {
                     let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
                     if let fileSize = attrs[.size] as? Int,
-                       fileSize > EchoEnvironment.maxAudioBytes {
-                        self.model.fail("File too large. Maximum size is \(EchoEnvironment.maxAudioBytes / 1_048_576) MB.")
+                       fileSize > EchoEnvironment.maxAudioInputBytes {
+                        self.model.fail("File too large. Maximum size is \(EchoEnvironment.maxAudioInputBytes / 1_048_576) MB.")
                         return
                     }
                 } catch {
@@ -110,5 +116,22 @@ final class ShareViewController: UIViewController {
 
     private func cancelShare() {
         extensionContext?.completeRequest(returningItems: nil, completionHandler: nil)
+    }
+
+    /// Resolve the most concrete UTI the provider advertised to a filename
+    /// extension, preferring audio-specific UTIs over broad classes.
+    private func typeIdentifierBestExtension(_ ids: [String]) -> String? {
+        var best: (String?, Int) = (nil, -1)
+        for id in ids {
+            guard let type = UTType(id),
+                  let ext = type.preferredFilenameExtension
+            else { continue }
+            // Absolute-type identifiers (public.audio.wav etc.) rank above
+            // abstract classes (public.audio, public.data).
+            let score = id.lowercased().hasPrefix("public.audio") ? 2
+                      : type.isSubtype(of: .audio) ? 1 : 0
+            if score > best.1 { best = (ext, score) }
+        }
+        return best.0
     }
 }

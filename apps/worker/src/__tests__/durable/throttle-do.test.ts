@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { jsonBody } from "@/__tests__/setup";
 
 function allow(key: string, limit: number, windowSec: number) {
   return env.THROTTLE_DO.getByName("otp").fetch(
@@ -14,38 +15,38 @@ describe("ThrottleBucket", () => {
     for (let i = 0; i < 5; i++) {
       const res = await allow(key, 5, windowSec);
       expect(res.status).toBe(200);
-      expect((await res.json()) as any).toEqual({ allowed: true });
+      expect(await jsonBody(res)).toEqual({ allowed: true });
     }
     const res = await allow(key, 5, windowSec);
     expect(res.status).toBe(200);
-    expect((await res.json()) as any).toEqual({ allowed: false });
+    expect(await jsonBody(res)).toEqual({ allowed: false });
   });
 
   it("keeps separate counters per key", async () => {
     const keyA = "email:a@b.co";
     const keyB = "email:c@d.co";
     await allow(keyA, 1, 600);
-    expect((await (await allow(keyA, 1, 600)).json()) as any).toEqual({
+    expect(await jsonBody(await allow(keyA, 1, 600))).toEqual({
       allowed: false,
     });
-    expect((await (await allow(keyB, 1, 600)).json()) as any).toEqual({
+    expect(await jsonBody(await allow(keyB, 1, 600))).toEqual({
       allowed: true,
     });
   });
 
   it("rolls the window over once resetAt passes (no storage TTL)", async () => {
     const key = "ip:5.6.7.8";
-    expect((await (await allow(key, 2, 1)).json()) as any).toEqual({
+    expect(await jsonBody(await allow(key, 2, 1))).toEqual({
       allowed: true,
     });
-    expect((await (await allow(key, 2, 1)).json()) as any).toEqual({
+    expect(await jsonBody(await allow(key, 2, 1))).toEqual({
       allowed: true,
     });
-    expect((await (await allow(key, 2, 1)).json()) as any).toEqual({
+    expect(await jsonBody(await allow(key, 2, 1))).toEqual({
       allowed: false,
     });
     await new Promise((resolve) => setTimeout(resolve, 1200));
-    expect((await (await allow(key, 2, 1)).json()) as any).toEqual({
+    expect(await jsonBody(await allow(key, 2, 1))).toEqual({
       allowed: true,
     });
   });
@@ -55,6 +56,6 @@ describe("ThrottleBucket", () => {
       "https://otp-throttle/allow?key=x&limit=0&windowSec=60",
     );
     expect(res.status).toBe(400);
-    expect((await res.json()) as any).toEqual({ allowed: true });
+    expect(await jsonBody(res)).toEqual({ allowed: false });
   });
 });

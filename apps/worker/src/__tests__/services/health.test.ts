@@ -4,6 +4,7 @@ import { logger } from "@/core/logger";
 import {
   HEALTH_TRIP_THRESHOLD,
   isProviderDegraded,
+  reportProviderNeutral,
   reportProviderOutcome,
   resetHealthMemo,
 } from "@/services/health";
@@ -77,5 +78,33 @@ describe("health circuit breaker", () => {
     await reportProviderOutcome(env, "cohere", false);
     await reportProviderOutcome(env, "cohere", false);
     expect(await isProviderDegraded(env, "cohere")).toBe(false);
+  });
+
+  test("a null result does not count as a provider failure", async () => {
+    const env = mockEnv();
+    for (let i = 0; i < HEALTH_TRIP_THRESHOLD * 2; i++) {
+      reportProviderNeutral("deepgram");
+    }
+    expect(await isProviderDegraded(env, "deepgram")).toBe(false);
+  });
+
+  test("a null result neither trips nor clears an existing failure count", async () => {
+    const env = mockEnv();
+    await reportProviderOutcome(env, "witai", false);
+    await reportProviderOutcome(env, "witai", false);
+    reportProviderNeutral("witai");
+    reportProviderNeutral("witai");
+    await reportProviderOutcome(env, "witai", false);
+    expect(await isProviderDegraded(env, "witai")).toBe(true);
+  });
+
+  test("counts failures that land on separate isolates", async () => {
+    const env = mockEnv();
+    for (let i = 0; i < HEALTH_TRIP_THRESHOLD - 1; i++) {
+      await reportProviderOutcome(env, "assemblyai", false);
+      resetHealthMemo();
+    }
+    await reportProviderOutcome(env, "assemblyai", false);
+    expect(await isProviderDegraded(env, "assemblyai")).toBe(true);
   });
 });

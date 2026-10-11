@@ -10,7 +10,7 @@ import {
 import "@/routes/webhook";
 import "@/services/flutterwave";
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
-import { mockEnv, jsonResponse } from "@/__tests__/setup";
+import { jsonBody, jsonResponse, mockEnv } from "@/__tests__/setup";
 import { server } from "@/__tests__/msw/server";
 
 describe("Provider Registry", () => {
@@ -43,7 +43,7 @@ describe("Provider Registry", () => {
     const result = await unknownProvider({}, env);
     expect(result.fullyApplied).toBe(true);
     expect(result.response.status).toBe(400);
-    const body = (await result.response.json()) as any;
+    const body = await jsonBody(result.response);
     expect(body.error).toBe(WORKER_ERROR_CODES.UNKNOWN_PROVIDER);
   });
 
@@ -83,7 +83,7 @@ describe("Provider Registry", () => {
     const result = await processWebhookEvent("disabled-provider", {}, env);
     expect(result.fullyApplied).toBe(true);
     expect(result.response.status).toBe(503);
-    const body = (await result.response.json()) as any;
+    const body = await jsonBody(result.response);
     expect(body.error).toBe(WORKER_ERROR_CODES.PAYMENT_PROVIDER_UNAVAILABLE);
   });
 
@@ -92,7 +92,7 @@ describe("Provider Registry", () => {
     const result = await processWebhookEvent("nonexistent", {}, env);
     expect(result.fullyApplied).toBe(true);
     expect(result.response.status).toBe(400);
-    const body = (await result.response.json()) as any;
+    const body = await jsonBody(result.response);
     expect(body.error).toBe(WORKER_ERROR_CODES.UNKNOWN_PROVIDER);
   });
 

@@ -15,7 +15,7 @@ import Palette from "lucide-react-native/icons/palette";
 import Copy from "lucide-react-native/icons/copy";
 import Globe from "lucide-react-native/icons/globe";
 import Smartphone from "lucide-react-native/icons/smartphone";
-import Radio from "lucide-react-native/icons/radio";
+import CircleDot from "lucide-react-native/icons/circle-dot";
 import AudioLines from "lucide-react-native/icons/audio-lines";
 import Banknote from "lucide-react-native/icons/banknote";
 import RefreshCw from "lucide-react-native/icons/refresh-cw";
@@ -34,11 +34,13 @@ import {
   CurrencyPickerModal,
   QuotaUsageCard,
 } from "@/components";
+import { useTabBarTotalHeight } from "@/components/CustomTabBar";
 import { Box, Text, Pressable, ScrollArea, Spinner } from "@/components/ui";
 import { APP_VERSION, type VoiceGender } from "@ekwe/shared";
 import { getCurrencySymbol } from "@ekwe/shared/money";
-import { duration, borderRadius, opacity, spacing } from "@/constants";
+import { duration, borderRadius, spacing } from "@/constants";
 import { PLAN_LIMITS } from "@/constants/billing";
+import { EkweError, ErrorMessages } from "@/constants/errors";
 import { useLogout, useTheme, usePermissions, useReduceMotion } from "@/hooks";
 import { deleteAccount } from "@/services/auth";
 import {
@@ -71,6 +73,7 @@ export default function ProfileScreen(): React.JSX.Element {
   const isPro = useValue(() => auth$.isPro.get());
   const router = useRouter();
   const { color, colorScheme, setColorScheme } = useTheme();
+  const tabBarHeight = useTabBarTotalHeight();
   const permissions = usePermissions();
   const { confirmLogout } = useLogout();
   const reduceMotion = useReduceMotion();
@@ -85,16 +88,14 @@ export default function ProfileScreen(): React.JSX.Element {
   const {
     setHapticsEnabled,
     setAutoCopy,
-    setLiveTranscriptionEnabled,
+    setOrbEnabled,
     setVoiceGender,
     setVoiceId,
     setCurrency,
   } = settingsActions;
   const selectedLanguages = useValue(() => settings$.selectedLanguages.get());
   const autoCopy = useValue(() => settings$.autoCopy.get());
-  const liveTranscriptionEnabled = useValue(() =>
-    settings$.liveTranscriptionEnabled.get(),
-  );
+  const orbEnabled = useValue(() => settings$.orbEnabled.get());
   const voiceGender = useValue(() => settings$.voiceGender.get());
   const voiceId = useValue(() => settings$.voiceId.get());
   const activeVoice = resolveVoiceSelection(voiceId, voiceGender);
@@ -195,9 +196,9 @@ export default function ProfileScreen(): React.JSX.Element {
   const previewLang = selectedLanguages[0] ?? "en";
 
   const files = useSessionAudioFiles();
-  const handlePreviewError = useCallback((): void => {
+  const handlePreviewError = useCallback((error: EkweError): void => {
     AppToast.error("Preview Unavailable", {
-      description: "Failed to load voice preview.",
+      description: ErrorMessages[error],
     });
   }, []);
   const preview = useVoicePreview({
@@ -232,7 +233,7 @@ export default function ProfileScreen(): React.JSX.Element {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{
           paddingHorizontal: spacing.lg,
-          paddingBottom: spacing["6xl"],
+          paddingBottom: tabBarHeight + spacing.xl,
         }}
       >
         {}
@@ -368,6 +369,7 @@ export default function ProfileScreen(): React.JSX.Element {
               iconColor={color.foreground}
               title="Haptic Feedback"
               subtitle="Vibrate on user actions"
+              checked={hapticsEnabled}
               hasDivider
               onPress={async () => {
                 await triggerHaptic();
@@ -428,26 +430,26 @@ export default function ProfileScreen(): React.JSX.Element {
             tierBar={isPro ? "pro" : "free"}
           >
             <ProfileRow
-              icon={Radio}
-              sfIcon="waveform"
+              icon={CircleDot}
+              sfIcon="circle.dotted"
               iconColor={color.foreground}
-              title="Live Transcription"
-              subtitle="See transcription live while recording"
+              title="Orb"
+              subtitle="Transcribe while playing in another app"
+              checked={isPro ? orbEnabled : undefined}
               locked={!isPro}
               navigateToBilling
               onPress={async () => {
                 if (isPro) {
                   await triggerHaptic();
-                  setLiveTranscriptionEnabled(!liveTranscriptionEnabled);
+                  setOrbEnabled(!orbEnabled);
                 }
               }}
-              hasDivider
               trailing={
                 isPro ? (
                   <Switch
-                    value={liveTranscriptionEnabled}
+                    value={orbEnabled}
                     onValueChange={(val) => {
-                      setLiveTranscriptionEnabled(val);
+                      setOrbEnabled(val);
                     }}
                     trackColor={{
                       true: color.brand,
@@ -492,6 +494,7 @@ export default function ProfileScreen(): React.JSX.Element {
               iconColor={color.foreground}
               title="Auto-copy"
               subtitle="Copy translation automatically"
+              checked={isPro ? autoCopy : undefined}
               locked={!isPro}
               navigateToBilling
               onPress={async () => {
@@ -725,10 +728,7 @@ export default function ProfileScreen(): React.JSX.Element {
         {}
         <Animated.View entering={sectionEnter(320)}>
           <Box style={styles.footer}>
-            <Text
-              variant="caption"
-              style={{ opacity: opacity.inactive, color: color.muted }}
-            >
+            <Text variant="caption" style={{ color: color.muted }}>
               Made by the Ekwe team
             </Text>
           </Box>
@@ -863,6 +863,8 @@ export default function ProfileScreen(): React.JSX.Element {
                   borderColor: color.border,
                 }}
                 feedback="none"
+                accessibilityRole="button"
+                accessibilityLabel="Cancel account deletion"
               >
                 <Text
                   variant="body"
@@ -885,6 +887,16 @@ export default function ProfileScreen(): React.JSX.Element {
                   opacity: deleteConfirmText === "DELETE" ? 1 : 0.4,
                 }}
                 feedback="none"
+                accessibilityRole="button"
+                accessibilityLabel="Delete account permanently"
+                accessibilityState={{
+                  disabled: deleteConfirmText !== "DELETE",
+                }}
+                accessibilityHint={
+                  deleteConfirmText === "DELETE"
+                    ? "Permanently deletes your account"
+                    : "Type DELETE above to enable this button"
+                }
               >
                 <Text
                   variant="body"

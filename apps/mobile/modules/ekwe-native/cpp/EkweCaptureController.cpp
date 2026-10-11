@@ -127,7 +127,12 @@ bool CaptureController::feed_pcm(const int16_t* data, size_t num_samples) {
     // audio mid-recording.
     while (num_samples > 0 && active_) {
         const size_t room = reserve_staging(num_samples);
-        if (room == 0) break;
+        if (room == 0) {
+            // Staging is full and process_staged_frames drained nothing, which
+            // only happens once the encoder has stopped consuming. Report the
+            // loss instead of returning active_ and implying the audio landed.
+            return false;
+        }
 
         const size_t chunk = num_samples < room ? num_samples : room;
         std::memcpy(staging_buffer_.data() + staging_write_pos_, data,
@@ -147,7 +152,7 @@ bool CaptureController::feed_pcm_float(const float* data, size_t num_samples) {
 
     while (num_samples > 0 && active_) {
         const size_t room = reserve_staging(num_samples);
-        if (room == 0) break;
+        if (room == 0) return false;
 
         const size_t chunk = num_samples < room ? num_samples : room;
         int16_t* dest = staging_buffer_.data() + staging_write_pos_;
@@ -170,8 +175,11 @@ bool CaptureController::feed_pcm_float(const float* data, size_t num_samples) {
 }
 
 bool CaptureController::stop() {
-    if (!active_) return false;
-    active_ = false;
+    // exchange rather than check-then-set: process_frame can call stop() from
+    // inside feed_pcm (the VAD auto-stop path), so a second stop can arrive
+    // while this one is still flushing. Only the caller that flips the flag
+    // proceeds.
+    if (!active_.exchange(false)) return false;
 
     // Flush the staging buffer, zero-padding the last partial frame.
     const size_t samples_per_frame = frame_size_ * channels_;
@@ -200,6 +208,12 @@ bool CaptureController::stop() {
         if (!speech_started_ && !preroll_.empty()) {
             flush_preroll();
         }
+        // Drop any trailing silence instead of encoding it: the speaker stopped
+        // during a pause, so the dead air belongs in the waveform only as an
+        // absence. Encoding it would lengthen the file and hand a receiver a
+        // flat segment at the end. The preroll case above still guarantees at
+        // least one packet when nothing was ever spoken.
+        tail_silence_.clear();
         ogg_muxer_.finalize();
 
         // Derive the waveform from the file we just finished writing, using the
@@ -285,6 +299,28 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
         return;
     }
 
+    // FILE mode: hold trailing silence until the VAD hears speech again, so a
+    // pause between sentences is only encoded if the speaker actually resumes.
+    // A take that stops mid-pause therefore ends on the last spoken frame
+    // instead of a flat run of zeros, which is what turns a voice note into a
+    // straight line in a receiver's waveform view.
+    if (!is_speech_frame && speech_started_) {
+        const size_t cap = static_cast<size_t>(kTailSilenceMs) * sample_rate_ / 1000 * channels_;
+        tail_silence_.insert(tail_silence_.end(), scratch_buffer.begin(),
+                             scratch_buffer.begin() + total);
+        if (tail_silence_.size() > cap) {
+            // Keep the most recent window: the pause we drop is the oldest part
+            // of a long one, and keeping the tail preserves the boundary into
+            // whatever speech ends it.
+            tail_silence_.erase(tail_silence_.begin(),
+                                tail_silence_.begin() + (tail_silence_.size() - cap));
+        }
+        return;
+    }
+    if (is_speech_frame && !tail_silence_.empty()) {
+        flush_tail_silence();
+    }
+
     // FILE mode: hold the opening silence until the VAD hears speech.
     if (!speech_started_) {
         preroll_.insert(preroll_.end(), scratch_buffer.begin(),
@@ -317,6 +353,16 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
     encode_frame_to_ogg(scratch_buffer.data(), total);
 }
 
+void CaptureController::flush_tail_silence() {
+    const size_t per_frame = frame_size_ * channels_;
+    size_t offset = 0;
+    while (offset + per_frame <= tail_silence_.size()) {
+        encode_frame_to_ogg(tail_silence_.data() + offset, per_frame);
+        offset += per_frame;
+    }
+    tail_silence_.clear();
+}
+
 void CaptureController::flush_preroll() {
     const size_t per_frame = frame_size_ * channels_;
     size_t offset = 0;
@@ -347,7 +393,7 @@ void CaptureController::emit_event(CaptureEvent event, const uint8_t* data, size
     event_data.event = event;
     event_data.rms = current_rms_;
     if (data && size > 0) {
-        event_data.data.assign(data, data + size);
+        event_data.data = ByteView{data, size};
     }
     callback_(event_data);
 }

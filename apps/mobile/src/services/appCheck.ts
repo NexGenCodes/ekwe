@@ -12,20 +12,17 @@ let appCheckInstance: AppCheck | undefined;
 export const initializeAppCheck = (): void => {
   if (initialized) return;
   try {
-    const debugToken = process.env.EXPO_PUBLIC_APP_CHECK_DEBUG_TOKEN;
-    const useDebugProvider = Boolean(debugToken) || __DEV__;
+    const useDebugProvider = __DEV__;
 
     const provider = new ReactNativeFirebaseAppCheckProvider();
     provider.configure({
       android: {
         provider: useDebugProvider ? "debug" : "playIntegrity",
-        ...(debugToken ? { debugToken } : {}),
       },
       apple: {
         provider: useDebugProvider
           ? "debug"
           : "appAttestWithDeviceCheckFallback",
-        ...(debugToken ? { debugToken } : {}),
       },
       web: {
         provider: "reCaptchaV3",

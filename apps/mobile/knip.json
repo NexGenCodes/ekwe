@@ -4,6 +4,5 @@
     "modules/ekwe-native/app.plugin.js",
     "targets/share/expo-target.config.js"
   ],
-  "ignoreBinaries": ["adb"],
   "ignoreExportsUsedInFile": true
 }

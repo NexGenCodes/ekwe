@@ -141,6 +141,7 @@ export default function ResultScreen(): React.JSX.Element {
           </Box>
           <Pressable
             onPress={() => router.back()}
+            accessibilityLabel="Close"
             style={styles.closeButton}
             hitSlop={spacing.md}
           >

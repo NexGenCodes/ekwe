@@ -14,13 +14,14 @@ export interface UseHistoryReturn {
   loadMore: () => Promise<void>;
   hasMore: boolean;
   isFetchingNextPage: boolean;
+  isInitialLoading: boolean;
   refetch: () => Promise<void>;
 }
 
 export const useHistory = (): UseHistoryReturn => {
   const entries = useValue(() => sortedHistory$.get());
   const userId = useValue(() => auth$.user.get()?.id);
-  const { loadMore, hasMore, isFetchingNextPage, refetch } =
+  const { loadMore, hasMore, isFetchingNextPage, isInitialLoading, refetch } =
     useHistoryQuery(userId);
 
   const deleteEntry = useCallback(
@@ -65,6 +66,7 @@ export const useHistory = (): UseHistoryReturn => {
     loadMore,
     hasMore,
     isFetchingNextPage,
+    isInitialLoading,
     refetch,
   };
 };

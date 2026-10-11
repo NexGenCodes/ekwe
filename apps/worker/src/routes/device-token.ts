@@ -3,41 +3,51 @@ import {
   registerPushTokenRequestSchema,
 } from "@ekwe/shared";
 import { Env } from "@/core/types";
-import { safeParseJSON } from "@/core/guards";
-import { supabasePost } from "@/services/supabase";
+import { describeError, retryOnConnectionLoss } from "@/db/retry";
+import { pushTokens } from "@ekwe/db/schema";
+import { sql } from "drizzle-orm";
+import type { z } from "zod";
 
 import { type AuthResult } from "@/core/auth";
+import { logger } from "@/core/logger";
 
 export async function handleRegisterDeviceToken(
-  request: Request,
+  body: z.infer<typeof registerPushTokenRequestSchema>,
   env: Env,
   auth: AuthResult | null,
 ): Promise<Response> {
-  const parsed = await safeParseJSON<unknown>(request);
-  if (!parsed.ok) return parsed.response;
+  const values = {
+    pushToken: body.push_token,
+    platform: body.platform,
+    appVersion: body.app_version ?? null,
+    userId: auth?.userId ?? null,
+  };
 
-  const body = registerPushTokenRequestSchema.safeParse(parsed.data);
-  if (!body.success) {
-    return Response.json(
-      { error: WORKER_ERROR_CODES.INVALID_BODY },
-      { status: 400 },
+  try {
+    await retryOnConnectionLoss(
+      (client) =>
+        client
+          .insert(pushTokens)
+          .values(values)
+          .onConflictDoUpdate({
+            target: pushTokens.pushToken,
+            set: {
+              platform: values.platform,
+              appVersion: values.appVersion,
+              isActive: true,
+              lastUsedAt: sql`now()`,
+              // Keeps the recorded owner, so a token can only be claimed while
+              // unowned: no auth header cannot detach it, and another account
+              // cannot re-point it. Anonymous registration still works.
+              userId: sql`COALESCE(${pushTokens.userId}, ${values.userId}::uuid)`,
+            },
+          }),
+      env,
     );
-  }
-
-  const res = await supabasePost(env, "/rest/v1/rpc/upsert_push_token", {
-    p_push_token: body.data.push_token,
-    p_platform: body.data.platform,
-    p_app_version: body.data.app_version ?? null,
-    ...(auth?.userId ? { p_user_id: auth.userId } : {}),
-  });
-
-  if (!res) {
-    return Response.json(
-      { error: WORKER_ERROR_CODES.SERVICE_UNAVAILABLE },
-      { status: 503 },
-    );
-  }
-  if (!res.ok) {
+  } catch (error) {
+    logger.error("[device-token] failed to upsert push token", {
+      error: describeError(error),
+    });
     return Response.json(
       { error: WORKER_ERROR_CODES.SERVER_ERROR },
       { status: 502 },

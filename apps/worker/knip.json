@@ -4,5 +4,6 @@
     "src/__tests__/durable/main.ts",
     "src/__tests__/helpers/check-providers.d.mts"
   ],
-  "ignoreDependencies": ["cloudflare"]
+  "ignoreDependencies": ["cloudflare"],
+  "ignoreExportsUsedInFile": true
 }

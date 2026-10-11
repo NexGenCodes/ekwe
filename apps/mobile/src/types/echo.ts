@@ -7,16 +7,7 @@ export type EchoStep =
   | "FullResult"
   | "Error";
 
-export interface SharedFile {
-  value: string;
-  type: string;
-  mimeType: string;
-}
-
 export interface EchoProps {
-  value?: SharedFile[];
-  type?: string;
-
   audioUri?: string;
   mimeType?: string;
   fileName?: string;

@@ -7,6 +7,13 @@ vi.mock("jose", () => ({
   createRemoteJWKSet: vi.fn(() => vi.fn()),
 }));
 
+function mockJwt(payload: Record<string, unknown>): void {
+  vi.mocked(jwtVerify).mockResolvedValue({
+    payload,
+    protectedHeader: { alg: "HS256" },
+  });
+}
+
 import { jwtVerify } from "jose";
 
 describe("authenticate()", () => {
@@ -17,12 +24,10 @@ describe("authenticate()", () => {
   });
 
   test("returns AuthResult with FREE tier for non-pro user", async () => {
-    (jwtVerify as any).mockResolvedValue({
-      payload: {
-        sub: "user-123",
-        email: "user@example.com",
-        app_metadata: { is_pro: false },
-      },
+    mockJwt({
+      sub: "user-123",
+      email: "user@example.com",
+      app_metadata: { is_pro: false },
     });
 
     const result = await authenticate("valid-token", env);
@@ -33,12 +38,10 @@ describe("authenticate()", () => {
   });
 
   test("returns AuthResult with PREMIUM tier for pro user", async () => {
-    (jwtVerify as any).mockResolvedValue({
-      payload: {
-        sub: "user-456",
-        email: "pro@example.com",
-        app_metadata: { is_pro: true },
-      },
+    mockJwt({
+      sub: "user-456",
+      email: "pro@example.com",
+      app_metadata: { is_pro: true },
     });
 
     const result = await authenticate("pro-token", env);
@@ -47,27 +50,23 @@ describe("authenticate()", () => {
   });
 
   test("returns null when payload has no sub claim", async () => {
-    (jwtVerify as any).mockResolvedValue({
-      payload: { email: "no-sub@example.com" },
-    });
+    mockJwt({ email: "no-sub@example.com" });
 
     const result = await authenticate("no-sub-token", env);
     expect(result).toBeNull();
   });
 
   test("returns null when jwtVerify throws (invalid/expired token)", async () => {
-    (jwtVerify as any).mockRejectedValue(new Error("jwt malformed"));
+    vi.mocked(jwtVerify).mockRejectedValue(new Error("jwt malformed"));
 
     const result = await authenticate("bad-token", env);
     expect(result).toBeNull();
   });
 
   test("handles missing email gracefully as empty string", async () => {
-    (jwtVerify as any).mockResolvedValue({
-      payload: {
-        sub: "user-no-email",
-        app_metadata: { is_pro: false },
-      },
+    mockJwt({
+      sub: "user-no-email",
+      app_metadata: { is_pro: false },
     });
 
     const result = await authenticate("no-email-token", env);
@@ -76,12 +75,10 @@ describe("authenticate()", () => {
   });
 
   test("jwtVerify called with correct issuer and audience", async () => {
-    (jwtVerify as any).mockResolvedValue({
-      payload: {
-        sub: "user-999",
-        email: "check@example.com",
-        app_metadata: { is_pro: false },
-      },
+    mockJwt({
+      sub: "user-999",
+      email: "check@example.com",
+      app_metadata: { is_pro: false },
     });
 
     await authenticate("check-token", env);

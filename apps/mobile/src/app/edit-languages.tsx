@@ -5,7 +5,7 @@ import { View } from "react-native";
 import Animated from "react-native-reanimated";
 
 import { Button, LanguageSelectionGrid } from "@/components";
-import { Box, ScrollArea, Text } from "@/components/ui";
+import { Box, Text } from "@/components/ui";
 import { usePermissions } from "@/hooks";
 import { useStyles, useTokens } from "@/hooks/ui";
 import type { Tokens } from "@/hooks/ui";
@@ -33,9 +33,8 @@ export default function EditLanguagesScreen(): React.ReactElement {
     subtitle: {
       color: t.color.muted,
     },
-    scrollView: {
+    gridWrapper: {
       flex: 1,
-      paddingHorizontal: t.spacing.lg,
     },
     bottomSection: {
       paddingHorizontal: t.spacing.lg,
@@ -82,17 +81,14 @@ export default function EditLanguagesScreen(): React.ReactElement {
         </Text>
       </Animated.View>
 
-      <ScrollArea
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
-      >
+      <Box style={styles.gridWrapper}>
         <LanguageSelectionGrid
           selected={selected}
           onToggle={toggleLanguage}
           isMaxed={isMaxed}
+          horizontalInset={spacing.lg}
         />
-      </ScrollArea>
+      </Box>
 
       <Box style={styles.bottomSection}>
         <Box

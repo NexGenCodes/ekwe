@@ -19,7 +19,7 @@ import { EmptyState, IconContainer } from "@/components";
 import { HistoryListSection } from "@/components/history/HistoryListSection";
 import { Box, Text, Pressable } from "@/components/ui";
 import { duration, shadows } from "@/constants";
-import { borderRadius, iconSize } from "@/constants/sizes";
+import { borderRadius, iconSize, touchTarget } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import {
@@ -56,11 +56,19 @@ export default function HistoryScreen(): React.JSX.Element {
     loadMore,
     hasMore,
     isFetchingNextPage,
+    isInitialLoading,
     deleteEntry,
     refetch: refetchHistory,
   } = useHistory();
-  const { query, setQuery, filter, setFilter, filteredEntries, isSearching } =
-    useHistorySearch(entries);
+  const {
+    query,
+    setQuery,
+    filter,
+    setFilter,
+    filteredEntries,
+    isSearching,
+    isSearchPending,
+  } = useHistorySearch(entries);
   const [isFocused, setIsFocused] = React.useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -69,7 +77,7 @@ export default function HistoryScreen(): React.JSX.Element {
   const listRef = useRef<FlashListRef<ListItem>>(null!);
   const insets = useSafeAreaInsets();
 
-  const pullError = useValue(() => SyncService.pullError.get());
+  const hasPullError = useValue(() => SyncService.pullError.get() !== null);
 
   const deadCount = useValue(() => SyncService.deadCount.get());
 
@@ -175,7 +183,7 @@ export default function HistoryScreen(): React.JSX.Element {
         </Box>
 
         {}
-        {pullError ? (
+        {hasPullError ? (
           <Box
             style={[
               styles.syncErrorBanner,
@@ -190,7 +198,8 @@ export default function HistoryScreen(): React.JSX.Element {
               numberOfLines={2}
               style={[styles.syncErrorText, { color: color.error }]}
             >
-              Couldn't sync with cloud. {pullError}
+              Couldn't sync with cloud. Your history is still saved on this
+              device.
             </Text>
             <Pressable
               onPress={onRefresh}
@@ -271,6 +280,7 @@ export default function HistoryScreen(): React.JSX.Element {
                   triggerHaptic();
                   setQuery("");
                 }}
+                accessibilityLabel="Clear search"
                 hitSlop={spacing.md}
                 style={({ pressed }) => [
                   styles.clearButton,
@@ -293,6 +303,8 @@ export default function HistoryScreen(): React.JSX.Element {
                   triggerHaptic();
                   setFilter(option);
                 }}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: filter === option }}
                 style={[
                   styles.chip,
                   filter === option
@@ -323,7 +335,10 @@ export default function HistoryScreen(): React.JSX.Element {
         </Box>
       </Box>
 
-      {filteredEntries.length === 0 && listData.length === 0 ? (
+      {filteredEntries.length === 0 &&
+      listData.length === 0 &&
+      !isInitialLoading &&
+      !isSearchPending ? (
         <Animated.View
           entering={FadeIn.duration(duration.normal)}
           style={styles.emptyStateContainer}
@@ -362,6 +377,7 @@ export default function HistoryScreen(): React.JSX.Element {
           listData={listData}
           isRefreshing={isRefreshing}
           onRefresh={onRefresh}
+          isInitialLoading={isInitialLoading}
           isSearching={isSearching}
           hasMore={hasMore}
           isFetchingNextPage={isFetchingNextPage}
@@ -436,6 +452,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   chip: {
+    minHeight: touchTarget.minimum,
+    justifyContent: "center",
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.full,
@@ -446,7 +464,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     alignItems: "center",
     justifyContent: "center",
-    paddingBottom: spacing["6xl"],
   },
   emptyStateCard: {
     width: "100%",

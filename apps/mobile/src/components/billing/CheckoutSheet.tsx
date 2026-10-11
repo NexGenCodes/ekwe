@@ -1,13 +1,8 @@
-import React, { useCallback, useEffect, useRef } from "react";
-import { PayWithFlutterwave } from "flutterwave-react-native-sdk";
-import type { ComponentProps } from "react";
-
+import React, { useEffect, useCallback } from "react";
+import { Modal, Linking, View, ActivityIndicator } from "react-native";
 import type { CheckoutSession } from "@/services/flutterwave";
-import { getFlutterwavePublicKey } from "@/services/flutterwave";
 import { AppAlert } from "@/utils/alert";
-import type { FlutterwaveCurrency } from "@ekwe/shared/money";
-
-type SdkOptions = ComponentProps<typeof PayWithFlutterwave>["options"];
+import { Box, Text, Pressable } from "@/components/ui";
 
 interface CheckoutSheetProps {
   visible: boolean;
@@ -16,31 +11,12 @@ interface CheckoutSheetProps {
 
   plan: string | null;
 
-  email: string;
   onDismiss: () => void;
   onComplete: (data: {
     status: string | null;
     tx_ref: string | null;
     transaction_id: string | null;
   }) => void;
-}
-
-const BASE_PAYMENT_OPTIONS = ["card", "banktransfer", "ussd", "account"];
-
-const MOBILE_MONEY_OPTIONS: Partial<Record<FlutterwaveCurrency, string[]>> = {
-  KES: ["mpesa"],
-  GHS: ["mobilemoneyghana"],
-  UGX: ["mobilemoneyuganda"],
-  RWF: ["mobilemoneyrwanda"],
-  ZMW: ["mobilemoneyzambia"],
-  TZS: ["mobilemoneytanzania"],
-  XOF: ["mobilemoneyxof"],
-  XAF: ["mobilemoneyxaf"],
-};
-
-export function getPaymentOptions(currency: string): string {
-  const extra = MOBILE_MONEY_OPTIONS[currency as FlutterwaveCurrency] ?? [];
-  return [...BASE_PAYMENT_OPTIONS, ...extra].join(",");
 }
 
 const PLAN_LABELS: Record<string, string> = {
@@ -52,84 +28,99 @@ export function CheckoutSheet({
   visible,
   session,
   plan,
-  email,
   onDismiss,
   onComplete,
 }: CheckoutSheetProps): React.ReactElement | null {
-  const triggerPressRef = useRef<(() => void) | null>(null);
-
   useEffect(() => {
-    if (visible && session) {
-      requestAnimationFrame(() => triggerPressRef.current?.());
-    }
-  }, [visible, session]);
-
-  const handleInitializeError = useCallback(
-    (err: unknown) => {
-      const message =
-        err &&
-        typeof err === "object" &&
-        "message" in err &&
-        typeof err.message === "string"
-          ? err.message
-          : "Payment could not be started.";
-      AppAlert.error("Checkout Error", message);
-      onDismiss();
-    },
-    [onDismiss],
-  );
-
-  const handleRedirect = useCallback(
-    (data: { status: string; tx_ref: string; transaction_id?: string }) => {
-      onComplete({
-        status: data.status,
-        tx_ref: data.tx_ref,
-        transaction_id: data.transaction_id ?? null,
+    if (visible && session?.link) {
+      Linking.openURL(session.link).catch((_err) => {
+        AppAlert.error("Checkout Error", "Failed to open payment browser");
+        onDismiss();
       });
-    },
-    [onComplete],
-  );
+    }
+  }, [visible, session, onDismiss]);
+
+  const handleVerify = useCallback(() => {
+    if (session) {
+      onComplete({
+        status: null, // let backend polling verify
+        tx_ref: session.tx_ref,
+        transaction_id: null,
+      });
+    }
+  }, [onComplete, session]);
 
   if (!visible || !session) return null;
 
   const planLabel =
     PLAN_LABELS[plan?.replace("ekwe_pro_", "") ?? "monthly"] ?? "Monthly";
 
-  const options: SdkOptions = {
-    amount: session.amount,
-    currency: session.currency,
-    payment_options: getPaymentOptions(session.currency),
-
-    authorization: session.public_key || getFlutterwavePublicKey(),
-    tx_ref: session.tx_ref,
-    customer: {
-      email,
-    },
-
-    meta: {
-      plan,
-      amount: session.amount,
-      currency: session.currency,
-    },
-    customizations: {
-      title: "Ekwe Pro",
-      description: `Upgrade to Ekwe Pro (${planLabel.toLowerCase()})`,
-    },
-  } as SdkOptions;
-
   return (
-    <>
-      <PayWithFlutterwave
-        key={session.tx_ref}
-        options={options}
-        customButton={({ onPress }) => {
-          triggerPressRef.current = onPress;
-          return null;
+    <Modal visible={visible} animationType="slide" transparent>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: "rgba(0,0,0,0.6)",
+          justifyContent: "center",
+          padding: 20,
         }}
-        onInitializeError={handleInitializeError}
-        onAbort={onDismiss}
-        onRedirect={handleRedirect}
-      />
-    </>
+      >
+        <Box
+          style={{
+            backgroundColor: "#1C1C1E",
+            padding: 24,
+            borderRadius: 16,
+            alignItems: "center",
+          }}
+        >
+          <ActivityIndicator
+            size="large"
+            color="#FFFFFF"
+            style={{ marginBottom: 20 }}
+          />
+          <Text
+            variant="heading2"
+            style={{ color: "#FFFFFF", marginBottom: 12, textAlign: "center" }}
+          >
+            Awaiting Payment
+          </Text>
+          <Text
+            variant="body"
+            style={{ color: "#A1A1AA", textAlign: "center", marginBottom: 24 }}
+          >
+            Your secure {planLabel} checkout opened in a browser window. Once
+            you complete the payment, tap the button below.
+          </Text>
+
+          <Pressable
+            onPress={handleVerify}
+            style={{
+              backgroundColor: "#007AFF",
+              padding: 16,
+              borderRadius: 12,
+              width: "100%",
+              alignItems: "center",
+              marginBottom: 12,
+            }}
+          >
+            <Text
+              variant="body"
+              style={{ color: "#FFFFFF", fontWeight: "bold" }}
+            >
+              I've Completed Payment
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={onDismiss}
+            style={{ padding: 16, width: "100%", alignItems: "center" }}
+          >
+            <Text variant="body" style={{ color: "#FF3B30" }}>
+              Cancel Checkout
+            </Text>
+          </Pressable>
+        </Box>
+      </View>
+    </Modal>
   );
 }

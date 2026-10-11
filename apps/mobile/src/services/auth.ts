@@ -8,6 +8,7 @@ import { Db } from "@/services/db";
 import { mmkv } from "@/services/mmkv";
 import { mirrorSessionToSharedContainer } from "@/services/sharedContainer";
 import { supabase, setupAppStateListener } from "@/services/supabase";
+import { resetUserScopedState } from "@/store/resetUserScoped";
 import {
   auth$,
   authActions,
@@ -16,7 +17,7 @@ import {
 } from "@/store";
 import { isIOS } from "@/utils";
 import { track, identify, AnalyticsEvents } from "@/utils/analytics";
-import logger, { captureSentryMessage } from "@/utils/logger";
+import logger, { addSentryBreadcrumb } from "@/utils/logger";
 import { getWorkerUrl } from "@/utils/http";
 import { getAppCheckToken } from "@/services/appCheck";
 
@@ -105,9 +106,11 @@ export const initAuth = async (): Promise<void> => {
     logger.info(`Auth state changed: ${event}`, session?.user?.id);
     authActions.setSession(session);
     if (event === "SIGNED_IN") {
-      captureSentryMessage("auth.sign_in");
+      // A sign-in is a normal outcome; captureMessage filed it as a Sentry
+      // issue on every sign-in.
+      addSentryBreadcrumb("auth", "sign_in");
     } else if (event === "SIGNED_OUT") {
-      captureSentryMessage("auth.sign_out");
+      addSentryBreadcrumb("auth", "sign_out");
     }
     mmkv.set(SESSION_CACHE_KEY, session !== null);
 
@@ -229,7 +232,10 @@ export const sendOtp = async (email: string): Promise<AuthResult> => {
         res = await fetch(`${workerUrl}/auth/otp`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email.trim(), appCheckToken }),
+          body: JSON.stringify({
+            email: email.trim(),
+            ...(appCheckToken ? { appCheckToken } : {}),
+          }),
           signal: controller.signal,
         });
       } finally {
@@ -526,6 +532,8 @@ export const signOut = async (): Promise<AuthResult> => {
         );
       }
     }
+
+    resetUserScopedState();
 
     const { error } = await supabase.auth.signOut();
     try {

@@ -17,6 +17,8 @@ import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
+import expo.modules.ekwenative.orb.OrbConsent
+import expo.modules.ekwenative.orb.OrbCaptureService
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlin.concurrent.thread
@@ -27,20 +29,19 @@ class EkweNativeModule : Module() {
   private var gainControl: AutomaticGainControl? = null
 
   // AudioRecord capture state. These are read/written from three threads — the
-  // JS thread (start/stop), the AudioRecord loop, and the C++ capture thread
+  // JS thread (start/stop), the read loop, and the C++ capture thread
   // (emitVadSilenceFromNative) — so every field needs volatile visibility to
   // avoid stale reads (e.g. the loop never seeing a stop, or the VAD stop and a
-  // concurrent JS stop racing on release).
+  // concurrent JS stop racing on release). The read loop itself lives in
+  // PcmCaptureLoop, shared with Orb playback capture.
   @Volatile
   private var audioRecord: AudioRecord? = null
   @Volatile
+  private var captureLoopRef: PcmCaptureLoop? = null
+  @Volatile
   private var isAudioRecording = false
   @Volatile
-  private var recordingThread: Thread? = null
-  @Volatile
   private var recordingStartedAt = 0L
-  @Volatile
-  private var currentAmplitude: Float = 0f
 
   // Audio focus state — request GAIN_TRANSIENT before recording so other apps
   // (music, podcasts) duck, and abandon when recording stops. Pre-API 26
@@ -53,20 +54,53 @@ class EkweNativeModule : Module() {
   private val legacyFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
     if (focusChange != AudioManager.AUDIOFOCUS_GAIN && isAudioRecording) {
       Log.w("EkweAudio", "Audio focus lost ($focusChange), stopping recording")
-      // performStop is idempotent and safe from any thread
-      performStop()
-      // Notify JS to update UI state
-      nativeDispatchVadSilence()
+      // The listener is delivered on the main looper, and performStop() joins
+      // the capture thread and re-decodes the finished Ogg to derive the
+      // waveform. Doing that inline is an ANR on an ordinary event like an
+      // incoming call, so the teardown moves off the main thread.
+      thread(name = "EkweFocusTeardown") {
+        performStop()
+        nativeDispatchVadSilence()
+      }
     }
   }
 
   companion object {
     var instance: EkweNativeModule? = null
 
-    // Authoritative limit lives in @ekwe/shared/plans (PREMIUM_LIMITS.
-    // maxAudioBytes); JS passes it in at call time so native never hardcodes it.
-    // This is only a defensive default if a caller omits the argument.
+    // The authoritative limit is PREMIUM_LIMITS.maxAudioBytes in
+    // @ekwe/shared/plans, passed in per call; this is a fallback for a caller
+    // that omits it.
     private const val DEFAULT_MAX_AUDIO_BYTES = 10_485_760L
+
+    // Matches PREMIUM_LIMITS.dictationDurationMs (30 min). Free tier passes a
+    // tighter value via maxDurationMs in the options bundle.
+    private const val DEFAULT_MAX_DURATION_MS = 30L * 60L * 1000L
+
+    // Generous input safety cap from @ekwe/shared/plans (MAX_AUDIO_INPUT_BYTES).
+    // The tier cap applies to the transcoded output, not the original file.
+    private const val MAX_AUDIO_INPUT_BYTES = 100L * 1024L * 1024L
+
+    // Source duration without decoding; AMR falls back to the decode ceiling.
+    private fun probeDurationMs(context: Context, uri: android.net.Uri): Long? {
+        return try {
+            val retriever = android.media.MediaMetadataRetriever()
+            try {
+                when (uri.scheme) {
+                    "content" -> retriever.setDataSource(context, uri)
+                    "file", null -> retriever.setDataSource(uri.path)
+                    else -> return null
+                }
+                retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull()
+            } finally {
+                try { retriever.release() } catch (_: IllegalStateException) {}
+            }
+        } catch (t: Throwable) {
+            Log.w("EkweNative", "probeDurationMs failed for $uri", t)
+            null
+        }
+    }
 
     init {
       System.loadLibrary("ekwe_native_jni")
@@ -108,9 +142,12 @@ class EkweNativeModule : Module() {
 
     // --- Native Audio Processing (JNI) ---
     @JvmStatic external fun transcodeToOpusWithWaveformJNI(inputPath: String, outputPath: String, maxAudioBytes: Long, frameMs: Int): Array<Any?>
+    @JvmStatic external fun transcodeToVorbisWithWaveformJNI(inputPath: String, outputPath: String, maxAudioBytes: Long): Array<Any?>
+    @JvmStatic external fun transcodeToDualWithWaveformJNI(inputPath: String, opusPath: String, vorbisPath: String, maxAudioBytes: Long): Array<Array<Any?>>
+    @JvmStatic external fun probeAudioDurationMsJNI(inputPath: String): Int
     @JvmStatic external fun encodePcmToOpusJNI(pcmData: ShortArray, sampleRate: Int, channels: Int, outputPath: String): Array<Any?>
 
-    // New: memory-based decode (no temp file for content:// → FLAC)
+    // memory-based decode (no temp file for content:// shared audio)
     @JvmStatic external fun transcodeFromMemoryJNI(data: ByteArray, outputPath: String, maxAudioBytes: Long): Array<Any?>
 
     // Capture controller JNI (dual-path: file or live)
@@ -131,6 +168,19 @@ class EkweNativeModule : Module() {
 
     OnDestroy {
       instance = null
+    }
+
+    // MediaProjection consent. Routed through startActivityForResult rather than
+    // an ActivityResultLauncher because a launcher must be registered before
+    // the host activity reaches STARTED, and this module is first touched from
+    // JS long after the activity is RESUMED.
+    OnActivityResult { _, payload ->
+      val context = appContext.reactContext ?: return@OnActivityResult
+      if (!OrbConsent.accepts(payload.requestCode)) return@OnActivityResult
+      if (payload.resultCode != android.app.Activity.RESULT_OK || payload.data == null) {
+        return@OnActivityResult
+      }
+      OrbConsent.start(context, payload.resultCode, payload.data)
     }
 
     // --- Echo (Share Intent) Methods ---
@@ -256,6 +306,19 @@ class EkweNativeModule : Module() {
     //     "codecs=opus" before it treats the file as a voice message.
     // Anything else lands as an ordinary audio attachment.
     //
+    // This intent carries the stream and NOTHING else. Attaching EXTRA_TEXT
+    // alongside EXTRA_STREAM makes it a composite send — "some text plus an
+    // attachment" — and WhatsApp then classifies it as a document and renders
+    // the file card instead of a voice note, waveform included. The MIME above
+    // is only consulted for a stream-only send, so the caption has to be dropped
+    // here rather than merely being secondary. iOS gets away with the same
+    // caption because UIActivityViewController hands the target two independent
+    // items; Android folds them into one intent, which is why only Android ever
+    // showed a file. A transcript can still be shared, as its own text share.
+    //
+    // `text` is accepted and ignored so the JS signature stays in step with
+    // iOS, which does pass the caption.
+    //
     // Resolves once the chooser is on screen, not once the user picks a target:
     // callers only need to know the share was launched, and the receiving app
     // may still be reading the file long after this returns.
@@ -282,7 +345,12 @@ class EkweNativeModule : Module() {
           putExtra(Intent.EXTRA_STREAM, contentUri)
           // setType, deliberately NOT setTypeAndNormalize — see note above.
           setType(mimeType)
-          if (!text.isNullOrBlank()) putExtra(Intent.EXTRA_TEXT, text)
+          // Deliberately no EXTRA_TEXT. See the stream-only note above: a
+          // caption on this intent costs the voice-note rendering. Logged so the
+          // dropped caption is visible when a share is debugged.
+          if (!text.isNullOrBlank()) {
+            Log.d("EkweNative", "shareAudio: dropping caption to keep the PTT send stream-only")
+          }
           addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
@@ -367,35 +435,50 @@ class EkweNativeModule : Module() {
     }
 
     // ─── Resolve content:// URI → Ogg Opus directly (no temp file) ─────
-    AsyncFunction("resolveAndTranscodeToOpus") { uriString: String, outputPath: String, maxAudioBytes: Long ->
+    AsyncFunction("resolveAndTranscodeToOpus") { uriString: String, outputPath: String, maxAudioBytes: Long, options: Map<String, Any?>? ->
       val context = appContext.reactContext ?: return@AsyncFunction mapOf(
         "success" to false, "error" to "No context", "durationMs" to 0, "waveform" to emptyList<Float>()
       )
-      val limit = sanitizeMaxAudioBytes(maxAudioBytes)
+      val outputCap = sanitizeMaxAudioBytes(maxAudioBytes)
+      val inputCap = MAX_AUDIO_INPUT_BYTES
+      val maxDurationMs =
+        (options?.get("maxDurationMs") as? Number)?.toLong()?.takeIf { it > 0 }
+          ?: DEFAULT_MAX_DURATION_MS
 
       try {
         val uri = android.net.Uri.parse(uriString)
 
-        // Guard: reject oversized content:// sources BEFORE buffering into
-        // memory. Prevents a large shared file from being fully loaded + decoded.
+        // Reject pathological sources before buffering — the duration gate
+        // below is the real policy, this only stops decompression bombs.
         val declaredSize = queryContentSize(context, uri)
-        if (declaredSize != null && declaredSize > limit) {
-          Log.w("EkweNative", "resolveAndTranscodeToOpus rejected: size=$declaredSize over limit")
+        if (declaredSize != null && declaredSize > inputCap) {
+          Log.w("EkweNative", "resolveAndTranscodeToOpus rejected: size=$declaredSize over input cap")
           return@AsyncFunction mapOf(
             "success" to false, "error" to "FILE_TOO_LARGE",
             "durationMs" to 0, "waveform" to emptyList<Float>()
           )
         }
 
+        // Duration gate on the ORIGINAL audio, before any decode work. If
+        // MediaMetadataRetriever can't read it (raw AMR etc.), fall through
+        // and rely on the decode ceiling plus the post-transcode check.
+        val originalDurationMs = probeDurationMs(context, uri)
+        if (originalDurationMs != null && maxDurationMs > 0 && originalDurationMs > maxDurationMs) {
+          Log.w("EkweNative", "resolveAndTranscodeToOpus rejected: duration=${originalDurationMs}ms > limit=${maxDurationMs}ms")
+          return@AsyncFunction mapOf(
+            "success" to false, "error" to "AUDIO_TOO_LONG",
+            "durationMs" to originalDurationMs.toInt(), "waveform" to emptyList<Float>()
+          )
+        }
+
+        // miniaudio handles WAV/MP3/FLAC/Vorbis/AIFF natively; AAC/AMR/3GP/
+        // WebM fall through to the platform decoder when init fails.
         val inputStream = context.contentResolver.openInputStream(uri)
             ?: return@AsyncFunction mapOf(
               "success" to false, "error" to "Cannot open content URI",
               "durationMs" to 0, "waveform" to emptyList<Float>()
             )
 
-        // Bounded read: copy at most limit + 1 bytes so a
-        // provider that lies about its declared size (or omits SIZE entirely)
-        // cannot make us buffer an unbounded stream into memory.
         val bytes = inputStream.use { stream ->
           val buffer = java.io.ByteArrayOutputStream()
           val chunk = ByteArray(DEFAULT_BUFFER_SIZE)
@@ -404,12 +487,8 @@ class EkweNativeModule : Module() {
             val read = stream.read(chunk)
             if (read <= 0) break
             total += read
-            // Hard cap: once total bytes read exceeds the limit we must reject,
-            // not just stop buffering. Breaking before writing the crossing
-            // chunk would silently keep bytes.size <= limit and let the check
-            // below never fire, truncating the transcoded clip without error.
-            if (total > limit) {
-              Log.w("EkweNative", "resolveAndTranscodeToOpus rejected: bytes=$total over limit")
+            if (total > inputCap) {
+              Log.w("EkweNative", "resolveAndTranscodeToOpus rejected: bytes=$total over input cap")
               return@AsyncFunction mapOf(
                 "success" to false, "error" to "FILE_TOO_LARGE",
                 "durationMs" to 0, "waveform" to emptyList<Float>()
@@ -420,11 +499,59 @@ class EkweNativeModule : Module() {
           buffer.toByteArray()
         }
 
-        val result = transcodeFromMemoryJNI(bytes, resolvePath(outputPath), limit)
+        val result = transcodeFromMemoryJNI(bytes, resolvePath(outputPath), inputCap)
         val success = result[0] as Boolean
         val error = result[1] as String
         val durationMs = result[2] as Int
         val waveform = (result[3] as FloatArray).toList()
+
+        if (!success && (error == "MINIAUDIO_INIT_FAILED" || error.startsWith("miniaudio"))) {
+          // AAC/M4A/AMR/3GP — route through the platform decoder.
+          val pcm = PlatformAudioDecoder.decode(context, uri, maxDurationMs)
+          if (pcm != null && pcm.durationMs > maxDurationMs && maxDurationMs > 0) {
+            return@AsyncFunction mapOf(
+              "success" to false, "error" to "AUDIO_TOO_LONG",
+              "durationMs" to pcm.durationMs, "waveform" to emptyList<Float>()
+            )
+          }
+          if (pcm != null) {
+            val encResult = encodePcmToOpusJNI(pcm.samples, pcm.sampleRate, pcm.channels, resolvePath(outputPath))
+            val encSuccess = encResult[0] as Boolean
+            val encError = encResult[1] as String
+            val encDuration = encResult[2] as Int
+            val encWaveform = (encResult[3] as FloatArray).toList()
+            return@AsyncFunction mapOf(
+              "success" to encSuccess,
+              "error" to encError,
+              "durationMs" to encDuration,
+              "waveform" to encWaveform
+            )
+          }
+          return@AsyncFunction mapOf(
+            "success" to false, "error" to "Unsupported audio format",
+            "durationMs" to 0, "waveform" to emptyList<Float>()
+          )
+        }
+
+        if (success && maxDurationMs > 0 && durationMs > maxDurationMs) {
+          java.io.File(resolvePath(outputPath)).delete()
+          return@AsyncFunction mapOf(
+            "success" to false, "error" to "AUDIO_TOO_LONG",
+            "durationMs" to durationMs, "waveform" to emptyList<Float>()
+          )
+        }
+
+        // Tier cap applies to the transcoded output, not the original input.
+        if (success) {
+          val outFile = java.io.File(resolvePath(outputPath))
+          if (outFile.exists() && outFile.length() > outputCap) {
+            outFile.delete()
+            return@AsyncFunction mapOf(
+              "success" to false, "error" to "FILE_TOO_LARGE",
+              "durationMs" to durationMs, "waveform" to emptyList<Float>()
+            )
+          }
+        }
 
         return@AsyncFunction mapOf(
           "success" to success,
@@ -478,11 +605,21 @@ class EkweNativeModule : Module() {
         // VOICE_COMMUNICATION routes the mic through the call-mode DSP path:
         // built-in acoustic echo cancellation, noise suppression and automatic
         // gain control with ~20ms latency — the best production-quality speech
-        // capture for dictation/translation. The manual audiofx effects attached
-        // below are best-effort on top; where the framework already applies them
-        // isAvailable() reports false and the attach is skipped, so there is no
-        // double-processing. Fall back to the raw MIC source on old devices that
-        // don't honor the call-mode source.
+        // capture for dictation/translation. Those effects are applied by the
+        // source itself, so nothing is attached on top.
+        //
+        // Attaching them again used to be guarded by the belief that
+        // isAvailable() reports false once the source already applies them. It
+        // does not: it reports whether an implementation exists on the device,
+        // which is true on essentially every handset. The result was two AEC,
+        // NS and AGC instances in cascade, and the doubled NoiseSuppressor
+        // gated dictation — short bursts separated by pauses — down toward the
+        // noise floor. That survived playback (audible, just quiet) but not
+        // amplitude-envelope rendering, which is what a voice note waveform is
+        // drawn from. Effect state is now left entirely to the source.
+        //
+        // minSdkVersion is 24, so the MIC branch below is unreachable; it stays
+        // only as a guard should that floor ever move.
         val source =
           if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             MediaRecorder.AudioSource.VOICE_COMMUNICATION
@@ -510,48 +647,22 @@ class EkweNativeModule : Module() {
         val sessionId = audioRecord!!.audioSessionId
 
         Log.d("EkweAudio", "startAudioRecording: calling startRecording...")
-        audioRecord?.startRecording()
+        val captureLoop = PcmCaptureLoop("AudioRecord")
+        val started = captureLoop.start(audioRecord!!, nativeOutputPath, isLive)
+        if (!started) {
+          Log.e("EkweAudio", "capture loop refused to start, rolling back")
+          audioRecord?.release()
+          audioRecord = null
+          abandonAudioFocus()
+          return@AsyncFunction mapOf("success" to false, "error" to "Capture start failed")
+        }
+
+        captureLoopRef = captureLoop
         isAudioRecording = true
         recordingStartedAt = System.currentTimeMillis()
-        
-        Log.d("EkweAudio", "startAudioRecording: sessionId=$sessionId, attaching effects...")
-        try {
-          val effStart = System.currentTimeMillis()
-          attachEffectsInternal(sessionId)
-          val effEnd = System.currentTimeMillis()
-          Log.d("EkweAudioPerf", "attachEffectsInternal JNI took ${effEnd - effStart}ms")
-        } catch (e: Exception) {
-          Log.e("EkweAudio", "Failed to attach audio effects", e)
-        }
 
-        Log.d("EkweAudio", "startAudioRecording: recording started, spinning up thread...")
+        Log.d("EkweAudio", "startAudioRecording: recording started on $captureLoop")
 
-        recordingThread = thread(name = "AudioRecord") {
-          try {
-            val buffer = ShortArray(bufferSize / 2)
-            var frameCount = 0
-            Log.d("EkweAudio", "AudioRecord thread: starting loop")
-            while (isAudioRecording) {
-              val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
-              if (read > 0) {
-                frameCount++
-                if (frameCount == 1) Log.d("EkweAudio", "AudioRecord thread: first frame read=$read")
-                nativeFeedPcm(buffer, read)
-                // RMS from native capture controller
-                currentAmplitude = nativeGetAmplitude()
-              } else if (read == AudioRecord.ERROR_INVALID_OPERATION) {
-                Log.w("EkweAudio", "AudioRecord thread: ERROR_INVALID_OPERATION, breaking")
-                break
-              }
-            }
-            Log.d("EkweAudio", "AudioRecord thread: exiting loop, processed $frameCount frames")
-          } catch (e: Exception) {
-            Log.e("EkweAudio", "AudioRecord thread crashed: ${e.message}", e)
-            currentAmplitude = 0f
-          }
-        }
-
-        Log.d("EkweAudio", "startAudioRecording: returning success")
         val methodEnd = System.currentTimeMillis()
         Log.d("EkweAudioPerf", "startAudioRecording JNI took ${methodEnd - methodStart}ms")
         return@AsyncFunction mapOf("success" to true, "error" to "")
@@ -565,8 +676,26 @@ class EkweNativeModule : Module() {
       }
     }
 
+    AsyncFunction("startOrbCapture") { outputPath: String, isLive: Boolean ->
+      val activity = appContext.currentActivity
+        ?: return@AsyncFunction mapOf("success" to false, "error" to "No foreground activity")
+      if (!OrbConsent.request(activity, outputPath, isLive)) {
+        return@AsyncFunction mapOf("success" to false, "error" to "Consent request failed")
+      }
+      mapOf("success" to true, "error" to "")
+    }
+
+    AsyncFunction("stopOrbCapture") {
+      OrbConsent.stop(appContext.reactContext)
+      mapOf("success" to true, "error" to "")
+    }
+
+    AsyncFunction("getOrbPeakAmplitude") {
+      OrbCaptureService.lastPeakAmplitude.toDouble()
+    }
+
     AsyncFunction("getRecordingAmplitude") { ->
-      val amp = currentAmplitude
+      val amp = captureLoopRef?.amplitude ?: 0f
       Log.d("EkweAudio", "getRecordingAmplitude: $amp")
       amp.toDouble()
     }
@@ -617,6 +746,53 @@ class EkweNativeModule : Module() {
       )
     }
 
+    // Same shape as transcodeToOpusWithWaveform, but the artifact on disk is
+    // Vorbis-in-Ogg rather than Opus-in-Ogg. There is no options bag: Vorbis
+    // has no frame-size equivalent, and the bitrate is fixed natively at
+    // kDefaultVorbisBitrateKbps.
+    AsyncFunction("transcodeToVorbisWithWaveform") { inputPath: String, outputPath: String, maxAudioBytes: Long ->
+      val result = transcodeToVorbisWithWaveformJNI(resolvePath(inputPath), resolvePath(outputPath), sanitizeMaxAudioBytes(maxAudioBytes))
+      val success = result[0] as Boolean
+      val error = result[1] as String
+      val durationMs = result[2] as Int
+      val waveform = (result[3] as FloatArray).toList()
+      return@AsyncFunction mapOf(
+        "success" to success,
+        "error" to error,
+        "durationMs" to durationMs,
+        "waveform" to waveform
+      )
+    }
+
+    AsyncFunction("transcodeToDualWithWaveform") { inputPath: String, opusOutputPath: String, vorbisOutputPath: String, maxAudioBytes: Long ->
+      val results = transcodeToDualWithWaveformJNI(
+        resolvePath(inputPath),
+        resolvePath(opusOutputPath),
+        resolvePath(vorbisOutputPath),
+        sanitizeMaxAudioBytes(maxAudioBytes),
+      )
+      val opus = results[0]
+      val vorbis = results[1]
+      return@AsyncFunction mapOf(
+        "opus" to mapOf(
+          "success" to (opus[0] as Boolean),
+          "error" to (opus[1] as String),
+          "durationMs" to (opus[2] as Int),
+          "waveform" to (opus[3] as FloatArray).toList()
+        ),
+        "vorbis" to mapOf(
+          "success" to (vorbis[0] as Boolean),
+          "error" to (vorbis[1] as String),
+          "durationMs" to (vorbis[2] as Int),
+          "waveform" to (vorbis[3] as FloatArray).toList()
+        )
+      )
+    }
+
+    AsyncFunction("probeAudioDurationMs") { inputPath: String ->
+      probeAudioDurationMsJNI(resolvePath(inputPath))
+    }
+
     // --- Audio Effects Methods ---
     AsyncFunction("attachEffects") { audioSessionId: Double ->
       val sessionId = audioSessionId.toInt()
@@ -626,6 +802,15 @@ class EkweNativeModule : Module() {
     AsyncFunction("releaseEffects") { ->
       releaseEffectsInternal()
     }
+
+    AsyncFunction("configureOrb") { config: Map<String, Any?> ->
+      true
+    }
+
+    AsyncFunction("getOrbStatus") {
+      mapOf("running" to false, "hasMediaProjection" to false, "foregroundApp" to null, "lastPeakAmplitude" to 0f)
+    }
+
   }
 
   /**
@@ -693,6 +878,14 @@ class EkweNativeModule : Module() {
     Log.d("EkweAudio", "Audio focus abandoned")
   }
 
+  /**
+   * Opt-in attachment of the platform AEC/NS/AGC to an arbitrary audio session.
+   *
+   * NOT used by the recorder. Capture runs on AudioSource.VOICE_COMMUNICATION,
+   * which applies all three through the call-mode DSP already; attaching here
+   * as well put two of each in cascade. Call this only for a session opened on
+   * a source that does no processing of its own (e.g. MediaRecorder.AudioSource.MIC).
+   */
   private fun attachEffectsInternal(sessionId: Int): Map<String, Boolean> {
     val result = mutableMapOf<String, Boolean>()
     try {
@@ -732,42 +925,27 @@ class EkweNativeModule : Module() {
   }
 
   /**
-   * Releases AudioRecord + effects and stops the native capture controller.
+   * Releases the capture loop + effects and stops the native capture controller.
    * Idempotent and callable from any thread, so both stopAudioRecording (JS
    * thread) and emitVadSilenceFromNative (C++ capture callback, which runs ON
-   * the AudioRecord thread) share one teardown path. When invoked from the
-   * recording thread itself we skip the join — the read loop exits naturally
-   * once isAudioRecording is false. Does NOT read nativeGetLastWaveform():
-   * that buffer is cleared on read, so stopAudioRecording owns it exclusively.
+   * the read loop) share one teardown path. PcmCaptureLoop.stop() skips the
+   * join when called from its own read thread. Does NOT read
+   * nativeGetLastWaveform(): that buffer is cleared on read, so
+   * stopAudioRecording owns it exclusively.
    */
   private fun performStop() = synchronized(this) {
     isAudioRecording = false
 
-    // Unblock the audioRecord.read() loop IMMEDIATELY
-    try {
-      audioRecord?.stop()
-    } catch (_: IllegalStateException) { }
-
-    val thread = recordingThread
-    if (thread != null && thread !== Thread.currentThread()) {
-      thread.interrupt()
-      try {
-        thread.join(500) // Should die instantly now
-      } catch (_: InterruptedException) {
-        thread.interrupt()
-      }
-    }
-    recordingThread = null
+    val loop = captureLoopRef
+    captureLoopRef = null
+    loop?.stop()
 
     audioRecord?.release()
     audioRecord = null
 
     releaseEffectsInternal()
 
-    Log.d("EkweAudio", "performStop: calling nativeStopCapture...")
-    val stopOk = nativeStopCapture()
-    Log.d("EkweAudio", "performStop: nativeStopCapture returned $stopOk")
-
+    Log.d("EkweAudio", "performStop: capture loop stopped")
     abandonAudioFocus()
   }
 

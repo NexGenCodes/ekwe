@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import { registerTableTransform } from "@/store/mmkvPlugin";
+
 const mmkvMock = {
   getString: vi.fn(),
   set: vi.fn(),
@@ -10,7 +12,10 @@ vi.mock("@/services/mmkv", () => ({
   mmkv: mmkvMock,
 }));
 
-vi.mock("@/store/mmkvPlugin", () => ({ mmkvPlugin: {} }));
+vi.mock("@/store/mmkvPlugin", () => ({
+  mmkvPlugin: {},
+  registerTableTransform: vi.fn(),
+}));
 
 vi.mock("@/services/sharedContainer", () => ({
   mirrorSettingsToShared: vi.fn(),
@@ -19,60 +24,64 @@ vi.mock("@/services/sharedContainer", () => ({
 
 vi.mock("@legendapp/state/sync", () => ({ syncObservable: vi.fn() }));
 
-function lastPersistedSettings(): Record<string, unknown> | undefined {
-  const calls = mmkvMock.set.mock.calls;
-  const last = calls[calls.length - 1];
-  if (!last) return undefined;
-  return JSON.parse(last[1] as string);
-}
+type TableTransform = (
+  data: Record<string, unknown>,
+) => Record<string, unknown>;
 
-async function loadSettings(stored: unknown): Promise<void> {
+async function loadMigration(): Promise<TableTransform> {
   vi.resetModules();
-  mmkvMock.getString.mockReturnValue(
-    stored === undefined ? null : JSON.stringify(stored),
-  );
-  mmkvMock.set.mockClear();
   await import("@/store/settings");
-  await vi.waitFor(() => expect(mmkvMock.set).toHaveBeenCalled());
+  const call = vi
+    .mocked(registerTableTransform)
+    .mock.calls.find(([table]) => table === "ekwe-settings");
+  if (!call) throw new Error("settings never registered its migration");
+  return call[1] as TableTransform;
 }
 
 describe("settings currency migration", () => {
   beforeEach(() => {
-    mmkvMock.getString.mockReset();
-    mmkvMock.set.mockReset();
+    vi.mocked(registerTableTransform).mockClear();
   });
 
   test("normalizes a lowercase stored currency", async () => {
-    await loadSettings({ currency: "ngn" });
-    expect(lastPersistedSettings()?.currency).toBe("NGN");
+    const migrate = await loadMigration();
+    expect(migrate({ currency: "ngn" }).currency).toBe("NGN");
   });
 
   test("trims and uppercases a stored currency", async () => {
-    await loadSettings({ currency: " ghs " });
-    expect(lastPersistedSettings()?.currency).toBe("GHS");
+    const migrate = await loadMigration();
+    expect(migrate({ currency: " ghs " }).currency).toBe("GHS");
   });
 
   test("falls back to NGN for an unsupported currency", async () => {
-    await loadSettings({ currency: "BRL" });
-    expect(lastPersistedSettings()?.currency).toBe("NGN");
+    const migrate = await loadMigration();
+    expect(migrate({ currency: "BRL" }).currency).toBe("NGN");
   });
 
   test("falls back to NGN when no currency was stored", async () => {
-    await loadSettings({ themePreference: "dark" });
-    expect(lastPersistedSettings()?.currency).toBe("NGN");
+    const migrate = await loadMigration();
+    expect(migrate({ themePreference: "dark" }).currency).toBe("NGN");
   });
 
   test("falls back to NGN for a non-string currency", async () => {
-    await loadSettings({ currency: 978 });
-    expect(lastPersistedSettings()?.currency).toBe("NGN");
+    const migrate = await loadMigration();
+    expect(migrate({ currency: 978 }).currency).toBe("NGN");
   });
 
   test("leaves an already-valid currency untouched", async () => {
-    vi.resetModules();
-    mmkvMock.getString.mockReturnValue(JSON.stringify({ currency: "USD" }));
-    mmkvMock.set.mockClear();
-    await import("@/store/settings");
-    await Promise.resolve();
-    expect(mmkvMock.set).not.toHaveBeenCalled();
+    const migrate = await loadMigration();
+    expect(migrate({ currency: "USD" }).currency).toBe("USD");
+  });
+
+  test("renames the retired ttsVoice field", async () => {
+    const migrate = await loadMigration();
+    const migrated = migrate({ ttsVoice: "female" });
+    expect(migrated.voiceGender).toBe("female");
+    expect("ttsVoice" in migrated).toBe(false);
+  });
+
+  test("maps the retired neutral voice to default", async () => {
+    const migrate = await loadMigration();
+    expect(migrate({ voiceGender: "neutral" }).voiceGender).toBe("default");
   });
 });

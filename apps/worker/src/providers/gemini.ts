@@ -1,6 +1,7 @@
 import {
   CLIENT_ABORTED,
   Env,
+  TttRequest,
   TranslateResult,
   SpeechAttempt,
 } from "@/core/types";
@@ -23,15 +24,16 @@ const GEMINI_SPEECH_URL = `https://generativelanguage.googleapis.com/v1beta/mode
 
 const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 
-export async function translate(
+export async function ttt(
   text: string,
-  targetLang: string,
-  sourceLang: string | undefined,
+  request: TttRequest,
   env: Env,
   signal: AbortSignal,
-  transliteration: boolean = false,
 ): Promise<TranslateResult | null> {
-  logger.info("[gemini] Requesting translation", { targetLang, sourceLang });
+  logger.info("[gemini] Requesting translation", {
+    targetLang: request.targetLang,
+    sourceLang: request.sourceLang,
+  });
 
   try {
     const res = await rotateKeys(
@@ -52,9 +54,9 @@ export async function translate(
                 parts: [
                   {
                     text: buildTranslatePrompt(
-                      targetLang,
-                      sourceLang,
-                      transliteration,
+                      request.targetLang,
+                      request.sourceLang,
+                      request.transliteration,
                     ),
                   },
                 ],
@@ -85,7 +87,7 @@ export async function translate(
 
     const { translation, transliteration: romanized } = parseTranslateOutput(
       raw,
-      transliteration,
+      request.transliteration,
     );
     return {
       translation,

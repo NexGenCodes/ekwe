@@ -2,7 +2,11 @@ import { describe, test, expect } from "vitest";
 
 import { getStreamRoutes, providerSupportsLanguage } from "@/providers";
 import { LANGUAGE_CODE_SET } from "@ekwe/shared/languages";
-import { streamRoutesFor } from "@ekwe/shared/languageCapabilities";
+import {
+  streamRoutesFor,
+  unsupportedLanguages,
+  unsupportedStreamLanguages,
+} from "@ekwe/shared/languageCapabilities";
 
 /**
  * The language *data* — which codes each provider accepts, and how they are
@@ -20,19 +24,47 @@ describe("providerSupportsLanguage", () => {
     expect(providerSupportsLanguage("groq", "stt", "en")).toBe(true);
     expect(providerSupportsLanguage("cloudflare", "stt", "en")).toBe(true);
     expect(providerSupportsLanguage("gladia", "stt", "en")).toBe(true);
-    expect(providerSupportsLanguage("openrouter", "stt", "en")).toBe(true);
     expect(providerSupportsLanguage("assemblyai", "stt", "en")).toBe(true);
   });
 
   test("keeps Wit reachable for Nigerian languages", () => {
+    // Wit leads both STT pools, so a language it cannot transcribe is a failed
+    // round-trip on every request before the pool moves on. Probing every Wit
+    // key against /dictation shows it transcribes 32 languages and answers
+    // `Speech recognition is not supported for language: xx` for the rest —
+    // including all three Nigerian ones.
     for (const code of ["ig", "yo", "ha"]) {
-      expect(providerSupportsLanguage("witai", "stt", code)).toBe(true);
+      expect(providerSupportsLanguage("witai", "stt", code)).toBe(false);
     }
   });
 
-  test("keeps Wit reachable for Cherokee and Sicilian", () => {
-    expect(providerSupportsLanguage("witai", "stt", "ci")).toBe(true);
-    expect(providerSupportsLanguage("witai", "stt", "ck")).toBe(true);
+  test("still offers Nigerian transcription where a provider really serves it", () => {
+    // Excluding Wit must not empty the pool for the product's core languages.
+    // Yoruba and Hausa are in Whisper's hundred, and Scribe covers all three.
+    for (const code of ["yo", "ha"]) {
+      expect(providerSupportsLanguage("groq", "stt", code)).toBe(true);
+    }
+    for (const code of ["yo", "ig", "ha"]) {
+      expect(providerSupportsLanguage("elevenlabs", "stt", code)).toBe(true);
+    }
+    // Igbo is the exception and has to stay an exception: it is absent from
+    // Whisper's own tokenizer, so only Scribe serves it. Saying otherwise would
+    // route a request to a provider that 400s.
+    expect(providerSupportsLanguage("groq", "stt", "ig")).toBe(false);
+  });
+
+  test("keeps Wit synthesis wide even though its dictation is narrow", () => {
+    // Synthesis and dictation are different endpoints with different coverage;
+    // collapsing them would break transcription to keep a true claim about TTS.
+    expect(providerSupportsLanguage("witai", "stt", "ci")).toBe(false);
+    expect(providerSupportsLanguage("witai", "tts", "ci")).toBe(true);
+    expect(providerSupportsLanguage("witai", "tts", "yo")).toBe(true);
+  });
+
+  test("keeps Wit reachable for the languages dictation does serve", () => {
+    for (const code of ["en", "fr", "es", "pt", "ru", "zh"]) {
+      expect(providerSupportsLanguage("witai", "stt", code)).toBe(true);
+    }
   });
 
   test("excludes Cohere from languages it cannot transcribe", () => {
@@ -84,10 +116,10 @@ describe("providerSupportsLanguage", () => {
       "groq",
       "cloudflare",
       "gladia",
-      "openrouter",
       "cohere",
       "deepgram",
       "assemblyai",
+      "elevenlabs",
     ]) {
       expect(providerSupportsLanguage(provider, "stt", "auto")).toBe(true);
     }
@@ -96,6 +128,8 @@ describe("providerSupportsLanguage", () => {
   test("refuses a capability the provider does not implement", () => {
     // AssemblyAI has no synthesis; a pool that trusted this would call it.
     expect(providerSupportsLanguage("assemblyai", "tts", "en")).toBe(false);
+    // OpenRouter is translate-only: it publishes no `:free` STT model.
+    expect(providerSupportsLanguage("openrouter", "stt", "en")).toBe(false);
     // Streaming TTS is not implemented by anyone.
     expect(providerSupportsLanguage("edge", "ttsStream", "en")).toBe(false);
     // Groq claims no streaming route at all, so it is absent from the pipeline
@@ -108,20 +142,28 @@ describe("providerSupportsLanguage", () => {
     expect(providerSupportsLanguage("nope", "tts", "en")).toBe(false);
   });
 
-  test("leaves at least one transcription provider for every catalog language", () => {
-    // The product must never offer a language whose entire pool is empty.
+  test("leaves a transcription provider for every catalog language that has one", () => {
+    // The product must never offer a language whose entire pool is empty. The 27
+    // orphans are excluded deliberately: Wit used to be credited with them and
+    // would have answered 400, so an empty pool is the honest reading and lets
+    // the picker hide them.
+    const orphaned = new Set(unsupportedLanguages("stt"));
     for (const code of LANGUAGE_CODE_SET) {
       const pool = [
         "witai",
         "groq",
         "cloudflare",
         "gladia",
-        "openrouter",
         "cohere",
         "deepgram",
         "assemblyai",
+        "elevenlabs",
       ].filter((p) => providerSupportsLanguage(p, "stt", code));
-      expect(pool.length, `no STT provider for "${code}"`).toBeGreaterThan(0);
+      if (orphaned.has(code)) {
+        expect(pool.length, `"${code}" should be an orphan`).toBe(0);
+      } else {
+        expect(pool.length, `no STT provider for "${code}"`).toBeGreaterThan(0);
+      }
     }
   });
 
@@ -134,13 +176,18 @@ describe("providerSupportsLanguage", () => {
     }
   });
 
-  test("gives every catalog language a streaming route but one", () => {
-    // Cantonese is the exception: no streaming route takes it, so a client
-    // asking to stream it must be told rather than left to fail on attach.
+  test("gives every streamable catalog language a streaming route", () => {
+    // A client asking to stream an unsupported language must be told rather than
+    // left to fail on attach, so the no-route set is asserted rather than assumed
+    // to be just Cantonese.
+    const unroutable = new Set(unsupportedStreamLanguages());
+    expect(unroutable.has("yue")).toBe(true);
     for (const code of LANGUAGE_CODE_SET) {
       const routes = streamRoutesFor(code);
-      if (code === "yue") {
-        expect(routes, "yue unexpectedly has a streaming route").toEqual([]);
+      if (unroutable.has(code)) {
+        expect(routes, `"${code}" unexpectedly has a streaming route`).toEqual(
+          [],
+        );
       } else {
         expect(
           routes.length,

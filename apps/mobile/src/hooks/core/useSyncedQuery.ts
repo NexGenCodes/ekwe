@@ -16,6 +16,18 @@ interface SyncedQueryResult<T> {
   invalidate: () => void;
 }
 
+type ResetHandler = () => Promise<void>;
+
+const userScopedResetters = new Set<ResetHandler>();
+
+export function registerUserScopedQuery(reset: ResetHandler): void {
+  userScopedResetters.add(reset);
+}
+
+export async function resetUserScopedQueries(): Promise<void> {
+  await Promise.allSettled([...userScopedResetters].map((fn) => fn()));
+}
+
 export function createSyncedQuery<T>(
   cacheKey: string,
   fetchFn: () => Promise<T>,
@@ -36,6 +48,11 @@ export function createSyncedQuery<T>(
   // helper, not as a `query$.syncState` property — reading that property
   // yields `{}` and calling anything off it throws "Object is not a function".
   const sync$ = syncState(query$);
+
+  registerUserScopedQuery(() => {
+    query$.set(undefined);
+    return Promise.resolve();
+  });
 
   function useQuery(): SyncedQueryResult<T>["useQuery"] extends (
     ...args: never[]

@@ -29,14 +29,11 @@ export interface UseResultPipelineReturn {
 }
 
 /**
- * Backs the `/result` sheet, which is a viewer for an entry already in History.
+ * Backs the `/result` sheet, a viewer for an entry that is already in History.
  *
- * This used to also transcribe an incoming audio file and archive the result.
- * That path is gone: sharing audio now runs through `/share` → Echo, and the
- * only navigation to `/result` passes `isHistoryReplay`, which suppressed the
- * transcription branch and both of its history writes. What remains is
- * hydration from the store plus an on-demand translation, neither of which
- * writes to History — the entry it is showing is already there.
+ * Nothing here writes to History. Share-in lands through Echo, not this sheet,
+ * so the entry on screen was written when it was captured. The hook only
+ * hydrates from the store and offers an on-demand translation.
  */
 export const useResultPipeline = ({
   entryId,

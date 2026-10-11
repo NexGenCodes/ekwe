@@ -11,7 +11,7 @@ import { TELEMETRY_SOURCES } from "@/types/telemetry";
  */
 describe("TelemetrySource", () => {
   it("keeps the studio key while the origin was renamed to speech-studio", () => {
-    // The surface is "Speech Studio" in the product and in `HistoryOrigin`, but
+    // The surface shows as "Studio" and its origin is "speech-studio", but
     // `result_shared` dashboards key on "studio" and must not be touched.
     expect(isHistoryOrigin("speech-studio")).toBe(true);
     expect(TELEMETRY_SOURCES).toContain("studio");

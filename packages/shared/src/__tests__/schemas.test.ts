@@ -528,6 +528,53 @@ describe("synthesizeRequestSchema", () => {
     expect(parsed.data?.gender).toBeUndefined();
   });
 
+  test("accepts the preview flag", () => {
+    const parsed = synthesizeRequestSchema.safeParse({
+      text: "Hello",
+      targetLang: "en",
+      isPreview: true,
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.isPreview).toBe(true);
+  });
+
+  test("rejects a preview flag that is not true", () => {
+    // Optional-and-literal, so `isPreview: false` and a forged `"yes"` cannot
+    // pass a truthiness check downstream and quietly skip the quota.
+    expect(
+      synthesizeRequestSchema.safeParse({
+        text: "Hello",
+        targetLang: "en",
+        isPreview: false,
+      }).success,
+    ).toBe(false);
+    expect(
+      synthesizeRequestSchema.safeParse({
+        text: "Hello",
+        targetLang: "en",
+        isPreview: "yes",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("bounds reroll so it cannot be used to mint a new cache entry per call", () => {
+    // A timestamp is out of range, which is how a preview used to 400.
+    expect(
+      synthesizeRequestSchema.safeParse({
+        text: "Hello",
+        targetLang: "en",
+        reroll: Date.now(),
+      }).success,
+    ).toBe(false);
+    expect(
+      synthesizeRequestSchema.safeParse({
+        text: "Hello",
+        targetLang: "en",
+        reroll: 7,
+      }).success,
+    ).toBe(true);
+  });
+
   test("rejects a voiceId that is not a slot", () => {
     const parsed = synthesizeRequestSchema.safeParse({
       text: "Hello",
@@ -793,7 +840,7 @@ describe("registerPushTokenRequestSchema", () => {
   test("accepts a valid Expo push token", () => {
     expect(
       registerPushTokenRequestSchema.safeParse({
-        push_token: "ExponentPushToken[abc123]",
+        push_token: "ExponentPushToken[abcdefghijklmnopqrstuvwxyz012345]",
         platform: "android",
       }).success,
     ).toBe(true);
@@ -802,7 +849,7 @@ describe("registerPushTokenRequestSchema", () => {
   test("accepts an app_version", () => {
     expect(
       registerPushTokenRequestSchema.safeParse({
-        push_token: "ExponentPushToken[abc123]",
+        push_token: "ExponentPushToken[abcdefghijklmnopqrstuvwxyz012345]",
         platform: "ios",
         app_version: "1.2.3",
       }).success,
@@ -821,8 +868,35 @@ describe("registerPushTokenRequestSchema", () => {
   test("rejects an unknown platform", () => {
     expect(
       registerPushTokenRequestSchema.safeParse({
-        push_token: "ExponentPushToken[abc123]",
+        push_token: "ExponentPushToken[abcdefghijklmnopqrstuvwxyz012345]",
         platform: "web",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("rejects a bare prefix with no token body", () => {
+    expect(
+      registerPushTokenRequestSchema.safeParse({
+        push_token: "ExponentPushToken[]",
+        platform: "android",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("rejects an unterminated token", () => {
+    expect(
+      registerPushTokenRequestSchema.safeParse({
+        push_token: "ExponentPushToken[abcdefghijklmnopqrstuvwxyz012345",
+        platform: "android",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("rejects a prefix smuggled past the start of the string", () => {
+    expect(
+      registerPushTokenRequestSchema.safeParse({
+        push_token: "junkExponentPushToken[abcdefghijklmnopqrstuvwxyz012345]",
+        platform: "android",
       }).success,
     ).toBe(false);
   });

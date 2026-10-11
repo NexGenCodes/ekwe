@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -20,7 +20,12 @@ const DEFAULT_MIN_H = 2;
 const DEFAULT_RANGE = 36;
 
 export interface AudioWaveformProps {
-  amplitudes: number[] | SharedValue<number[]>;
+  /**
+   * A static peak array, a shared peak array, or a live scalar amplitude. The
+   * scalar form lets the waveform own its rolling window, so callers do not
+   * have to keep a second array in sync.
+   */
+  amplitudes: number[] | SharedValue<number[]> | SharedValue<number>;
   progressSV?: SharedValue<number>;
   duration?: number;
   barCount?: number;
@@ -110,9 +115,14 @@ export function AudioWaveform({
   const finalActiveColor = activeColor ?? color.brand;
   const finalInactiveColor = inactiveColor ?? color.foreground;
 
-  const isSharedValue = amplitudes && "value" in amplitudes;
+  const isSharedValue = !!amplitudes && "value" in amplitudes;
+  const liveAmplitude =
+    isSharedValue && !Array.isArray((amplitudes as SharedValue<number>).value)
+      ? (amplitudes as SharedValue<number>)
+      : null;
+
   const localAmplitudes = useSharedValue<number[]>(
-    isSharedValue ? [] : (amplitudes as number[]),
+    isSharedValue ? [] : ((amplitudes as number[]) ?? []),
   );
 
   useEffect(() => {
@@ -121,42 +131,68 @@ export function AudioWaveform({
     }
   }, [amplitudes, isSharedValue, localAmplitudes]);
 
-  const targetAmplitudes = isSharedValue
+  const peaksSV = isSharedValue
     ? (amplitudes as SharedValue<number[]>)
     : localAmplitudes;
 
-  const barHeights = useSharedValue<number[]>(
-    new Array(barCount).fill(minBarHeight),
-  );
+  const initialBars = useRef<number[] | null>(null);
+  if (initialBars.current === null) {
+    initialBars.current = new Array(barCount).fill(minBarHeight);
+  }
+  const barHeights = useSharedValue<number[]>(initialBars.current);
   const measuredWidth = useSharedValue(200);
 
   useAnimatedReaction(
-    () => targetAmplitudes.value,
+    () => peaksSV.value,
     (amps) => {
       if (!amps || amps.length === 0) return;
 
-      const arr = new Array(barCount);
+      const prev = barHeights.value;
+      const next = new Array(barCount);
       const sourceCount = amps.length;
+      let changed = false;
 
       for (let i = 0; i < barCount; i++) {
-        const start = Math.floor((i * sourceCount) / barCount);
-        const end = Math.max(
-          start + 1,
-          Math.floor(((i + 1) * sourceCount) / barCount),
-        );
-
-        let raw = 0;
-        for (let j = start; j < end && j < sourceCount; j++) {
-          const v = amps[j] ?? 0;
-          if (v > raw) raw = v;
+        let peak = 0;
+        if (sourceCount === barCount) {
+          peak = amps[i] ?? 0;
+        } else {
+          const start = Math.floor((i * sourceCount) / barCount);
+          const end = Math.max(
+            start + 1,
+            Math.floor(((i + 1) * sourceCount) / barCount),
+          );
+          for (let j = start; j < end && j < sourceCount; j++) {
+            const v = amps[j] ?? 0;
+            if (v > peak) peak = v;
+          }
         }
 
-        const n = Math.min(1, Math.max(0, raw));
-        arr[i] = minBarHeight + Math.pow(n, 0.5) * DEFAULT_RANGE;
+        const n = Math.min(1, Math.max(0, peak));
+        const h = Math.round(minBarHeight + Math.pow(n, 0.5) * DEFAULT_RANGE);
+        if (h !== prev[i]) changed = true;
+        next[i] = h;
       }
-      barHeights.value = arr;
+
+      if (changed) barHeights.value = next;
     },
-    [targetAmplitudes, barCount, minBarHeight],
+    [peaksSV, barCount, minBarHeight],
+  );
+
+  useAnimatedReaction(
+    () => (liveAmplitude ? liveAmplitude.value : -1),
+    (value) => {
+      if (liveAmplitude === null || value < 0) return;
+
+      const prev = barHeights.value;
+      const next = new Array(barCount);
+      for (let i = 0; i < barCount - 1; i++) next[i] = prev[i + 1];
+      next[barCount - 1] = Math.round(
+        Math.min(1, Math.max(0, value)) ** 0.5 * DEFAULT_RANGE,
+      );
+      barHeights.value = next;
+    },
+    [liveAmplitude, barCount],
   );
 
   const handleLayout = (event: LayoutChangeEvent): void => {

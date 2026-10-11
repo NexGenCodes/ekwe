@@ -18,11 +18,15 @@ rules = [
 binding = "EKWE_KV"
 id = "00000000000000000000000000000000"
 
-# Minimal vars so the stream quota gate's preflight path can build valid
-# Supabase auth headers and reach the mocked RPC endpoint (see setup.ts).
-[vars]
-SUPABASE_URL = "https://supabase.test"
-SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key"
+# `getDb` reaches Supabase over the Postgres wire protocol, which no HTTP mock
+# can intercept (and there is no local Postgres). `durable/setup.ts` replaces
+# the `@/db` module with an in-memory Drizzle-shaped stand-in via `vi.mock`, so
+# no database is contacted. The binding must still exist because the DO code
+# guards on `env.HYPERDRIVE` presence; its connection string is never dialed.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "local"
+localConnectionString = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
 
 [[durable_objects.bindings]]
 name = "STREAM_DO"

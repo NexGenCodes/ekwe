@@ -8,7 +8,10 @@ import type { OpusTranscodeResult } from "../../modules/ekwe-native/src/EkweNati
 export const IntentService = {
   resolveToFileUri: async (rawUri: string): Promise<string | null> => {
     if (isAndroid && rawUri.startsWith("content://")) {
-      return EkweNative.resolveContentUri(rawUri, MAX_AUDIO_BYTES);
+      // Registered only on Android, which is what is being tested here. The
+      // optional call is a type-level acknowledgement of that, not a runtime
+      // check: `isAndroid` already rules out iOS.
+      return EkweNative.resolveContentUri?.(rawUri, MAX_AUDIO_BYTES) ?? null;
     }
     return rawUri;
   },
@@ -16,6 +19,7 @@ export const IntentService = {
   resolveAndTranscodeToOpus: async (
     contentUri: string,
     outputPath: string,
+    options?: { maxDurationMs?: number },
   ): Promise<OpusTranscodeResult | null> => {
     if (isAndroid && contentUri.startsWith("content://")) {
       try {
@@ -23,6 +27,7 @@ export const IntentService = {
           contentUri,
           outputPath,
           MAX_AUDIO_BYTES,
+          options ?? null,
         );
       } catch (err) {
         logger.error("[IntentService] resolveAndTranscodeToOpus failed:", err);
@@ -34,13 +39,13 @@ export const IntentService = {
 
   dismissNativeLoader: (): void => {
     if (isAndroid) {
-      EkweNative.dismissNativeLoader();
+      EkweNative.dismissNativeLoader?.();
     }
   },
 
   dismissEcho: (): void => {
     if (isAndroid) {
-      EkweNative.dismissEcho();
+      EkweNative.dismissEcho?.();
     }
   },
 };

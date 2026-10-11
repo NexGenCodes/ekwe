@@ -66,9 +66,9 @@ static void captureCallback(const ekwe::CaptureEventData& event) {
     switch (event.event) {
         case ekwe::CaptureEvent::AUDIO_DATA: {
             // Nitro path — zero-copy ArrayBuffer dispatch
-            if (!event.data.empty()) {
+            if (event.data.size > 0) {
                 margelo::nitro::ekwe::HybridEkweAudio::dispatchOpusPacket(
-                    event.data.data(), event.data.size(), event.rms);
+                    event.data.data, event.data.size, event.rms);
             }
             break;
         }
@@ -103,6 +103,79 @@ Java_expo_modules_ekwenative_EkweNativeModule_transcodeToOpusWithWaveformJNI(
     ekwe::DecodeResult result = ekwe::transcode_audio_to_opus(input, output,
         static_cast<size_t>(maxAudioBytes), static_cast<int>(frameMs));
     return buildResultArray(env, result);
+}
+
+// Vorbis-in-Ogg sibling of the Opus transcode, for the Wit.ai upload path
+// (Wit.ai parses Vorbis but not Opus; see apps/worker/src/providers/witai.ts).
+extern "C" JNIEXPORT jobject JNICALL
+Java_expo_modules_ekwenative_EkweNativeModule_transcodeToVorbisWithWaveformJNI(
+    JNIEnv *env, jobject thiz, jstring inputPath, jstring outputPath, jlong maxAudioBytes) {
+
+    const char *input_c_str = env->GetStringUTFChars(inputPath, nullptr);
+    const char *output_c_str = env->GetStringUTFChars(outputPath, nullptr);
+    if (!input_c_str || !output_c_str) {
+        if (input_c_str) env->ReleaseStringUTFChars(inputPath, input_c_str);
+        if (output_c_str) env->ReleaseStringUTFChars(outputPath, output_c_str);
+        return buildErrorResult(env, "String allocation failed");
+    }
+
+    std::string input(input_c_str);
+    std::string output(output_c_str);
+
+    env->ReleaseStringUTFChars(inputPath, input_c_str);
+    env->ReleaseStringUTFChars(outputPath, output_c_str);
+
+    ekwe::DecodeResult result = ekwe::transcode_audio_to_vorbis(input, output,
+        static_cast<size_t>(maxAudioBytes));
+    return buildResultArray(env, result);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_expo_modules_ekwenative_EkweNativeModule_probeAudioDurationMsJNI(
+    JNIEnv *env, jobject thiz, jstring inputPath) {
+
+    const char *input_c_str = env->GetStringUTFChars(inputPath, nullptr);
+    if (!input_c_str) return -1;
+
+    std::string input(input_c_str);
+    env->ReleaseStringUTFChars(inputPath, input_c_str);
+
+    return ekwe::probe_audio_duration_ms(input);
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_expo_modules_ekwenative_EkweNativeModule_transcodeToDualWithWaveformJNI(
+    JNIEnv *env, jobject thiz, jstring inputPath, jstring opusPath, jstring vorbisPath,
+    jlong maxAudioBytes) {
+
+    const char *input_c_str = env->GetStringUTFChars(inputPath, nullptr);
+    const char *opus_c_str = env->GetStringUTFChars(opusPath, nullptr);
+    const char *vorbis_c_str = env->GetStringUTFChars(vorbisPath, nullptr);
+    if (!input_c_str || !opus_c_str || !vorbis_c_str) {
+        if (input_c_str) env->ReleaseStringUTFChars(inputPath, input_c_str);
+        if (opus_c_str) env->ReleaseStringUTFChars(opusPath, opus_c_str);
+        if (vorbis_c_str) env->ReleaseStringUTFChars(vorbisPath, vorbis_c_str);
+        jobject single = buildErrorResult(env, "String allocation failed");
+        jobjectArray out = env->NewObjectArray(2, env->FindClass("[Ljava/lang/Object;"), single);
+        env->SetObjectArrayElement(out, 1, single);
+        return out;
+    }
+
+    std::string input(input_c_str);
+    std::string opus_output(opus_c_str);
+    std::string vorbis_output(vorbis_c_str);
+
+    env->ReleaseStringUTFChars(inputPath, input_c_str);
+    env->ReleaseStringUTFChars(opusPath, opus_c_str);
+    env->ReleaseStringUTFChars(vorbisPath, vorbis_c_str);
+
+    ekwe::DualTranscodeResult result = ekwe::transcode_audio_to_dual(
+        input, opus_output, vorbis_output, static_cast<size_t>(maxAudioBytes));
+
+    jobjectArray out = env->NewObjectArray(2, env->FindClass("[Ljava/lang/Object;"), nullptr);
+    env->SetObjectArrayElement(out, 0, buildResultArray(env, result.opus));
+    env->SetObjectArrayElement(out, 1, buildResultArray(env, result.vorbis));
+    return out;
 }
 
 extern "C" JNIEXPORT jobject JNICALL

@@ -1,6 +1,11 @@
 import X from "lucide-react-native/icons/x";
 import React from "react";
-import { Modal as RNModal, type DimensionValue } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Modal as RNModal,
+  Platform,
+  type DimensionValue,
+} from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -42,53 +47,58 @@ export function Sheet({
       onRequestClose={onClose}
     >
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <Box
-          style={{
-            flex: 1,
-            justifyContent: "flex-end",
-            backgroundColor: color.overlay,
-          }}
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          <Pressable style={{ flex: 1 }} onPress={onClose} feedback="none" />
-
           <Box
             style={{
-              borderTopLeftRadius: borderRadius["2xl"],
-              borderTopRightRadius: borderRadius["2xl"],
-              height,
-              maxHeight: height ?? maxHeight,
-              backgroundColor: color.background,
-              paddingBottom: insets.bottom,
+              flex: 1,
+              justifyContent: "flex-end",
+              backgroundColor: color.overlay,
             }}
           >
-            {title && (
-              <Box
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: spacing.lg,
-                  borderBottomWidth: 1,
-                  borderColor: color.border,
-                }}
-              >
-                <Text variant="heading3" style={{ color: color.foreground }}>
-                  {title}
-                </Text>
-                <Pressable
-                  onPress={onClose}
-                  hitSlop={10}
-                  style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-                  accessibilityLabel="Close"
-                >
-                  <X size={24} color={color.muted} />
-                </Pressable>
-              </Box>
-            )}
+            <Pressable style={{ flex: 1 }} onPress={onClose} feedback="none" />
 
-            {children}
+            <Box
+              style={{
+                borderTopLeftRadius: borderRadius["2xl"],
+                borderTopRightRadius: borderRadius["2xl"],
+                height,
+                maxHeight: height ?? maxHeight,
+                backgroundColor: color.background,
+                paddingBottom: insets.bottom,
+              }}
+            >
+              {title && (
+                <Box
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: spacing.lg,
+                    borderBottomWidth: 1,
+                    borderColor: color.border,
+                  }}
+                >
+                  <Text variant="heading3" style={{ color: color.foreground }}>
+                    {title}
+                  </Text>
+                  <Pressable
+                    onPress={onClose}
+                    hitSlop={10}
+                    style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+                    accessibilityLabel="Close"
+                  >
+                    <X size={24} color={color.muted} />
+                  </Pressable>
+                </Box>
+              )}
+
+              {children}
+            </Box>
           </Box>
-        </Box>
+        </KeyboardAvoidingView>
       </GestureHandlerRootView>
     </RNModal>
   );

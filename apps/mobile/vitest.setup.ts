@@ -148,8 +148,7 @@ globalThis.expo = {
     EventEmitter: class {},
     UnavailabilityError: class extends Error {},
   },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-} as any;
+} as unknown as NonNullable<typeof globalThis.expo>;
 
 vi.mock("expo-clipboard", () => ({
   getStringAsync: vi.fn(async () => ""),
@@ -191,12 +190,16 @@ vi.mock("react-native-mmkv", () => ({
     getNumber: vi.fn(() => undefined),
     set: vi.fn(),
     getBoolean: vi.fn(() => undefined),
+    getAllKeys: vi.fn(() => [] as string[]),
+    remove: vi.fn(),
   })),
   MMKV: class {
     getString = vi.fn(() => undefined);
     getNumber = vi.fn(() => undefined);
     set = vi.fn();
     getBoolean = vi.fn(() => undefined);
+    getAllKeys = vi.fn(() => [] as string[]);
+    remove = vi.fn();
   },
 }));
 

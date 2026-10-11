@@ -1,4 +1,9 @@
 import { LANGUAGES, WORKER_ERROR_CODES } from "@ekwe/shared";
+import {
+  isLanguageSupported,
+  providerIdsForCapability,
+  type LanguageCapability,
+} from "@ekwe/shared/languageCapabilities";
 import { logger } from "@/core/logger";
 import { error } from "@/core/http";
 import { getLimits, type Tier } from "@/core/limits";
@@ -211,26 +216,43 @@ export function guardAudioSize(fileSize: number, tier: Tier): GuardResult {
   return { allowed: true };
 }
 
+/**
+ * Opus will not encode speech below roughly this many bits per second, so a
+ * file smaller than FLOOR_BITRATE * duration cannot actually hold that much
+ * audio. Used to bound a client-declared duration, which is otherwise the only
+ * thing standing between a caller and an arbitrarily long upload.
+ */
+const OPUS_FLOOR_BITRATE_BPS = 4_000;
+
 export function guardAudioDuration(
   durationMs: number | undefined,
   tier: Tier,
+  byteSize?: number,
 ): GuardResult {
-  if (!durationMs || durationMs <= 0) return { allowed: true };
-
   const { dictationDurationMs } = getLimits(tier);
+  const declared = durationMs && durationMs > 0 ? durationMs : undefined;
 
-  if (durationMs > dictationDurationMs) {
-    logger.warn(
-      `[security] Rejected audio for tier ${tier}. Duration: ${durationMs} > Max: ${dictationDurationMs}`,
-    );
-    return {
-      allowed: false,
-      response: error(
-        WORKER_ERROR_CODES.AUDIO_TOO_LONG,
-        413,
-        `Audio is longer than the ${Math.round(dictationDurationMs / 60_000)} minute limit for your plan.`,
-      ),
-    };
+  if (declared && declared > dictationDurationMs) {
+    // A size that could not hold this much audio means the declaration is
+    // false, so the limit has been evaded rather than genuinely exceeded.
+    const floorMs =
+      byteSize !== undefined
+        ? (byteSize * 8 * 1000) / OPUS_FLOOR_BITRATE_BPS
+        : 0;
+
+    if (!byteSize || declared <= floorMs) {
+      logger.warn(
+        `[security] Rejected audio for tier ${tier}. Duration: ${declared} > Max: ${dictationDurationMs}`,
+      );
+      return {
+        allowed: false,
+        response: error(
+          WORKER_ERROR_CODES.AUDIO_TOO_LONG,
+          413,
+          `Audio is longer than the ${Math.round(dictationDurationMs / 60_000)} minute limit for your plan.`,
+        ),
+      };
+    }
   }
 
   return { allowed: true };
@@ -279,6 +301,48 @@ export function guardLanguageCode(
   }
 
   return { allowed: true };
+}
+
+/**
+ * Catalog membership is not the same as being servable. A code can be a real
+ * language that no provider transcribes, and only the capability registry knows
+ * the difference.
+ *
+ * This is checked before any request is spent, because the alternative is
+ * silently skipping every provider and reporting `EKWE_ALL_PROVIDERS_FAIL` —
+ * which reads as an outage, tells the client to retry, and marks healthy
+ * providers as failing. A language we cannot do is a 4xx about the request, not
+ * a 503 about the service.
+ */
+export function guardSupportedLanguage(
+  code: string | undefined | null,
+  capability: LanguageCapability,
+): GuardResult {
+  if (!code || code === "auto") return { allowed: true };
+
+  const servable = providerIdsForCapability(capability).some((id) =>
+    isLanguageSupported(id, capability, code),
+  );
+  if (servable) return { allowed: true };
+
+  logger.warn(`[guards] No provider serves ${capability} for "${code}"`);
+  // The capability id is internal vocabulary; the message names the feature.
+  const feature =
+    capability === "stt"
+      ? "transcription"
+      : capability === "tts"
+        ? "speech"
+        : capability === "ttt"
+          ? "translation"
+          : capability;
+  return {
+    allowed: false,
+    response: error(
+      WORKER_ERROR_CODES.LANGUAGE_UNSUPPORTED,
+      400,
+      `No provider handles ${code} for ${feature}.`,
+    ),
+  };
 }
 
 export function guardJsonSize(request: Request, maxBytes: number): GuardResult {

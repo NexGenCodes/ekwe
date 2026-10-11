@@ -21,14 +21,24 @@ describe("needsRomanization", () => {
 });
 
 describe("buildTranslatePrompt", () => {
+  test("resolves canonical codes to language names", () => {
+    const prompt = buildTranslatePrompt("yo", "en");
+    expect(prompt).toContain("into fluent, natural-sounding Yoruba");
+    expect(prompt).toContain("from English");
+  });
+
+  test("omits the source clause for an auto source", () => {
+    expect(buildTranslatePrompt("es", "auto")).not.toContain(" from ");
+  });
+
   test("does not mention romanization unless requested", () => {
-    const prompt = buildTranslatePrompt("Yoruba", "English");
+    const prompt = buildTranslatePrompt("yo", "en");
     expect(prompt).toContain("Output ONLY the final translated text");
     expect(prompt).not.toContain(ROMANIZATION_MARKER);
   });
 
   test("adds the marker format rule when requested", () => {
-    const prompt = buildTranslatePrompt("Hindi", "English", true);
+    const prompt = buildTranslatePrompt("hi", "en", true);
     expect(prompt).toContain(ROMANIZATION_MARKER);
     expect(prompt).not.toContain("Output ONLY the final translated text");
   });

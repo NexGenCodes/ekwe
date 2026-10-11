@@ -73,6 +73,7 @@ vi.mock("@/utils/voicePreviewCache", () => ({
 }));
 
 import { useVoicePreview } from "@/hooks/audio/useVoicePreview";
+import { EkweError, ErrorMessages } from "@/constants/errors";
 
 const files: SessionAudioFiles = {
   remember: vi.fn(),
@@ -153,7 +154,7 @@ describe("useVoicePreview", () => {
 
     expect(playFromStart).toHaveBeenCalledTimes(1);
     expect(result.current.phase).toBe("playing");
-    expect(result.current.activeKey).toBe(`${getStandardSlot().id}_female`);
+    expect(result.current.activeKey).toBe(`${getStandardSlot().id}_female_en`);
   });
 
   it("keeps the spinner up until the clip finishes decoding", async () => {
@@ -191,7 +192,7 @@ describe("useVoicePreview", () => {
     await resolvePending(0, "file:///standard.ogg");
 
     expect(playFromStart).toHaveBeenCalledTimes(1);
-    expect(result.current.activeKey).toBe(`${STUDIO_VOICE_ID}_female`);
+    expect(result.current.activeKey).toBe(`${STUDIO_VOICE_ID}_female_en`);
   });
 
   it("stops the sounding preview when its own button is tapped again", async () => {
@@ -252,6 +253,21 @@ describe("useVoicePreview", () => {
     expect(result.current.phase).toBeNull();
   });
 
+  it("reports the quota error by name so the UI can say the limit was reached", async () => {
+    const { result } = mount();
+
+    act(() => {
+      result.current.preview(selection(getStandardSlot().id, "female"));
+    });
+    await act(async () => {
+      pending[0].settle({ ok: false, error: EkweError.QUOTA_EXCEEDED });
+    });
+
+    expect(onError).toHaveBeenCalledWith(EkweError.QUOTA_EXCEEDED);
+    expect(ErrorMessages[EkweError.QUOTA_EXCEEDED]).toMatch(/limit/i);
+    expect(result.current.activeKey).toBeNull();
+  });
+
   it("waits for readiness rather than a stale loaded flag", async () => {
     const { result, rerender } = mount();
 
@@ -275,7 +291,7 @@ describe("useVoicePreview", () => {
 
   it("keeps the memoized clip on reset instead of deleting it", async () => {
     const { result } = mount();
-    const key = `${getStandardSlot().id}_female`;
+    const key = `${getStandardSlot().id}_female_en`;
 
     act(() => {
       result.current.preview(selection(getStandardSlot().id, "female"));

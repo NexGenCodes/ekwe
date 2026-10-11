@@ -3,6 +3,7 @@ import {
   rotateWsKeys,
   openWebSocket,
   createStreamInterceptor,
+  resetWsKeyPenalties,
 } from "@/utils/stream";
 import { mockEnv } from "@/__tests__/setup";
 import { FakeWebSocket } from "@/__tests__/helpers/fake-websocket";
@@ -19,6 +20,7 @@ function makePair(): {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  resetWsKeyPenalties();
 });
 
 describe("rotateWsKeys", () => {
@@ -79,6 +81,58 @@ describe("rotateWsKeys", () => {
 
     expect(ws).not.toBeNull();
     expect(buildUrl.mock.calls.every(([key]) => key !== "short")).toBe(true);
+  });
+
+  test("retries a key that failed once, so one transient error is not fatal", async () => {
+    const env = mockEnv({
+      DEEPGRAM_KEY_1: "key-one-abcde",
+      DEEPGRAM_KEY_2: "",
+    });
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    const buildUrl = vi.fn(() => "ws://fail.example");
+
+    expect(await rotateWsKeys(env, "DEEPGRAM_KEY_", buildUrl)).toBeNull();
+    expect(buildUrl).toHaveBeenCalledTimes(1);
+
+    buildUrl.mockClear();
+    expect(await rotateWsKeys(env, "DEEPGRAM_KEY_", buildUrl)).toBeNull();
+    expect(buildUrl).toHaveBeenCalledTimes(1);
+  });
+
+  test("stops dialing a key that has failed repeatedly", async () => {
+    const env = mockEnv({
+      DEEPGRAM_KEY_1: "key-one-abcde",
+      DEEPGRAM_KEY_2: "key-two-abcde",
+    });
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    const buildUrl = vi.fn(() => "ws://fail.example");
+
+    // Two rounds: each dial fails, which is what earns the cooldown.
+    expect(await rotateWsKeys(env, "DEEPGRAM_KEY_", buildUrl)).toBeNull();
+    expect(await rotateWsKeys(env, "DEEPGRAM_KEY_", buildUrl)).toBeNull();
+    expect(buildUrl).toHaveBeenCalled();
+
+    buildUrl.mockClear();
+    expect(await rotateWsKeys(env, "DEEPGRAM_KEY_", buildUrl)).toBeNull();
+
+    // Every key is now in cooldown, so none is worth dialing again.
+    expect(buildUrl).not.toHaveBeenCalled();
+  });
+
+  test("forgets a key that connects again", async () => {
+    const env = mockEnv({ DEEPGRAM_KEY_1: "key-one-abcde" });
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    const buildUrl = vi.fn(() => "ws://fail.example");
+
+    expect(await rotateWsKeys(env, "DEEPGRAM_KEY_", buildUrl)).toBeNull();
+    buildUrl.mockReturnValue("ws://ok.example");
+    expect(await rotateWsKeys(env, "DEEPGRAM_KEY_", buildUrl)).not.toBeNull();
+
+    // A success clears the failure history, so the key is dialed normally.
+    buildUrl.mockClear();
+    buildUrl.mockReturnValue("ws://ok.example");
+    expect(await rotateWsKeys(env, "DEEPGRAM_KEY_", buildUrl)).not.toBeNull();
+    expect(buildUrl).toHaveBeenCalled();
   });
 });
 

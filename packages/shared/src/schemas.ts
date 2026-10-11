@@ -23,8 +23,8 @@ export const otpRequestSchema = z.object({
   turnstileToken: z
     .string()
     .max(2048, { message: "TURNSTILE_INVALID" })
-    .optional(),
-  appCheckToken: z.string().max(2048, { message: "INVALID_BODY" }).optional(),
+    .nullish(),
+  appCheckToken: z.string().max(2048, { message: "INVALID_BODY" }).nullish(),
 });
 export type OtpRequest = z.infer<typeof otpRequestSchema>;
 
@@ -130,6 +130,11 @@ export const synthesizeRequestSchema = z.object({
   gender: z.enum(["male", "female"]).optional(),
   voiceId: z.enum(VOICE_SLOT_IDS).optional(),
   reroll: z.number().int().min(0).max(1_000).optional(),
+  /**
+   * A voice-picker audition, not a real synthesis. Keys the shared speech cache
+   * so the provider cost is one-off, and exempts it from the caller's quota.
+   */
+  isPreview: z.literal(true).optional(),
 });
 export type SynthesizeRequest = z.infer<typeof synthesizeRequestSchema>;
 
@@ -185,6 +190,7 @@ export const checkoutResponseSchema = z.object({
   amount: z.number(),
   currency: z.enum(FLUTTERWAVE_CURRENCIES),
   public_key: z.string(),
+  link: z.string().optional(),
 });
 export type CheckoutResponse = z.infer<typeof checkoutResponseSchema>;
 
@@ -214,7 +220,14 @@ export type BillingFlagsResponse = z.infer<typeof billingFlagsResponseSchema>;
 export const registerPushTokenRequestSchema = z.object({
   push_token: z
     .string()
-    .startsWith("ExponentPushToken[")
+    // Expo tokens are `ExponentPushToken[...]`. The bracket body is what makes
+    // the broadcast list trustworthy: every active row is sent an update
+    // notification, and registration is reachable without an account, so a
+    // permissive pattern would let junk rows accumulate into that audience.
+    .regex(
+      /^ExponentPushToken\[[A-Za-z0-9_-]{20,120}\]$/,
+      "push_token is not a valid Expo push token",
+    )
     .max(256, "push_token is too long"),
   platform: z.enum(["ios", "android"]),
   app_version: z.string().max(32, "app_version is too long").optional(),
@@ -371,10 +384,31 @@ export const historyOutboxUpsertPayloadSchema = z.object({
   stt_provider: z.string().optional(),
   mt_provider: z.string().nullish(),
   created_at: z.string(),
+  /**
+   * The server revision this edit was based on, which is what lets the server
+   * refuse a write that has been overtaken. Optional because the outbox is a
+   * durable queue: a payload enqueued by an older app version has none and must
+   * keep validating, or it would be retried to death on every drain. A payload
+   * without one is applied last-write-wins.
+   */
+  base_revision: z.number().int().nonnegative().nullish(),
+  /**
+   * Undo of a delete. The server keeps a deleted row as a tombstone and refuses
+   * an ordinary write over it, so this is the only way a row the user
+   * deliberately deleted comes back. Absent on an ordinary write.
+   */
+  restore: z.boolean().optional(),
 });
 export const historyOutboxDeletePayloadSchema = z.object({
   action: z.literal("delete"),
   id: z.string(),
+  /**
+   * The revision this delete was based on. The server refuses a delete whose
+   * base_revision has been overtaken, so a device removing a row it has not
+   * caught up with cannot delete a newer edit. Null on a payload from an older
+   * build, which is applied unconditionally rather than refused.
+   */
+  base_revision: z.number().int().nonnegative().nullish(),
 });
 export const historyOutboxDeleteAllPayloadSchema = z.object({
   action: z.literal("delete_all"),

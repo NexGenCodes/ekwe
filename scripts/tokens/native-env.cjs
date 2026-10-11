@@ -37,7 +37,10 @@ function typedDecl(name, value) {
   return `    static let ${name}: String = "${escapeSwiftString(value)}"`;
 }
 
-function generateEchoEnvironment(envVars, maxAudioBytes) {
+function generateEchoEnvironment(envVars, maxAudioBytes, caps = {}) {
+  const maxAudioDurationMs = caps.maxAudioDurationMs ?? 1800000;
+  const maxAudioInputBytes = caps.maxAudioInputBytes ?? 104857600;
+  const witVorbisMaxDurationMs = caps.witVorbisMaxDurationMs ?? 296000;
   const publicKeys = Object.keys(envVars)
     .filter((k) => k.startsWith("EXPO_PUBLIC_"))
     .sort();
@@ -60,6 +63,22 @@ ${lines.join("\n")}
     /// Canonical, product-aware upload cap — matches the app's MAX_AUDIO_BYTES
     /// so Pro users can transcribe 26 MB voice notes in the share sheet too.
     static let maxAudioBytes: Int = ${maxAudioBytes}
+
+    /// Upper bound on original-audio duration accepted in the extension
+    /// (PREMIUM_LIMITS.dictationDurationMs). Protects the transcode-to-PCM
+    /// buffers inside a ~50 MB extension sandbox.
+    static let maxAudioDurationMs: Int = ${maxAudioDurationMs}
+
+    /// Generous input safety cap (MAX_AUDIO_INPUT_BYTES from plans.ts). The tier
+    /// cap applies to the transcoded output; inputs can be much larger and
+    /// still transcode to a few MB of Opus.
+    static let maxAudioInputBytes: Int = ${maxAudioInputBytes}
+
+    /// Above this, Wit.ai is not worth targeting
+    /// (WIT_VORBIS_MAX_DURATION_MS from plans.ts): its /dictation endpoint
+    /// caps out well before the extension's own duration limit, so longer
+    /// clips upload the Opus and let the worker route them onward.
+    static let witVorbisMaxDurationMs: Int = ${witVorbisMaxDurationMs}
 }
 `;
 }

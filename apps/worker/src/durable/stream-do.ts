@@ -73,7 +73,7 @@ interface SessionState {
   /** Language a provider has claimed, or "auto" while unresolved. */
   pinnedLang: string;
   langCommitted: boolean;
-  /** The device's own voice-activity gate, used to find a safe failover seam. */
+  /** The device's own voice-activity gate, used to find a safe point to fail over. */
   vadActive: boolean;
   /** When a deferred failover stops waiting, or null when none is pending. */
   failoverDeadlineAt: number | null;
@@ -228,7 +228,7 @@ export class StreamDurableObject extends DurableObject<Env> {
 
     const gate = await runPreflightGate(
       this.env,
-      this.ctx as unknown as ExecutionContext,
+      this.ctx,
       userId,
       tier,
       "stream",
@@ -387,7 +387,7 @@ export class StreamDurableObject extends DurableObject<Env> {
         const conn = this.connections.get(ws);
         state.vadActive = msg.active;
         ws.serializeAttachment(state);
-        // Swap providers at the silence seam, with no speech in the gap.
+        // Swap providers in the silence, with no speech in the gap.
         if (conn && conn.pendingFailover && !msg.active) {
           conn.pendingFailover = false;
           state.failoverDeadlineAt = null;
@@ -475,7 +475,6 @@ export class StreamDurableObject extends DurableObject<Env> {
       this.connections.delete(ws);
     }
     this.sessionBytes.delete(ws);
-    this.billStint(ws, true);
     if (this.ctx.getWebSockets().length === 0) {
       await this.ctx.storage.deleteAlarm();
     }
@@ -543,11 +542,17 @@ export class StreamDurableObject extends DurableObject<Env> {
         state.failoverDeadlineAt !== null &&
         now >= state.failoverDeadlineAt
       ) {
-        // No silence boundary arrived in time, so take the seam anyway.
+        // No silence arrived in time, so fail over anyway.
         state.failoverDeadlineAt = null;
         ws.serializeAttachment(state);
         const conn = this.connections.get(ws);
-        if (conn?.pendingFailover) this.startProviderPipeline(ws, state);
+        if (conn?.pendingFailover) {
+          // The swap is happening now, so the pending swap is consumed. Leaving
+          // this set would make the next VAD silence abort the provider just
+          // started.
+          conn.pendingFailover = false;
+          this.startProviderPipeline(ws, state);
+        }
       }
 
       const idleDeadline = state.lastIdleResetAt + IDLE_TIMEOUT_MS;
@@ -712,9 +717,15 @@ export class StreamDurableObject extends DurableObject<Env> {
     }
 
     conn.dialing = true;
-    void this.runProviderPipeline(ws, state, conn).finally(() => {
-      conn.dialing = false;
-    });
+    void this.runProviderPipeline(ws, state, conn)
+      .catch((err) => {
+        logger.error("[stream] provider pipeline rejected", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      })
+      .finally(() => {
+        conn.dialing = false;
+      });
   }
 
   /** A pin wins; with no route to take it, the pin is released to auto. */
@@ -855,16 +866,25 @@ export class StreamDurableObject extends DurableObject<Env> {
     this.primeReplacement(conn);
     this.billStint(ws);
 
-    if (state.vadActive) {
+    // billStint re-reads and rewrites the attachment, so the copy captured
+    // above is stale from here on. Re-read before mutating failover state,
+    // otherwise this write reverts billedSince and re-bills the same span.
+    const latest = (ws.deserializeAttachment() as SessionState | null) ?? state;
+
+    if (latest.vadActive) {
       conn.pendingFailover = true;
-      state.failoverDeadlineAt = Date.now() + FAILOVER_SEAM_WAIT_MS;
-      ws.serializeAttachment(state);
-      void this.scheduleNextAlarm(state);
+      latest.failoverDeadlineAt = Date.now() + FAILOVER_SEAM_WAIT_MS;
+      ws.serializeAttachment(latest);
+      void this.scheduleNextAlarm(latest).catch((err) => {
+        logger.error("[stream] scheduleNextAlarm rejected", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
       return;
     }
-    state.failoverDeadlineAt = null;
-    ws.serializeAttachment(state);
-    this.startProviderPipeline(ws, state);
+    latest.failoverDeadlineAt = null;
+    ws.serializeAttachment(latest);
+    this.startProviderPipeline(ws, latest);
   }
 
   /** Replays the audio tail so the replacement does not start cold. */

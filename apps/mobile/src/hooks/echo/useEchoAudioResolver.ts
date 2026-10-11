@@ -12,17 +12,16 @@ import {
 import { AudioCapture } from "@/services/audioCapture";
 import { AudioTranscoder } from "@/services/audioTranscoder";
 import { IntentService } from "@/services/intentService";
-import { SharedFile } from "@/types/echo";
-import { isIOS } from "@/utils/platform";
 import { default as logger } from "@/utils/logger";
 import { cleanEchoCache } from "@/utils/audioCache";
 import { EkweError, ErrorMessages } from "@/constants/errors";
 import { createDeferredCacheCleaner } from "@/hooks/echo/deferredCacheCleaner";
 
 export const useEchoAudioResolver = (props: {
-  value?: SharedFile[];
   audioUri?: string;
   mimeType?: string;
+  /** Plan-duration ceiling, enforced natively before decode. */
+  maxDurationMs?: number;
 }): {
   audioUri: string | undefined;
   isResolving: boolean;
@@ -35,8 +34,6 @@ export const useEchoAudioResolver = (props: {
   isSubsequentIntent: boolean;
   setIsSubsequentIntent: Dispatch<SetStateAction<boolean>>;
 } => {
-  const hasIOSFiles = isIOS && props.value && props.value.length > 0;
-
   const [audioUri, setAudioUri] = useState<string | undefined>(undefined);
   const [isResolving, setIsResolving] = useState(false);
   const [convertedWaveform, setConvertedWaveform] = useState<number[]>([]);
@@ -63,15 +60,9 @@ export const useEchoAudioResolver = (props: {
     setRetryNonce((n) => n + 1);
   };
 
-  const rawUri = useMemo(
-    () => (hasIOSFiles ? props.value?.[0]?.value : props.audioUri),
-    [hasIOSFiles, props.value, props.audioUri],
-  );
+  const rawUri = useMemo(() => props.audioUri, [props.audioUri]);
 
-  const mimeType = useMemo(
-    () => (hasIOSFiles ? props.value?.[0]?.mimeType : props.mimeType),
-    [hasIOSFiles, props.value, props.mimeType],
-  );
+  const mimeType = useMemo(() => props.mimeType, [props.mimeType]);
 
   useEffect(() => {
     let isStale = false;
@@ -126,6 +117,7 @@ export const useEchoAudioResolver = (props: {
         const combinedResult = await IntentService.resolveAndTranscodeToOpus(
           rawUri,
           opusPath,
+          { maxDurationMs: props.maxDurationMs },
         );
 
         if (isStale) {
@@ -152,6 +144,15 @@ export const useEchoAudioResolver = (props: {
           setResolveRetryable(false);
           setResolveError(ErrorMessages[EkweError.FILE_TOO_LARGE]);
           logger.warn("[IntentResolver] ❌ FILE_TOO_LARGE rejected by native");
+          return;
+        }
+
+        if (combinedResult && combinedResult.error === "AUDIO_TOO_LONG") {
+          if (opusPathAttempted) cleanEchoCache(opusPathAttempted);
+          setIsResolving(false);
+          setResolveRetryable(false);
+          setResolveError(ErrorMessages[EkweError.AUDIO_TOO_LONG]);
+          logger.warn("[IntentResolver] ❌ AUDIO_TOO_LONG rejected by native");
           return;
         }
 
@@ -242,7 +243,7 @@ export const useEchoAudioResolver = (props: {
     return (): void => {
       isStale = true;
     };
-  }, [rawUri, mimeType, hasIOSFiles, retryNonce]);
+  }, [rawUri, mimeType, retryNonce, props.maxDurationMs]);
 
   return {
     audioUri,

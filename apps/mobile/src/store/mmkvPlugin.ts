@@ -17,6 +17,27 @@ const { safeParse, safeStringify } = internal as unknown as {
 
 const MetadataSuffix = "__m";
 
+type TableTransform = (
+  data: Record<string, unknown>,
+) => Record<string, unknown>;
+
+const tableTransforms = new Map<string, TableTransform>();
+
+/**
+ * Register a migration for a persisted table.
+ *
+ * It runs inside `loadTable`, which makes the plugin the only reader and writer
+ * of the stored layout. A migration that writes the same MMKV key from outside
+ * this class races `loadTable`: whichever loses has its write replaced by the
+ * next `save()`, so the migration is silently lost and never retried.
+ */
+export function registerTableTransform(
+  table: string,
+  transform: TableTransform,
+): void {
+  tableTransforms.set(table, transform);
+}
+
 export class ObservablePersistMMKV implements ObservablePersistPlugin {
   private data: Record<string, unknown> = {};
 
@@ -28,7 +49,15 @@ export class ObservablePersistMMKV implements ObservablePersistPlugin {
       try {
         await initializeMMKV();
         const value = mmkv.getString(table);
-        this.data[table] = value ? safeParse(value) : undefined;
+        if (value) {
+          const parsed = safeParse(value) as Record<string, unknown> | null;
+          const transform = tableTransforms.get(table);
+          const migrated = parsed && transform ? transform(parsed) : parsed;
+          this.data[table] = migrated;
+          if (migrated && transform) {
+            mmkv.set(table, safeStringify(migrated));
+          }
+        }
       } catch {
         logger.error("[legend-state] MMKV failed to load", table);
       }

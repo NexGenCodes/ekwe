@@ -77,8 +77,8 @@ const ShareExtensionRoot = (props) => {
 AppRegistry.registerComponent("share-extension", () => ShareExtensionRoot);
 
 // Main app entry. Android and iOS share paths are handled natively
-// (ShareActivity / ShareViewController) and deep-link into the app's `/share`
-// route, which hosts the Echo sheet.
+// (ShareActivity / ShareViewController) and render the extension root
+// directly — there is no /share route and no deep-link handoff.
 const MainAppWrapper = (props) => {
   const App = require( "@/app/AppEntry").default;
   return <App {...props} />;

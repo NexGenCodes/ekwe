@@ -24,6 +24,8 @@ export interface ProfileRowProps {
   locked?: boolean;
 
   navigateToBilling?: boolean;
+
+  checked?: boolean;
 }
 
 export function ProfileRow({
@@ -38,6 +40,7 @@ export function ProfileRow({
   accentColor,
   locked = false,
   navigateToBilling = false,
+  checked,
 }: ProfileRowProps): React.JSX.Element {
   const { color } = useTheme();
 
@@ -65,6 +68,7 @@ export function ProfileRow({
         pressed && { backgroundColor: pressBg, transform: [{ scale: 0.98 }] },
       ]}
       accessibilityLabel={subtitle ? `${title}, ${subtitle}` : title}
+      accessibilityState={{ checked }}
       contentStyle={{
         flex: 1,
         flexDirection: "row",

@@ -39,11 +39,7 @@ export const MainTextInput = React.memo(
     }, [color.foreground]);
 
     return (
-      <Box
-        accessible
-        accessibilityRole="text"
-        style={{ flex: 1, position: "relative" }}
-      >
+      <Box style={{ flex: 1, position: "relative" }}>
         <TextInput
           accessibilityLabel="Source text input"
           accessibilityHint="Type or paste text to translate."

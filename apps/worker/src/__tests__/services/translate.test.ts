@@ -11,8 +11,8 @@ vi.mock("@/services/auto-detect", () => ({
     validateTranscriptLanguage(t, l),
 }));
 
-import { runTranslateJob } from "@/services/translate";
-import { mockEnv, jsonResponse, mockExecutionContext } from "@/__tests__/setup";
+import { runTranslate } from "@/services/translate";
+import { mockEnv, jsonResponse } from "@/__tests__/setup";
 import { ROMANIZATION_MARKER } from "@/utils/prompts";
 import { http } from "msw";
 import { server } from "@/__tests__/msw/server";
@@ -21,47 +21,53 @@ import type { Env, Tier } from "@/core/types";
 
 const TRANSLATION = "El zorro marrón salta sobre el perro perezoso";
 
-function job(over: Partial<Parameters<typeof runTranslateJob>[0]> = {}) {
+function job(over: Partial<Parameters<typeof runTranslate>[0]> = {}) {
   return {
     env: mockEnv() as Env,
     tier: "PREMIUM" as Tier,
-    userId: "user-1",
-    ctx: mockExecutionContext(),
     signal: new AbortController().signal,
     text: "The quick brown fox jumps over the lazy dog",
     sourceLang: "en",
     targetLang: "es",
     wantTransliteration: false,
-    cacheKey: null,
-    textHash: "hash",
     budgetMs: 10_000,
-    logPrefix: "[test]",
     ...over,
   };
 }
 
-describe("runTranslateJob", () => {
+describe("runTranslate", () => {
   test("rejects a provider the validator refuses and tries the next", async () => {
     // Synthesis used to skip this check entirely, so a provider that answered in
     // the wrong language was cached and served from D1 from then on.
     validateTranscriptLanguage.mockImplementation((t) => t !== TRANSLATION);
-    const first = vi.fn(() =>
-      jsonResponse({ choices: [{ message: { content: TRANSLATION } }] }),
-    );
-    const second = vi.fn(() =>
-      jsonResponse({ choices: [{ message: { content: "Hola mundo" } }] }),
-    );
     server.use(
-      http.post(PROVIDER_URLS.groqChat, first),
-      http.post(PROVIDER_URLS.openrouterChat, second),
+      http.post(PROVIDER_URLS.geminiGenerate, async ({ request }) => {
+        await request.text();
+        return jsonResponse({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: TRANSLATION }],
+              },
+            },
+          ],
+        });
+      }),
+      http.post(PROVIDER_URLS.cohereChat, async ({ request }) => {
+        await request.text();
+        return jsonResponse({
+          message: { content: [{ type: "text", text: "Hola mundo" }] },
+        });
+      }),
     );
 
-    const result = await runTranslateJob(job());
+    const result = await runTranslate(job());
 
     expect(validateTranscriptLanguage).toHaveBeenCalled();
-    expect(first).toHaveBeenCalled();
-    expect(second).toHaveBeenCalled();
+    // Gemini leads the premium pool and answers in the wrong language, so the
+    // job must fall through to the next provider rather than cache it.
     expect(result?.translation).toBe("Hola mundo");
+    expect(result?.provider).toBe("cohere");
   });
 
   test("returns null when the validator refuses every provider", async () => {
@@ -75,7 +81,7 @@ describe("runTranslateJob", () => {
       http.post(PROVIDER_URLS.mistralChat, wrong),
     );
 
-    expect(await runTranslateJob(job())).toBeNull();
+    expect(await runTranslate(job())).toBeNull();
   });
 
   test("does not ask for a romanization when the caller does not want one", async () => {
@@ -92,7 +98,7 @@ describe("runTranslateJob", () => {
       }),
     );
 
-    const result = await runTranslateJob(job({ wantTransliteration: false }));
+    const result = await runTranslate(job({ wantTransliteration: false }));
 
     expect(result?.translation).toBe("Hola mundo");
     expect(body).not.toContain(ROMANIZATION_MARKER);
@@ -110,7 +116,7 @@ describe("runTranslateJob", () => {
       }),
     );
 
-    await runTranslateJob(job({ wantTransliteration: true }));
+    await runTranslate(job({ wantTransliteration: true }));
 
     expect(body).toContain(ROMANIZATION_MARKER);
   });

@@ -3,7 +3,8 @@ import { Env, Tier, UsageType } from "@/core/types";
 import { getLimits } from "@/core/limits";
 import { logger } from "@/core/logger";
 import { recordUserEvent } from "@/utils/analytics";
-import { supabasePost, supabaseServiceHeaders } from "@/services/supabase";
+import { retryOnConnectionLoss } from "@/db/retry";
+import { sql } from "drizzle-orm";
 
 type PreflightReason =
   | "RATE_LIMIT"
@@ -44,7 +45,7 @@ type PreflightGateResult = PreflightGateSuccess | PreflightGateFailure;
  */
 export async function runPreflightGate(
   env: Env,
-  ctx: ExecutionContext,
+  ctx: { waitUntil: (promise: Promise<unknown>) => void },
   userId: string,
   tier: Tier,
   usageType: UsageType,
@@ -106,7 +107,7 @@ export async function runPreflightGate(
           { status: 500 },
         ),
       };
-    } else {
+    } else if (preflight.reason === "RATE_LIMIT") {
       const retryAfter = Math.ceil(preflight.cooldown_remaining || 0);
       result = {
         ok: false,
@@ -116,6 +117,23 @@ export async function runPreflightGate(
             message: `Please wait ${retryAfter} seconds.`,
           },
           { status: 429, headers: { "Retry-After": String(retryAfter) } },
+        ),
+      };
+    } else {
+      // An unrecognised reason is a bug, not a rate limit. Reporting it as
+      // EKWE_RATE_LIMIT hid a broken preflight row behind a plausible 429 for
+      // two days, so fail loudly instead of guessing.
+      logger.error("[preflight] unknown deny reason, failing closed", {
+        reason: preflight.reason ?? "undefined",
+      });
+      result = {
+        ok: false,
+        response: Response.json(
+          {
+            error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL,
+            message: "Service temporarily unavailable. Please try again later.",
+          },
+          { status: 500 },
         ),
       };
     }
@@ -160,10 +178,16 @@ async function isSessionActive(
 ): Promise<boolean | null> {
   if (!sessionId) return null;
   try {
-    const res = await supabasePost(env, "/rest/v1/rpc/check_session_active", {
-      p_session_id: sessionId,
-    });
-    if (res?.ok) return Boolean(await res.json<boolean>());
+    const result = await retryOnConnectionLoss(
+      (client) =>
+        client.execute(
+          sql`SELECT check_session_active(${sessionId}) as active`,
+        ),
+      env,
+    );
+    if (result.length > 0) {
+      return Boolean(result[0].active);
+    }
   } catch (err) {
     logger.warn("[preflight] session-active check failed, allowing", {
       error: err,
@@ -214,7 +238,7 @@ export async function checkPreflight(
 
   // Config guard first: it is synchronous, and there is no point issuing two
   // RPCs when the service keys are missing.
-  if (!supabaseServiceHeaders(env)) {
+  if (!env.HYPERDRIVE) {
     return {
       allowed: false,
       tier_active: requestedTier,
@@ -288,25 +312,36 @@ async function checkQuotaPreflight(
   } = args;
 
   try {
-    const res = await supabasePost(env, "/rest/v1/rpc/check_preflight", {
-      p_user_id: userId,
-      p_type: type,
-      p_free_cooldown_seconds: freeCooldownSeconds,
-      p_free_daily_limit: freeDailyLimit,
-      p_premium_cooldown_seconds: premiumCooldownSeconds,
-      p_premium_daily_limit: premiumDailyLimit,
-      p_premium_throttle_threshold: premiumThrottleThreshold,
-      p_throttle_cooldown_seconds: throttleCooldownSeconds,
-      p_premium_speech_chars_limit: premiumSpeechCharsLimit,
-      p_charge_chars: chargeChars,
-    });
+    // Increments no counter, so replaying it is safe.
+    // The alias is load-bearing: `SELECT * FROM check_preflight(...)` returns
+    // ONE column named after the function, so `result[0]` is
+    // `{ check_preflight: {...} }` and reading `.allowed` off it yields
+    // undefined — which fell through to the rate-limit branch and answered
+    // every request with 429 "Please wait 0 seconds." Alias it explicitly.
+    const result = await retryOnConnectionLoss(
+      (client) =>
+        client.execute(sql`SELECT check_preflight(
+      ${userId},
+      ${type},
+      ${freeCooldownSeconds},
+      ${freeDailyLimit},
+      ${premiumCooldownSeconds},
+      ${premiumDailyLimit},
+      ${premiumThrottleThreshold},
+      ${throttleCooldownSeconds},
+      ${premiumSpeechCharsLimit},
+      ${chargeChars}
+    ) AS preflight`),
+      env,
+    );
 
-    if (res?.ok) {
-      return await res.json<PreflightResponse>();
+    const row = result[0] as { preflight?: PreflightResponse } | undefined;
+    if (row?.preflight) {
+      return row.preflight;
     }
-    logger.error("[preflight] RPC non-OK or unconfigured, failing closed", {
-      status: res?.status,
-    });
+    logger.error(
+      "[preflight] unexpected check_preflight row shape, failing closed",
+    );
   } catch (err) {
     logger.error("[preflight] check failed, failing closed", { error: err });
   }

@@ -1,6 +1,7 @@
+import type { SQLiteBindParams } from "expo-sqlite";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import { openDatabaseSync } from "expo-sqlite";
-import { eq, and, desc, sql, or, placeholder } from "drizzle-orm";
+import { eq, and, desc, sql, or, inArray, placeholder } from "drizzle-orm";
 import { history, outbox } from "@ekwe/db/local-schema";
 
 import migrations from "../../drizzle/migrations";
@@ -135,12 +136,7 @@ ensureTables();
 
 // ---------------------------------------------------------------------------
 // Prepared statements — parse SQL once, bind params on each call.
-// This saves ~0.2–0.5ms per call on the JS thread.
-//
-// Run these with `.run()` / `.all()` / `.get()`. Never `.execute()`: on the
-// sync (expo-sqlite) driver it returns an `ExecuteResultSync` thunk that only
-// touches the database when materialized, so a `delete`/`update` written that
-// way parses and throws nothing while doing absolutely nothing.
+// Use `.run()` / `.all()` / `.get()`, never `.execute()` (sync driver no-op).
 // ---------------------------------------------------------------------------
 
 const _recentHistoryStmt = db
@@ -159,15 +155,7 @@ const _historyPageFirstStmt = db
   .limit(placeholder("limit"))
   .prepare();
 
-/**
- * Backs the capture-id upsert that gives each capture exactly one row. A
- * transcription writes the row and a later translation updates it in place.
- *
- * This replaces a lookup keyed on the entry's text, which could never match a
- * transcription against its own translation because it also keyed on
- * `entry_type` — and the two rows always had different `entry_type` values.
- * That is why every translated note used to leave an orphan row behind.
- */
+/** Finds a row by capture ID for upsert deduplication. */
 const _captureStmt = db
   .select()
   .from(history)
@@ -264,12 +252,23 @@ export const Db = {
     _deleteHistoryStmt.run({ id });
   },
 
-  /**
-   * Find the row for a capture so a later step can update it instead of
-   * appending. Returns null for an empty captureId, which must never match:
-   * legacy rows all share a NULL capture_id and would otherwise collapse into
-   * one another.
-   */
+  /** Records the server-confirmed revision for conflict resolution. */
+  setHistoryRevision: (id: string, revision: number): void => {
+    db.update(history).set({ revision }).where(eq(history.id, id)).run();
+  },
+
+  /** Returns the last server-confirmed revision, or null if unknown. */
+  getHistoryRevision: (id: string): number | null => {
+    const rows = db
+      .select({ revision: history.revision })
+      .from(history)
+      .where(eq(history.id, id))
+      .limit(1)
+      .all();
+    return rows[0]?.revision ?? null;
+  },
+
+  /** Finds the row for a capture ID. Returns null for empty IDs to prevent legacy row collisions. */
   findByCaptureId: (
     userId: string,
     captureId: string | null,
@@ -282,11 +281,7 @@ export const Db = {
   updateCaptureRow: (
     id: string,
     row: {
-      /**
-       * The transcript, on updates as well as inserts. Omitting it left the
-       * local row holding the pre-edit text while the outbox and the in-memory
-       * store carried the corrected one, so a restart re-read the stale value.
-       */
+      /** The transcript field, included on updates to keep local storage in sync. */
       transcript: string;
       translation_text: string | null;
       transliteration_text: string | null;
@@ -312,8 +307,7 @@ export const Db = {
         mtProvider: row.mt_provider,
         origin: row.origin,
         input: row.input,
-        // Kept in step with the translation so the column stays meaningful for
-        // older clients, which still read it.
+        // Keep entryType in sync with translation state for backward compatibility.
         entryType: row.translation_text ? "translation" : "transcription",
       })
       .where(eq(history.id, id))
@@ -336,8 +330,7 @@ export const Db = {
       return _historyPageFirstStmt.all({ userId, limit });
     }
 
-    // Keyset pagination with cursor — can't easily use a single prepared
-    // statement for the OR condition with dynamic params, so we build inline.
+    // Keyset pagination with cursor — requires inline SQL for the OR condition.
     return db
       .select()
       .from(history)
@@ -382,6 +375,40 @@ export const Db = {
       .orderBy(desc(history.createdAt))
       .limit(limit)
       .all();
+  },
+
+  /**
+   * Async counterpart to searchHistory. The drizzle Expo driver is sync-only,
+   * so the statement is built with the query builder and handed to the native
+   * async API — that keeps FTS off the JS thread instead of blocking render.
+   */
+  searchHistoryAsync: async (
+    userId: string,
+    query: string,
+    limit: number = 100,
+  ): Promise<HistoryRow[]> => {
+    if (!userId || !query) return [];
+
+    const sanitized = query.replace(/['"]/g, "").trim();
+    if (!sanitized) return [];
+
+    const statement = db
+      .select()
+      .from(history)
+      .where(
+        and(
+          eq(history.userId, userId),
+          sql`${history.id} IN (SELECT id FROM history_fts WHERE history_fts MATCH ${`"${sanitized}"*`})`,
+        ),
+      )
+      .orderBy(desc(history.createdAt))
+      .limit(limit)
+      .toSQL();
+
+    return (await expoDb.getAllAsync(
+      statement.sql,
+      statement.params as SQLiteBindParams,
+    )) as HistoryRow[];
   },
 
   cleanupExpiredHistory: (ttlDays: number, userId?: string): number => {
@@ -440,6 +467,21 @@ export const Db = {
       .run();
   },
 
+  /** Returns all unacknowledged outbox rows regardless of status (pending, in_flight, or dead). */
+  getUnacknowledgedOutbox: (userId: string): OutboxRow[] => {
+    if (!userId) return [];
+    return db
+      .select()
+      .from(outbox)
+      .where(
+        and(
+          eq(outbox.userId, userId),
+          inArray(outbox.status, ["pending", "in_flight", "dead"]),
+        ),
+      )
+      .all();
+  },
+
   getPendingOutbox: (userId: string): OutboxRow[] => {
     if (!userId) return [];
     return db
@@ -458,6 +500,27 @@ export const Db = {
       )
       .orderBy(outbox.createdAt)
       .all();
+  },
+
+  /** Fast point lookup for the realtime echo guard. Checks both outbox ID and payload target ID. */
+  hasPendingOutboxRow: (userId: string, id: string): boolean => {
+    if (!userId) return false;
+    const row = db
+      .select({ id: outbox.id })
+      .from(outbox)
+      .where(
+        and(
+          eq(outbox.userId, userId),
+          eq(outbox.status, "pending"),
+          or(
+            eq(outbox.id, id),
+            sql`${outbox.payload} LIKE '%"id":"' || ${id} || '"%'`,
+          ),
+        ),
+      )
+      .limit(1)
+      .all();
+    return row.length > 0;
   },
 
   countDeadOutbox: (userId: string): number => {

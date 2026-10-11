@@ -41,6 +41,16 @@ export const history = sqliteTable(
     mtProvider: text("mt_provider"),
     createdAt: text("created_at").notNull(),
     /**
+     * Server-assigned version of this row, mirrored from the cloud.
+     *
+     * A local edit does not change it: it records what the server last
+     * confirmed. The next push sends it as `base_revision`, so the server can
+     * tell whether this device's edit was based on current data. Zero means the
+     * row has never been pushed (or was written by an older app version), and
+     * the server falls back to insert or last-write-wins for it.
+     */
+    revision: integer("revision").notNull().default(0),
+    /**
      * Retained only as a stored column. It is no longer a user-facing concept:
      * one row exists per capture, so whether a translation exists is derivable
      * from `translation_text` being non-null.
@@ -57,10 +67,7 @@ export const history = sqliteTable(
       table.createdAt,
       table.id,
     ),
-    /**
-     * Backs the capture-id upsert. Partial, because legacy rows have no
-     * capture_id and must not all collide on NULL.
-     */
+    /** Serves the per-user lookup by capture id during sync. */
     userCaptureIdx: index("idx_history_user_capture").on(
       table.userId,
       table.captureId,

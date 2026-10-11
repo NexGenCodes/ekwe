@@ -37,7 +37,11 @@ export async function pollUntilReady<T>(
   } = options;
 
   for (let i = 0; i < maxPolls; i++) {
-    await abortableDelay(intervalMs, signal);
+    // Providers that return an already-finished job answer on the first poll,
+    // so waiting before the first request only adds latency to the common case.
+    if (i > 0) {
+      await abortableDelay(intervalMs, signal);
+    }
 
     const poll = await fetchWithTimeout(
       url,

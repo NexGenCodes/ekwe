@@ -1,6 +1,7 @@
 import {
   CLIENT_ABORTED,
   Env,
+  TttRequest,
   TranscribeResult,
   TranslateResult,
 } from "@/core/types";
@@ -19,15 +20,16 @@ const COHERE_CHAT = "https://api.cohere.ai/v2/chat";
 const COHERE_TRANSCRIBE = "https://api.cohere.com/v2/audio/transcriptions";
 const COHERE_MODEL = "cohere-transcribe-03-2026";
 
-export async function translate(
+export async function ttt(
   text: string,
-  targetLang: string,
-  sourceLang: string | undefined,
+  request: TttRequest,
   env: Env,
   signal: AbortSignal,
-  transliteration: boolean = false,
 ): Promise<TranslateResult | null> {
-  logger.info("[cohere] Requesting translation", { targetLang, sourceLang });
+  logger.info("[cohere] Requesting translation", {
+    targetLang: request.targetLang,
+    sourceLang: request.sourceLang,
+  });
 
   try {
     const res = await rotateKeys(
@@ -49,9 +51,9 @@ export async function translate(
                 {
                   role: "system",
                   content: buildTranslatePrompt(
-                    targetLang,
-                    sourceLang,
-                    transliteration,
+                    request.targetLang,
+                    request.sourceLang,
+                    request.transliteration,
                   ),
                 },
                 { role: "user", content: text },
@@ -80,7 +82,7 @@ export async function translate(
 
     const { translation, transliteration: romanized } = parseTranslateOutput(
       raw,
-      transliteration,
+      request.transliteration,
     );
     return {
       translation,

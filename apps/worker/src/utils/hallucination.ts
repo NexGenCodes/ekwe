@@ -11,15 +11,19 @@ const HALLUCINATION_PATTERNS: RegExp[] = [
 
 const MAX_REPEATED_BLOCK = 64;
 
+// A Uint16Array is reused across calls so a per-request transcription does not
+// allocate 128KB of counters for the overwhelmingly common early return.
+const repeated_block_counts = new Uint16Array(65536);
+
 function hasRepeatedBlock(text: string): boolean {
   const n = text.length;
   if (n < 15) return false;
 
-  const freqs = new Array<number>(65536).fill(0);
+  repeated_block_counts.fill(0);
   let sawRepeat = false;
   for (let i = 0; i < n; i++) {
     const code = text.charCodeAt(i);
-    const f = ++freqs[code];
+    const f = ++repeated_block_counts[code];
     if (f >= 3) {
       sawRepeat = true;
       break;

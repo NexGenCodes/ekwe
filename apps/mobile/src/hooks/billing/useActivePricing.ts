@@ -15,6 +15,7 @@ import type { FlutterwaveCurrency } from "@ekwe/shared/money";
 import { fetchWorkerPricing } from "@/services/pricing";
 import { settings$ } from "@/store";
 import { mmkvPlugin } from "@/store/mmkvPlugin";
+import { registerUserScopedQuery } from "@/hooks/core/useSyncedQuery";
 import type { StorePricingResponse } from "@ekwe/shared";
 
 export interface ActivePricing {
@@ -35,6 +36,8 @@ const pricingCache$ = observable<
   Record<string, Synced<StorePricingResponse | undefined>>
 >({});
 
+const registeredCurrencies = new Set<FlutterwaveCurrency>();
+
 function getPricingObs(
   currency: FlutterwaveCurrency,
 ): ObservableParam<Synced<StorePricingResponse | undefined>> {
@@ -49,6 +52,16 @@ function getPricingObs(
       }),
     );
   }
+
+  if (!registeredCurrencies.has(currency)) {
+    registeredCurrencies.add(currency);
+    const obs = pricingCache$[currency];
+    registerUserScopedQuery(() => {
+      obs.set(undefined);
+      return Promise.resolve();
+    });
+  }
+
   return pricingCache$[currency];
 }
 

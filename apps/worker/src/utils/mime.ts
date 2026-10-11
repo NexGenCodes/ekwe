@@ -14,6 +14,13 @@ const EXT_MAP: Record<string, string> = {
   "audio/x-wav": "wav",
   "audio/ulaw": "ulaw",
   "audio/raw": "raw",
+  "audio/amr": "amr",
+  "audio/amr-wb": "amr",
+  "audio/3gpp": "3gp",
+  "audio/3gpp2": "3gpp2",
+  "audio/aiff": "aiff",
+  "audio/x-aiff": "aiff",
+  "audio/x-caf": "caf",
 };
 
 export function mimeToExt(mime: string): string {
@@ -32,6 +39,33 @@ export function sniffAudioMime(bytes: Uint8Array, declared: string): string {
       return "audio/wav";
     if (b[0] === 0x66 && b[1] === 0x4c && b[2] === 0x61 && b[3] === 0x43)
       return "audio/flac";
+    // #!AMR raw narrowband / wideband
+    if (b[0] === 0x23 && b[1] === 0x21 && b[2] === 0x41 && b[3] === 0x4d)
+      return "audio/amr";
+    // FORM....AIFF
+    if (b[0] === 0x46 && b[1] === 0x4f && b[2] === 0x52 && b[3] === 0x4d) {
+      if (
+        bytes[8] === 0x41 &&
+        bytes[9] === 0x49 &&
+        bytes[10] === 0x46 &&
+        bytes[11] === 0x46
+      )
+        return "audio/aiff";
+    }
+    // CAF (caff)
+    if (b[0] === 0x63 && b[1] === 0x61 && b[2] === 0x66 && b[3] === 0x66)
+      return "audio/x-caf";
+  }
+
+  // EBML/WebM container
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === 0x1a &&
+    bytes[1] === 0x45 &&
+    bytes[2] === 0xdf &&
+    bytes[3] === 0xa3
+  ) {
+    return "audio/webm";
   }
 
   if (
@@ -53,8 +87,9 @@ export function sniffAudioMime(bytes: Uint8Array, declared: string): string {
     return "audio/mp4";
   }
 
+  // 0xFFEx sync word: ADTS AAC (layer bits 00) vs MP3 frame (layer bits 01).
   if (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) {
-    return "audio/mpeg";
+    return (bytes[1] & 0x06) === 0 ? "audio/aac" : "audio/mpeg";
   }
 
   if (

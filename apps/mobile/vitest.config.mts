@@ -20,6 +20,10 @@ export default defineConfig({
         replacement: resolve(dir, "./__mocks__/rn-nitro-mock.js"),
       },
       {
+        find: "react-native-svg",
+        replacement: resolve(dir, "./__mocks__/rn-svg-mock.js"),
+      },
+      {
         find: "posthog-react-native",
         replacement: resolve(dir, "./__mocks__/posthog-mock.js"),
       },
@@ -46,7 +50,7 @@ export default defineConfig({
     include: ["src/**/__tests__/**/*.test.{ts,tsx}"],
     server: {
       deps: {
-        inline: ["@ekwe/shared", "@ekwe/db", /^expo-/],
+        inline: ["@ekwe/shared", "@ekwe/db", /^expo-/, "lucide-react-native"],
       },
     },
     coverage: {

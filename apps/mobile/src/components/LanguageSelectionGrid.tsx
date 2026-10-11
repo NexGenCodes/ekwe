@@ -1,4 +1,5 @@
-import React, { memo, useMemo } from "react";
+import { FlashList } from "@shopify/flash-list";
+import React, { memo, useCallback, useMemo } from "react";
 import { View } from "react-native";
 
 import { LanguageGridCard } from "@/components/language";
@@ -9,7 +10,15 @@ export interface LanguageSelectionGridProps {
   selected: string[];
   onToggle: (code: string) => void;
   isMaxed?: boolean;
+  horizontalInset?: number;
+  contentContainerStyle?: React.ComponentProps<
+    typeof FlashList
+  >["contentContainerStyle"];
 }
+
+const GUTTER = spacing.sm;
+
+const keyExtractor = (lang: (typeof LANGUAGES)[number]): string => lang.code;
 
 const LanguageGridItem = memo(function LanguageGridItem({
   code,
@@ -25,7 +34,12 @@ const LanguageGridItem = memo(function LanguageGridItem({
   onToggle: (code: string) => void;
 }) {
   return (
-    <View style={{ width: "50%", padding: spacing.sm }}>
+    <View
+      style={{
+        paddingHorizontal: GUTTER,
+        paddingVertical: GUTTER,
+      }}
+    >
       <LanguageGridCard
         code={code}
         label={label}
@@ -43,38 +57,43 @@ export function LanguageSelectionGrid({
   selected,
   onToggle,
   isMaxed = false,
+  horizontalInset = 0,
+  contentContainerStyle,
 }: LanguageSelectionGridProps): React.ReactElement {
   const selectedSet = useMemo(() => new Set(selected), [selected]);
 
-  const items = useMemo(
-    () =>
-      LANGUAGES.map((lang) => {
-        const code = lang.code;
-        return (
-          <LanguageGridItem
-            key={code}
-            code={code}
-            label={getLanguageName(code)}
-            isSelected={selectedSet.has(code)}
-            isMaxed={isMaxed}
-            onToggle={onToggle}
-          />
-        );
-      }),
+  const renderItem = useCallback(
+    ({ item }: { item: (typeof LANGUAGES)[number] }): React.ReactElement => (
+      <LanguageGridItem
+        code={item.code}
+        label={getLanguageName(item.code)}
+        isSelected={selectedSet.has(item.code)}
+        isMaxed={isMaxed}
+        onToggle={onToggle}
+      />
+    ),
     [selectedSet, isMaxed, onToggle],
   );
 
+  const getItemType = useCallback((): string => "language", []);
+
   return (
-    <View
-      style={{
-        flexDirection: "row",
-        flexWrap: "wrap",
-        paddingTop: spacing.lg,
-        paddingBottom: spacing["3xl"],
-        marginHorizontal: -spacing.sm,
-      }}
-    >
-      {items}
-    </View>
+    <FlashList
+      data={LANGUAGES}
+      numColumns={2}
+      renderItem={renderItem}
+      keyExtractor={keyExtractor}
+      getItemType={getItemType}
+      showsVerticalScrollIndicator={false}
+      contentInsetAdjustmentBehavior="never"
+      contentContainerStyle={[
+        {
+          paddingTop: spacing.lg,
+          paddingBottom: spacing["3xl"],
+          paddingHorizontal: horizontalInset - GUTTER,
+        },
+        contentContainerStyle,
+      ]}
+    />
   );
 }

@@ -1,6 +1,5 @@
 import { observable } from "@legendapp/state";
 import { syncObservable } from "@legendapp/state/sync";
-import { internal } from "@legendapp/state";
 
 import { VoiceGender } from "@ekwe/shared";
 import {
@@ -13,10 +12,11 @@ import {
   mirrorSettingsToShared,
   SharedPreferences,
 } from "@/services/sharedContainer";
-import { mmkvPlugin } from "@/store/mmkvPlugin";
-import { initializeMMKV, mmkv } from "@/services/mmkv";
+import { mmkvPlugin, registerTableTransform } from "@/store/mmkvPlugin";
 
 type IsProProvider = () => boolean;
+import EkweNative from "../../modules/ekwe-native/src/EkweNativeModule";
+
 let isProProvider: IsProProvider = () => false;
 
 export function registerIsProProvider(provider: IsProProvider): void {
@@ -45,6 +45,8 @@ export interface SettingsState {
   autoCopy: boolean;
   hapticsEnabled: boolean;
   liveTranscriptionEnabled: boolean;
+  orbEnabled: boolean;
+  orbAutoArm: boolean;
   voiceGender: VoiceGenderSetting;
   voiceId: string | null;
   currency: FlutterwaveCurrency;
@@ -65,6 +67,8 @@ const initialSettings: SettingsState = {
   autoCopy: true,
   hapticsEnabled: true,
   liveTranscriptionEnabled: false,
+  orbEnabled: false,
+  orbAutoArm: false,
   voiceGender: "default",
   voiceId: null,
   currency: DEFAULT_PAYMENT_CURRENCY,
@@ -95,39 +99,26 @@ export function buildSettingsSharedPrefs(
   };
 }
 
-void (async (): Promise<void> => {
-  try {
-    await initializeMMKV();
-    const raw = mmkv.getString("ekwe-settings");
-    if (raw) {
-      const parsed = internal.safeParse(raw) as Record<string, unknown> | null;
-      if (parsed && "ttsVoice" in parsed && !("voiceGender" in parsed)) {
-        parsed.voiceGender = parsed.ttsVoice;
-        delete parsed.ttsVoice;
-        mmkv.set("ekwe-settings", internal.safeStringify(parsed));
-      }
-      if (parsed && parsed.voiceGender === "neutral") {
-        parsed.voiceGender = "default";
-        mmkv.set("ekwe-settings", internal.safeStringify(parsed));
-      }
-      if (parsed) {
-        const storedCurrency =
-          typeof parsed.currency === "string" ? parsed.currency.trim() : "";
-        const normalizedCurrency = storedCurrency.toUpperCase();
-        if (!isSupportedPaymentCurrency(normalizedCurrency)) {
-          parsed.currency = DEFAULT_PAYMENT_CURRENCY;
-          mmkv.set("ekwe-settings", internal.safeStringify(parsed));
-        } else if (parsed.currency !== normalizedCurrency) {
-          parsed.currency = normalizedCurrency;
-          mmkv.set("ekwe-settings", internal.safeStringify(parsed));
-        }
-      }
-    }
-  } catch {
-    // Non-fatal: the next session retries or the user starts from
-    // defaults if the old value is unrecoverable.
+function migrateSettings(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  if ("ttsVoice" in data && !("voiceGender" in data)) {
+    data.voiceGender = data.ttsVoice;
+    delete data.ttsVoice;
   }
-})();
+  if (data.voiceGender === "neutral") {
+    data.voiceGender = "default";
+  }
+  const storedCurrency =
+    typeof data.currency === "string" ? data.currency.trim() : "";
+  const normalizedCurrency = storedCurrency.toUpperCase();
+  data.currency = isSupportedPaymentCurrency(normalizedCurrency)
+    ? normalizedCurrency
+    : DEFAULT_PAYMENT_CURRENCY;
+  return data;
+}
+
+registerTableTransform("ekwe-settings", migrateSettings);
 
 syncObservable(settings$, {
   persist: {
@@ -176,6 +167,12 @@ export const settingsActions = {
   setLiveTranscriptionEnabled: (val: boolean): void => {
     settings$.liveTranscriptionEnabled.set(val);
   },
+  setOrbEnabled: (val: boolean): void => {
+    settings$.orbEnabled.set(val);
+  },
+  setOrbAutoArm: (val: boolean): void => {
+    settings$.orbAutoArm.set(val);
+  },
   setVoiceGender: (val: VoiceGenderSetting): void => {
     settings$.voiceGender.set(val);
   },
@@ -202,6 +199,47 @@ export function resetPersonalSettings(): void {
   settings$.liveTranscriptionEnabled.set(
     initialSettings.liveTranscriptionEnabled,
   );
+  settings$.orbEnabled.set(initialSettings.orbEnabled);
+  settings$.orbAutoArm.set(initialSettings.orbAutoArm);
 
   mirrorSettingsToShared(buildSettingsSharedPrefs());
+}
+
+// Keep native orb config in sync
+let lastSyncOrb = { orbEnabled: false, orbAutoArm: false };
+try {
+  settings$.orbEnabled.onChange(() => {
+    const state = settings$.get();
+    if (
+      state.orbEnabled !== lastSyncOrb.orbEnabled ||
+      state.orbAutoArm !== lastSyncOrb.orbAutoArm
+    ) {
+      lastSyncOrb = {
+        orbEnabled: state.orbEnabled,
+        orbAutoArm: state.orbAutoArm,
+      };
+      void EkweNative.configureOrb?.({
+        orbEnabled: state.orbEnabled,
+        orbAutoArm: state.orbAutoArm,
+      });
+    }
+  });
+  settings$.orbAutoArm.onChange(() => {
+    const state = settings$.get();
+    if (
+      state.orbEnabled !== lastSyncOrb.orbEnabled ||
+      state.orbAutoArm !== lastSyncOrb.orbAutoArm
+    ) {
+      lastSyncOrb = {
+        orbEnabled: state.orbEnabled,
+        orbAutoArm: state.orbAutoArm,
+      };
+      void EkweNative.configureOrb?.({
+        orbEnabled: state.orbEnabled,
+        orbAutoArm: state.orbAutoArm,
+      });
+    }
+  });
+} catch {
+  // ignore
 }

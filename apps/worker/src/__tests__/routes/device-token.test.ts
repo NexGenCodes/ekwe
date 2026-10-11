@@ -1,86 +1,99 @@
-import { describe, test, expect, beforeEach } from "vitest";
-import { http, HttpResponse } from "msw";
+import { describe, test, expect, beforeEach, vi } from "vitest";
 import { handleRegisterDeviceToken } from "@/routes/device-token";
-import { mockEnv } from "@/__tests__/setup";
-import { server } from "@/__tests__/msw/server";
-import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
+import type { AuthResult } from "@/core/auth";
+import { mockDb, mockEnv } from "@/__tests__/setup";
+import { PgDialect } from "drizzle-orm/pg-core";
 
-function pushTokenRequest(body: string): Request {
-  return new Request("http://test/devices/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-  });
+const auth = (userId: string): AuthResult => ({
+  userId,
+  userEmail: "a@b.c",
+  tier: "FREE",
+  sessionId: null,
+});
+
+type ConflictArg = {
+  target: unknown;
+  set: Record<string, unknown>;
+};
+
+function conflictArg(): ConflictArg {
+  const call = mockDb.onConflictDoUpdate.mock.calls[0];
+  expect(call, "onConflictDoUpdate was never called").toBeDefined();
+  return call[0] as ConflictArg;
+}
+
+/** Renders a Drizzle `sql` fragment the way the pg driver would. */
+function sqlText(value: unknown): string {
+  return new PgDialect().sqlToQuery(value as never).sql;
 }
 
 describe("handleRegisterDeviceToken", () => {
   beforeEach(() => {
-    server.use(
-      http.post(PROVIDER_URLS.supabaseUpsertPushToken, async ({ request }) => {
-        const body = (await request.json()) as any as {
-          p_push_token?: string;
-          p_platform?: string;
-          p_app_version?: string | null;
-        };
-        return HttpResponse.json({
-          token: body.p_push_token,
-          platform: body.p_platform,
-          app_version: body.p_app_version,
-        });
-      }),
-    );
+    vi.clearAllMocks();
   });
 
-  test("accepts a valid Expo push token", async () => {
+  test("registers an anonymous token with no owner", async () => {
     const res = await handleRegisterDeviceToken(
-      pushTokenRequest(
-        JSON.stringify({
-          push_token: "ExponentPushToken[abc123]",
-          platform: "android",
-          app_version: "1.2.3",
-        }),
-      ),
+      { push_token: "ExponentPushToken[abc]", platform: "android" },
       mockEnv(),
       null,
     );
+
     expect(res.status).toBe(200);
-    expect((await res.json()) as any).toEqual({ ok: true });
+    const values = mockDb.values.mock.calls[0][0] as Record<string, unknown>;
+    expect(values.userId).toBeNull();
   });
 
-  test("returns 400 for a non-Expo token", async () => {
-    const res = await handleRegisterDeviceToken(
-      pushTokenRequest(
-        JSON.stringify({ push_token: "APNs-abc123", platform: "ios" }),
-      ),
+  test("a conflict never clears or reassigns an existing owner", async () => {
+    await handleRegisterDeviceToken(
+      { push_token: "ExponentPushToken[abc]", platform: "android" },
       mockEnv(),
       null,
     );
-    expect(res.status).toBe(400);
-    expect((await res.json()) as any).toEqual({ error: "INVALID_BODY" });
+
+    const { set } = conflictArg();
+
+    // The owner column must be a conditional expression, not a literal that
+    // would overwrite whatever the row already records.
+    expect(sqlText(set.userId)).toMatch(/COALESCE/i);
+
+    // Nothing else in the conflict clause may reintroduce a plain owner write.
+    for (const [key, value] of Object.entries(set)) {
+      if (key === "userId") continue;
+      expect(
+        (value as Record<string, unknown>)?.userId,
+        `set.${key} must not carry userId`,
+      ).toBeUndefined();
+    }
   });
 
-  test("returns 400 for an unknown platform", async () => {
+  test("an authenticated call still records its own user id on insert", async () => {
+    const userId = "3f7c1d2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f";
+
     const res = await handleRegisterDeviceToken(
-      pushTokenRequest(
-        JSON.stringify({
-          push_token: "ExponentPushToken[abc123]",
-          platform: "web",
-        }),
-      ),
+      { push_token: "ExponentPushToken[xyz]", platform: "ios" },
+      mockEnv(),
+      auth(userId),
+    );
+
+    expect(res.status).toBe(200);
+    const values = mockDb.values.mock.calls[0][0] as Record<string, unknown>;
+    expect(values.userId).toBe(userId);
+    expect(sqlText(conflictArg().set.userId)).toMatch(/COALESCE/i);
+  });
+
+  test("a db failure surfaces as a 502, not a 500", async () => {
+    mockDb.execute.mockRejectedValueOnce(new Error("boom") as never);
+    mockDb.insert.mockImplementationOnce((() => {
+      throw new Error("connection lost");
+    }) as never);
+
+    const res = await handleRegisterDeviceToken(
+      { push_token: "ExponentPushToken[abc]", platform: "android" },
       mockEnv(),
       null,
     );
-    expect(res.status).toBe(400);
-    expect((await res.json()) as any).toEqual({ error: "INVALID_BODY" });
-  });
 
-  test("returns 400 when the body is missing fields", async () => {
-    const res = await handleRegisterDeviceToken(
-      pushTokenRequest(JSON.stringify({ platform: "android" })),
-      mockEnv(),
-      null,
-    );
-    expect(res.status).toBe(400);
-    expect((await res.json()) as any).toEqual({ error: "INVALID_BODY" });
+    expect(res.status).toBe(502);
   });
 });

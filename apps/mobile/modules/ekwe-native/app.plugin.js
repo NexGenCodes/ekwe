@@ -20,7 +20,7 @@ const APP_GROUP_ID = 'group.com.ekwe.app';
 /**
  * Adds Intent Filters to AndroidManifest for handling shared audio and text.
  * Intercepts expo-share-intent by stripping ACTION_SEND from MainActivity and
- * routing it to ShareActivity instead for "Ekwe Echo" (Pulse Flow).
+ * routing it to ShareActivity instead for "Ekwe Echo".
  */
 const withAndroidIntentFilters = (config) => {
   return withAndroidManifest(config, (config) => {
@@ -204,11 +204,12 @@ const withIosAppGroup = (config) => {
  */
 
 /**
- * Creates the ShareActivity.kt source file.
+ * Placeholder kept in the plugin chain so `withMainActivity` stays wired up.
+ * ShareActivity.kt is a hand-written source file, not a generated one; this
+ * only reserves the hook and changes nothing.
  */
 const withShareActivity = (config) => {
   return withMainActivity(config, (config) => {
-    // This plugin placeholder manages the ShareActivity registration logic.
     return config;
   });
 };
@@ -640,6 +641,10 @@ const withEkweNativePermissionsAndServices = (config) => {
     const permissions = [
       'android.permission.FOREGROUND_SERVICE',
       'android.permission.FOREGROUND_SERVICE_MICROPHONE',
+      'android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION',
+      'android.permission.RECORD_AUDIO',
+      'android.permission.SYSTEM_ALERT_WINDOW',
+      'android.permission.PACKAGE_USAGE_STATS',
     ];
     if (!config.modResults.manifest['uses-permission']) {
       config.modResults.manifest['uses-permission'] = [];
@@ -653,6 +658,32 @@ const withEkweNativePermissionsAndServices = (config) => {
         config.modResults.manifest['uses-permission'].push({
           $: { 'android:name': perm },
         });
+      }
+    });
+
+    const services = [
+      {
+        $: {
+          'android:name': 'expo.modules.ekwenative.orb.OrbCaptureService',
+          'android:exported': 'false',
+          'android:foregroundServiceType': 'mediaProjection',
+        },
+      },
+      {
+        $: {
+          'android:name': 'expo.modules.ekwenative.orb.OrbService',
+          'android:exported': 'false',
+          'android:foregroundServiceType': 'mediaProjection',
+        },
+      },
+    ];
+    if (!mainApplication.service) mainApplication.service = [];
+    services.forEach((svc) => {
+      const alreadyDeclared = mainApplication.service.some(
+        (s) => s.$['android:name'] === svc.$['android:name'],
+      );
+      if (!alreadyDeclared) {
+        mainApplication.service.push(svc);
       }
     });
     return config;

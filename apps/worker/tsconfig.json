@@ -9,7 +9,9 @@
     "isolatedModules": true,
     "types": ["vitest/globals", "@cloudflare/vitest-pool-workers/types"],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "drizzle-orm": ["./node_modules/drizzle-orm"],
+      "drizzle-orm/*": ["./node_modules/drizzle-orm/*"]
     }
   },
   "include": [

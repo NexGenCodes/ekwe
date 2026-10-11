@@ -15,6 +15,18 @@ type TabBarProps = Parameters<
 >[0];
 type TabRoute = TabBarProps["state"]["routes"][number];
 
+export const TAB_BAR_CONTENT_HEIGHT = 54;
+export const TAB_BAR_MIN_BOTTOM_INSET = 16;
+
+export function useTabBarTotalHeight(): number {
+  const insets = useSafeAreaInsets();
+  return (
+    TAB_BAR_CONTENT_HEIGHT +
+    spacing.sm +
+    Math.max(insets.bottom, TAB_BAR_MIN_BOTTOM_INSET)
+  );
+}
+
 export function CustomTabBar({
   state,
   descriptors,
@@ -35,7 +47,7 @@ export function CustomTabBar({
         backgroundColor: color.card,
         borderTopWidth: 1,
         borderTopColor: color.border,
-        paddingBottom: Math.max(insets.bottom, 16),
+        paddingBottom: Math.max(insets.bottom, TAB_BAR_MIN_BOTTOM_INSET),
         paddingTop: spacing.sm,
         paddingHorizontal: spacing.md,
         boxShadow: shadows.soft,

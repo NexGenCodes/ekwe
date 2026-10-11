@@ -59,8 +59,6 @@ const featureFlagsQuery = createSyncedQuery<PaymentFeatureFlags>(
   },
 );
 
-export const featureFlags$ = featureFlagsQuery.query$;
-
 export function usePaymentProvider(): UsePaymentProviderReturn {
   const { data, isLoading } = featureFlagsQuery.useQuery();
 

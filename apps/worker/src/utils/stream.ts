@@ -36,14 +36,71 @@ export async function openWebSocket(
   });
 }
 
+const WS_KEY_PENALTY_MS = 60_000;
+
+/**
+ * A key is skipped only after it has failed to open more than once.
+ *
+ * One failed handshake is not evidence of a dead key: a provider can refuse a
+ * socket for a transient reason, and within a single session the caller fails
+ * over to the next route, which may reuse the same key. Blacklisting on the
+ * first failure turned that failover into "no route left".
+ */
+const WS_KEY_FAILURE_THRESHOLD = 2;
+
+interface WsKeyPenalty {
+  failures: number;
+  lastFailureAt: number;
+  /** 0 until the key has failed often enough to earn a cooldown. */
+  penalisedUntil: number;
+}
+
+const wsKeyPenalties = new Map<string, WsKeyPenalty>();
+
+function penaltyFor(key: string, now: number): WsKeyPenalty | undefined {
+  const entry = wsKeyPenalties.get(key);
+  if (!entry) return undefined;
+  // Failure history decays on the same window as the cooldown, so a key that
+  // misbehaves once and then behaves is not remembered forever.
+  if (now - entry.lastFailureAt > WS_KEY_PENALTY_MS) {
+    wsKeyPenalties.delete(key);
+    return undefined;
+  }
+  return entry;
+}
+
+function recordOpenFailure(key: string, now: number): void {
+  const failures = (penaltyFor(key, now)?.failures ?? 0) + 1;
+  wsKeyPenalties.set(key, {
+    failures,
+    lastFailureAt: now,
+    penalisedUntil:
+      failures >= WS_KEY_FAILURE_THRESHOLD ? now + WS_KEY_PENALTY_MS : 0,
+  });
+}
+
+export function resetWsKeyPenalties(): void {
+  wsKeyPenalties.clear();
+}
+
 export async function rotateWsKeys(
   env: Env,
   prefix: string,
   buildUrl: (key: string) => string,
 ): Promise<WebSocket | null> {
-  for (const key of providerKeys(env, prefix)) {
+  const now = Date.now();
+  const candidates = providerKeys(env, prefix).filter((key) => {
+    const entry = penaltyFor(key, now);
+    return !entry || entry.failures < WS_KEY_FAILURE_THRESHOLD;
+  });
+
+  for (const key of candidates) {
     const ws = await openWebSocket(buildUrl(key));
-    if (ws) return ws;
+    if (ws) {
+      wsKeyPenalties.delete(key);
+      return ws;
+    }
+    recordOpenFailure(key, Date.now());
   }
   return null;
 }

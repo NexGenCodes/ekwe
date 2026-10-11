@@ -4,6 +4,7 @@ interface Env {
   FIREBASE_PROJECT_NUMBER?: string;
   REQUIRE_APP_CHECK?: string;
   SUPABASE_SECRET_KEY?: string;
+  HYPERDRIVE?: Hyperdrive;
   SPEECH_URL_SECRET?: string;
   SENTRY_DSN?: string;
   UPDATE_NOTIFY_SECRET?: string;
@@ -17,6 +18,7 @@ interface Env {
   EKWE_ANALYTICS?: AnalyticsEngineDataset;
   [key: `COHERE_KEY_${number}`]: string | undefined;
   [key: `DEEPGRAM_KEY_${number}`]: string | undefined;
+  [key: `ELEVENLABS_KEY_${number}`]: string | undefined;
   [key: `GEMINI_KEY_${number}`]: string | undefined;
   [key: `GLADIA_KEY_${number}`]: string | undefined;
   [key: `GROQ_KEY_${number}`]: string | undefined;

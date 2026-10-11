@@ -6,13 +6,9 @@ import { logger } from "@/utils";
 /**
  * Copying a result, in one place.
  *
- * Every caller used to decide for itself what lands on the clipboard: some
- * signed it, some did not, and the History row copied bare text while
- * `AnimatedCopyButton` copied signed text. That last difference was visible to
- * users — the same text pasted from two places came out different.
- *
- * The signature now lives here, so copied text matches what is on screen and
- * what sharing would send.
+ * Signing is centralised here so every copy path produces identical text: the
+ * same result copied from History and from the result sheet must paste the
+ * same way.
  */
 export const CopyService = {
   /**

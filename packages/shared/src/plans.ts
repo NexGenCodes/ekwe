@@ -97,7 +97,7 @@ export const PREMIUM_LIMITS: PlanLimits = {
   dailySpeechCharsLimit: 15000,
   dailyStreamLimit: 120,
   throttleTranslateThreshold: 500,
-  throttleTranscribeThreshold: 200,
+  throttleTranscribeThreshold: 500,
 };
 
 export const FREE_FEATURES: PlanFeatures = {
@@ -147,6 +147,24 @@ export const LOCAL_PRICES: Record<FlutterwaveCurrency, LocalPrice> = {
 };
 
 export const MAX_AUDIO_BYTES = PREMIUM_LIMITS.maxAudioBytes;
+
+// Generous safety cap for *input* audio files (pre-transcode). The tier cap
+// (MAX_AUDIO_BYTES) applies to the transcoded Ogg Opus output; inputs can be
+// much larger and still transcode to a few MB. Guards against decompression
+// bombs — 100 MB covers any realistic voice note at uncompressed rates.
+export const MAX_AUDIO_INPUT_BYTES = 100 * 1024 * 1024;
+
+/**
+ * Longest clip worth handing to Wit.ai as Ogg/Vorbis. Wit.ai's /dictation
+ * endpoint is documented to accept up to 5 minutes and answers Opus-in-Ogg
+ * with an empty transcript rather than an error, so the client re-encodes to
+ * Vorbis to reach it at all. Longer clips are uploaded as-is.
+ *
+ * 296s rather than 299s buys four seconds of headroom for the gap between our
+ * decoded duration and Wit's own parse. Output size is not a factor: at the
+ * encoder's 32 kbps target this is roughly 1.2 MB against MAX_AUDIO_BYTES.
+ */
+export const WIT_VORBIS_MAX_DURATION_MS = 296_000;
 
 export const SPEECH_MAX_TEXT_CHARS = 2400;
 

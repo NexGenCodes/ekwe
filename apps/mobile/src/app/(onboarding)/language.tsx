@@ -10,10 +10,13 @@ import { useTokens } from "@/hooks/ui";
 import { useLanguageSelection } from "@/hooks/useLanguageSelection";
 import { settingsActions, auth$ } from "@/store";
 import { track, AnalyticsEvents } from "@/utils/analytics";
+import { spacing as spacingToken } from "@/constants/spacing";
 
 const HEADING = "Pick your languages";
 const subtitleFor = (max: number): string =>
   `Choose exactly ${max} languages you work with. Tap to select, tap again to remove. You can always change these later.`;
+
+const FOOTER_CLEARANCE = spacingToken.md * 2 + 56 + spacingToken.md * 2;
 
 export default function OnboardingLanguagesScreen(): React.ReactElement {
   const router = useRouter();
@@ -39,21 +42,19 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
   }, [isComplete, selected, router]);
 
   const countColor = isComplete ? color.success : color.muted;
+  const inset = spacing.xl;
 
   return (
     <View style={{ flex: 1, backgroundColor: color.background }}>
       <ScreenContainer
-        scroll
-        contentContainerStyle={{
-          paddingHorizontal: spacing.xl,
-          paddingBottom: spacing["7xl"] + spacing.lg,
-        }}
+        scroll={false}
         style={{ backgroundColor: color.background }}
       >
         <Box
           style={{
             paddingTop: spacing["3xl"],
             paddingBottom: spacing.lg,
+            paddingHorizontal: inset,
           }}
         >
           <Text
@@ -97,11 +98,17 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
           </Box>
         </Box>
 
-        <LanguageSelectionGrid
-          selected={selected}
-          onToggle={toggleLanguage}
-          isMaxed={isMaxed}
-        />
+        <Box style={{ flex: 1 }}>
+          <LanguageSelectionGrid
+            selected={selected}
+            onToggle={toggleLanguage}
+            isMaxed={isMaxed}
+            horizontalInset={inset}
+            contentContainerStyle={{
+              paddingBottom: FOOTER_CLEARANCE,
+            }}
+          />
+        </Box>
       </ScreenContainer>
 
       <Box
@@ -115,7 +122,7 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
           borderTopColor: color.border,
           paddingTop: spacing.md,
           paddingBottom: insets.bottom + spacing.md,
-          paddingHorizontal: spacing.xl,
+          paddingHorizontal: inset,
         }}
       >
         <Button

@@ -19,7 +19,29 @@ typedef void (^VadSilenceCallback)(void);
 // 1: errorMessage (NSString)
 // 2: durationMs (NSNumber NSInteger)
 // 3: waveform (NSArray<NSNumber *>)
-// `maxAudioBytes` caps the source file size (from @ekwe/shared/plans).
+// Decodes to the mono/16 kHz contract and re-encodes as Vorbis-in-Ogg, the
+// format Wit.ai parses (see apps/worker/src/providers/witai.ts).
+// `maxAudioBytes` caps the source file size.
++ (NSArray *)transcodeToVorbisWithWaveform:(NSString *)sourcePath
+                                outputPath:(NSString *)outputPath
+                             maxAudioBytes:(NSUInteger)maxAudioBytes;
+
+// Decodes once and writes both Ogg Opus and Ogg Vorbis.
+// Returns @[opusArray, vorbisArray], each shaped as above.
++ (NSArray *)transcodeToDualWithWaveform:(NSString *)sourcePath
+                             opusOutputPath:(NSString *)opusOutputPath
+                          vorbisOutputPath:(NSString *)vorbisOutputPath
+                             maxAudioBytes:(NSUInteger)maxAudioBytes;
+
+// Duration in ms without a full decode, or -1 when it cannot be probed.
++ (NSInteger)probeAudioDurationMs:(NSString *)path;
+
+// Returns an array containing:
+// 0: success (NSNumber BOOL)
+// 1: errorMessage (NSString)
+// 2: durationMs (NSNumber NSInteger)
+// 3: waveform (NSArray<NSNumber *>)
+// `maxAudioBytes` caps the source file size.
 + (NSArray *)decodeToWavWithSourcePath:(NSString *)sourcePath
                             outputPath:(NSString *)outputPath
                          maxAudioBytes:(NSUInteger)maxAudioBytes;

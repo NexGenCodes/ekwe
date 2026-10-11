@@ -98,6 +98,10 @@ describe("ShareOutService.shareAudio", () => {
     expect(shareAudioMock).toHaveBeenCalledTimes(1);
     const [path, mime, text] = shareAudioMock.mock.calls[0];
     expect(mime).toBe("audio/ogg; codecs=opus");
+    // The caption is still composed and still handed to native, which decides
+    // per-platform what to do with it: iOS can pair it with the audio, Android
+    // must not, because EXTRA_TEXT next to EXTRA_STREAM turns the send into a
+    // document and costs the voice-note rendering.
     expect(text).toBe(
       "hola mundo\n\n— Shared with Ekwe · Speak, we'll handle the rest",
     );
@@ -108,7 +112,7 @@ describe("ShareOutService.shareAudio", () => {
     await ShareOutService.shareAudio(ARTIFACT, "hi");
 
     // Share-out is not a capture surface, so it borrows no feature name —
-    // "Echo" is the share-in sheet. See docs/naming.md.
+    // "Echo" is the share-in sheet.
     expect(shareAudioMock.mock.calls[0][3]).toBe("Send with Ekwe");
   });
 
@@ -118,8 +122,24 @@ describe("ShareOutService.shareAudio", () => {
     // The studio plays from ARTIFACT, so it must be copied, never moved.
     expect(fileMock.copied).toHaveLength(1);
     expect(fileMock.copied[0]).toMatch(
-      /^file:\/\/\/cache\/ekwe-voice-\d{4}-\d{2}-\d{2}\.ogg$/,
+      /^file:\/\/\/cache\/ekwe-voice-\d{4}-\d{2}-\d{2}-[a-z0-9]{4}\.ogg$/,
     );
+  });
+
+  it("stages two same-day shares to different paths so neither overwrites the other", async () => {
+    const random = vi
+      .spyOn(Math, "random")
+      .mockReturnValueOnce(0.111111)
+      .mockReturnValueOnce(0.222222);
+    try {
+      await ShareOutService.shareAudio(ARTIFACT, "first");
+      await ShareOutService.shareAudio(ARTIFACT, "second");
+    } finally {
+      random.mockRestore();
+    }
+
+    expect(fileMock.copied).toHaveLength(2);
+    expect(fileMock.copied[0]).not.toBe(fileMock.copied[1]);
   });
 
   it("sends no caption when there is no transcript", async () => {
@@ -157,7 +177,7 @@ describe("ShareOutService.shareAudio", () => {
     // Byte-copy fallback writes in place at the intended name.
     expect(fileMock.copied).toHaveLength(0);
     expect(shareAudioMock.mock.calls[0][0]).toMatch(
-      /^file:\/\/\/cache\/ekwe-voice-\d{4}-\d{2}-\d{2}\.ogg$/,
+      /^file:\/\/\/cache\/ekwe-voice-\d{4}-\d{2}-\d{2}-[a-z0-9]{4}\.ogg$/,
     );
   });
 

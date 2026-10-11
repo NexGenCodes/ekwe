@@ -193,6 +193,7 @@ export default function LegalScreen(): React.JSX.Element {
                   </Box>
                 }
                 label=""
+                accessibilityLabel="Back"
               />
             </Box>
           ),

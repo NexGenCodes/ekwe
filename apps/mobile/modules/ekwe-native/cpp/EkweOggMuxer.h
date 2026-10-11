@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <atomic>
 #include <cstdio>
 
 namespace ekwe {
@@ -40,7 +41,7 @@ public:
 
 private:
     bool ok_;
-    bool finalized_;
+    std::atomic<bool> finalized_;
     std::FILE* file_;
     std::string output_path_;
     int serial_number_;

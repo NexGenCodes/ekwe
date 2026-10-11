@@ -18,7 +18,7 @@ import { HistoryService } from "@/services/historyService";
 import { IntentService } from "@/services/intentService";
 import { settings$, auth$, network$ } from "@/store";
 import { EchoStep, EchoProps, UseEchoFlowResult } from "@/types/echo";
-import { default as logger } from "@/utils/logger";
+import { default as logger, addSentryBreadcrumb } from "@/utils/logger";
 import { cleanEchoCache } from "@/utils/audioCache";
 import { ErrorMessages } from "@/constants/errors";
 import {
@@ -232,7 +232,10 @@ export const useEchoFlow = (
     activeResolvedUri,
     isSubsequentIntent,
     setIsSubsequentIntent,
-  } = useEchoAudioResolver(props);
+  } = useEchoAudioResolver({
+    ...props,
+    maxDurationMs: permissions.dictationDurationMs,
+  });
 
   useEffect(() => {
     if (resolveError && !isResolving) {
@@ -470,7 +473,13 @@ export const useEchoFlow = (
         }
 
         if (!trResult.ok) {
-          logger.error("[EchoFlow] Transcribe rejected:", trResult.error);
+          // A rate limit is an expected outcome the UI already surfaces, so it
+          // must not be captured as an error. `logger.warn` compiles out of
+          // release builds, so the breadcrumb keeps it measurable in production.
+          addSentryBreadcrumb("echo.transcribe", "rejected", {
+            reason: trResult.error,
+          });
+          logger.warn("[EchoFlow] Transcribe rejected:", trResult.error);
           dispatch({
             type: "FAIL",
             payload: {
@@ -623,8 +632,7 @@ export const useEchoFlow = (
       });
 
       if (autoCopy && translationResultText) {
-        // CopyService owns the signature — Echo used to append it by hand,
-        // which is the only reason the string constant was imported here.
+        // CopyService owns the signature; do not append it here.
         if (await CopyService.copyText(translationResultText)) {
           setAutoCopied(true);
           if (autoCopyTimerRef.current) clearTimeout(autoCopyTimerRef.current);

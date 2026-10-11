@@ -3,6 +3,7 @@ import {
   TRANSLATE_EXPANSION_CUSHION,
   synthesizeRequestSchema,
   synthesizeResponseSchema,
+  VOICE_PREVIEW_TEXT,
   VOICE_SLOT_IDS,
   getStandardSlot,
   getVoiceSlot,
@@ -12,27 +13,25 @@ import { RequestTimings } from "@/core/timing";
 import { pipelineTierForSlot, resolveExecutionTier } from "@/core/voices";
 import {
   SPEECH_PIPELINE_TOTAL_MS,
-  SYNTHESIZE_TOTAL_MS,
   TRANSCRIBE_TOTAL_MS,
   TRANSLATE_TOTAL_MS,
 } from "@/core/budgets";
 import { getLimits } from "@/core/limits";
-import {
-  guardAutoDetect,
-  guardContentType,
-  guardJsonSize,
-  guardLanguageCode,
-  MAX_JSON_BODY_BYTES,
-  safeParseJSON,
-} from "@/core/guards";
+import { guardAutoDetect, guardLanguageCode } from "@/core/guards";
+import type { z } from "zod";
 import { sanitizeTranslationText } from "@/core/sanitize";
 import { hashKey } from "@/utils/keys";
 import { signSpeechUrl } from "@/utils/speech-url";
 import { ingestAudioUpload } from "@/services/audio";
 import { detectTextLanguage } from "@/services/auto-detect";
 import { runPreflightGate } from "@/services/preflight";
-import { buildTranslateCacheKey, runTranslateJob } from "@/services/translate";
-import { trackBillableSuccess } from "@/services/usage";
+import {
+  buildTranslateCacheKey,
+  readTranslateCache,
+  runTranslate,
+  writeTranslateCache,
+} from "@/services/translate";
+import { releaseUsage } from "@/services/usage";
 import {
   buildTranscribeCacheKey,
   readTranscribeCache,
@@ -43,7 +42,6 @@ import {
 import {
   buildSpeechCacheKey,
   readSpeechCache,
-  resolveEffectiveLang,
   runSpeechSynth,
   type SpeechResult,
 } from "@/services/speech";
@@ -176,36 +174,40 @@ async function translateStage(
   );
   if (!gate.ok) return { ok: false, response: gate.response };
   if (signal.aborted) throw new Error(CLIENT_ABORTED);
+  const pipelineTier = gate.preflight.throttled ? "FREE" : tier;
 
   let cacheKey: string | null = null;
-  let textHash = "";
   try {
-    textHash = await hashKey(`${text}_${sourceLang || "auto"}_${targetLang}`);
+    const textHash = await hashKey(
+      `${text}_${sourceLang || "auto"}_${targetLang}`,
+    );
     cacheKey = buildTranslateCacheKey(userId, tier, textHash);
+
+    const cached = await readTranslateCache(env, cacheKey);
+    if (cached) {
+      releaseUsage(env, userId, "translate", ctx);
+      return { ok: true, result: cached };
+    }
   } catch (err) {
     logger.error(`[synthesize] translate cache key error (continuing)`, {
       error: String(err),
     });
   }
 
-  const result = await runTranslateJob({
+  const result = await runTranslate({
     env,
-    tier,
-    userId,
-    ctx,
+    tier: pipelineTier,
     signal,
     text,
-    sourceLang,
     targetLang,
+    sourceLang,
     // Synthesis speaks the target script, so a romanization is never wanted.
     wantTransliteration: false,
-    cacheKey,
-    textHash,
     budgetMs,
-    logPrefix: "[synthesize]",
   });
 
   if (!result) {
+    releaseUsage(env, userId, "translate", ctx);
     return {
       ok: false,
       response: Response.json(
@@ -213,6 +215,10 @@ async function translateStage(
         { status: 503 },
       ),
     };
+  }
+
+  if (cacheKey) {
+    await writeTranslateCache(env, cacheKey, userId, tier, result);
   }
   return { ok: true, result };
 }
@@ -223,15 +229,12 @@ interface ResponseMeta {
   translated: boolean;
   voiceId: string | undefined;
   /**
-   * The text as the user gave it to us — the typed text, or the transcript of
-   * the uploaded audio. Reported back so the client can archive what it paid
-   * to have understood; previously this was computed and then discarded, which
-   * is why Speech Studio could not write to History at all.
+   * The text as typed by the user or transcribed from audio.
    */
   transcript: string;
-  /** The translated text when one was produced, otherwise null. */
+  /** The translated text if produced, otherwise null. */
   translation: string | null;
-  /** True when `transcript` covers only the opening span of what was said. */
+  /** Indicates if `transcript` covers only the beginning of what was said. */
   translationTruncated: boolean;
 }
 
@@ -279,7 +282,7 @@ interface FinishSpeechOptions {
   userId: string;
   sessionId: string | null;
   isPreview: boolean;
-  /** Distinguishes successive renders of identical text; absent is a normal request. */
+  /** Distinguishes successive renders of identical text. */
   reroll?: number;
   remainingMs: () => number;
   timings: RequestTimings;
@@ -335,44 +338,27 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
   }
   if (signal.aborted) throw new Error(CLIENT_ABORTED);
 
-  // Entitlement and execution are separate facts. Entitlement comes from the
-  // JWT and is never downgraded, so a throttled Pro user is never told to
-  // upgrade. Execution may fall back to the free pool, in which case Studio
-  // degrades to the free providers' voices instead of erroring — matching the
-  // "a throttled PREMIUM request is never denied" contract in check_preflight.
-  // The selected slot decides which pipeline may serve the request, so a Pro
-  // user on Standard stays on the free pool. The budget gate can only
-  // downgrade from there.
-  // An absent voiceId means Standard. Resolved once so the tier check and the
-  // pool can never disagree about which slot is in play.
+  // Execute gate reservation for entitlements and budgets.
   const slot = getVoiceSlot(voiceId) ?? getStandardSlot();
   const slotTier = pipelineTierForSlot(slot);
   const scope = isPreview ? "shared" : "user";
   let executionTier: Tier = slotTier;
   let gateError: Response | null = null;
 
-  // The gate and the cache read are independent, and doing them in sequence put
-  // two network round trips in front of every request. Start the gate, then read
-  // the cache speculatively at the slot's tier while it is in flight.
-  //
-  // `resolveExecutionTier` collapses to FREE whenever the slot is FREE, so for
-  // the standard slot the speculative tier is always the final tier and the
-  // read is never wasted. Only a Pro slot can resolve to a different tier, and
-  // that costs one extra read — still cheaper than serialising the common case.
+  // Pre-fetch cache speculatively based on slot tier while waiting for entitlement gate.
   const entitlementGate = guardVoiceEntitlement(voiceId, jwtTier, isPreview);
   if (entitlementGate) return entitlementGate;
 
-  const gatePromise = isPreview
-    ? Promise.resolve<SpeechGate>({ ok: true, tier: jwtTier })
-    : reserveSpeechGate(
-        env,
-        ctx,
-        userId,
-        jwtTier,
-        sessionId,
-        cleanSpoken.length,
-        gateCharge,
-      );
+  // Avoid charging chars for previews as they are fixed shared clips.
+  const gatePromise = reserveSpeechGate(
+    env,
+    ctx,
+    userId,
+    jwtTier,
+    sessionId,
+    isPreview ? 0 : cleanSpoken.length,
+    gateCharge,
+  );
 
   const speculative = timings
     .measure("cache", async () => {
@@ -386,10 +372,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
         scope,
         reroll,
       );
-      // A failed read is a miss, not an absent key. Swallowing it here keeps
-      // `key` so the synthesis below still populates the cache — collapsing both
-      // failures into one empty key would make a transient KV blip permanently
-      // uncacheable for this text.
+      // Treat failed reads as a miss but retain cache key to allow cache population.
       const hit = await readSpeechCache(env, key).catch((err) => {
         logger.warn(
           "[synthesize] speech cache read failed, treating as a miss",
@@ -401,8 +384,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
       });
       return { key, hit };
     })
-    // The key itself could not be built, so there is genuinely nothing to read
-    // or write.
+    // Cache key could not be built.
     .catch((err) => {
       logger.warn("[synthesize] speech cache key build failed", {
         error: err instanceof Error ? err.message : String(err),
@@ -425,13 +407,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     cacheKey = speculativeResult.key;
     cached = speculativeResult.hit;
   } else {
-    // Pro slot downgraded by the gate: the speculative read used the wrong tier
-    // in the key, so it cannot be trusted.
-    //
-    // `readSpeechCache` does not swallow its own KV/R2 errors, so this path needs
-    // the same guard as the speculative read above. Without it a transient cache
-    // blip would surface as a 500 here while the standard-slot path degraded
-    // gracefully to a miss.
+    // Pro slot downgraded by gate; invalidate speculative read and retry at new execution tier.
     const recheck = await buildSpeechCacheKey(
       cleanSpoken,
       spokenLang,
@@ -460,6 +436,15 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     logger.info(
       `[synthesize] Speech cache hit scope=${scope} tier=${executionTier}`,
     );
+    if (reserved.ok) {
+      releaseUsage(
+        env,
+        userId,
+        "speech",
+        ctx,
+        isPreview ? 0 : cleanSpoken.length,
+      );
+    }
     timings.start("encode");
     const res = await buildSpeechResponse(env, cached, meta, cacheKey);
     timings.end("encode");
@@ -482,12 +467,17 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
       signal,
       budgetMs: speechBudget,
       cacheKey,
-      // The response points straight at this object, so the write must have
-      // landed before we reply: a client that fetches the URL immediately
-      // would otherwise race it.
+      // Write result cache before replying so clients don't race the write.
     }),
   );
   if (!result) {
+    releaseUsage(
+      env,
+      userId,
+      "speech",
+      ctx,
+      isPreview ? 0 : cleanSpoken.length,
+    );
     return Response.json(
       {
         error: WORKER_ERROR_CODES.SPEECH_UNAVAILABLE,
@@ -498,18 +488,14 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     );
   }
 
-  if (!isPreview) {
-    trackBillableSuccess(env, userId, "speech", ctx, cleanSpoken.length);
-  }
-
   timings.start("encode");
   const res = await buildSpeechResponse(env, result, meta, cacheKey);
   timings.end("encode");
   return res;
 }
 
-async function synthesizeFromText(
-  request: Request,
+export async function synthesizeFromText(
+  body: z.infer<typeof synthesizeRequestSchema>,
   env: Env,
   tier: Tier,
   signal: AbortSignal,
@@ -520,23 +506,8 @@ async function synthesizeFromText(
   timings: RequestTimings,
   gateCharge: { skipCooldown: () => boolean; markCharged: () => void },
 ): Promise<Response> {
-  const ctGuard = guardContentType(request);
-  if (!ctGuard.allowed) return ctGuard.response;
-
-  const sizeGuard = guardJsonSize(request, MAX_JSON_BODY_BYTES);
-  if (!sizeGuard.allowed) return sizeGuard.response;
-
-  const parsedJson = await safeParseJSON<unknown>(request);
-  if (!parsedJson.ok) return parsedJson.response;
-
-  const parsed = synthesizeRequestSchema.safeParse(parsedJson.data);
-  if (!parsed.success) {
-    return Response.json(
-      { error: WORKER_ERROR_CODES.INVALID_BODY },
-      { status: 400 },
-    );
-  }
-  const { text, sourceLang, targetLang, gender, voiceId, reroll } = parsed.data;
+  const { text, sourceLang, targetLang, gender, voiceId, reroll } = body;
+  const isPreview = body.isPreview || text === VOICE_PREVIEW_TEXT;
 
   if (!text) {
     return Response.json(
@@ -555,15 +526,11 @@ async function synthesizeFromText(
 
   const resolvedGender = gender;
 
-  const { isPreview, effectiveLang } = resolveEffectiveLang(
-    cleanText,
-    targetLang,
-  );
-
+  // Previews don't require language fallback logic.
   if (isPreview) {
     return finishSpeech({
       spokenText: cleanText,
-      spokenLang: effectiveLang,
+      spokenLang: targetLang,
       gender: resolvedGender,
       voiceId,
       jwtTier: tier,
@@ -591,8 +558,7 @@ async function synthesizeFromText(
   let spokenText = cleanText;
   let translated = false;
   let effectiveSource = sourceLang ?? targetLang;
-  // The transcript reported back must describe the same span the translation
-  // covers, or the pair contradicts the response schema's own contract.
+  // Match reported transcript to the same text span the translation covers.
   let reportedText = cleanText;
   let translationTruncated = false;
 
@@ -687,7 +653,7 @@ async function synthesizeFromText(
   });
 }
 
-async function synthesizeFromAudio(
+export async function synthesizeFromAudio(
   request: Request,
   env: Env,
   tier: Tier,
@@ -729,8 +695,7 @@ async function synthesizeFromAudio(
   const tgtGuard = guardLanguageCode(targetLang, "targetLang");
   if (!tgtGuard.allowed) return tgtGuard.response;
 
-  // `null` means the client has not chosen; providers supply their own neutral
-  // default, so it is passed through rather than coerced to a gender here.
+  // Maintain `null` gender to use provider-specific neutral defaults.
   let resolvedGender: "male" | "female" | undefined;
   if (genderRaw !== null && genderRaw !== "male" && genderRaw !== "female") {
     return Response.json(
@@ -767,6 +732,7 @@ async function synthesizeFromAudio(
   );
   if (!transcribeGate.ok) return transcribeGate.response;
   if (signal.aborted) throw new Error(CLIENT_ABORTED);
+  const sttPipelineTier = transcribeGate.preflight.throttled ? "FREE" : tier;
 
   let cacheKey: string | null = null;
   let transcript: string | null = null;
@@ -783,6 +749,7 @@ async function synthesizeFromAudio(
     if (cached) {
       transcript = cached.text;
       detectedLang = cached.language ?? null;
+      releaseUsage(env, userId, "transcribe", ctx);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -796,13 +763,14 @@ async function synthesizeFromAudio(
         audioBlob: audio,
         effectiveLang: isAuto ? "auto" : lang,
         isAuto,
-        tier: tier,
+        tier: sttPipelineTier,
         env,
         signal,
         budgetMs: Math.min(TRANSCRIBE_TOTAL_MS, remainingMs()),
       }),
     );
     if (!result) {
+      releaseUsage(env, userId, "transcribe", ctx);
       return Response.json(
         { error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL },
         { status: 503 },
@@ -810,8 +778,6 @@ async function synthesizeFromAudio(
     }
     transcript = result.text;
     detectedLang = result.language ?? null;
-
-    trackBillableSuccess(env, userId, "transcribe", ctx);
 
     if (cacheKey) {
       const prepared = stripTranscriptLanguage(result, tier);
@@ -895,19 +861,7 @@ async function synthesizeFromAudio(
   });
 }
 
-export interface SynthesizeAuthContext {
-  userId: string;
-  sessionId: string | null;
-}
-
-/**
- * One per request. A combined request charges the cooldown on its first gate
- * and passes `true` to the rest.
- *
- * This must never be module-level: a Worker isolate handles requests
- * concurrently, so shared state would let one request skip another's cooldown.
- */
-function createGateCharge(): {
+export function createGateCharge(): {
   skipCooldown: () => boolean;
   markCharged: () => void;
 } {
@@ -918,46 +872,4 @@ function createGateCharge(): {
       charged = true;
     },
   };
-}
-
-export async function handleSynthesize(
-  request: Request,
-  env: Env,
-  tier: Tier,
-  signal: AbortSignal,
-  auth: SynthesizeAuthContext,
-  ctx: ExecutionContext,
-  timings: RequestTimings = new RequestTimings(),
-): Promise<Response> {
-  const start = Date.now();
-  const remainingMs = () => SYNTHESIZE_TOTAL_MS - (Date.now() - start);
-  const gateCharge = createGateCharge();
-
-  const ct = request.headers.get("Content-Type") || "";
-  if (ct.includes("multipart/form-data")) {
-    return synthesizeFromAudio(
-      request,
-      env,
-      tier,
-      signal,
-      auth.userId,
-      auth.sessionId,
-      ctx,
-      remainingMs,
-      timings,
-      gateCharge,
-    );
-  }
-  return synthesizeFromText(
-    request,
-    env,
-    tier,
-    signal,
-    auth.userId,
-    auth.sessionId,
-    ctx,
-    remainingMs,
-    timings,
-    gateCharge,
-  );
 }

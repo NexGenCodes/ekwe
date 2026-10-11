@@ -109,4 +109,8 @@ coverage/
 # Turborepo
 .turbo/
 
+# Firebase configuration
+apps/mobile/GoogleService-Info.plist
 
+
+apps/mobile/google-services.json

@@ -196,6 +196,8 @@ describe("sweepStaleAudioCache", () => {
       recording,
       fresh,
       foreign,
+      entry("file:///mock/cache/ekwe_opus_old.ogg", 60 * 60 * 1000),
+      entry("file:///mock/cache/ekwe_vorbis_old.ogg", 60 * 60 * 1000),
       new Directory("file:///mock/cache/sub"),
     );
 
@@ -205,6 +207,8 @@ describe("sweepStaleAudioCache", () => {
       new Set([
         "file:///mock/cache/ekwe_speech_old.mp3",
         "file:///mock/cache/ekwe_recording_abc.ogg",
+        "file:///mock/cache/ekwe_opus_old.ogg",
+        "file:///mock/cache/ekwe_vorbis_old.ogg",
       ]),
     );
   });

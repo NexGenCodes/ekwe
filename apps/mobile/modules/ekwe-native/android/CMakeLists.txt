@@ -36,6 +36,44 @@ target_include_directories(opusfile PUBLIC
 )
 target_link_libraries(opusfile PUBLIC ogg opus)
 
+# libvorbis is compiled directly rather than via its own CMakeLists, which is
+# the same call as opusfile above: its find_package(Ogg) expects an installed
+# libogg, while ours is the add_subdirectory() target. vorbisfile.c is the
+# only file left out — it is the streaming-read API, and this build only ever
+# writes.
+set(VORBIS_SRC
+    ../cpp/thirdparty/libvorbis/lib/analysis.c
+    ../cpp/thirdparty/libvorbis/lib/bitrate.c
+    ../cpp/thirdparty/libvorbis/lib/block.c
+    ../cpp/thirdparty/libvorbis/lib/codebook.c
+    ../cpp/thirdparty/libvorbis/lib/envelope.c
+    ../cpp/thirdparty/libvorbis/lib/floor0.c
+    ../cpp/thirdparty/libvorbis/lib/floor1.c
+    ../cpp/thirdparty/libvorbis/lib/info.c
+    ../cpp/thirdparty/libvorbis/lib/lookup.c
+    ../cpp/thirdparty/libvorbis/lib/lpc.c
+    ../cpp/thirdparty/libvorbis/lib/lsp.c
+    ../cpp/thirdparty/libvorbis/lib/mapping0.c
+    ../cpp/thirdparty/libvorbis/lib/mdct.c
+    ../cpp/thirdparty/libvorbis/lib/psy.c
+    ../cpp/thirdparty/libvorbis/lib/registry.c
+    ../cpp/thirdparty/libvorbis/lib/res0.c
+    ../cpp/thirdparty/libvorbis/lib/sharedbook.c
+    ../cpp/thirdparty/libvorbis/lib/smallft.c
+    ../cpp/thirdparty/libvorbis/lib/synthesis.c
+    ../cpp/thirdparty/libvorbis/lib/vorbisenc.c
+    ../cpp/thirdparty/libvorbis/lib/window.c
+)
+add_library(vorbis STATIC ${VORBIS_SRC})
+target_include_directories(vorbis PUBLIC
+    ../cpp/thirdparty/libvorbis/include
+    ../cpp/thirdparty/libogg/include
+)
+target_include_directories(vorbis PRIVATE
+    ../cpp/thirdparty/libvorbis/lib
+)
+target_link_libraries(vorbis PUBLIC ogg)
+
 # Shared Opus/Ogg utilities (used by decoder and capture engine)
 add_library(ekwe_opus_util STATIC
     ../cpp/EkweOpusEncoder.cpp
@@ -51,9 +89,10 @@ target_include_directories(ekwe_opus_util PUBLIC
 )
 target_link_libraries(ekwe_opus_util PUBLIC opus ogg)
 
-# Our EkweAudioDecoder
+# Our EkweAudioDecoder + the Vorbis encoder the Wit.ai path needs
 add_library(ekwe_audio_decoder STATIC
     ../cpp/EkweAudioDecoder.cpp
+    ../cpp/EkweVorbisEncoder.cpp
 )
 target_include_directories(ekwe_audio_decoder PUBLIC
     ../cpp
@@ -61,8 +100,9 @@ target_include_directories(ekwe_audio_decoder PUBLIC
     ../cpp/thirdparty/opusfile/include
     ../cpp/thirdparty/opus/include
     ../cpp/thirdparty/libogg/include
+    ../cpp/thirdparty/libvorbis/include
 )
-target_link_libraries(ekwe_audio_decoder PRIVATE opusfile ekwe_opus_util)
+target_link_libraries(ekwe_audio_decoder PRIVATE opusfile vorbis ekwe_opus_util)
 
 # Capture engine (CaptureController)
 # Links ekwe_audio_decoder because stop() re-decodes the finished Ogg to derive

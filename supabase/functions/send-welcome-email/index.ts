@@ -16,12 +16,13 @@ const SMTP_HOST = "smtp-relay.brevo.com";
 const SMTP_PORT = 465;
 const SMTP_USER = Deno.env.get("BREVO_SMTP_USER") || "";
 const SMTP_PASS = Deno.env.get("BREVO_SMTP_PASS") || "";
-const SENDER_EMAIL =
-  Deno.env.get("SENDER_EMAIL") || "emmanuelforchinagorom@gmail.com";
+// The edge function only sends, so the service-role key is never needed here.
+// Reject rather than fall back: a missing sender means the email silently goes
+// out from a personal address, which is worse than a delivery failure.
+const SENDER_EMAIL = Deno.env.get("SENDER_EMAIL") || "";
 const SENDER_NAME = "Ekwe";
 
 const WEBHOOK_SECRET = Deno.env.get("SEND_WELCOME_EMAIL_SECRET") || "";
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
 function timingSafeEqualStr(a: string, b: string): boolean {
   const A = new TextEncoder().encode(a);
@@ -39,7 +40,7 @@ async function isAuthorized(req: Request): Promise<boolean> {
     : provided;
   if (!token) return false;
 
-  const candidates = [WEBHOOK_SECRET, SERVICE_ROLE_KEY].filter(Boolean);
+  const candidates = [WEBHOOK_SECRET].filter(Boolean);
   if (candidates.length === 0) return false;
 
   for (const candidate of candidates) {
@@ -158,6 +159,15 @@ serve(async (req) => {
     if (!(await isAuthorized(req))) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
+      });
+    }
+
+    if (!SENDER_EMAIL || !SMTP_USER || !SMTP_PASS) {
+      // Deno edge functions have no logger module; console is the runtime's.
+      // eslint-disable-next-line no-console
+      console.error("send-welcome-email: SMTP/SENDER_EMAIL not configured");
+      return new Response(JSON.stringify({ error: "Not configured" }), {
+        status: 503,
       });
     }
 

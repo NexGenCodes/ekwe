@@ -24,9 +24,15 @@ export interface OriginMeta {
 
 export const HISTORY_ORIGINS = ["speech-studio", "echo", "orb"] as const;
 
+/**
+ * `label` is display-only and may be shortened freely; the origin *value* is
+ * persisted on every history row and is frozen. Renaming it would orphan
+ * existing entries and break the `result_shared` dashboards, which key on the
+ * separate `TELEMETRY_SOURCES` vocabulary.
+ */
 export const ORIGIN_META: Record<HistoryOrigin, OriginMeta> = {
   "speech-studio": {
-    label: "Speech Studio",
+    label: "Studio",
     description: "Recorded or typed in Ekwe",
     icon: "mic",
   },
@@ -37,7 +43,7 @@ export const ORIGIN_META: Record<HistoryOrigin, OriginMeta> = {
   },
   orb: {
     label: "Orb",
-    description: "Captured from an app that can't share its audio",
+    description: "Transcribed while playing in another app",
     icon: "circle-dot",
   },
 };

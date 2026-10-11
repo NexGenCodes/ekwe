@@ -2,6 +2,7 @@ import { blobToBase64 } from "@/utils/base64";
 import {
   CLIENT_ABORTED,
   Env,
+  TttRequest,
   TranscribeResult,
   TranslateResult,
 } from "@/core/types";
@@ -70,13 +71,11 @@ export async function stt(
   return null;
 }
 
-export async function translate(
+export async function ttt(
   text: string,
-  targetLang: string,
-  sourceLang: string | undefined,
+  request: TttRequest,
   env: Env,
   signal: AbortSignal,
-  transliteration: boolean = false,
 ): Promise<TranslateResult | null> {
   try {
     if (signal.aborted) throw new Error(CLIENT_ABORTED);
@@ -85,9 +84,9 @@ export async function translate(
         {
           role: "system",
           content: buildTranslatePrompt(
-            targetLang,
-            sourceLang,
-            transliteration,
+            request.targetLang,
+            request.sourceLang,
+            request.transliteration,
           ),
         },
         { role: "user", content: text },
@@ -99,7 +98,7 @@ export async function translate(
     if (response) {
       const { translation, transliteration: romanized } = parseTranslateOutput(
         response,
-        transliteration,
+        request.transliteration,
       );
       return {
         translation,

@@ -1,4 +1,4 @@
-import { CLIENT_ABORTED, Env, TranslateResult } from "@/core/types";
+import { CLIENT_ABORTED, Env, TttRequest, TranslateResult } from "@/core/types";
 import { rotateKeys } from "@/utils/keys";
 import { buildTranslatePrompt, parseTranslateOutput } from "@/utils/prompts";
 import {
@@ -9,16 +9,18 @@ import {
 import { logger } from "@/core/logger";
 
 const MISTRAL_CHAT = "https://api.mistral.ai/v1/chat/completions";
+const MISTRAL_MODEL = "ministral-14b-latest";
 
-export async function translate(
+export async function ttt(
   text: string,
-  targetLang: string,
-  sourceLang: string | undefined,
+  request: TttRequest,
   env: Env,
   signal: AbortSignal,
-  transliteration: boolean = false,
 ): Promise<TranslateResult | null> {
-  logger.info("[mistral] Requesting translation", { targetLang, sourceLang });
+  logger.info("[mistral] Requesting translation", {
+    targetLang: request.targetLang,
+    sourceLang: request.sourceLang,
+  });
 
   try {
     const res = await rotateKeys(
@@ -35,14 +37,14 @@ export async function translate(
               ...getClientHeaders(),
             },
             body: JSON.stringify({
-              model: "mistral-small-2603",
+              model: MISTRAL_MODEL,
               messages: [
                 {
                   role: "system",
                   content: buildTranslatePrompt(
-                    targetLang,
-                    sourceLang,
-                    transliteration,
+                    request.targetLang,
+                    request.sourceLang,
+                    request.transliteration,
                   ),
                 },
                 { role: "user", content: text },
@@ -71,7 +73,7 @@ export async function translate(
 
     const { translation, transliteration: romanized } = parseTranslateOutput(
       content,
-      transliteration,
+      request.transliteration,
     );
     return {
       translation,

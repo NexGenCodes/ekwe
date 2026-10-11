@@ -6,7 +6,6 @@ export * from "@/components/AuthHeader";
 export * from "@/components/AuthShell";
 export * from "@/components/SocialAuthGroup";
 export * from "@/components/SocialButton";
-export * from "@/components/LanguagePickerSheet";
 export * from "@/components/LanguageSelectionGrid";
 export * from "@/components/ScrollableTextBox";
 export * from "@/components/CustomTabBar";

@@ -13,6 +13,12 @@ const VOICE_NOTE_EXTENSIONS = [
   ".amr",
   ".3gp",
   ".wav",
+  ".flac",
+  ".mp3",
+  ".aiff",
+  ".aif",
+  ".caf",
+  ".webm",
 ];
 
 const VOICE_NOTE_MIME_TYPES = [
@@ -30,6 +36,15 @@ const VOICE_NOTE_MIME_TYPES = [
   "audio/mp4",
   "audio/wav",
   "audio/x-wav",
+  "audio/flac",
+  "audio/x-flac",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/aiff",
+  "audio/x-aiff",
+  "audio/x-caf",
+  "audio/caf",
+  "audio/webm",
 ];
 
 export const VOICE_NOTE_EXTENSION_TO_MIME: Record<string, string> = {
@@ -42,6 +57,11 @@ export const VOICE_NOTE_EXTENSION_TO_MIME: Record<string, string> = {
   wav: "audio/wav",
   mp3: "audio/mpeg",
   mp4: "audio/mp4",
+  flac: "audio/flac",
+  aiff: "audio/aiff",
+  aif: "audio/aiff",
+  caf: "audio/x-caf",
+  webm: "audio/webm",
 };
 
 const validateVoiceNoteFormat = (uri: string, mimeType?: string): boolean => {
@@ -85,16 +105,25 @@ const sniffAudioHeader = async (uri: string): Promise<boolean> => {
     const rawBytes = handle.readBytes(12);
     handle.close();
 
-    let binary = "";
-    for (let i = 0; i < rawBytes.length; i++) {
-      binary += String.fromCharCode(rawBytes[i]);
-    }
-    const header = btoa(binary);
-    if (!header) return false;
+    const text = String.fromCharCode(...rawBytes);
 
-    const signatures = ["T2dnUw", "OpusHead", "ZnR5c", "I0FNUg", "UklGR"];
+    const signatures = [
+      "OggS", // Ogg (Opus/Vorbis)
+      "fLaC",
+      "ID3", // MP3 with ID3 tag
+      "RIFF", // WAV
+      "ftyp", // MP4/M4A BMFF
+      "caff", // Core Audio Format
+      "FORM", // AIFF
+      "#!AMR", // raw AMR-NB/WB
+    ];
 
-    return signatures.some((sig) => header.includes(sig));
+    if (signatures.some((sig) => text.includes(sig))) return true;
+
+    // ADTS AAC syncword (0xFFF1/0xFFF9) and bare MP3 frame sync
+    if (rawBytes[0] === 0xff && (rawBytes[1] & 0xe0) === 0xe0) return true;
+
+    return false;
   } catch {
     return false;
   }

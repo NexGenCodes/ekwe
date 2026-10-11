@@ -1,76 +1,88 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-
-const bodies: Array<Record<string, unknown>> = [];
-
-vi.mock("@/services/supabase", () => ({
-  supabaseServiceHeaders: () => ({}),
-  supabasePost: vi.fn(async (_env: unknown, _path: string, body: unknown) => {
-    bodies.push(body as Record<string, unknown>);
-    return {
-      ok: true,
-      json: async () => ({
-        allowed: true,
-        tier_active: "FREE",
-        reason: null,
-        cooldown_remaining: 0,
-        quota_total: null,
-        quota_remaining: null,
-        throttled: false,
-      }),
-    };
-  }),
-}));
-
+import { mockDb, mockEnv, executeQueryChunks } from "@/__tests__/setup";
 import { checkPreflight } from "@/services/preflight";
+import { getLimits } from "@/core/limits";
 
-const env = {} as Env;
+const env = mockEnv();
 
-function cooldown(type: string, skip: boolean): number {
-  void checkPreflight(env, "u1", "FREE", type as never, null, 0, skip).catch(
-    () => undefined,
+/**
+ * Helper to call checkPreflight and return the queryChunks from the
+ * check_preflight RPC call for parameter inspection.
+ */
+async function preflightChunks(
+  type: string,
+  skip: boolean,
+  chargeChars = 0,
+  tier: "FREE" | "PREMIUM" = "FREE",
+): Promise<unknown[]> {
+  mockDb.execute.mockImplementation(async (query) => {
+    const q = JSON.stringify(query);
+    if (q.includes("check_preflight")) {
+      return [
+        {
+          preflight: {
+            allowed: true,
+            tier_active: tier,
+            reason: null,
+            cooldown_remaining: 0,
+            quota_total: null,
+            quota_remaining: null,
+            throttled: false,
+          },
+        },
+      ];
+    }
+    return [];
+  });
+
+  await checkPreflight(env, "u1", tier, type as never, null, chargeChars, skip);
+
+  const call = mockDb.execute.mock.calls.find((c) =>
+    JSON.stringify(c[0]).includes("check_preflight"),
   );
-  return bodies[bodies.length - 1].p_free_cooldown_seconds as number;
+  return executeQueryChunks(call![0]);
 }
 
 describe("checkPreflight cooldown scoping", () => {
   beforeEach(() => {
-    bodies.length = 0;
     vi.clearAllMocks();
   });
 
-  it("charges the cooldown on the first gate of a request", () => {
-    expect(cooldown("transcribe", false)).toBeGreaterThan(0);
+  it("charges the cooldown on the first gate of a request", async () => {
+    const chunks = await preflightChunks("transcribe", false);
+    // chunks[5] = freeCooldownSeconds
+    expect(chunks[5]).toBeGreaterThan(0);
   });
 
-  it("sends no cooldown when the request already charged", () => {
-    expect(cooldown("speech", true)).toBe(0);
+  it("sends no cooldown when the request already charged", async () => {
+    const chunks = await preflightChunks("speech", true);
+    // chunks[5] = freeCooldownSeconds (should be 0 when skipCooldown is true)
+    expect(chunks[5]).toBe(0);
   });
 
   it("still charges speech quota when the cooldown is skipped", async () => {
-    bodies.length = 0;
-    await checkPreflight(env, "u1", "FREE", "speech", null, 120, true);
-    const body = bodies[bodies.length - 1];
-    expect(body.p_charge_chars).toBe(120);
-    expect(body.p_free_daily_limit).toBeGreaterThan(0);
+    const chunks = await preflightChunks("speech", true, 120);
+    // chunks[19] = chargeChars
+    expect(chunks[19]).toBe(120);
+    // chunks[7] = freeDailyLimit
+    expect(chunks[7]).toBeGreaterThan(0);
   });
 
   it("still charges translate quota when the cooldown is skipped", async () => {
-    bodies.length = 0;
-    await checkPreflight(env, "u1", "FREE", "translate", null, 0, true);
-    expect(bodies[bodies.length - 1].p_free_daily_limit).toBe(25);
+    const chunks = await preflightChunks("translate", true);
+    // chunks[7] = freeDailyLimit
+    expect(chunks[7]).toBe(25);
   });
 
-  it("applies the same rule to the premium cooldown", () => {
-    void checkPreflight(env, "u1", "PREMIUM", "speech", null, 0, true).catch(
-      () => undefined,
-    );
-    expect(bodies[bodies.length - 1].p_premium_cooldown_seconds).toBe(0);
+  it("applies the same rule to the premium cooldown", async () => {
+    const chunks = await preflightChunks("speech", true, 0, "PREMIUM");
+    // chunks[9] = premiumCooldownSeconds (should be 0 when skipCooldown is true)
+    expect(chunks[9]).toBe(0);
   });
 
-  it("does not zero the throttle cooldown for a charged request", () => {
-    void checkPreflight(env, "u1", "PREMIUM", "speech", null, 0, true).catch(
-      () => undefined,
-    );
-    expect(bodies[bodies.length - 1].p_throttle_cooldown_seconds).toBe(3);
+  it("does not zero the throttle cooldown for a charged request", async () => {
+    const chunks = await preflightChunks("speech", true, 0, "PREMIUM");
+    // chunks[15] = throttleCooldownSeconds (should NOT be zeroed by skipCooldown)
+    expect(chunks[15]).toBe(getLimits("FREE").cooldownSeconds);
   });
 });

@@ -1,6 +1,10 @@
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { logger } from "@/core/logger";
-import { guardAutoDetect, guardLanguageCode } from "@/core/guards";
+import {
+  guardAutoDetect,
+  guardLanguageCode,
+  guardSupportedLanguage,
+} from "@/core/guards";
 import { ingestAudioUpload } from "@/services/audio";
 import { TRANSCRIBE_TOTAL_MS } from "@/core/budgets";
 import {
@@ -10,21 +14,25 @@ import {
   stripTranscriptLanguage,
   writeTranscribeCache,
 } from "@/services/transcribe";
-import { trackBillableSuccess } from "@/services/usage";
+import { releaseUsage } from "@/services/usage";
 import { Env, Tier } from "@/core/types";
 
 export async function handleTranscribe(
   request: Request,
   env: Env,
   tier: Tier,
+  pipelineTier: Tier,
   signal: AbortSignal,
   userId: string,
   ctx?: ExecutionContext,
 ): Promise<Response> {
-  logger.info(`[transcribe] handleTranscribe started`, { tier });
+  logger.info(`[transcribe] handleTranscribe started`, { tier, pipelineTier });
 
   const ingest = await ingestAudioUpload(request, tier);
-  if (!ingest.ok) return ingest.response;
+  if (!ingest.ok) {
+    releaseUsage(env, userId, "transcribe", ctx);
+    return ingest.response;
+  }
   const { audio, audioHash, durationMs, form } = ingest.value;
 
   const lang = form.get("lang") as string | null;
@@ -33,10 +41,24 @@ export async function handleTranscribe(
   );
 
   const autoGuard = guardAutoDetect(lang, tier);
-  if (!autoGuard.allowed) return autoGuard.response;
+  if (!autoGuard.allowed) {
+    releaseUsage(env, userId, "transcribe", ctx);
+    return autoGuard.response;
+  }
 
   const langGuard = guardLanguageCode(lang, "lang");
-  if (!langGuard.allowed) return langGuard.response;
+  if (!langGuard.allowed) {
+    releaseUsage(env, userId, "transcribe", ctx);
+    return langGuard.response;
+  }
+
+  // A catalog language no provider transcribes must fail as a request error,
+  // before audio is decoded and before healthy providers are marked down.
+  const supportGuard = guardSupportedLanguage(lang, "stt");
+  if (!supportGuard.allowed) {
+    releaseUsage(env, userId, "transcribe", ctx);
+    return supportGuard.response;
+  }
 
   let cacheKey: string | null = null;
   try {
@@ -48,7 +70,10 @@ export async function handleTranscribe(
     });
 
     const cached = await readTranscribeCache(env, cacheKey);
-    if (cached) return Response.json(cached);
+    if (cached) {
+      releaseUsage(env, userId, "transcribe", ctx);
+      return Response.json(cached);
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error(`[transcribe] D1 cache lookup error (continuing): ${msg}`);
@@ -61,7 +86,7 @@ export async function handleTranscribe(
     audioBlob: audio,
     effectiveLang,
     isAuto,
-    tier,
+    tier: pipelineTier,
     env,
     signal,
     budgetMs: TRANSCRIBE_TOTAL_MS,
@@ -73,12 +98,11 @@ export async function handleTranscribe(
       await writeTranscribeCache(env, cacheKey, userId, tier, prepared);
     }
 
-    trackBillableSuccess(env, userId, "transcribe", ctx);
-
     return Response.json(prepared);
   }
 
   logger.error(`[transcribe] ALL providers failed`);
+  releaseUsage(env, userId, "transcribe", ctx);
 
   return Response.json(
     { error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL },

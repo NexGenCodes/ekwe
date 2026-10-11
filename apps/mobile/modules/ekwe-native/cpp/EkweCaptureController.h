@@ -9,6 +9,7 @@
 
 #include "EkweOpusEncoder.h"
 #include "EkweOggMuxer.h"
+#include "EkweCallbackSlot.hpp"
 
 namespace ekwe {
 
@@ -26,7 +27,10 @@ enum class CaptureEvent {
 
 struct CaptureEventData {
     CaptureEvent event;
-    std::vector<uint8_t> data;
+    // Non-owning view valid only for the duration of the callback. The frame
+    // bytes are handed to a synchronous listener, so copying them into the
+    // event would just allocate per audio frame.
+    ByteView data;
     std::string error_message;
     float rms;
 };
@@ -104,6 +108,15 @@ private:
     int preroll_frames_;
     bool speech_started_;
 
+    // Trailing-silence gate, the mirror of the preroll. A silent frame is
+    // buffered rather than encoded, so silence only reaches the Ogg when speech
+    // follows it. Without this, dictation padded by thinking pauses (and the
+    // 8s auto-stop path in particular) ends on a long flat run of zeros, which
+    // a voice note renders as the dead, straight-line waveform the whole point
+    // of the shared file is to avoid. stop() drops whatever is still pending.
+    static constexpr int kTailSilenceMs = 500;
+    std::vector<int16_t> tail_silence_;
+
 
     OpusStreamEncoder opus_encoder_;
     OggMuxer ogg_muxer_;
@@ -119,6 +132,8 @@ private:
     void process_frame(const int16_t* frame_data, size_t frame_samples);
     void encode_frame_to_ogg(const int16_t* data, size_t total);
     void flush_preroll();
+    // Encodes the buffered trailing silence, because speech resumed.
+    void flush_tail_silence();
     void process_staged_frames();
     // Compacts the staging buffer so at least `needed` samples fit, and reports
     // how many actually do. Callers loop on this instead of clipping their

@@ -56,12 +56,15 @@ vi.mock("@/utils/http", () => ({
 
 vi.mock("@/utils/logger", () => ({
   default: loggerMock,
-  captureSentryMessage: vi.fn(),
   setSentryUser: vi.fn(),
 }));
 
 vi.mock("@/store/auth", () => ({
   getToken: getTokenMock,
+}));
+
+vi.mock("expo-router", () => ({
+  router: { push: vi.fn(), replace: vi.fn() },
 }));
 
 import * as Notifications from "expo-notifications";

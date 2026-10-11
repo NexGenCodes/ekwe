@@ -5,16 +5,7 @@ import { VOICE_PREVIEW_VERSION } from "@ekwe/shared";
 import { logger } from "@/utils";
 import { cleanAudioArtifacts } from "@/utils/audioCache";
 
-/**
- * A voice preview is a fixed clip for a fixed (slot, gender): the text is a
- * constant and the worker pins previews to English, so the rendered audio
- * never changes for a given app build. That makes it worth keeping on disk
- * instead of re-downloading it on every tap.
- *
- * The prefix is deliberately absent from `TRANSIENT_CACHE_PREFIXES` so the
- * startup sweep leaves these alone; `clearStalePreviewCache` owns their
- * lifetime instead.
- */
+/** Disk cache prefix for voice previews. Excluded from startup sweep; managed by `clearStalePreviewCache`. */
 const PREVIEW_PREFIX = "ekwe_vpreview";
 
 const fileNameFor = (key: string, extension: string): string =>
@@ -30,10 +21,7 @@ const pathFor = (key: string, extension: string): string | null => {
   }
 };
 
-/**
- * `getExtension` in services/speech narrows to wav/mp3, but the pipeline also
- * emits Opus, so the extension is read off the file rather than assumed.
- */
+/** Extracts the file extension from a URI. */
 const extensionOf = (uri: string, fallback: string): string => {
   const match = /\.([a-z0-9]+)$/i.exec(uri);
   return match?.[1]?.toLowerCase() || fallback;
@@ -57,11 +45,7 @@ export function getCachedPreviewUri(key: string): string | null {
   }
 }
 
-/**
- * Moves a freshly synthesized clip to its deterministic memo path so the next
- * tap is served from disk. Returns the path to play, falling back to the
- * source when the move cannot happen.
- */
+/** Moves a synthesized clip to its deterministic memo path. Falls back to the source URI on failure. */
 export async function persistPreview(
   sourceUri: string,
   key: string,
@@ -85,10 +69,7 @@ export async function persistPreview(
   }
 }
 
-/**
- * Retires memoized previews written by an older app version, so a slot whose
- * resolved voice changed does not keep playing a stale clip.
- */
+/** Removes memoized previews from older app versions to avoid stale clips. */
 export async function clearStalePreviewCache(): Promise<void> {
   try {
     const entries = new Directory(Paths.cache).list();

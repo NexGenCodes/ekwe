@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { error, HttpError } from "@/core/http";
+import { jsonBody } from "@/__tests__/setup";
 
 describe("error", () => {
   it("returns JSON body with error, message, correct status, and headers", async () => {
@@ -12,7 +13,7 @@ describe("error", () => {
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(res.headers.get("X-Test")).toBe("123");
 
-    const body = (await res.json()) as any;
+    const body = await jsonBody(res);
     expect(body).toEqual({
       error: "CODE",
       message: "Message",

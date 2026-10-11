@@ -10,7 +10,6 @@ vi.mock("@/providers/edge", () => ({
 import {
   buildSpeechCacheKey,
   readSpeechCache,
-  resolveEffectiveLang,
   runSpeechSynth,
   writeSpeechCache,
 } from "@/services/speech";
@@ -32,8 +31,7 @@ import { http } from "msw";
 import type { HttpResponseResolver } from "msw";
 import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
-import { getVoiceSlot, VOICE_PREVIEW_TEXT } from "@ekwe/shared";
-import { LANGUAGE_CODES } from "@ekwe/shared/languages";
+import { getVoiceSlot } from "@ekwe/shared";
 
 function mp3Response(): Response {
   const mp3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00, 0x00]);
@@ -402,51 +400,6 @@ describe("speech engine (services/speech.ts)", () => {
     });
   });
 
-  describe("resolveEffectiveLang", () => {
-    test("preview text is pinned to english regardless of requested lang", () => {
-      const result = resolveEffectiveLang(VOICE_PREVIEW_TEXT, "fr");
-      expect(result.isPreview).toBe(true);
-      expect(result.effectiveLang).toBe("en");
-    });
-
-    test("non-preview text keeps the requested lang", () => {
-      const result = resolveEffectiveLang("anything else", "fr");
-      expect(result.isPreview).toBe(false);
-      expect(result.effectiveLang).toBe("fr");
-    });
-
-    test("previews in English for every catalog language, on purpose", () => {
-      // A deliberate product decision, not a gap: the sample sentence is fixed
-      // English, so pinning it keeps one cached clip per voice instead of one
-      // per language. Lifting it needs real per-language sample sentences.
-      for (const code of LANGUAGE_CODES) {
-        expect(
-          resolveEffectiveLang(VOICE_PREVIEW_TEXT, code).effectiveLang,
-        ).toBe("en");
-      }
-    });
-
-    test("mints one preview clip per voice, not per language", async () => {
-      // The cache key includes the language, so a preview that followed the
-      // selection would duplicate the same audio once per catalog language.
-      const keys = new Set(
-        await Promise.all(
-          LANGUAGE_CODES.map(async (code) => {
-            const effective = resolveEffectiveLang(VOICE_PREVIEW_TEXT, code);
-            return buildSpeechCacheKey(
-              VOICE_PREVIEW_TEXT,
-              effective.effectiveLang,
-              "female",
-              "studio",
-              "user-1",
-            );
-          }),
-        ),
-      );
-      expect(keys.size).toBe(1);
-    });
-  });
-
   describe("resolveProviderVoices", () => {
     test("deepgram resolves per-language gendered voices", () => {
       expect(resolveProviderVoices("deepgram", "female", "es")).toEqual([
@@ -547,7 +500,13 @@ describe("speech engine (services/speech.ts)", () => {
           ),
         ),
       ];
-      expect(providers).toEqual(["gemini", "deepgram", "edge", "witai"]);
+      expect(providers).toEqual([
+        "gemini",
+        "deepgram",
+        "elevenlabs",
+        "edge",
+        "witai",
+      ]);
     });
 
     test("the two Studio slots resolve to different first candidates", () => {
@@ -597,7 +556,7 @@ describe("speech engine (services/speech.ts)", () => {
       // deepgram supports 7 languages and zh is not one of them, so it must
       // not be attempted (and therefore cannot be marked down for it).
       expect(providers).not.toContain("deepgram");
-      expect(providers).toEqual(["gemini", "edge", "witai"]);
+      expect(providers).toEqual(["gemini", "elevenlabs", "edge", "witai"]);
     });
 
     test("a missing persona position is skipped, not clamped", () => {

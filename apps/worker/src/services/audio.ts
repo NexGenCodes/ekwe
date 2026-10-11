@@ -116,7 +116,21 @@ export async function ingestAudioUpload(
 
   const durationRaw = form.get("duration") as string | null;
   const durationMs = durationRaw ? Number(durationRaw) : undefined;
-  const durationGuard = guardAudioDuration(durationMs, tier);
+  if (
+    durationMs === undefined ||
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0
+  ) {
+    return {
+      ok: false,
+      response: error(
+        WORKER_ERROR_CODES.MISSING_DURATION,
+        400,
+        "A positive upload duration in milliseconds is required.",
+      ),
+    };
+  }
+  const durationGuard = guardAudioDuration(durationMs, tier, file.size);
   if (!durationGuard.allowed)
     return { ok: false, response: durationGuard.response };
 

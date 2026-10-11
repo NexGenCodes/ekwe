@@ -149,15 +149,26 @@ Notifications.addPushTokenListener(async (token) => {
   }
 });
 
-// TODO: Once deep-link routes are defined, replace the logger.info with
+import { router, type Href } from "expo-router";
 
 export function setupNotificationTapListener(): () => void {
   const subscription = Notifications.addNotificationResponseReceivedListener(
     (response) => {
       const { notification } = response;
-      const data = notification.request.content.data;
+      const data = notification.request.content.data as { url?: string };
 
       logger.info("[Notifications] Notification tapped:", JSON.stringify(data));
+
+      if (data?.url) {
+        try {
+          router.push(data.url as Href);
+        } catch (err) {
+          logger.warn(
+            "[Notifications] Failed to push notification route:",
+            err,
+          );
+        }
+      }
     },
   );
 

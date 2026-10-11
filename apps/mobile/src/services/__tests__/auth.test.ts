@@ -42,6 +42,8 @@ const mmkvMock = vi.hoisted(() => ({
   getString: vi.fn(),
   set: vi.fn(),
   getBoolean: vi.fn(),
+  getAllKeys: vi.fn(() => [] as string[]),
+  remove: vi.fn(),
 }));
 
 const syncMock = vi.hoisted(() => ({
@@ -118,7 +120,7 @@ vi.mock("@/services/historyService", () => ({
 
 vi.mock("@/utils/logger", () => ({
   default: loggerMock,
-  captureSentryMessage: vi.fn(),
+  addSentryBreadcrumb: vi.fn(),
   setSentryUser: vi.fn(),
 }));
 

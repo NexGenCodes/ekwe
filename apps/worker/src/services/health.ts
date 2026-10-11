@@ -5,6 +5,7 @@ export const HEALTH_TRIP_THRESHOLD = 3;
 const HEALTH_OPEN_MS = 30_000;
 const HEALTH_REOPEN_MS = 60_000;
 const HEALTH_MEMO_TTL_MS = 15_000;
+const HEALTH_COUNT_TTL_MS = 60_000;
 
 const HEALTH_KEY_PREFIX = "health:";
 
@@ -53,12 +54,14 @@ async function writeState(
   state: HealthState,
 ): Promise<void> {
   try {
+    const openRemainingMs = state.trippedAtEpochMs + state.openMs - Date.now();
+    const ttlSeconds =
+      openRemainingMs > 0
+        ? Math.ceil(openRemainingMs / 1000) + 60
+        : Math.ceil(HEALTH_COUNT_TTL_MS / 1000);
+
     await env.EKWE_KV.put(healthKey(provider), JSON.stringify(state), {
-      expirationTtl: Math.max(
-        1,
-        Math.ceil((state.trippedAtEpochMs + state.openMs - Date.now()) / 1000) +
-          60,
-      ),
+      expirationTtl: Math.max(1, ttlSeconds),
     });
   } catch {
     // Health writes must never break the request path.
@@ -67,6 +70,17 @@ async function writeState(
 
 export function resetHealthMemo(): void {
   healthMemo.clear();
+}
+
+export function reportProviderNeutral(provider: string): void {
+  const now = Date.now();
+  const memo = healthMemo.get(provider);
+  if (!memo || memo.untilEpochMs <= now) return;
+
+  healthMemo.set(provider, {
+    untilEpochMs: now + HEALTH_MEMO_TTL_MS,
+    state: memo.state,
+  });
 }
 
 export async function isProviderDegraded(
@@ -146,6 +160,8 @@ export async function reportProviderOutcome(
     logger.error(`[health] "${provider}" tripped open for ${base.openMs}ms`, {
       failures: base.failures,
     });
+  } else {
+    await writeState(env, provider, base);
   }
 
   healthMemo.set(provider, {

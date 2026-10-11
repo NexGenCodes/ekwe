@@ -4,5 +4,3 @@ export { AppToast } from "@/utils/toast";
 export * from "@/utils/platform";
 export { withAlpha } from "@/utils/color";
 export { triggerHaptic } from "@/utils/haptics";
-export { formatClock, formatDuration } from "@/utils/formatDuration";
-export { resample, normalizeAmplitudes } from "@/utils/waveform";

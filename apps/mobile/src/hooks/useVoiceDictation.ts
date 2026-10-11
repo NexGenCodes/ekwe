@@ -118,7 +118,11 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
         const startTime = performance.now();
         setTimerInterval(
           setInterval(() => {
-            dictation$.elapsedMs.set(performance.now() - startTime);
+            const elapsed = performance.now() - startTime;
+            const rounded = Math.floor(elapsed / 1000) * 1000;
+            if (rounded !== dictation$.elapsedMs.peek()) {
+              dictation$.elapsedMs.set(rounded);
+            }
           }, TIMER_TICK_MS),
         );
       }

@@ -11,6 +11,7 @@ import {
 } from "@/core/guards";
 import { sanitizeTranslationText } from "@/core/sanitize";
 import { getLanguageName, FREE_LIMITS, PREMIUM_LIMITS } from "@ekwe/shared";
+import { jsonBody } from "@/__tests__/setup";
 
 describe("guardAudioSize", () => {
   test("FREE: boundary follows the published limit", () => {
@@ -274,7 +275,7 @@ describe("guardContentType", () => {
     expect(res.allowed).toBe(false);
     if (!res.allowed) {
       expect(res.response.status).toBe(415);
-      const body = (await res.response.json()) as any;
+      const body = await jsonBody(res.response);
       expect(body.error).toBe("INVALID_CONTENT_TYPE");
     }
   });

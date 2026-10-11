@@ -15,6 +15,15 @@ const dictation = () =>
     jsonResponse({ text: "Hello world", is_final: true }),
   );
 
+function makeOggBlob(codecMarker: string): Blob {
+  const bytes = new Uint8Array(64);
+  const oggS = "OggS";
+  for (let i = 0; i < oggS.length; i++) bytes[i] = oggS.charCodeAt(i);
+  for (let i = 0; i < codecMarker.length; i++)
+    bytes[28 + i] = codecMarker.charCodeAt(i) & 0xff;
+  return new Blob([bytes], { type: "audio/ogg" });
+}
+
 describe("Wit.ai provider", () => {
   test("returns result on success", async () => {
     server.use(dictation());
@@ -29,6 +38,90 @@ describe("Wit.ai provider", () => {
     const env = mockEnv({});
     const result = await witai.stt(makeAudioBlob(), "yo", env, mockSignal());
     expect(result).toBeNull();
+  });
+
+  test("skips Ogg/Opus without spending a request", async () => {
+    const calls: string[] = [];
+    server.use(
+      http.post(PROVIDER_URLS.witaiDictation, ({ request }) => {
+        calls.push(request.url);
+        return jsonResponse({ text: "should not be reached" });
+      }),
+    );
+
+    const env = mockEnv({ WIT_KEY_EN: "mock-wit-en-key-10" });
+    const result = await witai.stt(
+      makeOggBlob("OpusHead"),
+      "en",
+      env,
+      mockSignal(),
+    );
+
+    expect(result).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+
+  test("still calls the API for Ogg/Vorbis", async () => {
+    const calls: string[] = [];
+    server.use(
+      http.post(PROVIDER_URLS.witaiDictation, ({ request }) => {
+        calls.push(request.url);
+        return jsonResponse({ text: "vorbis result", is_final: true });
+      }),
+    );
+
+    const env = mockEnv({ WIT_KEY_EN: "mock-wit-en-key-10" });
+    const result = await witai.stt(
+      makeOggBlob("\x01vorbis"),
+      "en",
+      env,
+      mockSignal(),
+    );
+
+    expect(result!.text).toBe("vorbis result");
+    expect(calls).toHaveLength(1);
+  });
+
+  test("skips an Ogg container holding a codec Wit.ai cannot parse", async () => {
+    const calls: string[] = [];
+    server.use(
+      http.post(PROVIDER_URLS.witaiDictation, ({ request }) => {
+        calls.push(request.url);
+        return jsonResponse({ text: "should not be reached" });
+      }),
+    );
+
+    const env = mockEnv({ WIT_KEY_EN: "mock-wit-en-key-10" });
+    const result = await witai.stt(
+      makeOggBlob("\x7fFLAC"),
+      "en",
+      env,
+      mockSignal(),
+    );
+
+    expect(result).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+
+  test("requires the Vorbis identification packet, not just the name", async () => {
+    const calls: string[] = [];
+    server.use(
+      http.post(PROVIDER_URLS.witaiDictation, ({ request }) => {
+        calls.push(request.url);
+        return jsonResponse({ text: "should not be reached" });
+      }),
+    );
+
+    const env = mockEnv({ WIT_KEY_EN: "mock-wit-en-key-10" });
+    const result = await witai.stt(
+      makeOggBlob("vorbis"),
+      "en",
+      env,
+      mockSignal(),
+    );
+
+    expect(result).toBeNull();
+    expect(calls).toHaveLength(0);
   });
 
   test("uses pool binding when no individual key", async () => {
@@ -77,7 +170,7 @@ describe("Wit.ai provider", () => {
     expect(result).toBeNull();
   });
 
-  test("discards hallucination transcripts", async () => {
+  test("throws on hallucination transcripts so the circuit breaker sees it", async () => {
     server.use(
       http.post(PROVIDER_URLS.witaiDictation, () =>
         jsonResponse({ text: "Thanks for watching", is_final: true }),
@@ -85,11 +178,12 @@ describe("Wit.ai provider", () => {
     );
 
     const env = mockEnv({ WIT_KEY_EN: "mock-wit-en-key-10" });
-    const result = await witai.stt(makeAudioBlob(), "en", env, mockSignal());
-    expect(result).toBeNull();
+    await expect(
+      witai.stt(makeAudioBlob(), "en", env, mockSignal()),
+    ).rejects.toThrow("Wit.ai transcript discarded as hallucination");
   });
 
-  test("returns null when no transcript in stream response", async () => {
+  test("throws on an empty transcript so it is not reported as neutral", async () => {
     server.use(
       http.post(PROVIDER_URLS.witaiDictation, () =>
         jsonResponse({ text: "", is_final: true }),
@@ -97,19 +191,21 @@ describe("Wit.ai provider", () => {
     );
 
     const env = mockEnv({ WIT_KEY_EN: "mock-wit-en-key-10" });
-    const result = await witai.stt(makeAudioBlob(), "en", env, mockSignal());
-    expect(result).toBeNull();
+    await expect(
+      witai.stt(makeAudioBlob(), "en", env, mockSignal()),
+    ).rejects.toThrow("Wit.ai returned an empty transcript");
   });
 
-  test("returns null on HTTP error", async () => {
+  test("throws on HTTP error so the circuit breaker can trip", async () => {
     server.use(
       http.post(PROVIDER_URLS.witaiDictation, () =>
         jsonResponse({ error: "bad auth" }, 401),
       ),
     );
     const env = mockEnv({ WIT_KEY_EN: "mock-wit-en-key-10" });
-    const result = await witai.stt(makeAudioBlob(), "en", env, mockSignal());
-    expect(result).toBeNull();
+    await expect(
+      witai.stt(makeAudioBlob(), "en", env, mockSignal()),
+    ).rejects.toThrow("Wit.ai returned HTTP 401");
   });
 
   test("handles multi-chunk streaming response", async () => {

@@ -23,6 +23,30 @@ import { mergePcmFrames } from "@/utils/pcm";
 const WITAI_DICTATION = "https://api.wit.ai/dictation?v=20240304";
 const WITAI_SYNTH_URL = "https://api.wit.ai/synthesize?v=20240304";
 
+function subarray(bytes: Uint8Array, needle: number[]): boolean {
+  outer: for (let i = 0; i + needle.length <= bytes.length; i++) {
+    for (let j = 0; j < needle.length; j++) {
+      if (bytes[i + j] !== needle[j]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
+
+// Wit.ai only parses Vorbis-in-Ogg, whose identification header is the
+// packet signature `\x01vorbis`.
+async function isOggVorbis(blob: Blob): Promise<boolean> {
+  const bytes = new Uint8Array(await blob.slice(0, 128).arrayBuffer());
+  return subarray(bytes, [0x01, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73]);
+}
+
+async function isOggOpus(blob: Blob): Promise<boolean> {
+  const bytes = new Uint8Array(await blob.slice(0, 128).arrayBuffer());
+  let head = "";
+  for (const b of bytes) head += String.fromCharCode(b);
+  return head.includes("OpusHead");
+}
+
 export async function stt(
   blob: Blob,
   lang: string,
@@ -45,6 +69,16 @@ export async function stt(
   const contentType = toWitMime(blob.type);
   if (!contentType) {
     logger.warn("[witai] Skipping: Unsupported MIME type", { type: blob.type });
+    return null;
+  }
+
+  if (contentType === "audio/ogg" && !(await isOggVorbis(blob))) {
+    const isOpus = await isOggOpus(blob);
+    logger.warn("[witai] Skipping: Ogg container does not hold Vorbis", {
+      codec: isOpus ? "Opus" : "unknown",
+      type: blob.type,
+      size: blob.size,
+    });
     return null;
   }
 
@@ -74,23 +108,18 @@ export async function stt(
     logger.warn("[witai] Transcribe failed, provider returned error", {
       status: res.status,
     });
-    return null;
+    throw new Error(`Wit.ai returned HTTP ${res.status}`);
   }
 
   const data = await parseStream(res);
-  if (data?.text && !isHallucination(data.text)) {
-    return { text: data.text, provider: "witai", language: lang };
+  if (!data?.text) {
+    throw new Error("Wit.ai returned an empty transcript");
+  }
+  if (isHallucination(data.text)) {
+    throw new Error("Wit.ai transcript discarded as hallucination");
   }
 
-  if (data?.text) {
-    logger.warn("[witai] Transcript discarded as hallucination", {
-      text: data.text.substring(0, 50),
-    });
-  } else {
-    logger.warn("[witai] No transcript returned in stream response");
-  }
-
-  return null;
+  return { text: data.text, provider: "witai", language: lang };
 }
 
 async function parseStream(res: Response): Promise<{ text: string } | null> {
@@ -314,142 +343,6 @@ function toWitMime(mime: string): string | null {
   };
   return map[baseMime] ?? null;
 }
-
-const WITAI_LANGUAGES = new Set([
-  "af",
-  "ak",
-  "sq",
-  "am",
-  "ar",
-  "hy",
-  "as",
-  "ay",
-  "az",
-  "eu",
-  "be",
-  "bn",
-  "bs",
-  "br",
-  "bg",
-  "my",
-  "ca",
-  "ci",
-  "ck",
-  "ny",
-  "zh",
-  "hr",
-  "cs",
-  "da",
-  "dv",
-  "nl",
-  "en",
-  "eo",
-  "et",
-  "fo",
-  "fi",
-  "fr",
-  "ff",
-  "gl",
-  "lg",
-  "ka",
-  "de",
-  "el",
-  "gn",
-  "gu",
-  "ht",
-  "ha",
-  "he",
-  "hi",
-  "hu",
-  "is",
-  "ig",
-  "id",
-  "iu",
-  "ga",
-  "it",
-  "ja",
-  "jv",
-  "kl",
-  "kn",
-  "ks",
-  "kk",
-  "km",
-  "rw",
-  "ky",
-  "ko",
-  "ku",
-  "lo",
-  "la",
-  "lv",
-  "li",
-  "ln",
-  "lt",
-  "mk",
-  "mg",
-  "ms",
-  "ml",
-  "mt",
-  "mi",
-  "mr",
-  "mn",
-  "ne",
-  "se",
-  "no",
-  "nb",
-  "or",
-  "om",
-  "pa",
-  "ps",
-  "fa",
-  "pl",
-  "pt",
-  "qu",
-  "rm",
-  "ro",
-  "ru",
-  "sa",
-  "sc",
-  "gd",
-  "sr",
-  "sn",
-  "sd",
-  "si",
-  "sk",
-  "sl",
-  "so",
-  "st",
-  "nr",
-  "es",
-  "su",
-  "sw",
-  "ss",
-  "sv",
-  "tl",
-  "tg",
-  "ta",
-  "tt",
-  "te",
-  "th",
-  "bo",
-  "ti",
-  "ts",
-  "tn",
-  "tr",
-  "ug",
-  "uk",
-  "ur",
-  "uz",
-  "ve",
-  "vi",
-  "cy",
-  "fy",
-  "wo",
-  "xh",
-  "yi",
-  "yo",
-  "zu",
-]);
-export { WITAI_LANGUAGES as supportedLanguages };
 
 const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 

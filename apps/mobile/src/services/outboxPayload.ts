@@ -23,6 +23,8 @@ export function buildUpsertOutboxPayload(
   fields: HistoryWriteFields,
   created_at: string,
   captureId: string | null,
+  baseRevision: number | null = null,
+  restore = false,
 ): string {
   return JSON.stringify({
     action: "upsert",
@@ -41,11 +43,22 @@ export function buildUpsertOutboxPayload(
     stt_provider: fields.sttProvider,
     mt_provider: fields.mtProvider,
     created_at,
+    // The revision this edit was based on, so the server can tell whether the
+    // device had gone stale before sending. Null for a row that has never been
+    // acknowledged, which the server treats as an insert.
+    base_revision: baseRevision,
+    // Only set when this write is an undo of a delete. The server treats a
+    // tombstoned row as final for ordinary writes, so without this an undo
+    // would be refused and the row would stay deleted.
+    ...(restore ? { restore: true } : {}),
   });
 }
 
-export function buildDeleteOutboxPayload(id: string): string {
-  return JSON.stringify({ action: "delete", id });
+export function buildDeleteOutboxPayload(
+  id: string,
+  baseRevision: number | null = null,
+): string {
+  return JSON.stringify({ action: "delete", id, base_revision: baseRevision });
 }
 
 export function buildDeleteAllOutboxPayload(): string {

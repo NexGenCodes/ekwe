@@ -31,7 +31,6 @@ export {
   autoDetectLanguages,
   unsupportedStreamLanguages,
   streamSkipReason,
-  skipReason,
   pinLanguage,
   languageTier,
   hasNativeVoice,
@@ -98,6 +97,13 @@ export {
   FALLBACK_ORIGIN,
 } from "./origins";
 export type { HistoryOrigin, HistoryInput, OriginMeta } from "./origins";
+export {
+  ORB_TARGET_APPS,
+  isOrbTargetApp,
+  orbAppName,
+  orbTargetPackages,
+} from "./apps";
+export type { OrbTargetApp } from "./apps";
 export * from "./schemas";
 export { USAGE_METER_META, USAGE_METER_IDS } from "./usageMeters";
 export type { UsageMeterId, UsageMeterMeta } from "./usageMeters";

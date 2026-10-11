@@ -2,6 +2,62 @@ import { vi, beforeAll, afterEach, afterAll } from "vitest";
 import type { Env } from "@/core/types";
 import { server } from "@/__tests__/msw/server";
 import { resetHealthMemo } from "@/services/health";
+import { resetWsKeyPenalties } from "@/utils/stream";
+import {
+  defaultMockDbExecute,
+  type MockExecuteQuery,
+  type MockRows,
+} from "@/__tests__/helpers/mock-db";
+
+// Direct `export … from` (rather than importing then re-exporting) so Vitest's
+// `vi.mock` hoisting keeps these bindings live for tests that import them from
+// this setup module.
+export {
+  defaultMockDbExecute,
+  executeQueryChunks,
+  executeQueryToSql,
+} from "@/__tests__/helpers/mock-db";
+export type { MockExecuteQuery, MockRows } from "@/__tests__/helpers/mock-db";
+
+/**
+ * A Drizzle-shaped stand-in for `getDb()`. The builder methods hand back the
+ * mock so chains keep flowing; tests override `execute` per query text and
+ * `where` per row set.
+ */
+export const mockDb = {
+  execute:
+    vi.fn<(query: MockExecuteQuery) => Promise<MockRows>>(defaultMockDbExecute),
+  select: vi.fn<(...args: unknown[]) => unknown>(function (this: unknown) {
+    return this;
+  }),
+  from: vi.fn<(...args: unknown[]) => unknown>(function (this: unknown) {
+    return this;
+  }),
+  where: vi.fn<(...args: unknown[]) => unknown>(function (this: unknown) {
+    return this;
+  }),
+  insert: vi.fn<(...args: unknown[]) => unknown>(function (this: unknown) {
+    return this;
+  }),
+  values: vi.fn<(...args: unknown[]) => unknown>(function (this: unknown) {
+    return this;
+  }),
+  onConflictDoUpdate: vi.fn<(...args: unknown[]) => unknown>(function (
+    this: unknown,
+  ) {
+    return this;
+  }),
+  update: vi.fn<(...args: unknown[]) => unknown>(function (this: unknown) {
+    return this;
+  }),
+  set: vi.fn<(...args: unknown[]) => unknown>(function (this: unknown) {
+    return this;
+  }),
+};
+
+vi.mock("@/db", () => ({
+  getDb: () => mockDb,
+}));
 
 const cacheStore = new Map<string, Response>();
 
@@ -206,6 +262,9 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
         }
       },
     ) as unknown as Env["EKWE_KV"]["put"],
+    delete: vi.fn(async (key: string) => {
+      store.delete(key);
+    }) as unknown as Env["EKWE_KV"]["delete"],
   } as unknown as Env["EKWE_KV"];
 
   const ai = {
@@ -319,6 +378,9 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
   return {
     SUPABASE_URL: "https://mock.supabase.co",
     SUPABASE_SERVICE_ROLE_KEY: "mock-service-role-key",
+    HYPERDRIVE: {
+      connectionString: "postgresql://mock:mock@mock.supabase.co:6543/postgres",
+    } as unknown as Env["HYPERDRIVE"],
     EKWE_KV: kv,
     EKWE_D1: d1,
     AI: ai,
@@ -337,6 +399,8 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
     GLADIA_KEY_5: "mock-gladia-key-5-abcde",
     ASSEMBLYAI_KEY_1: "mock-assembly-1-abcde",
     ASSEMBLYAI_KEY_2: "mock-assembly-2-abcde",
+    ELEVENLABS_KEY_1: "mock-elevenlabs-key-1-abcde",
+    ELEVENLABS_KEY_2: "mock-elevenlabs-key-2-abcde",
     GEMINI_KEY_1: "mock-gemini-key-1-abcde",
     GEMINI_KEY_2: "mock-gemini-key-2-abcde",
     GEMINI_KEY_3: "mock-gemini-key-3-abcde",
@@ -395,6 +459,33 @@ export function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
+/**
+ * Reads a JSON response body for assertions. The type parameter is a claim the
+ * test makes about the route's payload, so a wrong shape surfaces as a
+ * typecheck failure rather than a silent `undefined`.
+ */
+export async function jsonBody<T = Record<string, unknown>>(
+  res: Response,
+): Promise<T> {
+  return (await res.json()) as T;
+}
+
+/**
+ * A stand-in `AI` binding for tests that only exercise `run`. The real binding
+ * carries a large surface the worker never touches, so tests pass just the
+ * method they care about.
+ */
+export function aiStub(
+  run: (model: string, inputs: Record<string, unknown>) => Promise<unknown>,
+): Env["AI"] {
+  return { run } as unknown as Env["AI"];
+}
+
+/** A stand-in `EKWE_KV` binding; every method may be omitted. */
+export function kvStub(overrides: Partial<Env["EKWE_KV"]>): Env["EKWE_KV"] {
+  return overrides as unknown as Env["EKWE_KV"];
+}
+
 export function mockSignal(): AbortSignal {
   return new AbortController().signal;
 }
@@ -411,6 +502,7 @@ if (!IS_INTEGRATION) {
   afterEach(() => {
     server.resetHandlers();
     resetHealthMemo();
+    resetWsKeyPenalties();
   });
 
   afterAll(() => {

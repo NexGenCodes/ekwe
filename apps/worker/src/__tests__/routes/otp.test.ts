@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
-import { handleSendOtp, resetTurnstileAlertCache } from "@/routes/otp";
-import { mockEnv } from "@/__tests__/setup";
+import { resetTurnstileAlertCache } from "@/routes/otp";
+import { app } from "@/app";
+import { jsonBody, mockEnv, mockExecutionContext } from "@/__tests__/setup";
 import { logger } from "@/core/logger";
 import { http } from "msw";
 import { server } from "@/__tests__/msw/server";
@@ -36,19 +37,25 @@ describe("handleSendOtp body guard", () => {
       email: "a@b.co",
       turnstileToken: "x".repeat(200_000),
     });
-    const res = await handleSendOtp(otpRequest(oversized), env);
-    expect(res.status).toBe(413);
-    expect((await res.json()) as any).toEqual(
-      expect.objectContaining({ error: "PAYLOAD_TOO_LARGE" }),
+    const res = await app.fetch(
+      otpRequest(oversized),
+      env,
+      mockExecutionContext(),
     );
+    // Hono body limit middleware returns 413
+    expect(res.status).toBe(413);
   });
 
   test("rejects malformed JSON with 400", async () => {
     const env = mockEnv();
-    const res = await handleSendOtp(otpRequest("{not-json"), env);
+    const res = await app.fetch(
+      otpRequest("{not-json"),
+      env,
+      mockExecutionContext(),
+    );
     expect(res.status).toBe(400);
-    expect((await res.json()) as any).toEqual(
-      expect.objectContaining({ error: "INVALID_JSON" }),
+    expect(await jsonBody(res)).toEqual(
+      expect.objectContaining({ error: "INVALID_BODY" }),
     );
   });
 });
@@ -79,8 +86,8 @@ describe("Turnstile fail-open alerting", () => {
         body: JSON.stringify({ email: "a@b.co", turnstileToken: "tok" }),
       });
 
-    await handleSendOtp(req(), env);
-    await handleSendOtp(req(), env);
+    await app.fetch(req(), env, mockExecutionContext());
+    await app.fetch(req(), env, mockExecutionContext());
 
     const alerts = spy.mock.calls.filter(([msg]) =>
       String(msg).includes("Turnstile degraded"),
@@ -96,9 +103,10 @@ describe("handleSendOtp throttle fail-closed", () => {
       APP_ENV: "production",
       THROTTLE_DO: throwingThrottleDo(),
     });
-    const res = await handleSendOtp(
+    const res = await app.fetch(
       otpRequest(JSON.stringify({ email: "throttle@test.dev" })),
       env,
+      mockExecutionContext(),
     );
     expect(res.status).toBe(429);
   });
@@ -113,11 +121,12 @@ describe("handleSendOtp throttle fail-closed", () => {
       APP_ENV: "development",
       THROTTLE_DO: throwingThrottleDo(),
     });
-    const res = await handleSendOtp(
+    const res = await app.fetch(
       otpRequest(
         JSON.stringify({ email: "dev-open@test.dev", turnstileToken: "x" }),
       ),
       env,
+      mockExecutionContext(),
     );
     expect(res.status).toBe(200);
   });

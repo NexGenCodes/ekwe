@@ -134,10 +134,13 @@ describe("Cloudflare provider", () => {
   describe("translate", () => {
     test("returns translation on success", async () => {
       const env = mockEnv();
-      const result = await cloudflare.translate(
+      const result = await cloudflare.ttt(
         "Hello world",
-        "Spanish",
-        "English",
+        {
+          targetLang: "es",
+          sourceLang: "en",
+          transliteration: false,
+        },
         env,
         mockSignal(),
       );
@@ -149,10 +152,13 @@ describe("Cloudflare provider", () => {
     test("returns null on empty response", async () => {
       const env = mockEnv();
       env.AI.run = (async () => ({})) as unknown as typeof env.AI.run;
-      const result = await cloudflare.translate(
+      const result = await cloudflare.ttt(
         "Hello",
-        "Spanish",
-        "English",
+        {
+          targetLang: "es",
+          sourceLang: "en",
+          transliteration: false,
+        },
         env,
         mockSignal(),
       );
@@ -164,10 +170,13 @@ describe("Cloudflare provider", () => {
       env.AI.run = async () => {
         throw new Error("model error");
       };
-      const result = await cloudflare.translate(
+      const result = await cloudflare.ttt(
         "Hello",
-        "Spanish",
-        "English",
+        {
+          targetLang: "es",
+          sourceLang: "en",
+          transliteration: false,
+        },
         env,
         mockSignal(),
       );

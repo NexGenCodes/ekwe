@@ -15,10 +15,13 @@ describe("Gemini provider", () => {
       ),
     );
 
-    const result = await gemini.translate(
+    const result = await gemini.ttt(
       "Hello world",
-      "Spanish",
-      "English",
+      {
+        targetLang: "es",
+        sourceLang: "en",
+        transliteration: false,
+      },
       mockEnv(),
       mockSignal(),
     );
@@ -33,10 +36,13 @@ describe("Gemini provider", () => {
         jsonResponse({ error: { message: "quota exceeded" } }, 429),
       ),
     );
-    const result = await gemini.translate(
+    const result = await gemini.ttt(
       "Hello",
-      "Spanish",
-      "English",
+      {
+        targetLang: "es",
+        sourceLang: "en",
+        transliteration: false,
+      },
       mockEnv(),
       mockSignal(),
     );
@@ -49,10 +55,13 @@ describe("Gemini provider", () => {
         jsonResponse({ candidates: [] }),
       ),
     );
-    const result = await gemini.translate(
+    const result = await gemini.ttt(
       "Hello",
-      "Spanish",
-      "English",
+      {
+        targetLang: "es",
+        sourceLang: "en",
+        transliteration: false,
+      },
       mockEnv(),
       mockSignal(),
     );
@@ -65,10 +74,13 @@ describe("Gemini provider", () => {
         jsonResponse({ candidates: [{ content: {} }] }),
       ),
     );
-    const result = await gemini.translate(
+    const result = await gemini.ttt(
       "Hello",
-      "Spanish",
-      "English",
+      {
+        targetLang: "es",
+        sourceLang: "en",
+        transliteration: false,
+      },
       mockEnv(),
       mockSignal(),
     );

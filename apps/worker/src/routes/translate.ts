@@ -3,61 +3,39 @@ import { logger } from "@/core/logger";
 import { TRANSLATE_TOTAL_MS } from "@/core/budgets";
 import { getLimits } from "@/core/limits";
 import { needsRomanization } from "@ekwe/shared/languages";
-import { buildTranslateCacheKey } from "@/services/translate";
+import {
+  buildTranslateCacheKey,
+  readTranslateCache,
+  runTranslate,
+  stripTranslationTier,
+  writeTranslateCache,
+} from "@/services/translate";
+import { releaseUsage } from "@/services/usage";
+import { sanitizeTranslationText } from "@/core/sanitize";
+import { hashKey } from "@/utils/keys";
+import { Env, Tier } from "@/core/types";
+import type { z } from "zod";
 import {
   guardTextLength,
   guardAutoDetect,
   guardLanguageCode,
-  safeParseJSON,
-  guardContentType,
-  guardJsonSize,
-  MAX_JSON_BODY_BYTES,
+  guardSupportedLanguage,
 } from "@/core/guards";
-import { sanitizeTranslationText } from "@/core/sanitize";
-import { hashKey } from "@/utils/keys";
-import { Env, Tier } from "@/core/types";
-import { runTranslateJob } from "@/services/translate";
 
 export async function handleTranslate(
-  request: Request,
+  body: z.infer<typeof translateRequestSchema>,
   env: Env,
   tier: Tier,
+  pipelineTier: Tier,
   signal: AbortSignal,
   userId: string,
   ctx?: ExecutionContext,
 ): Promise<Response> {
-  const ctGuard = guardContentType(request);
-  if (!ctGuard.allowed) return ctGuard.response;
-
-  const sizeGuard = guardJsonSize(request, MAX_JSON_BODY_BYTES);
-  if (!sizeGuard.allowed) return sizeGuard.response;
-
-  const parsed = await safeParseJSON<unknown>(request);
-  if (!parsed.ok) return parsed.response;
-
-  const body = translateRequestSchema.safeParse(parsed.data);
-  if (!body.success) {
-    const firstPath = body.error.issues[0]?.path[0];
-    if (firstPath === "targetLang") {
-      return Response.json(
-        { error: WORKER_ERROR_CODES.INVALID_TARGET_LANGUAGE },
-        { status: 400 },
-      );
-    }
-    if (firstPath === "sourceLang") {
-      return Response.json(
-        { error: WORKER_ERROR_CODES.INVALID_LANGUAGE },
-        { status: 400 },
-      );
-    }
-    return Response.json(
-      { error: WORKER_ERROR_CODES.EKWE_EMPTY_TRANSCRIPT },
-      { status: 400 },
-    );
-  }
-  const { text, sourceLang, targetLang } = body.data;
+  const { text, sourceLang, targetLang } = body;
+  const refund = () => releaseUsage(env, userId, "translate", ctx);
 
   if (!text.trim()) {
+    refund();
     return Response.json(
       { error: WORKER_ERROR_CODES.EKWE_EMPTY_TRANSCRIPT },
       { status: 400 },
@@ -65,18 +43,46 @@ export async function handleTranslate(
   }
 
   const textGuard = guardTextLength(text, tier);
-  if (!textGuard.allowed) return textGuard.response;
+  if (!textGuard.allowed) {
+    refund();
+    return textGuard.response;
+  }
 
   const autoGuard = guardAutoDetect(sourceLang, tier);
-  if (!autoGuard.allowed) return autoGuard.response;
+  if (!autoGuard.allowed) {
+    refund();
+    return autoGuard.response;
+  }
 
   const srcLangGuard = guardLanguageCode(sourceLang, "sourceLang");
-  if (!srcLangGuard.allowed) return srcLangGuard.response;
+  if (!srcLangGuard.allowed) {
+    refund();
+    return srcLangGuard.response;
+  }
 
   const tgtLangGuard = guardLanguageCode(targetLang, "targetLang");
-  if (!tgtLangGuard.allowed) return tgtLangGuard.response;
+  if (!tgtLangGuard.allowed) {
+    refund();
+    return tgtLangGuard.response;
+  }
+
+  // Both directions must be servable, and separately: an unservable *source*
+  // means nothing can transcribe it, while an unservable *target* means nothing
+  // can translate into it. Reporting one as an outage would be a lie either way.
+  const srcSupportGuard = guardSupportedLanguage(sourceLang, "stt");
+  if (!srcSupportGuard.allowed) {
+    refund();
+    return srcSupportGuard.response;
+  }
+
+  const tgtSupportGuard = guardSupportedLanguage(targetLang, "ttt");
+  if (!tgtSupportGuard.allowed) {
+    refund();
+    return tgtSupportGuard.response;
+  }
 
   if (!targetLang || targetLang === "auto") {
+    refund();
     return Response.json(
       {
         error: WORKER_ERROR_CODES.INVALID_TARGET_LANGUAGE,
@@ -92,6 +98,7 @@ export async function handleTranslate(
     logger.info(
       `[translate] Short-circuiting identical languages (${sourceLang})`,
     );
+    refund();
     return Response.json({
       translation: cleanText,
       provider: "ekwe",
@@ -100,36 +107,45 @@ export async function handleTranslate(
   }
 
   let cacheKey: string | null = null;
-  let textHash = "";
   try {
-    textHash = await hashKey(
+    const textHash = await hashKey(
       `${cleanText}_${sourceLang || "auto"}_${targetLang}`,
     );
     cacheKey = buildTranslateCacheKey(userId, tier, textHash);
+
+    const cached = await readTranslateCache(env, cacheKey);
+    if (cached) {
+      refund();
+      return Response.json(stripTranslationTier(cached, tier));
+    }
   } catch (err) {
-    logger.error(`[translate] cache key error (continuing)`, {
-      error: String(err),
-    });
+    logger.error(
+      `[translate] D1 cache lookup error (continuing): ${String(err)}`,
+    );
   }
 
-  const result = await runTranslateJob({
+  const result = await runTranslate({
     env,
-    tier,
-    userId,
-    ctx,
+    tier: pipelineTier,
     signal,
     text: cleanText,
-    sourceLang,
     targetLang,
+    sourceLang,
     wantTransliteration:
       getLimits(tier).transliterationAllowed && needsRomanization(targetLang),
-    cacheKey,
-    textHash,
     budgetMs: TRANSLATE_TOTAL_MS,
-    logPrefix: "[translate]",
   });
 
-  if (result) return Response.json(result);
+  if (result) {
+    const prepared = stripTranslationTier(result, tier);
+    if (cacheKey) {
+      await writeTranslateCache(env, cacheKey, userId, tier, prepared);
+    }
+    return Response.json(prepared);
+  }
+
+  logger.error(`[translate] ALL providers failed`);
+  refund();
 
   return Response.json(
     { error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL },

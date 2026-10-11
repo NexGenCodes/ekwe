@@ -6,12 +6,19 @@ import {
   providerSupportsLanguage,
 } from "@/providers";
 import { PROVIDER_SKIP_AUTO, PROVIDER_TIMEOUT } from "@/core/providers";
-import { TRANSCRIBE_CACHE_TTL_SECONDS } from "@/core/budgets";
+import {
+  FALLBACK_ATTEMPT_TIMEOUT_MS,
+  TRANSCRIBE_CACHE_TTL_SECONDS,
+} from "@/core/budgets";
 import { sanitizeProviderOutput } from "@/core/sanitize";
 import { getLimits } from "@/core/limits";
 import { d1Get, d1Put } from "@/services/d1-cache";
 import { runProviderFailover } from "@/utils/retry";
-import { isProviderDegraded, reportProviderOutcome } from "@/services/health";
+import {
+  isProviderDegraded,
+  reportProviderNeutral,
+  reportProviderOutcome,
+} from "@/services/health";
 import {
   detectTextLanguage,
   validateTranscriptLanguage,
@@ -109,7 +116,8 @@ function buildPipeline(
     name,
     skipOnAuto: PROVIDER_SKIP_AUTO[name] ?? false,
     timeoutMs:
-      PROVIDER_TIMEOUT[name as keyof typeof PROVIDER_TIMEOUT]?.[tier] ?? 15_000,
+      PROVIDER_TIMEOUT[name as keyof typeof PROVIDER_TIMEOUT]?.[tier] ??
+      FALLBACK_ATTEMPT_TIMEOUT_MS.transcribe,
     fn: getProviderModule(name)?.stt ?? (() => Promise.resolve(null)),
   }));
 }
@@ -186,7 +194,7 @@ export async function runTranscribe(
       entry(name).fn(audioBlob, effectiveLang, env, attemptSignal),
     handleAttempt: async (name, attempt) => {
       if (!attempt) {
-        await reportProviderOutcome(env, name, false);
+        reportProviderNeutral(name);
         logger.info(`[transcribe] ${name} returned null (no result)`);
         return false;
       }

@@ -5,46 +5,26 @@ import {
   verifyTransactionRequestSchema,
   verifyTransactionResponseSchema,
 } from "@ekwe/shared";
+import { toLowestUnit } from "@ekwe/shared/money";
 import { Env } from "@/core/types";
 import { logger } from "@/core/logger";
-import { supabaseGet, supabasePost } from "@/services/supabase";
-import { guardFlutterwaveKeys, computeProExpiry } from "@/services/flutterwave";
+import { guardFlutterwaveKeys, setProStatus } from "@/services/flutterwave";
+import { claimFlutterwaveTransaction } from "@/services/flutterwave-claim";
 import { AuthResult } from "@/core/auth";
+import { describeError, retryOnConnectionLoss } from "@/db/retry";
+import { appConfig } from "@ekwe/db/schema";
+import { eq } from "drizzle-orm";
 import {
   getAuthoritativePlanPrices,
   resolveRequestCurrency,
 } from "@/routes/pricing";
-import {
-  guardJsonSize,
-  MAX_JSON_BODY_BYTES,
-  safeParseJSON,
-} from "@/core/guards";
-
-interface PaymentConfigRow {
-  flutterwave_enabled: boolean;
-  default_provider: string;
-}
+import type { z } from "zod";
 
 export async function handleCheckout(
-  request: Request,
+  body: z.infer<typeof checkoutRequestSchema>,
   env: Env,
   auth: AuthResult,
 ): Promise<Response> {
-  const sizeGuard = guardJsonSize(request, MAX_JSON_BODY_BYTES);
-  if (!sizeGuard.allowed) return sizeGuard.response;
-
-  const parsedBody = await safeParseJSON<unknown>(request);
-  if (!parsedBody.ok) return parsedBody.response;
-
-  const parsed = checkoutRequestSchema.safeParse(parsedBody.data);
-  if (!parsed.success) {
-    return Response.json(
-      { error: WORKER_ERROR_CODES.INVALID_BODY, message: "Invalid request" },
-      { status: 400 },
-    );
-  }
-  const body = parsed.data;
-
   const currency = resolveRequestCurrency(body.currency);
 
   const keyGuard = guardFlutterwaveKeys(env);
@@ -71,16 +51,66 @@ export async function handleCheckout(
     "",
   )}_${crypto.randomUUID()}`;
 
+  let paymentLink = "";
+  if (env.FLUTTERWAVE_SECRET) {
+    try {
+      const flwReq = await fetch("https://api.flutterwave.com/v3/payments", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.FLUTTERWAVE_SECRET}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tx_ref: txRef,
+          amount: amount.toString(),
+          currency: currency,
+          redirect_url: "https://ekwe.app/checkout/callback",
+          customer: {
+            email: auth.userEmail,
+          },
+          customizations: {
+            title: "Ekwe Pro",
+            description: `Upgrade to Ekwe Pro (${body.plan.replace("ekwe_pro_", "")})`,
+          },
+        }),
+      });
+      if (flwReq.ok) {
+        const flwData: { status?: string; data?: { link?: string } } =
+          await flwReq.json();
+        if (flwData.status === "success" && flwData.data?.link) {
+          paymentLink = flwData.data.link;
+        }
+      } else {
+        logger.error(
+          "[billing/checkout] Flutterwave payments API returned error",
+          {
+            status: flwReq.status,
+            body: await flwReq.text().catch(() => ""),
+          },
+        );
+      }
+    } catch (err) {
+      logger.error(
+        "[billing/checkout] Flutterwave payments API request failed",
+        {
+          error: describeError(err),
+        },
+      );
+    }
+  }
+
   const responseBody = {
     tx_ref: txRef,
     amount,
     currency,
     public_key: env.FLUTTERWAVE_PUBLIC ?? "",
+    ...(paymentLink ? { link: paymentLink } : {}),
   };
   logger.info("[billing] Checkout session authorized", {
     tx_ref: txRef,
     amount,
     currency,
+    has_link: !!paymentLink,
   });
   return Response.json(checkoutResponseSchema.parse(responseBody));
 }
@@ -103,27 +133,11 @@ interface FlutterwaveVerifyResponse {
 }
 
 export async function handleVerifyTransaction(
-  request: Request,
+  body: z.infer<typeof verifyTransactionRequestSchema>,
   env: Env,
   auth: AuthResult,
 ): Promise<Response> {
-  const sizeGuard = guardJsonSize(request, MAX_JSON_BODY_BYTES);
-  if (!sizeGuard.allowed) return sizeGuard.response;
-
-  const parsedBody = await safeParseJSON<unknown>(request);
-  if (!parsedBody.ok) return parsedBody.response;
-
-  const parsed = verifyTransactionRequestSchema.safeParse(parsedBody.data);
-  if (!parsed.success) {
-    return Response.json(
-      {
-        error: WORKER_ERROR_CODES.INVALID_BODY,
-        message: "transaction_id required",
-      },
-      { status: 400 },
-    );
-  }
-  const { transaction_id } = parsed.data;
+  const { transaction_id } = body;
 
   const keyGuard = guardFlutterwaveKeys(env);
   if (!keyGuard.allowed) return keyGuard.response;
@@ -153,7 +167,7 @@ export async function handleVerifyTransaction(
     });
   } catch (err) {
     logger.error("[billing/verify] Flutterwave API request failed", {
-      error: err instanceof Error ? err.message : String(err),
+      error: describeError(err),
     });
     return Response.json(
       { error: "Failed to verify payment" },
@@ -215,8 +229,14 @@ export async function handleVerifyTransaction(
 
   const expectedAmount =
     plan === "ekwe_pro_annual" ? prices.annual : prices.monthly;
-  const actualCents = Math.round(Number(fwData.data.amount) * 100);
-  const expectedCents = Math.round(Number(expectedAmount) * 100);
+  const actualCents = toLowestUnit(
+    Number(fwData.data.amount),
+    fwData.data.currency,
+  );
+  const expectedCents = toLowestUnit(
+    Number(expectedAmount),
+    fwData.data.currency,
+  );
   if (actualCents !== expectedCents) {
     logger.error("[billing/verify] Amount mismatch", {
       expected: expectedAmount,
@@ -229,38 +249,57 @@ export async function handleVerifyTransaction(
     return Response.json({ error: "Payment amount mismatch" }, { status: 400 });
   }
 
-  const expiresAt = computeProExpiry(
-    planPart === "annual" ? "annual" : "monthly",
-  );
-  const rpcResult = await supabasePost(env, "/rest/v1/rpc/set_pro_status", {
-    p_email: auth.userEmail,
-    p_user_id: auth.userId,
-    p_is_pro: true,
-    p_expires_at: expiresAt,
-    p_provider: "flutterwave",
-    p_payment_ref: fwData.data.flw_ref,
+  const period = planPart === "annual" ? "annual" : "monthly";
+
+  const claim = await claimFlutterwaveTransaction(env, {
+    flwRef: fwData.data.flw_ref,
+    userId: auth.userId,
+    txRef: fwData.data.tx_ref,
+    amount: Number(fwData.data.amount),
+    currency: fwData.data.currency,
+    period,
   });
 
-  if (!rpcResult) {
-    logger.error("[billing/verify] Failed to call set_pro_status (no env)");
+  if (!claim) {
     return Response.json({ error: "Failed to activate Pro" }, { status: 500 });
   }
+
+  if (!claim.shouldActivate) {
+    logger.info("[billing/verify] Transaction already redeemed", {
+      userId: auth.userId,
+      flw_ref: fwData.data.flw_ref,
+    });
+    return Response.json(
+      verifyTransactionResponseSchema.parse({
+        ok: true,
+        permanent: false,
+        transaction_id: fwData.data.id,
+        tx_ref: fwData.data.tx_ref,
+      }),
+    );
+  }
+
+  const expiresAt = claim.expiresAt;
+  const rpcResult = await setProStatus(
+    env,
+    { email: auth.userEmail, userId: auth.userId },
+    true,
+    expiresAt,
+    "flutterwave",
+    fwData.data.flw_ref,
+  );
 
   if (!rpcResult.ok) {
-    const body = await rpcResult.text().catch(() => "");
-    logger.error("[billing/verify] set_pro_status RPC failed", {
-      status: rpcResult.status,
-      body: body.slice(0, 200),
-    });
+    logger.error("[billing/verify] set_pro_status RPC failed");
     return Response.json({ error: "Failed to activate Pro" }, { status: 500 });
   }
 
-  const rpcData: { permanent?: boolean } | null = await rpcResult.json();
-  const permanentlyActivated = rpcData?.permanent === true;
+  const permanentlyActivated = rpcResult.permanent === true;
 
   logger.info("[billing/verify] Pro activated via verify endpoint", {
     userId: auth.userId,
     tx_ref: fwData.data.tx_ref,
+    expires_at: expiresAt,
     permanent: permanentlyActivated,
   });
 
@@ -279,45 +318,32 @@ export async function handleBillingFlags(
   env: Env,
 ): Promise<Response> {
   try {
-    const res = await supabaseGet(
+    const [config] = await retryOnConnectionLoss(
+      (client) =>
+        client
+          .select({
+            flutterwaveEnabled: appConfig.flutterwaveEnabled,
+            defaultProvider: appConfig.defaultProvider,
+          })
+          .from(appConfig)
+          .where(eq(appConfig.id, 1)),
       env,
-      "/rest/v1/app_config?id=eq.1&select=flutterwave_enabled,default_provider",
     );
 
-    if (!res) {
-      logger.warn("[billing] Missing Supabase credentials for flags");
+    if (!config) {
       return Response.json({
         flutterwave_enabled: true,
         default_provider: "flutterwave",
       });
     }
 
-    if (!res.ok) {
-      logger.warn("[billing] Failed to fetch app_config", {
-        status: res.status,
-      });
-      return Response.json({
-        flutterwave_enabled: true,
-        default_provider: "flutterwave",
-      });
-    }
-
-    const rows: PaymentConfigRow[] = await res.json();
-    if (rows.length === 0) {
-      return Response.json({
-        flutterwave_enabled: true,
-        default_provider: "flutterwave",
-      });
-    }
-
-    const config = rows[0];
     return Response.json({
-      flutterwave_enabled: config.flutterwave_enabled,
-      default_provider: config.default_provider,
+      flutterwave_enabled: config.flutterwaveEnabled,
+      default_provider: config.defaultProvider,
     });
   } catch (err) {
     logger.error("[billing] Failed to read app_config", {
-      error: err instanceof Error ? err.message : String(err),
+      error: describeError(err),
     });
     return Response.json({
       flutterwave_enabled: true,

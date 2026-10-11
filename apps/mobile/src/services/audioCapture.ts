@@ -19,6 +19,8 @@ import EkweNative, { ekweAudio } from "../../modules/ekwe-native";
 
 export type CaptureMode = "file" | "live";
 
+const METERING_STORE_INTERVAL_MS = 50;
+
 export interface RecordingResult {
   uri: string;
   durationMs: number;
@@ -152,7 +154,8 @@ class AudioCaptureClass {
         this.currentRecordingPath = outputPath;
       } else {
         try {
-          await EkweNative.configureVoiceSession();
+          // iOS only; the optional call reflects that rather than asserting it.
+          await EkweNative.configureVoiceSession?.();
         } catch (e) {
           logger.warn("AudioCapture: configureVoiceSession failed", e);
         }
@@ -199,10 +202,14 @@ class AudioCaptureClass {
 
       if (this.amplitudeRafId) cancelAnimationFrame(this.amplitudeRafId);
 
-      const pollAmplitude = (): void => {
+      let lastStoredAt = 0;
+      const pollAmplitude = (now: number): void => {
         const val = ekweAudio.getAmplitude();
-        this.currentMeteringData.push(val);
         this.notifyListeners(val);
+        if (now - lastStoredAt >= METERING_STORE_INTERVAL_MS) {
+          lastStoredAt = now;
+          this.currentMeteringData.push(val);
+        }
         this.amplitudeRafId = requestAnimationFrame(pollAmplitude);
       };
       this.amplitudeRafId = requestAnimationFrame(pollAmplitude);

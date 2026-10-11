@@ -3,6 +3,7 @@ import Loader from "lucide-react-native/icons/loader";
 import React, { useMemo } from "react";
 import { StyleProp, TextStyle, ViewStyle } from "react-native";
 import Animated, {
+  cancelAnimation,
   Easing,
   useAnimatedStyle,
   useSharedValue,
@@ -20,6 +21,7 @@ import {
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks";
+import { useReduceMotion } from "@/hooks/ui";
 
 type ButtonVariant = "primary" | "outline" | "ghost";
 type ButtonSize = "small" | "medium" | "large" | "md";
@@ -56,12 +58,13 @@ export const Button = React.memo(function Button({
   accessibilityHint,
 }: ButtonProps): React.ReactElement {
   const { color } = useTheme();
+  const reduceMotion = useReduceMotion();
 
   const scaleAnim = useSharedValue(1);
   const spinAnim = useSharedValue(0);
 
   React.useEffect(() => {
-    if (loading) {
+    if (loading && !reduceMotion) {
       spinAnim.value = withRepeat(
         withTiming(360, {
           duration: 1000,
@@ -71,9 +74,17 @@ export const Button = React.memo(function Button({
         false,
       );
     } else {
+      cancelAnimation(spinAnim);
       spinAnim.value = 0;
     }
-  }, [loading, spinAnim]);
+  }, [loading, reduceMotion, spinAnim]);
+
+  React.useEffect(() => {
+    return (): void => {
+      cancelAnimation(spinAnim);
+      cancelAnimation(scaleAnim);
+    };
+  }, [spinAnim, scaleAnim]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scaleAnim.value }],
@@ -85,11 +96,16 @@ export const Button = React.memo(function Button({
 
   const handlePressIn = (): void => {
     if (disabled || loading) return;
+    if (reduceMotion) {
+      triggerHaptic();
+      return;
+    }
     scaleAnim.value = withTiming(0.95, { duration: 100 });
     triggerHaptic();
   };
 
   const handlePressOut = (): void => {
+    if (reduceMotion) return;
     scaleAnim.value = withTiming(1, { duration: 150 });
   };
 

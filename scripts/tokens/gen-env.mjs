@@ -60,15 +60,27 @@ const main = async () => {
     }
   }
 
-  const { MAX_AUDIO_BYTES } = await import(PLANS_URL);
+  const {
+    MAX_AUDIO_BYTES,
+    MAX_AUDIO_INPUT_BYTES,
+    PREMIUM_LIMITS,
+    WIT_VORBIS_MAX_DURATION_MS,
+  } = await import(PLANS_URL);
 
-  const swift = generateEchoEnvironment(env, MAX_AUDIO_BYTES);
+  const swift = generateEchoEnvironment(env, MAX_AUDIO_BYTES, {
+    maxAudioDurationMs: PREMIUM_LIMITS.dictationDurationMs,
+    maxAudioInputBytes: MAX_AUDIO_INPUT_BYTES,
+    witVorbisMaxDurationMs: WIT_VORBIS_MAX_DURATION_MS,
+  });
   await writeFile(OUT_FILE, swift, "utf8");
 
   const publicKeys = Object.keys(env).filter((k) => k.startsWith("EXPO_PUBLIC_"));
   console.log(`Wrote ${OUT_FILE} (${swift.length} bytes)`);
   console.log(`  keys: ${publicKeys.length} EXPO_PUBLIC_* (${REQUIRED.length} required)`);
   console.log(`  maxAudioBytes=${MAX_AUDIO_BYTES}`);
+  console.log(`  maxAudioDurationMs=${PREMIUM_LIMITS.dictationDurationMs}`);
+  console.log(`  maxAudioInputBytes=${MAX_AUDIO_INPUT_BYTES}`);
+  console.log(`  witVorbisMaxDurationMs=${WIT_VORBIS_MAX_DURATION_MS}`);
 };
 
 main().catch((e) => {

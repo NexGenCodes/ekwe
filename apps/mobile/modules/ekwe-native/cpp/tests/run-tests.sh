@@ -7,21 +7,27 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cpp="$(cd "${here}/.." && pwd)"
 out="${TMPDIR:-/tmp}/ekwe_native_tests"
 
-# Opus/Ogg ship as source under thirdparty/. There is nothing to build here, so
-# prefer whatever the system already has and fall back to a bundled build.
+# Opus/Ogg/Vorbis ship as source under thirdparty/. There is nothing to build
+# here, so prefer whatever the system already has and fall back to a bundled
+# build. Distro installs often leave only the versioned sonames (no -dev
+# symlink), so the versioned form is matched last as a catch-all.
 find_lib() {
-  local name="$1" dir
+  local name="$1" dir match
   for dir in /usr/lib/"$(uname -m)"-linux-gnu /usr/lib64 /usr/lib /usr/local/lib \
-             "${cpp}/thirdparty/${name}/lib"; do
+             "${cpp}/thirdparty/${name}/lib" "${cpp}/thirdparty/lib${name}/lib"; do
     if [ -e "${dir}/lib${name}.so" ]; then printf '%s' "${dir}/lib${name}.so"; return 0; fi
     if [ -e "${dir}/lib${name}.a" ];  then printf '%s' "${dir}/lib${name}.a";  return 0; fi
     if [ -e "${dir}/lib${name}.so.0" ]; then printf '%s' "${dir}/lib${name}.so.0"; return 0; fi
+    for match in "${dir}"/lib"${name}".so.*; do
+      if [ -e "${match}" ]; then printf '%s' "${match}"; return 0; fi
+    done
   done
   return 1
 }
 
+# vorbisenc must precede vorbis: the former calls into the latter.
 link_flags=()
-for name in opusfile ogg opus; do
+for name in opusfile ogg opus vorbisenc vorbis; do
   if found="$(find_lib "$name")"; then
     link_flags+=("${found}")
   else
@@ -36,6 +42,7 @@ flags=(-std=c++17 -g -Wall -Wextra -Wno-unused-parameter)
 incs=(-I"${cpp}"
       -I"${cpp}/thirdparty/opus/include"
       -I"${cpp}/thirdparty/libogg/include"
+      -I"${cpp}/thirdparty/libvorbis/include"
       -I"${cpp}/thirdparty/opusfile/include")
 
 # ASan catches the buffer overruns this code sits next to. Probe first, since
@@ -48,18 +55,29 @@ else
   echo "asan: unavailable, running without it"
 fi
 
+# Everything under test, minus the mains: each test file builds its own binary
+# so a fixture clash between suites cannot silently disable a check.
 sources=(
-  "${here}/capture_leading_silence_test.cpp"
   "${cpp}/EkweCaptureController.cpp"
   "${cpp}/EkweOpusEncoder.cpp"
   "${cpp}/EkweOggMuxer.cpp"
   "${cpp}/EkweAudioDecoder.cpp"
+  "${cpp}/EkweVorbisEncoder.cpp"
   "${cpp}/EkweWaveform.cpp"
   "${cpp}/EkweCafMuxer.cpp"
 )
 
-echo "building ${out}"
-"${cxx}" "${flags[@]}" "${san[@]}" "${incs[@]}" "${sources[@]}" \
-  "${link_flags[@]}" -o "${out}"
+# The capture-thread callback tests live in run-callback-tests.sh: they need
+# C++20 and TSan, neither of which this suite probes for.
+tests=(capture_leading_silence_test vorbis_encode_test)
 
-"${out}"
+fail=0
+for name in "${tests[@]}"; do
+  bin="${out}_${name}"
+  echo "building ${bin}"
+  "${cxx}" "${flags[@]}" "${san[@]}" "${incs[@]}" "${here}/${name}.cpp" "${sources[@]}" \
+    "${link_flags[@]}" -o "${bin}"
+  "${bin}" || fail=1
+done
+
+exit "${fail}"

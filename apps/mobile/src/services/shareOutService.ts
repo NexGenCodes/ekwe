@@ -9,25 +9,10 @@ import { logger } from "@/utils";
 import type { TelemetrySource } from "@/types/telemetry";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 
-/**
- * Chooser header, Android only — UIActivityViewController has no title, and on
- * iOS the caption travels as the first activity item instead.
- *
- * Share-out is not a capture surface, so it gets no feature name: Echo, Speech
- * Studio and Orb all name where audio came *in*. The sender here is the app
- * itself. See docs/naming.md.
- */
+/** Android share chooser title. iOS uses the first activity item instead. */
 const SHARE_CHOOSER_TITLE = "Send with Ekwe";
 
-/**
- * Domain origin -> frozen telemetry key.
- *
- * Callers pass the origin they actually have (`"speech-studio"`), and this is
- * the one place that knows the reporting vocabulary is older and different.
- * Mapping it here rather than at each call site is what stops the next rename
- * from silently editing a dashboard key: the surface is renamed, the map gains
- * a row, and `result_shared` reports `"studio"` exactly as it did before.
- */
+/** Maps domain origins to frozen telemetry keys for stable dashboard reporting. */
 export const TELEMETRY_KEY: Record<ShareSource, TelemetrySource> = {
   "speech-studio": "studio",
   echo: "echo",
@@ -37,13 +22,7 @@ export const TELEMETRY_KEY: Record<ShareSource, TelemetrySource> = {
   result: "result",
 };
 
-/**
- * One `result_shared` per successful share.
- *
- * Fired here rather than by each caller because they disagreed: three surfaces
- * fired before opening the sheet, which counted every dismissal as a share.
- * `kind` separates a voice note from plain text without adding an event.
- */
+/** Fires `result_shared` after a successful share with the content kind. */
 const trackShare = (source: ShareSource, kind: "audio" | "text"): void => {
   track(AnalyticsEvents.RESULT_SHARED, {
     source: TELEMETRY_KEY[source],
@@ -51,17 +30,7 @@ const trackShare = (source: ShareSource, kind: "audio" | "text"): void => {
   });
 };
 
-/**
- * MIME type per file extension for outgoing shares.
- *
- * Ogg/Opus must carry the `codecs=opus` parameter rather than plain
- * `audio/ogg`. WhatsApp allow-lists exactly "audio/ogg; codecs=opus" (plus
- * audio/m4a and audio/x-m4a) to render an incoming file as a PTT voice note,
- * and Telegram requires the type to both start with "audio/ogg" and contain
- * "codecs=opus" before treating it as a voice message. Both compare the full
- * string, so the parameter is what separates a voice note from an ordinary
- * audio attachment. Everything else maps to a plain type and arrives as one.
- */
+/** MIME type per file extension. Ogg/Opus carries `codecs=opus` for WhatsApp/Telegram voice note rendering. */
 const AUDIO_MIME_BY_EXT: Record<string, string> = {
   mp3: "audio/mpeg",
   wav: "audio/wav",
@@ -78,23 +47,16 @@ export function mimeFor(uri: string): string {
 
 const pad = (value: number): string => String(value).padStart(2, "0");
 
-/**
- * The filename the recipient sees in their chat. Built from local date parts
- * rather than toISOString(), which would land a day early west of UTC.
- */
+/** Generates a date-stamped filename for the shared artifact. */
 const sharedFileName = (extension: string): string => {
   const now = new Date();
   const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  return `ekwe-voice-${stamp}.${extension}`;
+  // Add random suffix to prevent staging collisions for same-day shares.
+  const salt = Math.random().toString(36).slice(2, 6);
+  return `ekwe-voice-${stamp}-${salt}.${extension}`;
 };
 
-/**
- * Copies the artifact to a human-readable name in the cache.
- *
- * A copy rather than a rename: the same uri is the studio's playback source,
- * so moving it would break replay after a share. The copy is transient —
- * sweepStaleAudioCache() owns anything named "ekwe-voice-".
- */
+/** Copies the artifact to a human-readable cache path. Uses a copy to preserve the original playback source. */
 const prepareShareFile = async (uri: string): Promise<string> => {
   try {
     const source = new File(uri);
@@ -116,26 +78,11 @@ const prepareShareFile = async (uri: string): Promise<string> => {
   }
 };
 
-/**
- * Which surface is handing the result to another app.
- *
- * Deliberately a superset of `HistoryOrigin`: `history` and `result` are
- * surfaces that show results without capturing anything, so they have no
- * origin to key on. A frozen counterpart lives in `@/types/telemetry` — the two
- * must not be merged.
- */
+/** Surface type for share operations. Superset of `HistoryOrigin`. */
 export type ShareSource = HistoryOrigin | "history" | "result";
 
 export const ShareOutService = {
-  /**
-   * Hand a voice note to another app, falling back to its text.
-   *
-   * The audio path is the one that matters — a file the receiving app can play,
-   * typed as `audio/ogg; codecs=opus` so WhatsApp and Telegram render it as a
-   * voice note rather than an audio document. When there is no file, or the
-   * platform sheet cannot carry it, the text is the fallback, so a share is
-   * never a no-op.
-   */
+  /** Shares audio as a voice note, falling back to text if unavailable. */
   shareArtifact: async (
     audioUri: string | null,
     text: string | null,
@@ -168,9 +115,11 @@ export const ShareOutService = {
       }
 
       const payload = message ? `${message.trim()}${EKWE_SHARE_SIGNATURE}` : "";
+      // Derive MIME from the actual shared file's extension for type consistency.
+      const sharedUri = await prepareShareFile(uri);
       const result = await EkweNative.shareAudio(
-        await prepareShareFile(uri),
-        mimeFor(uri),
+        sharedUri,
+        mimeFor(sharedUri),
         payload || null,
         SHARE_CHOOSER_TITLE,
       );

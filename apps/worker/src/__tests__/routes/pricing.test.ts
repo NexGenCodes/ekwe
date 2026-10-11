@@ -1,9 +1,11 @@
 import { describe, test, expect, beforeEach } from "vitest";
 import { handleStorePricing, resetPricingCache } from "@/routes/pricing";
-import { mockEnv, mockExecutionContext } from "@/__tests__/setup";
-import { http } from "msw";
-import { server } from "@/__tests__/msw/server";
-import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
+import {
+  jsonBody,
+  mockDb,
+  mockEnv,
+  mockExecutionContext,
+} from "@/__tests__/setup";
 
 function pricingRequest(
   currency?: string,
@@ -17,7 +19,6 @@ function pricingRequest(
 describe("handleStorePricing", () => {
   beforeEach(() => {
     resetPricingCache();
-    server.resetHandlers();
   });
 
   test("returns NGN monthly + annual pricing by default", async () => {
@@ -27,7 +28,7 @@ describe("handleStorePricing", () => {
       mockExecutionContext(),
     );
     expect(res.status).toBe(200);
-    expect((await res.json()) as any).toEqual({
+    expect(await jsonBody(res)).toEqual({
       currency: "NGN",
       price: 3000,
       usd: 2.23,
@@ -47,7 +48,7 @@ describe("handleStorePricing", () => {
       mockExecutionContext(),
     );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as any;
+    const json = await jsonBody(res);
     expect(json.currency).toBe("NGN");
     expect(json.price).toBe(3000);
     expect(json.annualPrice).toBe(28800);
@@ -63,7 +64,7 @@ describe("handleStorePricing", () => {
       mockExecutionContext(),
     );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as any;
+    const json = await jsonBody(res);
     expect(json.currency).toBe("NGN");
     expect(json.price).toBe(3000);
   });
@@ -75,25 +76,21 @@ describe("handleStorePricing", () => {
       mockExecutionContext(),
     );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as any;
+    const json = await jsonBody(res);
     expect(json.currency).toBe("USD");
     expect(json.price).toBe(2.23);
   });
 
   test("reads local_prices from the app_config row in Supabase", async () => {
-    server.use(
-      http.get(PROVIDER_URLS.supabaseAppConfig, () => {
-        return Response.json([
-          {
-            id: 1,
-            base_price_usd: 2.5,
-            discount_percent: 0,
-            annual_discount_percent: 20,
-            local_prices: { NGN: { monthly: 4000, annual: 38400 } },
-          },
-        ]);
-      }),
-    );
+    mockDb.where.mockResolvedValue([
+      {
+        id: 1,
+        basePriceUsd: 2.5,
+        discountPercent: 0,
+        annualDiscountPercent: 20,
+        localPrices: { NGN: { monthly: 4000, annual: 38400 } },
+      },
+    ]);
 
     const res = await handleStorePricing(
       pricingRequest("NGN"),
@@ -101,7 +98,7 @@ describe("handleStorePricing", () => {
       mockExecutionContext(),
     );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as any;
+    const json = await jsonBody(res);
     expect(json.currency).toBe("NGN");
     expect(json.price).toBe(4000);
     expect(json.annualPrice).toBe(38400);

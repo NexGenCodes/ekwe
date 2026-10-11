@@ -1,7 +1,15 @@
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import app from "@/index";
 import { createWorker } from "@/worker";
-import { mockEnv, jsonResponse } from "@/__tests__/setup";
+import {
+  mockEnv,
+  jsonResponse,
+  jsonBody,
+  mockDb,
+  mockExecutionContext,
+  defaultMockDbExecute,
+  executeQueryToSql,
+} from "@/__tests__/setup";
 import { http } from "msw";
 import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
@@ -18,19 +26,20 @@ vi.mock("@/providers/edge", () => ({
 
 import { jwtVerify } from "jose";
 
+/** Makes the mocked `jwtVerify` resolve with the given claims. */
+function mockJwt(payload: Record<string, unknown>): void {
+  vi.mocked(jwtVerify).mockResolvedValue({
+    payload,
+    protectedHeader: { alg: "HS256" },
+  });
+}
+
 describe("Worker Router (index.ts)", () => {
   const env = mockEnv();
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    server.use(
-      http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
-        jsonResponse({ allowed: true, tier_active: "FREE" }),
-      ),
-      http.post(PROVIDER_URLS.supabaseConsumeUsage, () =>
-        jsonResponse({ count: 1 }),
-      ),
-    );
+    mockDb.execute.mockImplementation(defaultMockDbExecute);
   });
 
   describe("CORS & Preflight", () => {
@@ -39,12 +48,9 @@ describe("Worker Router (index.ts)", () => {
         method: "OPTIONS",
         headers: { Origin: "http://localhost" },
       });
-      const res = await app.fetch(req, env, {
-        waitUntil: () => {},
-        passThroughOnException: () => {},
-      } as any);
+      const res = await app.fetch(req, env, mockExecutionContext());
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(204);
       expect(res.headers.get("Access-Control-Allow-Origin")).toBe(
         "http://localhost",
       );
@@ -57,23 +63,18 @@ describe("Worker Router (index.ts)", () => {
       const req = new Request("http://localhost/translate", {
         method: "POST",
       });
-      const res = await app.fetch(req, env, {
-        waitUntil: () => {},
-        passThroughOnException: () => {},
-      } as any);
+      const res = await app.fetch(req, env, mockExecutionContext());
 
       expect(res.status).toBe(401);
-      const json = (await res.json()) as any;
+      const json = await jsonBody(res);
       expect(json).toHaveProperty("error", "UNAUTHORIZED");
     });
 
     test("accepts valid JWT and routes to handler", async () => {
-      (jwtVerify as any).mockResolvedValue({
-        payload: {
-          sub: "user-123",
-          email: "test@example.com",
-          app_metadata: { is_pro: false },
-        },
+      mockJwt({
+        sub: "user-123",
+        email: "test@example.com",
+        app_metadata: { is_pro: false },
       });
 
       // Cloudflare AI is the only provider this file leaves unmocked, so the
@@ -107,10 +108,7 @@ describe("Worker Router (index.ts)", () => {
           targetLang: "fr",
         }),
       });
-      const res = await app.fetch(req, env, {
-        waitUntil: vi.fn(),
-        passThroughOnException: () => {},
-      } as any);
+      const res = await app.fetch(req, env, mockExecutionContext());
       env.AI.run = aiRun;
 
       expect(res.status).toBe(200);
@@ -120,10 +118,7 @@ describe("Worker Router (index.ts)", () => {
       const req = new Request("http://localhost/transcribe/stream", {
         method: "GET",
       });
-      const res = await app.fetch(req, env, {
-        waitUntil: () => {},
-        passThroughOnException: () => {},
-      } as any);
+      const res = await app.fetch(req, env, mockExecutionContext());
 
       expect(res.status).toBe(401);
       const text = await res.text();
@@ -131,16 +126,13 @@ describe("Worker Router (index.ts)", () => {
     });
 
     test("rejects request on /transcribe/stream with invalid token", async () => {
-      (jwtVerify as any).mockRejectedValue(new Error("jwt malformed"));
+      vi.mocked(jwtVerify).mockRejectedValue(new Error("jwt malformed"));
 
       const req = new Request("http://localhost/transcribe/stream", {
         method: "GET",
         headers: { "Sec-WebSocket-Protocol": "bad-token" },
       });
-      const res = await app.fetch(req, env, {
-        waitUntil: () => {},
-        passThroughOnException: () => {},
-      } as any);
+      const res = await app.fetch(req, env, mockExecutionContext());
 
       expect(res.status).toBe(401);
       const text = await res.text();
@@ -150,23 +142,27 @@ describe("Worker Router (index.ts)", () => {
 
   describe("Daily usage quota", () => {
     test("returns 429 EKWE_QUOTA_EXCEEDED when the daily quota is exhausted", async () => {
-      (jwtVerify as any).mockResolvedValue({
-        payload: {
-          sub: "quota-user",
-          email: "quota@example.com",
-          app_metadata: { is_pro: false },
-        },
+      mockJwt({
+        sub: "quota-user",
+        email: "quota@example.com",
+        app_metadata: { is_pro: false },
       });
-      server.use(
-        http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
-          jsonResponse({
-            allowed: false,
-            reason: "QUOTA_EXCEEDED",
-            quota_total: 25,
-            quota_remaining: 0,
-          }),
-        ),
-      );
+      mockDb.execute.mockImplementation(async (query) => {
+        const sqlStr = executeQueryToSql(query);
+        if (sqlStr.includes("check_preflight")) {
+          return [
+            {
+              preflight: {
+                allowed: false,
+                reason: "QUOTA_EXCEEDED",
+                quota_total: 25,
+                quota_remaining: 0,
+              },
+            },
+          ];
+        }
+        return defaultMockDbExecute(query);
+      });
 
       const req = new Request("http://localhost/translate", {
         method: "POST",
@@ -176,24 +172,19 @@ describe("Worker Router (index.ts)", () => {
         },
         body: JSON.stringify({ text: "hello", targetLang: "fr" }),
       });
-      const res = await app.fetch(req, env, {
-        waitUntil: vi.fn(),
-        passThroughOnException: () => {},
-      } as any);
+      const res = await app.fetch(req, env, mockExecutionContext());
 
       expect(res.status).toBe(429);
       expect(res.headers.get("Retry-After")).toBeTruthy();
-      const json = (await res.json()) as any;
+      const json = await jsonBody(res);
       expect(json).toHaveProperty("error", "EKWE_QUOTA_EXCEEDED");
     });
 
-    test("consumes quota on billable success but not on KV cache replays", async () => {
-      (jwtVerify as any).mockResolvedValue({
-        payload: {
-          sub: "replay-user",
-          email: "replay@example.com",
-          app_metadata: { is_pro: false },
-        },
+    test("reserves quota at the gate and refunds KV cache replays", async () => {
+      mockJwt({
+        sub: "replay-user",
+        email: "replay@example.com",
+        app_metadata: { is_pro: false },
       });
       server.use(
         http.post(PROVIDER_URLS.groqChat, () =>
@@ -202,12 +193,19 @@ describe("Worker Router (index.ts)", () => {
       );
 
       const consumeCalls: string[] = [];
-      server.use(
-        http.post(PROVIDER_URLS.supabaseConsumeUsage, ({ request }) => {
-          consumeCalls.push(request.url);
-          return jsonResponse({ count: consumeCalls.length });
-        }),
-      );
+      const refundCalls: string[] = [];
+      mockDb.execute.mockImplementation(async (query) => {
+        const sqlStr = executeQueryToSql(query);
+        if (sqlStr.includes("consume_usage")) {
+          consumeCalls.push(sqlStr);
+          return [{ count: consumeCalls.length }];
+        }
+        if (sqlStr.includes("refund_usage")) {
+          refundCalls.push(sqlStr);
+          return [];
+        }
+        return defaultMockDbExecute(query);
+      });
 
       const mkReq = () =>
         new Request("http://localhost/translate", {
@@ -223,41 +221,89 @@ describe("Worker Router (index.ts)", () => {
           }),
         });
 
-      const waitUntil = vi.fn();
-
-      const first = await app.fetch(mkReq(), env, {
-        waitUntil,
-        passThroughOnException: () => {},
-      } as any);
+      const first = await app.fetch(mkReq(), env, mockExecutionContext());
       expect(first.status).toBe(200);
-      await vi.waitFor(() => expect(consumeCalls.length).toBe(1));
+      // The success keeps the reservation made by check_preflight, so nothing
+      // is consumed separately and nothing is refunded.
+      await vi.waitFor(() => expect(consumeCalls.length).toBe(0));
+      expect(refundCalls.length).toBe(0);
 
-      const second = await app.fetch(mkReq(), env, {
-        waitUntil,
-        passThroughOnException: () => {},
-      } as any);
+      const second = await app.fetch(mkReq(), env, mockExecutionContext());
       expect(second.status).toBe(200);
+      // The replay is served from cache, so its reservation is released.
+      await vi.waitFor(() => expect(refundCalls.length).toBe(1));
 
-      expect(consumeCalls.length).toBe(1);
+      expect(consumeCalls.length).toBe(0);
     });
 
-    test("serves a throttled PREMIUM request with FREE-tier limits instead of blocking", async () => {
-      (jwtVerify as any).mockResolvedValue({
-        payload: {
-          sub: "throttled-pro",
-          email: "throttled@example.com",
-          app_metadata: { is_pro: true },
-        },
+    test("refunds the reservation on an identical-language short-circuit", async () => {
+      mockJwt({
+        sub: "refund-user",
+        email: "refund@example.com",
+        app_metadata: { is_pro: false },
       });
-      server.use(
-        http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
-          jsonResponse({
-            allowed: true,
-            tier_active: "PREMIUM",
-            throttled: true,
-            quota_total: 0,
-            quota_remaining: 0,
+
+      const refundCalls: string[] = [];
+      mockDb.execute.mockImplementation(async (query) => {
+        const sqlStr = executeQueryToSql(query);
+        if (sqlStr.includes("refund_usage")) {
+          refundCalls.push(sqlStr);
+          return [];
+        }
+        return defaultMockDbExecute(query);
+      });
+
+      const res = await app.fetch(
+        new Request("http://localhost/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer refund-jwt",
+          },
+          body: JSON.stringify({
+            text: "noop",
+            sourceLang: "en",
+            targetLang: "en",
           }),
+        }),
+        env,
+        mockExecutionContext(),
+      );
+
+      expect(res.status).toBe(200);
+      await vi.waitFor(() => expect(refundCalls.length).toBe(1));
+    });
+
+    test("serves a throttled PREMIUM request on the FREE pipeline while keeping Pro limits", async () => {
+      mockJwt({
+        sub: "throttled-pro",
+        email: "throttled@example.com",
+        app_metadata: { is_pro: true },
+      });
+      mockDb.execute.mockImplementation(async (query) => {
+        const sqlStr = executeQueryToSql(query);
+        if (sqlStr.includes("check_preflight")) {
+          return [
+            {
+              preflight: {
+                allowed: true,
+                tier_active: "PREMIUM",
+                throttled: true,
+                quota_total: 0,
+                quota_remaining: 0,
+              },
+            },
+          ];
+        }
+        return defaultMockDbExecute(query);
+      });
+
+      server.use(
+        http.post(PROVIDER_URLS.groqChat, () =>
+          jsonResponse({ choices: [{ message: { content: "Bonjour" } }] }),
+        ),
+        http.post(PROVIDER_URLS.mistralChat, () =>
+          jsonResponse({ choices: [{ message: { content: "Bonjour" } }] }),
         ),
       );
 
@@ -273,34 +319,37 @@ describe("Worker Router (index.ts)", () => {
           sourceLang: "auto",
         }),
       });
-      const res = await app.fetch(req, env, {
-        waitUntil: vi.fn(),
-        passThroughOnException: () => {},
-      } as any);
+      const res = await app.fetch(req, env, mockExecutionContext());
 
-      expect(res.status).toBe(403);
-      const json = (await res.json()) as any;
-      expect(json).toHaveProperty("error", "AUTO_DETECT_UNAVAILABLE");
+      expect(res.status).toBe(200);
+      const json = await jsonBody(res);
+      expect(json.provider).toBe("groq");
     });
 
     test("honors the authoritative DB tier over a stale FREE JWT", async () => {
-      (jwtVerify as any).mockResolvedValue({
-        payload: {
-          sub: "db-pro-user",
-          email: "dbpro@example.com",
-          app_metadata: { is_pro: false },
-        },
+      mockJwt({
+        sub: "db-pro-user",
+        email: "dbpro@example.com",
+        app_metadata: { is_pro: false },
+      });
+      mockDb.execute.mockImplementation(async (query) => {
+        const sqlStr = executeQueryToSql(query);
+        if (sqlStr.includes("check_preflight")) {
+          return [
+            {
+              preflight: {
+                allowed: true,
+                tier_active: "PREMIUM",
+                throttled: false,
+                quota_total: 0,
+                quota_remaining: 0,
+              },
+            },
+          ];
+        }
+        return defaultMockDbExecute(query);
       });
       server.use(
-        http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
-          jsonResponse({
-            allowed: true,
-            tier_active: "PREMIUM",
-            throttled: false,
-            quota_total: 0,
-            quota_remaining: 0,
-          }),
-        ),
         http.post(PROVIDER_URLS.groqChat, () =>
           jsonResponse({ choices: [{ message: { content: "Hola" } }] }),
         ),
@@ -318,32 +367,35 @@ describe("Worker Router (index.ts)", () => {
           sourceLang: "auto",
         }),
       });
-      const res = await app.fetch(req, env, {
-        waitUntil: vi.fn(),
-        passThroughOnException: () => {},
-      } as any);
+      const res = await app.fetch(req, env, mockExecutionContext());
 
       expect(res.status).toBe(200);
     });
 
     test("downgrades a stale PREMIUM JWT to FREE when the DB says free", async () => {
-      (jwtVerify as any).mockResolvedValue({
-        payload: {
-          sub: "expired-pro",
-          email: "expired@example.com",
-          app_metadata: { is_pro: true },
-        },
+      mockJwt({
+        sub: "expired-pro",
+        email: "expired@example.com",
+        app_metadata: { is_pro: true },
+      });
+      mockDb.execute.mockImplementation(async (query) => {
+        const sqlStr = executeQueryToSql(query);
+        if (sqlStr.includes("check_preflight")) {
+          return [
+            {
+              preflight: {
+                allowed: true,
+                tier_active: "FREE",
+                throttled: false,
+                quota_total: 25,
+                quota_remaining: 24,
+              },
+            },
+          ];
+        }
+        return defaultMockDbExecute(query);
       });
       server.use(
-        http.post(PROVIDER_URLS.supabaseCheckPreflight, () =>
-          jsonResponse({
-            allowed: true,
-            tier_active: "FREE",
-            throttled: false,
-            quota_total: 25,
-            quota_remaining: 24,
-          }),
-        ),
         http.post(PROVIDER_URLS.groqChat, () =>
           jsonResponse({ choices: [{ message: { content: "Bonjour" } }] }),
         ),
@@ -361,13 +413,10 @@ describe("Worker Router (index.ts)", () => {
           sourceLang: "auto",
         }),
       });
-      const res = await app.fetch(req, env, {
-        waitUntil: vi.fn(),
-        passThroughOnException: () => {},
-      } as any);
+      const res = await app.fetch(req, env, mockExecutionContext());
 
       expect(res.status).toBe(403);
-      const json = (await res.json()) as any;
+      const json = await jsonBody(res);
       expect(json).toHaveProperty("error", "AUTO_DETECT_UNAVAILABLE");
     });
   });
@@ -375,13 +424,10 @@ describe("Worker Router (index.ts)", () => {
   describe("Route dispatch", () => {
     test("serves /health without auth", async () => {
       const req = new Request("http://localhost/health", { method: "GET" });
-      const res = await app.fetch(req, env, {
-        waitUntil: vi.fn(),
-        passThroughOnException: () => {},
-      } as any);
+      const res = await app.fetch(req, env, mockExecutionContext());
 
       expect(res.status).toBe(200);
-      const json = (await res.json()) as any;
+      const json = await jsonBody(res);
       expect(json).toHaveProperty("status", "ok");
       expect(json).toHaveProperty("degradedProviders");
       expect(json.degradedProviders).toEqual([]);
@@ -389,25 +435,25 @@ describe("Worker Router (index.ts)", () => {
     });
 
     test("records a request-level analytics event for matched routes", async () => {
-      (jwtVerify as any).mockResolvedValue({
-        payload: {
-          sub: "metric-user",
-          email: "metric@example.com",
-          app_metadata: { is_pro: false },
-        },
+      mockJwt({
+        sub: "metric-user",
+        email: "metric@example.com",
+        app_metadata: { is_pro: false },
       });
-      server.use(
-        http.post(PROVIDER_URLS.supabaseGetDailyUsage, () =>
-          jsonResponse({ day: "2026-08-13", translate: 2, transcribe: 0 }),
-        ),
-      );
-
+      mockDb.where.mockResolvedValue([
+        {
+          day: "2026-08-13",
+          translateCount: 2,
+          transcribeCount: 0,
+          speechChars: 0,
+        },
+      ]);
       const res = await app.fetch(
         new Request("http://localhost/usage", {
           headers: { Authorization: "Bearer metric-jwt" },
         }),
         env,
-        { waitUntil: vi.fn(), passThroughOnException: () => {} } as any,
+        mockExecutionContext(),
       );
       expect(res.status).toBe(200);
 
@@ -431,21 +477,23 @@ describe("Worker Router (index.ts)", () => {
 
     test("returns 404 for an unknown path without requiring auth or running preflight", async () => {
       let preflightCalls = 0;
-      server.use(
-        http.post(PROVIDER_URLS.supabaseCheckPreflight, () => {
+      mockDb.execute.mockImplementation(async (query) => {
+        const sqlStr = executeQueryToSql(query);
+        if (sqlStr.includes("check_preflight")) {
           preflightCalls += 1;
-          return jsonResponse({ allowed: true, tier_active: "FREE" });
-        }),
-      );
+          return [{ preflight: { allowed: true, tier_active: "FREE" } }];
+        }
+        return defaultMockDbExecute(query);
+      });
 
       const res = await app.fetch(
         new Request("http://localhost/does-not-exist", { method: "GET" }),
         env,
-        { waitUntil: vi.fn(), passThroughOnException: () => {} } as any,
+        mockExecutionContext(),
       );
 
       expect(res.status).toBe(404);
-      const json = (await res.json()) as any;
+      const json = await jsonBody(res);
       expect(json).toHaveProperty("error", "NOT_FOUND");
       expect(preflightCalls).toBe(0);
     });
@@ -454,52 +502,56 @@ describe("Worker Router (index.ts)", () => {
       const res = await app.fetch(
         new Request("http://localhost/translate", { method: "GET" }),
         env,
-        { waitUntil: vi.fn(), passThroughOnException: () => {} } as any,
+        mockExecutionContext(),
       );
 
       expect(res.status).toBe(404);
     });
 
     test("GET /usage returns a snapshot without running the preflight gate", async () => {
-      (jwtVerify as any).mockResolvedValue({
-        payload: {
-          sub: "usage-user",
-          email: "usage@example.com",
-          app_metadata: { is_pro: false },
-        },
+      mockJwt({
+        sub: "usage-user",
+        email: "usage@example.com",
+        app_metadata: { is_pro: false },
       });
+      mockDb.where.mockResolvedValue([
+        {
+          day: "2026-08-13",
+          translateCount: 2,
+          transcribeCount: 0,
+          speechChars: 0,
+        },
+      ]);
 
       let preflightCalls = 0;
-      server.use(
-        http.post(PROVIDER_URLS.supabaseCheckPreflight, () => {
+      mockDb.execute.mockImplementation(async (query) => {
+        const sqlStr = executeQueryToSql(query);
+        if (sqlStr.includes("check_preflight")) {
           preflightCalls += 1;
-
-          return jsonResponse({ allowed: false, reason: "QUOTA_EXCEEDED" });
-        }),
-        http.post(PROVIDER_URLS.supabaseGetDailyUsage, () =>
-          jsonResponse({ day: "2026-08-13", translate: 2, transcribe: 0 }),
-        ),
-      );
+          return [{ preflight: { allowed: false, reason: "QUOTA_EXCEEDED" } }];
+        }
+        return defaultMockDbExecute(query);
+      });
 
       const req = new Request("http://localhost/usage", {
         method: "GET",
         headers: { Authorization: "Bearer usage-jwt" },
       });
-      const res = await app.fetch(req, env, {
-        waitUntil: vi.fn(),
-        passThroughOnException: () => {},
-      } as any);
+      const res = await app.fetch(req, env, mockExecutionContext());
 
       expect(res.status).toBe(200);
       expect(preflightCalls).toBe(0);
-      const json = (await res.json()) as any;
-      expect(json).toMatchObject({ day: "2026-08-13" });
+      const json = await jsonBody(res);
+      expect(json).toMatchObject({
+        day: new Date().toISOString().slice(0, 10),
+      });
     });
   });
 
   describe("Queue handler", () => {
     test("acks DLQ messages after reporting them to Sentry", async () => {
       const ack = vi.fn();
+      const retryAll = vi.fn();
       const batch = {
         queue: "ekwe-maintenance-dlq",
         messages: [
@@ -512,7 +564,7 @@ describe("Worker Router (index.ts)", () => {
           },
         ],
         ackAll: vi.fn(),
-        retryAll: vi.fn(),
+        retryAll,
       } as unknown as MessageBatch<unknown>;
 
       await createWorker().queue(batch, env, {
@@ -521,7 +573,7 @@ describe("Worker Router (index.ts)", () => {
       } as unknown as ExecutionContext);
 
       expect(ack).toHaveBeenCalledTimes(1);
-      expect((batch as any).retryAll).not.toHaveBeenCalled();
+      expect(retryAll).not.toHaveBeenCalled();
     });
 
     test("does not ack maintenance tasks dispatched on the main queue", async () => {

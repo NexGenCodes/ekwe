@@ -314,48 +314,8 @@ struct EchoShareSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, 16)
 
-            HStack(spacing: 12) {
-                Button(action: model.togglePlay) {
-                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(onBrandFill)
-                        .frame(width: 48, height: 48)
-                        .background(Circle().fill(brandFill))
-                }
-                .buttonStyle(BorderlessButtonStyle())
-                .accessibilityLabel(model.isPlaying ? "Pause playback" : "Play preview")
-
-                VStack(spacing: 8) {
-                    WaveformView(peaks: model.peaks, played: model.progress)
-                        .frame(height: 40)
-                        .frame(maxWidth: .infinity)
-
-                    HStack(spacing: 8) {
-                        Text("\(model.formattedTime(model.progress * model.duration)) / \(model.formattedTime(model.duration))")
-                            .font(EchoFonts.custom("Outfit-Regular", size: 12))
-                            .monospacedDigit()
-                            .foregroundStyle(mutedFill)
-                        Spacer()
-                        Button(action: model.cycleRate) {
-                            Text(String(format: "%gx", model.rate))
-                                .font(EchoFonts.custom("Outfit-Medium", size: 12))
-                                .foregroundStyle(foregroundFill)
-                                .padding(.horizontal, 8)
-                                .frame(minHeight: 28)
-                                .background(Capsule().fill(surfaceFill))
-                        }
-                        .buttonStyle(BorderlessButtonStyle())
-                        .accessibilityLabel("Playback speed")
-                    }
-                }
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(backgroundFill))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(borderFill, lineWidth: 1)
-            )
-            .padding(.bottom, 12)
+            transportRow
+                .padding(.bottom, 12)
 
             Slider(value: Binding(
                 get: { model.progress },
@@ -403,6 +363,50 @@ struct EchoShareSheet: View {
             return "\(lang.flag) \(lang.englishName) · this voice note"
         }
         return "This voice note"
+    }
+
+    private var transportRow: some View {
+        HStack(spacing: 12) {
+            Button(action: model.togglePlay) {
+                Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(onBrandFill)
+                    .frame(width: 48, height: 48)
+                    .background(Circle().fill(brandFill))
+            }
+            .buttonStyle(BorderlessButtonStyle())
+            .accessibilityLabel(model.isPlaying ? "Pause playback" : "Play voice note")
+
+            VStack(spacing: 8) {
+                WaveformView(peaks: model.peaks, played: model.progress)
+                    .frame(height: 40)
+                    .frame(maxWidth: .infinity)
+
+                HStack(spacing: 8) {
+                    Text("\(model.formattedTime(model.progress * model.duration)) / \(model.formattedTime(model.duration))")
+                        .font(EchoFonts.custom("Outfit-Regular", size: 12))
+                        .monospacedDigit()
+                        .foregroundStyle(mutedFill)
+                    Spacer()
+                    Button(action: model.cycleRate) {
+                        Text(String(format: "%gx", model.rate))
+                            .font(EchoFonts.custom("Outfit-Medium", size: 12))
+                            .foregroundStyle(foregroundFill)
+                            .padding(.horizontal, 8)
+                            .frame(minHeight: 28)
+                            .background(Capsule().fill(surfaceFill))
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+                    .accessibilityLabel("Playback speed")
+                }
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(backgroundFill))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(borderFill, lineWidth: 1)
+        )
     }
 
     // MARK: - Transcribing
@@ -488,6 +492,9 @@ struct EchoShareSheet: View {
                     .strokeBorder(borderFill, lineWidth: 1)
             )
             .padding(.bottom, 16)
+
+            transportRow
+                .padding(.bottom, 16)
 
             Text("Translate to")
                 .font(EchoFonts.custom("Outfit-Medium", size: 13))
@@ -599,6 +606,9 @@ struct EchoShareSheet: View {
                     .strokeBorder(borderFill, lineWidth: 1)
             )
             .padding(.bottom, 16)
+
+            transportRow
+                .padding(.bottom, 16)
 
             HStack(spacing: 8) {
                 copyButton(label: model.didAutoCopy ? "Copied" : "Copy", copied: model.didAutoCopy) {

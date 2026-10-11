@@ -3,28 +3,7 @@ import { hashKey } from "@/utils/keys";
 
 /**
  * Workers Analytics Engine positional layout for dataset `ekwe_provider`.
- * Columns are positional and CANNOT be renamed or reordered after data exists —
- * treat this layout as frozen and only ever append to the reserved slots.
- *
- * index1: route[:provider] — the single sampling/filter key.
- *   e.g. "transcribe:groq", "preflight:preflight", "speech_cache:speech_cache"
- *
- * blob1:  schema_version   ("v1")
- * blob2:  event_type       (provider_attempt | speech_cache | user)
- * blob3:  outcome          (success|failure|skip | hit|miss|write | allow|deny|ok|fail|unconfigured)
- * blob4:  provider         ('' for non-provider events)
- * blob5:  tier             (FREE | PREMIUM, '' if none)
- * blob6:  error_class      ('' if none)
- * blob7:  user_hash        (SHA-256 of userId, '' if none)
- * blob8:  usage_type       ('' if none)
- * blob9:  source           (kv | r2 | none, '' if none)
- * blob10: reason           ('' if none)
- * blob11: http_status      ('' if none)
- * blob12-20: reserved
- *
- * double1: latency_ms
- * double2: attempt
- * double3-20: reserved
+ * Columns are positional and frozen — only append to reserved slots.
  */
 export const AE_LAYOUT = {
   BLOB_EVENT_TYPE: 1,
@@ -57,11 +36,7 @@ export interface AnalyticsEvent {
   attempt?: number;
 }
 
-/**
- * Best-effort Analytics Engine emitter. No-ops (and never throws) when the
- * EKWE_ANALYTICS binding is absent, so tests and local dev without the binding
- * continue to work untouched. writeDataPoint is fire-and-forget.
- */
+/** Best-effort Analytics Engine emitter. No-ops when the EKWE_ANALYTICS binding is absent. */
 export function recordEvent(env: Env, event: AnalyticsEvent): void {
   const dataset = env.EKWE_ANALYTICS;
   if (!dataset || typeof dataset.writeDataPoint !== "function") return;
@@ -88,11 +63,7 @@ export function recordEvent(env: Env, event: AnalyticsEvent): void {
   }
 }
 
-/**
- * Per-attempt provider telemetry, emitted from the failover choke point
- * (utils/retry.ts). The index is `route:provider` so each provider/route has
- * its own sampling bucket and can be filtered without a GROUP BY.
- */
+/** Emits per-attempt provider telemetry, indexed by `route:provider`. */
 export function recordProviderAttempt(
   env: Env,
   route: string,
@@ -139,10 +110,7 @@ async function hashUserId(userId: string): Promise<string> {
   }
 }
 
-/**
- * User-scoped event (preflight, usage, …). Only a SHA-256 hash of the userId is
- * stored in blob7 — raw identifiers never leave the worker.
- */
+/** User-scoped event. Stores only a SHA-256 hash of the userId. */
 export async function recordUserEvent(
   env: Env,
   route: string,
@@ -162,12 +130,7 @@ export async function recordUserEvent(
   });
 }
 
-/**
- * Per-HTTP-request telemetry for matched routes, emitted from the pipeline
- * boundary (core/pipeline.ts). `outcome` is "error" only for server-side
- * failures (>= 500); 4xx responses are "success" (the worker handled them).
- * The HTTP status is stored in blob11 (http_status) for filtering.
- */
+/** Per-request telemetry for matched routes. 4xx responses are "success"; >= 500 are "error". */
 export function recordRequestEvent(
   env: Env,
   route: string,

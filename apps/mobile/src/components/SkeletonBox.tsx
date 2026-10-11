@@ -66,7 +66,7 @@ export function SkeletonBox({
 
   return (
     <Box
-      accessible
+      accessible={false}
       accessibilityRole="progressbar"
       style={[
         {
