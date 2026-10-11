@@ -251,9 +251,13 @@ export const useSharedAudioPlayer = (
         ogg: isOggSource,
         playable: shortUri(playableSource),
         loaded: status.isLoaded,
+        state: status.playbackState,
         error: loadError,
       }),
     );
+    // Diagnostic snapshot on source/load changes only: depending on
+    // currentTime/playbackState here would re-log on every frame.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     uri,
     isOggSource,
@@ -318,9 +322,32 @@ export const useSharedAudioPlayer = (
     if (status.didJustFinish) {
       didJustFinishRef.current = true;
       setIsEnded(true);
-      logger.debug("[Playback] ended", "id=" + instanceId, shortUri(uri));
+      // ExoPlayer keeps playWhenReady=true at STATE_ENDED, so any native
+      // re-prepare of the finished source re-fires didJustFinish endlessly.
+      // Flatten playWhenReady once so a re-prepare lands READY at the end
+      // without transitioning to ENDED again. Replay still works because
+      // play() seeks to 0 first.
+      try {
+        player.pause();
+      } catch {
+        // Ignored
+      }
+      logger.debug(
+        "[Playback] ended",
+        "id=" + instanceId,
+        "state=" + status.playbackState,
+        "t=" + status.currentTime.toFixed(2),
+        shortUri(uri),
+      );
     }
-  }, [status.didJustFinish, uri, instanceId]);
+  }, [
+    status.didJustFinish,
+    status.playbackState,
+    status.currentTime,
+    player,
+    uri,
+    instanceId,
+  ]);
 
   const play = useCallback(async (): Promise<void> => {
     if (releasedRef.current) return;

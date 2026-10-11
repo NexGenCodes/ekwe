@@ -3,6 +3,7 @@ import type { Env } from "@/core/types";
 import { server } from "@/__tests__/msw/server";
 import { resetHealthMemo } from "@/services/health";
 import { resetWsKeyPenalties } from "@/utils/stream";
+import { clearBlacklistMemo } from "@/utils/keys";
 import {
   defaultMockDbExecute,
   type MockExecuteQuery,
@@ -503,6 +504,7 @@ if (!IS_INTEGRATION) {
     server.resetHandlers();
     resetHealthMemo();
     resetWsKeyPenalties();
+    clearBlacklistMemo();
   });
 
   afterAll(() => {

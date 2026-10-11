@@ -824,7 +824,6 @@ export async function synthesizeFromAudio(
       );
       if (!result) {
         releaseUsage(env, userId, "transcribe", ctx);
-        transcribeCharged = false;
         return Response.json(
           { error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL },
           { status: 503 },
@@ -845,7 +844,6 @@ export async function synthesizeFromAudio(
     if (!spokenText) {
       if (transcribeCharged) {
         releaseUsage(env, userId, "transcribe", ctx);
-        transcribeCharged = false;
       }
       return Response.json(
         { error: WORKER_ERROR_CODES.EKWE_EMPTY_TRANSCRIPT },
@@ -888,7 +886,6 @@ export async function synthesizeFromAudio(
         if (!translation.ok) {
           if (transcribeCharged) {
             releaseUsage(env, userId, "transcribe", ctx);
-            transcribeCharged = false;
           }
           return translation.response;
         }
@@ -929,7 +926,6 @@ export async function synthesizeFromAudio(
     if (!speechResponse.ok) {
       if (transcribeCharged) {
         releaseUsage(env, userId, "transcribe", ctx);
-        transcribeCharged = false;
       }
       if (translated) {
         releaseUsage(env, userId, "translate", ctx);
