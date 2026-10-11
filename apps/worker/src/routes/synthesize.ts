@@ -651,7 +651,7 @@ export async function synthesizeFromText(
     }
   }
 
-  return finishSpeech({
+  const speechResponse = await finishSpeech({
     spokenText,
     spokenLang: targetLang,
     gender: resolvedGender,
@@ -677,6 +677,12 @@ export async function synthesizeFromText(
       translationTruncated,
     },
   });
+
+  if (!speechResponse.ok && translated) {
+    releaseUsage(env, userId, "translate", ctx);
+  }
+
+  return speechResponse;
 }
 
 export async function synthesizeFromAudio(
@@ -780,6 +786,7 @@ export async function synthesizeFromAudio(
     let cacheKey: string | null = null;
     let transcript: string | null = null;
     let detectedLang: string | null = null;
+    let transcribeCharged = true;
     try {
       cacheKey = buildTranscribeCacheKey({
         userId,
@@ -793,6 +800,7 @@ export async function synthesizeFromAudio(
         transcript = cached.text;
         detectedLang = cached.language ?? null;
         releaseUsage(env, userId, "transcribe", ctx);
+        transcribeCharged = false;
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -816,6 +824,7 @@ export async function synthesizeFromAudio(
       );
       if (!result) {
         releaseUsage(env, userId, "transcribe", ctx);
+        transcribeCharged = false;
         return Response.json(
           { error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL },
           { status: 503 },
@@ -834,6 +843,10 @@ export async function synthesizeFromAudio(
 
     let spokenText = sanitizeTranslationText(transcript);
     if (!spokenText) {
+      if (transcribeCharged) {
+        releaseUsage(env, userId, "transcribe", ctx);
+        transcribeCharged = false;
+      }
       return Response.json(
         { error: WORKER_ERROR_CODES.EKWE_EMPTY_TRANSCRIPT },
         { status: 400 },
@@ -872,7 +885,13 @@ export async function synthesizeFromAudio(
             gateCharge,
           }),
         );
-        if (!translation.ok) return translation.response;
+        if (!translation.ok) {
+          if (transcribeCharged) {
+            releaseUsage(env, userId, "transcribe", ctx);
+            transcribeCharged = false;
+          }
+          return translation.response;
+        }
         spokenText = translation.result.translation;
         translated = true;
         effectiveSource = sourceCode;
@@ -881,7 +900,7 @@ export async function synthesizeFromAudio(
       }
     }
 
-    return finishSpeech({
+    const speechResponse = await finishSpeech({
       spokenText,
       spokenLang: targetLang,
       gender: resolvedGender,
@@ -906,6 +925,18 @@ export async function synthesizeFromAudio(
         translationTruncated,
       },
     });
+
+    if (!speechResponse.ok) {
+      if (transcribeCharged) {
+        releaseUsage(env, userId, "transcribe", ctx);
+        transcribeCharged = false;
+      }
+      if (translated) {
+        releaseUsage(env, userId, "translate", ctx);
+      }
+    }
+
+    return speechResponse;
   }
 }
 

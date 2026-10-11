@@ -25,8 +25,13 @@ export function hexEncode(buffer: ArrayBuffer): string {
 }
 
 const keyHashCache = new Map<string, string>();
+const localBlacklist = new Map<string, number>();
 const MAX_CACHE_SIZE = 1000;
 const MAX_CACHE_KEY_LENGTH = 512;
+
+export function clearBlacklistMemo(): void {
+  localBlacklist.clear();
+}
 
 export async function hashKey(key: string): Promise<string> {
   if (key.length > MAX_CACHE_KEY_LENGTH) {
@@ -134,7 +139,14 @@ export async function rotateKeysDetailed(
 
     const keyHash = await hashKey(key);
     const memoKey = `blacklist:${namespace}:${keyHash}`;
-    if (await env.EKWE_KV.get(memoKey)) continue;
+    const now = Date.now();
+    const memoExpires = localBlacklist.get(memoKey);
+    if (memoExpires && memoExpires > now) continue;
+    if (await env.EKWE_KV.get(memoKey)) {
+      if (localBlacklist.size > MAX_CACHE_SIZE) localBlacklist.clear();
+      localBlacklist.set(memoKey, now + 60_000);
+      continue;
+    }
 
     let res: Response;
     try {
@@ -157,15 +169,17 @@ export async function rotateKeysDetailed(
     lastStatus = res.status;
 
     if (res.status === 429) {
+      if (localBlacklist.size > MAX_CACHE_SIZE) localBlacklist.clear();
+      localBlacklist.set(memoKey, Date.now() + 60_000);
       await env.EKWE_KV.put(memoKey, "true", {
         expirationTtl: 60,
       });
-      const jitterMs = getRandomInt(100) + 50;
-      await new Promise((r) => setTimeout(r, jitterMs));
       continue;
     }
 
     if (res.status === 401 || res.status === 402 || res.status === 403) {
+      if (localBlacklist.size > MAX_CACHE_SIZE) localBlacklist.clear();
+      localBlacklist.set(memoKey, Date.now() + 86400_000);
       await env.EKWE_KV.put(memoKey, "true", {
         expirationTtl: 86400,
       });
@@ -182,6 +196,8 @@ export async function rotateKeysDetailed(
           "account_suspended",
         ];
         if (PERMANENT_CODES.some((code) => body.includes(code))) {
+          if (localBlacklist.size > MAX_CACHE_SIZE) localBlacklist.clear();
+          localBlacklist.set(memoKey, Date.now() + 86400_000);
           await env.EKWE_KV.put(memoKey, "true", {
             expirationTtl: 86400,
           });

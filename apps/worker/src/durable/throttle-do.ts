@@ -9,6 +9,12 @@ interface WindowCounter {
 export class ThrottleBucket extends DurableObject<Env> {
   private static readonly PRUNE_INTERVAL_MS = 60_000;
   private static readonly PREFIX = "otp:throttle:";
+  private alarmScheduled = false;
+
+  async alarm(): Promise<void> {
+    this.alarmScheduled = false;
+    await this.prune();
+  }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -33,7 +39,15 @@ export class ThrottleBucket extends DurableObject<Env> {
     limit: number,
     windowSec: number,
   ): Promise<boolean> {
-    await this.prune();
+    if (!this.alarmScheduled) {
+      this.alarmScheduled = true;
+      const currentAlarm = await this.ctx.storage.getAlarm();
+      if (!currentAlarm) {
+        await this.ctx.storage.setAlarm(
+          Date.now() + ThrottleBucket.PRUNE_INTERVAL_MS,
+        );
+      }
+    }
     return this.ctx.blockConcurrencyWhile(async () => {
       const storageKey = `${ThrottleBucket.PREFIX}${key}`;
       const now = Date.now();
@@ -56,9 +70,6 @@ export class ThrottleBucket extends DurableObject<Env> {
 
   private async prune(): Promise<void> {
     const now = Date.now();
-    const lastPrune =
-      (await this.ctx.storage.get<number>("otp:throttle:prune")) ?? 0;
-    if (now - lastPrune < ThrottleBucket.PRUNE_INTERVAL_MS) return;
     const entries = await this.ctx.storage.list<WindowCounter>({
       prefix: ThrottleBucket.PREFIX,
     });
@@ -67,6 +78,11 @@ export class ThrottleBucket extends DurableObject<Env> {
       if (value.resetAt < now) stale.push(key);
     }
     if (stale.length > 0) await this.ctx.storage.delete(stale);
-    await this.ctx.storage.put("otp:throttle:prune", now);
+    if (entries.size > stale.length) {
+      await this.ctx.storage.setAlarm(
+        Date.now() + ThrottleBucket.PRUNE_INTERVAL_MS,
+      );
+      this.alarmScheduled = true;
+    }
   }
 }
