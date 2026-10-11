@@ -46,11 +46,26 @@ constexpr int32_t kOpusGranuleRate = 48000;
 // stretched 3x with the pitch dragged down an octave and change. So the samples
 // are resampled down to kRecorderSampleRate after they are read.
 //
-// miniaudio sources (WAV/MP3/M4A/…) get there on their own: miniaudio resamples
-// to the requested rate as part of decoding.
+// Non-Ogg sources are decoded by the platform (or the local WAV reader) and
+// normalised to this contract by normalize_pcm_to_contract(); the Ogg decoders
+// resample here after reading.
 constexpr uint16_t kTargetChannels = 1;
 constexpr uint32_t kRecorderSampleRate = 16000;
 constexpr uint32_t kOpusDecodeSampleRate = 48000;
+
+// Which decoder a source needs. Ogg is the only container this module decodes
+// itself (Opus via libopusfile, Vorbis via libvorbisfile); every other format
+// is decoded by the platform (MediaCodec / AVAssetReader) and fed back in as
+// PCM through encode_pcm_to_*. Classified by sniffing "OggS" plus the codec
+// identification packet, since the container magic alone is not enough.
+enum class AudioContainer {
+    kNotOgg,
+    kOggOpus,
+    kOggVorbis,
+    kOggOther,
+};
+
+AudioContainer classify_audio_container(const std::string& input_path);
 
 // Members are initialised so a default-constructed result is already a failed
 // one: the early returns below set error_message and hand the struct back
@@ -66,8 +81,9 @@ struct DecodeResult {
 // source verbatim when it is already mono Ogg Opus at a legal rate.
 // Extracts a 60-point waveform. `max_audio_bytes` caps the input file size.
 //
-// Ogg sniffing separates Opus (libopusfile) from Vorbis (stb_vorbis inside
-// miniaudio); everything else (WAV/MP3/FLAC/AIFF) also goes through miniaudio.
+// Ogg sniffing separates Opus (libopusfile) from Vorbis (libvorbisfile); WAV
+// is parsed locally, and every other container (MP3/M4A/AAC/…) is decoded by
+// the platform and fed back in as PCM.
 DecodeResult transcode_audio_to_opus(
     const std::string& input_path,
     const std::string& output_path,
@@ -99,6 +115,34 @@ DualTranscodeResult transcode_audio_to_dual(
     const std::string& vorbis_output_path,
     size_t max_audio_bytes = kDefaultMaxAudioBytes);
 
+// Platform-orchestrated fan-out for sources the platform decoded itself
+// (MP3/AAC/M4A/AMR/…). Collapses the raw PCM to the mono/16 kHz contract once,
+// then encodes Ogg Opus and — when `vorbis_output_path` is non-empty — Ogg
+// Vorbis from the same buffer, so both artifacts and the waveform come from a
+// single normalisation. The Opus half is always attempted; the Vorbis half is
+// skipped (and reported as failed) when no path is given.
+DualTranscodeResult encode_pcm_to_dual(
+    const int16_t* pcm_data,
+    size_t num_samples,
+    uint32_t sample_rate,
+    uint16_t channels,
+    const std::string& opus_output_path,
+    const std::string& vorbis_output_path);
+
+// Platform-orchestrated path for Ogg sources, which the platform cannot decode.
+// Decodes the Ogg stream once and writes the Ogg Opus artifact (reusing the
+// source verbatim when it is already mono Ogg Opus), plus optional Ogg Vorbis
+// when `vorbis_output_path` is non-empty. When `wav_output_path` is non-empty a
+// 16 kHz mono PCM WAV is also written, giving the platform a decodable source
+// for its own M4A playback encoder (AVPlayer / Media3 have no Ogg support).
+// Returns duration + waveform from the same decode.
+DecodeResult resolve_ogg_to_artifacts(
+    const std::string& input_path,
+    const std::string& opus_output_path,
+    const std::string& vorbis_output_path,
+    const std::string& wav_output_path,
+    size_t max_audio_bytes = kDefaultMaxAudioBytes);
+
 // Collapses interleaved PCM to the mono/16 kHz decode contract: averages down
 // to kTargetChannels, enforces kMaxAudioDurationMs, and resamples to
 // kRecorderSampleRate. Shared by the Opus and Vorbis re-encode entry points so
@@ -123,25 +167,11 @@ DecodeResult transcode_audio_to_opus_from_memory(
     size_t max_audio_bytes = kDefaultMaxAudioBytes,
     int frame_ms = 20);
 
-// Decodes any audio file into a standalone PCM WAV file (no re-encode).
-// Ogg Opus is decoded via libopusfile and everything else via miniaudio, both
-// normalised to the mono contract above. Used by the iOS app to make
-// recorded Opus playable through AVPlayer/expo-audio, which has no native
-// Ogg Opus support.
+// Decodes a supported audio file into a standalone 16 kHz mono PCM WAV file
+// (no re-encode) through the shared decode_file_to_mono_pcm step. Used to make
+// a source playable through players without native Ogg support.
 // `max_audio_bytes` caps the input file size.
 DecodeResult decode_audio_to_wav(
-    const std::string& input_path,
-    const std::string& output_path,
-    size_t max_audio_bytes = kDefaultMaxAudioBytes);
-
-// Remuxes any audio file into an Opus-in-CAF file. Ogg Opus sources are
-// remuxed packet-for-packet (lossless container change); everything else is
-// decoded via miniaudio then re-encoded to Opus. Opus-in-CAF is supported by
-// iOS AVPlayer/AVAudioPlayer (iOS 11+) where the Ogg container is not.
-// Deliberately does not normalise the sample rate — it is a container change
-// for playback, so the packets pass through untouched.
-// `max_audio_bytes` caps the input file size.
-DecodeResult remux_audio_to_caf(
     const std::string& input_path,
     const std::string& output_path,
     size_t max_audio_bytes = kDefaultMaxAudioBytes);
@@ -159,7 +189,7 @@ DecodeResult analyze_audio_file(
 // downmixes to the mono/16 kHz decode contract, encodes to Ogg Opus,
 // computes 60-point waveform.
 // Used when a platform's hardware decoder handles formats
-// that miniaudio cannot (e.g. AAC/M4A or AMR on Android).
+// that this module's own decoders cannot (e.g. AAC/M4A or AMR).
 DecodeResult encode_pcm_to_opus(
     const int16_t* pcm_data,
     size_t num_samples,

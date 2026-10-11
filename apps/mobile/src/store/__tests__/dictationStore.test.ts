@@ -336,7 +336,7 @@ describe("confirmDictation", () => {
     expect(fileMock.deletes).toHaveBeenCalledTimes(1);
   });
 
-  it("surfaces a transcription failure as an error state", async () => {
+  it("keeps the clip on failure so it can be retried without re-recording", async () => {
     dictation$.set({
       ...INITIAL_STATE,
       status: "preview",
@@ -351,16 +351,42 @@ describe("confirmDictation", () => {
     const result = await dictationActions.confirmDictation("en");
 
     expect(result).toBeNull();
-    expect(dictation$.status.peek()).toBe("error");
+    // Back to `preview`, not `error`: the recording survives so the user can
+    // simply press confirm again. Deleting it here meant a timeout could only
+    // be recovered from by re-recording.
+    expect(dictation$.status.peek()).toBe("preview");
+    expect(dictation$.capturedUri.peek()).toBe("file:///rec.m4a");
     expect(dictation$.error.peek()).toBe(
       ErrorMessages[EkweError.TRANSCRIPTION_FAIL],
     );
+    expect(fileMock.deletes).not.toHaveBeenCalled();
     expect(audio.setError).toHaveBeenCalledWith(EkweError.TRANSCRIPTION_FAIL);
     expect(analytics.track).toHaveBeenCalledWith("transcription_failed", {
       sourceLang: "en",
       durationMs: 5000,
       error: EkweError.TRANSCRIPTION_FAIL,
     });
+  });
+
+  it("retries the same clip and succeeds", async () => {
+    dictation$.set({
+      ...INITIAL_STATE,
+      status: "preview",
+      capturedUri: "file:///rec.m4a",
+      capturedDurationMs: 5000,
+    });
+    batch.transcribe
+      .mockResolvedValueOnce({ ok: false, error: EkweError.TRANSCRIBE_TIMEOUT })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: { transcript: "retry worked", detectedLang: "en" },
+      });
+
+    expect(await dictationActions.confirmDictation("en")).toBeNull();
+    expect(dictation$.capturedUri.peek()).toBe("file:///rec.m4a");
+
+    expect(await dictationActions.confirmDictation("en")).toBe("retry worked");
+    expect(fileMock.deletes).toHaveBeenCalledTimes(1);
   });
 
   it("uses the accumulated transcript directly in live mode", async () => {

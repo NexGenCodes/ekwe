@@ -31,7 +31,10 @@ const WS_CLOSE = {
   DURATION_EXCEEDED: 4005,
 } as const;
 
-const MAX_CONCURRENT_STREAMS = 3;
+/**
+ * Live transcription is a paid feature, and the per-user cap now comes from
+ * the plan (`maxConcurrentStreams`) rather than a constant here.
+ */
 const IDLE_TIMEOUT_MS = 60_000;
 const CONFIG_NEGOTIATION_TIMEOUT_MS = 5_000;
 const CONFIG_NEGOTIATION_TOTAL_MS = CONFIG_NEGOTIATION_TIMEOUT_MS * 3;
@@ -215,12 +218,15 @@ export class StreamDurableObject extends DurableObject<Env> {
     const limits = getLimits(tier);
     const userId = this.ctx.id.name ?? "";
 
-    if (this.ctx.getWebSockets().length >= MAX_CONCURRENT_STREAMS) {
-      logger.warn("[stream-do] Concurrent stream cap reached", { tier });
+    if (this.ctx.getWebSockets().length >= limits.maxConcurrentStreams) {
+      logger.warn("[stream-do] Concurrent stream cap reached", {
+        tier,
+        limit: limits.maxConcurrentStreams,
+      });
       return new Response(
         JSON.stringify({
           error: WORKER_ERROR_CODES.TOO_MANY_CONNECTIONS,
-          message: `Max ${MAX_CONCURRENT_STREAMS} concurrent stream(s) per user.`,
+          message: `Max ${limits.maxConcurrentStreams} concurrent stream(s) per user.`,
         }),
         { status: 429, headers: { "Content-Type": "application/json" } },
       );
@@ -323,7 +329,11 @@ export class StreamDurableObject extends DurableObject<Env> {
         if (typeof msg.lang === "string" && msg.lang.trim() !== "") {
           const langGuard = guardLanguageCode(msg.lang.trim(), "lang");
           if (!langGuard.allowed) {
-            this.safeSend(ws, JSON.stringify(langGuard.response));
+            // `GuardFail.response` is a Response, and JSON.stringify of one is
+            // "{}" — the client received an error with no code in it. The body
+            // has to be read out before it goes down the socket.
+            const body = await langGuard.response.json();
+            this.safeSend(ws, JSON.stringify(body));
             this.closeSession(ws, WS_CLOSE.NORMAL, "Invalid language");
             return;
           }
@@ -759,6 +769,16 @@ export class StreamDurableObject extends DurableObject<Env> {
     for (const entry of STREAM_PIPELINE) {
       if (conn.triedRoutes.includes(entry.route.id)) continue;
       if (!streamRoutesFor(effectiveLang).includes(entry.route)) continue;
+      // A route that cannot be asked to infer a language must never be opened
+      // for an "auto" session. It was previously reached by failover, given the
+      // literal string "auto" as a language code, answered 400, and burned the
+      // route. The route table already declares this.
+      if (effectiveLang === "auto" && !entry.route.autoDetect) {
+        logger.info("[stream-do] Skipping route (no auto-detect)", {
+          route: entry.route.id,
+        });
+        continue;
+      }
       if (await isProviderDegraded(this.env, entry.route.provider)) {
         logger.info("[stream-do] Skipping route (circuit open)", {
           route: entry.route.id,

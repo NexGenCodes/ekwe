@@ -143,18 +143,46 @@ describe("handleTranscribe pipeline", () => {
     expect(res.status).toBe(400);
   });
 
-  test("supportedLanguages skips cohere for unsupported language", async () => {
+  test("skips cohere for a language it cannot transcribe", async () => {
+    // Marathi is offered but is outside Cohere's fourteen, so the pool must
+    // move past it rather than spend a request that would be rejected.
     let cohereCalled = false;
     server.use(
       http.post(PROVIDER_URLS.cohereTranscriptions, () => {
         cohereCalled = true;
         return jsonResponse({ text: "cohere result" });
       }),
+      http.post(PROVIDER_URLS.groqChat, () => jsonResponse({ text: "" })),
     );
 
     const env = mockEnv({
       AI: aiStub(async () => ({})),
     });
+
+    await handleTranscribe(
+      makeRequest("mr"),
+      env,
+      "FREE",
+      "FREE",
+      new AbortController().signal,
+      "test-user",
+    );
+    expect(cohereCalled).toBe(false);
+  });
+
+  test("rejects a language we do not offer before spending a request", async () => {
+    // Igbo is in the catalog but outside the offered tier. The guard answers
+    // 400 up front rather than draining the pool and reporting 503, which would
+    // read as an outage and could mark healthy providers as degraded.
+    let anyProviderCalled = false;
+    server.use(
+      http.post(PROVIDER_URLS.cohereTranscriptions, () => {
+        anyProviderCalled = true;
+        return jsonResponse({ text: "should not happen" });
+      }),
+    );
+
+    const env = mockEnv({ AI: aiStub(async () => ({})) });
 
     const res = await handleTranscribe(
       makeRequest("ig"),
@@ -164,8 +192,11 @@ describe("handleTranscribe pipeline", () => {
       new AbortController().signal,
       "test-user",
     );
-    expect(cohereCalled).toBe(false);
-    expect(res.status).toBe(503);
+
+    expect(res.status).toBe(400);
+    expect(anyProviderCalled).toBe(false);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe("INVALID_LANGUAGE");
   });
 
   test("supportedLanguages does not skip cohere for supported language", async () => {
@@ -383,7 +414,7 @@ describe("handleTranscribe pipeline", () => {
     expect(body.text).toContain("automatic transcription");
   });
 
-  test("auto: rejects transcript whose detected language mismatches", async () => {
+  test("auto: keeps a transcript whose detected language is doubted", async () => {
     let deepgramCalled = false;
     server.use(
       http.post(PROVIDER_URLS.deepgram, () => {
@@ -418,8 +449,13 @@ describe("handleTranscribe pipeline", () => {
       new AbortController().signal,
       "test-user",
     );
+    // The transcript is returned even though the worker doubts the language
+    // label. Discarding it burned every provider in the pool to reach a 503 for
+    // words that were already transcribed correctly.
     expect(deepgramCalled).toBe(true);
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
+    const body = await jsonBody(res);
+    expect(body.text).toContain("Bonjour mes amis");
   });
 
   test("PREMIUM pipeline tries witai (free) before paid providers for non-auto", async () => {

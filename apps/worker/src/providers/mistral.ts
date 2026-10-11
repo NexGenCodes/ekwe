@@ -1,5 +1,5 @@
 import { CLIENT_ABORTED, Env, TttRequest, TranslateResult } from "@/core/types";
-import { rotateKeys } from "@/utils/keys";
+import { rotateKeysOrThrow } from "@/utils/keys";
 import { buildTranslatePrompt, parseTranslateOutput } from "@/utils/prompts";
 import {
   fetchWithTimeout,
@@ -7,6 +7,7 @@ import {
   TIMEOUT_FAST,
 } from "@/utils/fetch";
 import { logger } from "@/core/logger";
+import { ProviderHttpError } from "@/core/provider-errors";
 
 const MISTRAL_CHAT = "https://api.mistral.ai/v1/chat/completions";
 const MISTRAL_MODEL = "ministral-14b-latest";
@@ -23,9 +24,10 @@ export async function ttt(
   });
 
   try {
-    const res = await rotateKeys(
+    const res = await rotateKeysOrThrow(
       env,
       "MISTRAL_KEY_",
+      "mistral",
       (key) =>
         fetchWithTimeout(
           MISTRAL_CHAT,
@@ -58,12 +60,7 @@ export async function ttt(
       signal,
     );
 
-    if (!res?.ok) {
-      logger.warn("[mistral] Translate failed, provider returned error", {
-        status: res?.status ?? "no response",
-      });
-      return null;
-    }
+    if (!res.ok) throw new ProviderHttpError("mistral", res.status);
 
     const data = await res.json<{
       choices?: Array<{ message?: { content?: string } }>;
@@ -82,9 +79,6 @@ export async function ttt(
     };
   } catch (e) {
     if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
-    logger.error("[mistral] Translate exception", {
-      error: e instanceof Error ? e.message : String(e),
-    });
-    return null;
+    throw e;
   }
 }

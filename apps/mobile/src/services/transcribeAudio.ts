@@ -3,6 +3,7 @@ import { File as ExpoFile } from "expo-file-system";
 import { transcribeResponseSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
 import {
   MAX_AUDIO_BYTES as MAX_FILE_SIZE_BYTES,
+  MAX_AUDIO_INPUT_BYTES,
   PREMIUM_LIMITS,
 } from "@ekwe/shared/plans";
 import { EkweError } from "@/constants/errors";
@@ -33,6 +34,7 @@ export async function transcribeAudio(
   onProgress?: (fraction: number) => void,
 ): Promise<Result<TranscriptionResult, EkweError>> {
   let convertedPath: string | null = null;
+  let playbackPath: string | null = null;
 
   try {
     const file = new ExpoFile(audio.uri);
@@ -44,7 +46,7 @@ export async function transcribeAudio(
       return err(EkweError.AUDIO_EMPTY);
     }
 
-    if (file.size && file.size > MAX_FILE_SIZE_BYTES) {
+    if (file.size && file.size > MAX_AUDIO_INPUT_BYTES) {
       return err(EkweError.FILE_TOO_LARGE);
     }
 
@@ -71,6 +73,15 @@ export async function transcribeAudio(
       sourceLang,
     );
     convertedPath = artifact.isTemporary ? artifact.uri : null;
+    playbackPath =
+      artifact.playbackUri && artifact.playbackUri !== artifact.uri
+        ? artifact.playbackUri
+        : null;
+
+    const uploadFile = new ExpoFile(artifact.uri);
+    if (uploadFile.size && uploadFile.size > MAX_FILE_SIZE_BYTES) {
+      return err(EkweError.FILE_TOO_LARGE);
+    }
 
     const {
       data: { session },
@@ -78,7 +89,7 @@ export async function transcribeAudio(
     const token = session?.access_token;
 
     const uploadResult = await uploadMultipart(
-      new ExpoFile(artifact.uri),
+      uploadFile,
       `${workerUrl}/transcribe`,
       {
         parameters: {
@@ -166,9 +177,10 @@ export async function transcribeAudio(
     }
     return err(EkweError.NETWORK_LOST);
   } finally {
-    if (convertedPath) {
+    for (const path of [convertedPath, playbackPath]) {
+      if (!path) continue;
       try {
-        await EkweNative.deleteFile(convertedPath);
+        await EkweNative.deleteFile(path);
       } catch {
         /* stale cache entries are reclaimed by sweepStaleAudioCache() */
       }

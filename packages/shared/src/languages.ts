@@ -182,9 +182,82 @@ export const LANGUAGE_CODES = [
 /** Union of the canonical catalog, for narrowing a plain `string` code. */
 export type LanguageCode = (typeof LANGUAGE_CODES)[number];
 
+/**
+ * The languages the product offers.
+ *
+ * This is the single editable list: every user-facing surface is derived from
+ * it, so adding or removing a language here is the only edit needed to change
+ * what appears in the picker, what the worker will accept, and what the
+ * conformance tests assert.
+ *
+ * It is deliberately a *subset* rather than a replacement for
+ * {@link LANGUAGE_CODES}. The catalog answers "what languages exist" and is
+ * used to resolve names and decode stored preferences; the tier answers "what do
+ * we offer". Collapsing them would strip the ability to name a language in a
+ * historical record, and would hard-fail any user whose saved selection falls
+ * outside the current set.
+ *
+ * Every language here was verified to have at least one transcription, one
+ * synthesis and one translation provider in the *free* pool, so the offered
+ * set never depends on a paid tier.
+ */
+export const SUPPORTED_LANGUAGE_CODES = [
+  "ar",
+  "bn",
+  "ca",
+  "de",
+  "en",
+  "es",
+  "fi",
+  "fr",
+  "hi",
+  "id",
+  "it",
+  "ja",
+  "kn",
+  "ko",
+  "ml",
+  "mr",
+  "ms",
+  "my",
+  "nl",
+  "pl",
+  "pt",
+  "ru",
+  "si",
+  "sv",
+  "ta",
+  "th",
+  "tl",
+  "tr",
+  "ur",
+  "vi",
+  "zh",
+] as const satisfies readonly LanguageCode[];
+
+export type SupportedLanguageCode = (typeof SUPPORTED_LANGUAGE_CODES)[number];
+
+export const SUPPORTED_LANGUAGE_CODE_SET: ReadonlySet<string> = new Set(
+  SUPPORTED_LANGUAGE_CODES,
+);
+
+/** Whether a code is one the product offers. */
+export const isSupportedLanguage = (
+  code: string | undefined | null,
+): code is SupportedLanguageCode =>
+  code != null && SUPPORTED_LANGUAGE_CODE_SET.has(code);
+
 export const LANGUAGE_CODE_SET: ReadonlySet<string> = new Set(LANGUAGE_CODES);
 
-export const LANGUAGES: Language[] = LANGUAGE_CODES.map((code) => {
+/**
+ * Every catalog language with its names resolved, offered or not.
+ *
+ * This is what name resolution must read. {@link LANGUAGES} is the offered tier,
+ * so indexing names from it would make a provider reporting a language we have
+ * dropped look like an unknown language — and `canonicalLanguageFromName` would
+ * discard a perfectly good detection instead of reporting it.
+ */
+export const ALL_LANGUAGES: Language[] = LANGUAGE_CODES.map((code) => {
   const lib = countryLanguages[code as keyof typeof countryLanguages];
   const override = NAME_OVERRIDES[code];
   return {
@@ -194,9 +267,33 @@ export const LANGUAGES: Language[] = LANGUAGE_CODES.map((code) => {
   };
 });
 
-export const LANGUAGE_BY_CODE: ReadonlyMap<string, Language> = new Map(
-  LANGUAGES.map((l): [string, Language] => [l.code, l]),
+/** Catalog lookup that still resolves a language we no longer offer. */
+export const LANGUAGE_BY_ANY_CODE: ReadonlyMap<string, Language> = new Map(
+  ALL_LANGUAGES.map((l): [string, Language] => [l.code, l]),
 );
+
+/**
+ * The offered languages, in catalog order.
+ *
+ * Every picker reads this rather than {@link LANGUAGE_CODES}: the catalog
+ * exists so names and stored values still resolve for languages we once
+ * supported, and reading it directly is how an unsupported language would leak
+ * into the UI.
+ */
+export const LANGUAGES: Language[] = LANGUAGE_CODES.filter(
+  isSupportedLanguage,
+).map((code) => LANGUAGE_BY_ANY_CODE.get(code) as Language);
+
+/**
+ * Lookup by code that still resolves a language we no longer offer.
+ *
+ * Backs {@link languageName} and the display helpers: a stored selection, a
+ * history row or a provider-reported detection must keep rendering a real name
+ * after the language leaves the offered tier. Backing this from {@link LANGUAGES}
+ * would silently downgrade those to the bare code.
+ */
+export const LANGUAGE_BY_CODE: ReadonlyMap<string, Language> =
+  LANGUAGE_BY_ANY_CODE;
 
 const LANG_TO_COUNTRY: Record<string, TCountryCode> = {
   en: "GB",

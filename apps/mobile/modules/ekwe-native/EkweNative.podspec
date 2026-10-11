@@ -1,8 +1,8 @@
 Pod::Spec.new do |s|
   s.name           = 'EkweNative'
   s.version        = '1.0.0'
-  s.summary        = 'Ekwe native audio capture, Opus/Ogg and Vorbis/Ogg encoding and Opus-in-CAF remuxing'
-  s.description    = 'Native C++ audio pipeline: capture + Ogg Opus recording, Vorbis-in-Ogg encoding for the Wit.ai upload path, and an iOS Opus-in-CAF decoder so AVPlayer can play Ogg Opus recordings without a WAV round-trip.'
+  s.summary        = 'Ekwe native audio capture, Opus/Ogg and Vorbis/Ogg encoding, and M4A playback copies'
+  s.description    = 'Native C++ audio pipeline: capture + Ogg Opus recording, Vorbis-in-Ogg encoding for the Wit.ai upload path, and an M4A/AAC playback copy (AVFoundation) so AVPlayer can play Ogg Opus recordings.'
   s.author         = 'Ekwe'
   s.homepage       = 'https://ekwe.pages.dev'
   s.platforms      = {
@@ -13,6 +13,11 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
+
+  # AVFoundation backs the platform-decode fallback the ObjC++ bridge uses when
+  # the C++ core defers a container (MP3/FLAC/AAC/M4A/…); CoreMedia provides the
+  # CMSampleBuffer/CMBlockBuffer types that AVAssetReader hands back.
+  s.frameworks = "AVFoundation", "CoreMedia", "AudioToolbox"
 
   # ── Compile sources ──────────────────────────────────────────────────────
   # The podspec lives at the module root so it can reach both ios/ (Swift +
@@ -41,10 +46,11 @@ Pod::Spec.new do |s|
     "cpp/thirdparty/opus/silk/float/*.c",
     "cpp/thirdparty/opus/src/*.c",
     "cpp/thirdparty/opusfile/src/{info,internal,opusfile,stream}.c",
-    # libvorbis: everything except vorbisfile.c, the streaming *read* API —
-    # this build only ever writes. The same list is spelled out in
-    # android/CMakeLists.txt so both platforms compile identical objects.
-    "cpp/thirdparty/libvorbis/lib/{analysis,bitrate,block,codebook,envelope,floor0,floor1,info,lookup,lpc,lsp,mapping0,mdct,psy,registry,res0,sharedbook,smallft,synthesis,vorbisenc,window}.c"
+    # libvorbis: the cyclic table + encoder + the vorbisfile streaming *read*
+    # API (used to decode Ogg Vorbis back for waveform/duration and the Ogg →
+    # WAV bridge). The same list is spelled out in android/CMakeLists.txt so
+    # both platforms compile identical objects.
+    "cpp/thirdparty/libvorbis/lib/{analysis,bitrate,block,codebook,envelope,floor0,floor1,info,lookup,lpc,lsp,mapping0,mdct,psy,registry,res0,sharedbook,smallft,synthesis,vorbisenc,vorbisfile,window}.c"
 
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = {
@@ -52,9 +58,10 @@ Pod::Spec.new do |s|
     'SWIFT_OBJC_BRIDGING_HEADER' => '${PODS_TARGET_SRCROOT}/ios/EkweNative-Bridging-Header.h',
 
     # Header search paths for the C++ core and vendored thirdparty includes.
-    # `thirdparty/miniaudio.h`, opusfile/opus/ogg includes and the checked-in
-    # `ogg/config_types.h` all resolve through these. celt/silk/float are the
-    # internal dirs that libopus's own CMake target adds; CocoaPods must too.
+    # opusfile/opus/ogg/vorbis includes, the r8brain headers used by
+    # EkweResampler.cpp, and the checked-in `ogg/config_types.h` all resolve
+    # through these. celt/silk/float are the internal dirs that libopus's own
+    # CMake target adds; CocoaPods must too.
     'HEADER_SEARCH_PATHS' => [
       '$(PODS_TARGET_SRCROOT)/cpp',
       '$(PODS_TARGET_SRCROOT)/cpp/thirdparty',

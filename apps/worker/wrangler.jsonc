@@ -5,7 +5,10 @@
   "compatibility_date": "2026-09-24",
   "compatibility_flags": ["nodejs_compat"],
 
-  // WASM module bundling
+  // CPU limit is intentionally unset: the account is on the Workers Free plan,
+  // which rejects `limits.cpu_ms`. On a paid plan, raise it to the documented
+  // maximum (300000) so a duration-scaled transcription budget
+  // (TRANSCRIBE_MAX_BUDGET_MS) stays reachable for long clips.
 
   // Daily history retention cleanup (free: 30d, pro: 365d) — calls
   // cleanup_expired_history via the service role in the `scheduled` handler.
@@ -50,21 +53,6 @@
     // Override to "development" locally via .dev.vars (precedence over vars).
     "APP_ENV": "production"
   },
-
-  // Wit.ai keys stored as pooled JSON maps in the account Secrets Store
-  // (store "ekwe-secrets"). Each pool holds ~17 languages ({"AF": "..."}).
-  // Read via `await env.WIT_POOL_<N>.get()` (see src/utils/wit-pools.ts).
-  // Names/IDs only — the secret values live in the store, never here.
-  "secrets_store_secrets": [
-    { "binding": "WIT_POOL_01", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_01" },
-    { "binding": "WIT_POOL_02", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_02" },
-    { "binding": "WIT_POOL_03", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_03" },
-    { "binding": "WIT_POOL_04", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_04" },
-    { "binding": "WIT_POOL_05", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_05" },
-    { "binding": "WIT_POOL_06", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_06" },
-    { "binding": "WIT_POOL_07", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_07" },
-    { "binding": "WIT_POOL_08", "store_id": "5a18c7b65511452a9d7e1d7999831974", "secret_name": "WIT_POOL_08" }
-  ],
 
   "observability": {
     "enabled": true,

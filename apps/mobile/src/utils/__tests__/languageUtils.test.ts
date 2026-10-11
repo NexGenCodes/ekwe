@@ -10,6 +10,7 @@ import {
   isGenuineLanguageDetection,
   resolveDetectedLanguage,
   sanitizeLanguageCodes,
+  unsupportedStoredLanguages,
 } from "@/utils/languageUtils";
 
 const KNOWN = LANGUAGES.slice(0, 6).map((l) => l.code);
@@ -132,5 +133,36 @@ describe("isGenuineLanguageDetection", () => {
   it("accepts a real language only when it differs from what was asked for", () => {
     expect(isGenuineLanguageDetection("es", "en")).toBe(true);
     expect(isGenuineLanguageDetection("en", "en")).toBe(false);
+  });
+});
+
+describe("unsupportedStoredLanguages", () => {
+  it("reports a language the product no longer offers", () => {
+    // Yoruba stays in the catalog so names still resolve, but it is outside the
+    // offered tier, so a stored selection has to be reported as dropped rather
+    // than filtered away without trace.
+    expect(unsupportedStoredLanguages(["en", "yo", "fr"])).toEqual(["yo"]);
+  });
+
+  it("never reports auto or a language we still offer", () => {
+    expect(unsupportedStoredLanguages(["auto", "en", "fr", "de"])).toEqual([]);
+  });
+
+  it("handles absent and empty input", () => {
+    expect(unsupportedStoredLanguages(undefined)).toEqual([]);
+    expect(unsupportedStoredLanguages([])).toEqual([]);
+  });
+
+  it("agrees with what sanitizeLanguageCodes actually keeps", () => {
+    // The two must not disagree: anything reported here must be absent from the
+    // sanitized list, or the app would claim a drop it never performed.
+    const stored = ["en", "yo", "ig", "ha", "fr"];
+    const kept = sanitizeLanguageCodes(stored, 5);
+    for (const dropped of unsupportedStoredLanguages(stored)) {
+      expect(kept).not.toContain(dropped);
+    }
+    expect(kept.length + unsupportedStoredLanguages(stored).length).toBe(
+      stored.length,
+    );
   });
 });

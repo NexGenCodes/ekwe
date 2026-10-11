@@ -158,18 +158,14 @@ describe("Deepgram provider", () => {
     expect(result).toBeNull();
   });
 
-  test("returns null on HTTP 403", async () => {
+  test("throws on HTTP 403", async () => {
     server.use(
       http.post(PROVIDER_URLS.deepgram, () =>
         jsonResponse({ error: "credit exhausted" }, 403),
       ),
     );
-    const result = await deepgram.stt(
-      makeAudioBlob(),
-      "en",
-      mockEnv(),
-      mockSignal(),
-    );
-    expect(result).toBeNull();
+    await expect(
+      deepgram.stt(makeAudioBlob(), "en", mockEnv(), mockSignal()),
+    ).rejects.toThrow();
   });
 });

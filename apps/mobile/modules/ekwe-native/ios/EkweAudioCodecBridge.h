@@ -20,13 +20,21 @@ NS_ASSUME_NONNULL_BEGIN
                                outputPath:(NSString *)outputPath
                             maxAudioBytes:(NSUInteger)maxAudioBytes;
 
-// Same shape as above, `maxAudioBytes` caps the source file size.
-+ (NSArray *)remuxToCafWithSourcePath:(NSString *)sourcePath
-                            outputPath:(NSString *)outputPath
-                         maxAudioBytes:(NSUInteger)maxAudioBytes;
+// Writes an M4A/AAC-LC copy of any source into `outputPath`, for playback
+// through AVPlayer (which cannot open the Ogg artifacts this bridge produces).
+// Ogg sources are decoded to a 16 kHz mono WAV first; everything else goes
+// through AVAssetReader. Returns @[@(success)].
++ (NSArray *)encodePlaybackCopyWithSourcePath:(NSString *)sourcePath
+                                   outputPath:(NSString *)outputPath
+                                maxAudioBytes:(NSUInteger)maxAudioBytes;
 
 // Raw interleaved 16-bit PCM already decoded by the caller (AVAssetReader).
 + (NSArray *)encodePcmToOpus:(NSData *)pcm sampleRate:(NSInteger)sampleRate channels:(NSInteger)channels outputPath:(NSString *)outputPath;
+
+// Same, encoding Vorbis-in-Ogg (the container the Wit.ai upload path needs) so
+// the share extension can fall back to AVAssetReader for files the C++ core
+// cannot read.
++ (NSArray *)encodePcmToVorbis:(NSData *)pcm sampleRate:(NSInteger)sampleRate channels:(NSInteger)channels outputPath:(NSString *)outputPath;
 
 // Duration in ms, or -1 when it cannot probe.
 + (NSInteger)probeAudioDurationMs:(NSString *)path;

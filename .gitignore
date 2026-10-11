@@ -54,7 +54,6 @@ desktop.ini
 # Cloudflare Workers
 **/.dev.vars*
 !**/.dev.vars.example
-!**/.dev.vars.store.example
 **/.wrangler/
 skills-lock.json
 

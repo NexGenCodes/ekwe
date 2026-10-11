@@ -1,11 +1,9 @@
 import { transcribeResponseSchema } from "@ekwe/shared";
 import { logger } from "@/core/logger";
-import {
-  getProviderModule,
-  getProviderNamesFor,
-  providerSupportsLanguage,
-} from "@/providers";
-import { PROVIDER_SKIP_AUTO, PROVIDER_TIMEOUT } from "@/core/providers";
+import { getProviderModule, getProviderNamesFor } from "@/providers";
+import { PROVIDER_TIMEOUT } from "@/core/providers";
+import { logSkips, planSttRoute } from "@/core/route-eligibility";
+import type { AudioCodec } from "@ekwe/shared/providerLimits";
 import {
   FALLBACK_ATTEMPT_TIMEOUT_MS,
   TRANSCRIBE_CACHE_TTL_SECONDS,
@@ -103,7 +101,6 @@ export function stripTranscriptLanguage(
 
 interface PipelineEntry {
   name: string;
-  skipOnAuto: boolean;
   timeoutMs: number;
   fn: SttFn;
 }
@@ -114,7 +111,6 @@ function buildPipeline(
 ): PipelineEntry[] {
   return names.map((name) => ({
     name,
-    skipOnAuto: PROVIDER_SKIP_AUTO[name] ?? false,
     timeoutMs:
       PROVIDER_TIMEOUT[name as keyof typeof PROVIDER_TIMEOUT]?.[tier] ??
       FALLBACK_ATTEMPT_TIMEOUT_MS.transcribe,
@@ -132,29 +128,50 @@ export interface TranscribeOptions {
   audioBlob: Blob;
   effectiveLang: string;
   isAuto: boolean;
+  codec: AudioCodec;
   tier: Tier;
   env: Env;
   signal: AbortSignal;
   budgetMs: number;
+  durationMs: number;
 }
 
 export async function runTranscribe(
   options: TranscribeOptions,
 ): Promise<TranscribeResult | null> {
-  const { audioBlob, effectiveLang, isAuto, tier, env, signal, budgetMs } =
-    options;
+  const {
+    audioBlob,
+    effectiveLang,
+    isAuto,
+    codec,
+    tier,
+    env,
+    signal,
+    budgetMs,
+    durationMs,
+  } = options;
 
   const pipeline = tier === "FREE" ? FREE_PIPELINE : PREMIUM_PIPELINE;
 
-  logger.info(
-    `[transcribe] Starting provider pipeline, pipeline has ${pipeline.length} providers`,
-  );
   const byName = new Map(pipeline.map((p) => [p.name, p]));
   const entry = (name: string): PipelineEntry => {
     const e = byName.get(name);
     if (!e) throw new Error(`[transcribe] Unknown provider: ${name}`);
     return e;
   };
+
+  const plan = planSttRoute(
+    pipeline.map((p) => p.name),
+    {
+      lang: effectiveLang,
+      isAuto,
+      codec,
+      bytes: audioBlob.size,
+      durationMs,
+    },
+  );
+  const planByProvider = new Map(plan.map((a) => [a.provider, a]));
+  logSkips("transcribe", plan);
 
   const result = await runProviderFailover<TranscribeResult>({
     providers: pipeline.map((p) => p.name),
@@ -166,22 +183,11 @@ export async function runTranscribe(
     attemptTimeoutMs: (name, remainingMs) =>
       Math.min(entry(name).timeoutMs, remainingMs),
     shouldSkip: async (name) => {
-      if (await isProviderDegraded(env, name)) {
-        logger.info(`[transcribe] Skipping ${name} (circuit open)`);
-        return true;
-      }
-      const e = entry(name);
-      if (isAuto && e.skipOnAuto) {
-        logger.info(`[transcribe] Skipping ${name} (skipOnAuto)`);
-        return true;
-      }
-      if (!isAuto && !providerSupportsLanguage(name, "stt", effectiveLang)) {
-        logger.info(
-          `[transcribe] Skipping ${name} (unsupported language: ${effectiveLang})`,
-        );
-        return true;
-      }
-      return false;
+      const planned = planByProvider.get(name);
+      if (planned && !planned.eligible) return planned.reason ?? null;
+      // The only dynamic skip: health state, which needs the KV store.
+      if (await isProviderDegraded(env, name)) return "circuit-open";
+      return null;
     },
     onTrying: (name, remainingMs) => {
       logger.info(`[transcribe] Trying ${name}`, {
@@ -194,6 +200,7 @@ export async function runTranscribe(
       entry(name).fn(audioBlob, effectiveLang, env, attemptSignal),
     handleAttempt: async (name, attempt) => {
       if (!attempt) {
+        // Answered with nothing: neutral, not a provider fault.
         reportProviderNeutral(name);
         logger.info(`[transcribe] ${name} returned null (no result)`);
         return false;
@@ -215,17 +222,15 @@ export async function runTranscribe(
         attempt.language &&
         !validateTranscriptLanguage(attempt.text, attempt.language)
       ) {
-        logger.info(`[transcribe] ${name} rejected (language mismatch)`);
-        return false;
+        // Keep the transcript; a slightly-off label is cheaper than a 503.
+        logger.warn(`[transcribe] ${name} language label disagreed`, {
+          reported: attempt.language,
+        });
       }
 
       if (isAuto && !attempt.language) {
         try {
-          const detected = await detectTextLanguage(
-            attempt.text,
-            env.EKWE_D1,
-            signal,
-          );
+          const detected = await detectTextLanguage(attempt.text, env, signal);
           if (detected) {
             attempt = { ...attempt, language: detected };
             logger.info(
@@ -247,6 +252,11 @@ export async function runTranscribe(
       await reportProviderOutcome(env, name, true);
 
       return true;
+    },
+    onRejectedResult: (name, result) => {
+      if (result) {
+        logger.warn(`[transcribe] ${name} produced an unusable result`);
+      }
     },
     onAttemptError: (name) => reportProviderOutcome(env, name, false),
   });

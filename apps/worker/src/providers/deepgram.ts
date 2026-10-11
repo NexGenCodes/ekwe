@@ -4,11 +4,12 @@ import {
   TranscribeResult,
   SpeechAttempt,
 } from "@/core/types";
-import { rotateKeys, rotateKeysDetailed } from "@/utils/keys";
+import { rotateKeysDetailed, rotateKeysOrThrow } from "@/utils/keys";
 import { isHallucination } from "@/utils/hallucination";
 import { fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
 import { rotateWsKeys, createStreamInterceptor } from "@/utils/stream";
 import { logger } from "@/core/logger";
+import { ProviderHttpError } from "@/core/provider-errors";
 import { canonicalLanguageFromName } from "@ekwe/shared/languageNames";
 import type { StreamRoute } from "@ekwe/shared/languageCapabilities";
 
@@ -33,9 +34,10 @@ export async function stt(
     params.set("detect_language", "true");
   }
 
-  const res = await rotateKeys(
+  const res = await rotateKeysOrThrow(
     env,
     "DEEPGRAM_KEY_",
+    "deepgram",
     (key) =>
       fetchWithTimeout(
         `${DEEPGRAM_URL}?${params}`,
@@ -53,15 +55,11 @@ export async function stt(
     signal,
   );
 
-  if (!res?.ok) {
-    if (res?.status === 402 || res?.status === 403) {
+  if (!res.ok) {
+    if (res.status === 402 || res.status === 403) {
       logger.error("[CREDIT_EXHAUSTED] Deepgram key requires manual rotation!");
-    } else {
-      logger.warn("[deepgram] Transcribe failed, provider returned error", {
-        status: res?.status ?? "no response",
-      });
     }
-    return null;
+    throw new ProviderHttpError("deepgram", res.status);
   }
 
   const data = await res.json<DeepgramResponse>();

@@ -16,19 +16,19 @@
     "check:keys": "node src/__tests__/helpers/check-providers.mjs",
     "check:keys:all": "node src/__tests__/helpers/check-providers.mjs --groq",
     "secrets:check": "node ../../scripts/deploy-keys.mjs check",
-    "secrets:sync-local": "node ../../scripts/deploy-keys.mjs sync-local",
-    "secrets:verify-local": "node ../../scripts/deploy-keys.mjs verify-local",
     "secrets:sync-remote": "node ../../scripts/deploy-keys.mjs sync-remote",
     "secrets:verify": "node ../../scripts/deploy-keys.mjs verify",
     "secrets:rotate": "node ../../scripts/deploy-keys.mjs rotate",
     "db:migrate": "for f in migrations/*.sql; do wrangler d1 execute ekwe-cache --remote --file \"$f\"; done",
     "db:migrate:local": "for f in migrations/*.sql; do wrangler d1 execute ekwe-cache --local --file \"$f\"; done",
-    "dev": "pnpm run secrets:sync-local && wrangler dev --persist-to .wrangler/state",
+    "dev": "wrangler dev --persist-to .wrangler/state",
     "deploy:worker": "wrangler deploy",
     "gen:types": "wrangler types",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "knip:check": "knip",
-    "check:stt": "node src/__tests__/helpers/check-stt.mjs"
+    "check:stt": "node src/__tests__/helpers/check-stt.mjs",
+    "check:tts": "node src/__tests__/helpers/check-tts.mjs",
+    "check:stream": "vitest run --project workers src/__tests__/durable/check-stream.test.ts"
   },
   "keywords": [],
   "author": "",
@@ -58,7 +58,7 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1",
     "vitest": "^4.1.6",
-    "wrangler": "^4.102.0",
+    "wrangler": "^4.149.0",
     "zod": "^4.6.5"
   }
 }

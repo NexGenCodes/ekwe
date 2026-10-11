@@ -25,9 +25,11 @@ find_lib() {
   return 1
 }
 
-# vorbisenc must precede vorbis: the former calls into the latter.
+# vorbisenc must precede vorbis: the former calls into the latter. vorbisfile
+# pulls in vorbis + ogg as well; list it last so the linker resolves the
+# higher-level symbols first.
 link_flags=()
-for name in opusfile ogg opus vorbisenc vorbis; do
+for name in opusfile ogg opus vorbisenc vorbis vorbisfile; do
   if found="$(find_lib "$name")"; then
     link_flags+=("${found}")
   else
@@ -62,14 +64,14 @@ sources=(
   "${cpp}/EkweOpusEncoder.cpp"
   "${cpp}/EkweOggMuxer.cpp"
   "${cpp}/EkweAudioDecoder.cpp"
+  "${cpp}/EkweResampler.cpp"
   "${cpp}/EkweVorbisEncoder.cpp"
   "${cpp}/EkweWaveform.cpp"
-  "${cpp}/EkweCafMuxer.cpp"
 )
 
 # The capture-thread callback tests live in run-callback-tests.sh: they need
 # C++20 and TSan, neither of which this suite probes for.
-tests=(capture_leading_silence_test vorbis_encode_test)
+tests=(capture_leading_silence_test vorbis_encode_test audio_paths_test)
 
 fail=0
 for name in "${tests[@]}"; do

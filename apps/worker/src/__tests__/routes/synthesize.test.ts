@@ -26,9 +26,14 @@ import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 import type { Env, Tier } from "@/core/types";
 
+/**
+ * Sized past the provider floor rather than being a token 8-byte frame: Wit
+ * returns 576 bytes of silence for a script it cannot speak, so anything under
+ * that is rejected rather than served. A realistic fixture keeps these tests
+ * exercising the route instead of the guard.
+ */
 function mp3Response(): Response {
-  const mp3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00, 0x00]);
-  return new Response(mp3, {
+  return new Response(new Uint8Array(4_096), {
     status: 200,
     headers: { "Content-Type": "audio/mpeg" },
   });

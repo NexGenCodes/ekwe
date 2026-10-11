@@ -9,6 +9,7 @@ import {
 import { http } from "msw";
 import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
+import { ProviderHttpError } from "@/core/provider-errors";
 
 describe("Groq provider", () => {
   describe("transcribe", () => {
@@ -115,19 +116,15 @@ describe("Groq provider", () => {
       expect(result).not.toHaveProperty("duration");
     });
 
-    test("returns null on HTTP error", async () => {
+    test("throws on HTTP error so the failover engine can classify it", async () => {
       server.use(
         http.post(PROVIDER_URLS.groqTranscriptions, () =>
           jsonResponse({ error: "unauthorized" }, 401),
         ),
       );
-      const result = await groq.stt(
-        makeAudioBlob(),
-        "en",
-        mockEnv(),
-        mockSignal(),
-      );
-      expect(result).toBeNull();
+      await expect(
+        groq.stt(makeAudioBlob(), "en", mockEnv(), mockSignal()),
+      ).rejects.toThrow(ProviderHttpError);
     });
 
     test("returns null on hallucination", async () => {
@@ -182,23 +179,24 @@ describe("Groq provider", () => {
       expect(result!.provider).toBe("groq");
     });
 
-    test("returns null on HTTP error", async () => {
+    test("throws on HTTP error", async () => {
       server.use(
         http.post(PROVIDER_URLS.groqChat, () =>
           jsonResponse({ error: "unauthorized" }, 401),
         ),
       );
-      const result = await groq.ttt(
-        "Hello",
-        {
-          targetLang: "es",
-          sourceLang: "en",
-          transliteration: false,
-        },
-        mockEnv(),
-        mockSignal(),
-      );
-      expect(result).toBeNull();
+      await expect(
+        groq.ttt(
+          "Hello",
+          {
+            targetLang: "es",
+            sourceLang: "en",
+            transliteration: false,
+          },
+          mockEnv(),
+          mockSignal(),
+        ),
+      ).rejects.toThrow(ProviderHttpError);
     });
 
     test("returns null on empty choices", async () => {

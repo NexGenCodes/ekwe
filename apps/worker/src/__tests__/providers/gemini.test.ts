@@ -30,23 +30,24 @@ describe("Gemini provider", () => {
     expect(result!.provider).toBe("gemini");
   });
 
-  test("returns null on HTTP error", async () => {
+  test("throws on HTTP error", async () => {
     server.use(
       http.post(PROVIDER_URLS.geminiGenerate, () =>
         jsonResponse({ error: { message: "quota exceeded" } }, 429),
       ),
     );
-    const result = await gemini.ttt(
-      "Hello",
-      {
-        targetLang: "es",
-        sourceLang: "en",
-        transliteration: false,
-      },
-      mockEnv(),
-      mockSignal(),
-    );
-    expect(result).toBeNull();
+    await expect(
+      gemini.ttt(
+        "Hello",
+        {
+          targetLang: "es",
+          sourceLang: "en",
+          transliteration: false,
+        },
+        mockEnv(),
+        mockSignal(),
+      ),
+    ).rejects.toThrow();
   });
 
   test("returns null on empty candidates", async () => {

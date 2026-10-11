@@ -7,6 +7,7 @@ export const PROVIDER_URLS = {
   assemblyaiUpload: "https://api.assemblyai.com/v2/upload",
   assemblyaiTranscript: "https://api.assemblyai.com/v2/transcript",
   witaiDictation: "https://api.wit.ai/dictation",
+  witaiLanguage: "https://api.wit.ai/language",
   groqTranscriptions: "https://api.groq.com/openai/v1/audio/transcriptions",
   groqChat: "https://api.groq.com/openai/v1/chat/completions",
   elevenlabsStt: "https://api.elevenlabs.io/v1/speech-to-text",
@@ -36,6 +37,12 @@ export const defaultHandlers = [
   http.post(PROVIDER_URLS.assemblyaiUpload, notFound),
   http.post(PROVIDER_URLS.assemblyaiTranscript, notFound),
   http.post(PROVIDER_URLS.witaiDictation, notFound),
+  // Auto-detect's Wit fallback is optional: default to a reachable service with
+  // no usable locale so unrelated tests never trip its circuit or hit the
+  // unhandled-request guard.
+  http.get(PROVIDER_URLS.witaiLanguage, () =>
+    HttpResponse.json({ detected_locales: [] }),
+  ),
   http.post(PROVIDER_URLS.groqTranscriptions, notFound),
   http.post(PROVIDER_URLS.elevenlabsStt, notFound),
   http.post(PROVIDER_URLS.elevenlabsTts, notFound),

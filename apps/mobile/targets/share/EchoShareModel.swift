@@ -191,7 +191,6 @@ final class EchoShareModel: NSObject, ObservableObject {
             var success = false
             var durationMs = 0
             var waveArr: [Double] = []
-            var opusPathForCaf = opusURL.path
             var vorbisPathForUpload: String?
 
             if isUnderWitCap {
@@ -213,6 +212,27 @@ final class EchoShareModel: NSObject, ObservableObject {
                     durationMs = (opusResult[2] as? NSNumber)?.intValue ?? 0
                     waveArr = (opusResult[3] as? [NSNumber])?.map { $0.doubleValue } ?? []
                     vorbisPathForUpload = vorbisURL.path
+                } else if let pcm = try? await Self.decodeToPcmFile(url: url) {
+                    // C++ core can't read this container (MP3/FLAC/…): decode
+                    // once through AVFoundation and fan out to both encoders.
+                    let fallbacks = await Task.detached(priority: .userInitiated) {
+                        (EkweAudioCodecBridge.encodePcmToOpus(
+                            pcm.data, sampleRate: pcm.sampleRate,
+                            channels: pcm.channels, outputPath: opusURL.path),
+                         EkweAudioCodecBridge.encodePcmToVorbis(
+                            pcm.data, sampleRate: pcm.sampleRate,
+                            channels: pcm.channels, outputPath: vorbisURL.path))
+                    }.value
+                    let opusFallback = fallbacks.0
+                    let vorbisFallback = fallbacks.1
+                    let opusOk = (opusFallback[0] as? NSNumber)?.boolValue ?? false
+                    let vorbisOk = (vorbisFallback[0] as? NSNumber)?.boolValue ?? false
+                    if opusOk && vorbisOk {
+                        success = true
+                        durationMs = (opusFallback[2] as? NSNumber)?.intValue ?? 0
+                        waveArr = (opusFallback[3] as? [NSNumber])?.map { $0.doubleValue } ?? []
+                        vorbisPathForUpload = vorbisURL.path
+                    }
                 }
             } else {
                 // > 296s or unknown duration: Opus only (Wit rejects Vorbis anyway)
@@ -257,24 +277,24 @@ final class EchoShareModel: NSObject, ObservableObject {
                 return
             }
 
-            // AVPlayer has no Ogg support — remux the Opus stream into CAF.
-            let cafURL = Self.temporaryURL(withExtension: "caf")
-            let remuxed = await Task.detached(priority: .userInitiated) {
-                EkweAudioCodecBridge.remuxToCafWithSourcePath(
-                    opusURL.path,
-                    outputPath: cafURL.path,
+            // AVPlayer has no Ogg support — encode an M4A copy for in-sheet preview.
+            let m4aURL = Self.temporaryURL(withExtension: "m4a")
+            let playback = await Task.detached(priority: .userInitiated) {
+                EkweAudioCodecBridge.encodePlaybackCopyWithSourcePath(
+                    url.path,
+                    outputPath: m4aURL.path,
                     maxAudioBytes: UInt(EchoEnvironment.maxAudioBytes))
             }.value
-            let didRemux = (remuxed[0] as? NSNumber)?.boolValue ?? false
+            let didEncode = (playback[0] as? NSNumber)?.boolValue ?? false
 
-            let player = AVPlayer(url: didRemux ? cafURL : url)
+            let player = AVPlayer(url: didEncode ? m4aURL : url)
             player.actionAtItemEnd = .pause
             self.player = player
             addEndOfPlaybackObserver(for: player)
             scheduleProgressTimer()
 
             // For upload: Vorbis when under Wit cap, Opus otherwise.
-            // Playback always uses the Opus copy remuxed to CAF above.
+            // Playback always uses the M4A copy encoded above.
             sourceURL = URL(fileURLWithPath: vorbisPathForUpload ?? opusURL.path)
             fileName = url.lastPathComponent
             fileSizeText = EchoShareModel.fileByteCountString(from: url)

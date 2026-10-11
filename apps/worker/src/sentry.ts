@@ -13,21 +13,6 @@ function beforeSend(
   ) as unknown as ReturnType<NonNullable<CloudflareOptions["beforeSend"]>>;
 }
 
-/**
- * Drops anything raised by a local `wrangler dev` session.
- *
- * `APP_ENV` defaults to "production" in wrangler.jsonc so that deploys never
- * ship with debug logging, which means a developer who has not yet copied
- * `.dev.vars.example` to `.dev.vars` runs with a production Sentry client and
- * files local failures — missing bindings, unavailable Workers AI, hand-edited
- * fixtures — against the live project. That is indistinguishable from a real
- * outage once it lands, and it buries the errors we actually want to see.
- *
- * The runtime gives no local-vs-deployed signal: `navigator.userAgent` is
- * "Cloudflare-Workers" in both, and `request.cf` is populated either way. The
- * request URL is the one thing that differs, since `wrangler dev` only ever
- * serves from loopback.
- */
 export function isLocalDevEvent(
   event: Parameters<NonNullable<CloudflareOptions["beforeSend"]>>[0],
 ): boolean {

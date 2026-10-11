@@ -27,6 +27,7 @@ interface PlaybackControlProps {
   isPlaying: boolean;
   isDecoding: boolean;
   isReady: boolean;
+  hasError: boolean;
   disabled: boolean;
   progress: number;
   progressSV: SharedValue<number>;
@@ -44,6 +45,7 @@ const PlaybackControl: React.FC<PlaybackControlProps> = React.memo(
     isPlaying,
     isDecoding,
     isReady,
+    hasError,
     disabled,
     progress,
     progressSV,
@@ -115,7 +117,9 @@ const PlaybackControl: React.FC<PlaybackControlProps> = React.memo(
                 opacity: disabled ? opacity.disabled : 1,
               }}
             >
-              {isDecoding || !isReady ? (
+              {hasError ? (
+                <Play size={18} color={color.onBrand} fill={color.onBrand} />
+              ) : isDecoding || !isReady ? (
                 <Spinner size="sm" color={color.onBrand} />
               ) : isPlaying ? (
                 <Pause size={18} color={color.onBrand} fill={color.onBrand} />
@@ -197,6 +201,12 @@ export const EchoPreviewStep: React.FC<EchoPreviewStepProps> = React.memo(
   ({ player, isResolving, peaks, onTranscribe, children }) => {
     const { color } = useTheme();
     const ready = player.isReady && !isResolving && !player.isDecoding;
+    // Transcription uploads the recording itself, so it stays available even if
+    // the local preview decode failed.
+    const canTranscribe =
+      (player.isReady || !!player.loadError) &&
+      !isResolving &&
+      !player.isDecoding;
 
     const handleTogglePlay = useCallback((): void => {
       if (player.isPlaying) {
@@ -230,6 +240,7 @@ export const EchoPreviewStep: React.FC<EchoPreviewStepProps> = React.memo(
           isPlaying={player.isPlaying}
           isDecoding={player.isDecoding || isResolving}
           isReady={player.isReady}
+          hasError={!!player.loadError}
           disabled={!ready}
           progress={player.progress}
           progressSV={player.progressSV}
@@ -242,12 +253,32 @@ export const EchoPreviewStep: React.FC<EchoPreviewStepProps> = React.memo(
           onScrubStateChange={handleScrubStateChange}
         />
 
+        {player.loadError ? (
+          <Pressable
+            feedback="opacity"
+            onPress={player.retryLoad}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading audio"
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: spacing.xs,
+              marginBottom: spacing.md,
+            }}
+          >
+            <Text variant="caption" style={{ color: color.error }}>
+              {player.loadError} Tap to retry.
+            </Text>
+          </Pressable>
+        ) : null}
+
         {children}
 
         <Pressable
           feedback="opacity"
           onPress={handleTranscribe}
-          disabled={!ready}
+          disabled={!canTranscribe}
           style={{
             flexDirection: "row",
             justifyContent: "center",
@@ -256,10 +287,10 @@ export const EchoPreviewStep: React.FC<EchoPreviewStepProps> = React.memo(
             paddingVertical: spacing.md,
             borderRadius: borderRadius["2xl"],
             backgroundColor: color.brand,
-            opacity: ready ? 1 : opacity.disabled,
+            opacity: canTranscribe ? 1 : opacity.disabled,
           }}
         >
-          {!ready && (
+          {!canTranscribe && (
             <Spinner
               size="sm"
               color={color.onBrand}
@@ -268,7 +299,7 @@ export const EchoPreviewStep: React.FC<EchoPreviewStepProps> = React.memo(
           )}
           <Zap size={18} color={color.onBrand} fill={color.onBrand} />
           <Text variant="body" style={{ color: color.onBrand }}>
-            {!ready ? "Loading Audio…" : "Transcribe"}
+            {!canTranscribe ? "Loading Audio…" : "Transcribe"}
           </Text>
         </Pressable>
       </Box>

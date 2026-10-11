@@ -2,7 +2,6 @@
 #include "EkweOpusEncoder.h"
 #include "EkweVorbisEncoder.h"
 #include "EkweOggMuxer.h"
-#include "EkweCafMuxer.h"
 #include "EkweWaveform.h"
 
 #include <iostream>
@@ -13,13 +12,10 @@
 #include <cstdint>
 #include <cstdio>
 
-#define STB_VORBIS_IMPLEMENTATION
-#include "thirdparty/stb_vorbis.c"
-
-#define MINIAUDIO_IMPLEMENTATION
-#include "thirdparty/miniaudio.h"
+#include "EkweResampler.h"
 
 #include "thirdparty/opusfile/include/opusfile.h"
+#include <vorbis/vorbisfile.h>
 #include <ogg/ogg.h>
 
 namespace ekwe {
@@ -29,10 +25,11 @@ namespace ekwe {
 enum OggStreamKind {
     kNotOgg,
     kOggOpus,
-    kOggNonOpus,
+    kOggVorbis,
+    kOggOther,
 };
 
-static OggStreamKind classify_ogg(const std::string& path) {
+OggStreamKind classify_ogg(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file) return kNotOgg;
     char header[4];
@@ -42,20 +39,31 @@ static OggStreamKind classify_ogg(const std::string& path) {
     // The codec identification packet lives within the first few hundred
     // bytes of the file for every sane encoder; a 4 KiB sniff is plenty.
     char buf[4100] = {};
-    std::streamsize n = file.readsome(buf, sizeof(buf) - 1);
-    if (n <= 0) return kOggNonOpus;
+    file.read(buf, sizeof(buf) - 1);
+    std::streamsize n = file.gcount();
+    if (n <= 0) return kOggOther;
     static constexpr const char kOpusMagic[] = "OpusHead";
-    const size_t k = sizeof(kOpusMagic) - 1;
-    for (std::streamsize i = 0; i + static_cast<std::streamsize>(k) <= n; ++i) {
-        if (std::memcmp(buf + i, kOpusMagic, k) == 0) {
+    const size_t opus_k = sizeof(kOpusMagic) - 1;
+    static constexpr const char kVorbisMagic[] = "\x01vorbis";
+    const size_t vorbis_k = sizeof(kVorbisMagic) - 1;
+    for (std::streamsize i = 0; i + static_cast<std::streamsize>(opus_k) <= n; ++i) {
+        if (std::memcmp(buf + i, kOpusMagic, opus_k) == 0) {
             return kOggOpus;
         }
+        if (i + static_cast<std::streamsize>(vorbis_k) <= n &&
+            std::memcmp(buf + i, kVorbisMagic, vorbis_k) == 0) {
+            return kOggVorbis;
+        }
     }
-    return kOggNonOpus;
+    return kOggOther;
 }
 
 static bool is_ogg_opus(const std::string& path) {
     return classify_ogg(path) == kOggOpus;
+}
+
+static bool is_ogg_vorbis(const std::string& path) {
+    return classify_ogg(path) == kOggVorbis;
 }
 
 static bool file_size(const std::string& path, uint64_t& out_size) {
@@ -100,9 +108,9 @@ static bool append_mono_pcm(MonoPcm& pcm, const int16_t* data, size_t count) {
     return true;
 }
 
-// Appends interleaved PCM as mono, averaging channels. Opus sources are decoded
-// straight from the bitstream and therefore carry whatever channel count
-// OpusHead declares, so unlike the miniaudio paths they are not mono by
+// Appends interleaved PCM as mono, averaging channels. Opus and Vorbis sources
+// are decoded straight from the bitstream and therefore carry whatever channel
+// count the stream declares, so unlike the WAV reader they are not mono by
 // construction. Returns false when the duration ceiling is hit.
 static bool append_mono_pcm(MonoPcm& pcm, const int16_t* data, size_t sample_count,
                             uint16_t source_channels) {
@@ -137,60 +145,19 @@ static bool is_legal_opus_rate(uint32_t rate) {
            rate == 24000 || rate == 48000;
 }
 
-class LinearResampler {
-public:
-    LinearResampler(uint32_t from_rate, uint32_t to_rate) {
-        const ma_linear_resampler_config config =
-            ma_linear_resampler_config_init(ma_format_s16, 1, from_rate, to_rate);
-        ok_ = ma_linear_resampler_init(&config, nullptr, &resampler_) == MA_SUCCESS;
-    }
-    ~LinearResampler() {
-        if (ok_) ma_linear_resampler_uninit(&resampler_, nullptr);
-    }
-
-    LinearResampler(const LinearResampler&) = delete;
-    LinearResampler& operator=(const LinearResampler&) = delete;
-
-    bool ok() const { return ok_; }
-    ma_linear_resampler* get() { return &resampler_; }
-
-private:
-    ma_linear_resampler resampler_;
-    bool ok_ = false;
-};
-
-// The resampler stops once it runs out of input, so an undersized buffer would
-// silently truncate the clip. A couple of spare frames rules that out.
-constexpr ma_uint64 kResampleSlackFrames = 2;
-
-// Resamples mono int16 PCM, replacing it with the converted result. miniaudio
-// low-pass filters to the lower rate's Nyquist, so downsampling does not alias.
-// Fails rather than leaving `samples` at the wrong rate.
+// Resamples mono int16 PCM, replacing it with the converted result. r8brain
+// applies a proper sinc low-pass, so downsampling does not alias. Fails rather
+// than leaving `samples` at the wrong rate.
 static bool resample_mono(std::vector<int16_t>& samples,
                           uint32_t from_rate, uint32_t to_rate) {
     if (from_rate == 0 || to_rate == 0 || from_rate == to_rate) return true;
     if (samples.empty()) return true;
 
-    LinearResampler resampler(from_rate, to_rate);
-    if (!resampler.ok()) return false;
-
-    ma_uint64 expected = 0;
-    if (ma_linear_resampler_get_expected_output_frame_count(
-            resampler.get(), samples.size(), &expected) != MA_SUCCESS) {
+    std::vector<int16_t> resampled;
+    if (!resample_mono_int16(samples.data(), samples.size(),
+                             from_rate, to_rate, resampled)) {
         return false;
     }
-
-    std::vector<int16_t> resampled(expected + kResampleSlackFrames);
-
-    ma_uint64 in_frames = samples.size();
-    ma_uint64 out_frames = resampled.size();
-    if (ma_linear_resampler_process_pcm_frames(resampler.get(), samples.data(),
-                                               &in_frames, resampled.data(),
-                                               &out_frames) != MA_SUCCESS) {
-        return false;
-    }
-
-    resampled.resize(out_frames);
     samples.swap(resampled);
     return true;
 }
@@ -298,6 +265,223 @@ static bool decode_opus_to_mono_pcm(OggOpusFile* of, MonoPcm& pcm,
     }
 
     return true;
+}
+
+// Decodes an Ogg Vorbis stream to mono PCM at the recorder rate via
+// libvorbisfile. Unlike Opus, Vorbis carries its real sample rate, so the
+// output is resampled down to kRecorderSampleRate afterwards.
+static bool decode_vorbis_to_mono_pcm(const std::string& input_path,
+                                      MonoPcm& pcm, std::string& error) {
+    OggVorbis_File vf;
+    if (ov_fopen(input_path.c_str(), &vf) != 0) {
+        error = "Failed to open Ogg Vorbis file.";
+        return false;
+    }
+
+    vorbis_info* info = ov_info(&vf, -1);
+    if (info == nullptr || info->channels < 1 || info->rate < 1) {
+        error = "Ogg Vorbis stream is missing its identification header.";
+        ov_clear(&vf);
+        return false;
+    }
+    const uint16_t source_channels = static_cast<uint16_t>(info->channels);
+    const uint32_t source_rate = static_cast<uint32_t>(info->rate);
+    pcm.sample_rate = source_rate;
+
+    std::vector<int16_t> buffer(4096 * source_channels);
+    int bitstream = 0;
+    for (;;) {
+        // 16-bit signed little-endian output, interleaved by channel.
+        const long bytes = ov_read(&vf, reinterpret_cast<char*>(buffer.data()),
+                                   static_cast<int>(buffer.size() * sizeof(int16_t)),
+                                   0, 2, 1, &bitstream);
+        if (bytes == 0) break; // end of stream
+        if (bytes < 0) {
+            // OV_HOLE marks a recoverable gap; the rest are real failures.
+            if (bytes == OV_HOLE) continue;
+            error = "Failed to decode Ogg Vorbis file.";
+            ov_clear(&vf);
+            return false;
+        }
+        const size_t samples = static_cast<size_t>(bytes) / sizeof(int16_t);
+        if (!append_mono_pcm(pcm, buffer.data(), samples, source_channels)) {
+            error = "AUDIO_TOO_LONG";
+            ov_clear(&vf);
+            return false;
+        }
+    }
+    ov_clear(&vf);
+
+    if (!resample_mono(pcm.samples, source_rate, kRecorderSampleRate)) {
+        error = "Failed to resample Vorbis stream to " +
+                std::to_string(kRecorderSampleRate) + " Hz.";
+        return false;
+    }
+    pcm.sample_rate = kRecorderSampleRate;
+    return true;
+}
+
+static uint16_t read_le16(const uint8_t* p) {
+    return static_cast<uint16_t>(p[0] | (p[1] << 8));
+}
+
+static uint32_t read_le32(const uint8_t* p) {
+    return static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[1]) << 8) |
+           (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[3]) << 24);
+}
+
+// Parses a RIFF/WAVE buffer into the mono contract. Handles PCM (8/16/24/32-bit)
+// and IEEE float (32/64-bit) with any channel count. Sets error="NOT_WAV" when
+// the bytes are not RIFF/WAVE so callers can route the source to a platform
+// decoder instead of reporting a failure. The only non-Ogg container this module
+// decodes itself; everything else (MP3/AAC/M4A/AMR/…) is decoded by the platform.
+static bool parse_wav_mono_pcm(const uint8_t* buf, size_t size,
+                               MonoPcm& pcm, std::string& error) {
+    if (size < 12 || std::memcmp(buf, "RIFF", 4) != 0 ||
+        std::memcmp(buf + 8, "WAVE", 4) != 0) {
+        error = "NOT_WAV";
+        return false;
+    }
+
+    uint16_t audio_format = 0;
+    uint16_t channels = 0;
+    uint16_t bits = 0;
+    uint32_t sample_rate = 0;
+    const uint8_t* data_ptr = nullptr;
+    size_t data_size = 0;
+    bool have_fmt = false;
+
+    size_t pos = 12;
+    while (pos + 8 <= size) {
+        const uint8_t* id = buf + pos;
+        uint32_t chunk_size = read_le32(buf + pos + 4);
+        const size_t body = pos + 8;
+        if (body > size) break;
+        // Tolerate a truncated final chunk rather than rejecting the file.
+        if (chunk_size > size - body) chunk_size = static_cast<uint32_t>(size - body);
+
+        if (std::memcmp(id, "fmt ", 4) == 0 && chunk_size >= 16) {
+            audio_format = read_le16(buf + body + 0);
+            channels = read_le16(buf + body + 2);
+            sample_rate = read_le32(buf + body + 4);
+            bits = read_le16(buf + body + 14);
+            if (audio_format == 0xFFFE && chunk_size >= 26) {
+                // WAVE_FORMAT_EXTENSIBLE: SubFormat GUID's first two bytes are
+                // the real format tag.
+                audio_format = read_le16(buf + body + 24);
+            }
+            have_fmt = true;
+        } else if (std::memcmp(id, "data", 4) == 0) {
+            data_ptr = buf + body;
+            data_size = chunk_size;
+        }
+        pos = body + chunk_size + (chunk_size & 1u); // chunks are word-aligned
+    }
+
+    if (!have_fmt || data_ptr == nullptr || channels == 0 || sample_rate == 0) {
+        error = "Malformed WAV file.";
+        return false;
+    }
+
+    const bool is_pcm = (audio_format == 1);
+    const bool is_float = (audio_format == 3);
+    if (!is_pcm && !is_float) {
+        error = "Unsupported WAV encoding.";
+        return false;
+    }
+
+    const size_t bytes_per_sample = bits / 8;
+    const size_t frame_bytes = bytes_per_sample * channels;
+    if (bytes_per_sample == 0 || frame_bytes == 0) {
+        error = "Unsupported WAV bit depth.";
+        return false;
+    }
+    const size_t frames = data_size / frame_bytes;
+    if (frames == 0) {
+        error = "Decoded audio is empty.";
+        return false;
+    }
+
+    std::vector<int16_t> interleaved(frames * channels);
+    for (size_t i = 0; i < interleaved.size(); ++i) {
+        const uint8_t* s = data_ptr + i * bytes_per_sample;
+        int64_t v = 0;
+        if (is_float) {
+            if (bits == 32) {
+                float f = 0.0f;
+                std::memcpy(&f, s, sizeof(f));
+                const float clamped = std::max(-1.0f, std::min(1.0f, f));
+                v = std::lround(clamped * 32767.0f);
+            } else if (bits == 64) {
+                double d = 0.0;
+                std::memcpy(&d, s, sizeof(d));
+                const double clamped = std::max(-1.0, std::min(1.0, d));
+                v = std::lround(clamped * 32767.0);
+            } else {
+                error = "Unsupported float WAV bit depth.";
+                return false;
+            }
+        } else {
+            switch (bits) {
+                case 8: // WAV 8-bit PCM is unsigned
+                    v = (static_cast<int32_t>(s[0]) - 128) << 8;
+                    break;
+                case 16:
+                    v = static_cast<int16_t>(read_le16(s));
+                    break;
+                case 24: {
+                    int32_t raw = static_cast<int32_t>(s[0]) |
+                                  (static_cast<int32_t>(s[1]) << 8) |
+                                  (static_cast<int32_t>(s[2]) << 16);
+                    if (raw & 0x800000) raw |= ~0xFFFFFF; // sign-extend
+                    v = raw >> 8;
+                    break;
+                }
+                case 32:
+                    v = static_cast<int32_t>(read_le32(s) >> 16); // keep high 16 bits
+                    break;
+                default:
+                    error = "Unsupported WAV bit depth.";
+                    return false;
+            }
+        }
+        interleaved[i] = static_cast<int16_t>(
+            std::max<int64_t>(-32768, std::min<int64_t>(32767, v)));
+    }
+
+    pcm.sample_rate = sample_rate;
+    if (!append_mono_pcm(pcm, interleaved.data(), interleaved.size(), channels)) {
+        error = "AUDIO_TOO_LONG";
+        return false;
+    }
+    if (!resample_mono(pcm.samples, pcm.sample_rate, kRecorderSampleRate)) {
+        error = "Failed to resample WAV to " + std::to_string(kRecorderSampleRate) + " Hz.";
+        return false;
+    }
+    pcm.sample_rate = kRecorderSampleRate;
+    return true;
+}
+
+static bool decode_wav_to_mono_pcm(const std::string& input_path,
+                                   MonoPcm& pcm, std::string& error) {
+    std::ifstream file(input_path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        error = "Cannot open audio file.";
+        return false;
+    }
+    const std::streampos end = file.tellg();
+    if (end < 0) {
+        error = "Cannot stat audio file.";
+        return false;
+    }
+    file.seekg(0);
+    std::vector<uint8_t> buf(static_cast<size_t>(end));
+    if (!buf.empty() && !file.read(reinterpret_cast<char*>(buf.data()),
+                                   static_cast<std::streamsize>(buf.size()))) {
+        error = "Cannot read audio file.";
+        return false;
+    }
+    return parse_wav_mono_pcm(buf.data(), buf.size(), pcm, error);
 }
 
 static bool copy_file(const std::string& src, const std::string& dst) {
@@ -426,8 +610,8 @@ static bool encode_opus(const std::vector<int16_t>& pcm_data, uint32_t sample_ra
 
 // Decodes any supported audio file to the mono PCM contract above, without
 // writing anything. This is the single decode step behind every file-based
-// entry point (transcode to Ogg, decode to WAV, remux to CAF, waveform
-// analysis), so duration and waveform can never be derived from a different
+// entry point (transcode to Ogg, decode to WAV, waveform analysis), so
+// duration and waveform can never be derived from a different
 // decode than the one the caller used.
 static bool decode_file_to_mono_pcm(const std::string& input_path,
                                     MonoPcm& pcm, std::string& error) {
@@ -444,48 +628,20 @@ static bool decode_file_to_mono_pcm(const std::string& input_path,
         return decoded;
     }
 
-    // miniaudio resamples and downmixes to the requested format as part of
-    // decoding, so this path lands on mono at the recorder rate.
-    pcm.sample_rate = kRecorderSampleRate;
-
-    ma_decoder decoder;
-    ma_decoder_config config = ma_decoder_config_init(
-        ma_format_s16, kTargetChannels, kRecorderSampleRate);
-
-    ma_result ma_res = ma_decoder_init_file(input_path.c_str(), &config, &decoder);
-    if (ma_res != MA_SUCCESS) {
-        // Distinct tag so Android can route AAC/AMR/3GP/WebM to the platform
-        // decoder instead of reporting a generic decode failure.
-        error = "MINIAUDIO_INIT_FAILED";
-        return false;
+    if (is_ogg_vorbis(input_path)) {
+        return decode_vorbis_to_mono_pcm(input_path, pcm, error);
     }
 
-    ma_uint64 total_frames = 0;
-    ma_decoder_get_length_in_pcm_frames(&decoder, &total_frames);
-    const size_t limit = max_mono_samples_for_rate(pcm.sample_rate);
-    if (total_frames > 0) {
-        pcm.samples.reserve(static_cast<size_t>(
-            std::min<ma_uint64>(total_frames, limit)));
+    // WAV is the only non-Ogg container this module decodes itself. Any other
+    // source (MP3/AAC/M4A/AMR/3GP/WebM) is decoded by the platform and fed back
+    // in through the PCM entry points, so signal that rather than a hard fail.
+    if (decode_wav_to_mono_pcm(input_path, pcm, error)) {
+        return true;
     }
-
-    const int CHUNK_SIZE = 4096;
-    std::vector<int16_t> buffer(CHUNK_SIZE);
-
-    ma_uint64 frames_read = 0;
-    while (true) {
-        ma_res = ma_decoder_read_pcm_frames(&decoder, buffer.data(), CHUNK_SIZE, &frames_read);
-        if (frames_read > 0) {
-            if (!append_mono_pcm(pcm, buffer.data(), static_cast<size_t>(frames_read))) {
-                ma_decoder_uninit(&decoder);
-                error = "AUDIO_TOO_LONG";
-                return false;
-            }
-        }
-        if (frames_read < CHUNK_SIZE || ma_res != MA_SUCCESS) break;
+    if (error == "NOT_WAV") {
+        error = "PLATFORM_DECODE_REQUIRED";
     }
-
-    ma_decoder_uninit(&decoder);
-    return true;
+    return false;
 }
 
 // Enforces the shared input-size cap for every file-based entry point.
@@ -644,6 +800,119 @@ DualTranscodeResult transcode_audio_to_dual(const std::string& input_path,
     return result;
 }
 
+AudioContainer classify_audio_container(const std::string& input_path) {
+    switch (classify_ogg(input_path)) {
+        case kOggOpus: return AudioContainer::kOggOpus;
+        case kOggVorbis: return AudioContainer::kOggVorbis;
+        case kOggOther: return AudioContainer::kOggOther;
+        case kNotOgg:
+        default: return AudioContainer::kNotOgg;
+    }
+}
+
+// Writes a fan-out result's shared duration + waveform onto both halves that
+// succeeded. Kept in one place so the two codecs can never report different
+// numbers for the same source.
+static void stamp_dual_results(DualTranscodeResult& result,
+                               int duration_ms,
+                               const std::vector<float>& waveform) {
+    if (result.opus.error_message.empty()) {
+        result.opus.duration_ms = duration_ms;
+        result.opus.waveform = waveform;
+        result.opus.success = true;
+    }
+    if (result.vorbis.error_message.empty()) {
+        result.vorbis.duration_ms = duration_ms;
+        result.vorbis.waveform = waveform;
+        result.vorbis.success = true;
+    }
+}
+
+DualTranscodeResult encode_pcm_to_dual(const int16_t* pcm_data, size_t num_samples,
+                                       uint32_t sample_rate, uint16_t channels,
+                                       const std::string& opus_output_path,
+                                       const std::string& vorbis_output_path) {
+    DualTranscodeResult result;
+
+    std::vector<int16_t> mono;
+    if (!normalize_pcm_to_contract(pcm_data, num_samples, channels, sample_rate,
+                                   mono, result.opus.error_message)) {
+        result.vorbis.error_message = result.opus.error_message;
+        return result;
+    }
+
+    if (!encode_opus(mono, kRecorderSampleRate, kTargetChannels, opus_output_path, 20)) {
+        result.opus.error_message = "Failed to encode Ogg Opus output.";
+    }
+
+    if (vorbis_output_path.empty()) {
+        // Caller did not ask for a Vorbis copy (e.g. > Wit cap): report the
+        // half as skipped rather than as a real failure.
+        result.vorbis.error_message = "SKIPPED";
+    } else if (!encode_vorbis(mono, kRecorderSampleRate, kTargetChannels,
+                              vorbis_output_path)) {
+        result.vorbis.error_message = "Failed to encode Vorbis output.";
+    }
+
+    stamp_dual_results(result, pcm_duration_ms(mono.size(), kRecorderSampleRate),
+                       compute_waveform(mono));
+    return result;
+}
+
+DecodeResult resolve_ogg_to_artifacts(const std::string& input_path,
+                                      const std::string& opus_output_path,
+                                      const std::string& vorbis_output_path,
+                                      const std::string& wav_output_path,
+                                      size_t max_audio_bytes) {
+    DecodeResult result;
+    result.success = false;
+
+    if (!check_input_size(input_path, max_audio_bytes, result.error_message)) {
+        return result;
+    }
+
+    MonoPcm pcm;
+    if (!decode_file_to_mono_pcm(input_path, pcm, result.error_message)) {
+        return result;
+    }
+    if (pcm.samples.empty()) {
+        result.error_message = "Decoded audio is empty.";
+        return result;
+    }
+
+    if (!opus_output_path.empty()) {
+        if (pcm.source_is_reusable) {
+            if (!copy_file(input_path, opus_output_path)) {
+                result.error_message = "Failed to reuse existing Ogg Opus source.";
+                return result;
+            }
+        } else if (!encode_opus(pcm.samples, pcm.sample_rate, kTargetChannels,
+                                opus_output_path, 20)) {
+            result.error_message = "Failed to encode Ogg Opus output.";
+            return result;
+        }
+    }
+
+    if (!vorbis_output_path.empty() &&
+        !encode_vorbis(pcm.samples, pcm.sample_rate, kTargetChannels, vorbis_output_path)) {
+        result.error_message = "Failed to encode Vorbis output.";
+        return result;
+    }
+
+    // A 16 kHz mono WAV gives the platform a source it can decode for the M4A
+    // playback artifact; the platform deletes it once the encode is done.
+    if (!wav_output_path.empty() &&
+        !write_wav(pcm.samples, pcm.sample_rate, kTargetChannels, wav_output_path)) {
+        result.error_message = "Failed to write WAV bridge output.";
+        return result;
+    }
+
+    result.duration_ms = pcm_duration_ms(pcm.samples.size(), pcm.sample_rate);
+    result.waveform = compute_waveform(pcm.samples);
+    result.success = true;
+    return result;
+}
+
 DecodeResult analyze_audio_file(const std::string& input_path, size_t max_audio_bytes) {
     DecodeResult result;
     result.success = false;
@@ -676,71 +945,13 @@ DecodeResult decode_audio_to_wav(const std::string& input_path, const std::strin
     DecodeResult result;
     result.success = false;
 
-    // Same size guard as transcode_audio_to_opus: never decode anything
-    // the plan cap doesn't allow.
-    if (max_audio_bytes == 0) {
-        max_audio_bytes = kDefaultMaxAudioBytes;
-    }
-
-    uint64_t input_size = 0;
-    if (!file_size(input_path, input_size)) {
-        result.error_message = "Cannot stat input file.";
-        return result;
-    }
-    if (input_size > max_audio_bytes) {
-        result.error_message = "FILE_TOO_LARGE";
+    if (!check_input_size(input_path, max_audio_bytes, result.error_message)) {
         return result;
     }
 
     MonoPcm pcm;
-
-    if (is_ogg_opus(input_path)) {
-        int err = 0;
-        OggOpusFile* of = op_open_file(input_path.c_str(), &err);
-        if (of == nullptr) {
-            result.error_message = "Failed to open Opus file. Error code: " + std::to_string(err);
-            return result;
-        }
-
-        std::string opus_error;
-        const bool decoded = decode_opus_to_mono_pcm(of, pcm, opus_error);
-        op_free(of);
-        if (!decoded) {
-            result.error_message = opus_error;
-            return result;
-        }
-    } else {
-        // miniaudio resamples and downmixes to the requested format as part of
-        // decoding, so this path lands on mono at the recorder rate.
-        pcm.sample_rate = kRecorderSampleRate;
-
-        ma_decoder decoder;
-        ma_decoder_config config = ma_decoder_config_init(
-            ma_format_s16, kTargetChannels, kRecorderSampleRate);
-
-        ma_result ma_res = ma_decoder_init_file(input_path.c_str(), &config, &decoder);
-        if (ma_res != MA_SUCCESS) {
-            result.error_message = "MINIAUDIO_INIT_FAILED";
-            return result;
-        }
-
-        const int CHUNK_SIZE = 4096;
-        std::vector<int16_t> buffer(CHUNK_SIZE);
-
-        ma_uint64 frames_read = 0;
-        while (true) {
-            ma_res = ma_decoder_read_pcm_frames(&decoder, buffer.data(), CHUNK_SIZE, &frames_read);
-            if (frames_read > 0) {
-                if (!append_mono_pcm(pcm, buffer.data(), static_cast<size_t>(frames_read))) {
-                    ma_decoder_uninit(&decoder);
-                    result.error_message = "AUDIO_TOO_LONG";
-                    return result;
-                }
-            }
-            if (frames_read < CHUNK_SIZE || ma_res != MA_SUCCESS) break;
-        }
-
-        ma_decoder_uninit(&decoder);
+    if (!decode_file_to_mono_pcm(input_path, pcm, result.error_message)) {
+        return result;
     }
 
     if (pcm.samples.empty()) {
@@ -755,342 +966,6 @@ DecodeResult decode_audio_to_wav(const std::string& input_path, const std::strin
 
     result.duration_ms = pcm_duration_ms(pcm.samples.size(), pcm.sample_rate);
     result.waveform = compute_waveform(pcm.samples);
-
-    result.success = true;
-    return result;
-}
-
-// ─── One Opus packet plus where it lives in the concatenated data chunk. ───
-struct CafPacket {
-    size_t offset;
-    size_t size;
-    uint64_t frames; // decoded frames at 48 kHz (RFC 7845 units)
-};
-
-// Demuxes the first Opus logical stream from an Ogg file, capturing the
-// OpusHead magic cookie (verbatim → kuki chunk), the per-packet byte/frame
-// table, and the concatenated packet bytes. Single-chain files only.
-static bool read_ogg_opus_packets(const std::string& path,
-                                  std::vector<uint8_t>& opus_head,
-                                  std::vector<uint8_t>& audio_bytes,
-                                  std::vector<CafPacket>& packets,
-                                  uint64_t& total_frames,
-                                  uint16_t& channels,
-                                  uint64_t& pre_skip,
-                                  std::string& error) {
-    FILE* file = std::fopen(path.c_str(), "rb");
-    if (file == nullptr) {
-        error = "Cannot open input file.";
-        return false;
-    }
-
-    ogg_sync_state sync;
-    ogg_stream_state stream;
-    ogg_page page;
-    ogg_packet packet;
-    ogg_sync_init(&sync);
-
-    bool have_stream = false;
-    bool stream_is_opus = false;
-    bool found_opus = false;
-    uint64_t stream_granule = 0; // authoritative 48 kHz sample count (RFC 7845)
-
-    const size_t BUFFER_SIZE = 4096;
-    char buffer[BUFFER_SIZE];
-    size_t bytes_read = 0;
-    while ((bytes_read = std::fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
-        char* sync_buffer = ogg_sync_buffer(&sync, static_cast<long>(bytes_read));
-        std::memcpy(sync_buffer, buffer, bytes_read);
-        ogg_sync_wrote(&sync, static_cast<long>(bytes_read));
-
-        while (ogg_sync_pageout(&sync, &page) == 1) {
-            if (ogg_page_bos(&page)) {
-                if (have_stream) {
-                    ogg_stream_clear(&stream);
-                    have_stream = false;
-                }
-                ogg_stream_init(&stream, ogg_page_serialno(&page));
-                have_stream = true;
-                stream_is_opus = false;
-            }
-
-            if (!have_stream) continue;
-            if (ogg_stream_pagein(&stream, &page) != 0) continue;
-            if (stream_is_opus) {
-                // Page granules record the sample count after the last packet
-                // completed on the page; the final page's granule is the total.
-                long long page_granule = ogg_page_granulepos(&page);
-                if (page_granule >= 0) {
-                    stream_granule = static_cast<uint64_t>(page_granule);
-                }
-            }
-
-            while (ogg_stream_packetout(&stream, &packet) == 1) {
-                if (!stream_is_opus) {
-                    // The first packet of a logical stream identifies its codec.
-                    if (packet.bytes >= 8 &&
-                        std::memcmp(packet.packet, "OpusHead", 8) == 0) {
-                        stream_is_opus = true;
-                        if (opus_head.empty()) {
-                            if (packet.bytes < 19) {
-                                error = "Malformed OpusHead packet.";
-                                ogg_sync_clear(&sync);
-                                if (have_stream) ogg_stream_clear(&stream);
-                                std::fclose(file);
-                                return false;
-                            }
-                            opus_head.assign(packet.packet, packet.packet + packet.bytes);
-                            channels = static_cast<uint16_t>(opus_head[9]);
-                            pre_skip = static_cast<uint64_t>(opus_head[10]) |
-                                       (static_cast<uint64_t>(opus_head[11]) << 8);
-                        }
-                    }
-                    continue;
-                }
-
-                if (packet.bytes >= 8 &&
-                    std::memcmp(packet.packet, "OpusTags", 8) == 0) {
-                    continue;
-                }
-                if (packet.bytes <= 0) continue;
-
-                int nb_frames = opus_packet_get_nb_frames(packet.packet, packet.bytes);
-                int spf = opus_packet_get_samples_per_frame(packet.packet, kOpusGranuleRate);
-                if (nb_frames < 1 || spf < 1) {
-                    error = "Invalid Opus packet in source.";
-                    ogg_sync_clear(&sync);
-                    if (have_stream) ogg_stream_clear(&stream);
-                    std::fclose(file);
-                    return false;
-                }
-
-                CafPacket entry;
-                entry.offset = audio_bytes.size();
-                entry.size = static_cast<size_t>(packet.bytes);
-                entry.frames = static_cast<uint64_t>(nb_frames) * static_cast<uint64_t>(spf);
-                audio_bytes.insert(audio_bytes.end(), packet.packet, packet.packet + packet.bytes);
-                packets.push_back(entry);
-                total_frames += entry.frames;
-                found_opus = true;
-            }
-
-            if (ogg_page_eos(&page) && have_stream) {
-                ogg_stream_clear(&stream);
-                have_stream = false;
-                if (found_opus) break; // single-chain source is complete
-            }
-        }
-        if (found_opus && !have_stream) break;
-    }
-
-    ogg_sync_clear(&sync);
-    if (have_stream) ogg_stream_clear(&stream);
-    std::fclose(file);
-
-    if (opus_head.empty()) {
-        error = "No Opus stream found in Ogg file.";
-        return false;
-    }
-    if (!found_opus) {
-        error = "No audio packets found in Ogg Opus file.";
-        return false;
-    }
-
-    if (stream_granule > 0) {
-        // The TOC-derived per-packet counts can overstate the final packet: the
-        // last Opus packet is a flush packet whose TOC claims a full frame but
-        // which only carries the tail + pre-skip region. The Ogg page granule
-        // is authoritative, so subtract any excess from the last entry to make
-        // sum(entries) == final granule. Readers (e.g. FFmpeg's cafdemuxer and
-        // AVPlayer) derive duration as sum(entries) - priming.
-        uint64_t toc_sum = 0;
-        for (const CafPacket& p : packets) toc_sum += p.frames;
-        if (toc_sum > stream_granule) {
-            uint64_t excess = toc_sum - stream_granule;
-            uint64_t& last_frames = packets.back().frames;
-            last_frames = last_frames > excess ? last_frames - excess : 0;
-        }
-        total_frames = stream_granule;
-    }
-
-    return true;
-}
-
-// Re-encodes decoded PCM into Opus and muxes into CAF (non-Ogg fallback).
-static bool encode_pcm_to_caf(const std::vector<int16_t>& pcm_data,
-                              uint32_t sample_rate,
-                              uint16_t channels,
-                              const std::string& output_path,
-                              std::string& error) {
-    OpusStreamEncoder encoder(sample_rate, channels);
-    if (!encoder.is_ok()) {
-        error = "Failed to init Opus encoder.";
-        return false;
-    }
-
-    // Pre-skip is expressed in 48 kHz samples regardless of the encoder's
-    // input sample rate (RFC 7845).
-    const uint64_t pre_skip =
-        static_cast<uint64_t>(encoder.lookahead()) * kOpusGranuleRate / sample_rate;
-
-    CafMuxer muxer(output_path, kOpusGranuleRate, channels);
-    if (!muxer.write_opus_header(channels, static_cast<int>(pre_skip), sample_rate)) {
-        error = "Failed to init CAF muxer.";
-        return false;
-    }
-
-    const size_t frame_size = sample_rate / 50; // 20 ms frames
-    std::vector<int16_t> padded_frame;
-    for (size_t offset = 0; offset < pcm_data.size(); offset += frame_size * channels) {
-        size_t remaining_frames = (pcm_data.size() - offset) / channels;
-        size_t this_frame = std::min(frame_size, remaining_frames);
-        if (this_frame == 0) break;
-
-        // Opus only accepts its canonical frame sizes. A final partial frame
-        // shorter than frame_size would make opus_encode reject the packet and
-        // fail the whole conversion, so pad it with silence to a full frame.
-        const int16_t* frame_data = pcm_data.data() + offset;
-        if (this_frame < frame_size) {
-            padded_frame.assign(frame_data, frame_data + this_frame * channels);
-            padded_frame.resize(frame_size * channels, 0);
-            frame_data = padded_frame.data();
-            this_frame = frame_size;
-        }
-
-        std::vector<uint8_t> packet;
-        if (!encoder.encode_frame(frame_data, this_frame * channels, packet)) {
-            error = "Opus encoding failed.";
-            return false;
-        }
-
-        int nb_frames = opus_packet_get_nb_frames(packet.data(), static_cast<opus_int32>(packet.size()));
-        int spf = opus_packet_get_samples_per_frame(packet.data(), kOpusGranuleRate);
-        if (nb_frames < 1 || spf < 1) {
-            error = "Encoder produced an invalid Opus packet.";
-            return false;
-        }
-
-        const uint64_t frames = static_cast<uint64_t>(nb_frames) * static_cast<uint64_t>(spf);
-        if (!muxer.write_packet(packet.data(), packet.size(), frames)) {
-            error = "Failed to write CAF packet.";
-            return false;
-        }
-    }
-
-    if (!muxer.finalize()) {
-        error = "No audio packets to write.";
-        return false;
-    }
-    return true;
-}
-
-DecodeResult remux_audio_to_caf(const std::string& input_path, const std::string& output_path,
-                                 size_t max_audio_bytes) {
-    DecodeResult result;
-    result.success = false;
-    result.duration_ms = 0;
-    result.error_message.clear();
-
-    if (max_audio_bytes == 0) {
-        max_audio_bytes = kDefaultMaxAudioBytes;
-    }
-
-    uint64_t input_size = 0;
-    if (!file_size(input_path, input_size)) {
-        result.error_message = "Cannot stat input file.";
-        return result;
-    }
-    if (input_size > max_audio_bytes) {
-        result.error_message = "FILE_TOO_LARGE";
-        return result;
-    }
-
-    if (is_ogg_opus(input_path)) {
-        // Remux path: re-containerize the Ogg Opus packets into CAF with no
-        // decode/re-encode, preserving the source quality exactly.
-        std::vector<uint8_t> opus_head;
-        std::vector<uint8_t> audio_bytes;
-        std::vector<CafPacket> packets;
-        uint64_t total_frames = 0;
-        uint16_t channels = 1;
-        uint64_t pre_skip = 0;
-
-        if (!read_ogg_opus_packets(input_path, opus_head, audio_bytes, packets,
-                                   total_frames, channels, pre_skip, result.error_message)) {
-            return result;
-        }
-
-        // Re-containerize the exact Opus packets (kuki = OpusHead verbatim,
-        // pakt frame counts reconciled against the source granule).
-        CafMuxer muxer(output_path, kOpusGranuleRate, channels);
-        if (!muxer.set_opus_head(opus_head.data(), opus_head.size(), pre_skip)) {
-            result.error_message = "Malformed OpusHead packet.";
-            return result;
-        }
-        for (const CafPacket& p : packets) {
-            if (!muxer.write_packet(audio_bytes.data() + p.offset, p.size, p.frames)) {
-                result.error_message = "Failed to write CAF packet.";
-                return result;
-            }
-        }
-        if (!muxer.finalize()) {
-            result.error_message = "No audio packets to write.";
-            return result;
-        }
-
-        const int64_t audible_ms =
-            static_cast<int64_t>(total_frames > pre_skip ? total_frames - pre_skip : 0) *
-            1000 / kOpusGranuleRate;
-        result.duration_ms = static_cast<int>(std::max<int64_t>(audible_ms, 0));
-    } else {
-        // Non-Opus source: decode to PCM via miniaudio, then re-encode to Opus
-        // and mux into CAF so iOS can still play it.
-        MonoPcm pcm;
-        pcm.sample_rate = kRecorderSampleRate;
-
-        // miniaudio resamples and downmixes to the requested format as part of
-        // decoding, so we do not read the rate back off the decoder: the buffer
-        // is mono at exactly the rate we asked for.
-        ma_decoder decoder;
-        ma_decoder_config config = ma_decoder_config_init(
-            ma_format_s16, kTargetChannels, kRecorderSampleRate);
-
-        ma_result ma_res = ma_decoder_init_file(input_path.c_str(), &config, &decoder);
-        if (ma_res != MA_SUCCESS) {
-            result.error_message = "MINIAUDIO_INIT_FAILED";
-            return result;
-        }
-
-        const int CHUNK_SIZE = 4096;
-        std::vector<int16_t> buffer(CHUNK_SIZE);
-        ma_uint64 frames_read = 0;
-
-        while (true) {
-            ma_res = ma_decoder_read_pcm_frames(&decoder, buffer.data(), CHUNK_SIZE, &frames_read);
-            if (frames_read > 0) {
-                if (!append_mono_pcm(pcm, buffer.data(), static_cast<size_t>(frames_read))) {
-                    ma_decoder_uninit(&decoder);
-                    result.error_message = "AUDIO_TOO_LONG";
-                    return result;
-                }
-            }
-            if (frames_read < CHUNK_SIZE || ma_res != MA_SUCCESS) break;
-        }
-
-        ma_decoder_uninit(&decoder);
-
-        if (pcm.samples.empty()) {
-            result.error_message = "Decoded audio is empty.";
-            return result;
-        }
-
-        if (!encode_pcm_to_caf(pcm.samples, pcm.sample_rate, kTargetChannels,
-                                output_path, result.error_message)) {
-            return result;
-        }
-
-        result.duration_ms = pcm_duration_ms(pcm.samples.size(), pcm.sample_rate);
-    }
 
     result.success = true;
     return result;
@@ -1164,8 +1039,9 @@ DecodeResult transcode_audio_to_opus_from_memory(
 
     // An Ogg container holds Opus, Vorbis, or other codecs; sending the
     // whole buffer at libopusfile makes Vorbis look "decoded" and then
-    // fail. Classify by the first page's codec id so Vorbis drops to
-    // miniaudio below.
+    // fail. Classify by the first page's codec id so only genuine Opus
+    // streams take the libopusfile path; WAV is parsed locally and every
+    // other format is handed to the platform decoder.
     bool has_opus_head = false;
     if (data_size >= 4 &&
         data[0] == 'O' && data[1] == 'g' &&
@@ -1203,37 +1079,14 @@ DecodeResult transcode_audio_to_opus_from_memory(
             return result;
         }
     } else {
-        // miniaudio resamples and downmixes to the requested format as part of
-        // decoding, so this path lands on mono at the recorder rate.
-        pcm.sample_rate = kRecorderSampleRate;
-
-        ma_decoder decoder;
-        ma_decoder_config config = ma_decoder_config_init(
-            ma_format_s16, kTargetChannels, kRecorderSampleRate);
-
-        ma_result ma_res = ma_decoder_init_memory(data, data_size, &config, &decoder);
-        if (ma_res != MA_SUCCESS) {
-            result.error_message = "MINIAUDIO_INIT_FAILED";
+        // Non-Ogg, non-Opus memory buffers (MP3/AAC/M4A/…) are decoded by the
+        // platform; only WAV can be parsed here.
+        if (!parse_wav_mono_pcm(data, data_size, pcm, result.error_message)) {
+            if (result.error_message == "NOT_WAV") {
+                result.error_message = "PLATFORM_DECODE_REQUIRED";
+            }
             return result;
         }
-
-        const int CHUNK_SIZE = 4096;
-        std::vector<int16_t> buffer(CHUNK_SIZE);
-        ma_uint64 frames_read = 0;
-
-        while (true) {
-            ma_res = ma_decoder_read_pcm_frames(&decoder, buffer.data(), CHUNK_SIZE, &frames_read);
-            if (frames_read > 0) {
-                if (!append_mono_pcm(pcm, buffer.data(), static_cast<size_t>(frames_read))) {
-                    ma_decoder_uninit(&decoder);
-                    result.error_message = "AUDIO_TOO_LONG";
-                    return result;
-                }
-            }
-            if (frames_read < CHUNK_SIZE || ma_res != MA_SUCCESS) break;
-        }
-
-        ma_decoder_uninit(&decoder);
     }
 
     if (pcm.samples.empty()) {
@@ -1288,11 +1141,61 @@ DecodeResult encode_pcm_to_opus(const int16_t* pcm_data, size_t num_samples,
     return result;
 }
 
+// Reads only the WAV chunk table (skipping sample data) to compute duration
+// without decoding. -1 when the file is not a parseable WAV.
+static int wav_duration_ms_from_header(const std::string& input_path) {
+    std::ifstream file(input_path, std::ios::binary | std::ios::ate);
+    if (!file) return -1;
+    const std::streampos end = file.tellg();
+    if (end < 12) return -1;
+    const size_t size = static_cast<size_t>(end);
+
+    file.seekg(0);
+    uint8_t riff[12];
+    if (!file.read(reinterpret_cast<char*>(riff), 12)) return -1;
+    if (std::memcmp(riff, "RIFF", 4) != 0 || std::memcmp(riff + 8, "WAVE", 4) != 0) {
+        return -1;
+    }
+
+    uint32_t sample_rate = 0;
+    uint16_t channels = 0;
+    uint16_t bits = 0;
+    uint64_t data_size = 0;
+    bool have_fmt = false;
+
+    std::streampos pos = 12;
+    while (static_cast<std::streamoff>(pos) + 8 <= static_cast<std::streamoff>(size)) {
+        file.seekg(pos);
+        uint8_t chunk[8];
+        if (!file.read(reinterpret_cast<char*>(chunk), 8)) break;
+        const uint32_t chunk_size = read_le32(chunk + 4);
+        if (std::memcmp(chunk, "fmt ", 4) == 0 && chunk_size >= 16) {
+            uint8_t fmt[16];
+            if (!file.read(reinterpret_cast<char*>(fmt), 16)) break;
+            channels = read_le16(fmt + 2);
+            sample_rate = read_le32(fmt + 4);
+            bits = read_le16(fmt + 14);
+            have_fmt = true;
+        } else if (std::memcmp(chunk, "data", 4) == 0) {
+            data_size = chunk_size;
+        }
+        pos += static_cast<std::streampos>(8 + chunk_size + (chunk_size & 1u));
+    }
+
+    const size_t frame_bytes = (bits / 8) * channels;
+    if (!have_fmt || data_size == 0 || frame_bytes == 0 || sample_rate == 0) {
+        return -1;
+    }
+    return static_cast<int>((data_size / frame_bytes) * 1000 / sample_rate);
+}
+
 // Duration of an audio file without a full decode; -1 when unknown. Used by
 // the share flows to gate against the plan's limit on the *original* file
 // before any decode work.
 int probe_audio_duration_ms(const std::string& input_path) {
-    if (is_ogg_opus(input_path)) {
+    const OggStreamKind kind = classify_ogg(input_path);
+
+    if (kind == kOggOpus) {
         int err = 0;
         OggOpusFile* of = op_open_file(input_path.c_str(), &err);
         if (of == nullptr) return -1;
@@ -1304,17 +1207,22 @@ int probe_audio_duration_ms(const std::string& input_path) {
         return static_cast<int>(total48k * 1000 / kOpusDecodeSampleRate);
     }
 
-    ma_decoder decoder;
-    ma_decoder_config config = ma_decoder_config_init(
-        ma_format_s16, kTargetChannels, kRecorderSampleRate);
-    if (ma_decoder_init_file(input_path.c_str(), &config, &decoder) != MA_SUCCESS) {
-        return -1;
+    if (kind == kOggVorbis) {
+        OggVorbis_File vf;
+        if (ov_fopen(input_path.c_str(), &vf) != 0) return -1;
+        vorbis_info* info = ov_info(&vf, -1);
+        const ogg_int64_t frames = ov_pcm_total(&vf, -1);
+        const long rate = info != nullptr ? info->rate : 0;
+        ov_clear(&vf);
+        if (frames <= 0 || rate <= 0) return -1;
+        return static_cast<int>(frames * 1000 / rate);
     }
-    ma_uint64 total_frames = 0;
-    ma_decoder_get_length_in_pcm_frames(&decoder, &total_frames);
-    ma_decoder_uninit(&decoder);
-    if (total_frames == 0) return -1;
-    return static_cast<int>(total_frames * 1000 / kRecorderSampleRate);
+
+    if (kind == kNotOgg) {
+        return wav_duration_ms_from_header(input_path);
+    }
+
+    return -1;
 }
 
 } // namespace ekwe

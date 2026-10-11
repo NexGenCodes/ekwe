@@ -1,6 +1,8 @@
 packages:
   - apps/*
   - packages/*
+overrides:
+  drizzle-orm: 0.45.3
 allowBuilds:
   '@firebase/util': true
   '@sentry/cli': true

@@ -54,7 +54,7 @@ app.use("*", async (c: Context<AppEnv, string>, next) => {
     origin: isAllowed ? origin || "" : "",
     credentials: true,
     allowMethods: ["GET", "POST", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
+    allowHeaders: ["Content-Type", "Authorization", "X-Firebase-AppCheck"],
     exposeHeaders: ["Server-Timing", "Retry-After"],
   })(c, next);
 });

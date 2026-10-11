@@ -93,12 +93,19 @@ describe("GET /speech/:key", () => {
     expect(mockedRead).not.toHaveBeenCalled();
   });
 
-  test("accepts both the shared-scope and user-scope key shapes", async () => {
+  test("accepts both the shared-scope and user-scope key shapes and reroll variants", async () => {
     expect(isSpeechCacheKey(await signedKey())).toBe(true);
     expect(
       isSpeechCacheKey(
         await signedKey(
           `speech:shared:remi:male:premium:cache:es:${"c".repeat(64)}`,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isSpeechCacheKey(
+        await signedKey(
+          `speech:${"a".repeat(64)}:standard:auto:free:cache:en:${"b".repeat(64)}:r1`,
         ),
       ),
     ).toBe(true);

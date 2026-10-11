@@ -15,6 +15,7 @@ const fsMock = vi.hoisted(() => ({
   exists: true,
   size: 1024,
   written: [] as Uint8Array[],
+  deleted: [] as string[],
 }));
 
 const networkMock = vi.hoisted(() => {
@@ -32,7 +33,9 @@ vi.mock("expo-file-system", () => {
     exists = fsMock.exists;
     size = fsMock.size;
     create = vi.fn();
-    delete = vi.fn();
+    delete = vi.fn((): void => {
+      fsMock.deleted.push(this.uri);
+    });
     write = vi.fn((bytes: Uint8Array): void => {
       fsMock.written.push(bytes);
     });
@@ -173,6 +176,7 @@ beforeEach(() => {
   fsMock.size = 1024;
   (Paths.cache as { uri: string }).uri = "file:///cache/";
   fsMock.written = [];
+  fsMock.deleted = [];
 });
 
 afterEach(() => {
@@ -609,6 +613,52 @@ describe("synthesizeAudio", () => {
     uploadMultipartMock.mockResolvedValue({ status: 500, body: "oops" });
     const result = await synthesizeAudio(source, "en", "es");
     expect(result).toEqual(err(EkweError.SPEECH_FAIL));
+  });
+
+  it("deletes the Echo playback copy once the upload settles", async () => {
+    prepareUploadArtifactMock.mockResolvedValue({
+      uri: "file:///cache/recording.ogg",
+      extension: "ogg",
+      isTemporary: false,
+      playbackUri: "file:///cache/ekwe_playback_xyz.m4a",
+    });
+    uploadMultipartMock.mockResolvedValue({
+      status: 200,
+      body: JSON.stringify({
+        audioUrl: AUDIO_PATH,
+        mime: "audio/wav",
+        sourceLang: "en",
+        targetLang: "es",
+        translated: true,
+        voiceId: "studio",
+      }),
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(new Uint8Array([0x52, 0x49, 0x46, 0x46]), {
+        headers: { "content-type": "audio/wav" },
+      }),
+    );
+
+    const result = await synthesizeAudio(source, "en", "es");
+
+    expect(result.ok).toBe(true);
+    expect(fsMock.deleted).toContain("file:///cache/ekwe_playback_xyz.m4a");
+  });
+
+  it("deletes both transcoded temps when the upload fails", async () => {
+    prepareUploadArtifactMock.mockResolvedValue({
+      uri: "file:///cache/ekwe_converted_xyz.ogg",
+      extension: "ogg",
+      isTemporary: true,
+      playbackUri: "file:///cache/ekwe_playback_xyz.m4a",
+    });
+    uploadMultipartMock.mockResolvedValue({ status: 500, body: "oops" });
+
+    const result = await synthesizeAudio(source, "en", "es");
+
+    expect(result).toEqual(err(EkweError.SPEECH_FAIL));
+    expect(fsMock.deleted).toContain("file:///cache/ekwe_converted_xyz.ogg");
+    expect(fsMock.deleted).toContain("file:///cache/ekwe_playback_xyz.m4a");
   });
 });
 

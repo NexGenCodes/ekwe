@@ -1,4 +1,5 @@
 import type { FlutterwaveCurrency } from "./money";
+import { WITAI_SAFE_DURATION_MS } from "./providerLimits";
 
 export interface PlanLimits {
   maxAudioBytes: number;
@@ -6,6 +7,7 @@ export interface PlanLimits {
   autoDetectAllowed: boolean;
   dictationDurationMs: number;
   maxStreamDurationMs: number;
+  maxConcurrentStreams: number;
   historyRemoteTtlDays: number;
   streamingAllowed: boolean;
   transliterationAllowed: boolean;
@@ -60,6 +62,7 @@ export const FREE_LIMITS: PlanLimits = {
   autoDetectAllowed: false,
   dictationDurationMs: 120_000,
   maxStreamDurationMs: 0,
+  maxConcurrentStreams: 0,
   historyRemoteTtlDays: 30,
   streamingAllowed: false,
   transliterationAllowed: false,
@@ -83,6 +86,7 @@ export const PREMIUM_LIMITS: PlanLimits = {
   autoDetectAllowed: true,
   dictationDurationMs: 1_800_000,
   maxStreamDurationMs: 120_000,
+  maxConcurrentStreams: 8,
   historyRemoteTtlDays: 365,
   streamingAllowed: true,
   transliterationAllowed: true,
@@ -155,16 +159,48 @@ export const MAX_AUDIO_BYTES = PREMIUM_LIMITS.maxAudioBytes;
 export const MAX_AUDIO_INPUT_BYTES = 100 * 1024 * 1024;
 
 /**
- * Longest clip worth handing to Wit.ai as Ogg/Vorbis. Wit.ai's /dictation
- * endpoint is documented to accept up to 5 minutes and answers Opus-in-Ogg
- * with an empty transcript rather than an error, so the client re-encodes to
- * Vorbis to reach it at all. Longer clips are uploaded as-is.
- *
- * 296s rather than 299s buys four seconds of headroom for the gap between our
- * decoded duration and Wit's own parse. Output size is not a factor: at the
- * encoder's 32 kbps target this is roughly 1.2 MB against MAX_AUDIO_BYTES.
+ * Re-exported from the provider registry so both sides of the wire agree on
+ * what Wit's ceiling is. The registry is the source of truth; this keeps the
+ * existing `plans` import path working.
  */
-export const WIT_VORBIS_MAX_DURATION_MS = 296_000;
+export {
+  WITAI_MAX_DURATION_MS,
+  WITAI_SAFE_DURATION_MS,
+  WITAI_MIN_SPEECH_BYTES,
+  CF_WORKERS_AI_MAX_AUDIO_BYTES,
+  PROVIDER_LIMITS,
+  providerAcceptsCodec,
+  sttLimits,
+  tttLimits,
+  ttsLimits,
+} from "./providerLimits";
+export type {
+  AudioCodec,
+  ProviderLimitsEntry,
+  SttLimits,
+  TttLimits,
+  TtsLimits,
+} from "./providerLimits";
+
+/**
+ * Whether to hand this clip to Wit.ai in its own codec rather than letting it
+ * go out as Opus.
+ *
+ * Wit is first in both transcription pipelines because it is the fastest thing
+ * we have, but `/dictation` parses Vorbis-in-Ogg and answers Opus-in-Ogg with
+ * silence rather than an error. Two conditions, both necessary:
+ *
+ *  - a language is named. Wit holds one key per language, so for `auto` there is
+ *    no key to pick and the provider is skipped server-side regardless.
+ *  - the clip is inside Wit's duration ceiling.
+ */
+export function shouldUploadVorbis(
+  durationMs: number,
+  lang: string | null | undefined,
+): boolean {
+  if (!lang || lang === "auto") return false;
+  return durationMs > 0 && durationMs <= WITAI_SAFE_DURATION_MS;
+}
 
 export const SPEECH_MAX_TEXT_CHARS = 2400;
 

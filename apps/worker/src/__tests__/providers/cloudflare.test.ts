@@ -1,6 +1,7 @@
 import { describe, test, expect } from "vitest";
 import * as cloudflare from "@/providers/cloudflare";
 import { mockEnv, makeAudioBlob, mockSignal } from "@/__tests__/setup";
+import { ProviderTransportError } from "@/core/provider-errors";
 
 describe("Cloudflare provider", () => {
   describe("transcribe", () => {
@@ -43,18 +44,14 @@ describe("Cloudflare provider", () => {
       expect(result).toBeNull();
     });
 
-    test("returns null on AI error", async () => {
+    test("throws on AI error so the failover engine can classify it", async () => {
       const env = mockEnv();
       env.AI.run = async () => {
         throw new Error("AI model error");
       };
-      const result = await cloudflare.stt(
-        makeAudioBlob(),
-        "en",
-        env,
-        mockSignal(),
-      );
-      expect(result).toBeNull();
+      await expect(
+        cloudflare.stt(makeAudioBlob(), "en", env, mockSignal()),
+      ).rejects.toThrow(ProviderTransportError);
     });
 
     test("uses the whisper-large-v3-turbo model", async () => {
@@ -165,22 +162,19 @@ describe("Cloudflare provider", () => {
       expect(result).toBeNull();
     });
 
-    test("returns null on error", async () => {
+    test("throws on error", async () => {
       const env = mockEnv();
       env.AI.run = async () => {
         throw new Error("model error");
       };
-      const result = await cloudflare.ttt(
-        "Hello",
-        {
-          targetLang: "es",
-          sourceLang: "en",
-          transliteration: false,
-        },
-        env,
-        mockSignal(),
-      );
-      expect(result).toBeNull();
+      await expect(
+        cloudflare.ttt(
+          "Hello",
+          { targetLang: "es", sourceLang: "en", transliteration: false },
+          env,
+          mockSignal(),
+        ),
+      ).rejects.toThrow(ProviderTransportError);
     });
   });
 });

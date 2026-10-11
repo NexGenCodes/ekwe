@@ -10,8 +10,9 @@ import android.util.Log
 import java.nio.ByteBuffer
 
 /**
- * Decodes audio that miniaudio cannot handle (AAC/ADTS, AMR, 3GP, WebM)
- * through the platform decoder, producing raw PCM int16 for encodePcmToOpusJNI.
+ * Decodes audio the C++ core doesn't handle itself (MP3/AAC/ADTS, M4A, FLAC,
+ * AMR, 3GP, WebM) through the platform decoder, producing raw PCM int16 that
+ * encodePcmToOpusJNI normalises to the 16 kHz mono contract.
  * Returns null when the platform cannot decode the input.
  */
 object PlatformAudioDecoder {

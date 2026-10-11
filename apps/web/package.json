@@ -9,6 +9,6 @@
     "deploy": "wrangler pages deploy --branch master"
   },
   "devDependencies": {
-    "wrangler": "^4.102.0"
+    "wrangler": "^4.149.0"
   }
 }

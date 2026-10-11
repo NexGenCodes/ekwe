@@ -189,7 +189,7 @@ describe("sweepStaleAudioCache", () => {
       "file:///mock/cache/ekwe_recording_abc.ogg",
       60 * 60 * 1000,
     );
-    const fresh = entry("file:///mock/cache/ekwe_remuxed_new.caf", 1000);
+    const fresh = entry("file:///mock/cache/ekwe_playback_fresh.m4a", 1000);
     const foreign = entry("file:///mock/cache/photo.png", 60 * 60 * 1000);
     mockDirEntries.push(
       stale,
@@ -198,6 +198,7 @@ describe("sweepStaleAudioCache", () => {
       foreign,
       entry("file:///mock/cache/ekwe_opus_old.ogg", 60 * 60 * 1000),
       entry("file:///mock/cache/ekwe_vorbis_old.ogg", 60 * 60 * 1000),
+      entry("file:///mock/cache/ekwe_playback_old.m4a", 60 * 60 * 1000),
       new Directory("file:///mock/cache/sub"),
     );
 
@@ -209,6 +210,7 @@ describe("sweepStaleAudioCache", () => {
         "file:///mock/cache/ekwe_recording_abc.ogg",
         "file:///mock/cache/ekwe_opus_old.ogg",
         "file:///mock/cache/ekwe_vorbis_old.ogg",
+        "file:///mock/cache/ekwe_playback_old.m4a",
       ]),
     );
   });

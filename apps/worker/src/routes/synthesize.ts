@@ -17,7 +17,11 @@ import {
   TRANSLATE_TOTAL_MS,
 } from "@/core/budgets";
 import { getLimits } from "@/core/limits";
-import { guardAutoDetect, guardLanguageCode } from "@/core/guards";
+import {
+  guardAutoDetect,
+  guardLanguageCode,
+  guardSupportedLanguage,
+} from "@/core/guards";
 import type { z } from "zod";
 import { sanitizeTranslationText } from "@/core/sanitize";
 import { hashKey } from "@/utils/keys";
@@ -45,6 +49,7 @@ import {
   runSpeechSynth,
   type SpeechResult,
 } from "@/services/speech";
+import { getProviderNamesFor } from "@/providers";
 import { CLIENT_ABORTED, Env, Tier, TranslateResult } from "@/core/types";
 
 function preShrinkForTranslate(
@@ -218,7 +223,7 @@ async function translateStage(
   }
 
   if (cacheKey) {
-    await writeTranslateCache(env, cacheKey, userId, tier, result);
+    ctx.waitUntil(writeTranslateCache(env, cacheKey, userId, tier, result));
   }
   return { ok: true, result };
 }
@@ -228,9 +233,7 @@ interface ResponseMeta {
   targetLang: string;
   translated: boolean;
   voiceId: string | undefined;
-  /**
-   * The text as typed by the user or transcribed from audio.
-   */
+  /** User-typed or transcribed text. */
   transcript: string;
   /** The translated text if produced, otherwise null. */
   translation: string | null;
@@ -456,6 +459,30 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
 
   if (gateError) return gateError;
 
+  // Checked after `executionTier` settles: a language the pool cannot speak
+  // must fail as a 4xx, not drain the pipeline into a 503.
+  // Same derivation `resolveVoicePool` uses, so the guard and the pool it
+  // validates cannot disagree. They read from two different sources before, and
+  // a module dropping `tts` would have passed the guard only to produce an
+  // empty pool — reported to the client as `SPEECH_UNAVAILABLE`.
+  const speechSupportGuard = guardSupportedLanguage(
+    spokenLang,
+    "tts",
+    getProviderNamesFor("tts", executionTier),
+  );
+  if (!speechSupportGuard.allowed) {
+    if (reserved.ok) {
+      releaseUsage(
+        env,
+        userId,
+        "speech",
+        ctx,
+        isPreview ? 0 : cleanSpoken.length,
+      );
+    }
+    return speechSupportGuard.response;
+  }
+
   const result = await timings.measure("tts", () =>
     runSpeechSynth({
       text: cleanSpoken,
@@ -467,7 +494,6 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
       signal,
       budgetMs: speechBudget,
       cacheKey,
-      // Write result cache before replying so clients don't race the write.
     }),
   );
   if (!result) {
@@ -594,7 +620,7 @@ export async function synthesizeFromText(
 
     let detected: string | null = null;
     try {
-      detected = await detectTextLanguage(cleanText, env.EKWE_D1, signal);
+      detected = await detectTextLanguage(cleanText, env, signal);
     } catch (err) {
       logger.error(`[synthesize] auto-detect failed: ${String(err)}`);
     }
@@ -665,200 +691,222 @@ export async function synthesizeFromAudio(
   timings: RequestTimings,
   gateCharge: { skipCooldown: () => boolean; markCharged: () => void },
 ): Promise<Response> {
-  const ingest = await ingestAudioUpload(request, tier);
-  if (!ingest.ok) return ingest.response;
-  const { audio, audioHash, durationMs, form } = ingest.value;
+  // Return the preflight charge on abort; a mid-pipeline disconnect otherwise
+  // throws past every early return and discards paid provider calls.
+  let charged = true;
+  const settle = (): void => {
+    if (!charged) return;
+    charged = false;
+    releaseUsage(env, userId, "transcribe", ctx);
+  };
 
-  const lang = form.get("lang") as string | null;
-  const targetLang = form.get("targetLang") as string | null;
-  const genderRaw = form.get("gender") as string | null;
-  const voiceIdRaw = form.get("voiceId") as string | null;
-  logger.info(
-    `[synthesize] lang=${lang} targetLang=${targetLang} duration=${durationMs} mime=${ingest.value.mimeType} size=${audio.size}`,
-  );
-
-  const autoGuard = guardAutoDetect(lang, tier);
-  if (!autoGuard.allowed) return autoGuard.response;
-
-  const langGuard = guardLanguageCode(lang, "lang");
-  if (!langGuard.allowed) return langGuard.response;
-
-  if (!targetLang || targetLang === "auto") {
-    return Response.json(
-      {
-        error: WORKER_ERROR_CODES.INVALID_TARGET_LANGUAGE,
-        message: "A concrete target language is required.",
-      },
-      { status: 400 },
-    );
+  try {
+    return await runFromAudio();
+  } catch (err) {
+    settle();
+    throw err;
   }
-  const tgtGuard = guardLanguageCode(targetLang, "targetLang");
-  if (!tgtGuard.allowed) return tgtGuard.response;
 
-  // Maintain `null` gender to use provider-specific neutral defaults.
-  let resolvedGender: "male" | "female" | undefined;
-  if (genderRaw !== null && genderRaw !== "male" && genderRaw !== "female") {
-    return Response.json(
-      { error: WORKER_ERROR_CODES.INVALID_BODY },
-      { status: 400 },
+  async function runFromAudio(): Promise<Response> {
+    const ingest = await ingestAudioUpload(request, tier);
+    if (!ingest.ok) return ingest.response;
+    const { audio, audioHash, durationMs, form, codec } = ingest.value;
+
+    const lang = form.get("lang") as string | null;
+    const targetLang = form.get("targetLang") as string | null;
+    const genderRaw = form.get("gender") as string | null;
+    const voiceIdRaw = form.get("voiceId") as string | null;
+    logger.info(
+      `[synthesize] lang=${lang} targetLang=${targetLang} duration=${durationMs} mime=${ingest.value.mimeType} codec=${codec} size=${audio.size}`,
     );
-  }
-  if (genderRaw !== null) resolvedGender = genderRaw;
 
-  let voiceId: string | undefined;
-  if (voiceIdRaw !== null) {
-    if (!VOICE_SLOT_IDS.includes(voiceIdRaw)) {
+    const autoGuard = guardAutoDetect(lang, tier);
+    if (!autoGuard.allowed) return autoGuard.response;
+
+    const langGuard = guardLanguageCode(lang, "lang");
+    if (!langGuard.allowed) return langGuard.response;
+
+    if (!targetLang || targetLang === "auto") {
+      return Response.json(
+        {
+          error: WORKER_ERROR_CODES.INVALID_TARGET_LANGUAGE,
+          message: "A concrete target language is required.",
+        },
+        { status: 400 },
+      );
+    }
+    const tgtGuard = guardLanguageCode(targetLang, "targetLang");
+    if (!tgtGuard.allowed) return tgtGuard.response;
+
+    // Maintain `null` gender to use provider-specific neutral defaults.
+    let resolvedGender: "male" | "female" | undefined;
+    if (genderRaw !== null && genderRaw !== "male" && genderRaw !== "female") {
       return Response.json(
         { error: WORKER_ERROR_CODES.INVALID_BODY },
         { status: 400 },
       );
     }
-    voiceId = voiceIdRaw;
-  }
+    if (genderRaw !== null) resolvedGender = genderRaw;
 
-  const transcribeSkip = gateCharge.skipCooldown();
-  gateCharge.markCharged();
-  const transcribeGate = await timings.measure("stt.gate", () =>
-    runPreflightGate(
-      env,
-      ctx,
-      userId,
-      tier,
-      "transcribe",
-      sessionId,
-      0,
-      transcribeSkip,
-    ),
-  );
-  if (!transcribeGate.ok) return transcribeGate.response;
-  if (signal.aborted) throw new Error(CLIENT_ABORTED);
-  const sttPipelineTier = transcribeGate.preflight.throttled ? "FREE" : tier;
-
-  let cacheKey: string | null = null;
-  let transcript: string | null = null;
-  let detectedLang: string | null = null;
-  try {
-    cacheKey = buildTranscribeCacheKey({
-      userId,
-      tier,
-      audioHash,
-      lang,
-    });
-
-    const cached = await readTranscribeCache(env, cacheKey);
-    if (cached) {
-      transcript = cached.text;
-      detectedLang = cached.language ?? null;
-      releaseUsage(env, userId, "transcribe", ctx);
+    let voiceId: string | undefined;
+    if (voiceIdRaw !== null) {
+      if (!VOICE_SLOT_IDS.includes(voiceIdRaw)) {
+        return Response.json(
+          { error: WORKER_ERROR_CODES.INVALID_BODY },
+          { status: 400 },
+        );
+      }
+      voiceId = voiceIdRaw;
     }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.error(`[synthesize] D1 cache lookup error (continuing): ${msg}`);
-  }
 
-  if (transcript === null) {
-    const isAuto = !lang || lang === "auto";
-    const result = await timings.measure("stt", () =>
-      runTranscribe({
-        audioBlob: audio,
-        effectiveLang: isAuto ? "auto" : lang,
-        isAuto,
-        tier: sttPipelineTier,
+    const transcribeSkip = gateCharge.skipCooldown();
+    gateCharge.markCharged();
+    const transcribeGate = await timings.measure("stt.gate", () =>
+      runPreflightGate(
         env,
-        signal,
-        budgetMs: Math.min(TRANSCRIBE_TOTAL_MS, remainingMs()),
-      }),
+        ctx,
+        userId,
+        tier,
+        "transcribe",
+        sessionId,
+        0,
+        transcribeSkip,
+      ),
     );
-    if (!result) {
-      releaseUsage(env, userId, "transcribe", ctx);
-      return Response.json(
-        { error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL },
-        { status: 503 },
-      );
-    }
-    transcript = result.text;
-    detectedLang = result.language ?? null;
+    if (!transcribeGate.ok) return transcribeGate.response;
+    if (signal.aborted) throw new Error(CLIENT_ABORTED);
+    const sttPipelineTier = transcribeGate.preflight.throttled ? "FREE" : tier;
 
-    if (cacheKey) {
-      const prepared = stripTranscriptLanguage(result, tier);
-      await writeTranscribeCache(env, cacheKey, userId, tier, prepared);
-    }
-  }
+    let cacheKey: string | null = null;
+    let transcript: string | null = null;
+    let detectedLang: string | null = null;
+    try {
+      cacheKey = buildTranscribeCacheKey({
+        userId,
+        tier,
+        audioHash,
+        lang,
+      });
 
-  let spokenText = sanitizeTranslationText(transcript);
-  if (!spokenText) {
-    return Response.json(
-      { error: WORKER_ERROR_CODES.EKWE_EMPTY_TRANSCRIPT },
-      { status: 400 },
-    );
-  }
-
-  let translated = false;
-  let effectiveSource = lang ?? targetLang;
-  let reportedTranscript = spokenText;
-  let translationTruncated = false;
-
-  if (lang !== targetLang) {
-    const isAuto = !lang || lang === "auto";
-    let sourceCode: string | null = isAuto ? detectedLang : lang;
-    if (isAuto && detectedLang && detectedLang === targetLang) {
-      sourceCode = null;
+      const cached = await readTranscribeCache(env, cacheKey);
+      if (cached) {
+        transcript = cached.text;
+        detectedLang = cached.language ?? null;
+        releaseUsage(env, userId, "transcribe", ctx);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`[synthesize] D1 cache lookup error (continuing): ${msg}`);
     }
 
-    if (sourceCode) {
-      if (signal.aborted) throw new Error(CLIENT_ABORTED);
-      const shrunk = preShrinkForTranslate(spokenText, tier);
-      reportedTranscript = shrunk.text;
-      translationTruncated = shrunk.truncated;
-      const translation = await timings.measure("mt", () =>
-        translateStage({
-          text: shrunk.text,
-          sourceLang: sourceCode,
-          targetLang,
-          tier: tier,
-          userId,
+    if (transcript === null) {
+      const isAuto = !lang || lang === "auto";
+      const result = await timings.measure("stt", () =>
+        runTranscribe({
+          audioBlob: audio,
+          effectiveLang: isAuto ? "auto" : lang,
+          isAuto,
+          codec,
+          tier: sttPipelineTier,
           env,
           signal,
-          budgetMs: Math.min(TRANSLATE_TOTAL_MS, remainingMs()),
-          ctx,
-          sessionId,
-          gateCharge,
+          budgetMs: Math.min(TRANSCRIBE_TOTAL_MS, remainingMs()),
+          durationMs: durationMs ?? 0,
         }),
       );
-      if (!translation.ok) return translation.response;
-      spokenText = translation.result.translation;
-      translated = true;
-      effectiveSource = sourceCode;
-    } else {
-      effectiveSource = detectedLang ?? targetLang;
-    }
-  }
+      if (!result) {
+        releaseUsage(env, userId, "transcribe", ctx);
+        return Response.json(
+          { error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL },
+          { status: 503 },
+        );
+      }
+      transcript = result.text;
+      detectedLang = result.language ?? null;
 
-  return finishSpeech({
-    spokenText,
-    spokenLang: targetLang,
-    gender: resolvedGender,
-    voiceId,
-    jwtTier: tier,
-    env,
-    signal,
-    ctx,
-    userId,
-    sessionId,
-    isPreview: false,
-    remainingMs,
-    timings,
-    gateCharge,
-    meta: {
-      sourceLang: effectiveSource,
-      targetLang,
-      translated,
+      if (cacheKey) {
+        const prepared = stripTranscriptLanguage(result, tier);
+        ctx.waitUntil(
+          writeTranscribeCache(env, cacheKey, userId, tier, prepared),
+        );
+      }
+    }
+
+    let spokenText = sanitizeTranslationText(transcript);
+    if (!spokenText) {
+      return Response.json(
+        { error: WORKER_ERROR_CODES.EKWE_EMPTY_TRANSCRIPT },
+        { status: 400 },
+      );
+    }
+
+    let translated = false;
+    let effectiveSource = lang ?? targetLang;
+    let reportedTranscript = spokenText;
+    let translationTruncated = false;
+
+    if (lang !== targetLang) {
+      const isAuto = !lang || lang === "auto";
+      let sourceCode: string | null = isAuto ? detectedLang : lang;
+      if (isAuto && detectedLang && detectedLang === targetLang) {
+        sourceCode = null;
+      }
+
+      if (sourceCode) {
+        if (signal.aborted) throw new Error(CLIENT_ABORTED);
+        const shrunk = preShrinkForTranslate(spokenText, tier);
+        reportedTranscript = shrunk.text;
+        translationTruncated = shrunk.truncated;
+        const translation = await timings.measure("mt", () =>
+          translateStage({
+            text: shrunk.text,
+            sourceLang: sourceCode,
+            targetLang,
+            tier: tier,
+            userId,
+            env,
+            signal,
+            budgetMs: Math.min(TRANSLATE_TOTAL_MS, remainingMs()),
+            ctx,
+            sessionId,
+            gateCharge,
+          }),
+        );
+        if (!translation.ok) return translation.response;
+        spokenText = translation.result.translation;
+        translated = true;
+        effectiveSource = sourceCode;
+      } else {
+        effectiveSource = detectedLang ?? targetLang;
+      }
+    }
+
+    return finishSpeech({
+      spokenText,
+      spokenLang: targetLang,
+      gender: resolvedGender,
       voiceId,
-      transcript: reportedTranscript,
-      translation: translated ? spokenText : null,
-      translationTruncated,
-    },
-  });
+      jwtTier: tier,
+      env,
+      signal,
+      ctx,
+      userId,
+      sessionId,
+      isPreview: false,
+      remainingMs,
+      timings,
+      gateCharge,
+      meta: {
+        sourceLang: effectiveSource,
+        targetLang,
+        translated,
+        voiceId,
+        transcript: reportedTranscript,
+        translation: translated ? spokenText : null,
+        translationTruncated,
+      },
+    });
+  }
 }
 
 export function createGateCharge(): {

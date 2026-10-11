@@ -258,4 +258,24 @@ describe("handleTranslate pipeline", () => {
     expect(body.translation).toBe("Hola");
     expect(calls).toBe(1);
   });
+
+  test("allows translation when source language is supported for translation", async () => {
+    server.use(
+      http.post(PROVIDER_URLS.groqChat, () =>
+        jsonResponse({ choices: [{ message: { content: "Bonjour monde" } }] }),
+      ),
+    );
+
+    const res = await handleTranslate(
+      makeBody("Hello world", "fr", "en"),
+      mockEnv(),
+      "FREE",
+      "FREE",
+      new AbortController().signal,
+      "test-user",
+    );
+    expect(res.status).toBe(200);
+    const body = await jsonBody(res);
+    expect(body.translation).toBe("Bonjour monde");
+  });
 });

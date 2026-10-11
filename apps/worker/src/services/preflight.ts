@@ -172,11 +172,22 @@ function secondsUntilUtcMidnight(): number {
   return Math.max(1, Math.ceil((nextUtcMidnightMs() - Date.now()) / 1000));
 }
 
+const sessionMemo = new Map<
+  string,
+  { result: boolean | null; until: number }
+>();
+const SESSION_MEMO_TTL_MS = 5_000;
+
 async function isSessionActive(
   env: Env,
   sessionId: string | null,
 ): Promise<boolean | null> {
   if (!sessionId) return null;
+
+  const now = Date.now();
+  const memo = sessionMemo.get(sessionId);
+  if (memo && memo.until > now) return memo.result;
+
   try {
     const result = await retryOnConnectionLoss(
       (client) =>
@@ -186,7 +197,13 @@ async function isSessionActive(
       env,
     );
     if (result.length > 0) {
-      return Boolean(result[0].active);
+      const active = Boolean(result[0].active);
+      if (sessionMemo.size > 500) sessionMemo.clear();
+      sessionMemo.set(sessionId, {
+        result: active,
+        until: now + SESSION_MEMO_TTL_MS,
+      });
+      return active;
     }
   } catch (err) {
     logger.warn("[preflight] session-active check failed, allowing", {

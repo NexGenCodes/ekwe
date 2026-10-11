@@ -16,19 +16,49 @@ if (typeof globalThis !== "undefined") {
 // the module graph evaluates; the layout decides exactly when to hideAsync.
 preventAutoHideAsync();
 
-// Global unhandled promise rejection handler — logs full stack to Metro
+// App-wide failure capture. Routes every uncaught JS error and (where the
+// runtime supports it) unhandled promise rejection through one [AppError] tag
+// so failures are greppable regardless of which subsystem threw.
 if (typeof ErrorUtils !== "undefined") {
   const origHandler = ErrorUtils.getGlobalHandler();
   ErrorUtils.setGlobalHandler((error, isFatal) => {
     console.error(
-      "[GlobalErrorHandler] isFatal:",
+      "[AppError] uncaught:",
+      "isFatal:",
       isFatal,
+      "name:",
+      error?.name,
       "message:",
       error?.message,
     );
-    console.error("[GlobalErrorHandler] stack:", error?.stack);
+    console.error("[AppError] stack:", error?.stack);
     if (origHandler) origHandler(error, isFatal);
   });
+}
+
+// Unhandled promise rejections. `promise/setimmediate/rejection-tracking` is the
+// polyfill React Native ships; enable it best-effort so a rejected await that
+// nobody catches still surfaces instead of being swallowed.
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const rejectionTracking = require("promise/setimmediate/rejection-tracking");
+  rejectionTracking.enable({
+    allRejections: true,
+    onUnhandled: (id, error) => {
+      console.error(
+        "[AppError] unhandledRejection id:",
+        id,
+        "name:",
+        error?.name,
+        "message:",
+        error?.message,
+      );
+      console.error("[AppError] stack:", error?.stack);
+    },
+    onHandled: () => {},
+  });
+} catch {
+  // Promise polyfill unavailable on this runtime; ErrorUtils above still fires.
 }
 
 // ⚠️ Keep the share/Echo module graph OFF the top of this entry. index.js is

@@ -8,7 +8,6 @@ const FAIL = '\x1b[31mFAIL\x1b[0m';
 const SKIP = '\x1b[33mSKIP\x1b[0m';
 
 const DEFAULT_DEV_VARS = resolve(__dirname, '../../../.dev.vars');
-const DEFAULT_WIT_VARS = resolve(__dirname, '../../../.dev.vars.store');
 
 function readEnvFile(path) {
   if (!existsSync(path)) return {};
@@ -24,9 +23,7 @@ function readEnvFile(path) {
 }
 
 export function loadEnv(path = DEFAULT_DEV_VARS) {
-  const env = readEnvFile(path);
-  if (path === DEFAULT_DEV_VARS) Object.assign(env, readEnvFile(DEFAULT_WIT_VARS));
-  return env;
+  return readEnvFile(path);
 }
 
 export function getMultiKeys(env, prefix) {
@@ -152,20 +149,11 @@ export async function testTranscribeProviders(env) {
     });
   }
 
-  const witLangs = ['EN', 'FR', 'ES', 'PT', 'DE', 'IT', 'ZH', 'IG', 'YO', 'HA',
-    'AF', 'AK', 'SQ', 'AM', 'AR', 'HY', 'AS', 'AY', 'AZ', 'EU',
-    'BE', 'BN', 'BS', 'BR', 'BG', 'MY', 'CA', 'CI', 'CK', 'NY', 'HR', 'CS',
-    'DA', 'DV', 'NL', 'EO', 'ET', 'FO', 'FI', 'FF', 'GL', 'LG',
-    'KA', 'EL', 'GN', 'GU', 'HT', 'HE', 'HI', 'HU', 'IS', 'ID',
-    'IU', 'GA', 'JA', 'JV', 'KL', 'KN', 'KS', 'KK', 'KM', 'RW',
-    'KY', 'KO', 'KU', 'LO', 'LA', 'LV', 'LI', 'LN', 'LT', 'MK',
-    'MG', 'MS', 'ML', 'MT', 'MI', 'MR', 'MN', 'NE', 'SE', 'NO',
-    'NB', 'OR', 'OM', 'PA', 'PS', 'FA', 'PL', 'QU', 'RM', 'RO',
-    'RU', 'SA', 'SC', 'GD', 'SR', 'SN', 'SD', 'SI', 'SK', 'SL',
-    'SO', 'ST', 'NR', 'SU', 'SW', 'SS', 'SV', 'TL', 'TG', 'TA',
-    'TT', 'TE', 'TH', 'BO', 'TI', 'TS', 'TN', 'TR', 'UG', 'UK',
-    'UR', 'UZ', 'VE', 'VI', 'CY', 'FY', 'WO', 'XH', 'YI', 'ZU',
-  ];
+  // Derived from the shared offered-language set rather than restated here: this
+  // list used to carry all 132 Wit codes, so after pruning the unsupported keys
+  // every dropped code reported "no key configured" and drowned the real signal.
+  const witLangs = (await import(resolve(__dirname, '../../../../../packages/shared/src/languages.ts')))
+    .SUPPORTED_LANGUAGE_CODES.map((code) => code.toUpperCase());
   for (const lang of witLangs) {
     const key = env[`WIT_KEY_${lang}`];
     if (!key) {
@@ -184,7 +172,7 @@ export async function testTranscribeProviders(env) {
 async function main() {
   const env = loadEnv();
   const checkGroq = process.argv.includes('--groq');
-  console.log(`Loaded ${Object.keys(env).length} vars from .dev.vars and .dev.vars.store\n`);
+  console.log(`Loaded ${Object.keys(env).length} vars from .dev.vars\n`);
 
   let allOk = true;
 

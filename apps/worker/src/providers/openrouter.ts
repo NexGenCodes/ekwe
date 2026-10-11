@@ -1,8 +1,9 @@
 import { CLIENT_ABORTED, Env, TttRequest, TranslateResult } from "@/core/types";
-import { rotateKeysDetailed } from "@/utils/keys";
+import { rotateKeysOrThrow } from "@/utils/keys";
 import { buildTranslatePrompt, parseTranslateOutput } from "@/utils/prompts";
 import { getUserAgent, fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
 import { logger } from "@/core/logger";
+import { ProviderHttpError } from "@/core/provider-errors";
 
 const OPENROUTER_CHAT = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_REFFERER = "https://ekwe.pages.dev";
@@ -19,9 +20,10 @@ export async function ttt(
   });
 
   try {
-    const { response: res } = await rotateKeysDetailed(
+    const res = await rotateKeysOrThrow(
       env,
       "OPENROUTER_KEY_",
+      "openrouter",
       (key) =>
         fetchWithTimeout(
           OPENROUTER_CHAT,
@@ -56,12 +58,7 @@ export async function ttt(
       signal,
     );
 
-    if (!res?.ok) {
-      logger.warn("[openrouter] Translate failed, provider returned error", {
-        status: res?.status ?? "no response",
-      });
-      return null;
-    }
+    if (!res.ok) throw new ProviderHttpError("openrouter", res.status);
 
     const data = await res.json<{
       choices?: Array<{ message?: { content?: string } }>;
@@ -80,9 +77,6 @@ export async function ttt(
     };
   } catch (e) {
     if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
-    logger.error("[openrouter] Translate exception", {
-      error: e instanceof Error ? e.message : String(e),
-    });
-    return null;
+    throw e;
   }
 }

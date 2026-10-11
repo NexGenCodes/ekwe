@@ -6,10 +6,10 @@
 
 #if defined(__ANDROID__)
 #include <android/log.h>
-#define ALOG(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, "EkveOgg", fmt, ##__VA_ARGS__)
+#define ALOG(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, "EkweOgg", fmt, ##__VA_ARGS__)
 #else
 #include <cstdio>
-#define ALOG(fmt, ...) std::printf("[EkveOgg] " fmt "\n", ##__VA_ARGS__)
+#define ALOG(fmt, ...) std::printf("[EkweOgg] " fmt "\n", ##__VA_ARGS__)
 #endif
 
 namespace ekwe {
@@ -130,6 +130,11 @@ bool OggMuxer::write_packet(const uint8_t* opus_data, size_t opus_size, int64_t 
         ALOG("write_packet: not ok");
         return false;
     }
+    if (opus_size > MAX_PAGE_DATA) {
+        ALOG("write_packet: packet size %zu exceeds MAX_PAGE_DATA %zu", opus_size, MAX_PAGE_DATA);
+        ok_ = false;
+        return false;
+    }
     last_granule_position_ = granule_position;
     OggPage page = make_page(opus_data, opus_size, granule_position, false, false);
     return write_page(page);
@@ -162,6 +167,10 @@ bool OggMuxer::finalize() {
 }
 
 bool OggMuxer::write_page(const OggPage& page) {
+    if (page.data.empty()) {
+        ok_ = false;
+        return false;
+    }
     if (!file_) {
         ALOG("write_page: no file");
         return false;
@@ -190,9 +199,10 @@ OggPage OggMuxer::make_page(const uint8_t* data, size_t size, int64_t granule_po
         segment_count = size / 255 + 1;
     }
     
-    if (segment_count > MAX_SEGMENTS) {
-        segment_count = MAX_SEGMENTS;
-        size = MAX_PAGE_DATA;
+    if (segment_count > MAX_SEGMENTS || size > MAX_PAGE_DATA) {
+        ALOG("make_page: packet size %zu exceeds MAX_PAGE_DATA %zu", size, MAX_PAGE_DATA);
+        ok_ = false;
+        return OggPage{};
     }
     page.segment_count = static_cast<uint8_t>(segment_count);
 

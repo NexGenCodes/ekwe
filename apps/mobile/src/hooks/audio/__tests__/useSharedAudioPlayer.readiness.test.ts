@@ -147,7 +147,10 @@ vi.mock("@/hooks/audio/audioFocus", () => ({
   createAudioFocus: () => ({ claim: vi.fn(), release: vi.fn() }),
 }));
 vi.mock("@/services/audioTranscoder", () => ({
-  AudioTranscoder: { remuxToCafForPlayback: vi.fn(), decodeToWav: vi.fn() },
+  AudioTranscoder: {
+    createPlaybackCopyForPlayback: vi.fn(),
+    decodeToWav: vi.fn(),
+  },
 }));
 vi.mock("expo-file-system", () => ({
   File: class {

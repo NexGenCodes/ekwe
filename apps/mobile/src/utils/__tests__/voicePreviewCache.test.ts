@@ -99,17 +99,17 @@ describe("getCachedPreviewUri", () => {
 
 describe("persistPreview", () => {
   it("moves the clip to a deterministic, version-stamped path", async () => {
-    existingFiles.set("file:///mock/cache/ekwe_remuxed_123.ogg", 2048);
+    existingFiles.set("file:///mock/cache/ekwe_speech_123.ogg", 2048);
 
     const result = await persistPreview(
-      "file:///mock/cache/ekwe_remuxed_123.ogg",
+      "file:///mock/cache/ekwe_speech_123.ogg",
       "studio_female",
     );
 
     expect(result).toBe(`file:///mock/cache/${memoName("studio_female")}`);
     expect(moves).toEqual([
       {
-        from: "file:///mock/cache/ekwe_remuxed_123.ogg",
+        from: "file:///mock/cache/ekwe_speech_123.ogg",
         to: `file:///mock/cache/${memoName("studio_female")}`,
         overwrite: true,
       },
@@ -117,12 +117,12 @@ describe("persistPreview", () => {
   });
 
   it("replaces the previous clip for the same voice", async () => {
-    existingFiles.set("file:///mock/cache/ekwe_remuxed_9.ogg", 2048);
+    existingFiles.set("file:///mock/cache/ekwe_speech_9.ogg", 2048);
     const previous = `file:///mock/cache/${memoName("standard_female")}`;
     existingFiles.set(previous, 2048);
 
     await persistPreview(
-      "file:///mock/cache/ekwe_remuxed_9.ogg",
+      "file:///mock/cache/ekwe_speech_9.ogg",
       "standard_female",
     );
 
@@ -143,7 +143,7 @@ describe("persistPreview", () => {
   });
 
   it("falls back to the source when the move cannot happen", async () => {
-    const source = "file:///mock/cache/ekwe_remuxed_gone.ogg";
+    const source = "file:///mock/cache/ekwe_speech_gone.ogg";
     const result = await persistPreview(source, "standard_female");
     expect(result).toBe(source);
     expect(moves).toEqual([]);

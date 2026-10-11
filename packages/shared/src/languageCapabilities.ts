@@ -20,7 +20,8 @@
  * language coverage. Deepgram alone has two.
  */
 
-import { LANGUAGE_CODES, LANGUAGE_CODE_SET } from "./languages";
+import { LANGUAGE_CODES } from "./languages";
+import { SUPPORTED_LANGUAGE_CODE_SET } from "./languages";
 
 export type ProviderId =
   | "assemblyai"
@@ -195,9 +196,18 @@ const WHISPER_ALIASES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Wit's documented speech-to-text set. Note it is NOT the whole catalog: `ba`,
- * `haw`, `lb`, `nn`, `oc`, `tk` and `yue` are absent, which is why TTS gating
- * must use this list rather than treating Wit as language-agnostic.
+ * Wit's speech-to-text set, verified one language per key against `/message`
+ * with native audio rather than copied from Wit's docs.
+ *
+ * `te` is deliberately excluded. The endpoint answers `200` for Telugu, but the
+ * transcript comes back as "Namaste" — a greeting rather than the spoken text —
+ * so a `200` proves nothing here, and the registration would have routed Telugu
+ * to a provider that silently returns the wrong words. Its `WIT_KEY_TE` was
+ * pruned from the key store to match.
+ *
+ * This is a different list from {@link WIT_LANGUAGES} below, which covers
+ * synthesis. Keeping them separate is what lets a language be offered for
+ * transcription without being claimed for speech.
  */
 const WIT_STT_LANGUAGES: readonly string[] = [
   "ar",
@@ -225,7 +235,6 @@ const WIT_STT_LANGUAGES: readonly string[] = [
   "si",
   "sv",
   "ta",
-  "te",
   "th",
   "tl",
   "tr",
@@ -235,152 +244,85 @@ const WIT_STT_LANGUAGES: readonly string[] = [
 ];
 
 /**
- * Languages Wit's *synthesis* endpoint accepts. Far wider than {@link
- * WIT_STT_LANGUAGES}, and deliberately kept separate from it.
+ * The languages Wit's *synthesis* endpoint genuinely speaks, measured by
+ * `check-tts.mjs` rather than taken from Wit's advertised coverage.
  *
- * Wit publishes one list for both capabilities, which is why the dictation
- * endpoint looked like it covered 130-odd languages. Probing every key against
- * `/dictation` shows only the 32 above actually transcribe; the other hundred
- * answer `400 Speech recognition is not supported for language: xx`. Synthesis
- * genuinely does speak the wider set, so merging the two lists back together
- * would break transcription to keep a true statement about synthesis.
+ * The harness synthesizes a known phrase per language and transcribes it back.
+ * The results split by script, not by the API's language list:
  *
- * The gap costs us the Nigerian languages — `yo`, `ig` and `ha` are all
- * unsupportable here — which is why the STT pools must reach a Whisper-family
- * provider instead of relying on Wit for African speech.
+ *   576 bytes   - silent no-audio payload: `hi`, `th`, `ta`, `te`
+ *   ~3.4 KB     - clipped audio read character by character: `ja`, `ko`, `zh`, `ar`
+ *   7.4 KB +    - real speech, transcribed correctly (Latin and Cyrillic alike)
+ *
+ * Wit answers `200` for every one of these either way, so a status check proves
+ * nothing; only the audio does. This list previously held 131 languages on the
+ * strength of the request being accepted, which routed Indic, Thai, CJK,
+ * Hangul and Arabic synthesis to a provider that returns silence or a
+ * character-by-character reading. `MIN_SPEECH_BYTES` in the provider now
+ * rejects the silent response at runtime, and keeping this list honest stops the
+ * pool choosing Wit for a script it cannot voice in the first place.
+ *
+ * `ru` and `ba` are kept deliberately: Cyrillic is voiced correctly, so the
+ * cut is by script coverage rather than by "not Latin".
+ *
+ * The gap costs `hi`, `th`, `ta`, `te`, `ja`, `ko`, `zh` and `ar`, which must
+ * route to Gemini or ElevenLabs instead of this fallback.
  */
 const WIT_LANGUAGES: readonly string[] = [
   "af",
-  "ak",
-  "am",
-  "ar",
-  "as",
-  "ay",
-  "az",
-  "be",
-  "bg",
-  "bn",
-  "bo",
-  "br",
-  "bs",
+  "ba",
   "ca",
-  "ci",
-  "ck",
   "cs",
   "cy",
   "da",
   "de",
-  "dv",
   "el",
   "en",
   "eo",
   "es",
   "et",
   "eu",
-  "fa",
-  "ff",
   "fi",
-  "fo",
   "fr",
-  "fy",
   "ga",
-  "gd",
   "gl",
-  "gn",
-  "gu",
-  "ha",
-  "he",
-  "hi",
+  "haw",
   "hr",
-  "ht",
   "hu",
   "hy",
   "id",
-  "ig",
   "is",
   "it",
-  "iu",
-  "ja",
-  "jv",
   "ka",
-  "kk",
-  "kl",
-  "km",
-  "kn",
-  "ko",
-  "ks",
-  "ku",
-  "ky",
   "la",
-  "lg",
-  "li",
-  "ln",
-  "lo",
+  "lb",
   "lt",
   "lv",
-  "mg",
-  "mi",
   "mk",
-  "ml",
-  "mn",
-  "mr",
   "ms",
   "mt",
-  "my",
   "nb",
-  "ne",
+  "nn",
   "nl",
   "no",
-  "nr",
-  "ny",
-  "om",
-  "or",
-  "pa",
+  "oc",
   "pl",
-  "ps",
   "pt",
-  "qu",
-  "rm",
   "ro",
   "ru",
-  "rw",
-  "sa",
-  "sc",
-  "sd",
-  "se",
-  "si",
   "sk",
   "sl",
+  "sn",
   "so",
   "sq",
   "sr",
-  "ss",
-  "st",
-  "su",
   "sv",
   "sw",
-  "ta",
-  "te",
-  "tg",
-  "th",
-  "ti",
-  "tl",
-  "tn",
+  "tk",
   "tr",
-  "ts",
-  "tt",
-  "ug",
   "uk",
-  "ur",
   "uz",
-  "ve",
   "vi",
-  "wo",
-  "xh",
-  "yi",
-  "yo",
-  "zh",
-  "zu",
 ];
 
 const COHERE_LANGUAGES: readonly string[] = [
@@ -1099,7 +1041,10 @@ export const autoDetectLanguages = (): string[] =>
 /** Streaming languages a picker must hide, because nothing can route them. */
 export const unsupportedStreamLanguages = (): string[] => {
   const covered = new Set(streamLanguages());
-  return [...LANGUAGE_CODE_SET].filter((c) => !covered.has(c)).sort();
+  // Scoped to the offered set: a picker only needs to hide among the languages
+  // it is actually showing, and returning the whole unsupported catalog would
+  // imply the other 108 are merely unstreamable rather than not offered.
+  return [...SUPPORTED_LANGUAGE_CODE_SET].filter((c) => !covered.has(c)).sort();
 };
 
 /**
@@ -1325,7 +1270,8 @@ export const unsupportedLanguages = (
 ): string[] => {
   if (isLanguageUnbounded(capability)) return [];
   const covered = new Set(languagesForCapability(capability));
-  return [...LANGUAGE_CODE_SET].filter((c) => !covered.has(c)).sort();
+  // Offered set, not the whole catalog — see unsupportedStreamLanguages.
+  return [...SUPPORTED_LANGUAGE_CODE_SET].filter((c) => !covered.has(c)).sort();
 };
 
 function allSpecs(capability: LanguageCapability): LanguageCapabilitySpec[] {

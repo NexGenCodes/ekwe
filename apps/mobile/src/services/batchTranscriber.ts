@@ -8,10 +8,7 @@ import {
 } from "@/services/transcribeAudio";
 import { Result, err } from "@/types/Result";
 import logger from "@/utils/logger";
-import {
-  MAX_AUDIO_BYTES as MAX_FILE_SIZE,
-  PREMIUM_LIMITS,
-} from "@ekwe/shared/plans";
+import { MAX_AUDIO_INPUT_BYTES, PREMIUM_LIMITS } from "@ekwe/shared/plans";
 
 export interface BatchAudioInput {
   uri: string;
@@ -50,7 +47,7 @@ class BatchTranscriber {
         return err(EkweError.SHARE_COPY_FAIL);
       }
 
-      if (file.size && file.size > MAX_FILE_SIZE) {
+      if (file.size && file.size > MAX_AUDIO_INPUT_BYTES) {
         logger.warn("[BatchTranscriber] File too large:", file.size);
         return err(EkweError.FILE_TOO_LARGE);
       }

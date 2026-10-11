@@ -9,12 +9,16 @@
  * reaches anything that compares languages, or it silently reads as a language
  * we do not have.
  *
- * The index is derived from {@link LANGUAGES} rather than hand-listed, so it
+ * The index is derived from {@link ALL_LANGUAGES} rather than hand-listed, so it
  * covers the whole catalog and cannot fall behind it. {@link
  * PROVIDER_DETECTION_NAMES} only carries the names where a provider's meaning
  * differs from, or is absent in, our catalog spelling.
  */
-import { LANGUAGES, LANGUAGE_CODE_SET, type LanguageCode } from "./languages";
+import {
+  ALL_LANGUAGES,
+  LANGUAGE_CODE_SET,
+  type LanguageCode,
+} from "./languages";
 
 /**
  * Fold a name to a comparison key: case, diacritics and punctuation carry no
@@ -84,7 +88,7 @@ const PROVIDER_DETECTION_NAMES: Readonly<Record<string, LanguageCode>> = {
 /**
  * Narrows a catalog entry's code to the canonical union.
  *
- * `LANGUAGES` is derived from `LANGUAGE_CODES`, so this cannot fail for data
+ * `ALL_LANGUAGES` is derived from `LANGUAGE_CODES`, so this cannot fail for data
  * that came from the catalog. It is checked rather than cast because this
  * module's whole job is to be the one place a language string becomes a code
  * the rest of the app trusts — a code that is not in the catalog has to stop
@@ -100,7 +104,7 @@ const canonical = (code: string): LanguageCode => {
 /** Names that resolve to more than one code, so the data has to stay honest. */
 const CATALOG_NAME_COLLISIONS: ReadonlyMap<string, readonly string[]> = (() => {
   const owners = new Map<string, Set<string>>();
-  for (const { code, englishName, nativeName } of LANGUAGES) {
+  for (const { code, englishName, nativeName } of ALL_LANGUAGES) {
     for (const k of [
       ...nameKeys(englishName),
       ...nameKeys(nativeName),
@@ -120,7 +124,7 @@ const CATALOG_NAME_COLLISIONS: ReadonlyMap<string, readonly string[]> = (() => {
 
 const CATALOG_NAME_INDEX: ReadonlyMap<string, LanguageCode> = (() => {
   const index = new Map<string, LanguageCode>();
-  for (const { code, englishName, nativeName } of LANGUAGES) {
+  for (const { code, englishName, nativeName } of ALL_LANGUAGES) {
     for (const k of [
       ...nameKeys(englishName),
       ...nameKeys(nativeName),

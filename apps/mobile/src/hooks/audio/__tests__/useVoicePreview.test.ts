@@ -41,6 +41,8 @@ vi.mock("@/hooks/audio/useSharedAudioPlayer", () => ({
     setPlaybackRate: vi.fn(),
     beginScrub: vi.fn(),
     endScrub: vi.fn(),
+    loadError: null,
+    retryLoad: vi.fn(),
   }),
 }));
 

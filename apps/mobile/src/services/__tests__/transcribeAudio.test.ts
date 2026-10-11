@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { WIT_VORBIS_MAX_DURATION_MS } from "@ekwe/shared/plans";
+import { WITAI_SAFE_DURATION_MS } from "@ekwe/shared/plans";
 
 import { EkweError } from "@/constants/errors";
 import type { ProcessedAudio } from "@/services/audioProcessor";
@@ -14,6 +14,7 @@ const isDefinitelyOfflineMock = vi.hoisted(() => vi.fn());
 const fsMock = vi.hoisted(() => ({
   exists: true,
   size: 4096,
+  deleted: [] as string[],
 }));
 
 const okResult = vi.hoisted(() => ({
@@ -21,10 +22,11 @@ const okResult = vi.hoisted(() => ({
   error: "",
   durationMs: 60_000,
   waveform: [],
+  vorbisSuccess: true,
 }));
 
 const nativeMock = vi.hoisted(() => ({
-  transcodeToDualWithWaveform: vi.fn(),
+  resolveAudio: vi.fn(),
   probeAudioDurationMs: vi.fn(),
   deleteFile: vi.fn(),
 }));
@@ -38,6 +40,9 @@ vi.mock("expo-file-system", () => {
     exists = fsMock.exists;
     size = fsMock.size;
     constructor(public uri: string) {}
+    delete(): void {
+      fsMock.deleted.push(this.uri);
+    }
   }
   return {
     File: MockFile,
@@ -97,22 +102,17 @@ const uploadedUri = (): string | null => {
   return file?.uri ?? null;
 };
 
-const dualCall = (): {
+const resolveCall = (): {
   input: string;
-  opusPath: string;
-  vorbisPath: string;
+  vorbisPath: string | null;
 } => {
-  const [input, opusPath, vorbisPath] =
-    nativeMock.transcodeToDualWithWaveform.mock.calls[0];
-  return { input, opusPath, vorbisPath };
+  const [input, options] = nativeMock.resolveAudio.mock.calls[0];
+  return { input, vorbisPath: options.vorbisOutputPath ?? null };
 };
 
 describe("transcribeAudio upload artifact", () => {
   beforeEach(() => {
-    nativeMock.transcodeToDualWithWaveform.mockReset().mockResolvedValue({
-      opus: okResult,
-      vorbis: okResult,
-    });
+    nativeMock.resolveAudio.mockReset().mockResolvedValue(okResult);
     nativeMock.probeAudioDurationMs.mockReset().mockResolvedValue(60_000);
     uploadMultipartMock.mockReset().mockResolvedValue(okUpload());
     nativeMock.deleteFile.mockReset().mockResolvedValue(true);
@@ -123,6 +123,7 @@ describe("transcribeAudio upload artifact", () => {
     isDefinitelyOfflineMock.mockReturnValue(false);
     fsMock.exists = true;
     fsMock.size = 4096;
+    fsMock.deleted.length = 0;
   });
 
   it("converts any input to Vorbis and uploads the copy", async () => {
@@ -132,9 +133,9 @@ describe("transcribeAudio upload artifact", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(nativeMock.transcodeToDualWithWaveform).toHaveBeenCalledTimes(1);
+    expect(nativeMock.resolveAudio).toHaveBeenCalledTimes(1);
 
-    const { input, vorbisPath } = dualCall();
+    const { input, vorbisPath } = resolveCall();
     expect(input).toBe("/cache/recording.m4a");
     expect(vorbisPath).toMatch(/^file:\/\/\/cache\/ekwe_vorbis_[^.]*\.ogg$/);
 
@@ -145,7 +146,7 @@ describe("transcribeAudio upload artifact", () => {
   it("deletes the converted copy once the upload settles", async () => {
     await transcribeAudio(audio("file:///cache/recording.ogg", 60_000), "en");
 
-    const { vorbisPath } = dualCall();
+    const { vorbisPath } = resolveCall();
     expect(nativeMock.deleteFile).toHaveBeenCalledWith(vorbisPath);
   });
 
@@ -163,43 +164,44 @@ describe("transcribeAudio upload artifact", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe(EkweError.TRANSCRIPTION_FAIL);
 
-    const { vorbisPath } = dualCall();
+    const { vorbisPath } = resolveCall();
     expect(nativeMock.deleteFile).toHaveBeenCalledWith(vorbisPath);
   });
 
-  it("skips the encode when the language is auto", async () => {
+  it("skips Vorbis when the language is auto (Opus only)", async () => {
     await transcribeAudio(audio("file:///cache/recording.ogg", 60_000), "auto");
 
-    expect(nativeMock.transcodeToDualWithWaveform).not.toHaveBeenCalled();
-    expect(nativeMock.deleteFile).not.toHaveBeenCalled();
-    expect(uploadedUri()).toBe("file:///cache/recording.ogg");
+    expect(nativeMock.resolveAudio).toHaveBeenCalledTimes(1);
+    expect(resolveCall().vorbisPath).toBeNull();
+    expect(uploadedUri()).toMatch(/^file:\/\/\/cache\/ekwe_opus_/);
   });
 
-  it("skips the encode when the language is empty", async () => {
+  it("skips Vorbis when the language is empty (Opus only)", async () => {
     await transcribeAudio(audio("file:///cache/recording.ogg", 60_000), "");
 
-    expect(nativeMock.transcodeToDualWithWaveform).not.toHaveBeenCalled();
-    expect(uploadedUri()).toBe("file:///cache/recording.ogg");
+    expect(nativeMock.resolveAudio).toHaveBeenCalledTimes(1);
+    expect(resolveCall().vorbisPath).toBeNull();
+    expect(uploadedUri()).toMatch(/^file:\/\/\/cache\/ekwe_opus_/);
   });
 
-  it("skips the encode when duration is past the cap", async () => {
+  it("skips Vorbis when duration is past the cap (Opus only)", async () => {
     await transcribeAudio(
-      audio("file:///cache/recording.ogg", WIT_VORBIS_MAX_DURATION_MS + 1),
+      audio("file:///cache/recording.ogg", WITAI_SAFE_DURATION_MS + 1),
       "en",
     );
 
-    expect(nativeMock.transcodeToDualWithWaveform).not.toHaveBeenCalled();
+    expect(nativeMock.resolveAudio).toHaveBeenCalledTimes(1);
     expect(nativeMock.probeAudioDurationMs).not.toHaveBeenCalled();
-    expect(uploadedUri()).toBe("file:///cache/recording.ogg");
+    expect(resolveCall().vorbisPath).toBeNull();
   });
 
   it("converts at exactly the cap", async () => {
     await transcribeAudio(
-      audio("file:///cache/recording.ogg", WIT_VORBIS_MAX_DURATION_MS),
+      audio("file:///cache/recording.ogg", WITAI_SAFE_DURATION_MS),
       "en",
     );
 
-    expect(nativeMock.transcodeToDualWithWaveform).toHaveBeenCalledTimes(1);
+    expect(nativeMock.resolveAudio).toHaveBeenCalledTimes(1);
   });
 
   it("probes duration when the caller does not know it", async () => {
@@ -208,33 +210,33 @@ describe("transcribeAudio upload artifact", () => {
     expect(nativeMock.probeAudioDurationMs).toHaveBeenCalledWith(
       "/cache/recording.ogg",
     );
-    expect(nativeMock.transcodeToDualWithWaveform).toHaveBeenCalledTimes(1);
+    expect(nativeMock.resolveAudio).toHaveBeenCalledTimes(1);
   });
 
-  it("uploads as-is when the probe finds the clip is too long", async () => {
+  it("skips Vorbis when the probe finds the clip is too long", async () => {
     nativeMock.probeAudioDurationMs.mockResolvedValue(
-      WIT_VORBIS_MAX_DURATION_MS + 1,
+      WITAI_SAFE_DURATION_MS + 1,
     );
 
     await transcribeAudio(audio("file:///cache/recording.ogg", 0), "en");
 
-    expect(nativeMock.transcodeToDualWithWaveform).not.toHaveBeenCalled();
-    expect(uploadedUri()).toBe("file:///cache/recording.ogg");
+    expect(nativeMock.resolveAudio).toHaveBeenCalledTimes(1);
+    expect(resolveCall().vorbisPath).toBeNull();
   });
 
-  it("uploads as-is when the probe cannot read a duration", async () => {
+  it("skips Vorbis when the probe cannot read a duration", async () => {
     nativeMock.probeAudioDurationMs.mockResolvedValue(-1);
 
     await transcribeAudio(audio("file:///cache/recording.ogg", 0), "en");
 
-    expect(nativeMock.transcodeToDualWithWaveform).not.toHaveBeenCalled();
-    expect(uploadedUri()).toBe("file:///cache/recording.ogg");
+    expect(nativeMock.resolveAudio).toHaveBeenCalledTimes(1);
+    expect(resolveCall().vorbisPath).toBeNull();
   });
 
   it("uploads as-is when the Vorbis encode fails", async () => {
-    nativeMock.transcodeToDualWithWaveform.mockResolvedValue({
-      opus: okResult,
-      vorbis: { ...okResult, success: false, error: "encode failed" },
+    nativeMock.resolveAudio.mockResolvedValue({
+      ...okResult,
+      vorbisSuccess: false,
     });
 
     const result = await transcribeAudio(
@@ -248,9 +250,10 @@ describe("transcribeAudio upload artifact", () => {
   });
 
   it("uploads as-is when the Opus encode fails", async () => {
-    nativeMock.transcodeToDualWithWaveform.mockResolvedValue({
-      opus: { ...okResult, success: false, error: "encode failed" },
-      vorbis: okResult,
+    nativeMock.resolveAudio.mockResolvedValue({
+      ...okResult,
+      success: false,
+      error: "encode failed",
     });
 
     const result = await transcribeAudio(
@@ -263,9 +266,7 @@ describe("transcribeAudio upload artifact", () => {
   });
 
   it("uploads as-is when the transcode throws", async () => {
-    nativeMock.transcodeToDualWithWaveform.mockRejectedValue(
-      new Error("bridge missing"),
-    );
+    nativeMock.resolveAudio.mockRejectedValue(new Error("bridge missing"));
 
     const result = await transcribeAudio(
       audio("file:///cache/recording.ogg", 60_000),
@@ -275,5 +276,50 @@ describe("transcribeAudio upload artifact", () => {
     expect(result.ok).toBe(true);
     expect(uploadedUri()).toBe("file:///cache/recording.ogg");
     expect(nativeMock.deleteFile).not.toHaveBeenCalled();
+  });
+
+  it("cleans up partial transcoded temps when the encoder fails", async () => {
+    nativeMock.resolveAudio.mockResolvedValue({
+      ...okResult,
+      success: false,
+      error: "encode failed",
+    });
+
+    await transcribeAudio(audio("file:///cache/recording.ogg", 60_000), "en");
+
+    expect(fsMock.deleted.some((p) => p.includes("ekwe_opus_"))).toBe(true);
+    expect(fsMock.deleted.some((p) => p.includes("ekwe_vorbis_"))).toBe(true);
+  });
+
+  it("cleans up partial transcoded temps when the transcode throws", async () => {
+    nativeMock.resolveAudio.mockRejectedValue(new Error("bridge missing"));
+
+    await transcribeAudio(audio("file:///cache/recording.ogg", 60_000), "en");
+
+    expect(fsMock.deleted.some((p) => p.includes("ekwe_opus_"))).toBe(true);
+    expect(fsMock.deleted.some((p) => p.includes("ekwe_vorbis_"))).toBe(true);
+  });
+
+  it("reuses an existing Opus file without re-transcoding when Vorbis is not needed", async () => {
+    const result = await transcribeAudio(
+      audio("file:///cache/ekwe_opus_abc.ogg", 60_000),
+      "auto",
+    );
+
+    expect(result.ok).toBe(true);
+    expect(nativeMock.resolveAudio).not.toHaveBeenCalled();
+    expect(uploadedUri()).toBe("file:///cache/ekwe_opus_abc.ogg");
+    expect(nativeMock.deleteFile).not.toHaveBeenCalled();
+  });
+
+  it("still transcodes an existing Opus file to Vorbis when a language is set", async () => {
+    await transcribeAudio(
+      audio("file:///cache/ekwe_opus_abc.ogg", 60_000),
+      "en",
+    );
+
+    expect(nativeMock.resolveAudio).toHaveBeenCalledTimes(1);
+    expect(resolveCall().input).toBe("/cache/ekwe_opus_abc.ogg");
+    expect(resolveCall().vorbisPath).toMatch(/ekwe_vorbis_/);
   });
 });

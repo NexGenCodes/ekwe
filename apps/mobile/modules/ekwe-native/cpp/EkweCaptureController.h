@@ -41,8 +41,8 @@ class CaptureController {
 public:
     // output_path: Ogg Opus destination (the single recorded artifact). In FILE
     // mode every packet is written into it and nothing else is produced — iOS
-    // derives its own Opus-in-CAF copy for playback on demand via
-    // remux_audio_to_caf(), so no sibling file is written during capture.
+    // derives its own M4A playback copy on demand, so no sibling file is
+    // written during capture.
     CaptureController(uint32_t sample_rate,
                       uint16_t channels,
                       const std::string& output_path,
@@ -91,6 +91,9 @@ private:
     double dc_blocker_prev_in_;
     double dc_blocker_prev_out_;
 
+    // Smoothed AGC envelope follower
+    double agc_envelope_;
+
     // VAD state, for the file-mode auto-stop
     static constexpr double kVadThreshold = 600.0;  // ~1.8% RMS, tuned for generator/street noise
     bool vad_silence_detected_;
@@ -126,6 +129,7 @@ private:
     std::array<int16_t, 8192> staging_buffer_;
     size_t staging_read_pos_;
     size_t staging_write_pos_;
+    std::vector<int16_t> scratch_buffer_;
 
     void apply_dc_blocker(int16_t* data, size_t num_samples);
     void normalize_volume(int16_t* data, size_t num_samples);

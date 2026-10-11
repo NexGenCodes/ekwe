@@ -4,6 +4,7 @@ import {
   LANGUAGE_CAPABILITIES,
   isLanguageSupported,
 } from "@ekwe/shared/languageCapabilities";
+import { sttLimits } from "@ekwe/shared/providerLimits";
 
 type TranscribeProvider =
   | "witai"
@@ -103,6 +104,16 @@ export function getTranslateProviderNames(tier: Tier): readonly string[] {
   );
 }
 
+/**
+ * Providers that can synthesize, in pool order.
+ *
+ * Only used where the raw pipeline is what is wanted — the synthesis guard in
+ * `routes/synthesize.ts`. Anything deciding which providers to *offer* must go
+ * through `getProviderNamesFor("tts", tier)` in `providers/index.ts`, which is
+ * the pipeline intersected with the capabilities the modules actually
+ * implement. The two agreeing today is a coincidence of the current registry,
+ * not a guarantee.
+ */
 export function getSpeechProviderNames(tier: Tier): readonly string[] {
   return (
     PROVIDER_PIPELINES.pipelines.Speech[tier] ??
@@ -141,13 +152,18 @@ export const PROVIDER_TIMEOUT = {
   openrouter: { premium: 12_000, free: 15_000 },
 } as const;
 
-export const PROVIDER_SKIP_AUTO: Record<string, boolean> = {
-  deepgram: false,
-  cohere: true,
-  gladia: false,
-  assemblyai: false,
-  elevenlabs: false,
-  witai: true,
-  groq: false,
-  cloudflare: false,
-};
+/**
+ * Whether a provider can be asked to infer a language.
+ *
+ * This used to live here as `PROVIDER_SKIP_AUTO`, a bare
+ * `Record<string, boolean>` read with `?? false`. That made "unsupported" and
+ * "nobody has declared this" the same value, so a provider added to a pipeline
+ * without touching this table would silently join the auto path — the exact
+ * mistake Wit and Cohere are excluded for. It now lives in the shared limits
+ * registry as `stt.autoDetect`, which is `satisfies`-typed against the provider
+ * list, so the compiler rejects an undeclared provider.
+ */
+export function providerSupportsAutoDetect(provider: string): boolean {
+  const limits = sttLimits(provider);
+  return limits?.autoDetect === "supported";
+}

@@ -1,5 +1,6 @@
 import { logger } from "@/core/logger";
 import { STREAM_CHUNK_MS } from "@ekwe/shared";
+import { isSupportedLanguage } from "@ekwe/shared/languages";
 import type { StreamRoute } from "@ekwe/shared/languageCapabilities";
 import {
   Env,
@@ -7,8 +8,13 @@ import {
   TranscribeResult,
   SpeechAttempt,
 } from "@/core/types";
-import { sanitizeKey } from "@/utils/keys";
-import { getWitSecretKey } from "@/utils/wit-pools";
+import { rotateKeysOrThrow, sanitizeKey } from "@/utils/keys";
+import {
+  ProviderHttpError,
+  ProviderUnusableError,
+} from "@/core/provider-errors";
+import { WITAI_MIN_SPEECH_BYTES } from "@ekwe/shared/providerLimits";
+import { getWitSecretKey } from "@/utils/wit-keys";
 import { isHallucination } from "@/utils/hallucination";
 import {
   fetchWithIdleTimeout,
@@ -22,6 +28,66 @@ import { mergePcmFrames } from "@/utils/pcm";
 
 const WITAI_DICTATION = "https://api.wit.ai/dictation?v=20240304";
 const WITAI_SYNTH_URL = "https://api.wit.ai/synthesize?v=20240304";
+const WITAI_LANGUAGE_URL = "https://api.wit.ai/language?v=20240304";
+
+// Require both confidence and support: Wit also names languages we do not sell.
+const WIT_DETECT_CONFIDENCE_MIN = 0.6;
+const WIT_DETECT_MAX_CHARS = 280;
+// Tighter than a normal provider call (TIMEOUT_FAST is 15s).
+const WIT_DETECT_TIMEOUT_MS = 2_500;
+
+/** Detect `text`'s language via Wit's `/language`, or `null` if unsure. */
+export async function witDetectLanguage(
+  text: string,
+  env: Env,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const q = text.trim().slice(0, WIT_DETECT_MAX_CHARS);
+  if (!q) return null;
+
+  const url = `${WITAI_LANGUAGE_URL}&n=3&q=${encodeURIComponent(q)}`;
+  const res = await rotateKeysOrThrow(
+    env,
+    "WIT_KEY_",
+    "witai",
+    (key) =>
+      fetchWithTimeout(
+        url,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "User-Agent": getUserAgent(),
+          },
+        },
+        WIT_DETECT_TIMEOUT_MS,
+        signal,
+      ),
+    signal,
+  );
+
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    return null;
+  }
+
+  const locales = (body as { detected_locales?: unknown })?.detected_locales;
+  if (!Array.isArray(locales)) return null;
+
+  for (const entry of locales) {
+    const locale = (entry as { locale?: unknown })?.locale;
+    const confidence = (entry as { confidence?: unknown })?.confidence;
+    if (typeof locale !== "string" || typeof confidence !== "number") continue;
+    if (confidence < WIT_DETECT_CONFIDENCE_MIN) continue;
+
+    const code = locale.trim().toLowerCase().split(/[-_]/)[0];
+    if (isSupportedLanguage(code)) return code;
+  }
+
+  return null;
+}
 
 function subarray(bytes: Uint8Array, needle: number[]): boolean {
   outer: for (let i = 0; i + needle.length <= bytes.length; i++) {
@@ -33,8 +99,7 @@ function subarray(bytes: Uint8Array, needle: number[]): boolean {
   return false;
 }
 
-// Wit.ai only parses Vorbis-in-Ogg, whose identification header is the
-// packet signature `\x01vorbis`.
+// Wit parses Vorbis-in-Ogg only; its identification packet is `\x01vorbis`.
 async function isOggVorbis(blob: Blob): Promise<boolean> {
   const bytes = new Uint8Array(await blob.slice(0, 128).arrayBuffer());
   return subarray(bytes, [0x01, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73]);
@@ -55,31 +120,33 @@ export async function stt(
 ): Promise<TranscribeResult | null> {
   const targetLang = lang.toUpperCase().replace("-", "_");
   const baseLang = targetLang.split("_")[0];
-  const witKey = sanitizeKey(await getWitSecretKey(env, targetLang, baseLang));
+  const witKey = sanitizeKey(getWitSecretKey(env, targetLang, baseLang));
 
+  // A credential gap, not a provider failure — but it must still be visible,
+  // so it throws rather than returning a null indistinguishable from "declined".
   if (!witKey) {
-    logger.warn("[witai] Skipping: No API key found", {
-      lang,
-      targetLang,
-      baseLang,
-    });
-    return null;
+    throw new ProviderUnusableError(
+      "witai",
+      `no API key for language ${lang} (looked for ${targetLang} and ${baseLang})`,
+    );
   }
 
   const contentType = toWitMime(blob.type);
   if (!contentType) {
-    logger.warn("[witai] Skipping: Unsupported MIME type", { type: blob.type });
-    return null;
+    throw new ProviderUnusableError(
+      "witai",
+      `unsupported container type ${blob.type}`,
+    );
   }
 
   if (contentType === "audio/ogg" && !(await isOggVorbis(blob))) {
+    // Detected here rather than downstream, because a silent empty result is
+    // indistinguishable from a recording of silence.
     const isOpus = await isOggOpus(blob);
-    logger.warn("[witai] Skipping: Ogg container does not hold Vorbis", {
-      codec: isOpus ? "Opus" : "unknown",
-      type: blob.type,
-      size: blob.size,
-    });
-    return null;
+    throw new ProviderUnusableError(
+      "witai",
+      `Ogg container holds ${isOpus ? "Opus" : "an unrecognised codec"}; /dictation parses Vorbis only`,
+    );
   }
 
   logger.info("[witai] Sending request", {
@@ -105,21 +172,32 @@ export async function stt(
   );
 
   if (!res.ok) {
-    logger.warn("[witai] Transcribe failed, provider returned error", {
-      status: res.status,
-    });
-    throw new Error(`Wit.ai returned HTTP ${res.status}`);
+    throw new ProviderHttpError("witai", res.status, await safeText(res));
   }
 
   const data = await parseStream(res);
   if (!data?.text) {
-    throw new Error("Wit.ai returned an empty transcript");
+    // Wit does return 200 with nothing for audio it cannot parse. The planner
+    // gates on duration first, so reaching here means the clip was in range.
+    logger.warn("[witai] Empty transcript");
+    return null;
   }
   if (isHallucination(data.text)) {
-    throw new Error("Wit.ai transcript discarded as hallucination");
+    throw new ProviderUnusableError(
+      "witai",
+      "transcript discarded as hallucination",
+    );
   }
 
   return { text: data.text, provider: "witai", language: lang };
+}
+
+async function safeText(res: Response): Promise<string> {
+  try {
+    return await res.text();
+  } catch {
+    return "";
+  }
 }
 
 async function parseStream(res: Response): Promise<{ text: string } | null> {
@@ -128,9 +206,8 @@ async function parseStream(res: Response): Promise<{ text: string } | null> {
 }
 
 /**
- * Wit's dictation endpoint is a chunked POST answered with newline-delimited
- * JSON, not a socket, so it does not fit the interceptor and is the only route
- * needing a RIFF header. It has no auto-detection: one key per language.
+ * Wit's dictation is a chunked POST answered with newline-delimited JSON, so it
+ * is the only route needing a RIFF header. No auto-detection: one key per language.
  */
 export async function sttStream(
   env: Env,
@@ -141,7 +218,7 @@ export async function sttStream(
 ): Promise<boolean> {
   const targetLang = lang.toUpperCase().replace("-", "_");
   const baseLang = targetLang.split("_")[0];
-  const witKey = sanitizeKey(await getWitSecretKey(env, targetLang, baseLang));
+  const witKey = sanitizeKey(getWitSecretKey(env, targetLang, baseLang));
   if (!witKey) return false;
 
   logger.info("[witai:stream] Starting dictation session", { lang });
@@ -286,6 +363,21 @@ export async function sttStream(
   }
 }
 
+/** First/last token timestamp (ms) for a dictation object, or -1 when absent. */
+function tokenSpan(speech: { tokens?: unknown } | undefined): [number, number] {
+  const tokens = speech?.tokens;
+  if (!Array.isArray(tokens)) return [-1, -1];
+  let start = Infinity;
+  let end = -Infinity;
+  for (const token of tokens) {
+    const s = (token as { start?: unknown })?.start;
+    const e = (token as { end?: unknown })?.end;
+    if (typeof s === "number") start = Math.min(start, s);
+    if (typeof e === "number") end = Math.max(end, e);
+  }
+  return start === Infinity ? [-1, -1] : [start, end];
+}
+
 function parseJsonStream(raw: string): { text: string } | null {
   const cleaned = raw.replace(/^\uFEFF/, "");
   logger.info("[witai] Raw response", {
@@ -315,12 +407,65 @@ function parseJsonStream(raw: string): { text: string } | null {
     }
   }
 
-  if (!last?.text?.trim()) return null;
+  // Dictation is newline-delimited JSON with one FINAL_TRANSCRIPTION per
+  // segment; the *last* object is not always the full clip (Wit re-runs a tail
+  // as its own segment). Every final is committed speech, so real, time-distinct
+  // finals must be concatenated. The same time span re-finalized is a
+  // refinement, not a new utterance -- pop anything the new final overlaps,
+  // then append.
+  const segments: Array<{ start: number; end: number; text: string }> = [];
+  for (const obj of parts) {
+    const trimmed = obj.replace(/\r$/, "").trim();
+    if (!trimmed) continue;
+    let parsed: {
+      text?: unknown;
+      is_final?: unknown;
+      type?: unknown;
+      speech?: { tokens?: unknown };
+    };
+    try {
+      prev += trimmed;
+      parsed = JSON.parse(prev) as {
+        text?: unknown;
+        is_final?: unknown;
+        type?: unknown;
+        speech?: { tokens?: unknown };
+      };
+      prev = "";
+    } catch {
+      continue;
+    }
+    // Canonical marker per Wit's SDKs is `is_final`; the live endpoint also
+    // sends `type: "FINAL_TRANSCRIPTION"`. Accept either.
+    const isFinal =
+      parsed.is_final === true || parsed.type === "FINAL_TRANSCRIPTION";
+    if (!isFinal) continue;
+    const text = typeof parsed.text === "string" ? parsed.text.trim() : "";
+    if (!text) continue;
+
+    const [start, end] = tokenSpan(parsed.speech);
+    const seg = { start, end, text };
+    while (
+      segments.length &&
+      start !== -1 &&
+      end !== -1 &&
+      segments[segments.length - 1].start <= end &&
+      segments[segments.length - 1].end >= start
+    ) {
+      segments.pop();
+    }
+    segments.push(seg);
+  }
+
+  const result = segments.length
+    ? segments.map((seg) => seg.text).join(" ")
+    : last?.text;
+  if (!result?.trim()) return null;
 
   logger.info("[witai] Final transcript", {
-    text: last.text.substring(0, 100),
+    text: result.trim().substring(0, 100),
   });
-  return { text: last.text.trim() };
+  return { text: result.trim() };
 }
 
 function toWitMime(mime: string): string | null {
@@ -349,16 +494,9 @@ const MAX_SPEECH_BYTES = 8 * 1024 * 1024;
 type VoiceGender = "male" | "female";
 
 /**
- * Order is the persona contract: index 0 is the Clear voice, index 1 the Warm
- * voice. Wit has no per-language voice identity, so one list per gender serves
- * every locale.
- *
- * Only these four names are enabled. Wit free-tier voice access is
- * account-assigned and an unassigned name fails the request outright; with
- * `HEALTH_TRIP_THRESHOLD = 3`, three such attempts open this provider's
- * circuit for the whole pool. `wit$Railey`, `wit$Rubie`, `wit$Charlie` and
- * `wit$Carl` are documented and appropriate, but must be confirmed against the
- * live Ekwe key before being added here.
+ * Index 0 is the Clear voice, index 1 the Warm voice; one list per gender serves
+ * every locale. Only these four names are enabled — an unassigned Wit free-tier
+ * voice fails outright, and three such attempts trip the circuit for the pool.
  */
 const WITAI_VOICE_POOL: Readonly<
   Record<VoiceGender | "default", readonly string[]>
@@ -379,43 +517,6 @@ export function voices(
   if (gender) return [...WITAI_VOICE_POOL[gender]];
   return [...WITAI_VOICE_POOL.default];
 }
-
-/**
- * Escapes a text node for the `<lang>` element below.
- *
- * The synthesis endpoint takes a bare `<lang xml:lang="..">` child rather than a
- * full SSML document, so the text lands directly inside a tag and any angle
- * bracket in user text would otherwise be parsed as markup. `&` and `'` are
- * escaped too so the same helper is safe if the text is ever placed in an
- * attribute.
- */
-const escapeXmlText = (value: string): string =>
-  value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-
-/**
- * Wraps text in the language hint that makes Wit speak it.
- *
- * Wit resolves a synthesis request's language from the API key, and only
- * `WIT_KEY_EN` is accepted — every other per-language key answers
- * `400 Unsupported language for synthesize`. English is therefore the only
- * language that needs no hint, and is left as plain text.
- *
- * For anything else the hint is load-bearing rather than cosmetic. Probed with
- * a three-sentence Tamil passage: sent plain, the endpoint returns 576 bytes of
- * near-silence; sent wrapped, 39 KB of correctly voiced audio. A well-formed
- * `<speak><lang>` wrapper does *not* work — the endpoint wants the bare
- * element, and rejects the document form the same way.
- */
-const withLanguageHint = (text: string, lang: string): string => {
-  const normalized = lang.toLowerCase().split("-")[0];
-  if (!normalized || normalized === "en") return text;
-  return `<lang xml:lang="${normalized}">${escapeXmlText(text)}</lang>`;
-};
 
 export async function tts(
   text: string,
@@ -438,7 +539,7 @@ export async function tts(
   // so asking for "EN" twice also rules out borrowing another language's key,
   // and a missing English key skips synthesis rather than trying a substitute.
   // Dictation still rotates: there the per-language keys are the whole mechanism.
-  const witKey = sanitizeKey(await getWitSecretKey(env, "EN", "EN"));
+  const witKey = sanitizeKey(getWitSecretKey(env, "EN", "EN"));
   if (!witKey) {
     logger.warn("[witai:tts] Skipping: no English Wit key in the environment");
     return { result: null, status: null };
@@ -458,7 +559,7 @@ export async function tts(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          q: withLanguageHint(text, lang),
+          q: text,
           voice: resolvedVoice,
           style: "default",
           speed: "100",
@@ -484,8 +585,17 @@ export async function tts(
     }
 
     const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_SPEECH_BYTES) {
-      logger.warn("[witai:tts] Output over hard cap", {
+    // Wit answers 200 with a few hundred bytes for a script it cannot speak —
+    // Hindi, Thai, Tamil and Telugu all come back as the identical 576-byte
+    // payload, which is silence rather than speech. Passing that through would
+    // cache and serve audio that plays nothing, so it is treated as a miss and
+    // the pool moves on. Every real utterance measured well above this floor.
+    if (
+      bytes.byteLength === 0 ||
+      bytes.byteLength < WITAI_MIN_SPEECH_BYTES ||
+      bytes.byteLength > MAX_SPEECH_BYTES
+    ) {
+      logger.warn("[witai:tts] Output unusable", {
         bytes: bytes.byteLength,
       });
       return { result: null, status: 502 };

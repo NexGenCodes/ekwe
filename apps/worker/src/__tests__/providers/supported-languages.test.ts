@@ -1,7 +1,7 @@
 import { describe, test, expect } from "vitest";
 
 import { getStreamRoutes, providerSupportsLanguage } from "@/providers";
-import { LANGUAGE_CODE_SET } from "@ekwe/shared/languages";
+import { SUPPORTED_LANGUAGE_CODES } from "@ekwe/shared/languages";
 import {
   streamRoutesFor,
   unsupportedLanguages,
@@ -53,12 +53,16 @@ describe("providerSupportsLanguage", () => {
     expect(providerSupportsLanguage("groq", "stt", "ig")).toBe(false);
   });
 
-  test("keeps Wit synthesis wide even though its dictation is narrow", () => {
-    // Synthesis and dictation are different endpoints with different coverage;
-    // collapsing them would break transcription to keep a true claim about TTS.
-    expect(providerSupportsLanguage("witai", "stt", "ci")).toBe(false);
-    expect(providerSupportsLanguage("witai", "tts", "ci")).toBe(true);
-    expect(providerSupportsLanguage("witai", "tts", "yo")).toBe(true);
+  test("keeps Wit synthesis and dictation as separately measured lists", () => {
+    // The two endpoints answer 200 with unusable audio for scripts they cannot
+    // voice, so coverage is measured rather than copied between them.
+    // Synthesis stays wider than dictation...
+    expect(providerSupportsLanguage("witai", "stt", "lb")).toBe(false);
+    expect(providerSupportsLanguage("witai", "tts", "lb")).toBe(true);
+    // ...but neither claims the scripts check-tts.mjs measured as silence.
+    for (const code of ["hi", "th", "ta", "te", "ja", "ko", "zh", "ar"]) {
+      expect(providerSupportsLanguage("witai", "tts", code)).toBe(false);
+    }
   });
 
   test("keeps Wit reachable for the languages dictation does serve", () => {
@@ -142,13 +146,12 @@ describe("providerSupportsLanguage", () => {
     expect(providerSupportsLanguage("nope", "tts", "en")).toBe(false);
   });
 
-  test("leaves a transcription provider for every catalog language that has one", () => {
-    // The product must never offer a language whose entire pool is empty. The 27
-    // orphans are excluded deliberately: Wit used to be credited with them and
-    // would have answered 400, so an empty pool is the honest reading and lets
-    // the picker hide them.
+  test("leaves a transcription provider for every OFFERED language", () => {
+    // Scoped to the offered tier. The catalog still contains languages nothing
+    // transcribes (Scottish Gaelic, Cherokee, ...) and those are simply not
+    // offered — iterating the catalog here would demand coverage we never had.
     const orphaned = new Set(unsupportedLanguages("stt"));
-    for (const code of LANGUAGE_CODE_SET) {
+    for (const code of SUPPORTED_LANGUAGE_CODES) {
       const pool = [
         "witai",
         "groq",
@@ -167,8 +170,8 @@ describe("providerSupportsLanguage", () => {
     }
   });
 
-  test("leaves a synthesis provider for every catalog language", () => {
-    for (const code of LANGUAGE_CODE_SET) {
+  test("leaves a synthesis provider for every OFFERED language", () => {
+    for (const code of SUPPORTED_LANGUAGE_CODES) {
       const pool = ["gemini", "edge", "deepgram", "witai"].filter((p) =>
         providerSupportsLanguage(p, "tts", code),
       );
@@ -176,13 +179,15 @@ describe("providerSupportsLanguage", () => {
     }
   });
 
-  test("gives every streamable catalog language a streaming route", () => {
+  test("gives every OFFERED language a streaming route", () => {
     // A client asking to stream an unsupported language must be told rather than
     // left to fail on attach, so the no-route set is asserted rather than assumed
     // to be just Cantonese.
+    // The offered tier clears the streaming gap too, so nothing offered can fail
+    // on attach. Cantonese is unstreamable and therefore not offered.
     const unroutable = new Set(unsupportedStreamLanguages());
-    expect(unroutable.has("yue")).toBe(true);
-    for (const code of LANGUAGE_CODE_SET) {
+    expect(unroutable.has("yue")).toBe(false);
+    for (const code of SUPPORTED_LANGUAGE_CODES) {
       const routes = streamRoutesFor(code);
       if (unroutable.has(code)) {
         expect(routes, `"${code}" unexpectedly has a streaming route`).toEqual(

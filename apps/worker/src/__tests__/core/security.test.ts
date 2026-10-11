@@ -90,9 +90,18 @@ describe("guardAutoDetect", () => {
 
 describe("guardLanguageCode", () => {
   test("valid codes pass", () => {
-    ["en", "es", "yo", "ig", "ha", "fr", "auto", "zh"].forEach((code) => {
+    ["en", "es", "fr", "de", "zh", "auto"].forEach((code) => {
       expect(guardLanguageCode(code, "lang").allowed).toBe(true);
     });
+  });
+
+  test("a catalog language we no longer offer is rejected", () => {
+    // Yoruba, Igbo and Hausa remain in the catalog so names and stored values
+    // still resolve, but they are outside the offered tier, so the API must not
+    // accept them.
+    for (const code of ["yo", "ig", "ha"]) {
+      expect(guardLanguageCode(code, "lang").allowed).toBe(false);
+    }
   });
 
   test("invalid codes fail", () => {

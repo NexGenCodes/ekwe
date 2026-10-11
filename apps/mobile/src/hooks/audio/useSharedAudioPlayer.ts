@@ -35,6 +35,10 @@ export interface SharedAudioPlayer {
   isReady: boolean;
   playbackRate: number;
   isEnded: boolean;
+  /** Non-null when the requested source failed to load and is not playable. */
+  loadError: string | null;
+  /** Re-attempts loading a source that previously failed. */
+  retryLoad: () => void;
 }
 
 type PlaybackRate = 1 | 1.5 | 2;
@@ -42,6 +46,16 @@ type PlaybackRate = 1 | 1.5 | 2;
 export const PLAYBACK_RATES: PlaybackRate[] = [1, 1.5, 2];
 
 const SEEK_END_EPSILON = 0.15;
+
+// Keeps the tail of a path (file name) so playback logs stay greppable without
+// dumping full cache paths into every line.
+const shortUri = (value: string | null | undefined): string | null =>
+  value ? value.slice(-56) : null;
+
+// Attributes every log line to one mount of one surface. Without this the
+// "load -> instant end" loops in the share flow cannot be told apart from
+// multiple screens each owning a player. Remove with the playback audit.
+let nextPlayerInstanceId = 0;
 
 export const useSharedAudioPlayer = (
   uri: string | null,
@@ -59,6 +73,13 @@ export const useSharedAudioPlayer = (
   const [playableSource, setPlayableSource] = useState<string | null>(
     isOggSource ? null : uri,
   );
+  const instanceIdRef = useRef<number | null>(null);
+  if (instanceIdRef.current === null) {
+    instanceIdRef.current = ++nextPlayerInstanceId;
+  }
+  const instanceId = instanceIdRef.current;
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
   /** The `uri` whose source is installed in the player right now. */
   const boundUriRef = useRef<string | null>(null);
   /** The `uri` that most recently completed a load. */
@@ -71,27 +92,31 @@ export const useSharedAudioPlayer = (
     if (!uri) {
       setPlayableSource(null);
       boundUriRef.current = null;
+      setLoadError(null);
       return;
     }
 
     if (!isOggSource) {
       setPlayableSource(uri);
       boundUriRef.current = uri;
+      setLoadError(null);
       return;
     }
 
     setPlayableSource(null);
     boundUriRef.current = null;
+    setLoadError(null);
 
     const commitDerived = (derivedUri: string): void => {
       if (cancelled) return;
       setPlayableSource(derivedUri);
       boundUriRef.current = uri;
+      setLoadError(null);
     };
 
-    // iOS lacks native Ogg Opus playback; remux to CAF with disk caching.
+    // iOS lacks native Ogg Opus playback; decode to M4A with disk caching.
     const fallbackToWav = (reason: string): void => {
-      logger.error("[SharedAudioPlayer] iOS Ogg remux-to-CAF failed:", reason);
+      logger.error("[SharedAudioPlayer] iOS Ogg decode-to-M4A failed:", reason);
       AudioTranscoder.decodeToWav(uri).then((wavResult) => {
         if (cancelled) return;
         if (wavResult.ok) {
@@ -103,11 +128,12 @@ export const useSharedAudioPlayer = (
           );
           setPlayableSource(uri);
           boundUriRef.current = uri;
+          setLoadError("This audio could not be decoded for playback.");
         }
       });
     };
 
-    AudioTranscoder.remuxToCafForPlayback(uri)
+    AudioTranscoder.createPlaybackCopyForPlayback(uri)
       .then((result) => {
         if (cancelled) return;
         if (result.ok) {
@@ -124,7 +150,7 @@ export const useSharedAudioPlayer = (
     return (): void => {
       cancelled = true;
     };
-  }, [uri, isOggSource]);
+  }, [uri, isOggSource, reloadNonce]);
 
   // Reset playback state when the audio source changes so stale
   // "ended" flags from a previous clip cannot block replay.
@@ -178,7 +204,7 @@ export const useSharedAudioPlayer = (
     if (!isPlayingSV.value) return;
     if (isScrubbingSV.value) return;
 
-    const dt = ((info.timeSincePreviousFrame ?? 0.016) / 1000) * rateSV.value;
+    const dt = ((info.timeSincePreviousFrame ?? 16.6) / 1000) * rateSV.value;
     const next = progressSV.value + dt;
     progressSV.value =
       durationSV.value > 0 && next >= durationSV.value
@@ -213,11 +239,46 @@ export const useSharedAudioPlayer = (
 
   const isReady = status.isLoaded && loadedUri === uri;
 
+  // App-wide playback diagnostics: every surface that plays audio goes through
+  // this hook, so these two effects cover load/playback state and failures
+  // everywhere. Remove once the playback investigation is closed.
+  useEffect(() => {
+    logger.debug(
+      "[Playback] source",
+      JSON.stringify({
+        id: instanceId,
+        uri: shortUri(uri),
+        ogg: isOggSource,
+        playable: shortUri(playableSource),
+        loaded: status.isLoaded,
+        error: loadError,
+      }),
+    );
+  }, [
+    uri,
+    isOggSource,
+    playableSource,
+    status.isLoaded,
+    loadError,
+    instanceId,
+  ]);
+
+  useEffect(() => {
+    if (loadError) {
+      logger.error("[Playback] load failed:", loadError, shortUri(uri));
+    }
+  }, [loadError, uri]);
+
   useEffect(() => {
     isPlayingSV.value = isPlaying;
     isPlayingRef.current = isPlaying;
     frameCallback.setActive(isPlaying);
-  }, [isPlaying, isPlayingSV, frameCallback]);
+    logger.debug(
+      isPlaying ? "[Playback] started" : "[Playback] stopped",
+      "id=" + instanceId,
+      shortUri(uri),
+    );
+  }, [isPlaying, isPlayingSV, frameCallback, uri, instanceId]);
 
   useEffect(() => {
     isEndedRef.current = isEnded;
@@ -257,8 +318,9 @@ export const useSharedAudioPlayer = (
     if (status.didJustFinish) {
       didJustFinishRef.current = true;
       setIsEnded(true);
+      logger.debug("[Playback] ended", "id=" + instanceId, shortUri(uri));
     }
-  }, [status.didJustFinish]);
+  }, [status.didJustFinish, uri, instanceId]);
 
   const play = useCallback(async (): Promise<void> => {
     if (releasedRef.current) return;
@@ -453,23 +515,47 @@ export const useSharedAudioPlayer = (
     try {
       player.remove();
     } catch (error) {
-      logger.debug(
-        "[SharedAudioPlayer] remove() threw during release:",
-        error instanceof Error ? error.name : String(error),
-      );
+      const message =
+        error instanceof Error
+          ? `${error.name}: ${error.message}`
+          : String(error);
+      // expo-audio frees the native player on its own unmount/source swap, so our
+      // trailing remove() can hit an already-released handle. That is expected
+      // teardown noise, not a playback failure.
+      if (message.includes("already released")) {
+        logger.debug(
+          "[Playback] release skipped",
+          "id=" + instanceId,
+          shortUri(uri),
+        );
+      } else {
+        logger.warn(
+          "[Playback] release remove() failed:",
+          message,
+          "id=" + instanceId,
+          shortUri(uri),
+        );
+      }
     }
     setIsAudioActiveAsync(false).catch(() => {});
     setAudioModeAsync({ interruptionMode: "mixWithOthers" }).catch(() => {});
-  }, [player, frameCallback]);
+  }, [player, frameCallback, uri, instanceId]);
 
   const releaseRef = useRef(release);
   useEffect(() => {
     releaseRef.current = release;
   });
   useEffect(() => {
+    logger.debug("[Playback] mount", "id=" + instanceId, shortUri(uri));
     return (): void => {
+      logger.debug("[Playback] unmount", "id=" + instanceId, shortUri(uri));
       releaseRef.current();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instanceId]);
+
+  const retryLoad = useCallback((): void => {
+    setReloadNonce((n) => n + 1);
   }, []);
 
   const progressDisplay = Math.round(progress);
@@ -491,6 +577,8 @@ export const useSharedAudioPlayer = (
       isReady,
       playbackRate,
       isEnded,
+      loadError,
+      retryLoad,
     }),
     [
       play,
@@ -509,6 +597,8 @@ export const useSharedAudioPlayer = (
       isReady,
       playbackRate,
       isEnded,
+      loadError,
+      retryLoad,
     ],
   );
 

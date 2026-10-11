@@ -7,9 +7,23 @@ import { tts } from "@/providers/witai";
 
 const env = mockEnv();
 
-function mp3(): Response {
-  const mp3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00, 0x00]);
-  return new Response(mp3, {
+/**
+ * A stand-in for real Wit output.
+ *
+ * Sized deliberately: the provider rejects anything under 1.2 KB because that
+ * is the byte length of the silence Wit returns for a script it cannot speak, so
+ * an 8-byte fixture would trip the very guard these tests exist to exercise.
+ */
+function mp3(bytes = 4_096): Response {
+  return new Response(new Uint8Array(bytes), {
+    status: 200,
+    headers: { "Content-Type": "audio/mpeg" },
+  });
+}
+
+/** The silence Wit actually returns for Hindi, Thai, Tamil and Telugu. */
+function silence(): Response {
+  return new Response(new Uint8Array(576), {
     status: 200,
     headers: { "Content-Type": "audio/mpeg" },
   });
@@ -48,56 +62,56 @@ function captureWit(respond: () => Response = mp3): () => Captured {
   return () => seen;
 }
 
-describe("Wit synthesis language hint", () => {
-  test("wraps non-English text in the bare <lang> element", async () => {
+describe("Wit synthesis text on the wire", () => {
+  test("sends text verbatim, with no language hint", async () => {
+    // The endpoint does not parse a `<lang>` element — it speaks it. Asking for
+    // Spanish produced audio of "LAND XML, LAND es igual a ESOLA" rather than
+    // Spanish, so the hint was removed and the text goes out untouched.
     const captured = captureWit();
 
-    const res = await tts("வணக்கம்", "ta", env, new AbortController().signal);
+    const res = await tts("Bonjour", "fr", env, new AbortController().signal);
 
     expect(res.status).toBeNull();
-    expect(captured().body.q).toBe('<lang xml:lang="ta">வணக்கம்</lang>');
+    expect(captured().body.q).toBe("Bonjour");
   });
 
-  test("does not use the <speak><lang> document form Wit rejects", async () => {
+  test("sends Latin-script text unchanged for any language", async () => {
     const captured = captureWit();
 
-    await tts("வணக்கம்", "ta", env, new AbortController().signal);
+    await tts("Hola, como estas?", "es", env, new AbortController().signal);
 
+    expect(captured().body.q).toBe("Hola, como estas?");
+  });
+
+  test("never emits a <lang> or <speak> element", async () => {
+    const captured = captureWit();
+
+    await tts("Bonjour", "fr", env, new AbortController().signal);
+    await tts("Hello", "en", env, new AbortController().signal);
+
+    expect(captured().body.q).not.toContain("<lang");
     expect(captured().body.q).not.toContain("<speak>");
   });
 
-  test("sends English unwrapped, since it needs no hint", async () => {
-    const captured = captureWit();
-
-    await tts("Hello there.", "en", env, new AbortController().signal);
-
-    expect(captured().body.q).toBe("Hello there.");
-  });
-
-  test("reduces a region tag to the base language Wit understands", async () => {
-    const captured = captureWit();
-
-    await tts("Bonjour", "fr-CA", env, new AbortController().signal);
-
-    expect(captured().body.q).toBe('<lang xml:lang="fr">Bonjour</lang>');
-  });
-
-  test("escapes markup so user text cannot close the hint element", async () => {
+  test("passes user text through without markup escaping", async () => {
+    // With no wrapper there is no element for user text to break out of, so
+    // escaping is no longer the provider's concern — the value is the text.
     const captured = captureWit();
 
     await tts('a & b <script> "q"', "de", env, new AbortController().signal);
 
-    expect(captured().body.q).toBe(
-      '<lang xml:lang="de">a &amp; b &lt;script&gt; &quot;q&quot;</lang>',
-    );
+    expect(captured().body.q).toBe('a & b <script> "q"');
   });
 
-  test("leaves escaped English untouched", async () => {
-    const captured = captureWit();
+  test("treats the silence Wit returns for an unvoiced script as a miss", async () => {
+    // Hindi, Thai, Tamil and Telugu all come back as the identical 576-byte
+    // payload. Serving it would cache audio that plays nothing.
+    captureWit(silence);
 
-    await tts("a & b", "en", env, new AbortController().signal);
+    const res = await tts("வணக்கம்", "ta", env, new AbortController().signal);
 
-    expect(captured().body.q).toBe("a & b");
+    expect(res.result).toBeNull();
+    expect(res.status).toBe(502);
   });
 });
 
@@ -149,17 +163,15 @@ describe("Wit synthesis credentials", () => {
     // synthesize`, so substituting it would fail every non-English request
     // while looking configured.
     const captured = captureWit();
-    const poolOnly = mockEnv({
+    const taOnly = mockEnv({
       WIT_KEY_EN: "",
-      WIT_POOL_01: {
-        get: async () => JSON.stringify({ TA: "mock-wit-pool-ta-key-10" }),
-      },
+      WIT_KEY_TA: "mock-wit-ta-key-10",
     });
 
     const res = await tts(
       "வணக்கம்",
       "ta",
-      poolOnly,
+      taOnly,
       new AbortController().signal,
     );
 
@@ -167,24 +179,19 @@ describe("Wit synthesis credentials", () => {
     expect(captured().calls).toBe(0);
   });
 
-  test("still finds the English key when it only exists in a pool", async () => {
+  test("uses the configured English key for any language", async () => {
     const captured = captureWit();
-    const poolOnly = mockEnv({
-      WIT_KEY_EN: "",
-      WIT_POOL_01: {
-        get: async () => JSON.stringify({ EN: "mock-wit-pool-en-key-10" }),
-      },
-    });
+    const taOnly = mockEnv({ WIT_KEY_EN: "mock-wit-en-key-10" });
 
     const res = await tts(
       "வணக்கம்",
       "ta",
-      poolOnly,
+      taOnly,
       new AbortController().signal,
     );
 
     expect(res.result).not.toBeNull();
-    expect(captured().auth).toBe("Bearer mock-wit-pool-en-key-10");
+    expect(captured().auth).toBe("Bearer mock-wit-en-key-10");
   });
 });
 

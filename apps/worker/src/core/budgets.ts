@@ -1,6 +1,33 @@
 export const TRANSCRIBE_TOTAL_MS = 25_000;
 export const TRANSCRIBE_CACHE_TTL_SECONDS = 4 * 60 * 60;
 
+/**
+ * Ceiling on the scaled budget, so a pathological clip cannot hold a request
+ * open indefinitely. Cloudflare allows unlimited wall time while the client is
+ * connected; the binding constraint is CPU per request.
+ */
+export const TRANSCRIBE_MAX_BUDGET_MS = 90_000;
+
+/** Milliseconds of budget granted per second of audio. */
+const TRANSCRIBE_MS_PER_AUDIO_SECOND = 350;
+const TRANSCRIBE_BASE_BUDGET_MS = 8_000;
+const TRANSCRIBE_MIN_BUDGET_MS = 15_000;
+
+/**
+ * Short clips get the floor, long ones the ceiling. Fixed timeouts were sized
+ * for dictation, where a clip transcribes in seconds; holding that number for
+ * a long upload guarantees a timeout on every provider.
+ */
+export function transcribeBudgetMs(durationMs: number): number {
+  const scaled =
+    TRANSCRIBE_BASE_BUDGET_MS +
+    (Math.max(0, durationMs) / 1000) * TRANSCRIBE_MS_PER_AUDIO_SECOND;
+  return Math.min(
+    TRANSCRIBE_MAX_BUDGET_MS,
+    Math.max(TRANSCRIBE_MIN_BUDGET_MS, Math.round(scaled)),
+  );
+}
+
 export const TRANSLATE_TOTAL_MS = 20_000;
 export const TRANSLATE_CACHE_TTL_SECONDS = 4 * 60 * 60;
 export const SYNTHESIZE_TOTAL_MS = 25_000;

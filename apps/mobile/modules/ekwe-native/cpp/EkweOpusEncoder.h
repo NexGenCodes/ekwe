@@ -23,7 +23,7 @@ public:
     // would only cost bitrate with nothing to recover.
     OpusStreamEncoder(uint32_t sample_rate,
                       uint16_t channels,
-                      int complexity = 10,
+                      int complexity = 5,
                       bool enable_fec = false,
                       int packet_loss_perc = 0);
     ~OpusStreamEncoder();

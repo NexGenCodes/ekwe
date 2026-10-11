@@ -97,6 +97,7 @@ const echoReducer = (state: EchoState, action: EchoAction): EchoState => {
         translation: null,
         detectedLang: null,
         uploadProgress: null,
+        error: null,
       };
     default:
       return state;
@@ -408,16 +409,16 @@ export const useEchoFlow = (
         return;
       }
 
-      let isOnline = false;
+      let online = false;
       try {
-        isOnline = await checkIsOnline();
+        online = await checkIsOnline();
       } catch (e: unknown) {
         logger.error(
           "[EchoFlow] Connectivity check failed:",
           e instanceof Error ? (e.stack ?? e.message) : String(e),
         );
       }
-      if (!isOnline) {
+      if (!online) {
         dispatch({
           type: "FAIL",
           payload: {
@@ -446,7 +447,7 @@ export const useEchoFlow = (
             uri: safeUri,
             durationMs,
             meteringData: waveform,
-            waveform: [],
+            waveform,
           },
           state.selectedLang,
           controller.signal,

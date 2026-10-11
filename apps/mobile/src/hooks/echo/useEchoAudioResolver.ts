@@ -120,6 +120,21 @@ export const useEchoAudioResolver = (props: {
           { maxDurationMs: props.maxDurationMs },
         );
 
+        // DEBUG: `reportedDurationMs` is the native MediaMetadataRetriever value
+        // on AUDIO_TOO_LONG, or the decoded duration on success. Remove once the
+        // WhatsApp misprobe is confirmed.
+        logger.info(
+          "[ProbeDebug] combined:",
+          JSON.stringify({
+            success: combinedResult?.success,
+            error: combinedResult?.error,
+            reportedDurationMs: combinedResult?.durationMs,
+            limitMs: props.maxDurationMs,
+            rawUri: rawUri.substring(0, 80),
+            opusPath,
+          }),
+        );
+
         if (isStale) {
           if (opusPathAttempted) cleanEchoCache(opusPathAttempted);
           return;
@@ -153,6 +168,26 @@ export const useEchoAudioResolver = (props: {
           setResolveRetryable(false);
           setResolveError(ErrorMessages[EkweError.AUDIO_TOO_LONG]);
           logger.warn("[IntentResolver] ❌ AUDIO_TOO_LONG rejected by native");
+          // DEBUG: compare the (untrusted) metadata probe against the
+          // granule-based probe. A huge metadataProbeMs + sane granuleProbeMs
+          // proves the WhatsApp sentinel misprobe. Remove after confirming.
+          try {
+            const probeFileUri = await IntentService.resolveToFileUri(rawUri);
+            const granuleProbeMs = probeFileUri
+              ? await IntentService.probeAudioDurationMs(probeFileUri)
+              : -1;
+            logger.warn(
+              "[ProbeDebug] AUDIO_TOO_LONG:",
+              JSON.stringify({
+                metadataProbeMs: combinedResult?.durationMs,
+                granuleProbeMs,
+                limitMs: props.maxDurationMs,
+                probeFileUri,
+              }),
+            );
+          } catch (probeErr) {
+            logger.warn("[ProbeDebug] AUDIO_TOO_LONG probe failed:", probeErr);
+          }
           return;
         }
 

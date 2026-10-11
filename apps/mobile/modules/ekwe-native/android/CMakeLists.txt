@@ -38,9 +38,9 @@ target_link_libraries(opusfile PUBLIC ogg opus)
 
 # libvorbis is compiled directly rather than via its own CMakeLists, which is
 # the same call as opusfile above: its find_package(Ogg) expects an installed
-# libogg, while ours is the add_subdirectory() target. vorbisfile.c is the
-# only file left out — it is the streaming-read API, and this build only ever
-# writes.
+# libogg, while ours is the add_subdirectory() target. vorbisfile.c provides the
+# streaming-read API used to decode Ogg Vorbis back (waveform/duration and the
+# Ogg → WAV bridge for the platform M4A encoder).
 set(VORBIS_SRC
     ../cpp/thirdparty/libvorbis/lib/analysis.c
     ../cpp/thirdparty/libvorbis/lib/bitrate.c
@@ -62,6 +62,7 @@ set(VORBIS_SRC
     ../cpp/thirdparty/libvorbis/lib/smallft.c
     ../cpp/thirdparty/libvorbis/lib/synthesis.c
     ../cpp/thirdparty/libvorbis/lib/vorbisenc.c
+    ../cpp/thirdparty/libvorbis/lib/vorbisfile.c
     ../cpp/thirdparty/libvorbis/lib/window.c
 )
 add_library(vorbis STATIC ${VORBIS_SRC})
@@ -78,7 +79,6 @@ target_link_libraries(vorbis PUBLIC ogg)
 add_library(ekwe_opus_util STATIC
     ../cpp/EkweOpusEncoder.cpp
     ../cpp/EkweOggMuxer.cpp
-    ../cpp/EkweCafMuxer.cpp
     ../cpp/EkweWaveform.cpp
 )
 target_include_directories(ekwe_opus_util PUBLIC
@@ -92,6 +92,7 @@ target_link_libraries(ekwe_opus_util PUBLIC opus ogg)
 # Our EkweAudioDecoder + the Vorbis encoder the Wit.ai path needs
 add_library(ekwe_audio_decoder STATIC
     ../cpp/EkweAudioDecoder.cpp
+    ../cpp/EkweResampler.cpp
     ../cpp/EkweVorbisEncoder.cpp
 )
 target_include_directories(ekwe_audio_decoder PUBLIC

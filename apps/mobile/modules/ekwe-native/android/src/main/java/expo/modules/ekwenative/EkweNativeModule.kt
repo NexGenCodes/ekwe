@@ -77,6 +77,12 @@ class EkweNativeModule : Module() {
     // tighter value via maxDurationMs in the options bundle.
     private const val DEFAULT_MAX_DURATION_MS = 30L * 60L * 1000L
 
+    // MediaMetadataRetriever is not maintained for Ogg/Opus and returns garbage
+    // on many devices (observed: a constant 2,783,138,807 ms ~= 32 days for any
+    // Ogg file, regardless of its real length). Any value outside this range is
+    // treated as "unknown" rather than a real duration.
+    private const val MAX_PLAUSIBLE_DURATION_MS = 24L * 60L * 60L * 1000L
+
     // Generous input safety cap from @ekwe/shared/plans (MAX_AUDIO_INPUT_BYTES).
     // The tier cap applies to the transcoded output, not the original file.
     private const val MAX_AUDIO_INPUT_BYTES = 100L * 1024L * 1024L
@@ -101,6 +107,30 @@ class EkweNativeModule : Module() {
             null
         }
     }
+
+    // MediaMetadataRetriever result, discarded when implausible. This is the
+    // only option for content:// streams we have not buffered yet; for Ogg files
+    // prefer a `gateDurationMs`-style granule read instead.
+    private fun metadataDurationMs(context: Context, uri: android.net.Uri): Long? =
+        probeDurationMs(context, uri)?.takeIf { it in 1..MAX_PLAUSIBLE_DURATION_MS }
+
+    // Duration used for the plan gate. Ogg/Opus is read from the granule position
+    // in C++ (accurate); everything else uses platform metadata, discarding
+    // implausible values so a broken retriever can never reject a valid clip.
+    private fun gateDurationMs(context: Context, fsPath: String?, uri: android.net.Uri): Long? {
+        if (fsPath != null) {
+            val container = classifyAudioContainerJNI(fsPath)
+            if (container == 1 || container == 2) {
+                val granule = probeAudioDurationMsJNI(fsPath)
+                if (granule > 0) return granule.toLong()
+            }
+        }
+        return metadataDurationMs(context, uri)
+    }
+
+    // Reported alongside a rejection; never let a large probe overflow Int.
+    private fun clampDurationToInt(ms: Long): Int =
+        ms.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 
     init {
       System.loadLibrary("ekwe_native_jni")
@@ -141,11 +171,11 @@ class EkweNativeModule : Module() {
     @JvmStatic external fun nativeDispatchVadSilence()
 
     // --- Native Audio Processing (JNI) ---
-    @JvmStatic external fun transcodeToOpusWithWaveformJNI(inputPath: String, outputPath: String, maxAudioBytes: Long, frameMs: Int): Array<Any?>
-    @JvmStatic external fun transcodeToVorbisWithWaveformJNI(inputPath: String, outputPath: String, maxAudioBytes: Long): Array<Any?>
-    @JvmStatic external fun transcodeToDualWithWaveformJNI(inputPath: String, opusPath: String, vorbisPath: String, maxAudioBytes: Long): Array<Array<Any?>>
     @JvmStatic external fun probeAudioDurationMsJNI(inputPath: String): Int
     @JvmStatic external fun encodePcmToOpusJNI(pcmData: ShortArray, sampleRate: Int, channels: Int, outputPath: String): Array<Any?>
+    @JvmStatic external fun classifyAudioContainerJNI(inputPath: String): Int
+    @JvmStatic external fun encodePcmToDualJNI(pcmData: ShortArray, sampleRate: Int, channels: Int, opusPath: String, vorbisPath: String): Array<Array<Any?>>
+    @JvmStatic external fun resolveOggToArtifactsJNI(inputPath: String, opusPath: String, vorbisPath: String, maxAudioBytes: Long): Array<Any?>
 
     // memory-based decode (no temp file for content:// shared audio)
     @JvmStatic external fun transcodeFromMemoryJNI(data: ByteArray, outputPath: String, maxAudioBytes: Long): Array<Any?>
@@ -462,17 +492,19 @@ class EkweNativeModule : Module() {
         // Duration gate on the ORIGINAL audio, before any decode work. If
         // MediaMetadataRetriever can't read it (raw AMR etc.), fall through
         // and rely on the decode ceiling plus the post-transcode check.
-        val originalDurationMs = probeDurationMs(context, uri)
+        val originalDurationMs = metadataDurationMs(context, uri)
         if (originalDurationMs != null && maxDurationMs > 0 && originalDurationMs > maxDurationMs) {
           Log.w("EkweNative", "resolveAndTranscodeToOpus rejected: duration=${originalDurationMs}ms > limit=${maxDurationMs}ms")
           return@AsyncFunction mapOf(
             "success" to false, "error" to "AUDIO_TOO_LONG",
-            "durationMs" to originalDurationMs.toInt(), "waveform" to emptyList<Float>()
+            "durationMs" to clampDurationToInt(originalDurationMs), "waveform" to emptyList<Float>()
           )
         }
 
-        // miniaudio handles WAV/MP3/FLAC/Vorbis/AIFF natively; AAC/AMR/3GP/
-        // WebM fall through to the platform decoder when init fails.
+        // The C++ core decodes Ogg Opus and WAV itself (and resamples via
+        // r8brain); every other container (MP3/AAC/M4A/FLAC/AMR/3GP/WebM) is
+        // reported as PLATFORM_DECODE_REQUIRED and handled by the platform
+        // decoder below.
         val inputStream = context.contentResolver.openInputStream(uri)
             ?: return@AsyncFunction mapOf(
               "success" to false, "error" to "Cannot open content URI",
@@ -505,8 +537,8 @@ class EkweNativeModule : Module() {
         val durationMs = result[2] as Int
         val waveform = (result[3] as FloatArray).toList()
 
-        if (!success && (error == "MINIAUDIO_INIT_FAILED" || error.startsWith("miniaudio"))) {
-          // AAC/M4A/AMR/3GP — route through the platform decoder.
+        if (!success && error == "PLATFORM_DECODE_REQUIRED") {
+          // MP3/AAC/M4A/FLAC/AMR/3GP/WebM — route through the platform decoder.
           val pcm = PlatformAudioDecoder.decode(context, uri, maxDurationMs)
           if (pcm != null && pcm.durationMs > maxDurationMs && maxDurationMs > 0) {
             return@AsyncFunction mapOf(
@@ -730,63 +762,92 @@ class EkweNativeModule : Module() {
       )
     }
 
-    // --- Audio Conversion Methods ---
-    AsyncFunction("transcodeToOpusWithWaveform") { inputPath: String, outputPath: String, maxAudioBytes: Long, options: Map<String, Any>? ->
-      val frameMs = (options?.get("frameMs") as? Double)?.toInt() ?: 20
-      val result = transcodeToOpusWithWaveformJNI(resolvePath(inputPath), resolvePath(outputPath), sanitizeMaxAudioBytes(maxAudioBytes), frameMs)
-      val success = result[0] as Boolean
-      val error = result[1] as String
-      val durationMs = result[2] as Int
-      val waveform = (result[3] as FloatArray).toList()
-      return@AsyncFunction mapOf(
-        "success" to success,
-        "error" to error,
-        "durationMs" to durationMs,
-        "waveform" to waveform
+    AsyncFunction("resolveAudio") { inputPath: String, options: Map<String, Any?> ->
+      val context = appContext.reactContext ?: return@AsyncFunction mapOf(
+        "success" to false, "error" to "No context", "durationMs" to 0,
+        "waveform" to emptyList<Float>(), "vorbisSuccess" to false
       )
-    }
+      val opusArg = options["opusOutputPath"] as? String
+      if (opusArg.isNullOrEmpty()) return@AsyncFunction mapOf(
+        "success" to false, "error" to "missing opusOutputPath", "durationMs" to 0,
+        "waveform" to emptyList<Float>(), "vorbisSuccess" to false
+      )
+      val opusOut = resolvePath(opusArg)
+      val vorbisOut = (options["vorbisOutputPath"] as? String)?.let { resolvePath(it) }.orEmpty()
+      val maxAudioBytes = sanitizeMaxAudioBytes((options["maxAudioBytes"] as? Number)?.toLong() ?: DEFAULT_MAX_AUDIO_BYTES)
+      val maxDurationMs = (options["maxDurationMs"] as? Number)?.toLong()?.takeIf { it > 0 } ?: DEFAULT_MAX_DURATION_MS
+      val inputFsPath = resolvePath(inputPath)
 
-    // Same shape as transcodeToOpusWithWaveform, but the artifact on disk is
-    // Vorbis-in-Ogg rather than Opus-in-Ogg. There is no options bag: Vorbis
-    // has no frame-size equivalent, and the bitrate is fixed natively at
-    // kDefaultVorbisBitrateKbps.
-    AsyncFunction("transcodeToVorbisWithWaveform") { inputPath: String, outputPath: String, maxAudioBytes: Long ->
-      val result = transcodeToVorbisWithWaveformJNI(resolvePath(inputPath), resolvePath(outputPath), sanitizeMaxAudioBytes(maxAudioBytes))
-      val success = result[0] as Boolean
-      val error = result[1] as String
-      val durationMs = result[2] as Int
-      val waveform = (result[3] as FloatArray).toList()
-      return@AsyncFunction mapOf(
-        "success" to success,
-        "error" to error,
-        "durationMs" to durationMs,
-        "waveform" to waveform
-      )
-    }
+      try {
+        val inputFile = java.io.File(inputFsPath)
+        if (inputFile.length() > MAX_AUDIO_INPUT_BYTES) {
+          return@AsyncFunction mapOf(
+            "success" to false, "error" to "FILE_TOO_LARGE", "durationMs" to 0,
+            "waveform" to emptyList<Float>(), "vorbisSuccess" to false
+          )
+        }
 
-    AsyncFunction("transcodeToDualWithWaveform") { inputPath: String, opusOutputPath: String, vorbisOutputPath: String, maxAudioBytes: Long ->
-      val results = transcodeToDualWithWaveformJNI(
-        resolvePath(inputPath),
-        resolvePath(opusOutputPath),
-        resolvePath(vorbisOutputPath),
-        sanitizeMaxAudioBytes(maxAudioBytes),
-      )
-      val opus = results[0]
-      val vorbis = results[1]
-      return@AsyncFunction mapOf(
-        "opus" to mapOf(
+        val container = classifyAudioContainerJNI(inputFsPath)
+
+        val originalDurationMs = gateDurationMs(context, inputFsPath, android.net.Uri.fromFile(inputFile))
+        if (originalDurationMs != null && maxDurationMs > 0 && originalDurationMs > maxDurationMs) {
+          return@AsyncFunction mapOf(
+            "success" to false, "error" to "AUDIO_TOO_LONG", "durationMs" to clampDurationToInt(originalDurationMs),
+            "waveform" to emptyList<Float>(), "vorbisSuccess" to false
+          )
+        }
+
+        if (container == 1 || container == 2) {
+          val result = resolveOggToArtifactsJNI(inputFsPath, opusOut, vorbisOut, maxAudioBytes)
+          val success = result[0] as Boolean
+          val error = result[1] as String
+          val durationMs = result[2] as Int
+          val waveform = (result[3] as FloatArray).toList()
+          val vorbisSuccess = vorbisOut.isNotEmpty() && java.io.File(vorbisOut).let { it.exists() && it.length() > 0 }
+          // Failsafe: enforce the limit on the authoritative decoded duration too.
+          if (success && maxDurationMs > 0 && durationMs > maxDurationMs) {
+            if (opusOut.isNotEmpty()) java.io.File(opusOut).delete()
+            if (vorbisOut.isNotEmpty()) java.io.File(vorbisOut).delete()
+            return@AsyncFunction mapOf(
+              "success" to false, "error" to "AUDIO_TOO_LONG", "durationMs" to durationMs,
+              "waveform" to emptyList<Float>(), "vorbisSuccess" to false
+            )
+          }
+          return@AsyncFunction mapOf(
+            "success" to success, "error" to error, "durationMs" to durationMs,
+            "waveform" to waveform, "vorbisSuccess" to vorbisSuccess
+          )
+        }
+
+        val pcm = PlatformAudioDecoder.decode(context, android.net.Uri.fromFile(inputFile), maxDurationMs)
+          ?: return@AsyncFunction mapOf(
+            "success" to false, "error" to "Unsupported audio format", "durationMs" to 0,
+            "waveform" to emptyList<Float>(), "vorbisSuccess" to false
+          )
+        if (maxDurationMs > 0 && pcm.durationMs > maxDurationMs) {
+          return@AsyncFunction mapOf(
+            "success" to false, "error" to "AUDIO_TOO_LONG", "durationMs" to pcm.durationMs,
+            "waveform" to emptyList<Float>(), "vorbisSuccess" to false
+          )
+        }
+
+        val dual = encodePcmToDualJNI(pcm.samples, pcm.sampleRate, pcm.channels, opusOut, vorbisOut)
+        val opus = dual[0]
+        val vorbis = dual[1]
+        return@AsyncFunction mapOf(
           "success" to (opus[0] as Boolean),
           "error" to (opus[1] as String),
           "durationMs" to (opus[2] as Int),
-          "waveform" to (opus[3] as FloatArray).toList()
-        ),
-        "vorbis" to mapOf(
-          "success" to (vorbis[0] as Boolean),
-          "error" to (vorbis[1] as String),
-          "durationMs" to (vorbis[2] as Int),
-          "waveform" to (vorbis[3] as FloatArray).toList()
+          "waveform" to (opus[3] as FloatArray).toList(),
+          "vorbisSuccess" to (vorbis[0] as Boolean)
         )
-      )
+      } catch (e: Exception) {
+        Log.e("EkweNative", "resolveAudio failed", e)
+        return@AsyncFunction mapOf(
+          "success" to false, "error" to (e.message ?: "Unknown error"), "durationMs" to 0,
+          "waveform" to emptyList<Float>(), "vorbisSuccess" to false
+        )
+      }
     }
 
     AsyncFunction("probeAudioDurationMs") { inputPath: String ->

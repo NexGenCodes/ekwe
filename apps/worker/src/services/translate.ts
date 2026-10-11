@@ -1,11 +1,8 @@
 import { translateResponseSchema } from "@ekwe/shared";
 import { logger } from "@/core/logger";
-import {
-  getProviderModule,
-  getProviderNamesFor,
-  providerSupportsLanguage,
-} from "@/providers";
+import { getProviderModule, getProviderNamesFor } from "@/providers";
 import { PROVIDER_TIMEOUT } from "@/core/providers";
+import { logSkips, planTttRoute } from "@/core/route-eligibility";
 import {
   FALLBACK_ATTEMPT_TIMEOUT_MS,
   TRANSLATE_CACHE_TTL_SECONDS,
@@ -82,10 +79,7 @@ export function buildTranslateCacheKey(
   return `trans:${userId}:${tier}:${textHash}`;
 }
 
-/**
- * Mirrors `stripTranscriptLanguage`: a plan-gated field is removed here, in the
- * route's caller, so the provider that produced it never learns it is metered.
- */
+/** Removes plan-gated fields so the provider never learns they are metered. */
 export function stripTranslationTier(
   result: TranslateResult,
   tier: Tier,
@@ -152,18 +146,30 @@ export async function runTranslate(
     return e;
   };
 
-  // Auto-detect is the service's job: a provider is given the resolved source,
-  // or "auto" and left to infer it.
+  // Auto-detect is the service's job; providers get the resolved source.
   const isAuto = !sourceLang || sourceLang === "auto";
   let detected: string | null = null;
   if (isAuto) {
     try {
-      detected = await detectTextLanguage(text, env.EKWE_D1, signal);
+      detected = await detectTextLanguage(text, env, signal);
     } catch {
       // Detection failure is non-fatal: providers can still translate.
     }
     if (signal.aborted) throw new Error(CLIENT_ABORTED);
   }
+
+  const plan = planTttRoute(
+    pipeline.map((p) => p.name),
+    {
+      targetLang,
+      textLength: text.length,
+    },
+  );
+  const planByProvider = new Map(plan.map((a) => [a.provider, a]));
+  logSkips("translate", plan);
+
+  // First valid answer, boxed because it is assigned inside the callback.
+  const firstAnswer: { value: TranslateResult | null } = { value: null };
 
   const result = await runProviderFailover<TranslateResult>({
     providers: pipeline.map((p) => p.name),
@@ -175,17 +181,10 @@ export async function runTranslate(
     attemptTimeoutMs: (name, remainingMs) =>
       Math.min(entry(name).timeoutMs, remainingMs),
     shouldSkip: async (name) => {
-      if (await isProviderDegraded(env, name)) {
-        logger.info(`[translate] Skipping ${name} (circuit open)`);
-        return true;
-      }
-      // Skipping a provider that cannot write the target language is what keeps
-      // an unwritable request from burning a paid call before the next provider.
-      if (!providerSupportsLanguage(name, "ttt", targetLang)) {
-        logger.info(`[translate] Skipping ${name} (no ${targetLang})`);
-        return true;
-      }
-      return false;
+      const planned = planByProvider.get(name);
+      if (planned && !planned.eligible) return planned.reason ?? null;
+      if (await isProviderDegraded(env, name)) return "circuit-open";
+      return null;
     },
     onTrying: (name, remainingMs) => {
       logger.info(`[translate] Trying ${name}`, {
@@ -224,12 +223,19 @@ export async function runTranslate(
         return false;
       }
 
+      if (!firstAnswer.value) firstAnswer.value = attempt;
+
       if (!validateTranscriptLanguage(attempt.translation, targetLang)) {
-        logger.warn(`[translate] ${name} did not return ${targetLang}`, {
-          provider: attempt.provider,
-          targetLang,
-          sample: attempt.translation.slice(0, 80),
-        });
+        // Romanised targets (zh, ja, hi, ko, ar, th) fail here by design; keep
+        // looking, but remember the answer.
+        logger.warn(
+          `[translate] ${name} output did not look like ${targetLang}`,
+          {
+            provider: attempt.provider,
+            targetLang,
+            sample: attempt.translation.slice(0, 80),
+          },
+        );
         return false;
       }
 
@@ -242,8 +248,24 @@ export async function runTranslate(
       });
       return true;
     },
+    onRejectedResult: (name, result) => {
+      if (result) {
+        logger.warn(`[translate] ${name} produced an unusable result`);
+      }
+    },
     onAttemptError: (name) => reportProviderOutcome(env, name, false),
   });
 
-  return result;
+  if (result) return result;
+
+  const bestEffort = firstAnswer.value;
+  if (bestEffort) {
+    logger.warn(
+      `[translate] No provider wrote ${targetLang}; returning the closest answer`,
+      { provider: bestEffort.provider },
+    );
+    if (detected) bestEffort.language = detected;
+    return bestEffort;
+  }
+  return null;
 }

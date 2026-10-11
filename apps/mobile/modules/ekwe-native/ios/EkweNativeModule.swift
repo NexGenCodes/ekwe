@@ -101,100 +101,49 @@ public class EkweNativeModule: Module {
       "store"
     }
 
-    // ------------------------------------
-    // Audio Conversion
-    // ------------------------------------
-    AsyncFunction("transcodeToOpusWithWaveform") { (inputPath: String, outputPath: String, maxAudioBytes: Int) -> [String: Any] in
+    // Decodes the source once and fans out to the Opus artifact plus an optional
+    // Vorbis copy.
+    AsyncFunction("resolveAudio") { (inputPath: String, options: [String: Any]) -> [String: Any] in
+      let opusOutputPath = options["opusOutputPath"] as? String ?? ""
+      let vorbisOutputPath = options["vorbisOutputPath"] as? String ?? ""
+      let maxAudioBytes = (options["maxAudioBytes"] as? NSNumber)?.intValue ?? 0
+
       switch self.guardedSourcePath(inputPath, maxAudioBytes: maxAudioBytes) {
       case .tooLarge:
         return [
-          "success": false,
-          "error": "FILE_TOO_LARGE",
-          "durationMs": 0,
-          "waveform": [] as [Float],
+          "success": false, "error": "FILE_TOO_LARGE", "durationMs": 0,
+          "waveform": [] as [Float], "vorbisSuccess": false,
         ]
       case .invalid:
         return [
-          "success": false,
-          "error": "INVALID_INPUT_FILE",
-          "durationMs": 0,
-          "waveform": [] as [Float],
+          "success": false, "error": "INVALID_INPUT_FILE", "durationMs": 0,
+          "waveform": [] as [Float], "vorbisSuccess": false,
         ]
       case .ok(let sourcePath):
-        let result = EkweAudioBridge.transcodeToOpusWithWaveform(sourcePath, outputPath: outputPath)
+        let result = EkweAudioBridge.resolveAudio(sourcePath, options: [
+          "opusOutputPath": opusOutputPath,
+          "vorbisOutputPath": vorbisOutputPath,
+          "maxAudioBytes": maxAudioBytes,
+        ])
         return [
-          "success": result[0] as! Bool,
-          "error": result[1] as! String,
-          "durationMs": result[2] as! Int,
-          "waveform": result[3] as! [Float],
+          "success": result["success"] as? Bool ?? false,
+          "error": result["error"] as? String ?? "",
+          "durationMs": result["durationMs"] as? Int ?? 0,
+          "waveform": result["waveform"] as? [Float] ?? [],
+          "vorbisSuccess": result["vorbisSuccess"] as? Bool ?? false,
         ]
       }
     }
 
-    // Same decode → waveform shape as transcodeToOpusWithWaveform, but the
-    // artifact written to `outputPath` is Vorbis-in-Ogg, which Wit.ai parses
-    // (see apps/worker/src/providers/witai.ts). Input guarding is identical;
-    // only the encoder differs.
-    AsyncFunction("transcodeToVorbisWithWaveform") { (inputPath: String, outputPath: String, maxAudioBytes: Int) -> [String: Any] in
+    // Decodes the source and writes an M4A/AAC-LC playback copy. Ogg sources go
+    // Ogg → WAV bridge → M4A; platform-readable sources decode straight to M4A.
+    AsyncFunction("createPlaybackCopy") { (inputPath: String, outputPath: String, maxAudioBytes: Int) -> Bool in
       switch self.guardedSourcePath(inputPath, maxAudioBytes: maxAudioBytes) {
-      case .tooLarge:
-        return [
-          "success": false,
-          "error": "FILE_TOO_LARGE",
-          "durationMs": 0,
-          "waveform": [] as [Float],
-        ]
-      case .invalid:
-        return [
-          "success": false,
-          "error": "INVALID_INPUT_FILE",
-          "durationMs": 0,
-          "waveform": [] as [Float],
-        ]
       case .ok(let sourcePath):
-        let result = EkweAudioBridge.transcodeToVorbisWithWaveform(
+        return EkweAudioBridge.createPlaybackCopyWithSourcePath(
           sourcePath, outputPath: outputPath, maxAudioBytes: UInt(max(0, maxAudioBytes)))
-        return [
-          "success": result[0] as! Bool,
-          "error": result[1] as! String,
-          "durationMs": result[2] as! Int,
-          "waveform": result[3] as! [Float],
-        ]
-      }
-    }
-
-    AsyncFunction("transcodeToDualWithWaveform") { (inputPath: String, opusOutputPath: String, vorbisOutputPath: String, maxAudioBytes: Int) -> [String: Any] in
-      switch self.guardedSourcePath(inputPath, maxAudioBytes: maxAudioBytes) {
-      case .tooLarge:
-        return [
-          "opus": ["success": false, "error": "FILE_TOO_LARGE", "durationMs": 0, "waveform": [] as [Float]],
-          "vorbis": ["success": false, "error": "FILE_TOO_LARGE", "durationMs": 0, "waveform": [] as [Float]],
-        ]
-      case .invalid:
-        return [
-          "opus": ["success": false, "error": "INVALID_INPUT_FILE", "durationMs": 0, "waveform": [] as [Float]],
-          "vorbis": ["success": false, "error": "INVALID_INPUT_FILE", "durationMs": 0, "waveform": [] as [Float]],
-        ]
-      case .ok(let sourcePath):
-        let result = EkweAudioBridge.transcodeToDualWithWaveform(
-          sourcePath,
-          opusOutputPath: opusOutputPath,
-          vorbisOutputPath: vorbisOutputPath,
-          maxAudioBytes: UInt(max(0, maxAudioBytes)))
-        return [
-          "opus": [
-            "success": result[0][0] as! Bool,
-            "error": result[0][1] as! String,
-            "durationMs": result[0][2] as! Int,
-            "waveform": result[0][3] as! [Float],
-          ],
-          "vorbis": [
-            "success": result[1][0] as! Bool,
-            "error": result[1][1] as! String,
-            "durationMs": result[1][2] as! Int,
-            "waveform": result[1][3] as! [Float],
-          ],
-        ]
+      default:
+        return false
       }
     }
 
@@ -223,36 +172,6 @@ public class EkweNativeModule: Module {
         ]
       case .ok(let sourcePath):
         let result = EkweAudioBridge.decodeToWavWithSourcePath(sourcePath, outputPath: outputPath, maxAudioBytes: UInt(max(0, maxAudioBytes)))
-        return [
-          "success": result[0] as! Bool,
-          "error": result[1] as! String,
-          "durationMs": result[2] as! Int,
-          "waveform": result[3] as! [Float],
-        ]
-      }
-    }
-
-    // Remuxes Ogg Opus into Opus-in-CAF, or re-encodes non-Opus sources to Opus
-    // CAF (see cpp::remux_audio_to_caf). CAF is an iOS-supported container, so
-    // playback avoids the size and CPU cost of the WAV round-trip.
-    AsyncFunction("remuxToCaf") { (inputPath: String, outputPath: String, maxAudioBytes: Int) -> [String: Any] in
-      switch self.guardedSourcePath(inputPath, maxAudioBytes: maxAudioBytes) {
-      case .tooLarge:
-        return [
-          "success": false,
-          "error": "FILE_TOO_LARGE",
-          "durationMs": 0,
-          "waveform": [] as [Float],
-        ]
-      case .invalid:
-        return [
-          "success": false,
-          "error": "INVALID_INPUT_FILE",
-          "durationMs": 0,
-          "waveform": [] as [Float],
-        ]
-      case .ok(let sourcePath):
-        let result = EkweAudioBridge.remuxToCafWithSourcePath(sourcePath, outputPath: outputPath, maxAudioBytes: UInt(max(0, maxAudioBytes)))
         return [
           "success": result[0] as! Bool,
           "error": result[1] as! String,
@@ -392,11 +311,39 @@ public class EkweNativeModule: Module {
                 "durationMs": durationMs, "waveform": waveform]
       }
 
-    AsyncFunction("resolveAndTranscodeToOpus") { (_: String, _: String, _: Int) -> [String: Any] in
-      // iOS doesn't receive Android-style content:// URIs; shared files arrive
-      // as file:// paths consumable by transcodeToOpusWithWaveform directly.
-      return ["success": false, "error": "Use transcodeToOpusWithWaveform on iOS",
-              "durationMs": 0, "waveform": [] as [Float]]
+    AsyncFunction("resolveAndTranscodeToOpus") { (uriString: String, outputPath: String, maxAudioBytes: Int, options: [String: Any]?) -> [String: Any] in
+      switch self.guardedSourcePath(uriString, maxAudioBytes: maxAudioBytes) {
+      case .tooLarge:
+        return [
+          "success": false, "error": "FILE_TOO_LARGE", "durationMs": 0,
+          "waveform": [] as [Float],
+        ]
+      case .invalid:
+        return [
+          "success": false, "error": "INVALID_INPUT_FILE", "durationMs": 0,
+          "waveform": [] as [Float],
+        ]
+      case .ok(let sourcePath):
+        if let maxDurationMs = options?["maxDurationMs"] as? Int, maxDurationMs > 0 {
+          let probed = EkweAudioBridge.probeAudioDurationMs(sourcePath)
+          if probed > maxDurationMs {
+            return [
+              "success": false, "error": "DURATION_TOO_LONG", "durationMs": probed,
+              "waveform": [] as [Float],
+            ]
+          }
+        }
+        let result = EkweAudioBridge.resolveAudio(sourcePath, options: [
+          "opusOutputPath": outputPath,
+          "maxAudioBytes": maxAudioBytes,
+        ])
+        return [
+          "success": result["success"] as? Bool ?? false,
+          "error": result["error"] as? String ?? "",
+          "durationMs": result["durationMs"] as? Int ?? 0,
+          "waveform": result["waveform"] as? [Float] ?? [],
+        ]
+      }
     }
 
      AsyncFunction("writeSharedFile") { (fileName: String, content: String) -> Bool in

@@ -57,8 +57,11 @@ describe("speechProviderSupports", () => {
     expect(speechProviderSupports("deepgram", "ja")).toBe(true);
     expect(speechProviderSupports("deepgram", "zh")).toBe(false);
 
-    expect(speechProviderSupports("witai", "ko")).toBe(true);
+    // Wit returns silence for Hangul and Korean, so it must not claim them.
+    expect(speechProviderSupports("witai", "ko")).toBe(false);
+    expect(speechProviderSupports("witai", "th")).toBe(false);
     expect(speechProviderSupports("edge", "fr")).toBe(true);
+    expect(speechProviderSupports("edge", "th")).toBe(true);
   });
 
   it("returns false for unknown provider", () => {

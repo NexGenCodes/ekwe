@@ -1,5 +1,6 @@
 import { Env, SpeechAttempt, TranscribeResult } from "@/core/types";
-import { rotateKeysDetailed } from "@/utils/keys";
+import { rotateKeysDetailed, rotateKeysOrThrow } from "@/utils/keys";
+import { ProviderHttpError } from "@/core/provider-errors";
 import { isHallucination } from "@/utils/hallucination";
 import { mimeToExt } from "@/utils/mime";
 import { fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
@@ -31,9 +32,10 @@ export async function stt(
     size: blob.size,
   });
 
-  const { response: res } = await rotateKeysDetailed(
+  const res = await rotateKeysOrThrow(
     env,
     "ELEVENLABS_KEY_",
+    "elevenlabs",
     (key) => {
       const body = new FormData();
       body.append("file", blob, `audio.${mimeToExt(blob.type)}`);
@@ -58,12 +60,7 @@ export async function stt(
     signal,
   );
 
-  if (!res?.ok) {
-    logger.warn("[elevenlabs] Transcribe failed, provider returned error", {
-      status: res?.status ?? "no response",
-    });
-    return null;
-  }
+  if (!res.ok) throw new ProviderHttpError("elevenlabs", res.status);
 
   const data = await res.json<{
     text?: string;
@@ -83,9 +80,7 @@ export async function stt(
     };
   }
 
-  logger.warn("[elevenlabs] Transcription empty or hallucinated", {
-    text: data.text,
-  });
+  logger.warn("[elevenlabs] Transcription empty or hallucinated");
   return null;
 }
 

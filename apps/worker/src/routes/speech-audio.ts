@@ -16,7 +16,7 @@ interface RouteContext {
 type RouteHandler = (rctx: RouteContext) => Response | Promise<Response>;
 
 const CACHE_KEY_RE =
-  /^speech:(?:shared|[a-f0-9]{64}):[A-Za-z0-9_-]+:(?:male|female|auto):(?:free|premium):cache:[A-Za-z-]+:[a-f0-9]{64}\.[a-f0-9]{32}$/;
+  /^speech:(?:shared|[a-f0-9]{64}):[A-Za-z0-9_-]+:(?:male|female|auto):(?:free|premium):cache:[A-Za-z-]+:[a-f0-9]{64}(?::r\d+)?\.[a-f0-9]{32}$/;
 
 /**
  * Serves previously synthesised audio out of the speech cache.
@@ -26,7 +26,12 @@ const CACHE_KEY_RE =
  * about to turn back into bytes anyway. It now hands back a URL to this route
  * and the payload stays a few hundred bytes regardless of clip length.
  */
-export const speechAudioHandler: RouteHandler = async ({ params, env }) => {
+export const speechAudioHandler: RouteHandler = async ({
+  request,
+  params,
+  env,
+  ctx,
+}) => {
   const key = params.key ?? "";
   if (!CACHE_KEY_RE.test(key)) {
     return error(WORKER_ERROR_CODES.INVALID_BODY, 400);
@@ -37,23 +42,34 @@ export const speechAudioHandler: RouteHandler = async ({ params, env }) => {
     return error(WORKER_ERROR_CODES.NOT_FOUND, 404);
   }
 
+  const edgeCache =
+    typeof caches !== "undefined" && "default" in caches
+      ? (caches as unknown as { default: Cache }).default
+      : null;
+  if (edgeCache) {
+    const edgeHit = await edgeCache.match(request);
+    if (edgeHit) return edgeHit;
+  }
+
   const hit = await readSpeechCache(env, cacheKey);
   if (!hit) {
-    // Either the write has not landed yet, or the entry aged out. The client
-    // treats a miss here as a cache miss and falls back to the inline payload.
     return error(WORKER_ERROR_CODES.NOT_FOUND, 404);
   }
 
-  return new Response(hit.audio as BodyInit, {
+  const response = new Response(hit.audio as BodyInit, {
     headers: {
       "Content-Type": hit.mime,
       "Content-Length": String(hit.audio.byteLength),
-      // The key is a digest of the inputs, so this body can never change for a
-      // given URL. Let the client hold it rather than re-fetching on every play.
-      "Cache-Control": "private, max-age=86400",
+      "Cache-Control": "public, max-age=86400",
       "Accept-Ranges": "none",
     },
   });
+
+  if (edgeCache && typeof ctx?.waitUntil === "function") {
+    ctx.waitUntil(edgeCache.put(request, response.clone()).catch(() => {}));
+  }
+
+  return response;
 };
 
 /** Test-only helper: the digest shape the route accepts. */

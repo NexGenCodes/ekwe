@@ -22,6 +22,21 @@ export function sanitizeLanguageCodes(
   return result;
 }
 
+/**
+ * Stored selections the product no longer offers.
+ *
+ * Surfaced rather than dropped so the app can tell the user their languages
+ * changed, instead of quietly shrinking their list. `sanitizeLanguageCodes`
+ * still filters them out — this only reports what went, so a caller can decide
+ * whether to explain it or migrate them.
+ */
+export function unsupportedStoredLanguages(
+  codes: readonly string[] | undefined,
+): string[] {
+  if (!codes?.length) return [];
+  return codes.filter((code) => code !== "auto" && !isKnownLanguage(code));
+}
+
 export function getDefaultSourceLang(autoDetectAllowed: boolean): string {
   return autoDetectAllowed ? "auto" : "en";
 }

@@ -75,41 +75,12 @@ describe("language capability registry", () => {
     }
   });
 
-  it("names the languages no provider can transcribe", () => {
-    // Wit used to be credited with ~130 languages, which made this empty. Probing
-    // every Wit key against /dictation showed it transcribes 32 and rejects the
-    // rest, so the orphans below were always a runtime 400 rather than coverage.
-    // Asserting the exact set keeps both halves honest: a provider regaining a
-    // language and a language being added to the catalog both show up here.
-    expect(unsupportedLanguages("stt")).toEqual([
-      "ak",
-      "ay",
-      "ci",
-      "ck",
-      "dv",
-      "eo",
-      "fy",
-      "gd",
-      "gn",
-      "iu",
-      "kl",
-      "ks",
-      "li",
-      "nr",
-      "om",
-      "qu",
-      "rm",
-      "rw",
-      "sc",
-      "se",
-      "ss",
-      "st",
-      "ti",
-      "tn",
-      "ts",
-      "ug",
-      "ve",
-    ]);
+  it("no offered language lacks a transcription provider", () => {
+    // The offered tier is deliberately drawn from languages with real coverage:
+    // every code below was verified to have a transcription provider in the free
+    // pool, so a picker can never offer something that always fails. This is the
+    // invariant that lets the catalog shrink to the offered set.
+    expect(unsupportedLanguages("stt")).toEqual([]);
   });
 
   it("never claims a language no provider can transcribe", () => {
@@ -157,12 +128,33 @@ describe("language capability registry", () => {
   });
 
   it("does not treat Wit as language-agnostic for synthesis", () => {
-    // Regression guard: "all" previously let 7 unsupported codes through.
-    for (const code of ["ba", "haw", "lb", "nn", "oc", "tk", "yue"]) {
+    // Regression guard: "all" previously let unsupported codes through.
+    for (const code of ["yue", "ar", "th", "hi", "ja", "ko", "zh", "ta"]) {
       expect(LANGUAGE_CODE_SET.has(code)).toBe(true);
       expect(isLanguageSupported("witai", "tts", code)).toBe(false);
     }
     expect(isLanguageSupported("witai", "tts", "en")).toBe(true);
+  });
+
+  it("registers the minority Wit voices verified by synthesis", () => {
+    // Wit's advertised list omits these, but synthesizing them returns real
+    // audio that transcribes back correctly ("Azobomir", "Salam", "Moro").
+    for (const code of ["lb", "nn", "ba", "haw", "oc", "tk", "sn", "ru"]) {
+      expect(isLanguageSupported("witai", "tts", code)).toBe(true);
+    }
+  });
+
+  it("does not claim Wit speaks scripts it can only return silence for", () => {
+    // Measured with check-tts.mjs: 576 bytes of silence for these, and ~3.4 KB
+    // of clipped audio for the CJK/Hangul/Arabic ones. Listing them routed
+    // synthesis to a provider that cannot serve it.
+    for (const code of ["hi", "th", "ta", "te", "ja", "ko", "zh", "ar"]) {
+      expect(isLanguageSupported("witai", "tts", code)).toBe(false);
+    }
+    // Latin-script coverage is real and still registered.
+    for (const code of ["en", "es", "fr", "de", "it", "pt", "nl", "id", "pl"]) {
+      expect(isLanguageSupported("witai", "tts", code)).toBe(true);
+    }
   });
 
   it("narrows Deepgram TTS below its recognition set", () => {
@@ -243,11 +235,11 @@ describe("language capability registry", () => {
   it("reports nothing unsupported while an unbounded provider exists", () => {
     expect(isLanguageUnbounded("ttt")).toBe(true);
     expect(unsupportedLanguages("ttt")).toEqual([]);
-    // Transcription is fully enumerated, so it has a real boundary. It is not
-    // an empty one: 27 catalog languages have no transcription provider, which
-    // is what lets a picker hide them instead of offering a guaranteed failure.
+    // Translation is unbounded because an LLM will attempt anything. Transcription
+    // is fully enumerated, and the offered tier is drawn only from languages it
+    // covers, so nothing offered is untranscribable.
     expect(isLanguageUnbounded("stt")).toBe(false);
-    expect(unsupportedLanguages("stt").length).toBe(27);
+    expect(unsupportedLanguages("stt")).toEqual([]);
   });
 
   it("distinguishes an unbounded capability from one that supports nothing", () => {
@@ -361,52 +353,11 @@ describe("stream routes", () => {
     expect(streamRoutesFor("sw").map((r) => r.id)).toEqual(["gladia-solaria"]);
   });
 
-  it("leaves only languages no route can carry", () => {
-    // Wider than the batch orphan list: streaming also needs a route whose own
-    // language set covers the code, and several routes are narrower than the
-    // batch providers that serve those languages. Gladia is the one route that
-    // still reaches Yoruba, Igbo and Hausa.
-    expect(unsupportedStreamLanguages()).toEqual([
-      "ak",
-      "ay",
-      "ci",
-      "ck",
-      "dv",
-      "eo",
-      "ff",
-      "fy",
-      "ga",
-      "gd",
-      "gn",
-      "ig",
-      "iu",
-      "kl",
-      "ks",
-      "ku",
-      "ky",
-      "lg",
-      "li",
-      "nr",
-      "ny",
-      "om",
-      "or",
-      "qu",
-      "rm",
-      "rw",
-      "sc",
-      "se",
-      "ss",
-      "st",
-      "ti",
-      "tn",
-      "ts",
-      "ug",
-      "ve",
-      "wo",
-      "xh",
-      "yue",
-      "zu",
-    ]);
+  it("no offered language lacks a streaming route", () => {
+    // Streaming coverage is narrower than transcription, so the offered tier was
+    // chosen to clear it too — otherwise a client could select a language that
+    // fails on attach.
+    expect(unsupportedStreamLanguages()).toEqual([]);
   });
 
   it("covers a hundred languages for explicit streaming", () => {
@@ -499,15 +450,18 @@ describe("language tiers", () => {
   });
 
   it("calls Wit's non-English coverage multilingual, not native", () => {
-    // Wit's synthesis endpoint speaks these with the English key, so the voice
-    // is an English one reading the text, not an authored Tamil one.
-    expect(languageTier("witai", "tts", "ta")).toBe("multilingual");
+    // Wit speaks these with the English key, so the voice is an English one
+    // reading the text rather than an authored French one. Tamil no longer
+    // appears: it is silent, not multilingual.
     expect(languageTier("witai", "tts", "fr")).toBe("multilingual");
+    expect(languageTier("witai", "tts", "ta")).toBeNull();
   });
 
   it("returns null rather than a tier for a language a provider cannot speak", () => {
     expect(languageTier("deepgram", "tts", "ta")).toBeNull();
-    expect(languageTier("witai", "tts", "oc")).toBeNull();
+    // "oc" is registered: it synthesizes real Occitan audio. Use a script Wit
+    // genuinely cannot voice.
+    expect(languageTier("witai", "tts", "th")).toBeNull();
   });
 
   it("calls Edge's fallback locales multilingual, not native", () => {
@@ -623,12 +577,14 @@ describe("Edge synthesis coverage", () => {
     }
   });
 
-  it("covers the seven Wit and Deepgram lack through the Edge fallback", () => {
-    const gaps = ["ba", "haw", "lb", "nn", "oc", "sn", "tk"];
+  it("covers the scripts Wit cannot voice through the Edge fallback", () => {
+    // The eight languages check-tts.mjs measured Wit returning silence or a
+    // clipped character-by-character reading for. Edge carries authored voices
+    // for every one, so the free pool still resolves them.
+    const gaps = ["hi", "th", "ta", "te", "ja", "ko", "zh", "ar"];
     for (const code of gaps) {
       expect(isLanguageSupported("witai", "tts", code)).toBe(false);
-      expect(isLanguageSupported("deepgram", "tts", code)).toBe(false);
-      expect(languageTier("edge", "tts", code)).toBe("multilingual");
+      expect(languageTier("edge", "tts", code)).toBe("native");
     }
   });
 });

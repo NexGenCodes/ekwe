@@ -45,22 +45,18 @@ describe("AssemblyAI provider", () => {
     expect(result!.language).toBe("en");
   });
 
-  test("returns null on upload error", async () => {
+  test("throws on upload error", async () => {
     server.use(
       http.post(PROVIDER_URLS.assemblyaiUpload, () =>
         jsonResponse({ error: "bad key" }, 401),
       ),
     );
-    const result = await assemblyai.stt(
-      makeAudioBlob(),
-      "en",
-      mockEnv(),
-      mockSignal(),
-    );
-    expect(result).toBeNull();
+    await expect(
+      assemblyai.stt(makeAudioBlob(), "en", mockEnv(), mockSignal()),
+    ).rejects.toThrow();
   });
 
-  test("returns null on polling timeout", async () => {
+  test("throws on polling timeout", async () => {
     server.use(
       http.post(PROVIDER_URLS.assemblyaiUpload, () =>
         jsonResponse({ upload_url: "https://mock.audio/url" }),
@@ -71,12 +67,13 @@ describe("AssemblyAI provider", () => {
       ),
     );
 
-    const result = await assemblyai.stt(
-      makeAudioBlob(),
-      "en",
-      mockEnv({ ASSEMBLYAI_KEY_2: "" }),
-      mockSignal(),
-    );
-    expect(result).toBeNull();
+    await expect(
+      assemblyai.stt(
+        makeAudioBlob(),
+        "en",
+        mockEnv({ ASSEMBLYAI_KEY_2: "" }),
+        mockSignal(),
+      ),
+    ).rejects.toThrow();
   }, 15000);
 });

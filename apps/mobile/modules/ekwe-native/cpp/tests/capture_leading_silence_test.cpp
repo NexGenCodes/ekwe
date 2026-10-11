@@ -124,7 +124,7 @@ void test_never_speaks_still_writes_a_valid_file() {
 
 void test_stop_inside_the_lead_in_is_rescued() {
     // stop() has to flush the ring, otherwise this finalizes an empty Ogg that
-    // iOS cannot remux.
+    // iOS cannot play.
     const std::string out = temp_path("early.ogg");
     std::remove(out.c_str());
     CaptureController c(SR, 1, out, CaptureMode::FILE, false);

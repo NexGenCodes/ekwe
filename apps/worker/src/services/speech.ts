@@ -13,7 +13,9 @@ import { groupCandidatesByProvider, resolveVoicePool } from "@/core/voices";
 import { hashKey } from "@/utils/keys";
 import { recordSpeechCacheEvent } from "@/utils/analytics";
 import { Env, Tier, SpeechGender, SpeechAttempt } from "@/core/types";
-import { classifyProviderError, runProviderFailover } from "@/utils/retry";
+import { runProviderFailover } from "@/utils/retry";
+import { classifyError } from "@/core/provider-errors";
+import { logSkips, planTtsRoute } from "@/core/route-eligibility";
 import {
   isProviderDegraded,
   reportProviderNeutral,
@@ -256,7 +258,26 @@ async function markSpeechProviderDown(
   await env.EKWE_KV.put(key, "1", {
     expirationTtl: SPEECH_DOWN_TTL_SECONDS,
   });
-  logger.warn(`[speech] Marked "${provider}" down for UTC ${date}`);
+  logger.warn(`[speech] Marked "${provider}" down until ${date}`);
+}
+
+/**
+ * Clears the down flag when the provider answers. Without this one transient
+ * 503 kept it out for the full TTL, since only expiry cleared the flag.
+ */
+async function clearSpeechProviderDown(
+  env: Env,
+  provider: string,
+): Promise<void> {
+  const key = speechDownKey(provider, utcDate());
+  if (!speechDownMemo.has(key)) return;
+  speechDownMemo.delete(key);
+  try {
+    await env.EKWE_KV.delete(key);
+  } catch {
+    // Best-effort; the TTL still bounds it.
+  }
+  logger.info(`[speech] "${provider}" recovered, down flag cleared`);
 }
 
 async function tryProviderVoices(
@@ -330,24 +351,13 @@ export interface SpeechSynthOptions {
   signal: AbortSignal;
   budgetMs: number;
   cacheKey: string | null;
-  waitUntil?: (promise: Promise<unknown>) => void;
 }
 
 export async function runSpeechSynth(
   options: SpeechSynthOptions,
 ): Promise<SpeechResult | null> {
-  const {
-    text,
-    lang,
-    gender,
-    slot,
-    tier,
-    env,
-    signal,
-    budgetMs,
-    cacheKey,
-    waitUntil,
-  } = options;
+  const { text, lang, gender, slot, tier, env, signal, budgetMs, cacheKey } =
+    options;
 
   // Failover list matches the pool's preference order; unsupported languages are excluded upfront.
   const voicesByProvider = groupCandidatesByProvider(
@@ -361,6 +371,13 @@ export async function runSpeechSynth(
     return null;
   }
 
+  const plan = planTtsRoute(providers, {
+    lang,
+    textLength: text.length,
+  });
+  const planByProvider = new Map(plan.map((a) => [a.provider, a]));
+  logSkips("speech", plan);
+
   const result = await singleFlightSpeech(cacheKey, () =>
     runProviderFailover<SpeechAttempt>({
       providers,
@@ -373,20 +390,16 @@ export async function runSpeechSynth(
       env,
       tier,
       shouldSkip: async (provider) => {
+        const planned = planByProvider.get(provider);
+        if (planned && !planned.eligible) return planned.reason ?? null;
         // Parallel health checks to minimize pre-flight latency.
         const [down, degraded] = await Promise.all([
           isSpeechProviderDown(env, provider),
           isProviderDegraded(env, provider),
         ]);
-        if (down) {
-          logger.info(`[speech] Skipping "${provider}": marked down for today`);
-          return true;
-        }
-        if (degraded) {
-          logger.info(`[speech] Skipping "${provider}" (circuit open)`);
-          return true;
-        }
-        return false;
+        if (down) return "circuit-open";
+        if (degraded) return "circuit-open";
+        return null;
       },
       invoke: (provider, attemptSignal) =>
         tryProviderVoices(
@@ -400,27 +413,37 @@ export async function runSpeechSynth(
       handleAttempt: async (provider, att) => {
         if (att?.result) {
           await reportProviderOutcome(env, provider, true);
+          await clearSpeechProviderDown(env, provider);
           if (cacheKey) {
-            // Write to cache asynchronously without blocking the client response.
-            const write = writeSpeechCache(env, cacheKey, att.result);
-            if (waitUntil) waitUntil(write);
-            else await write;
+            await writeSpeechCache(env, cacheKey, att.result);
           }
           return true;
         }
 
-        if (att?.status === 429 || att?.status === 503) {
+        // Any real status counts. Checking only 429/503 meant a provider
+        // answering 500 for an hour never opened its circuit.
+        const status = att?.status ?? null;
+        if (status !== null) {
           await reportProviderOutcome(env, provider, false);
-          await markSpeechProviderDown(env, provider);
+          if (status === 429 || status === 503) {
+            await markSpeechProviderDown(env, provider);
+          }
         } else {
           reportProviderNeutral(provider);
         }
         return false;
       },
+      onRejectedResult: (provider, att) => {
+        if (!att?.result) return;
+        logger.warn(`[speech] ${provider} returned no usable audio`, {
+          status: att.status,
+        });
+      },
       onAttemptError: (provider) => reportProviderOutcome(env, provider, false),
-      // Do not retry timeouts on the same provider to preserve budget for alternatives.
+      // A timeout already consumed the per-attempt slice; spend what is left
+      // on the alternative providers instead.
       shouldRetryOnError: (_provider, error) =>
-        classifyProviderError(error) !== "timeout",
+        classifyError(error) !== "timeout",
     }),
   );
 

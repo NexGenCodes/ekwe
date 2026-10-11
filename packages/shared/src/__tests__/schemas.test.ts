@@ -183,20 +183,20 @@ describe("translateRequestSchema", () => {
     expect(
       translateRequestSchema.safeParse({
         text: "hello",
-        targetLang: "yo",
+        targetLang: "fr",
       }).success,
     ).toBe(true);
     expect(
       translateRequestSchema.safeParse({
         text: "hello",
-        targetLang: "yo",
-        sourceLang: "en",
+        targetLang: "fr",
+        sourceLang: "es",
       }).success,
     ).toBe(true);
   });
 
   test("rejects a body missing text or targetLang", () => {
-    expect(translateRequestSchema.safeParse({ targetLang: "yo" }).success).toBe(
+    expect(translateRequestSchema.safeParse({ targetLang: "fr" }).success).toBe(
       false,
     );
     expect(translateRequestSchema.safeParse({ text: "hi" }).success).toBe(

@@ -9,6 +9,7 @@ import {
 import { http } from "msw";
 import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
+import { ProviderHttpError } from "@/core/provider-errors";
 
 const MOCK_UPLOAD_URL = "https://mock.audio/url";
 const MOCK_RESULT_URL = "https://mock.gladia/result";
@@ -50,22 +51,18 @@ describe("Gladia provider", () => {
     expect(result!.provider).toBe("gladia");
   });
 
-  test("returns null on upload error", async () => {
+  test("throws on upload error", async () => {
     server.use(
       http.post(PROVIDER_URLS.gladiaUpload, () =>
         jsonResponse({ error: "bad key" }, 401),
       ),
     );
-    const result = await gladia.stt(
-      makeAudioBlob(),
-      "en",
-      mockEnv(),
-      mockSignal(),
-    );
-    expect(result).toBeNull();
+    await expect(
+      gladia.stt(makeAudioBlob(), "en", mockEnv(), mockSignal()),
+    ).rejects.toThrow();
   });
 
-  test("returns null on polling timeout", async () => {
+  test("throws on polling timeout", async () => {
     server.use(
       http.post(PROVIDER_URLS.gladiaUpload, () =>
         jsonResponse({ audio_url: MOCK_UPLOAD_URL }),
@@ -76,17 +73,18 @@ describe("Gladia provider", () => {
       http.get(MOCK_RESULT_URL, () => jsonResponse({ status: "running" })),
     );
 
-    const result = await gladia.stt(
-      makeAudioBlob(),
-      "en",
-      mockEnv({
-        GLADIA_KEY_2: "",
-        GLADIA_KEY_3: "",
-        GLADIA_KEY_4: "",
-        GLADIA_KEY_5: "",
-      }),
-      mockSignal(),
-    );
-    expect(result).toBeNull();
+    await expect(
+      gladia.stt(
+        makeAudioBlob(),
+        "en",
+        mockEnv({
+          GLADIA_KEY_2: "",
+          GLADIA_KEY_3: "",
+          GLADIA_KEY_4: "",
+          GLADIA_KEY_5: "",
+        }),
+        mockSignal(),
+      ),
+    ).rejects.toThrow(ProviderHttpError);
   }, 15000);
 });

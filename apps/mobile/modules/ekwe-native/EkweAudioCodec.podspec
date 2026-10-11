@@ -18,9 +18,10 @@ Pod::Spec.new do |s|
     "cpp/thirdparty/opus/silk/float/*.c",
     "cpp/thirdparty/opus/src/*.c",
     "cpp/thirdparty/opusfile/src/{info,internal,opusfile,stream}.c",
-    # Everything but vorbisfile.c (the streaming read API) — matches
-    # android/CMakeLists.txt so both platforms compile the same objects.
-    "cpp/thirdparty/libvorbis/lib/{analysis,bitrate,block,codebook,envelope,floor0,floor1,info,lookup,lpc,lsp,mapping0,mdct,psy,registry,res0,sharedbook,smallft,synthesis,vorbisenc,window}.c"
+    # Full libvorbis + vorbisfile (the streaming read API the Ogg Vorbis decode
+    # and Ogg → WAV bridge need) — matches android/CMakeLists.txt so both
+    # platforms compile the same objects.
+    "cpp/thirdparty/libvorbis/lib/{analysis,bitrate,block,codebook,envelope,floor0,floor1,info,lookup,lpc,lsp,mapping0,mdct,psy,registry,res0,sharedbook,smallft,synthesis,vorbisenc,vorbisfile,window}.c"
 
   # HybridEkweAudio is the Nitro hybrid that exposes the capture path to JS. It
   # includes <NitroModules/ArrayBuffer.hpp> and defines no get_current_rms (that
@@ -29,7 +30,10 @@ Pod::Spec.new do |s|
   s.exclude_files = "cpp/HybridEkweAudio.{hpp,cpp}"
 
   s.public_header_files = "ios/EkweAudioCodecBridge.h"
-  s.frameworks = "Foundation"
+
+  # AVFoundation decodes non-Ogg sources to PCM and provides the CoreMedia
+  # sample-buffer types; AudioToolbox's ExtAudioFile writes the M4A playback copy.
+  s.frameworks = "Foundation", "AVFoundation", "CoreMedia", "AudioToolbox"
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',

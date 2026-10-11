@@ -279,7 +279,6 @@ class AudioCaptureClass {
         ...(waveform !== undefined ? { waveform } : {}),
       };
 
-      this.currentSessionId = null;
       this.currentMeteringData = [];
 
       if (isAndroid) {

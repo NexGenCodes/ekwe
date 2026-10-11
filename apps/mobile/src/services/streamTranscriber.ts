@@ -1,5 +1,6 @@
 import {
   streamServerMessageSchema,
+  type StreamControlMessage,
   type StreamError,
   type StreamTranscriptEvent,
 } from "@ekwe/shared";
@@ -14,7 +15,17 @@ export interface StreamConfig {
   getToken?: () => string | null;
 }
 
-type StreamCallback = (event: StreamTranscriptEvent | StreamError) => void;
+/**
+ * Every server message reaches the consumer, not just transcripts.
+ *
+ * Control messages carry the session's state — which provider is actually
+ * speaking, what language was detected, that the socket is open. Forwarding
+ * only transcripts meant a caller could not tell a healthy session from one the
+ * worker had quietly moved off its primary provider.
+ */
+type StreamCallback = (
+  event: StreamTranscriptEvent | StreamError | StreamControlMessage,
+) => void;
 type StreamStatusCallback = (
   status: "connecting" | "connected" | "disconnected" | "error",
 ) => void;
@@ -124,6 +135,52 @@ class StreamTranscriberClass {
               return;
             }
 
+            // Control messages the server sends for the client's benefit.
+            // They used to fall through to a bare `return`, which discarded the
+            // only signal that a stream was viable, that the detected language
+            // changed, or that the worker had silently swapped providers
+            // mid-session.
+            if (msg.type === "ready") {
+              logger.info("[StreamTranscriber] Provider socket open", {
+                route: msg.route,
+                provider: msg.provider,
+              });
+              this.notifyCallbacks(msg);
+              return;
+            }
+
+            if (msg.type === "language_detected") {
+              logger.info("[StreamTranscriber] Language detected", {
+                language: msg.language,
+                provider: msg.provider,
+              });
+              this.notifyCallbacks(msg);
+              return;
+            }
+
+            if (msg.type === "provider_switch") {
+              logger.info("[StreamTranscriber] Provider switched", {
+                from: msg.from,
+                to: msg.to,
+                reason: msg.reason,
+                languageReset: msg.languageReset ?? false,
+              });
+              this.notifyCallbacks(msg);
+              return;
+            }
+
+            // `stop` means the worker ended the session deliberately. Interim
+            // text already delivered stays delivered; the close event that
+            // follows carries the reason.
+            if (msg.type === "stop") {
+              logger.info("[StreamTranscriber] Server ended the session");
+              return;
+            }
+
+            logger.warn(
+              "[StreamTranscriber] Unhandled server message",
+              (msg as { type?: string }).type,
+            );
             return;
           }
 
@@ -252,7 +309,9 @@ class StreamTranscriberClass {
     }
   }
 
-  private notifyCallbacks(event: StreamTranscriptEvent | StreamError): void {
+  private notifyCallbacks(
+    event: StreamTranscriptEvent | StreamError | StreamControlMessage,
+  ): void {
     this.callbacks.forEach((cb) => cb(event));
   }
 

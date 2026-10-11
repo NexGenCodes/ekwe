@@ -1,6 +1,6 @@
 import { CLIENT_ABORTED, Env } from "@/core/types";
 import { logger } from "@/core/logger";
-import { loadWitPoolKeys } from "@/utils/wit-pools";
+import { ProviderHttpError } from "@/core/provider-errors";
 
 export function getRandomInt(max: number): number {
   if (!Number.isInteger(max) || max <= 0) return NaN;
@@ -82,12 +82,9 @@ export async function timingSafeEqual(a: string, b: string): Promise<boolean> {
 export interface RotateKeysDetailedResult {
   response: Response | null;
   lastStatus: number | null;
+  lastError: unknown;
 }
 
-/**
- * Usable keys for a provider, in random order so every session does not hammer
- * the first one until it rate-limits.
- */
 export function providerKeys(env: Env, prefix: string): string[] {
   const keys = Object.keys(env)
     .filter((k) => k.startsWith(prefix))
@@ -114,8 +111,7 @@ export async function rotateKeysDetailed(
     .map((k) => sanitizeKey(env[k]))
     .filter((k) => k.length > 10);
 
-  const candidates =
-    prefix === "WIT_KEY_" ? [...keys, ...(await loadWitPoolKeys(env))] : keys;
+  const candidates = keys;
 
   const array = new Uint32Array(candidates.length);
   crypto.getRandomValues(array);
@@ -123,6 +119,7 @@ export async function rotateKeysDetailed(
   const shuffled = idx.map((i) => candidates[i]);
 
   let lastStatus: number | null = null;
+  let lastError: unknown = null;
 
   for (const key of shuffled) {
     if (signal.aborted) {
@@ -132,28 +129,35 @@ export async function rotateKeysDetailed(
       ) {
         throw new Error(CLIENT_ABORTED);
       }
-      return { response: null, lastStatus };
+      return { response: null, lastStatus, lastError: null };
     }
 
     const keyHash = await hashKey(key);
-    if (await env.EKWE_KV.get(`blacklist:${namespace}:${keyHash}`)) continue;
+    const memoKey = `blacklist:${namespace}:${keyHash}`;
+    if (await env.EKWE_KV.get(memoKey)) continue;
 
     let res: Response;
     try {
       res = await execute(key);
     } catch (err) {
+      if (err instanceof Error && err.message === CLIENT_ABORTED) throw err;
+      if (err instanceof Error && err.name === "ProviderTimeoutError") {
+        lastError = err;
+        break;
+      }
+      lastError = err;
       logger.warn("[keys] Rotation attempt failed", {
         error: err instanceof Error ? err.message : String(err),
       });
       continue;
     }
 
-    if (res.ok) return { response: res, lastStatus: null };
+    if (res.ok) return { response: res, lastStatus: null, lastError: null };
 
     lastStatus = res.status;
 
     if (res.status === 429) {
-      await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, "true", {
+      await env.EKWE_KV.put(memoKey, "true", {
         expirationTtl: 60,
       });
       const jitterMs = getRandomInt(100) + 50;
@@ -162,7 +166,7 @@ export async function rotateKeysDetailed(
     }
 
     if (res.status === 401 || res.status === 402 || res.status === 403) {
-      await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, "true", {
+      await env.EKWE_KV.put(memoKey, "true", {
         expirationTtl: 86400,
       });
       continue;
@@ -178,7 +182,7 @@ export async function rotateKeysDetailed(
           "account_suspended",
         ];
         if (PERMANENT_CODES.some((code) => body.includes(code))) {
-          await env.EKWE_KV.put(`blacklist:${namespace}:${keyHash}`, "true", {
+          await env.EKWE_KV.put(memoKey, "true", {
             expirationTtl: 86400,
           });
         }
@@ -193,13 +197,17 @@ export async function rotateKeysDetailed(
         status: res.status,
         namespace,
       });
-      return { response: null, lastStatus: res.status };
+      return {
+        response: null,
+        lastStatus: res.status,
+        lastError: new ProviderHttpError(namespace, res.status),
+      };
     }
 
     continue;
   }
 
-  return { response: null, lastStatus };
+  return { response: null, lastStatus, lastError };
 }
 
 export async function rotateKeys(
@@ -210,4 +218,30 @@ export async function rotateKeys(
 ): Promise<Response | null> {
   const { response } = await rotateKeysDetailed(env, prefix, execute, signal);
   return response;
+}
+
+export async function rotateKeysOrThrow(
+  env: Env,
+  prefix: string,
+  provider: string,
+  execute: (key: string) => Promise<Response>,
+  signal: AbortSignal,
+): Promise<Response> {
+  const { response, lastStatus, lastError } = await rotateKeysDetailed(
+    env,
+    prefix,
+    execute,
+    signal,
+  );
+  if (response) return response;
+  if (lastError) {
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("All provider keys failed");
+  }
+  throw new ProviderHttpError(
+    provider,
+    lastStatus ?? 502,
+    "every key in the pool was exhausted",
+  );
 }

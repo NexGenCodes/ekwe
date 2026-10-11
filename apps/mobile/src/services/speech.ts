@@ -5,7 +5,11 @@ import {
   WORKER_ERROR_CODES,
   VoiceGender,
 } from "@ekwe/shared";
-import { MAX_AUDIO_BYTES, PREMIUM_LIMITS } from "@ekwe/shared/plans";
+import {
+  MAX_AUDIO_BYTES,
+  MAX_AUDIO_INPUT_BYTES,
+  PREMIUM_LIMITS,
+} from "@ekwe/shared/plans";
 
 import { EkweError } from "@/constants/errors";
 import { AudioTranscoder } from "@/services/audioTranscoder";
@@ -275,6 +279,7 @@ export async function synthesizeAudio(
   },
 ): Promise<Result<SynthesizedAudio, EkweError>> {
   let convertedPath: string | null = null;
+  let playbackPath: string | null = null;
 
   try {
     const file = new File(audio.uri);
@@ -284,7 +289,7 @@ export async function synthesizeAudio(
     if (file.size === 0) {
       return err(EkweError.AUDIO_EMPTY);
     }
-    if (file.size && file.size > MAX_AUDIO_BYTES) {
+    if (file.size && file.size > MAX_AUDIO_INPUT_BYTES) {
       return err(EkweError.FILE_TOO_LARGE);
     }
     if (
@@ -324,9 +329,18 @@ export async function synthesizeAudio(
       sourceLang,
     );
     if (artifact.isTemporary) convertedPath = artifact.uri;
+    playbackPath =
+      artifact.playbackUri && artifact.playbackUri !== artifact.uri
+        ? artifact.playbackUri
+        : null;
+
+    const uploadFile = new File(artifact.uri);
+    if (uploadFile.size && uploadFile.size > MAX_AUDIO_BYTES) {
+      return err(EkweError.FILE_TOO_LARGE);
+    }
 
     const upload = await uploadMultipart(
-      new File(artifact.uri),
+      uploadFile,
       `${workerUrl}/synthesize`,
       {
         parameters,
@@ -427,10 +441,11 @@ export async function synthesizeAudio(
     }
     return err(EkweError.NETWORK_LOST);
   } finally {
-    if (convertedPath) {
+    for (const path of [convertedPath, playbackPath]) {
+      if (!path) continue;
       try {
-        const converted = new File(convertedPath);
-        if (converted.exists) converted.delete();
+        const file = new File(path);
+        if (file.exists) file.delete();
       } catch {
         // Best-effort: the startup cache sweep is the backstop.
       }

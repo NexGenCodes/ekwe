@@ -4,14 +4,16 @@ import React from "react";
 import { View } from "react-native";
 import Animated from "react-native-reanimated";
 
-import { Button, LanguageSelectionGrid } from "@/components";
+import { Badge, Button, LanguageSelectionGrid } from "@/components";
 import { Box, Text } from "@/components/ui";
 import { usePermissions } from "@/hooks";
 import { useStyles, useTokens } from "@/hooks/ui";
 import type { Tokens } from "@/hooks/ui";
 import { useFadeIn } from "@/hooks/useAnimation";
 import { useLanguageSelection } from "@/hooks/useLanguageSelection";
-import { settingsActions } from "@/store";
+import { getLanguageName } from "@/constants/languages";
+import { unsupportedStoredLanguages } from "@/utils/languageUtils";
+import { settings$, settingsActions } from "@/store";
 import { triggerHaptic } from "@/utils/haptics";
 
 export default function EditLanguagesScreen(): React.ReactElement {
@@ -20,6 +22,13 @@ export default function EditLanguagesScreen(): React.ReactElement {
   const { selected, toggleLanguage, isComplete, remaining, isMaxed } =
     useLanguageSelection();
   const { maxSelectedLanguages } = usePermissions();
+
+  // Languages the user picked back when we offered them. Reported rather than
+  // silently dropped: a selection that shrinks with no explanation reads as a
+  // bug, and the user is the only one who can decide what to replace.
+  const dropped = unsupportedStoredLanguages(
+    settings$.selectedLanguages.peek(),
+  );
 
   const headerStyle = useFadeIn({ duration: 400 });
 
@@ -31,6 +40,13 @@ export default function EditLanguagesScreen(): React.ReactElement {
       paddingBottom: t.spacing.sm,
     },
     subtitle: {
+      color: t.color.muted,
+    },
+    notice: {
+      marginTop: t.spacing.sm,
+      gap: t.spacing.xs,
+    },
+    noticeHint: {
       color: t.color.muted,
     },
     gridWrapper: {
@@ -79,6 +95,19 @@ export default function EditLanguagesScreen(): React.ReactElement {
           Select exactly {maxSelectedLanguages} languages you work with. Tap to
           select, tap again to remove.
         </Text>
+
+        {dropped.length > 0 && (
+          <Box style={styles.notice}>
+            <Badge
+              variant="warning"
+              label={`No longer offered: ${dropped.map(getLanguageName).join(", ")}`}
+            />
+            <Text variant="caption" style={styles.noticeHint}>
+              These stayed on your account but Ekwe no longer supports them.
+              Pick a replacement from the list.
+            </Text>
+          </Box>
+        )}
       </Animated.View>
 
       <Box style={styles.gridWrapper}>

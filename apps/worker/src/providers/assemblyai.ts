@@ -1,5 +1,6 @@
 import { Env, TranscribeResult } from "@/core/types";
-import { rotateKeys } from "@/utils/keys";
+import { rotateKeysOrThrow } from "@/utils/keys";
+import { ProviderHttpError } from "@/core/provider-errors";
 import { isHallucination } from "@/utils/hallucination";
 import { fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
 import { pollUntilReady } from "@/utils/poll";
@@ -28,9 +29,10 @@ export async function stt(
   env: Env,
   signal: AbortSignal,
 ): Promise<TranscribeResult | null> {
-  const res = await rotateKeys(
+  const res = await rotateKeysOrThrow(
     env,
     "ASSEMBLYAI_KEY_",
+    "assemblyai",
     async (key) => {
       const uploadRes = await fetchWithTimeout(
         ASSEMBLYAI_UPLOAD,
@@ -149,7 +151,7 @@ export async function stt(
     signal,
   );
 
-  if (!res?.ok) return null;
+  if (!res.ok) throw new ProviderHttpError("assemblyai", res.status);
 
   const finalData = await res.json<{
     text: string;

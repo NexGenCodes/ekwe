@@ -5,7 +5,8 @@ import {
   TranscribeResult,
   TranslateResult,
 } from "@/core/types";
-import { rotateKeys } from "@/utils/keys";
+import { rotateKeysOrThrow } from "@/utils/keys";
+import { ProviderHttpError } from "@/core/provider-errors";
 import { buildTranslatePrompt, parseTranslateOutput } from "@/utils/prompts";
 import {
   fetchWithTimeout,
@@ -14,7 +15,6 @@ import {
 } from "@/utils/fetch";
 import { mimeToExt } from "@/utils/mime";
 import { logger } from "@/core/logger";
-import { isLanguageSupported } from "@ekwe/shared/languageCapabilities";
 
 const COHERE_CHAT = "https://api.cohere.ai/v2/chat";
 const COHERE_TRANSCRIBE = "https://api.cohere.com/v2/audio/transcriptions";
@@ -32,9 +32,10 @@ export async function ttt(
   });
 
   try {
-    const res = await rotateKeys(
+    const res = await rotateKeysOrThrow(
       env,
       "COHERE_KEY_",
+      "cohere",
       (key) =>
         fetchWithTimeout(
           COHERE_CHAT,
@@ -67,12 +68,7 @@ export async function ttt(
       signal,
     );
 
-    if (!res?.ok) {
-      logger.warn("[cohere] Translate failed, provider returned error", {
-        status: res?.status ?? "no response",
-      });
-      return null;
-    }
+    if (!res.ok) throw new ProviderHttpError("cohere", res.status);
 
     const data = await res.json<{
       message?: { content?: Array<{ text?: string }> };
@@ -91,10 +87,7 @@ export async function ttt(
     };
   } catch (e) {
     if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
-    logger.error("[cohere] Translate exception", {
-      error: e instanceof Error ? e.message : String(e),
-    });
-    return null;
+    throw e;
   }
 }
 
@@ -104,19 +97,15 @@ export async function stt(
   env: Env,
   signal: AbortSignal,
 ): Promise<TranscribeResult | null> {
-  if (lang && lang !== "auto" && !isLanguageSupported("cohere", "stt", lang)) {
-    logger.info(`[cohere] Skipping transcribe — unsupported language: ${lang}`);
-    return null;
-  }
-
   const body = new FormData();
   body.append("model", COHERE_MODEL);
   body.append("language", lang === "auto" ? "en" : lang);
   body.append("file", blob, `audio.${mimeToExt(blob.type)}`);
 
-  const res = await rotateKeys(
+  const res = await rotateKeysOrThrow(
     env,
     "COHERE_KEY_",
+    "cohere",
     (key) =>
       fetchWithTimeout(
         COHERE_TRANSCRIBE,
@@ -131,12 +120,7 @@ export async function stt(
     signal,
   );
 
-  if (!res?.ok) {
-    logger.warn("[cohere] Transcribe failed, provider returned error", {
-      status: res?.status ?? "no response",
-    });
-    return null;
-  }
+  if (!res.ok) throw new ProviderHttpError("cohere", res.status);
 
   const data = await res.json<{ text?: string }>();
   const text = data.text?.trim();

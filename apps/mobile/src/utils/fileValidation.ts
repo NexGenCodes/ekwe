@@ -2,8 +2,7 @@ import { File as ExpoFile, FileMode } from "expo-file-system";
 
 import { EkweError } from "@/constants/errors";
 import { Result, ok, err } from "@/types/Result";
-import { auth$ } from "@/store";
-import { FREE_LIMITS, PREMIUM_LIMITS } from "@ekwe/shared/plans";
+import { MAX_AUDIO_INPUT_BYTES } from "@ekwe/shared/plans";
 
 const VOICE_NOTE_EXTENSIONS = [
   ".ogg",
@@ -141,9 +140,7 @@ export const validateSharedAudio = async (
     return err(EkweError.BAD_FORMAT);
   }
 
-  const maxSize = auth$.isPro.peek()
-    ? PREMIUM_LIMITS.maxAudioBytes
-    : FREE_LIMITS.maxAudioBytes;
+  const maxSize = MAX_AUDIO_INPUT_BYTES;
 
   const sizeResult = await validateFileSize(uri, maxSize);
   if (!sizeResult.ok) {

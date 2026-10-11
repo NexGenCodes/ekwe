@@ -1,4 +1,9 @@
 import { blobToBase64 } from "@/utils/base64";
+import { CF_WORKERS_AI_MAX_AUDIO_BYTES } from "@ekwe/shared/providerLimits";
+import {
+  ProviderTransportError,
+  ProviderUnusableError,
+} from "@/core/provider-errors";
 import {
   CLIENT_ABORTED,
   Env,
@@ -23,9 +28,18 @@ export async function stt(
   env: Env,
   signal: AbortSignal,
 ): Promise<TranscribeResult | null> {
-  try {
-    if (signal.aborted) throw new Error(CLIENT_ABORTED);
+  if (signal.aborted) throw new Error(CLIENT_ABORTED);
 
+  // The binding takes base64, so the payload inflates by 4/3 before it is sent,
+  // and the model rejects oversized input with `AiError 3010/3006`.
+  if (blob.size > CF_WORKERS_AI_MAX_AUDIO_BYTES) {
+    throw new ProviderUnusableError(
+      "cloudflare",
+      `input ${blob.size}B exceeds the Workers AI ceiling of ${CF_WORKERS_AI_MAX_AUDIO_BYTES}B`,
+    );
+  }
+
+  try {
     // The Workers AI binding serializes Blob/ArrayBuffer into a JSON
     // object, but the Whisper endpoint expects /audio to be a base64
     // string. Encode explicitly so the shape matches what the API
@@ -61,14 +75,14 @@ export async function stt(
         ...(detected ? { language: detected } : {}),
       };
     }
+
+    // A genuine no-result, not a failure: the breaker must not count it.
+    logger.warn("[cloudflare] Transcription empty or hallucinated");
+    return null;
   } catch (e) {
     if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
-    logger.error("[cloudflare] Transcription error", {
-      error: e instanceof Error ? e.message : String(e),
-    });
+    throw new ProviderTransportError("cloudflare", e);
   }
-
-  return null;
 }
 
 export async function ttt(
@@ -95,23 +109,21 @@ export async function ttt(
     if (signal.aborted) throw new Error(CLIENT_ABORTED);
 
     const response = result?.choices?.[0]?.message?.content ?? "";
-    if (response) {
-      const { translation, transliteration: romanized } = parseTranslateOutput(
-        response,
-        request.transliteration,
-      );
-      return {
-        translation,
-        ...(romanized ? { transliteration: romanized } : {}),
-        provider: "cloudflare",
-      };
+    if (!response) {
+      logger.warn("[cloudflare] Translation empty");
+      return null;
     }
+    const { translation, transliteration: romanized } = parseTranslateOutput(
+      response,
+      request.transliteration,
+    );
+    return {
+      translation,
+      ...(romanized ? { transliteration: romanized } : {}),
+      provider: "cloudflare",
+    };
   } catch (e) {
     if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
-    logger.error("[cloudflare] Translation error", {
-      error: e instanceof Error ? e.message : String(e),
-    });
+    throw new ProviderTransportError("cloudflare", e);
   }
-
-  return null;
 }

@@ -28,23 +28,24 @@ describe("Mistral provider", () => {
     expect(result!.provider).toBe("mistral");
   });
 
-  test("returns null on HTTP error", async () => {
+  test("throws on HTTP error", async () => {
     server.use(
       http.post(PROVIDER_URLS.mistralChat, () =>
         jsonResponse({ error: "rate limited" }, 429),
       ),
     );
-    const result = await mistral.ttt(
-      "Hello",
-      {
-        targetLang: "it",
-        sourceLang: "en",
-        transliteration: false,
-      },
-      mockEnv(),
-      mockSignal(),
-    );
-    expect(result).toBeNull();
+    await expect(
+      mistral.ttt(
+        "Hello",
+        {
+          targetLang: "it",
+          sourceLang: "en",
+          transliteration: false,
+        },
+        mockEnv(),
+        mockSignal(),
+      ),
+    ).rejects.toThrow();
   });
 
   test("returns null on empty choices", async () => {

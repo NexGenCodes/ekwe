@@ -14,11 +14,24 @@ import {
   isSupportedPaymentCurrency,
   resolvePaymentCurrency,
 } from "../money";
-import { LANGUAGES, getLanguageFlag, languageName } from "../languages";
+import {
+  ALL_LANGUAGES,
+  LANGUAGES,
+  LANGUAGE_CODE_SET,
+  SUPPORTED_LANGUAGE_CODES,
+  getLanguageFlag,
+  isSupportedLanguage,
+  languageName,
+} from "../languages";
 
 describe("languages registry", () => {
-  test("LANGUAGES is the provider allowlist with derived names", () => {
-    expect(LANGUAGES.length).toBe(139);
+  test("LANGUAGES is the offered set, not the whole catalog", () => {
+    // LANGUAGES is what every picker renders, so it is the supported tier. The
+    // complete catalog lives in ALL_LANGUAGES / LANGUAGE_CODES.
+    expect(LANGUAGES.length).toBe(SUPPORTED_LANGUAGE_CODES.length);
+    expect(LANGUAGES.map((l) => l.code).sort()).toEqual(
+      [...SUPPORTED_LANGUAGE_CODES].sort(),
+    );
     expect(LANGUAGES[0]).toEqual({
       code: "en",
       englishName: "English",
@@ -29,8 +42,35 @@ describe("languages registry", () => {
     );
   });
 
+  test("the offered set is a subset of the catalog", () => {
+    // The catalog stays complete so names and stored values still resolve for a
+    // language we once offered; the tier can only ever narrow it.
+    for (const code of SUPPORTED_LANGUAGE_CODES) {
+      expect(LANGUAGE_CODE_SET.has(code), `${code} missing from catalog`).toBe(
+        true,
+      );
+    }
+    expect(LANGUAGE_CODE_SET.size).toBeGreaterThan(
+      SUPPORTED_LANGUAGE_CODES.length,
+    );
+    expect(isSupportedLanguage("yo")).toBe(false);
+    expect(isSupportedLanguage("en")).toBe(true);
+    expect(isSupportedLanguage("zz")).toBe(false);
+    expect(isSupportedLanguage(undefined)).toBe(false);
+  });
+
+  test("names still resolve for a language we no longer offer", () => {
+    // Dropping Yoruba from the picker must not make stored values or provider
+    // detections unreadable — that is what ALL_LANGUAGES is for.
+    expect(languageName("yo")).toBe("Yoruba");
+    expect(ALL_LANGUAGES.length).toBe(LANGUAGE_CODE_SET.size);
+    expect(LANGUAGES.some((l) => l.code === "yo")).toBe(false);
+  });
+
   test("non-ISO codes fall back to overrides, not a missing name", () => {
-    for (const code of ["ci", "ck", "yue", "haw"]) {
+    // Cherokee, Sicilian and Hawaiian are catalog languages we do not offer;
+    // they must still resolve by name.
+    for (const code of ["ci", "ck", "haw"]) {
       expect(languageName(code)).not.toBe(code);
     }
     expect(languageName("zz")).toBe("zz");

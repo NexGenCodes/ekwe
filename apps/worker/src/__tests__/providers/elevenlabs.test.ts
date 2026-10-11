@@ -97,21 +97,16 @@ describe("ElevenLabs provider", () => {
       expect(result).not.toHaveProperty("language");
     });
 
-    test("returns null on HTTP error", async () => {
+    test("throws on HTTP error", async () => {
       server.use(
         http.post(PROVIDER_URLS.elevenlabsStt, () =>
           jsonResponse({ detail: "unauthorized" }, 401),
         ),
       );
 
-      const result = await elevenlabs.stt(
-        makeAudioBlob(),
-        "en",
-        mockEnv(),
-        mockSignal(),
-      );
-
-      expect(result).toBeNull();
+      await expect(
+        elevenlabs.stt(makeAudioBlob(), "en", mockEnv(), mockSignal()),
+      ).rejects.toThrow();
     });
 
     test("returns null on a hallucinated transcript", async () => {

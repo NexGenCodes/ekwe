@@ -217,7 +217,26 @@ export const dictationActions = {
         });
 
         const removeCb = StreamTranscriber.addCallback((event) => {
-          if ("error" in event) return;
+          // Stream errors used to be dropped here, so a session the worker
+          // could not serve — no route for the language, no provider available,
+          // a dropped socket — ended as a silent empty transcript. Partial
+          // text is kept; the failure is shown.
+          if ("error" in event) {
+            logger.warn("[VoiceDictation] Stream error", {
+              error: event.error,
+              message: event.message,
+            });
+            track(AnalyticsEvents.TRANSCRIPTION_FAILED, {
+              sourceLang,
+              durationMs: dictation$.capturedDurationMs.peek(),
+              error: event.error,
+            });
+            StreamTranscriber.disconnect();
+            dictation$.status.set("error");
+            dictation$.error.set(event.message || "Live transcription failed.");
+            return;
+          }
+
           dictation$.interimText.set(
             event.type === "interim"
               ? event.text
@@ -414,8 +433,21 @@ export const dictationActions = {
       abortController = null;
     }
 
+    // A failed transcription deliberately keeps its clip so the user can retry.
+    // Cancelling is the explicit "I am done with this", so it is where that
+    // clip finally goes.
+    const retained = dictation$.capturedUri.peek();
     dictation$.set({ ...INITIAL_STATE });
     audioActions.resetAudioState();
+
+    if (retained) {
+      try {
+        const f = new File(retained);
+        if (f.exists) f.delete();
+      } catch {
+        // cleanup best-effort
+      }
+    }
   },
 
   async confirmDictation(sourceLang: string): Promise<string | null> {
@@ -440,6 +472,10 @@ export const dictationActions = {
     }
 
     dictation$.status.set("processing");
+    // Cleared up front so a second failure alerts again. Mobx does not notify
+    // when a field is set to the value it already holds, so without this a
+    // retried-and-again-failed clip would stay silent.
+    dictation$.error.set(null);
     track(AnalyticsEvents.TRANSCRIBING_STARTED, {
       sourceLang,
       durationMs: dictation$.capturedDurationMs.peek(),
@@ -447,6 +483,12 @@ export const dictationActions = {
 
     const controller = new AbortController();
     abortController = controller;
+
+    // Cleared only once a transcript exists. A failed attempt has to leave the
+    // clip on disk and the machine in `preview`, otherwise the only recovery is
+    // re-recording — after a timeout or a dropped connection, exactly when the
+    // user least wants to do that.
+    let delivered = false;
 
     try {
       logger.info("[VoiceDictation] Confirming dictation, uri:", uri);
@@ -471,18 +513,21 @@ export const dictationActions = {
         }
         const msg = ErrorMessages[result.error] ?? "Transcription failed.";
         logger.error("[VoiceDictation] Transcription failed:", result.error);
-        dictation$.status.set("error");
+        // Back to `preview`, not `error`: the clip is still there and
+        // `confirmDictation` will accept it again.
+        dictation$.status.set("preview");
         dictation$.error.set(msg);
         audioActions.setError(result.error as EkweError);
         track(AnalyticsEvents.TRANSCRIPTION_FAILED, {
           sourceLang,
           durationMs: dictation$.capturedDurationMs.peek(),
-          error: EkweError.TRANSCRIPTION_FAIL,
+          error: result.error,
         });
         return null;
       }
 
       const { transcript, detectedLang } = result.value;
+      delivered = true;
 
       track(AnalyticsEvents.TRANSCRIBING_COMPLETED, {
         sourceLang,
@@ -504,15 +549,21 @@ export const dictationActions = {
         durationMs: dictation$.capturedDurationMs.peek(),
         error: "exception",
       });
-      dictation$.status.set("error");
+      dictation$.status.set("preview");
       dictation$.error.set("Failed to process voice input.");
       return null;
     } finally {
-      try {
-        const f = new File(uri);
-        if (f.exists) f.delete();
-      } catch {
-        // cleanup best-effort
+      if (delivered) {
+        try {
+          const f = new File(uri);
+          if (f.exists) f.delete();
+        } catch {
+          // cleanup best-effort
+        }
+      } else {
+        logger.info(
+          "[VoiceDictation] Keeping recording for retry after a failed attempt",
+        );
       }
     }
   },

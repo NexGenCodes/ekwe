@@ -61,7 +61,7 @@ async function writeState(
         : Math.ceil(HEALTH_COUNT_TTL_MS / 1000);
 
     await env.EKWE_KV.put(healthKey(provider), JSON.stringify(state), {
-      expirationTtl: Math.max(1, ttlSeconds),
+      expirationTtl: Math.max(60, ttlSeconds),
     });
   } catch {
     // Health writes must never break the request path.
@@ -109,10 +109,12 @@ export async function reportProviderOutcome(
   const memoFresh = !!memo && memo.untilEpochMs > now;
 
   if (ok) {
+    // Deliberately unconditional. Gating this on a fresh memo meant a recovery
+    // seen more than HEALTH_MEMO_TTL_MS after the last failure cleared the
+    // circuit only in that one isolate; every other isolate kept reading an
+    // open circuit from KV until its TTL expired.
     const hadStress =
-      memoFresh &&
-      (isStateOpen(memo?.state ?? null, now) ||
-        (memo?.state?.failures ?? 0) > 0);
+      isStateOpen(memo?.state ?? null, now) || (memo?.state?.failures ?? 0) > 0;
     if (hadStress) {
       try {
         await env.EKWE_KV.delete(healthKey(provider));

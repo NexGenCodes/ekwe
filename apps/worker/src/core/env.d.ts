@@ -27,6 +27,5 @@ interface Env {
   [key: `ASSEMBLYAI_KEY_${number}`]: string | undefined;
   [key: `WIT_KEY_${number}`]: string | undefined;
   [key: `WIT_KEY_${string}`]: string | undefined;
-  [key: `WIT_POOL_${number}`]: { get(): Promise<string | null> } | undefined;
   [key: string]: unknown;
 }

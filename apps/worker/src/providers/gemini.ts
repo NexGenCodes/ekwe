@@ -5,7 +5,7 @@ import {
   TranslateResult,
   SpeechAttempt,
 } from "@/core/types";
-import { rotateKeys, rotateKeysDetailed } from "@/utils/keys";
+import { rotateKeysDetailed, rotateKeysOrThrow } from "@/utils/keys";
 import { buildTranslatePrompt, parseTranslateOutput } from "@/utils/prompts";
 import { base64ToBytes } from "@/utils/base64";
 import { pcmToWav } from "@/utils/wav";
@@ -15,6 +15,7 @@ import {
   TIMEOUT_FAST,
 } from "@/utils/fetch";
 import { logger } from "@/core/logger";
+import { ProviderHttpError } from "@/core/provider-errors";
 
 const GEMINI_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent";
@@ -36,9 +37,10 @@ export async function ttt(
   });
 
   try {
-    const res = await rotateKeys(
+    const res = await rotateKeysOrThrow(
       env,
       "GEMINI_KEY_",
+      "gemini",
       (key) =>
         fetchWithTimeout(
           GEMINI_URL,
@@ -71,12 +73,7 @@ export async function ttt(
       signal,
     );
 
-    if (!res?.ok) {
-      logger.warn("[gemini] Translate failed, provider returned error", {
-        status: res?.status ?? "no response",
-      });
-      return null;
-    }
+    if (!res.ok) throw new ProviderHttpError("gemini", res.status);
 
     const data = await res.json<GeminiResponse>();
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
@@ -96,10 +93,7 @@ export async function ttt(
     };
   } catch (e) {
     if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
-    logger.error("[gemini] Translate exception", {
-      error: e instanceof Error ? e.message : String(e),
-    });
-    return null;
+    throw e;
   }
 }
 

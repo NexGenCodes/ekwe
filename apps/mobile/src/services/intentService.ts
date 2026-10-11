@@ -21,7 +21,10 @@ export const IntentService = {
     outputPath: string,
     options?: { maxDurationMs?: number },
   ): Promise<OpusTranscodeResult | null> => {
-    if (isAndroid && contentUri.startsWith("content://")) {
+    if (
+      (isAndroid && contentUri.startsWith("content://")) ||
+      (!isAndroid && Boolean(contentUri))
+    ) {
       try {
         return await EkweNative.resolveAndTranscodeToOpus(
           contentUri,
@@ -35,6 +38,21 @@ export const IntentService = {
       }
     }
     return null;
+  },
+
+  /**
+   * Granule-based duration probe (C++ `probe_audio_duration_ms`). Authoritative
+   * for Ogg/Opus: it skips the `-1` / 0xFFFFFFFFFFFFFFFF sentinel page that some
+   * encoders (WhatsApp) append, unlike `MediaMetadataRetriever`. Returns -1 when
+   * unknown. Debug aid: compare against the MediaMetadataRetriever value.
+   */
+  probeAudioDurationMs: async (fileUri: string): Promise<number> => {
+    try {
+      return await EkweNative.probeAudioDurationMs(fileUri);
+    } catch (err) {
+      logger.error("[IntentService] probeAudioDurationMs failed:", err);
+      return -1;
+    }
   },
 
   dismissNativeLoader: (): void => {

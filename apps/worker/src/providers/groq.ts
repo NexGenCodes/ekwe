@@ -5,7 +5,8 @@ import {
   TranscribeResult,
   TranslateResult,
 } from "@/core/types";
-import { rotateKeysDetailed } from "@/utils/keys";
+import { rotateKeysDetailed, rotateKeysOrThrow } from "@/utils/keys";
+import { ProviderHttpError } from "@/core/provider-errors";
 import { buildTranslatePrompt, parseTranslateOutput } from "@/utils/prompts";
 import { isHallucination } from "@/utils/hallucination";
 import { mimeToExt } from "@/utils/mime";
@@ -25,9 +26,10 @@ export async function stt(
 ): Promise<TranscribeResult | null> {
   logger.info("[groq] Requesting transcription", { lang, size: blob.size });
 
-  const { response: res } = await rotateKeysDetailed(
+  const res = await rotateKeysOrThrow(
     env,
     "GROQ_KEY_",
+    "groq",
     (key) => {
       const body = new FormData();
       body.append("file", blob, `audio.${mimeToExt(blob.type)}`);
@@ -38,10 +40,6 @@ export async function stt(
         body.append("language", toProviderCode("groq", "stt", lang));
         body.append("response_format", "json");
       } else {
-        // Groq's plain `json` format returns only `text`; `language` and
-        // `duration` come back exclusively with `verbose_json`. The auto path
-        // needs the detected language to report it, so it must ask for the
-        // verbose shape. This mirrors the OpenRouter provider.
         body.append("response_format", "verbose_json");
       }
       body.append("temperature", "0");
@@ -60,11 +58,8 @@ export async function stt(
     signal,
   );
 
-  if (!res?.ok) {
-    logger.warn("[groq] Transcribe failed, provider returned error", {
-      status: res?.status ?? "no response",
-    });
-    return null;
+  if (!res.ok) {
+    throw new ProviderHttpError("groq", res.status, await safeText(res));
   }
 
   const data = await res.json<{
@@ -73,9 +68,6 @@ export async function stt(
     language?: string;
   }>();
   const durationMs = data.duration ? data.duration * 1000 : undefined;
-  // `verbose_json` spells the language out in English ("French"), so it has to
-  // be folded back to a canonical code before anything compares it against
-  // franc. Left unresolved when it names something we do not carry.
   const detected = canonicalLanguageFromName(data.language);
 
   if (data.text && !isHallucination(data.text, durationMs)) {
@@ -87,15 +79,20 @@ export async function stt(
       text: data.text,
       provider: "groq",
       ...(data.duration ? { duration: data.duration } : {}),
-      // Absent when unresolved — never substitute a default language.
       ...(detected ? { language: detected } : {}),
     };
   }
 
-  logger.warn("[groq] Transcription empty or hallucinated", {
-    text: data.text,
-  });
+  logger.warn("[groq] Transcription empty or hallucinated");
   return null;
+}
+
+async function safeText(res: Response): Promise<string> {
+  try {
+    return await res.text();
+  } catch {
+    return "";
+  }
 }
 
 export async function ttt(
@@ -110,7 +107,11 @@ export async function ttt(
   });
 
   try {
-    const { response: res, lastStatus } = await rotateKeysDetailed(
+    const {
+      response: res,
+      lastStatus,
+      lastError,
+    } = await rotateKeysDetailed(
       env,
       "GROQ_KEY_",
       (key) =>
@@ -146,11 +147,12 @@ export async function ttt(
     );
 
     if (!res?.ok) {
-      logger.warn("[groq] Translate failed, provider returned error", {
-        status: res?.status ?? "no response",
-        lastStatus,
-      });
-      return null;
+      if (lastError) {
+        throw lastError instanceof Error
+          ? lastError
+          : new Error("Groq translation request failed");
+      }
+      throw new ProviderHttpError("groq", lastStatus ?? 502);
     }
 
     const data = await res.json<{
@@ -170,9 +172,6 @@ export async function ttt(
     };
   } catch (e) {
     if (e instanceof Error && e.message === CLIENT_ABORTED) throw e;
-    logger.error("[groq] Translate exception", {
-      error: e instanceof Error ? e.message : String(e),
-    });
-    return null;
+    throw e;
   }
 }

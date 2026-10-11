@@ -8,6 +8,7 @@ import { StreamDurableObject } from "@/durable/stream-do";
 import { ws } from "msw";
 import { network } from "@/__tests__/msw/network";
 import { jsonBody } from "@/__tests__/setup";
+import { PREMIUM_LIMITS } from "@ekwe/shared";
 
 interface CloseInfo {
   code: number;
@@ -127,11 +128,12 @@ describe("StreamDurableObject", () => {
     await waitForClose(closes, 4004);
   });
 
-  it("caps concurrent streams per user at 3", async () => {
+  it("caps concurrent streams at the plan limit", async () => {
     const name = "cap-user";
-    await openSession(name, "?tier=PREMIUM");
-    await openSession(name, "?tier=PREMIUM");
-    await openSession(name, "?tier=PREMIUM");
+    const cap = PREMIUM_LIMITS.maxConcurrentStreams;
+    for (let i = 0; i < cap; i++) {
+      await openSession(name, "?tier=PREMIUM");
+    }
 
     const res = await getStub(name).fetch(
       new Request("http://example.com/transcribe/stream?tier=PREMIUM", {
@@ -160,8 +162,13 @@ describe("StreamDurableObject", () => {
   });
 
   it("rejects audio that exceeds the tier byte limit", async () => {
-    const { ws, messages, closes } = await openSession("too-big", "?tier=FREE");
-    ws.send(new ArrayBuffer(6 * 1024 * 1024));
+    // PREMIUM: streaming is Pro-only, so FREE can never hold a session to
+    // push bytes through.
+    const { ws, messages, closes } = await openSession(
+      "too-big",
+      "?tier=PREMIUM",
+    );
+    ws.send(new ArrayBuffer(PREMIUM_LIMITS.maxAudioBytes + 1));
 
     const err = await waitFor(messages, (m) => m.includes("FILE_TOO_LARGE"));
     expect(JSON.parse(err).error).toBe("FILE_TOO_LARGE");

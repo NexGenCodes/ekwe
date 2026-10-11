@@ -1,6 +1,9 @@
 import { LANGUAGES as BASE_LANGUAGES } from "@ekwe/shared/languages";
 import type { Language as BaseLanguage } from "@ekwe/shared/languages";
-import { LANGUAGE_BY_CODE } from "@ekwe/shared/languages";
+import {
+  LANGUAGE_BY_CODE,
+  SUPPORTED_LANGUAGE_CODE_SET,
+} from "@ekwe/shared/languages";
 
 export { getLanguageFlag } from "@ekwe/shared/languages";
 
@@ -86,8 +89,16 @@ export const getLanguageName = (code: string): string => {
   return LANGUAGE_BY_CODE.get(code)?.englishName ?? code;
 };
 
+/**
+ * Whether the product offers this language.
+ *
+ * Deliberately checks the offered set rather than the catalog. The catalog keeps
+ * languages we once supported so a stored selection still resolves to a real
+ * name, and reading it here is exactly how an unsupported language would leak
+ * back into the picker through `sanitizeLanguageCodes`.
+ */
 export const isKnownLanguage = (code: string): boolean =>
-  LANGUAGE_BY_CODE.has(code);
+  SUPPORTED_LANGUAGE_CODE_SET.has(code);
 
 export const getLanguageAbbreviation = (code: string): string => {
   if (code === "auto") return "AUTO";

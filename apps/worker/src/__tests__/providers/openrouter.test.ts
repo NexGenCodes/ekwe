@@ -35,23 +35,24 @@ describe("OpenRouter provider", () => {
       expect(seenHeaders["x-title"]).toBe("Ekwe");
     });
 
-    test("returns null on HTTP error", async () => {
+    test("throws on HTTP error", async () => {
       server.use(
         http.post(PROVIDER_URLS.openrouterChat, () =>
           jsonResponse({ error: "unauthorized" }, 401),
         ),
       );
-      const result = await openrouter.ttt(
-        "Hello",
-        {
-          targetLang: "es",
-          sourceLang: "en",
-          transliteration: false,
-        },
-        mockEnv(),
-        mockSignal(),
-      );
-      expect(result).toBeNull();
+      await expect(
+        openrouter.ttt(
+          "Hello",
+          {
+            targetLang: "es",
+            sourceLang: "en",
+            transliteration: false,
+          },
+          mockEnv(),
+          mockSignal(),
+        ),
+      ).rejects.toThrow();
     });
 
     test("returns null on empty choices", async () => {

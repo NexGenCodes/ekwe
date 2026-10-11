@@ -17,15 +17,37 @@ export function getMimeType(extension: string): string {
   return VOICE_NOTE_EXTENSION_TO_MIME[extension] || "audio/ogg";
 }
 
+/**
+ * Milliseconds per megabyte allowed for the upload itself, before any
+ * processing time.
+ *
+ * A file that is mostly on the wire and a file already at the worker look the
+ * same to a fixed timeout, so the smaller number always aborts one of them.
+ */
+const UPLOAD_MS_PER_MB = 2_000;
+
+/**
+ * Headroom over the worker's own ceiling.
+ *
+ * The worker caps a transcription at TRANSCRIBE_MAX_BUDGET_MS (90s). A client
+ * that gives up before then discards a result the worker had already paid for
+ * and charged for; one that waits far longer just holds a dead socket. Kept in
+ * step with `transcribeBudgetMs` in the worker's `core/budgets.ts`.
+ */
+const PROCESSING_HEADROOM_MS = 60_000;
+
+function defaultTimeoutMs(sizeBytes: number | null | undefined): number {
+  const mb = Math.ceil((sizeBytes ?? 0) / (1024 * 1024));
+  return PROCESSING_HEADROOM_MS + mb * UPLOAD_MS_PER_MB;
+}
+
 export async function uploadMultipart(
   file: ExpoFile,
   url: string,
   opts: UploadMultipartOptions,
 ): Promise<{ status: number; body: string; headers: Record<string, string> }> {
   const retries = 2;
-  const timeoutMs =
-    opts.timeoutMs ??
-    30_000 + Math.ceil((file.size ?? 0) / (1024 * 1024)) * 2000;
+  const timeoutMs = opts.timeoutMs ?? defaultTimeoutMs(file.size);
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -74,7 +96,10 @@ export async function uploadMultipart(
         throw new TimeoutError();
       }
 
-      const wait = 1000 * Math.pow(2, attempt);
+      // Full jitter. A fixed 1s/2s ladder synchronises every client that
+      // dropped at the same instant onto the same provider at the same instant.
+      const ceiling = 1000 * 2 ** attempt;
+      const wait = Math.random() * ceiling;
       await new Promise((resolve) => setTimeout(resolve, wait));
     } finally {
       clearTimeout(timeoutId);

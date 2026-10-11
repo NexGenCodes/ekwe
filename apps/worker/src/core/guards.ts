@@ -1,8 +1,10 @@
 import { LANGUAGES, WORKER_ERROR_CODES } from "@ekwe/shared";
 import {
   isLanguageSupported,
+  LANGUAGE_CAPABILITIES,
   providerIdsForCapability,
   type LanguageCapability,
+  type ProviderId,
 } from "@ekwe/shared/languageCapabilities";
 import { logger } from "@/core/logger";
 import { error } from "@/core/http";
@@ -308,6 +310,11 @@ export function guardLanguageCode(
  * language that no provider transcribes, and only the capability registry knows
  * the difference.
  *
+ * `pool` is the provider list this request will actually draw from. Passing it
+ * matters: a language served only by a premium-pool provider is registry-covered
+ * but unreachable on the free pool, and answering from the registry alone would
+ * promise something the request cannot get.
+ *
  * This is checked before any request is spent, because the alternative is
  * silently skipping every provider and reporting `EKWE_ALL_PROVIDERS_FAIL` —
  * which reads as an outage, tells the client to retry, and marks healthy
@@ -317,11 +324,17 @@ export function guardLanguageCode(
 export function guardSupportedLanguage(
   code: string | undefined | null,
   capability: LanguageCapability,
+  pool?: readonly string[],
 ): GuardResult {
   if (!code || code === "auto") return { allowed: true };
 
-  const servable = providerIdsForCapability(capability).some((id) =>
-    isLanguageSupported(id, capability, code),
+  // Restricted to the pool when one is given, because "some provider claims it"
+  // is weaker than "some provider this request may use claims it".
+  const candidates = pool
+    ? pool.filter((id) => id in LANGUAGE_CAPABILITIES)
+    : providerIdsForCapability(capability);
+  const servable = candidates.some((id) =>
+    isLanguageSupported(id as ProviderId, capability, code),
   );
   if (servable) return { allowed: true };
 

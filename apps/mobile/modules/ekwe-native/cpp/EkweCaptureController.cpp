@@ -7,10 +7,10 @@
 
 #if defined(__ANDROID__)
 #include <android/log.h>
-#define ALOG(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, "EkveCtrl", fmt, ##__VA_ARGS__)
+#define ALOG(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, "EkweCtrl", fmt, ##__VA_ARGS__)
 #else
 #include <cstdio>
-#define ALOG(fmt, ...) std::printf("[EkveCtrl] " fmt "\n", ##__VA_ARGS__)
+#define ALOG(fmt, ...) std::printf("[EkweCtrl] " fmt "\n", ##__VA_ARGS__)
 #endif
 
 namespace ekwe {
@@ -34,12 +34,13 @@ CaptureController::CaptureController(uint32_t sample_rate,
     , dc_filter_enabled_(enable_dc_filter)
     , dc_blocker_prev_in_(0.0)
     , dc_blocker_prev_out_(0.0)
+    , agc_envelope_(0.0)
     , vad_silence_detected_(false)
     , consecutive_silence_frames_(0)
     , silence_frame_threshold_(400) // 8s at 20ms frames
     , preroll_frames_(0)
     , speech_started_(false)
-    , opus_encoder_(sample_rate, channels, 10)
+    , opus_encoder_(sample_rate, channels, 5)
     , ogg_muxer_(output_path, sample_rate, 1)
     , staging_read_pos_(0)
     , staging_write_pos_(0)
@@ -203,7 +204,7 @@ bool CaptureController::stop() {
 
     if (mode_ == CaptureMode::FILE) {
         // A take that never reached speech would finalize an Ogg with no
-        // packets, which iOS cannot remux. Write the buffered lead-in so the
+        // packets, which iOS cannot play. Write the buffered lead-in so the
         // artifact is valid even when it is only silence.
         if (!speech_started_ && !preroll_.empty()) {
             flush_preroll();
@@ -255,20 +256,19 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
     }
     current_rms_ = static_cast<float>(std::sqrt(sum_sq / total) / 32768.0);
 
-    // Apply DC blocker and Normalize in a reusable local buffer
-    static thread_local std::vector<int16_t> scratch_buffer;
-    if (scratch_buffer.size() < total) scratch_buffer.resize(total);
-    std::memcpy(scratch_buffer.data(), frame_data, total * sizeof(int16_t));
+    // Apply DC blocker and Normalize in a reusable instance buffer
+    if (scratch_buffer_.size() < total) scratch_buffer_.resize(total);
+    std::memcpy(scratch_buffer_.data(), frame_data, total * sizeof(int16_t));
 
     if (dc_filter_enabled_) {
-        apply_dc_blocker(scratch_buffer.data(), total);
+        apply_dc_blocker(scratch_buffer_.data(), total);
     }
-    normalize_volume(scratch_buffer.data(), total);
+    normalize_volume(scratch_buffer_.data(), total);
 
     // VAD: energy-based silence detection for the file-mode auto-stop
     double frame_energy = 0.0;
     for (size_t i = 0; i < total; ++i) {
-        double s = static_cast<double>(std::abs(scratch_buffer[i]));
+        double s = static_cast<double>(std::abs(scratch_buffer_[i]));
         frame_energy += s;
     }
     frame_energy /= total;
@@ -294,7 +294,7 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
         // The worker speaks PCM16 LE, and the capture session is already 16 kHz
         // mono, so the frame is forwarded as-is.
         emit_event(CaptureEvent::AUDIO_DATA,
-                   reinterpret_cast<const uint8_t*>(scratch_buffer.data()),
+                   reinterpret_cast<const uint8_t*>(scratch_buffer_.data()),
                    total * sizeof(int16_t));
         return;
     }
@@ -306,8 +306,8 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
     // straight line in a receiver's waveform view.
     if (!is_speech_frame && speech_started_) {
         const size_t cap = static_cast<size_t>(kTailSilenceMs) * sample_rate_ / 1000 * channels_;
-        tail_silence_.insert(tail_silence_.end(), scratch_buffer.begin(),
-                             scratch_buffer.begin() + total);
+        tail_silence_.insert(tail_silence_.end(), scratch_buffer_.begin(),
+                             scratch_buffer_.begin() + total);
         if (tail_silence_.size() > cap) {
             // Keep the most recent window: the pause we drop is the oldest part
             // of a long one, and keeping the tail preserves the boundary into
@@ -323,8 +323,8 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
 
     // FILE mode: hold the opening silence until the VAD hears speech.
     if (!speech_started_) {
-        preroll_.insert(preroll_.end(), scratch_buffer.begin(),
-                        scratch_buffer.begin() + total);
+        preroll_.insert(preroll_.end(), scratch_buffer_.begin(),
+                        scratch_buffer_.begin() + total);
         preroll_frames_++;
 
         // The ring only needs to carry the onset, so anything older than
@@ -350,7 +350,7 @@ void CaptureController::process_frame(const int16_t* frame_data, size_t frame_sa
         return;
     }
 
-    encode_frame_to_ogg(scratch_buffer.data(), total);
+    encode_frame_to_ogg(scratch_buffer_.data(), total);
 }
 
 void CaptureController::flush_tail_silence() {
@@ -416,39 +416,53 @@ void CaptureController::apply_dc_blocker(int16_t* data, size_t num_samples) {
 }
 
 void CaptureController::normalize_volume(int16_t* data, size_t num_samples) {
-    // Target peak level: -3 dBFS (~22755) to leave headroom for clipping
+    if (num_samples == 0) return;
+
+    // Target peak level: -3 dBFS (~22755) to leave headroom
     static constexpr double kTargetPeak = 22755.0;
-    // Minimum gain to avoid amplifying silence/noise floor
     static constexpr double kMinGain = 0.5;
-    // Maximum gain to prevent excessive noise amplification
     static constexpr double kMaxGain = 4.0;
-    // Silence threshold: skip normalization for very quiet frames
     static constexpr double kSilenceThreshold = 500.0;
 
-    // Find peak amplitude
-    int peak = 0;
+    // Attack: fast reaction to sudden loudness (~10 ms)
+    // Release: slow recovery during quieter moments (~300 ms)
+    const double attack_coeff = std::exp(-1.0 / (sample_rate_ * 0.010));
+    const double release_coeff = std::exp(-1.0 / (sample_rate_ * 0.300));
+
+    // Find peak amplitude in current frame
+    int frame_peak = 0;
     for (size_t i = 0; i < num_samples; ++i) {
         int abs_val = std::abs(static_cast<int>(data[i]));
-        if (abs_val > peak) peak = abs_val;
+        if (abs_val > frame_peak) frame_peak = abs_val;
     }
 
-    // Skip normalization for silence or near-silence
-    if (peak < kSilenceThreshold) return;
+    // Update smoothed envelope
+    double current_val = static_cast<double>(frame_peak);
+    if (current_val > agc_envelope_) {
+        agc_envelope_ = attack_coeff * agc_envelope_ + (1.0 - attack_coeff) * current_val;
+    } else {
+        agc_envelope_ = release_coeff * agc_envelope_ + (1.0 - release_coeff) * current_val;
+    }
 
-    // Compute gain needed to reach target peak
-    double gain = kTargetPeak / static_cast<double>(peak);
+    // Skip gain modification for silence or near-silence
+    if (agc_envelope_ < kSilenceThreshold) return;
+
+    // Compute smoothed gain
+    double gain = kTargetPeak / agc_envelope_;
     gain = std::max(kMinGain, std::min(kMaxGain, gain));
 
-    // Apply gain with soft limiting to prevent clipping
+    // Apply gain with tanh soft clipping above threshold
+    static constexpr double kKnee = 26000.0; // Begin soft saturation above ~-2 dBFS
+    static constexpr double kMargin = 32767.0 - kKnee;
+
     for (size_t i = 0; i < num_samples; ++i) {
         double sample = static_cast<double>(data[i]) * gain;
-        // Soft clip: tanh-like saturation for smooth limiting
-        if (sample > 32767.0) {
-            sample = 32767.0;
-        } else if (sample < -32768.0) {
-            sample = -32768.0;
+        if (sample > kKnee) {
+            sample = kKnee + kMargin * std::tanh((sample - kKnee) / kMargin);
+        } else if (sample < -kKnee) {
+            sample = -kKnee + kMargin * std::tanh((sample + kKnee) / kMargin);
         }
-        data[i] = static_cast<int16_t>(sample);
+        data[i] = static_cast<int16_t>(std::round(sample));
     }
 }
 

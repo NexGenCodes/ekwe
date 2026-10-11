@@ -4,6 +4,7 @@ import { mockEnv, jsonResponse, mockSignal } from "@/__tests__/setup";
 import { http } from "msw";
 import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
+import { ProviderHttpError } from "@/core/provider-errors";
 
 describe("Cohere provider", () => {
   test("transcribe returns text on success", async () => {
@@ -20,13 +21,7 @@ describe("Cohere provider", () => {
     expect(result!.provider).toBe("cohere");
   });
 
-  test("transcribe returns null for unsupported language", async () => {
-    const blob = new Blob(["fake audio"], { type: "audio/wav" });
-    const result = await cohere.stt(blob, "ig", mockEnv(), mockSignal());
-    expect(result).toBeNull();
-  });
-
-  test("transcribe returns null on HTTP error", async () => {
+  test("transcribe throws on HTTP error", async () => {
     server.use(
       http.post(PROVIDER_URLS.cohereTranscriptions, () =>
         jsonResponse({ error: "fail" }, 500),
@@ -34,8 +29,9 @@ describe("Cohere provider", () => {
     );
 
     const blob = new Blob(["fake audio"], { type: "audio/wav" });
-    const result = await cohere.stt(blob, "en", mockEnv(), mockSignal());
-    expect(result).toBeNull();
+    await expect(
+      cohere.stt(blob, "en", mockEnv(), mockSignal()),
+    ).rejects.toThrow(ProviderHttpError);
   });
 
   test("transcribe returns null on missing text", async () => {
@@ -49,13 +45,18 @@ describe("Cohere provider", () => {
   });
 
   test("transcribe does not skip supported languages", async () => {
+    server.use(
+      http.post(PROVIDER_URLS.cohereTranscriptions, () =>
+        jsonResponse({ text: "hola mundo" }),
+      ),
+    );
     const result = await cohere.stt(
       new Blob(["fake"], { type: "audio/wav" }),
       "es",
       mockEnv(),
       mockSignal(),
     );
-    expect(result).toBeNull();
+    expect(result!.text).toBe("hola mundo");
   });
 
   test("returns translation on success", async () => {
@@ -80,23 +81,20 @@ describe("Cohere provider", () => {
     expect(result!.provider).toBe("cohere");
   });
 
-  test("returns null on HTTP error", async () => {
+  test("translate throws on HTTP error", async () => {
     server.use(
       http.post(PROVIDER_URLS.cohereChat, () =>
         jsonResponse({ error: "unauthorized" }, 401),
       ),
     );
-    const result = await cohere.ttt(
-      "Hello",
-      {
-        targetLang: "fr",
-        sourceLang: "en",
-        transliteration: false,
-      },
-      mockEnv(),
-      mockSignal(),
-    );
-    expect(result).toBeNull();
+    await expect(
+      cohere.ttt(
+        "Hello",
+        { targetLang: "fr", sourceLang: "en", transliteration: false },
+        mockEnv(),
+        mockSignal(),
+      ),
+    ).rejects.toThrow(ProviderHttpError);
   });
 
   test("returns null on empty message content", async () => {
@@ -107,11 +105,7 @@ describe("Cohere provider", () => {
     );
     const result = await cohere.ttt(
       "Hello",
-      {
-        targetLang: "fr",
-        sourceLang: "en",
-        transliteration: false,
-      },
+      { targetLang: "fr", sourceLang: "en", transliteration: false },
       mockEnv(),
       mockSignal(),
     );
@@ -122,11 +116,7 @@ describe("Cohere provider", () => {
     server.use(http.post(PROVIDER_URLS.cohereChat, () => jsonResponse({})));
     const result = await cohere.ttt(
       "Hello",
-      {
-        targetLang: "fr",
-        sourceLang: "en",
-        transliteration: false,
-      },
+      { targetLang: "fr", sourceLang: "en", transliteration: false },
       mockEnv(),
       mockSignal(),
     );

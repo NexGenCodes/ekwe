@@ -6,10 +6,10 @@
 
 #if defined(__ANDROID__)
 #include <android/log.h>
-#define ALOG(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, "EkveEnc", fmt, ##__VA_ARGS__)
+#define ALOG(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, "EkweEnc", fmt, ##__VA_ARGS__)
 #else
 #include <cstdio>
-#define ALOG(fmt, ...) std::printf("[EkveEnc] " fmt "\n", ##__VA_ARGS__)
+#define ALOG(fmt, ...) std::printf("[EkweEnc] " fmt "\n", ##__VA_ARGS__)
 #endif
 
 namespace ekwe {

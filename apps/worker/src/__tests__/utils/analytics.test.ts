@@ -141,7 +141,7 @@ describe("failover telemetry (utils/retry.ts)", () => {
       route: "translate",
       env,
       tier: "PREMIUM",
-      shouldSkip: async (name) => name === "p1",
+      shouldSkip: async (name) => (name === "p1" ? "circuit-open" : null),
       invoke: async () => {
         throw new Error("upstream timeout");
       },

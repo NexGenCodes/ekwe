@@ -33,9 +33,9 @@ import { server } from "@/__tests__/msw/server";
 import { PROVIDER_URLS } from "@/__tests__/msw/handlers";
 import { getVoiceSlot } from "@ekwe/shared";
 
+/** Past the provider floor — see the note in routes/synthesize.test.ts. */
 function mp3Response(): Response {
-  const mp3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x00, 0x00]);
-  return new Response(mp3, {
+  return new Response(new Uint8Array(4_096), {
     status: 200,
     headers: { "Content-Type": "audio/mpeg" },
   });
@@ -556,7 +556,10 @@ describe("speech engine (services/speech.ts)", () => {
       // deepgram supports 7 languages and zh is not one of them, so it must
       // not be attempted (and therefore cannot be marked down for it).
       expect(providers).not.toContain("deepgram");
-      expect(providers).toEqual(["gemini", "elevenlabs", "edge", "witai"]);
+      // Wit answers 200 for zh but returns 3.4 KB of clipped audio, so it must
+      // not be attempted either.
+      expect(providers).not.toContain("witai");
+      expect(providers).toEqual(["gemini", "elevenlabs", "edge"]);
     });
 
     test("a missing persona position is skipped, not clamped", () => {

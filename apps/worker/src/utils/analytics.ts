@@ -68,7 +68,7 @@ export function recordProviderAttempt(
   env: Env,
   route: string,
   provider: string,
-  outcome: "success" | "failure" | "skip",
+  outcome: "success" | "failure" | "skip" | "rejected",
   latencyMs: number,
   errorClass = "",
   attempt = 0,

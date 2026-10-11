@@ -11,10 +11,14 @@ import {
   readLimitedBody,
 } from "@/core/guards";
 import { hashBytes } from "@/utils/keys";
-import { sniffAudioMime } from "@/utils/mime";
+import { sniffAudioFormat, CODEC_SNIFF_BYTES } from "@/utils/mime";
+import type { AudioCodec } from "@ekwe/shared/providerLimits";
 
-/** `sniffAudioMime` never looks past the first 8 bytes. */
-const SNIFF_BYTES = 16;
+/**
+ * `sniffAudioFormat` reads far enough to separate Vorbis from Opus inside a
+ * shared Ogg container, which the container sniffer alone could not do.
+ */
+const SNIFF_BYTES = CODEC_SNIFF_BYTES;
 
 type FormResult = FormData | "too_large" | "invalid";
 
@@ -41,6 +45,12 @@ export interface IngestedAudio {
   /** Re-typed view over the uploaded part. `slice` does not copy the bytes. */
   audio: Blob;
   mimeType: string;
+  /**
+   * Resolved from the bytes, not the declared type. Wit parses Vorbis-in-Ogg
+   * and answers Opus-in-Ogg with silence, so the container alone is not enough
+   * to decide whether it can be attempted at all.
+   */
+  codec: AudioCodec;
   /** SHA-256 of the audio bytes, for cache keys. */
   audioHash: string;
   durationMs: number | undefined;
@@ -136,17 +146,22 @@ export async function ingestAudioUpload(
 
   // Hash the file's bytes, not the multipart body: clients send a new boundary
   // each request, so hashing the body would make every cache key unique.
-  const audioHash = await hashBytes(await file.arrayBuffer());
+  const fullBuffer = await file.arrayBuffer();
+  const audioHash = await hashBytes(fullBuffer);
 
-  // Sniff a short prefix rather than reading the whole upload for 8 bytes.
-  const head = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
-  const mimeType = sniffAudioMime(head, file.type);
+  const head = new Uint8Array(
+    fullBuffer,
+    0,
+    Math.min(fullBuffer.byteLength, SNIFF_BYTES),
+  );
+  const sniffed = sniffAudioFormat(head, file.type);
 
   return {
     ok: true,
     value: {
-      audio: file.slice(0, file.size, mimeType),
-      mimeType,
+      audio: file.slice(0, file.size, sniffed.mime),
+      mimeType: sniffed.mime,
+      codec: sniffed.codec,
       audioHash,
       durationMs,
       form,

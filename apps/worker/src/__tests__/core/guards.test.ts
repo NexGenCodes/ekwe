@@ -6,6 +6,7 @@ import {
   guardAudioDuration,
   guardAutoDetect,
   guardLanguageCode,
+  guardSupportedLanguage,
   guardWebSocketUpgrade,
   guardJsonSize,
   guardMultipartSize,
@@ -268,5 +269,57 @@ describe("tooManyRequests", () => {
     const res = tooManyRequests("Slow down", 30);
     expect(res.status).toBe(429);
     expect(res.headers.get("Retry-After")).toBe("30");
+  });
+});
+
+describe("guardSupportedLanguage", () => {
+  it("passes auto and absent codes", () => {
+    expect(guardSupportedLanguage("auto", "stt")).toEqual({ allowed: true });
+    expect(guardSupportedLanguage(undefined, "stt")).toEqual({ allowed: true });
+    expect(guardSupportedLanguage(null, "stt")).toEqual({ allowed: true });
+  });
+
+  it("passes a language some provider in the pool serves", () => {
+    expect(guardSupportedLanguage("en", "stt", ["groq", "witai"]).allowed).toBe(
+      true,
+    );
+    expect(guardSupportedLanguage("th", "ttt", ["gemini"]).allowed).toBe(true);
+  });
+
+  it("rejects a language no provider in the pool serves", () => {
+    // Every offered language is covered, so an empty pool is the realistic way
+    // to reach this: it is what a tier with nothing registered would look like.
+    const result = guardSupportedLanguage("en", "stt", []);
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.response.status).toBe(400);
+  });
+
+  it("checks the pool, not the whole registry", () => {
+    // ElevenLabs transcribes Igbo but sits in the premium pool only. Registry
+    // coverage would let a free-tier request through; the pool must not.
+    const PREMIUM_POOL = [
+      "witai",
+      "assemblyai",
+      "deepgram",
+      "elevenlabs",
+      "gladia",
+      "groq",
+      "cloudflare",
+    ];
+    const FREE_POOL = ["witai", "groq", "cloudflare", "gladia", "cohere"];
+
+    expect(guardSupportedLanguage("ig", "stt", PREMIUM_POOL).allowed).toBe(
+      true,
+    );
+    expect(guardSupportedLanguage("ig", "stt", FREE_POOL).allowed).toBe(false);
+    // Without a pool it falls back to registry coverage, which is the older,
+    // weaker answer — kept so callers that do not know their tier still work.
+    expect(guardSupportedLanguage("ig", "stt").allowed).toBe(true);
+  });
+
+  it("ignores pool entries that are not registered providers", () => {
+    expect(
+      guardSupportedLanguage("en", "stt", ["not-a-provider"]).allowed,
+    ).toBe(false);
   });
 });

@@ -36,9 +36,7 @@ function job(over: Partial<Parameters<typeof runTranslate>[0]> = {}) {
 }
 
 describe("runTranslate", () => {
-  test("rejects a provider the validator refuses and tries the next", async () => {
-    // Synthesis used to skip this check entirely, so a provider that answered in
-    // the wrong language was cached and served from D1 from then on.
+  test("keeps looking after a mismatched answer and takes the next", async () => {
     validateTranscriptLanguage.mockImplementation((t) => t !== TRANSLATION);
     server.use(
       http.post(PROVIDER_URLS.geminiGenerate, async ({ request }) => {
@@ -64,13 +62,13 @@ describe("runTranslate", () => {
     const result = await runTranslate(job());
 
     expect(validateTranscriptLanguage).toHaveBeenCalled();
-    // Gemini leads the premium pool and answers in the wrong language, so the
-    // job must fall through to the next provider rather than cache it.
     expect(result?.translation).toBe("Hola mundo");
     expect(result?.provider).toBe("cohere");
   });
 
-  test("returns null when the validator refuses every provider", async () => {
+  test("falls back to the first answer when every provider mismatches", async () => {
+    // Better than a 503: every provider produced words, and throwing them all
+    // away served the user nothing for a full budget's worth of calls.
     validateTranscriptLanguage.mockReturnValue(false);
     const wrong = () =>
       jsonResponse({ choices: [{ message: { content: TRANSLATION } }] });
@@ -81,7 +79,8 @@ describe("runTranslate", () => {
       http.post(PROVIDER_URLS.mistralChat, wrong),
     );
 
-    expect(await runTranslate(job())).toBeNull();
+    const result = await runTranslate(job());
+    expect(result?.translation).toBe(TRANSLATION);
   });
 
   test("does not ask for a romanization when the caller does not want one", async () => {

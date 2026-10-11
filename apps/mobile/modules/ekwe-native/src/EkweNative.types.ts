@@ -18,11 +18,19 @@ export type DecodeToWavResult = {
   waveform: number[];
 };
 
-export type RemuxToCafResult = {
+export type ResolveAudioOptions = {
+  opusOutputPath: string;
+  vorbisOutputPath?: string | null;
+  maxAudioBytes: number;
+  maxDurationMs?: number;
+};
+
+export type ResolveAudioResult = {
   success: boolean;
   error: string;
   durationMs: number;
   waveform: number[];
+  vorbisSuccess: boolean;
 };
 
 export type AudioRecordingResult = {
@@ -62,12 +70,6 @@ export type SimpleResult = {
 /**
  * Mirrors the AsyncFunctions the native modules actually register.
  *
- * Every entry here was read off `ios/EkweNativeModule.swift` and
- * `android/.../EkweNativeModule.kt`. The previous version declared methods that
- * exist on neither platform (`decodeToWav`, `encodePcmToOpus`,
- * `transcodeFromMemory`) and omitted ones callers use, which is what broke
- * `tsc` and the share-out tests.
- *
  * iOS and Android disagree on some functions — the orb screen and the echo
  * loader are Android-only — so a capability that is genuinely unavailable is
  * optional rather than declared and then failing at runtime.
@@ -81,31 +83,15 @@ export type EkweNativeModuleType = {
   /** Android only. */
   dismissEcho?(): void;
 
-  transcodeToOpusWithWaveform(
-    inputPath: string,
-    outputPath: string,
-    maxAudioBytes: number,
-    options?: Record<string, unknown>,
-  ): Promise<OpusTranscodeResult>;
-
   /**
-   * Same decode → waveform shape as `transcodeToOpusWithWaveform`, but writes
-   * Vorbis-in-Ogg instead of Opus-in-Ogg — the only codec Wit.ai parses inside
-   * an Ogg container. Always re-encodes, even when the source is already Ogg.
+   * Decode-once fan-out: writes the Ogg Opus artifact plus an optional Ogg
+   * Vorbis upload copy when `vorbisOutputPath` is non-empty. The result reports
+   * `vorbisSuccess`.
    */
-  transcodeToVorbisWithWaveform(
+  resolveAudio(
     inputPath: string,
-    outputPath: string,
-    maxAudioBytes: number,
-  ): Promise<OpusTranscodeResult>;
-
-  /** Decodes once, writes both Ogg Opus and Ogg Vorbis. */
-  transcodeToDualWithWaveform(
-    inputPath: string,
-    opusOutputPath: string,
-    vorbisOutputPath: string,
-    maxAudioBytes: number,
-  ): Promise<{ opus: OpusTranscodeResult; vorbis: OpusTranscodeResult }>;
+    options: ResolveAudioOptions,
+  ): Promise<ResolveAudioResult>;
 
   /** Duration in ms without a full decode, or -1 when it cannot be probed. */
   probeAudioDurationMs(inputPath: string): Promise<number>;
@@ -114,11 +100,17 @@ export type EkweNativeModuleType = {
     outputPath: string,
     maxAudioBytes: number,
   ): Promise<DecodeToWavResult>;
-  remuxToCaf(
+
+  /**
+   * iOS only. Decodes the source and writes an M4A/AAC-LC playback copy at
+   * `outputPath`. Ogg sources bridge through WAV; platform-readable sources
+   * decode straight to M4A. Returns true on success.
+   */
+  createPlaybackCopy?(
     inputPath: string,
     outputPath: string,
     maxAudioBytes: number,
-  ): Promise<RemuxToCafResult>;
+  ): Promise<boolean>;
   resolveAndTranscodeToOpus(
     uriString: string,
     outputPath: string,

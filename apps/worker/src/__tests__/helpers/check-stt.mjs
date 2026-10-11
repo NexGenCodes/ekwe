@@ -59,15 +59,13 @@ const DEFAULT_LANGS = ["en", "es", "fr", "yo", "ig"];
 
 export function loadEnv() {
   const env = {};
-  for (const name of [".dev.vars", ".dev.vars.store"]) {
-    const path = join(WORKER_DIR, name);
-    if (!existsSync(path)) continue;
-    for (const raw of readFileSync(path, "utf8").split("\n")) {
-      const line = raw.trim();
-      if (!line || line.startsWith("#")) continue;
-      const match = raw.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
-      if (match) env[match[1]] = match[2].trim().replace(/^["']|["']$/g, "");
-    }
+  const path = join(WORKER_DIR, ".dev.vars");
+  if (!existsSync(path)) return env;
+  for (const raw of readFileSync(path, "utf8").split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = raw.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (match) env[match[1]] = match[2].trim().replace(/^["']|["']$/g, "");
   }
   return env;
 }

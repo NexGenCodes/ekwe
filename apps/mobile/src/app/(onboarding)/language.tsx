@@ -3,12 +3,14 @@ import React, { useCallback } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Button, LanguageSelectionGrid } from "@/components";
+import { Badge, Button, LanguageSelectionGrid } from "@/components";
 import { Box, ScreenContainer, Text } from "@/components/ui";
 import { usePermissions } from "@/hooks";
 import { useTokens } from "@/hooks/ui";
 import { useLanguageSelection } from "@/hooks/useLanguageSelection";
-import { settingsActions, auth$ } from "@/store";
+import { settings$, settingsActions, auth$ } from "@/store";
+import { getLanguageName } from "@/constants/languages";
+import { unsupportedStoredLanguages } from "@/utils/languageUtils";
 import { track, AnalyticsEvents } from "@/utils/analytics";
 import { spacing as spacingToken } from "@/constants/spacing";
 
@@ -25,6 +27,10 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
   const { maxSelectedLanguages } = usePermissions();
   const { selected, toggleLanguage, isComplete, isMaxed } =
     useLanguageSelection();
+  // Reached when someone re-onboards after we dropped a language they had saved.
+  const dropped = unsupportedStoredLanguages(
+    settings$.selectedLanguages.peek(),
+  );
 
   const handleContinue = useCallback(async (): Promise<void> => {
     if (!isComplete) return;
@@ -97,6 +103,15 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
             </Text>
           </Box>
         </Box>
+
+        {dropped.length > 0 && (
+          <Box style={{ gap: spacing.xs, paddingHorizontal: spacing.lg }}>
+            <Badge
+              variant="warning"
+              label={`No longer offered: ${dropped.map(getLanguageName).join(", ")}`}
+            />
+          </Box>
+        )}
 
         <Box style={{ flex: 1 }}>
           <LanguageSelectionGrid

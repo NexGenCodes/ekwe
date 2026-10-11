@@ -226,6 +226,112 @@ void test_file_entry_point() {
     check("oversized input writes no output", file_size(never) < 0);
 }
 
+void test_encode_pcm_to_dual() {
+    const std::string opus_out = temp_path("dual_opus.ogg");
+    const std::string vorbis_out = temp_path("dual_vorbis.ogg");
+    std::remove(opus_out.c_str());
+    std::remove(vorbis_out.c_str());
+
+    const std::vector<int16_t> pcm = tone(SR); // 1s
+    DualTranscodeResult dual =
+        encode_pcm_to_dual(pcm.data(), pcm.size(), SR, 1, opus_out, vorbis_out);
+
+    check("dual: opus half succeeds", dual.opus.success);
+    check("dual: vorbis half succeeds", dual.vorbis.success);
+    check("dual: opus reports 1000 ms", dual.opus.duration_ms == 1000);
+    check("dual: vorbis reports the same 1000 ms", dual.vorbis.duration_ms == 1000);
+    check("dual: both carry the 60-bin waveform",
+          dual.opus.waveform.size() == 60 && dual.vorbis.waveform.size() == 60);
+
+    std::vector<uint8_t> opus_bytes;
+    std::vector<uint8_t> vorbis_bytes;
+    check("dual: opus output readable", read_all(opus_out, opus_bytes));
+    check("dual: vorbis output readable", read_all(vorbis_out, vorbis_bytes));
+    check("dual: opus output is Ogg Opus",
+          contains(opus_bytes, "OpusHead") && !contains(opus_bytes, "\x01vorbis"));
+    check("dual: vorbis output is Ogg Vorbis",
+          contains(vorbis_bytes, "\x01vorbis") && !contains(vorbis_bytes, "OpusHead"));
+
+    // An empty Vorbis path is how the caller opts out (> Wit cap): the half is
+    // reported as skipped, not failed, while Opus still succeeds.
+    const std::string opus_only = temp_path("dual_opus_only.ogg");
+    std::remove(opus_only.c_str());
+    DualTranscodeResult skipped =
+        encode_pcm_to_dual(pcm.data(), pcm.size(), SR, 1, opus_only, "");
+    check("dual: opus-only still succeeds", skipped.opus.success);
+    check("dual: opted-out vorbis is SKIPPED",
+          skipped.vorbis.error_message == "SKIPPED");
+}
+
+void test_resolve_ogg_to_artifacts() {
+    // Stage a real Ogg Vorbis source, then resolve it the way the platform
+    // resolver does: one decode, then Opus + Vorbis + the WAV bridge output.
+    const std::string src = temp_path("resolve_src.ogg");
+    std::remove(src.c_str());
+    const std::vector<int16_t> pcm = tone(SR); // 1s
+    DecodeResult encoded = encode_pcm_to_vorbis(src, pcm.data(), pcm.size(), SR, 1);
+    if (!encoded.success) {
+        check("resolve: source Vorbis staged", false);
+        return;
+    }
+
+    const std::string opus_out = temp_path("resolve_opus.ogg");
+    const std::string vorbis_out = temp_path("resolve_vorbis.ogg");
+    const std::string wav_out = temp_path("resolve_bridge.wav");
+    std::remove(opus_out.c_str());
+    std::remove(vorbis_out.c_str());
+    std::remove(wav_out.c_str());
+
+    DecodeResult resolved =
+        resolve_ogg_to_artifacts(src, opus_out, vorbis_out, wav_out, 10 * 1024 * 1024);
+    check("resolve: Ogg Vorbis decodes and resolves", resolved.success);
+    if (!resolved.success) {
+        std::printf("      error=%s\n", resolved.error_message.c_str());
+        return;
+    }
+    check("resolve: reports 1000 ms", resolved.duration_ms == 1000);
+    check("resolve: returns the 60-bin waveform", resolved.waveform.size() == 60);
+
+    std::vector<uint8_t> opus_bytes;
+    std::vector<uint8_t> vorbis_bytes;
+    std::vector<uint8_t> wav_bytes;
+    check("resolve: opus output readable", read_all(opus_out, opus_bytes));
+    check("resolve: vorbis output readable", read_all(vorbis_out, vorbis_bytes));
+    check("resolve: wav bridge readable", read_all(wav_out, wav_bytes));
+    check("resolve: opus output is Ogg Opus", contains(opus_bytes, "OpusHead"));
+    check("resolve: vorbis output is Ogg Vorbis", contains(vorbis_bytes, "\x01vorbis"));
+    check("resolve: wav bridge is RIFF/WAVE",
+          wav_bytes.size() >= 12 && std::memcmp(wav_bytes.data(), "RIFF", 4) == 0 &&
+              std::memcmp(wav_bytes.data() + 8, "WAVE", 4) == 0);
+
+    // The bridge WAV must decode with the module's own WAV reader.
+    DecodeResult wav_back = analyze_audio_file(wav_out);
+    check("resolve: the WAV bridge decodes back", wav_back.success);
+    if (wav_back.success) {
+        check("resolve: WAV bridge duration is 1000 ms", wav_back.duration_ms == 1000);
+    }
+}
+
+void test_non_wav_defers_to_platform() {
+    // An MP3-ish header: not Ogg, not RIFF. The core must refuse it with the
+    // documented sentinel so the platform decoder picks it up, and must not
+    // leave a bogus output behind.
+    const std::string src = temp_path("fake_mp3.bin");
+    const std::string out = temp_path("fake_mp3_out.ogg");
+    std::remove(out.c_str());
+    FILE* f = std::fopen(src.c_str(), "wb");
+    if (f) {
+        const char bytes[] = "ID3\x03\x00\x00\x00\x00\x00\x00";
+        std::fwrite(bytes, 1, sizeof(bytes) - 1, f);
+        std::fclose(f);
+    }
+    DecodeResult r = transcode_audio_to_opus(src, out, 10 * 1024 * 1024);
+    check("non-WAV/non-Ogg input fails in the core", !r.success);
+    check("non-WAV/non-Ogg reports PLATFORM_DECODE_REQUIRED",
+          r.error_message == "PLATFORM_DECODE_REQUIRED");
+    check("non-WAV/non-Ogg writes no output", file_size(out) < 0);
+}
+
 // Every entry point below builds a DecodeResult, sets error_message on the
 // failure paths, and returns without touching success or duration_ms. Callers
 // read both, so the members have to carry a failed state by default.
@@ -261,6 +367,9 @@ int main() {
     test_writes_a_vorbis_ogg();
     test_pcm_contract_is_enforced();
     test_file_entry_point();
+    test_encode_pcm_to_dual();
+    test_resolve_ogg_to_artifacts();
+    test_non_wav_defers_to_platform();
     test_default_result_is_a_failure();
 
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);

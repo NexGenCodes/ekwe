@@ -1,5 +1,6 @@
 import { Env, TranscribeResult } from "@/core/types";
-import { providerKeys, rotateKeys } from "@/utils/keys";
+import { providerKeys, rotateKeysOrThrow } from "@/utils/keys";
+import { ProviderHttpError } from "@/core/provider-errors";
 import { isHallucination } from "@/utils/hallucination";
 import { fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
 import { pollUntilReady } from "@/utils/poll";
@@ -21,14 +22,15 @@ export async function stt(
   env: Env,
   signal: AbortSignal,
 ): Promise<TranscribeResult | null> {
-  const res = await rotateKeys(
+  const res = await rotateKeysOrThrow(
     env,
     "GLADIA_KEY_",
+    "gladia",
     (key) => attemptTranscription(blob, lang, key, signal),
     signal,
   );
 
-  if (!res?.ok) return null;
+  if (!res.ok) throw new ProviderHttpError("gladia", res.status);
 
   const data = await res.json<{ text?: string; language?: string }>();
   if (data.text && !isHallucination(data.text)) {
@@ -67,10 +69,7 @@ async function attemptTranscription(
   );
 
   if (!uploadRes.ok) {
-    logger.warn("[gladia] Upload failed, provider returned error", {
-      status: uploadRes.status,
-    });
-    return uploadRes;
+    throw new ProviderHttpError("gladia", uploadRes.status, "upload failed");
   }
 
   const { audio_url } = await uploadRes.json<{ audio_url: string }>();
@@ -97,10 +96,7 @@ async function attemptTranscription(
   );
 
   if (!submitRes.ok) {
-    logger.warn("[gladia] Submit failed, provider returned error", {
-      status: submitRes.status,
-    });
-    return submitRes;
+    throw new ProviderHttpError("gladia", submitRes.status, "submit failed");
   }
 
   const { result_url } = await submitRes.json<{ result_url: string }>();
@@ -137,10 +133,9 @@ async function attemptTranscription(
     logger.info("[gladia] Transcription completed", { language });
     return Response.json({ text, language }, { status: 200 });
   }
-  return (
-    polled.response ??
-    Response.json({ error: "gladia_timeout" }, { status: 504 })
-  );
+  // Poll exhausted without reaching "done". A synthetic 504 classifies as a
+  // timeout and stays retryable.
+  return polled.response ?? new Response(null, { status: 504 });
 }
 
 interface GladiaResult {
