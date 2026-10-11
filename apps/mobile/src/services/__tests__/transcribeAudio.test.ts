@@ -68,7 +68,7 @@ vi.mock("@/utils/connectivity", () => ({
 }));
 
 vi.mock("@/utils/logger", () => ({
-  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock("@/utils/http", () => ({

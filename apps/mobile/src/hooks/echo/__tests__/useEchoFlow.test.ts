@@ -130,7 +130,7 @@ vi.mock("@/utils/connectivity", () => ({
   subscribeToNetwork: vi.fn(),
 }));
 vi.mock("@/utils/logger", () => ({
-  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 const SUCCESS_TRANSCRIPT = {

@@ -30,7 +30,7 @@ vi.mock("@/store", () => ({
 }));
 
 vi.mock("@/utils/logger", () => ({
-  default: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+  default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
 describe("useHistoryQuery", () => {
