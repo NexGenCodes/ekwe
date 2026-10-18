@@ -232,7 +232,7 @@ static bool decode_opus_to_mono_pcm(OggOpusFile* of, MonoPcm& pcm,
     // reproduce the same file. Mono alone is not enough: a stream declaring a
     // rate other than kRecorderSampleRate has to be resampled and re-encoded.
     // The copied artifact is only ever used for upload/share, never handed to a
-    // player: playback goes through a decoded WAV → M4A copy.
+    // player: playback encodes its M4A copy straight from this decode's PCM.
     const bool rate_matches = (head->input_sample_rate == kRecorderSampleRate);
 
     pcm.sample_rate = kOpusDecodeSampleRate;
