@@ -9,6 +9,11 @@ export type OpusTranscodeResult = {
   error: string;
   durationMs: number;
   waveform: number[];
+  /**
+   * M4A/AAC-LC playback copy from the same decode as the Ogg artifact, so
+   * playback never reuses a foreign Ogg. Absent where decode is lazy.
+   */
+  playbackUri?: string | null;
 };
 
 export type DecodeToWavResult = {
@@ -95,6 +100,11 @@ export type EkweNativeModuleType = {
 
   /** Duration in ms without a full decode, or -1 when it cannot be probed. */
   probeAudioDurationMs(inputPath: string): Promise<number>;
+  /**
+   * Decodes a supported source into a standalone 16 kHz mono PCM WAV at
+   * `outputPath`. Ogg/WAV sources decode natively; other containers report
+   * `PLATFORM_DECODE_REQUIRED`.
+   */
   decodeAudioToWav(
     inputPath: string,
     outputPath: string,
@@ -102,9 +112,9 @@ export type EkweNativeModuleType = {
   ): Promise<DecodeToWavResult>;
 
   /**
-   * iOS only. Decodes the source and writes an M4A/AAC-LC playback copy at
-   * `outputPath`. Ogg sources bridge through WAV; platform-readable sources
-   * decode straight to M4A. Returns true on success.
+   * Decodes the source and writes an M4A/AAC-LC playback copy at `outputPath`.
+   * Ogg sources bridge through WAV; platform-readable sources decode straight
+   * to M4A. Returns true on success.
    */
   createPlaybackCopy?(
     inputPath: string,

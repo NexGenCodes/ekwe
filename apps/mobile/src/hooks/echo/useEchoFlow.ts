@@ -224,6 +224,7 @@ export const useEchoFlow = (
 
   const {
     audioUri,
+    playbackUri,
     isResolving,
     convertedWaveform,
     convertedDurationMs,
@@ -329,12 +330,16 @@ export const useEchoFlow = (
     if (audioUri && audioUri !== activeResolvedUri.current) {
       cleanEchoCache(audioUri);
     }
+    if (playbackUri && playbackUri !== activeResolvedUri.current) {
+      cleanEchoCache(playbackUri);
+    }
     deactivateKeepAwake("echoSession").catch(() => {});
     IntentService.dismissEcho();
   }, [
     sourceApp,
     session,
     audioUri,
+    playbackUri,
     activeResolvedUri,
     onPlayerRelease,
     getCaptureId,
@@ -749,6 +754,7 @@ export const useEchoFlow = (
     sttProvider: state.sttProvider,
     llmProvider: state.llmProvider,
     audioUri,
+    playbackUri,
     sourceApp,
     isResolving,
     convertedWaveform,

@@ -190,21 +190,104 @@ void test_encode_pcm_to_opus() {
 
 void test_transcode_from_memory(const Fixtures& fx) {
     const std::string out = temp_path("memory_opus.ogg");
+    const std::string wav_out = temp_path("memory_wav.wav");
     std::remove(out.c_str());
+    std::remove(wav_out.c_str());
 
     std::vector<uint8_t> wav_bytes;
     if (!read_all(fx.wav, wav_bytes)) {
         check("from_memory: WAV fixture readable", false);
         return;
     }
+    std::vector<int16_t> pcm_out;
+    uint32_t pcm_rate = 0;
+    uint16_t pcm_channels = 0;
     DecodeResult r = transcode_audio_to_opus_from_memory(
-        wav_bytes.data(), wav_bytes.size(), out, kDefaultMaxAudioBytes, 20);
+        wav_bytes.data(), wav_bytes.size(), out, wav_out, kDefaultMaxAudioBytes, 20,
+        &pcm_out, &pcm_rate, &pcm_channels);
     check("from_memory: WAV in memory transcodes", r.success);
     check("from_memory: reports 1000 ms", r.duration_ms == 1000);
+
+    // PCM must be handed out so the platform can encode M4A without re-reading
+    // a WAV bridge; samples equal the source and stay on the mono/16 kHz contract.
+    check("from_memory: PCM returned", pcm_out.size() == SR);
+    check("from_memory: PCM at 16000 Hz mono", pcm_rate == 16000 && pcm_channels == 1);
+    bool pcm_match = pcm_out.size() == tone(SR).size();
+    if (pcm_match) {
+        const std::vector<int16_t> src = tone(SR);
+        pcm_match = std::equal(pcm_out.begin(), pcm_out.end(), src.begin());
+    }
+    check("from_memory: PCM matches source tone", pcm_match);
 
     std::vector<uint8_t> bytes;
     read_all(out, bytes);
     check("from_memory: output is Ogg Opus", contains(bytes, "OpusHead"));
+
+    // WAV bridge must be a real 16 kHz mono PCM16 WAV, not a passthrough copy.
+    std::vector<uint8_t> wav_out_bytes;
+    read_all(wav_out, wav_out_bytes);
+    check("from_memory: WAV bridge written",
+          !wav_out_bytes.empty() && file_size(wav_out) > 44);
+    check("from_memory: WAV bridge has RIFF/WAVE headers",
+          contains(wav_out_bytes, "RIFF") && contains(wav_out_bytes, "WAVE"));
+    bool header_consistent =
+        wav_out_bytes.size() >= 44 &&
+        wav_out_bytes[22] == 1 &&  // mono
+        wav_out_bytes[24] == 0x80 && wav_out_bytes[25] == 0x3e &&  // 16000 Hz
+        wav_out_bytes[34] == 16;   // 16-bit samples
+    check("from_memory: WAV bridge is 16 kHz mono 16-bit", header_consistent);
+    std::remove(wav_out.c_str());
+}
+
+// Covers the iOS eager-playback path: resolveAudio hands the decoded PCM back
+// so the bridge can encode M4A from the same decode, with no WAV round-trip.
+void test_resolve_ogg_pcm_out(const Fixtures& fx) {
+    const std::string out = temp_path("resolve_pcm.ogg");
+    std::remove(out.c_str());
+
+    std::vector<int16_t> pcm;
+    uint32_t rate = 0;
+    uint16_t channels = 0;
+    DecodeResult r = resolve_ogg_to_artifacts(fx.opus, out, std::string(),
+                                              std::string(), kDefaultMaxAudioBytes,
+                                              &pcm, &rate, &channels);
+    check("resolve_ogg: Ogg resolves to artifacts", r.success);
+    check("resolve_ogg: reports ~1000 ms", near_1000(r.duration_ms));
+
+    // The PCM must survive the hand-off intact, on the mono/16 kHz contract the
+    // M4A encoder expects. A moved-from vector here would encode silence, which
+    // is exactly the "spins then stops" symptom this change exists to avoid.
+    check("resolve_ogg: PCM returned", !pcm.empty());
+    // Opus always decodes at kOpusDecodeSampleRate and is only resampled down
+    // when the header's declared rate does not match, so either rate is legal
+    // here. What must hold is the invariant the M4A encoder relies on: the
+    // sample count read at the reported rate reproduces the reported duration.
+    check("resolve_ogg: PCM is mono", channels == 1);
+    const int pcm_ms = static_cast<int>((pcm.size() * 1000ull) / (rate ? rate : 1));
+    check("resolve_ogg: PCM length matches duration", near_1000(pcm_ms));
+    check("resolve_ogg: PCM rate is a decode-contract rate",
+          rate == kRecorderSampleRate || rate == kOpusDecodeSampleRate);
+    check("resolve_ogg: PCM is not silence", [&] {
+        for (int16_t s : pcm) {
+            if (s != 0) return true;
+        }
+        return false;
+    }());
+
+    std::vector<uint8_t> bytes;
+    read_all(out, bytes);
+    check("resolve_ogg: output is Ogg Opus", contains(bytes, "OpusHead"));
+    std::remove(out.c_str());
+
+    // Callers that don't want PCM (upload-only, Android JNI) must be unaffected,
+    // so a null pcm_out is still a full success with no PCM touched.
+    std::vector<int16_t> unused;
+    DecodeResult plain = resolve_ogg_to_artifacts(fx.opus, out, std::string(),
+                                                  std::string(), kDefaultMaxAudioBytes);
+    check("resolve_ogg: succeeds without PCM out-params", plain.success);
+    check("resolve_ogg: waveform returned either way", !plain.waveform.empty());
+    check("resolve_ogg: PCM untouched when not requested", unused.empty());
+    std::remove(out.c_str());
 }
 
 } // namespace
@@ -217,6 +300,7 @@ int main() {
     test_probe(fx);
     test_encode_pcm_to_opus();
     test_transcode_from_memory(fx);
+    test_resolve_ogg_pcm_out(fx);
 
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

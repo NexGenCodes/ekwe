@@ -148,7 +148,15 @@ vi.mock("@/hooks/audio/audioFocus", () => ({
 }));
 vi.mock("@/services/audioTranscoder", () => ({
   AudioTranscoder: {
-    createPlaybackCopyForPlayback: vi.fn(),
+    // Ogg sources derive an M4A playback copy on every platform now. Model the
+    // real stable-hash naming (distinct per input file, stable for it), so a
+    // source swap produces a genuinely different playable path.
+    createPlaybackCopyForPlayback: vi.fn((inputUri: string) =>
+      Promise.resolve({
+        ok: true,
+        value: inputUri.replace(/\.ogg$/, ".m4a"),
+      }),
+    ),
     decodeToWav: vi.fn(),
   },
 }));
@@ -235,7 +243,8 @@ describe("useSharedAudioPlayer readiness", () => {
 
     await flushPreloads();
     expect(result.current.isReady).toBe(true);
-    expect(replaceCalls).toContain("file:///b.ogg");
+    // The player receives the derived M4A copy, never the raw Ogg.
+    expect(replaceCalls).toContain("file:///b.m4a");
   });
 
   it("does not autoplay a swapped clip on the previous clip's readiness", async () => {

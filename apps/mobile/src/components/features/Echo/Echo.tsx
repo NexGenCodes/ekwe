@@ -67,6 +67,7 @@ export const Echo = (props: EchoProps): React.ReactElement => {
     transcription,
     translation,
     audioUri,
+    playbackUri,
     sourceApp,
     isResolving,
     convertedWaveform,
@@ -94,10 +95,16 @@ export const Echo = (props: EchoProps): React.ReactElement => {
   const playerActive =
     step === "Preview" || step === "TranscribeResult" || step === "FullResult";
 
-  const player = useAudioWaveformPlayback(audioUri || null, convertedWaveform, {
-    active: playerActive,
-    durationMs: convertedDurationMs,
-  });
+  // Playback prefers the M4A copy derived from the same decode as the Opus
+  // artifact; the Opus path falls back to the player hook's own M4A derive.
+  const player = useAudioWaveformPlayback(
+    playbackUri || audioUri || null,
+    convertedWaveform,
+    {
+      active: playerActive,
+      durationMs: convertedDurationMs,
+    },
+  );
 
   useEffect(() => {
     playerReleaseRef.current = player.release;

@@ -231,6 +231,8 @@ static bool decode_opus_to_mono_pcm(OggOpusFile* of, MonoPcm& pcm,
     // The source bytes are only worth keeping when re-encoding them would
     // reproduce the same file. Mono alone is not enough: a stream declaring a
     // rate other than kRecorderSampleRate has to be resampled and re-encoded.
+    // The copied artifact is only ever used for upload/share, never handed to a
+    // player: playback goes through a decoded WAV → M4A copy.
     const bool rate_matches = (head->input_sample_rate == kRecorderSampleRate);
 
     pcm.sample_rate = kOpusDecodeSampleRate;
@@ -863,7 +865,10 @@ DecodeResult resolve_ogg_to_artifacts(const std::string& input_path,
                                       const std::string& opus_output_path,
                                       const std::string& vorbis_output_path,
                                       const std::string& wav_output_path,
-                                      size_t max_audio_bytes) {
+                                      size_t max_audio_bytes,
+                                      std::vector<int16_t>* pcm_out,
+                                      uint32_t* pcm_rate_out,
+                                      uint16_t* pcm_channels_out) {
     DecodeResult result;
     result.success = false;
 
@@ -909,6 +914,13 @@ DecodeResult resolve_ogg_to_artifacts(const std::string& input_path,
 
     result.duration_ms = pcm_duration_ms(pcm.samples.size(), pcm.sample_rate);
     result.waveform = compute_waveform(pcm.samples);
+
+    if (pcm_out != nullptr) {
+        *pcm_out = std::move(pcm.samples);
+        if (pcm_rate_out != nullptr) *pcm_rate_out = pcm.sample_rate;
+        if (pcm_channels_out != nullptr) *pcm_channels_out = kTargetChannels;
+    }
+
     result.success = true;
     return result;
 }
@@ -1016,7 +1028,10 @@ static int mem_close(void* stream) {
 }
 
 DecodeResult transcode_audio_to_opus_from_memory(
-    const uint8_t* data, size_t data_size, const std::string& output_path, size_t max_audio_bytes, int frame_ms) {
+    const uint8_t* data, size_t data_size, const std::string& output_path,
+    const std::string& wav_output_path, size_t max_audio_bytes, int frame_ms,
+    std::vector<int16_t>* pcm_out, uint32_t* pcm_rate_out,
+    uint16_t* pcm_channels_out) {
     DecodeResult result;
     result.success = false;
 
@@ -1107,8 +1122,23 @@ DecodeResult transcode_audio_to_opus_from_memory(
         }
     }
 
+    // Optional 16 kHz mono WAV bridge from the same decode, for an M4A
+    // playback copy. Mirrors resolve_ogg_to_artifacts().
+    if (!wav_output_path.empty() &&
+        !write_wav(pcm.samples, pcm.sample_rate, kTargetChannels, wav_output_path)) {
+        result.error_message = "Failed to write WAV bridge output.";
+        return result;
+    }
+
     result.duration_ms = pcm_duration_ms(pcm.samples.size(), pcm.sample_rate);
     result.waveform = compute_waveform(pcm.samples);
+
+    if (pcm_out != nullptr) {
+        *pcm_out = std::move(pcm.samples);
+        if (pcm_rate_out != nullptr) *pcm_rate_out = pcm.sample_rate;
+        if (pcm_channels_out != nullptr) *pcm_channels_out = kTargetChannels;
+    }
+
     result.success = true;
     return result;
 }

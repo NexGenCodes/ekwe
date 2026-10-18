@@ -24,6 +24,8 @@ export const useEchoAudioResolver = (props: {
   maxDurationMs?: number;
 }): {
   audioUri: string | undefined;
+  /** M4A/AAC-LC copy for playback, produced from the same hard decode as audioUri. */
+  playbackUri: string | undefined;
   isResolving: boolean;
   convertedWaveform: number[];
   convertedDurationMs: number | null;
@@ -35,6 +37,7 @@ export const useEchoAudioResolver = (props: {
   setIsSubsequentIntent: Dispatch<SetStateAction<boolean>>;
 } => {
   const [audioUri, setAudioUri] = useState<string | undefined>(undefined);
+  const [playbackUri, setPlaybackUri] = useState<string | undefined>(undefined);
   const [isResolving, setIsResolving] = useState(false);
   const [convertedWaveform, setConvertedWaveform] = useState<number[]>([]);
   const [convertedDurationMs, setConvertedDurationMs] = useState<number | null>(
@@ -47,6 +50,10 @@ export const useEchoAudioResolver = (props: {
   const activeResolvedUri = useRef<string | undefined>(undefined);
   const convertedUriRef = useRef<string | undefined>(undefined);
   const previousRawUri = useRef<string | undefined>(undefined);
+  // Render-assigned mirror so the cleanup effect reads the latest playback URI
+  // without depending on it (which would re-run resolve).
+  const playbackUriRef = useRef<string | undefined>(undefined);
+  playbackUriRef.current = playbackUri;
 
   const deferredCleanupRef = useRef(createDeferredCacheCleaner(cleanEchoCache));
 
@@ -90,12 +97,14 @@ export const useEchoAudioResolver = (props: {
     deferredCleanupRef.current.remember(
       activeResolvedUri.current,
       convertedUriRef.current,
+      playbackUriRef.current,
     );
 
     const resolve = async (): Promise<void> => {
       let fileUri: string | null = null;
       let validatedUri: string | null = null;
       let opusPathAttempted: string | null = null;
+      let playbackPathAttempted: string | null = null;
       try {
         setIsResolving(true);
         setResolveError(null);
@@ -103,6 +112,7 @@ export const useEchoAudioResolver = (props: {
         setResolveRetryable(true);
         setConvertedWaveform([]);
         setConvertedDurationMs(null);
+        setPlaybackUri(undefined);
         logger.info(
           "[IntentResolver] resolve() started. rawUri:",
           rawUri.substring(0, 60),
@@ -114,6 +124,7 @@ export const useEchoAudioResolver = (props: {
           .toString(36)
           .slice(2, 8)}.ogg`;
         opusPathAttempted = opusPath;
+        playbackPathAttempted = opusPath.replace(/\.ogg$/, ".m4a");
         const combinedResult = await IntentService.resolveAndTranscodeToOpus(
           rawUri,
           opusPath,
@@ -137,6 +148,7 @@ export const useEchoAudioResolver = (props: {
 
         if (isStale) {
           if (opusPathAttempted) cleanEchoCache(opusPathAttempted);
+          if (playbackPathAttempted) cleanEchoCache(playbackPathAttempted);
           return;
         }
 
@@ -145,6 +157,7 @@ export const useEchoAudioResolver = (props: {
           convertedUriRef.current = opusPath;
           activeResolvedUri.current = opusPath;
           setAudioUri(opusPath);
+          setPlaybackUri(combinedResult.playbackUri || undefined);
           setConvertedWaveform(combinedResult.waveform);
           setConvertedDurationMs(combinedResult.durationMs);
           setIsResolving(false);
@@ -155,6 +168,7 @@ export const useEchoAudioResolver = (props: {
 
         if (combinedResult && combinedResult.error === "FILE_TOO_LARGE") {
           if (opusPathAttempted) cleanEchoCache(opusPathAttempted);
+          if (playbackPathAttempted) cleanEchoCache(playbackPathAttempted);
           setIsResolving(false);
           setResolveRetryable(false);
           setResolveError(ErrorMessages[EkweError.FILE_TOO_LARGE]);
@@ -164,6 +178,7 @@ export const useEchoAudioResolver = (props: {
 
         if (combinedResult && combinedResult.error === "AUDIO_TOO_LONG") {
           if (opusPathAttempted) cleanEchoCache(opusPathAttempted);
+          if (playbackPathAttempted) cleanEchoCache(playbackPathAttempted);
           setIsResolving(false);
           setResolveRetryable(false);
           setResolveError(ErrorMessages[EkweError.AUDIO_TOO_LONG]);
@@ -200,6 +215,7 @@ export const useEchoAudioResolver = (props: {
 
         if (isStale) {
           if (opusPathAttempted) cleanEchoCache(opusPathAttempted);
+          if (playbackPathAttempted) cleanEchoCache(playbackPathAttempted);
           if (fileUri) cleanEchoCache(fileUri);
           logger.info(
             "[IntentResolver] Stale after resolveToFileUri — aborting",
@@ -227,6 +243,7 @@ export const useEchoAudioResolver = (props: {
 
         if (isStale) {
           if (opusPathAttempted) cleanEchoCache(opusPathAttempted);
+          if (playbackPathAttempted) cleanEchoCache(playbackPathAttempted);
           if (fileUri && fileUri !== validatedUri) cleanEchoCache(fileUri);
           if (validatedUri && validatedUri !== fileUri) {
             cleanEchoCache(validatedUri);
@@ -262,6 +279,7 @@ export const useEchoAudioResolver = (props: {
         logger.error("[IntentResolver] ❌ Resolution FAILED:", err);
 
         if (opusPathAttempted) cleanEchoCache(opusPathAttempted);
+        if (playbackPathAttempted) cleanEchoCache(playbackPathAttempted);
         if (fileUri) cleanEchoCache(fileUri);
         if (validatedUri && validatedUri !== fileUri) {
           cleanEchoCache(validatedUri);
@@ -282,6 +300,7 @@ export const useEchoAudioResolver = (props: {
 
   return {
     audioUri,
+    playbackUri,
     isResolving,
     convertedWaveform,
     convertedDurationMs,

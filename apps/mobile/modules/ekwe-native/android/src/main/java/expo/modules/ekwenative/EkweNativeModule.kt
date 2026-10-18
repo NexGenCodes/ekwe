@@ -179,6 +179,7 @@ class EkweNativeModule : Module() {
 
     // memory-based decode (no temp file for content:// shared audio)
     @JvmStatic external fun transcodeFromMemoryJNI(data: ByteArray, outputPath: String, maxAudioBytes: Long): Array<Any?>
+    @JvmStatic external fun decodeFileToWavJNI(inputPath: String, outputPath: String, maxAudioBytes: Long): Array<Any?>
 
     // Capture controller JNI (dual-path: file or live)
     @JvmStatic external fun nativeInitCapture(outputPath: String, sampleRate: Int, channels: Int, isLive: Boolean): Boolean
@@ -475,6 +476,11 @@ class EkweNativeModule : Module() {
         (options?.get("maxDurationMs") as? Number)?.toLong()?.takeIf { it > 0 }
           ?: DEFAULT_MAX_DURATION_MS
 
+      // M4A playback copy (AAC-LC, decodable on every device) from the same
+      // decode as the Opus artifact, encoded straight from the decoded PCM.
+      val opusFsPath = resolvePath(outputPath)
+      val m4aFsPath = "${opusFsPath.substringBeforeLast('.')}.m4a"
+
       try {
         val uri = android.net.Uri.parse(uriString)
 
@@ -531,11 +537,14 @@ class EkweNativeModule : Module() {
           buffer.toByteArray()
         }
 
-        val result = transcodeFromMemoryJNI(bytes, resolvePath(outputPath), inputCap)
+        val result = transcodeFromMemoryJNI(bytes, opusFsPath, inputCap)
         val success = result[0] as Boolean
         val error = result[1] as String
         val durationMs = result[2] as Int
         val waveform = (result[3] as FloatArray).toList()
+        val decodedPcm = result[4] as ShortArray
+        val decodedRate = result[5] as Int
+        val decodedChannels = result[6] as Int
 
         if (!success && error == "PLATFORM_DECODE_REQUIRED") {
           // MP3/AAC/M4A/FLAC/AMR/3GP/WebM — route through the platform decoder.
@@ -547,49 +556,66 @@ class EkweNativeModule : Module() {
             )
           }
           if (pcm != null) {
-            val encResult = encodePcmToOpusJNI(pcm.samples, pcm.sampleRate, pcm.channels, resolvePath(outputPath))
+            val encResult = encodePcmToOpusJNI(pcm.samples, pcm.sampleRate, pcm.channels, opusFsPath)
             val encSuccess = encResult[0] as Boolean
             val encError = encResult[1] as String
             val encDuration = encResult[2] as Int
             val encWaveform = (encResult[3] as FloatArray).toList()
+            var encPlaybackUri = ""
+            if (encSuccess) {
+              val m4aOk = PlatformAudioEncoder.encodePcmToM4a(
+                pcm.samples, pcm.sampleRate, pcm.channels, m4aFsPath
+              )
+              if (m4aOk && java.io.File(m4aFsPath).length() > 0) encPlaybackUri = m4aFsPath
+            }
             return@AsyncFunction mapOf(
               "success" to encSuccess,
               "error" to encError,
               "durationMs" to encDuration,
-              "waveform" to encWaveform
+              "waveform" to encWaveform,
+              "playbackUri" to encPlaybackUri
             )
           }
           return@AsyncFunction mapOf(
             "success" to false, "error" to "Unsupported audio format",
-            "durationMs" to 0, "waveform" to emptyList<Float>()
+            "durationMs" to 0, "waveform" to emptyList<Float>(), "playbackUri" to ""
           )
         }
 
         if (success && maxDurationMs > 0 && durationMs > maxDurationMs) {
-          java.io.File(resolvePath(outputPath)).delete()
+          java.io.File(opusFsPath).delete()
           return@AsyncFunction mapOf(
             "success" to false, "error" to "AUDIO_TOO_LONG",
-            "durationMs" to durationMs, "waveform" to emptyList<Float>()
+            "durationMs" to durationMs, "waveform" to emptyList<Float>(), "playbackUri" to ""
           )
         }
 
         // Tier cap applies to the transcoded output, not the original input.
         if (success) {
-          val outFile = java.io.File(resolvePath(outputPath))
+          val outFile = java.io.File(opusFsPath)
           if (outFile.exists() && outFile.length() > outputCap) {
             outFile.delete()
             return@AsyncFunction mapOf(
               "success" to false, "error" to "FILE_TOO_LARGE",
-              "durationMs" to durationMs, "waveform" to emptyList<Float>()
+              "durationMs" to durationMs, "waveform" to emptyList<Float>(), "playbackUri" to ""
             )
           }
         }
+
+        // M4A playback copy from the same decode's PCM, no WAV intermediary.
+        if (success && decodedPcm.isNotEmpty()) {
+          PlatformAudioEncoder.encodePcmToM4a(decodedPcm, decodedRate, decodedChannels, m4aFsPath)
+        }
+        val playbackUri =
+          if (success && java.io.File(m4aFsPath).exists() && java.io.File(m4aFsPath).length() > 0)
+            m4aFsPath else ""
 
         return@AsyncFunction mapOf(
           "success" to success,
           "error" to error,
           "durationMs" to durationMs,
-          "waveform" to waveform
+          "waveform" to waveform,
+          "playbackUri" to playbackUri
         )
       } catch (e: Exception) {
         Log.e("EkweNative", "resolveAndConvertToOpus failed", e)
@@ -852,6 +878,70 @@ class EkweNativeModule : Module() {
 
     AsyncFunction("probeAudioDurationMs") { inputPath: String ->
       probeAudioDurationMsJNI(resolvePath(inputPath))
+    }
+
+    /**
+     * Decodes the source and writes an M4A/AAC-LC playback copy at `outputPath`.
+     * Ogg/WAV sources bridge through WAV; other containers decode via the
+     * platform decoder then encode PCM to M4A. Returns true on success.
+     */
+    AsyncFunction("createPlaybackCopy") { inputPath: String, outputPath: String, maxAudioBytes: Long ->
+      val context = appContext.reactContext ?: return@AsyncFunction false
+      val inputFs = resolvePath(inputPath)
+      val outputFs = resolvePath(outputPath)
+      val inputFile = java.io.File(inputFs)
+      if (!inputFile.isFile) return@AsyncFunction false
+      val tempWav = "${outputFs.substringBeforeLast('.')}_wav.wav"
+      try {
+        val decoded = decodeFileToWavJNI(inputFs, tempWav, maxAudioBytes)
+        if (decoded[0] as Boolean) {
+          val ok = PlatformAudioEncoder.encodeWavToM4a(tempWav, outputFs)
+          java.io.File(tempWav).delete()
+          if (ok && java.io.File(outputFs).exists()) return@AsyncFunction true
+        } else if ((decoded[1] as String) == "PLATFORM_DECODE_REQUIRED") {
+          val pcm = PlatformAudioDecoder.decode(
+            context, android.net.Uri.fromFile(inputFile), DEFAULT_MAX_DURATION_MS
+          )
+          if (pcm != null) {
+            val ok = PlatformAudioEncoder.encodePcmToM4a(
+              pcm.samples, pcm.sampleRate, pcm.channels, outputFs
+            )
+            if (ok && java.io.File(outputFs).exists()) return@AsyncFunction true
+          }
+        }
+        java.io.File(tempWav).delete()
+        false
+      } catch (e: Exception) {
+        Log.e("EkweNative", "createPlaybackCopy failed", e)
+        java.io.File(tempWav).delete()
+        false
+      }
+    }
+
+    AsyncFunction("decodeAudioToWav") { inputPath: String, outputPath: String, maxAudioBytes: Long ->
+      val inputFs = resolvePath(inputPath)
+      val outputFs = resolvePath(outputPath)
+      try {
+        if (java.io.File(inputFs).length() > MAX_AUDIO_INPUT_BYTES) {
+          return@AsyncFunction mapOf(
+            "success" to false, "error" to "FILE_TOO_LARGE",
+            "durationMs" to 0, "waveform" to emptyList<Float>()
+          )
+        }
+        val result = decodeFileToWavJNI(inputFs, outputFs, maxAudioBytes)
+        mapOf(
+          "success" to (result[0] as Boolean),
+          "error" to (result[1] as String),
+          "durationMs" to (result[2] as Int),
+          "waveform" to (result[3] as FloatArray).toList()
+        )
+      } catch (e: Exception) {
+        Log.e("EkweNative", "decodeAudioToWav failed", e)
+        mapOf(
+          "success" to false, "error" to (e.message ?: "Unknown error"),
+          "durationMs" to 0, "waveform" to emptyList<Float>()
+        )
+      }
     }
 
     // --- Audio Effects Methods ---

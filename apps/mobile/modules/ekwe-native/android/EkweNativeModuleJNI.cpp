@@ -61,6 +61,49 @@ static jobjectArray buildErrorResult(JNIEnv* env, const char* message) {
     return buildResultArray(env, err);
 }
 
+// Result array for transcodeFromMemoryJNI, which also returns the decoded PCM
+// so the caller can encode its own playback copy without a WAV round-trip.
+// [success, error, durationMs, waveform, pcm(short[]), sampleRate, channels].
+static jobjectArray buildResultArrayWithPcm(
+    JNIEnv* env, const ekwe::DecodeResult& result,
+    const std::vector<int16_t>& pcm, uint32_t sampleRate, uint16_t channels) {
+    jclass objClass = env->FindClass("java/lang/Object");
+    jobjectArray retArray = env->NewObjectArray(7, objClass, nullptr);
+
+    jclass booleanClass = env->FindClass("java/lang/Boolean");
+    jmethodID booleanValueOf = env->GetStaticMethodID(booleanClass, "valueOf", "(Z)Ljava/lang/Boolean;");
+    jobject successObj = env->CallStaticObjectMethod(booleanClass, booleanValueOf, result.success ? JNI_TRUE : JNI_FALSE);
+    env->SetObjectArrayElement(retArray, 0, successObj);
+
+    jstring errorStr = env->NewStringUTF(result.success ? "" : result.error_message.c_str());
+    env->SetObjectArrayElement(retArray, 1, errorStr);
+
+    jclass integerClass = env->FindClass("java/lang/Integer");
+    jmethodID integerValueOf = env->GetStaticMethodID(integerClass, "valueOf", "(I)Ljava/lang/Integer;");
+    jobject durationObj = env->CallStaticObjectMethod(integerClass, integerValueOf, (jint)result.duration_ms);
+    env->SetObjectArrayElement(retArray, 2, durationObj);
+
+    jfloatArray floatArray = env->NewFloatArray(result.waveform.size());
+    if (result.waveform.size() > 0) {
+        env->SetFloatArrayRegion(floatArray, 0, result.waveform.size(), result.waveform.data());
+    }
+    env->SetObjectArrayElement(retArray, 3, floatArray);
+
+    jshortArray pcmArray = env->NewShortArray(static_cast<jsize>(pcm.size()));
+    if (!pcm.empty()) {
+        env->SetShortArrayRegion(pcmArray, 0, static_cast<jsize>(pcm.size()), pcm.data());
+    }
+    env->SetObjectArrayElement(retArray, 4, pcmArray);
+
+    jobject rateObj = env->CallStaticObjectMethod(integerClass, integerValueOf, (jint)sampleRate);
+    env->SetObjectArrayElement(retArray, 5, rateObj);
+
+    jobject channelsObj = env->CallStaticObjectMethod(integerClass, integerValueOf, (jint)channels);
+    env->SetObjectArrayElement(retArray, 6, channelsObj);
+
+    return retArray;
+}
+
 // ─── Capture callback: forwards C++ events → JS via Nitro ──────────────────────
 static void captureCallback(const ekwe::CaptureEventData& event) {
     switch (event.event) {
@@ -223,15 +266,43 @@ Java_expo_modules_ekwenative_EkweNativeModule_transcodeFromMemoryJNI(
     jbyte* data_ptr = env->GetByteArrayElements(data, nullptr);
     if (!data_ptr) return buildErrorResult(env, "Array allocation failed");
 
+    std::vector<int16_t> pcm;
+    uint32_t pcm_rate = 0;
+    uint16_t pcm_channels = 1;
     ekwe::DecodeResult result = ekwe::transcode_audio_to_opus_from_memory(
         reinterpret_cast<const uint8_t*>(data_ptr),
         static_cast<size_t>(data_size),
         output,
-        static_cast<size_t>(maxAudioBytes)
+        std::string(),
+        static_cast<size_t>(maxAudioBytes),
+        20,
+        &pcm, &pcm_rate, &pcm_channels
     );
 
     env->ReleaseByteArrayElements(data, data_ptr, JNI_ABORT);
 
+    return buildResultArrayWithPcm(env, result, pcm, pcm_rate, pcm_channels);
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_expo_modules_ekwenative_EkweNativeModule_decodeFileToWavJNI(
+    JNIEnv *env, jobject thiz, jstring inputPath, jstring outputPath, jlong maxAudioBytes) {
+
+    const char *input_c_str = env->GetStringUTFChars(inputPath, nullptr);
+    const char *output_c_str = env->GetStringUTFChars(outputPath, nullptr);
+    if (!input_c_str || !output_c_str) {
+        if (input_c_str) env->ReleaseStringUTFChars(inputPath, input_c_str);
+        if (output_c_str) env->ReleaseStringUTFChars(outputPath, output_c_str);
+        return buildErrorResult(env, "String allocation failed");
+    }
+    std::string input(input_c_str);
+    std::string output(output_c_str);
+    env->ReleaseStringUTFChars(inputPath, input_c_str);
+    env->ReleaseStringUTFChars(outputPath, output_c_str);
+
+    ekwe::DecodeResult result = ekwe::decode_audio_to_wav(
+        input, output, static_cast<size_t>(maxAudioBytes)
+    );
     return buildResultArray(env, result);
 }
 

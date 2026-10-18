@@ -1,5 +1,4 @@
 import { File, Paths } from "expo-file-system";
-import { Platform } from "react-native";
 
 import EkweNative from "../../modules/ekwe-native";
 
@@ -86,9 +85,6 @@ class AudioTranscoderClass {
   async decodeToWav(
     inputUri: string,
   ): Promise<Result<TranscodedAudio, EkweError>> {
-    if (Platform.OS !== "ios") {
-      return err(EkweError.PROCESSOR_FAIL);
-    }
     if (!inputUri) return err(EkweError.AUDIO_EMPTY);
 
     try {
@@ -130,11 +126,11 @@ class AudioTranscoderClass {
   }
 
   /**
-   * Returns an M4A uri that AVPlayer/expo-audio can open natively for an Ogg
-   * Opus `inputUri`, decoding on first use and reusing the result afterwards.
+   * Returns an M4A uri that the player can open natively for an Ogg Opus
+   * `inputUri`, decoding on first use and reusing the result afterwards.
    *
-   * Recording only ever writes the Ogg file, so iOS derives this copy at play
-   * time. The derived name is a stable hash of the source path rather than a
+   * Recording only ever writes the Ogg file, so the player derives this copy at
+   * play time. The derived name is a stable hash of the source path rather than a
    * random temp, so repeatedly opening the same note reuses one file instead of
    * re-decoding and re-writing it per play. It stays prefixed `ekwe_playback_`
    * so sweepStaleAudioCache() reclaims it once the app stops touching it.
@@ -142,9 +138,6 @@ class AudioTranscoderClass {
   async createPlaybackCopyForPlayback(
     inputUri: string,
   ): Promise<Result<string, EkweError>> {
-    if (Platform.OS !== "ios") {
-      return err(EkweError.PROCESSOR_FAIL);
-    }
     if (!inputUri) return err(EkweError.AUDIO_EMPTY);
     if (!EkweNative.createPlaybackCopy) return err(EkweError.PROCESSOR_FAIL);
 

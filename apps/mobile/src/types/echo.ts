@@ -29,6 +29,8 @@ export interface UseEchoFlowResult {
   sttProvider: string | undefined;
   llmProvider: string | undefined;
   audioUri: string | undefined;
+  /** M4A/AAC-LC playback copy derived from the same decode; undefined when absent. */
+  playbackUri: string | undefined;
   /** The app the audio was shared from, or null when the platform didn't say. */
   sourceApp: string | null;
   isResolving: boolean;

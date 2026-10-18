@@ -13,7 +13,6 @@ import {
 } from "react-native-reanimated";
 
 import { AudioTranscoder } from "@/services/audioTranscoder";
-import { isIOS } from "@/utils/platform";
 import logger from "@/utils/logger";
 import { createAudioFocus } from "@/hooks/audio/audioFocus";
 
@@ -66,10 +65,10 @@ export const useSharedAudioPlayer = (
 
   const [duration, setDuration] = useState(0);
 
-  const isOggSource = useMemo(
-    () => isIOS && !!uri && /\.(ogg|opus)$/i.test(uri),
-    [uri],
-  );
+  // Ogg Opus is not guaranteed playable on every device (a foreign source's
+  // malformed final Ogg page can collapse the duration to 0), so Ogg always
+  // derives an M4A/AAC-LC playback copy before reaching the player.
+  const isOggSource = useMemo(() => !!uri && /\.(ogg|opus)$/i.test(uri), [uri]);
   const [playableSource, setPlayableSource] = useState<string | null>(
     isOggSource ? null : uri,
   );
@@ -114,16 +113,16 @@ export const useSharedAudioPlayer = (
       setLoadError(null);
     };
 
-    // iOS lacks native Ogg Opus playback; decode to M4A with disk caching.
+    // No platform is guaranteed to play Ogg Opus; decode to M4A with disk caching.
     const fallbackToWav = (reason: string): void => {
-      logger.error("[SharedAudioPlayer] iOS Ogg decode-to-M4A failed:", reason);
+      logger.error("[SharedAudioPlayer] Ogg decode-to-M4A failed:", reason);
       AudioTranscoder.decodeToWav(uri).then((wavResult) => {
         if (cancelled) return;
         if (wavResult.ok) {
           commitDerived(wavResult.value.uri);
         } else {
           logger.error(
-            "[SharedAudioPlayer] iOS Ogg decode fallback failed:",
+            "[SharedAudioPlayer] Ogg decode fallback failed:",
             wavResult.error,
           );
           setPlayableSource(uri);

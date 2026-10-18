@@ -333,15 +333,20 @@ public class EkweNativeModule: Module {
             ]
           }
         }
+        // M4A playback copy (AAC-LC) from the same decode as the Opus artifact,
+        // encoded straight from the decoded PCM — ready before preview.
+        let m4aPath = ((outputPath as NSString).deletingPathExtension as String) + ".m4a"
         let result = EkweAudioBridge.resolveAudio(sourcePath, options: [
           "opusOutputPath": outputPath,
           "maxAudioBytes": maxAudioBytes,
+          "playbackOutputPath": m4aPath,
         ])
         return [
           "success": result["success"] as? Bool ?? false,
           "error": result["error"] as? String ?? "",
           "durationMs": result["durationMs"] as? Int ?? 0,
           "waveform": result["waveform"] as? [Float] ?? [],
+          "playbackUri": result["playbackUri"] as? String ?? "",
         ]
       }
     }

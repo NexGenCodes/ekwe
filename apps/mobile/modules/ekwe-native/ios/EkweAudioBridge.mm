@@ -151,18 +151,23 @@ static BOOL encodePcmToM4a(const std::vector<int16_t> &pcm, uint32_t sampleRate,
     return ok;
 }
 
-static NSDictionary *resolveResultDict(const ekwe::DecodeResult &result, BOOL vorbisSuccess) {
+static NSDictionary *resolveResultDict(const ekwe::DecodeResult &result, BOOL vorbisSuccess,
+                                       NSString *playbackUri = nil) {
     NSMutableArray<NSNumber *> *waveformArray = [NSMutableArray arrayWithCapacity:result.waveform.size()];
     for (float val : result.waveform) {
         [waveformArray addObject:@(val)];
     }
-    return @{
+    NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithDictionary:@{
         @"success": @(result.success),
         @"error": [NSString stringWithUTF8String:result.error_message.c_str()],
         @"durationMs": @(result.duration_ms),
         @"waveform": waveformArray,
         @"vorbisSuccess": @(vorbisSuccess),
-    };
+    }];
+    if (playbackUri != nil) {
+        dict[@"playbackUri"] = playbackUri;
+    }
+    return dict;
 }
 
 static std::mutex g_mutex;
@@ -196,6 +201,7 @@ namespace ekwe {
 + (NSDictionary *)resolveAudio:(NSString *)sourcePath options:(NSDictionary *)options {
     NSString *opusOutputPath = options[@"opusOutputPath"];
     NSString *vorbisOutputPath = options[@"vorbisOutputPath"];
+    NSString *playbackOutputPath = options[@"playbackOutputPath"];
     NSUInteger maxAudioBytes = [options[@"maxAudioBytes"] unsignedIntegerValue];
 
     std::string input([sourcePath UTF8String]);
@@ -216,17 +222,34 @@ namespace ekwe {
         }
         ekwe::DualTranscodeResult dual = ekwe::encode_pcm_to_dual(
             pcm.data(), pcm.size(), rate, channels, opus_output, vorbis_output);
-        return resolveResultDict(dual.opus, dual.vorbis.success);
+        // Eager M4A playback copy from the same PCM that fed the Opus encode,
+        // ready before preview and without a WAV round-trip.
+        NSString *playbackUri = nil;
+        if (playbackOutputPath.length && dual.opus.success &&
+            encodePcmToM4a(pcm, rate, channels, playbackOutputPath)) {
+            playbackUri = playbackOutputPath;
+        }
+        return resolveResultDict(dual.opus, dual.vorbis.success, playbackUri);
     }
 
+    std::vector<int16_t> pcm;
+    uint32_t pcm_rate = 0;
+    uint16_t pcm_channels = 1;
     ekwe::DecodeResult result = ekwe::resolve_ogg_to_artifacts(
-        input, opus_output, vorbis_output, std::string(), static_cast<size_t>(maxAudioBytes));
+        input, opus_output, vorbis_output, std::string(), static_cast<size_t>(maxAudioBytes),
+        &pcm, &pcm_rate, &pcm_channels);
 
     BOOL vorbisSuccess = NO;
     if (result.success && !vorbis_output.empty()) {
         vorbisSuccess = [[NSFileManager defaultManager] fileExistsAtPath:vorbisOutputPath];
     }
-    return resolveResultDict(result, vorbisSuccess);
+    // Eager M4A playback copy from the same decode's PCM, no WAV intermediary.
+    NSString *playbackUri = nil;
+    if (result.success && playbackOutputPath.length && !pcm.empty() &&
+        encodePcmToM4a(pcm, pcm_rate, pcm_channels, playbackOutputPath)) {
+        playbackUri = playbackOutputPath;
+    }
+    return resolveResultDict(result, vorbisSuccess, playbackUri);
 }
 
 + (BOOL)createPlaybackCopyWithSourcePath:(NSString *)sourcePath

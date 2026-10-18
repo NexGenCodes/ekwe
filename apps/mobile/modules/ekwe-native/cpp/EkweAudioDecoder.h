@@ -135,13 +135,20 @@ DualTranscodeResult encode_pcm_to_dual(
 // when `vorbis_output_path` is non-empty. When `wav_output_path` is non-empty a
 // 16 kHz mono PCM WAV is also written, giving the platform a decodable source
 // for its own M4A playback encoder (AVPlayer / Media3 have no Ogg support).
+// When `pcm_out` is non-null, the decoded mono PCM is moved into it so the
+// caller can encode its own playback copy without a disk round-trip;
+// `pcm_rate_out`/`pcm_channels_out` receive the decode's sample rate and
+// channel count (callers must pass all three or none).
 // Returns duration + waveform from the same decode.
 DecodeResult resolve_ogg_to_artifacts(
     const std::string& input_path,
     const std::string& opus_output_path,
     const std::string& vorbis_output_path,
     const std::string& wav_output_path,
-    size_t max_audio_bytes = kDefaultMaxAudioBytes);
+    size_t max_audio_bytes = kDefaultMaxAudioBytes,
+    std::vector<int16_t>* pcm_out = nullptr,
+    uint32_t* pcm_rate_out = nullptr,
+    uint16_t* pcm_channels_out = nullptr);
 
 // Collapses interleaved PCM to the mono/16 kHz decode contract: averages down
 // to kTargetChannels, enforces kMaxAudioDurationMs, and resamples to
@@ -158,14 +165,23 @@ bool normalize_pcm_to_contract(const int16_t* pcm_data,
 // Memory-based audio decoder.
 // Reads audio from in-memory buffer — no temp file needed.
 // Same decode → Ogg Opus → waveform pipeline (with source reuse fast-path).
+// When `wav_output_path` is non-empty, a 16 kHz mono WAV of the same decode is
+// written for an M4A playback copy. When `pcm_out` is non-null, the decoded
+// mono PCM is moved into it so the caller can encode its own playback copy
+// without a disk round-trip; `pcm_rate_out`/`pcm_channels_out` receive the
+// decode's sample rate and channel count (callers must pass all three or none).
 // `data` must remain valid for duration of call.
 // `max_audio_bytes` caps the buffer size.
 DecodeResult transcode_audio_to_opus_from_memory(
     const uint8_t* data,
     size_t data_size,
     const std::string& output_path,
+    const std::string& wav_output_path = std::string(),
     size_t max_audio_bytes = kDefaultMaxAudioBytes,
-    int frame_ms = 20);
+    int frame_ms = 20,
+    std::vector<int16_t>* pcm_out = nullptr,
+    uint32_t* pcm_rate_out = nullptr,
+    uint16_t* pcm_channels_out = nullptr);
 
 // Decodes a supported audio file into a standalone 16 kHz mono PCM WAV file
 // (no re-encode) through the shared decode_file_to_mono_pcm step. Used to make

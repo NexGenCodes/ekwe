@@ -11,9 +11,13 @@ describe("createDeferredCacheCleaner (deferred file teardown)", () => {
   it("deletes both remembered files on cleanup(), then forgets them", () => {
     const deleted: string[] = [];
     const cleaner = createDeferredCacheCleaner((uri) => deleted.push(uri));
-    cleaner.remember("old-active.ogg", "old-converted.ogg");
+    cleaner.remember("old-active.ogg", "old-converted.ogg", "old-playback.m4a");
     cleaner.cleanup();
-    expect(deleted).toEqual(["old-active.ogg", "old-converted.ogg"]);
+    expect(deleted).toEqual([
+      "old-active.ogg",
+      "old-converted.ogg",
+      "old-playback.m4a",
+    ]);
   });
 
   it("is idempotent — a second cleanup deletes nothing", () => {

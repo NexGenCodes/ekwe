@@ -21,8 +21,11 @@ typedef void (^VadSilenceCallback)(void);
                          maxAudioBytes:(NSUInteger)maxAudioBytes;
 
 // Decodes the source once and fans out to the Opus artifact plus an optional
-// Vorbis copy when `options[@"vorbisOutputPath"]` is non-empty. Returns a
-// dictionary with success/error/durationMs/waveform plus `vorbisSuccess`.
+// Vorbis copy when `options[@"vorbisOutputPath"]` is non-empty. When
+// `options[@"playbackOutputPath"]` is non-empty, an eager M4A/AAC-LC playback
+// copy is also encoded from the same decode (no WAV bridge) and its path
+// returned as `playbackUri`. Returns a dictionary with
+// success/error/durationMs/waveform plus `vorbisSuccess`.
 + (NSDictionary *)resolveAudio:(NSString *)sourcePath options:(NSDictionary *)options;
 
 // Decodes `sourcePath` and writes an M4A/AAC-LC playback copy at `outputPath`.
