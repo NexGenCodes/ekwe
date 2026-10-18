@@ -31,32 +31,3 @@ describe("TelemetrySource", () => {
     expect(isHistoryOrigin(FALLBACK_ORIGIN)).toBe(true);
   });
 });
-
-describe("edit re-render cost", () => {
-  /**
-   * `synthesizeSpeech` treats a present `sourceLang` as "translate this" and an
-   * omitted one as "speak this". The editor only wants the former when the app
-   * misheard the user and the translation must follow the correction; every
-   * other edit is text the user has already written the final wording for, and
-   * translating it would charge them for a translation of their own words.
-   *
-   * The decision itself is covered behaviourally in
-   * `components/home/__tests__/editPlan.test.ts` — this block is kept only for
-   * the reasoning, which should survive the next refactor of the editor.
-   */
-  const needsTranslate = (
-    sourceLang: string | undefined,
-    targetLang: string,
-  ): boolean =>
-    sourceLang !== undefined &&
-    sourceLang !== "auto" &&
-    sourceLang !== targetLang;
-
-  it("translates when a source language is supplied", () => {
-    expect(needsTranslate("en", "fr")).toBe(true);
-  });
-
-  it("skips translation when the source language is omitted, as a speak-only render does", () => {
-    expect(needsTranslate(undefined, "fr")).toBe(false);
-  });
-});

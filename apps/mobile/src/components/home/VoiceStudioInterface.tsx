@@ -15,8 +15,6 @@ import { BackHandler, Keyboard } from "react-native";
 import Animated, { LinearTransition } from "react-native-reanimated";
 
 import { ExpressiveInput } from "@/components/home/ExpressiveInput";
-import type { EditableField } from "@/components/home/EditableText";
-import { planEdit } from "@/components/home/editPlan";
 import { VoicePickerSheet } from "@/components/home/VoicePickerSheet";
 import { VoiceResultPanel } from "@/components/home/VoiceResultPanel";
 
@@ -58,7 +56,7 @@ export interface VoiceStudioInterfaceRef {
  * `editing` shows the result card while the user edits the translated text.
  * It is a state of the result, not a separate step.
  */
-type Stage = "composer" | "converting" | "editing" | "ready" | "re-rendering";
+type Stage = "composer" | "converting" | "ready" | "re-rendering";
 
 /**
  * Cooldown between re-renders to prevent rapid sequential conversions.
@@ -115,13 +113,16 @@ export const VoiceStudioInterface = forwardRef<
   const [transcript, setTranscript] = useState("");
   /** The translation matching the rendered audio, editable by the user. */
   const [translation, setTranslation] = useState<string | null>(null);
-  /** The open editor's working copies. Null when closed. */
-  const [editDraft, setEditDraft] = useState<{
-    transcript: string;
-    translation: string;
-  } | null>(null);
   /** URI of the last archived capture for comparison. */
   const [artifactUri, setArtifactUri] = useState<string | null>(null);
+  /**
+   * An eager M4A playback copy of `artifactUri`, encoded during the convert so
+   * the player opens it directly rather than decoding the Ogg lazily on first
+   * play. Null when the eager encode failed; the player then derives it itself.
+   */
+  const [artifactPlaybackUri, setArtifactPlaybackUri] = useState<string | null>(
+    null,
+  );
   const [artifactDurationMs, setArtifactDurationMs] = useState(0);
   const [amplitudes, setAmplitudes] = useState<number[] | undefined>(undefined);
 
@@ -196,7 +197,12 @@ export const VoiceStudioInterface = forwardRef<
     cancelDictation,
   } = useVoiceDictation();
 
-  const player = useSharedAudioPlayer(artifactUri, artifactDurationMs || null);
+  const player = useSharedAudioPlayer(
+    // Bind the eagerly-encoded M4A when present so first play opens it directly;
+    // fall back to the Ogg artifact (decoded lazily) only if that encode failed.
+    artifactPlaybackUri ?? artifactUri,
+    artifactDurationMs || null,
+  );
   const sourcePlayer = useSharedAudioPlayer(
     sourceAudio?.uri ?? null,
     sourceAudio?.durationMs ?? null,
@@ -236,12 +242,18 @@ export const VoiceStudioInterface = forwardRef<
   const purgeSessionFiles = files.purge;
 
   const activeArtifactRef = useRef<string | null>(null);
+  const activePlaybackRef = useRef<string | null>(null);
   const commitArtifact = useCallback(
-    (uri: string): void => {
+    (uri: string, playbackUri?: string | null): void => {
       const previous = activeArtifactRef.current;
+      const previousPlayback = activePlaybackRef.current;
       activeArtifactRef.current = uri;
+      activePlaybackRef.current = playbackUri ?? null;
       rememberSessionFile(uri);
+      rememberSessionFile(playbackUri);
       if (previous && previous !== uri) deleteSessionFile(previous);
+      if (previousPlayback && previousPlayback !== playbackUri)
+        deleteSessionFile(previousPlayback);
     },
     [rememberSessionFile, deleteSessionFile],
   );
@@ -267,15 +279,16 @@ export const VoiceStudioInterface = forwardRef<
     player.pause();
     sourcePlayer.pause();
     activeArtifactRef.current = null;
+    activePlaybackRef.current = null;
     setSourceText("");
     setTranscript("");
     setTranslation(null);
-    setEditDraft(null);
     savedRef.current = false;
     draftTranscriptRef.current = "";
     draftTranslationRef.current = "";
     setSourceAudio(null);
     setArtifactUri(null);
+    setArtifactPlaybackUri(null);
     setArtifactDurationMs(0);
     setAmplitudes(undefined);
     preview.reset();
@@ -297,8 +310,10 @@ export const VoiceStudioInterface = forwardRef<
     player.pause();
     sourcePlayer.pause();
     if (activeArtifactRef.current === uri) activeArtifactRef.current = null;
+    activePlaybackRef.current = null;
     setSourceAudio(null);
     setArtifactUri(null);
+    setArtifactPlaybackUri(null);
     setArtifactDurationMs(0);
     setAmplitudes(undefined);
     deleteSessionFile(uri);
@@ -421,7 +436,6 @@ export const VoiceStudioInterface = forwardRef<
     }): void => {
       setTranscript(args.transcript);
       setTranslation(args.translation);
-      setEditDraft(null);
       resolvedSourceLangRef.current = args.sourceLang;
       resolvedTargetLangRef.current = args.targetLang;
       draftTranscriptRef.current = args.transcript;
@@ -438,7 +452,7 @@ export const VoiceStudioInterface = forwardRef<
 
       const seq = ++convertSeqRef.current;
       Keyboard.dismiss();
-      const isReRender = stage === "ready" || stage === "editing";
+      const isReRender = stage === "ready";
       setStage(isReRender ? "re-rendering" : "converting");
       if (!isReRender) {
         setArtifactUri(null);
@@ -507,8 +521,9 @@ export const VoiceStudioInterface = forwardRef<
 
         setArtifactDurationMs(result.value.durationMs || durationMs);
         setAmplitudes(normalizeAmplitudes(result.value.waveform ?? []));
-        commitArtifact(result.value.uri);
+        commitArtifact(result.value.uri, result.value.playbackUri);
         setArtifactUri(result.value.uri);
+        setArtifactPlaybackUri(result.value.playbackUri ?? null);
         setRenderedVoiceKey(currentVoiceKey);
 
         // Discard results with empty transcripts.
@@ -586,8 +601,9 @@ export const VoiceStudioInterface = forwardRef<
 
       setArtifactDurationMs(result.value.durationMs ?? 0);
       setAmplitudes(normalizeAmplitudes(result.value.waveform ?? []));
-      commitArtifact(result.value.uri);
+      commitArtifact(result.value.uri, result.value.playbackUri);
       setArtifactUri(result.value.uri);
+      setArtifactPlaybackUri(result.value.playbackUri ?? null);
       setRenderedVoiceKey(currentVoiceKey);
 
       const typedText = result.value.transcript?.trim() || text.trim();
@@ -651,11 +667,6 @@ export const VoiceStudioInterface = forwardRef<
     void runConvert({ text });
   }, [sourceAudio, sourceText, runConvert]);
 
-  const closeEditor = useCallback((): void => {
-    setEditDraft(null);
-    setStage("ready");
-  }, []);
-
   const handleBack = useCallback(() => {
     if (isReturnAudioLoading) return;
     void triggerHaptic();
@@ -667,20 +678,15 @@ export const VoiceStudioInterface = forwardRef<
   }, [isReturnAudioLoading, archiveIfUnsaved]);
 
   useEffect(() => {
-    if (stage !== "ready" && stage !== "editing") return;
+    if (stage !== "ready") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      // Close editor instead of navigating away.
-      if (stage === "editing") {
-        closeEditor();
-        return true;
-      }
       handleBack();
       return true;
     });
     return (): void => {
       sub.remove();
     };
-  }, [stage, handleBack, closeEditor]);
+  }, [stage, handleBack]);
 
   const handleClearSession = useCallback(() => {
     void handleClear();
@@ -696,48 +702,13 @@ export const VoiceStudioInterface = forwardRef<
   /** The text the result presents as the artifact, and therefore sends. */
   const resultText = translation?.trim() || transcript.trim();
 
-  const handleEditResult = useCallback(() => {
-    void triggerHaptic();
-    if (!resultText) return;
-    setEditDraft({ transcript, translation: translation ?? "" });
-    setStage("editing");
-  }, [resultText, transcript, translation]);
-
-  const handleEditFieldChange = useCallback(
-    (key: "transcript" | "translation", next: string): void => {
-      setEditDraft((prev) => (prev ? { ...prev, [key]: next } : prev));
-    },
-    [],
-  );
-
-  const handleCancelEdit = useCallback(() => {
-    void triggerHaptic();
-    closeEditor();
-  }, [closeEditor]);
-
-  /** Re-renders the result from the editor's draft. */
+  /** Re-renders the result audio in the selected voice, keeping the wording. */
   const renderInVoice = useCallback(
-    async (
-      draft: {
-        transcript: string;
-        translation: string;
-      },
-      options?: { force?: boolean },
-    ): Promise<void> => {
-      const spokenLang = resolvedTargetLangRef.current;
-      const hasTranslation = !!translation?.trim();
-      const plan = planEdit({
-        draftTranscript: draft.transcript,
-        draftTranslation: draft.translation,
-        transcript,
-        translation,
-      });
-      const retranslate = plan.kind === "retranslate";
-      const spokenText = plan.kind === "unchanged" ? "" : plan.text;
-      // Ignore regenerates of unchanged text unless forced.
-      if (!spokenText && !options?.force) return;
+    async (options?: { force?: boolean }): Promise<void> => {
+      const currentTranscript = transcript;
+      const currentTranslation = translation;
       const textToSpeak =
-        spokenText || draft.translation.trim() || draft.transcript.trim();
+        currentTranslation?.trim() || currentTranscript.trim();
       if (!textToSpeak) return;
       // Rate limit renders silently.
       if (startRenderCooldown()) return;
@@ -753,6 +724,7 @@ export const VoiceStudioInterface = forwardRef<
 
       // The artifact is dropped below and is not recoverable, so keep it.
       const prevArtifactUri = artifactUri;
+      const prevArtifactPlaybackUri = artifactPlaybackUri;
       const prevDurationMs = artifactDurationMs;
       const prevAmplitudes = amplitudes;
 
@@ -761,17 +733,18 @@ export const VoiceStudioInterface = forwardRef<
 
       const restore = (): void => {
         setArtifactUri(prevArtifactUri);
+        setArtifactPlaybackUri(prevArtifactPlaybackUri);
         setArtifactDurationMs(prevDurationMs);
         setAmplitudes(prevAmplitudes);
-        setStage("editing");
+        setStage("ready");
       };
 
+      const spokenLang = resolvedTargetLangRef.current;
       const renderSpan = startSpan("studio.synth.render");
       const result = await synthesizeSpeech(textToSpeak, spokenLang, {
         signal: controller.signal,
         voiceId: voice.slot.id,
         gender: voice.gender,
-        ...(retranslate ? { sourceLang: resolvedSourceLangRef.current } : {}),
         ...(options?.force
           ? { reroll: (rerollRef.current = (rerollRef.current + 1) % 1000) }
           : {}),
@@ -805,7 +778,7 @@ export const VoiceStudioInterface = forwardRef<
             action: outage
               ? {
                   label: "Retry",
-                  onClick: (): void => void renderInVoice(draft),
+                  onClick: (): void => void renderInVoice(options),
                 }
               : undefined,
           },
@@ -816,47 +789,24 @@ export const VoiceStudioInterface = forwardRef<
 
       setArtifactDurationMs(result.value.durationMs ?? 0);
       setAmplitudes(normalizeAmplitudes(result.value.waveform ?? []));
-      commitArtifact(result.value.uri);
+      commitArtifact(result.value.uri, result.value.playbackUri);
       setArtifactUri(result.value.uri);
+      setArtifactPlaybackUri(result.value.playbackUri ?? null);
       setRenderedVoiceKey(currentVoiceKey);
 
-      const nextTranscript = draft.transcript.trim();
-      const nextTranslation = retranslate
-        ? result.value.translation?.trim() || null
-        : hasTranslation
-          ? draft.translation.trim()
-          : null;
-
-      // Keep previous translation on failed re-translate.
-      if (retranslate && !nextTranslation) {
-        void cleanAudioArtifacts(result.value.uri);
-        restore();
-        AppToast.error("Could not update the translation", {
-          description: "Your wording is unchanged. Try again in a moment.",
-        });
-        return;
-      }
-
       publishResult({
-        transcript: nextTranscript,
-        translation: nextTranslation,
+        transcript: currentTranscript,
+        translation: currentTranslation,
         sourceLang: resolvedSourceLangRef.current,
         targetLang: spokenLang,
       });
-
-      if (result.value.translationTruncated) {
-        AppToast.info("Only part was translated", {
-          description:
-            "This was longer than one pass allows, so the voice covers the beginning. Shorten it, or send it as shorter messages.",
-        });
-      }
 
       savedRef.current = true;
       recordStudioCapture({
         captureId: getCaptureId(),
         input: sourceAudio ? "audio" : "text",
-        transcript: nextTranscript,
-        translation: nextTranslation,
+        transcript: currentTranscript,
+        translation: currentTranslation,
         durationSeconds: Math.round(
           (sourceAudio?.durationMs ?? artifactDurationMs) / 1000,
         ),
@@ -864,7 +814,6 @@ export const VoiceStudioInterface = forwardRef<
         spokenLang,
       });
 
-      setEditDraft(null);
       setStage("ready");
     },
     [
@@ -874,35 +823,17 @@ export const VoiceStudioInterface = forwardRef<
       commitArtifact,
       getCaptureId,
       artifactUri,
+      artifactPlaybackUri,
       amplitudes,
-      publishResult,
-      recordStudioCapture,
       sourceAudio,
       artifactDurationMs,
+      recordStudioCapture,
+      publishResult,
+      startRenderCooldown,
       transcript,
       translation,
-      startRenderCooldown,
     ],
   );
-
-  const handleApplyEdit = useCallback(async () => {
-    if (!editDraft) return;
-    const plan = planEdit({
-      draftTranscript: editDraft.transcript,
-      draftTranslation: editDraft.translation,
-      transcript,
-      translation,
-    });
-    if (plan.kind === "unchanged") {
-      closeEditor();
-      return;
-    }
-    await renderInVoice(editDraft);
-  }, [editDraft, transcript, translation, renderInVoice, closeEditor]);
-
-  const handleApplyEditWrapped = useCallback(() => {
-    void handleApplyEdit();
-  }, [handleApplyEdit]);
 
   const handleOpenVoicePicker = useCallback(() => {
     void triggerHaptic();
@@ -912,16 +843,9 @@ export const VoiceStudioInterface = forwardRef<
   /** Re-speaks displayed text with the selected voice. */
   const handleConvertInVoice = useCallback(() => {
     void triggerHaptic();
-    const text = resultText.trim();
-    if (text) {
-      // Re-render draft translation or transcript based on current state.
-      void renderInVoice(
-        {
-          transcript: translation ? transcript : text,
-          translation: translation ? text : "",
-        },
-        { force: true },
-      );
+    if (resultText.trim()) {
+      // Re-render the wording in the newly selected voice.
+      void renderInVoice({ force: true });
       return;
     }
     if (sourceAudio) {
@@ -930,15 +854,7 @@ export const VoiceStudioInterface = forwardRef<
     }
     const typed = sourceText.trim();
     if (typed) void runConvert({ text: typed });
-  }, [
-    resultText,
-    transcript,
-    translation,
-    sourceAudio,
-    sourceText,
-    runConvert,
-    renderInVoice,
-  ]);
+  }, [resultText, sourceAudio, sourceText, runConvert, renderInVoice]);
 
   const handleShare = useCallback(async () => {
     void triggerHaptic();
@@ -1043,44 +959,10 @@ export const VoiceStudioInterface = forwardRef<
       ? sourceLabel
       : `${sourceLabel} → ${getLanguageName(targetLang)}`;
 
-  /** Render edit fields based on available text data. */
-  const editFields = useMemo<EditableField[]>(() => {
-    const draft = editDraft ?? {
-      transcript,
-      translation: translation ?? "",
-    };
-    const fields: EditableField[] = [];
-    if (translation?.trim()) {
-      fields.push({
-        key: "translation",
-        label: getLanguageName(targetLang),
-        a11yLabel: "Translation",
-        value: draft.translation,
-      });
-    }
-    fields.push({
-      key: "transcript",
-      label: sourceAudio ? "What you said" : "What you typed",
-      value: draft.transcript,
-    });
-    return fields;
-  }, [editDraft, transcript, translation, sourceAudio, targetLang]);
-
-  const editHint = useMemo(() => {
-    if (!translation?.trim()) return "Renders these words in your voice";
-    if (!editDraft) return "";
-    if (editDraft.translation.trim() !== (translation ?? "").trim()) {
-      return "Speaks your wording in your voice";
-    }
-    return editDraft.transcript.trim() !== transcript.trim()
-      ? "Re-translates and re-renders in your voice"
-      : "Renders these words in your voice";
-  }, [translation, editDraft, transcript]);
-
   /**
    * ExpressiveInput is memoised, so this has to be a stable reference: a fresh
    * object literal here would re-render the whole dictation tree on every
-   * Studio render, even when nothing it reads changed.
+   * Studio render, even when nothing it read changed.
    */
   const dictationState = useMemo(
     () => ({
@@ -1126,7 +1008,7 @@ export const VoiceStudioInterface = forwardRef<
     >
       <Box
         style={
-          stage === "ready" || stage === "editing" || stage === "re-rendering"
+          stage === "ready" || stage === "re-rendering"
             ? { display: "none" }
             : undefined
         }
@@ -1156,9 +1038,7 @@ export const VoiceStudioInterface = forwardRef<
         />
       </Box>
 
-      {(stage === "ready" ||
-        stage === "editing" ||
-        stage === "re-rendering") && (
+      {(stage === "ready" || stage === "re-rendering") && (
         <VoiceResultPanel
           player={player}
           voice={voice.slot}
@@ -1172,20 +1052,11 @@ export const VoiceStudioInterface = forwardRef<
           amplitudes={amplitudes}
           isAudioLoading={isReturnAudioLoading}
           // The result is a document, not a player: the text is the artifact
-          // being sent and the audio is its read-aloud. The card's single
-          // "Edit text" action is how you correct the wording.
+          // being sent and the audio is its read-aloud.
           resultText={resultText}
           transcriptText={transcript}
           hasTranslation={!!translation?.trim()}
-          editFields={editFields}
-          editHint={editHint}
-          onEditResult={handleEditResult}
-          isEditing={stage === "editing"}
-          maxChars={permissions.textTranslationMaxChars}
-          onEditFieldChange={handleEditFieldChange}
-          onCancelEdit={handleCancelEdit}
-          onApplyEdit={handleApplyEditWrapped}
-          onBack={handleBack}
+          onEdit={handleBack}
           onChangeVoice={handleOpenVoicePicker}
           onConvert={handleConvertInVoice}
           canConvert={isVoiceDirty}
