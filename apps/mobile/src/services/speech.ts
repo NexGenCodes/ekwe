@@ -46,6 +46,12 @@ export interface SynthesizedAudio {
   uri: string;
   waveform?: number[];
   durationMs: number;
+  /**
+   * An M4A playback copy of `uri`, encoded during synthesis so playback opens it
+   * directly instead of decoding the Ogg/Opus artifact lazily on first play. Null
+   * when the eager encode failed; the player then derives the copy at play time.
+   */
+  playbackUri?: string | null;
   sourceLang?: string;
   targetLang?: string;
   translated?: boolean;
@@ -113,9 +119,22 @@ async function writeAudioFile(
 async function normalizeSynthAudio(
   rawUri: string,
 ): Promise<
-  Result<Pick<SynthesizedAudio, "uri" | "waveform" | "durationMs">, EkweError>
+  Result<
+    Pick<SynthesizedAudio, "uri" | "waveform" | "durationMs" | "playbackUri">,
+    EkweError
+  >
 > {
   const result = await AudioTranscoder.transcodeToOpus(rawUri);
+
+  // The provider's container is a throwaway once transcoded, so drop it on both
+  // outcomes rather than leaking it when the transcode fails.
+  try {
+    const raw = new File(rawUri);
+    if (raw.exists) raw.delete();
+  } catch {
+    // Best-effort: the startup cache sweep is the backstop.
+  }
+
   if (!result.ok) {
     logger.error(
       "[speech] Opus normalization failed, cannot produce a shareable artifact:",
@@ -124,17 +143,18 @@ async function normalizeSynthAudio(
     return err(EkweError.PROCESSOR_FAIL);
   }
 
-  try {
-    const raw = new File(rawUri);
-    if (raw.exists) raw.delete();
-  } catch {
-    // Best-effort: the startup cache sweep is the backstop.
-  }
+  // Encode the M4A playback copy up front, during the convert, so first play
+  // never has to decode the Ogg lazily. A failure here is non-fatal: the player
+  // still derives the copy at play time.
+  const playback = await AudioTranscoder.createPlaybackCopyForPlayback(
+    result.value.uri,
+  );
 
   return ok({
     uri: result.value.uri,
     waveform: result.value.waveform,
     durationMs: result.value.durationMs,
+    playbackUri: playback.ok ? playback.value : null,
   });
 }
 
@@ -238,7 +258,10 @@ export async function synthesizeSpeech(
     if (!rawUri) return err(EkweError.SPEECH_FAIL);
 
     // Playback-only clips keep the provider's format; shareable clips must be Ogg/Opus.
-    let normalized: Pick<SynthesizedAudio, "uri" | "waveform" | "durationMs">;
+    let normalized: Pick<
+      SynthesizedAudio,
+      "uri" | "waveform" | "durationMs" | "playbackUri"
+    >;
     if (options?.delivery === "playback") {
       normalized = { uri: rawUri, durationMs: parsed.data.durationMs ?? 0 };
     } else {

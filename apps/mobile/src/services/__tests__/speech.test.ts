@@ -52,6 +52,12 @@ vi.mock("@/services/audioTranscoder", () => ({
   AudioTranscoder: {
     transcodeToOpus: transcodeMock,
     prepareUploadArtifact: prepareUploadArtifactMock,
+    // The convert now derives the M4A playback copy eagerly, so every test that
+    // reaches normalizeSynthAudio needs this stubbed.
+    createPlaybackCopyForPlayback: vi.fn(async () => ({
+      ok: true,
+      value: "file:///cache/ekwe_playback_xyz.m4a",
+    })),
   },
 }));
 
@@ -219,6 +225,7 @@ describe("synthesizeSpeech", () => {
       uri: "file:///cache/ekwe_converted_test.ogg",
       durationMs: 1234,
       waveform: [0.12, 0.4, 0.8],
+      playbackUri: "file:///cache/ekwe_playback_xyz.m4a",
     });
     expect(fetchBody()).toMatchObject({ text: "hello", targetLang: "en" });
     expect(fetchBody().gender).toBeUndefined();
