@@ -509,6 +509,7 @@ jobs:
       - name: Commit + push version bump
         id: commit
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add apps/mobile/app.json apps/mobile/package.json package.json apps/web/config.json apps/web/package.json packages/shared/src/version.ts CHANGELOG.md
@@ -525,7 +526,14 @@ jobs:
           # A developer may have pushed during the ~90-min build: rebase the
           # bump commit onto that latest master instead of having the push
           # rejected as non-fast-forward (which used to fail the whole release).
-          git pull --rebase && git push
+          # The prebuild/build steps regenerate tracked native files, and a dirty
+          # worktree makes `git pull --rebase` abort before it can fast-forward.
+          # None of those changes belong in the release commit (the assets we
+          # still need live under the untracked dist/ directory), so discard
+          # them before syncing with the remote.
+          git checkout -- .
+          git pull --rebase
+          git push
           # Capture AFTER the rebase+push: if the rebase rewrote the bump
           # commit (remote advanced mid-run), the pre-rebase HEAD is an unpushed
           # commit and the Release's target_commitish / OTA git_ref dangle.
