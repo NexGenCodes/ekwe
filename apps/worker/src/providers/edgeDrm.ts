@@ -154,7 +154,7 @@ function expandSchedule(words: number[], firstWord = 16): void {
 }
 
 function sha256Init(prefix: Uint8Array): number[] {
-  const words: number[] = new Array(14).fill(0);
+  const words: number[] = new Array<number>(14).fill(0);
   words.push(((prefix[0] << 16) | (prefix[1] << 8) | prefix[2]) >>> 0);
   words.push(
     ((prefix[3] << 24) | (prefix[4] << 16) | (prefix[5] << 8) | prefix[6]) >>>
