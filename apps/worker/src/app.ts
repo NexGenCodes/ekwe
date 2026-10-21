@@ -67,7 +67,6 @@ app.use("*", async (c, next) => {
   c.set("pipelineTier", "FREE" as Tier);
 
   const url = new URL(c.req.url);
-  const exposeTimings = c.env.APP_ENV !== "production";
 
   await next();
 
@@ -76,7 +75,7 @@ app.use("*", async (c, next) => {
   const tier = c.get("tier") || "";
   recordRequestEvent(c.env, url.pathname, res.status, totalMs, tier);
 
-  if (exposeTimings && !c.res.headers.has("Server-Timing")) {
+  if (!c.res.headers.has("Server-Timing")) {
     const serverTiming = timings.toServerTiming(totalMs);
     if (serverTiming) {
       c.res = new Response(c.res.body, c.res);
@@ -120,10 +119,14 @@ app.notFound((c) => {
 
 // ── Standalone routes ─────────────────────────────────────────────────
 app.get("/health", async (c) => {
-  const degraded: string[] = [];
-  for (const name of Object.keys(PROVIDER_MODULES)) {
-    if (await isProviderDegraded(c.env, name)) degraded.push(name);
-  }
+  const providerNames = Object.keys(PROVIDER_MODULES);
+  const degradedResults = await Promise.all(
+    providerNames.map(async (name) => ({
+      name,
+      degraded: await isProviderDegraded(c.env, name),
+    })),
+  );
+  const degraded = degradedResults.filter((r) => r.degraded).map((r) => r.name);
 
   let d1 = "ok";
   try {

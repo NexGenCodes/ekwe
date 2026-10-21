@@ -416,8 +416,9 @@ export class StreamDurableObject extends DurableObject<Env> {
 
       if (msg && msg.type === "force_endpoint") {
         const conn = this.connections.get(ws);
+        const WIT_PROVIDER_ID = "witai";
         // Wit is an HTTP pipe and cannot be told to end a turn.
-        if (conn?.activeRouteId && conn.activeRouteId !== "witai") {
+        if (conn?.activeRouteId && conn.activeRouteId !== WIT_PROVIDER_ID) {
           conn.adapter.emit("control", "force_endpoint");
         }
         return;

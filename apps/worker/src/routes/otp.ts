@@ -112,7 +112,14 @@ async function verifyTurnstile(
 
     if (result.success === false) {
       const codes = result["error-codes"] ?? [];
-      if (codes.includes("invalid-input-response")) {
+      const BLOCK_CODES = new Set([
+        "invalid-input-response",
+        "invalid-input-secret",
+        "missing-input-response",
+        "missing-input-secret",
+        "bad-request",
+      ]);
+      if (codes.some((c) => BLOCK_CODES.has(c))) {
         return false;
       }
       failOpenAlert("validation_failed", { codes });

@@ -2,6 +2,7 @@ import { FREE_LIMITS, PREMIUM_LIMITS, WORKER_ERROR_CODES } from "@ekwe/shared";
 
 const FREE_MAX_MIN = Math.round(FREE_LIMITS.dictationDurationMs / 60000);
 const PRO_MAX_MIN = Math.round(PREMIUM_LIMITS.dictationDurationMs / 60000);
+const FREE_MAX_MB = Math.round(FREE_LIMITS.maxAudioBytes / 1_048_576);
 const PRO_MAX_MB = Math.round(PREMIUM_LIMITS.maxAudioBytes / 1_048_576);
 
 export const EkweError = {
@@ -29,6 +30,7 @@ export const EkweError = {
   AUDIO_EMPTY: "EKWE_AUDIO_EMPTY",
   FILE_TOO_LARGE: WORKER_ERROR_CODES.FILE_TOO_LARGE,
   AUDIO_TOO_LONG: WORKER_ERROR_CODES.AUDIO_TOO_LONG,
+  TEXT_TOO_LONG: WORKER_ERROR_CODES.TEXT_TOO_LONG,
   SPEECH_FAIL: "EKWE_SPEECH_FAIL",
   /** A free account asked for a Pro voice. */
   PREMIUM_REQUIRED: WORKER_ERROR_CODES.PREMIUM_FEATURE_REQUIRED,
@@ -76,8 +78,10 @@ export const ErrorMessages: Record<EkweError, string> = {
   [EkweError.AUDIO_RECORD_FAIL]: "Could not start recording. Please try again.",
   [EkweError.AUDIO_EMPTY]:
     "No audio was captured. Make sure the voice note is audible.",
-  [EkweError.FILE_TOO_LARGE]: `This file is too large to process. Maximum size is ${PRO_MAX_MB}MB.`,
+  [EkweError.FILE_TOO_LARGE]: `This file is too large for your plan. Free: ${FREE_MAX_MB}MB · Pro: ${PRO_MAX_MB}MB.`,
   [EkweError.AUDIO_TOO_LONG]: `This audio is too long for your plan. Free: ${FREE_MAX_MIN} min per file · Pro: ${PRO_MAX_MIN} min.`,
+  [EkweError.TEXT_TOO_LONG]:
+    "This text is too long for your plan. Try a shorter passage.",
   [EkweError.SPEECH_FAIL]: "Speech failed. Please try again.",
   [EkweError.PREMIUM_REQUIRED]: "This voice requires Ekwe Pro.",
   [EkweError.SPEECH_UNAVAILABLE]:

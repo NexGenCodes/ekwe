@@ -13,10 +13,6 @@ export async function d1Get(
 
     if (!row) return null;
     if (row.expires_at < Date.now() / 1000) {
-      db.prepare(`DELETE FROM ${table} WHERE cache_key = ?`)
-        .bind(cacheKey)
-        .run()
-        .catch(() => {});
       return null;
     }
     return row.result;

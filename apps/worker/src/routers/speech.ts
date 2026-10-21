@@ -5,6 +5,7 @@ import {
   WORKER_ERROR_CODES,
   translateRequestSchema,
   synthesizeRequestSchema,
+  voicePreviewRequestSchema,
 } from "@ekwe/shared";
 import { authMiddleware, preflightMiddleware } from "@/middleware";
 import { handleTranscribe } from "@/routes/transcribe";
@@ -14,6 +15,7 @@ import {
   synthesizeFromText,
   createGateCharge,
 } from "@/routes/synthesize";
+import { synthesizeVoicePreview } from "@/routes/preview";
 import { speechAudioHandler } from "@/routes/speech-audio";
 import { SYNTHESIZE_TOTAL_MS } from "@/core/budgets";
 import {
@@ -126,6 +128,31 @@ speechRouter.post("/synthesize", authMiddleware(), async (c) => {
     remainingMs,
     c.get("timings"),
     gateCharge,
+  );
+});
+
+speechRouter.post("/voice-preview", authMiddleware(), async (c) => {
+  let bodyJson: unknown;
+  try {
+    bodyJson = await c.req.json();
+  } catch {
+    return c.json({ error: WORKER_ERROR_CODES.INVALID_BODY }, 400);
+  }
+
+  const parsed = voicePreviewRequestSchema.safeParse(bodyJson);
+  if (!parsed.success) {
+    return c.json({ error: WORKER_ERROR_CODES.INVALID_BODY }, 400);
+  }
+
+  const start = Date.now();
+  const remainingMs = () => SYNTHESIZE_TOTAL_MS - (Date.now() - start);
+  return synthesizeVoicePreview(
+    parsed.data,
+    c.env,
+    c.req.raw.signal,
+    c.get("auth")!.userId,
+    remainingMs,
+    c.get("timings"),
   );
 });
 

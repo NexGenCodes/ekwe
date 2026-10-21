@@ -8,7 +8,6 @@ import { supabase } from "@/services/supabase";
 
 import {
   getFlutterwavePlanId,
-  getFlutterwavePublicKey,
   isFlutterwaveAvailable,
   openFlutterwaveCheckout,
   reconcileFlutterwaveStatus,
@@ -72,18 +71,6 @@ describe("getFlutterwavePlanId", () => {
   it("maps the billing toggle to the shared product IDs", () => {
     expect(getFlutterwavePlanId(false)).toBe(PRO_PRODUCT_IDS.monthly);
     expect(getFlutterwavePlanId(true)).toBe(PRO_PRODUCT_IDS.annual);
-  });
-});
-
-describe("getFlutterwavePublicKey", () => {
-  it("defaults to an empty string", () => {
-    expect(getFlutterwavePublicKey()).toBe("");
-  });
-
-  it("returns the configured publishable key", () => {
-    vi.stubEnv("EXPO_PUBLIC_FLUTTERWAVE_PUBLIC_KEY", "pk_live_pubkey");
-    expect(getFlutterwavePublicKey()).toBe("pk_live_pubkey");
-    vi.unstubAllEnvs();
   });
 });
 

@@ -390,12 +390,15 @@ public class EkweNativeModule: Module {
      //
      // `mimeType` is accepted for signature symmetry with Android but is not
      // used — iOS derives org.xiph.ogg-audio from the file's `.ogg` extension,
-     // which is what audio-capable activities match on. Note that voice-note
-     // rendering is not reachable on iOS: Telegram's share path only attaches
-     // a filename, never an audio attribute, so it renders a music player
-     // regardless of what we send.
+     // which is what audio-capable activities match on. Voice-note rendering is
+     // target-dependent: Telegram's iOS share path attaches the URL as a file
+     // item, so it may render as a music player rather than a voice note.
+     //
+     // `targetPackage` is also ignored: UIActivityViewController cannot force a
+     // specific third-party app, so iOS always presents the system activity
+     // sheet. The JS sheet still labels the intended target.
      AsyncFunction("shareAudio") {
-       (filePath: String, _ mimeType: String, text: String?, _ chooserTitle: String?, promise: Promise) in
+       (filePath: String, _ mimeType: String, text: String?, _ chooserTitle: String?, _ targetPackage: String?, promise: Promise) in
        let plainPath = filePath.hasPrefix("file://")
          ? String(filePath.dropFirst("file://".count))
          : filePath

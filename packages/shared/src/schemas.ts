@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { USAGE_METER_IDS } from "./usageMeters";
-import { PRO_PRODUCT_IDS } from "./plans";
+import { PRO_PRODUCT_IDS, SPEECH_MAX_TEXT_CHARS } from "./plans";
 import { LANGUAGES } from "./languages";
 import { FLUTTERWAVE_CURRENCIES } from "./money";
 import { VOICE_SLOT_IDS } from "./voices";
@@ -123,20 +123,22 @@ export const usageSnapshotSchema = z.object({
 export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>;
 
 export const synthesizeRequestSchema = z.object({
-  text: z.string().min(1).max(2_400).optional(),
+  text: z.string().min(1).max(SPEECH_MAX_TEXT_CHARS).optional(),
 
   sourceLang: z.enum(SOURCE_LANG_CODES).optional(),
   targetLang: z.enum(LANG_CODES),
   gender: z.enum(["male", "female"]).optional(),
   voiceId: z.enum(VOICE_SLOT_IDS).optional(),
   reroll: z.number().int().min(0).max(1_000).optional(),
-  /**
-   * A voice-picker audition, not a real synthesis. Keys the shared speech cache
-   * so the provider cost is one-off, and exempts it from the caller's quota.
-   */
-  isPreview: z.literal(true).optional(),
 });
 export type SynthesizeRequest = z.infer<typeof synthesizeRequestSchema>;
+
+export const voicePreviewRequestSchema = z.object({
+  voiceId: z.enum(VOICE_SLOT_IDS),
+  gender: z.enum(["male", "female"]),
+  lang: z.enum(LANG_CODES),
+});
+export type VoicePreviewRequest = z.infer<typeof voicePreviewRequestSchema>;
 
 export const synthesizeResponseSchema = z.object({
   /**

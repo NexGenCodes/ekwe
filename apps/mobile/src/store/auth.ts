@@ -1,6 +1,5 @@
 import { observable } from "@legendapp/state";
 import { Session, User } from "@supabase/supabase-js";
-import type { PaymentProvider } from "@ekwe/shared";
 import { resetPersonalSettings, registerIsProProvider } from "@/store/settings";
 import { setSentryUser } from "@/utils/logger";
 
@@ -63,14 +62,8 @@ export const authActions = {
   setIsPro: (isPro: boolean): void => {
     auth$.isPro.set(isPro);
   },
-  setEntitlementSynced: (
-    synced: boolean,
-    _provider?: PaymentProvider,
-  ): void => {
+  setEntitlementSynced: (synced: boolean): void => {
     auth$.isProEntitlementSynced.set(synced);
-  },
-  resetEntitlementForProviderSwitch: (): void => {
-    auth$.isProEntitlementSynced.set(false);
   },
   setInitialized: (initialized: boolean): void => {
     auth$.isInitialized.set(initialized);

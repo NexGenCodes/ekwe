@@ -3,7 +3,6 @@ import {
   TRANSLATE_EXPANSION_CUSHION,
   synthesizeRequestSchema,
   synthesizeResponseSchema,
-  VOICE_PREVIEW_TEXT,
   VOICE_SLOT_IDS,
   getStandardSlot,
   getVoiceSlot,
@@ -115,9 +114,8 @@ async function reserveSpeechGate(
 function guardVoiceEntitlement(
   voiceId: string | undefined,
   entitlementTier: Tier,
-  isPreview: boolean,
 ): Response | null {
-  if (isPreview || !voiceId || entitlementTier !== "FREE") return null;
+  if (!voiceId || entitlementTier !== "FREE") return null;
   const slot = getVoiceSlot(voiceId);
   if (slot?.tier === "pro") {
     return Response.json(
@@ -228,7 +226,7 @@ async function translateStage(
   return { ok: true, result };
 }
 
-interface ResponseMeta {
+export interface ResponseMeta {
   sourceLang: string;
   targetLang: string;
   translated: boolean;
@@ -249,7 +247,7 @@ function wavDurationMs(audio: Uint8Array): number | undefined {
   return Math.round((audio.byteLength / byteRate) * 1000);
 }
 
-async function buildSpeechResponse(
+export async function buildSpeechResponse(
   env: Env,
   result: SpeechResult,
   meta: ResponseMeta,
@@ -284,7 +282,6 @@ interface FinishSpeechOptions {
   ctx: ExecutionContext;
   userId: string;
   sessionId: string | null;
-  isPreview: boolean;
   /** Distinguishes successive renders of identical text. */
   reroll?: number;
   remainingMs: () => number;
@@ -305,7 +302,6 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     ctx,
     userId,
     sessionId,
-    isPreview,
     reroll,
     remainingMs,
     timings,
@@ -344,22 +340,20 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
   // Execute gate reservation for entitlements and budgets.
   const slot = getVoiceSlot(voiceId) ?? getStandardSlot();
   const slotTier = pipelineTierForSlot(slot);
-  const scope = isPreview ? "shared" : "user";
   let executionTier: Tier = slotTier;
   let gateError: Response | null = null;
 
   // Pre-fetch cache speculatively based on slot tier while waiting for entitlement gate.
-  const entitlementGate = guardVoiceEntitlement(voiceId, jwtTier, isPreview);
+  const entitlementGate = guardVoiceEntitlement(voiceId, jwtTier);
   if (entitlementGate) return entitlementGate;
 
-  // Avoid charging chars for previews as they are fixed shared clips.
   const gatePromise = reserveSpeechGate(
     env,
     ctx,
     userId,
     jwtTier,
     sessionId,
-    isPreview ? 0 : cleanSpoken.length,
+    cleanSpoken.length,
     gateCharge,
   );
 
@@ -372,7 +366,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
         voiceId,
         userId,
         slotTier,
-        scope,
+        "user",
         reroll,
       );
       // Treat failed reads as a miss but retain cache key to allow cache population.
@@ -418,7 +412,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
       voiceId,
       userId,
       executionTier,
-      scope,
+      "user",
       reroll,
     ).then((key) =>
       readSpeechCache(env, key)
@@ -436,26 +430,16 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
   }
 
   if (cached) {
-    logger.info(
-      `[synthesize] Speech cache hit scope=${scope} tier=${executionTier}`,
-    );
+    logger.info(`[synthesize] Speech cache hit tier=${executionTier}`);
     if (reserved.ok) {
-      releaseUsage(
-        env,
-        userId,
-        "speech",
-        ctx,
-        isPreview ? 0 : cleanSpoken.length,
-      );
+      releaseUsage(env, userId, "speech", ctx, cleanSpoken.length);
     }
     timings.start("encode");
     const res = await buildSpeechResponse(env, cached, meta, cacheKey);
     timings.end("encode");
     return res;
   }
-  logger.info(
-    `[synthesize] Speech cache miss scope=${scope} tier=${executionTier}`,
-  );
+  logger.info(`[synthesize] Speech cache miss tier=${executionTier}`);
 
   if (gateError) return gateError;
 
@@ -472,13 +456,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
   );
   if (!speechSupportGuard.allowed) {
     if (reserved.ok) {
-      releaseUsage(
-        env,
-        userId,
-        "speech",
-        ctx,
-        isPreview ? 0 : cleanSpoken.length,
-      );
+      releaseUsage(env, userId, "speech", ctx, cleanSpoken.length);
     }
     return speechSupportGuard.response;
   }
@@ -497,13 +475,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     }),
   );
   if (!result) {
-    releaseUsage(
-      env,
-      userId,
-      "speech",
-      ctx,
-      isPreview ? 0 : cleanSpoken.length,
-    );
+    releaseUsage(env, userId, "speech", ctx, cleanSpoken.length);
     return Response.json(
       {
         error: WORKER_ERROR_CODES.SPEECH_UNAVAILABLE,
@@ -533,7 +505,6 @@ export async function synthesizeFromText(
   gateCharge: { skipCooldown: () => boolean; markCharged: () => void },
 ): Promise<Response> {
   const { text, sourceLang, targetLang, gender, voiceId, reroll } = body;
-  const isPreview = body.isPreview || text === VOICE_PREVIEW_TEXT;
 
   if (!text) {
     return Response.json(
@@ -551,35 +522,6 @@ export async function synthesizeFromText(
   }
 
   const resolvedGender = gender;
-
-  // Previews don't require language fallback logic.
-  if (isPreview) {
-    return finishSpeech({
-      spokenText: cleanText,
-      spokenLang: targetLang,
-      gender: resolvedGender,
-      voiceId,
-      jwtTier: tier,
-      env,
-      signal,
-      ctx,
-      userId,
-      sessionId,
-      isPreview: true,
-      remainingMs,
-      timings,
-      gateCharge,
-      meta: {
-        sourceLang: sourceLang ?? targetLang,
-        targetLang,
-        translated: false,
-        voiceId,
-        transcript: cleanText,
-        translation: null,
-        translationTruncated: false,
-      },
-    });
-  }
 
   let spokenText = cleanText;
   let translated = false;
@@ -662,7 +604,6 @@ export async function synthesizeFromText(
     ctx,
     userId,
     sessionId,
-    isPreview: false,
     reroll,
     remainingMs,
     timings,
@@ -908,7 +849,6 @@ export async function synthesizeFromAudio(
       ctx,
       userId,
       sessionId,
-      isPreview: false,
       remainingMs,
       timings,
       gateCharge,

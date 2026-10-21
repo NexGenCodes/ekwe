@@ -20,7 +20,7 @@ import { settings$, auth$, network$ } from "@/store";
 import { EchoStep, EchoProps, UseEchoFlowResult } from "@/types/echo";
 import { default as logger, addSentryBreadcrumb } from "@/utils/logger";
 import { cleanEchoCache } from "@/utils/audioCache";
-import { ErrorMessages } from "@/constants/errors";
+import { EkweError, ErrorMessages } from "@/constants/errors";
 import {
   resolveDetectedLanguage,
   getDefaultSourceLang,
@@ -555,6 +555,14 @@ export const useEchoFlow = (
 
     if (!textToTranslate) return;
 
+    if (textToTranslate.length > permissions.textTranslationMaxChars) {
+      dispatch({
+        type: "FAIL",
+        payload: { error: ErrorMessages[EkweError.TEXT_TOO_LONG] },
+      });
+      return;
+    }
+
     const sourceLang =
       source ?? (state.selectedLang !== "auto" ? state.selectedLang : null);
     if (!sourceLang) {
@@ -714,6 +722,7 @@ export const useEchoFlow = (
     translate,
     session,
     getCaptureId,
+    permissions.textTranslationMaxChars,
   ]);
 
   const cancelProcessing = useCallback((): void => {

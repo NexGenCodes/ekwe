@@ -9,6 +9,7 @@ import {
   SPEECH_MAX_TEXT_CHARS,
 } from "../plans";
 import { FLUTTERWAVE_CURRENCIES } from "../money";
+import { HISTORY_TTL_FREE_DAYS, HISTORY_TTL_PAID_DAYS } from "../retention";
 
 describe("PLAN_CONFIG", () => {
   it("has FREE and PREMIUM keys with limits and features", () => {
@@ -37,6 +38,8 @@ describe("Plan Limits (FREE vs PREMIUM)", () => {
     expect(PREMIUM_LIMITS.historyRemoteTtlDays).toBeGreaterThan(
       FREE_LIMITS.historyRemoteTtlDays,
     );
+    expect(FREE_LIMITS.historyRemoteTtlDays).toBe(HISTORY_TTL_FREE_DAYS);
+    expect(PREMIUM_LIMITS.historyRemoteTtlDays).toBe(HISTORY_TTL_PAID_DAYS);
   });
 
   it("Premium allows streaming, auto-detect, and transliteration", () => {

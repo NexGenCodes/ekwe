@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach } from "vitest";
+import { http, HttpResponse } from "msw";
 import {
   handleCheckout,
   handleVerifyTransaction,
@@ -7,6 +8,12 @@ import {
 import { resetPricingCache } from "@/routes/pricing";
 import { jsonBody, mockDb, mockEnv } from "@/__tests__/setup";
 import { server } from "@/__tests__/msw/server";
+
+const FLUTTERWAVE_PAYMENTS_URL = "https://api.flutterwave.com/v3/payments";
+const PAYMENT_LINK = "https://checkout.flutterwave.com/pay/test";
+
+const liveEnv = (overrides: Parameters<typeof mockEnv>[0] = {}) =>
+  mockEnv({ FLUTTERWAVE_SECRET: "FLWSECK-abc123", ...overrides });
 
 const mockAuth = {
   userId: "test-user-123",
@@ -19,6 +26,14 @@ describe("handleCheckout", () => {
   beforeEach(() => {
     resetPricingCache();
     server.resetHandlers();
+    server.use(
+      http.post(FLUTTERWAVE_PAYMENTS_URL, () =>
+        HttpResponse.json({
+          status: "success",
+          data: { link: PAYMENT_LINK },
+        }),
+      ),
+    );
   });
 
   const monthlyBody = () => ({ plan: "ekwe_pro_monthly" as const });
@@ -42,7 +57,7 @@ describe("handleCheckout", () => {
 
   test("authorizes a checkout session with tx_ref, amount, and NGN default", async () => {
     seedSubscriptionConfig();
-    const env = mockEnv();
+    const env = liveEnv();
     const res = await handleCheckout(monthlyBody(), env, mockAuth);
 
     expect(res.status).toBe(200);
@@ -57,14 +72,14 @@ describe("handleCheckout", () => {
 
   test("fails closed when Supabase cannot confirm the price", async () => {
     mockDb.where.mockResolvedValue([]);
-    const env = mockEnv();
+    const env = liveEnv();
     const res = await handleCheckout(monthlyBody(), env, mockAuth);
     expect(res.status).toBe(503);
   });
 
   test("charges the static annual USD amount when requested", async () => {
     seedSubscriptionConfig();
-    const env = mockEnv();
+    const env = liveEnv();
     const res = await handleCheckout(
       { plan: "ekwe_pro_annual", currency: "USD" },
       env,
@@ -78,7 +93,7 @@ describe("handleCheckout", () => {
 
   test("charges the static monthly USD amount when requested", async () => {
     seedSubscriptionConfig();
-    const env = mockEnv();
+    const env = liveEnv();
     const res = await handleCheckout(
       { plan: "ekwe_pro_monthly", currency: "USD" },
       env,
@@ -92,7 +107,7 @@ describe("handleCheckout", () => {
 
   test("charges the static local price in a requested currency", async () => {
     seedSubscriptionConfig();
-    const env = mockEnv();
+    const env = liveEnv();
     const res = await handleCheckout(
       { plan: "ekwe_pro_monthly", currency: "NGN" },
       env,
@@ -115,7 +130,7 @@ describe("handleCheckout", () => {
       },
     ]);
 
-    const env = mockEnv();
+    const env = liveEnv();
     const res = await handleCheckout(
       { plan: "ekwe_pro_monthly", currency: "NGN" },
       env,
@@ -129,7 +144,7 @@ describe("handleCheckout", () => {
 
   test("falls back to NGN for unsupported currencies server-side", async () => {
     seedSubscriptionConfig();
-    const env = mockEnv();
+    const env = liveEnv();
     const res = await handleCheckout(
       { plan: "ekwe_pro_monthly", currency: "BRL" },
       env,
@@ -143,7 +158,7 @@ describe("handleCheckout", () => {
 
   test("generates a unique tx_ref per checkout for the same user and plan", async () => {
     seedSubscriptionConfig();
-    const env = mockEnv();
+    const env = liveEnv();
 
     const resA = await handleCheckout(monthlyBody(), env, mockAuth);
     const resB = await handleCheckout(monthlyBody(), env, mockAuth);
@@ -155,16 +170,45 @@ describe("handleCheckout", () => {
     expect(dataA.tx_ref).toMatch(/^ekwe_test-user-123_/);
   });
 
-  test("echoes the worker's public key in the checkout session", async () => {
+  test("echoes the worker's public key and payment link", async () => {
     seedSubscriptionConfig();
     const res = await handleCheckout(
       monthlyBody(),
-      mockEnv({ FLUTTERWAVE_PUBLIC: "FLWPUBK-abc123" }),
+      liveEnv({ FLUTTERWAVE_PUBLIC: "FLWPUBK-abc123" }),
       mockAuth,
     );
     expect(res.status).toBe(200);
     const data = await jsonBody(res);
     expect(data.public_key).toBe("FLWPUBK-abc123");
+    expect(data.link).toBe(PAYMENT_LINK);
+  });
+
+  test("fails when Flutterwave returns no payment link", async () => {
+    seedSubscriptionConfig();
+    server.use(
+      http.post(FLUTTERWAVE_PAYMENTS_URL, () =>
+        HttpResponse.json({ status: "success", data: {} }),
+      ),
+    );
+
+    const res = await handleCheckout(monthlyBody(), liveEnv(), mockAuth);
+    expect(res.status).toBe(502);
+    const data = await jsonBody(res);
+    expect(data.error).toBe("PAYMENT_INITIALIZATION_FAILED");
+  });
+
+  test("fails when Flutterwave is unreachable", async () => {
+    seedSubscriptionConfig();
+    server.use(
+      http.post(FLUTTERWAVE_PAYMENTS_URL, () =>
+        HttpResponse.json({ status: "error" }, { status: 500 }),
+      ),
+    );
+
+    const res = await handleCheckout(monthlyBody(), liveEnv(), mockAuth);
+    expect(res.status).toBe(502);
+    const data = await jsonBody(res);
+    expect(data.error).toBe("PAYMENT_INITIALIZATION_FAILED");
   });
 
   test("fails closed in production when a TEST secret key is configured", async () => {
@@ -199,6 +243,14 @@ describe("handleCheckout", () => {
       mockAuth,
     );
     expect(missingPublic.status).toBe(503);
+  });
+
+  test("fails when the Flutterwave secret is missing outside production", async () => {
+    seedSubscriptionConfig();
+    const res = await handleCheckout(monthlyBody(), mockEnv(), mockAuth);
+    expect(res.status).toBe(503);
+    const data = await jsonBody(res);
+    expect(data.error).toBe("PAYMENT_PROVIDER_UNAVAILABLE");
   });
 
   test("accepts TEST keys in non-production so the full flow is testable", async () => {
@@ -249,7 +301,7 @@ describe("handleBillingFlags", () => {
       },
     ]);
 
-    const env = mockEnv();
+    const env = liveEnv();
     const req = new Request("http://test/billing/flags", { method: "GET" });
     const res = await handleBillingFlags(req, env);
 
@@ -262,7 +314,7 @@ describe("handleBillingFlags", () => {
   test("returns defaults when payment_config table is empty", async () => {
     mockDb.where.mockResolvedValue([]);
 
-    const env = mockEnv();
+    const env = liveEnv();
     const req = new Request("http://test/billing/flags", { method: "GET" });
     const res = await handleBillingFlags(req, env);
 
@@ -275,7 +327,7 @@ describe("handleBillingFlags", () => {
   test("returns defaults when Supabase is unreachable", async () => {
     mockDb.where.mockRejectedValue(new Error("Supabase Unreachable"));
 
-    const env = mockEnv();
+    const env = liveEnv();
     const req = new Request("http://test/billing/flags", { method: "GET" });
     const res = await handleBillingFlags(req, env);
 
@@ -288,7 +340,7 @@ describe("handleBillingFlags", () => {
   test("returns defaults when Supabase returns 500", async () => {
     mockDb.where.mockRejectedValue(new Error("Internal Server Error"));
 
-    const env = mockEnv();
+    const env = liveEnv();
     const req = new Request("http://test/billing/flags", { method: "GET" });
     const res = await handleBillingFlags(req, env);
 

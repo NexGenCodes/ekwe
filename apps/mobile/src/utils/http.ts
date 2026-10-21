@@ -134,6 +134,8 @@ export function mapWorkerError(
       return EkweError.FILE_TOO_LARGE;
     case WORKER_ERROR_CODES.AUDIO_TOO_LONG:
       return EkweError.AUDIO_TOO_LONG;
+    case WORKER_ERROR_CODES.TEXT_TOO_LONG:
+      return EkweError.TEXT_TOO_LONG;
     case WORKER_ERROR_CODES.EKWE_RATE_LIMIT:
       return EkweError.RATE_LIMITED;
     case WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED:

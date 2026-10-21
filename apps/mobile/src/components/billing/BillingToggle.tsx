@@ -46,7 +46,7 @@ export function BillingToggle({
       style={[styles.toggleContainer, { backgroundColor: color.surface }]}
       onLayout={(event) => setContainerWidth(event.nativeEvent.layout.width)}
       accessibilityRole="tablist"
-      accessibilityLabel="Billing period"
+      accessibilityLabel="Plan duration"
     >
       <Animated.View
         style={[
@@ -66,7 +66,7 @@ export function BillingToggle({
         hitSlop={10}
         accessibilityRole="tab"
         accessibilityState={{ selected: !isAnnual }}
-        accessibilityLabel="Monthly billing"
+        accessibilityLabel="30-day plan"
       >
         <Text
           variant={!isAnnual ? "label" : "body"}
@@ -81,7 +81,7 @@ export function BillingToggle({
         hitSlop={10}
         accessibilityRole="tab"
         accessibilityState={{ selected: isAnnual }}
-        accessibilityLabel="Annual billing"
+        accessibilityLabel="12-month plan"
       >
         <Text
           variant={isAnnual ? "label" : "body"}

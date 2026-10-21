@@ -31,11 +31,35 @@ export class RealtimeSync {
   private realtimeUserId: string | null = null;
   /** Tracks the current realtime connection generation to ignore stale callbacks. */
   private realtimeGeneration = 0;
+  /** Last subscribe status reported for the current generation (null = none yet). */
+  private realtimeStatus: string | null = null;
+  /** The join currently in flight, so concurrent triggers can share it. */
+  private realtimeJoinPromise: Promise<void> | null = null;
 
+  /** Starts a fresh realtime session, superseding any current channel. */
   async startRealtimeListener(userId: string): Promise<void> {
     this.clearRealtimeRetry();
     this.realtimeRetryAttempt = 0;
-    await this.joinRealtime(userId);
+    return this.beginRealtimeJoin(userId);
+  }
+
+  /**
+   * Joins only when there is no healthy channel for this user yet. Used by the
+   * connectivity callback, which fires immediately on subscribe and again as
+   * reachability resolves — re-joining a healthy channel there would tear it
+   * down and re-subscribe in a loop.
+   */
+  async ensureRealtimeListener(userId: string): Promise<void> {
+    if (
+      this.realtimeChannel &&
+      this.realtimeUserId === userId &&
+      this.isRealtimeChannelHealthy()
+    ) {
+      return;
+    }
+    this.clearRealtimeRetry();
+    this.realtimeRetryAttempt = 0;
+    return this.beginRealtimeJoin(userId);
   }
 
   stopRealtimeListener(): void {
@@ -43,13 +67,40 @@ export class RealtimeSync {
     this.realtimeGeneration += 1;
     this.realtimeUserId = null;
     this.realtimeRetryAttempt = 0;
+    this.realtimeStatus = null;
     void this.teardownRealtimeChannel();
+  }
+
+  private beginRealtimeJoin(userId: string): Promise<void> {
+    // A join for the same user that is still handshaking is shared instead of
+    // superseded: boot fires sign-in and connectivity triggers concurrently.
+    if (this.realtimeJoinPromise && this.realtimeUserId === userId) {
+      return this.realtimeJoinPromise;
+    }
+    const join = this.joinRealtime(userId).finally(() => {
+      if (this.realtimeJoinPromise === join) {
+        this.realtimeJoinPromise = null;
+      }
+    });
+    this.realtimeJoinPromise = join;
+    return join;
+  }
+
+  private isRealtimeChannelHealthy(): boolean {
+    // null covers the window between channel creation and the first subscribe
+    // status (bounded by supabase's join timeout, after which an error status
+    // lands and the channel counts as unhealthy again).
+    return (
+      this.realtimeStatus === null ||
+      this.realtimeStatus === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED
+    );
   }
 
   private async joinRealtime(userId: string): Promise<void> {
     const generation = ++this.realtimeGeneration;
 
     this.realtimeUserId = userId;
+    this.realtimeStatus = null;
 
     const detached = this.teardownRealtimeChannel();
     if (detached) await detached;
@@ -107,6 +158,7 @@ export class RealtimeSync {
             mtProvider: entry.mtProvider,
             createdAt: row.created_at,
             entryType: entry.type ?? "transcription",
+            revision: row.revision ?? 0,
           });
 
           history$[row.id].set(entry);
@@ -192,6 +244,7 @@ export class RealtimeSync {
           );
           return;
         }
+        this.realtimeStatus = status;
         logger.info("[Sync] Realtime subscription status:", status);
         if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
           this.realtimeRetryAttempt = 0;
@@ -277,7 +330,7 @@ export class RealtimeSync {
     this.realtimeRetryTimeout = setTimeout(() => {
       this.realtimeRetryTimeout = null;
       if (this.realtimeUserId !== userId) return;
-      this.joinRealtime(userId).catch((err) =>
+      this.beginRealtimeJoin(userId).catch((err) =>
         logger.error("[Sync] Realtime retry failed", err),
       );
     }, delay);

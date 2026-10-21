@@ -572,15 +572,11 @@ describe("handleSynthesize — text branch", () => {
     expect(body.error).toBe("INVALID_BODY");
   });
 
-  test("preview text is free: no gate, no charge, pinned to en", async () => {
-    const ctx = mockExecutionContext();
-    let consumeCalls = 0;
+  test("preview text is no longer special-cased: it runs the gated path", async () => {
+    let preflightCalls = 0;
     mockDb.execute.mockImplementation(async (query) => {
       const queryStr = executeQueryToSql(query);
-      if (queryStr.includes("consume_usage")) {
-        consumeCalls++;
-        return [];
-      }
+      if (queryStr.includes("check_preflight")) preflightCalls++;
       const { defaultMockDbExecute } = await import("@/__tests__/setup");
       return defaultMockDbExecute(query);
     });
@@ -588,23 +584,15 @@ describe("handleSynthesize — text branch", () => {
     const res = await handle(
       textRequest({
         text: VOICE_PREVIEW_TEXT,
-        sourceLang: "es",
+        sourceLang: "fr",
         targetLang: "fr",
       }),
       aiMp3Env(),
       "FREE",
-      new AbortController().signal,
-      { userId: "uid-syn", sessionId: null },
-      ctx,
     );
-    await awaitWaitUntil(ctx);
     expect(res.status).toBe(200);
-    const body = await jsonBody(res);
-    expect(body.translated).toBe(false);
-
-    expect(body.sourceLang).toBe("es");
-    expect(body.targetLang).toBe("fr");
-    expect(consumeCalls).toBe(0);
+    expect((await jsonBody(res)).translated).toBe(false);
+    expect(preflightCalls).toBeGreaterThan(0);
   });
 
   test("returns 503 when every speech provider fails", async () => {

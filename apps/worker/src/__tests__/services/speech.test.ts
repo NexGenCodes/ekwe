@@ -9,6 +9,7 @@ vi.mock("@/providers/edge", () => ({
 }));
 import {
   buildSpeechCacheKey,
+  purgeExpiredSpeechCache,
   readSpeechCache,
   runSpeechSynth,
   writeSpeechCache,
@@ -397,6 +398,70 @@ describe("speech engine (services/speech.ts)", () => {
       expect(env.EKWE_KV.put).not.toHaveBeenCalled();
       expect(env.SPEECH_CACHE!.put).not.toHaveBeenCalled();
       expect(await readSpeechCache(env, key)).toBeNull();
+    });
+  });
+
+  describe("purgeExpiredSpeechCache", () => {
+    test("deletes expired and metadata-less objects, keeps fresh ones", async () => {
+      const env = mockEnv();
+      const now = Math.floor(Date.now() / 1000);
+      vi.mocked(env.SPEECH_CACHE!.list).mockResolvedValue({
+        objects: [
+          {
+            key: "speech:fresh",
+            customMetadata: { expiresAt: String(now + 600) },
+          },
+          {
+            key: "speech:expired",
+            customMetadata: { expiresAt: String(now - 60) },
+          },
+          { key: "speech:legacy", customMetadata: {} },
+        ],
+        truncated: false,
+      } as never);
+
+      expect(await purgeExpiredSpeechCache(env)).toBe(2);
+      expect(env.SPEECH_CACHE!.delete).toHaveBeenCalledWith("speech:expired");
+      expect(env.SPEECH_CACHE!.delete).toHaveBeenCalledWith("speech:legacy");
+      expect(env.SPEECH_CACHE!.delete).not.toHaveBeenCalledWith("speech:fresh");
+    });
+
+    test("follows the cursor across pages", async () => {
+      const env = mockEnv();
+      const now = Math.floor(Date.now() / 1000);
+      vi.mocked(env.SPEECH_CACHE!.list)
+        .mockResolvedValueOnce({
+          objects: [
+            {
+              key: "speech:a",
+              customMetadata: { expiresAt: String(now - 10) },
+            },
+          ],
+          truncated: true,
+          cursor: "page-2",
+        } as never)
+        .mockResolvedValueOnce({
+          objects: [
+            {
+              key: "speech:b",
+              customMetadata: { expiresAt: String(now + 10) },
+            },
+          ],
+          truncated: false,
+        } as never);
+
+      expect(await purgeExpiredSpeechCache(env)).toBe(1);
+      expect(env.SPEECH_CACHE!.list).toHaveBeenNthCalledWith(2, {
+        cursor: "page-2",
+      });
+      expect(env.SPEECH_CACHE!.delete).toHaveBeenCalledWith("speech:a");
+      expect(env.SPEECH_CACHE!.delete).not.toHaveBeenCalledWith("speech:b");
+    });
+
+    test("is a no-op without an R2 binding", async () => {
+      const env = mockEnv();
+      env.SPEECH_CACHE = undefined;
+      expect(await purgeExpiredSpeechCache(env)).toBe(0);
     });
   });
 

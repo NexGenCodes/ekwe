@@ -186,6 +186,7 @@ vi.mock("react-native-reanimated", async () => {
 });
 
 import { useSharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
+import { setAudioModeAsync } from "expo-audio";
 
 /** Lets the source-install effect enqueue its work. */
 const settle = async (): Promise<void> => {
@@ -204,6 +205,8 @@ beforeEach(() => {
   pendingInstalls = [];
   pendingLoads = [];
   pendingSeeks = [];
+  vi.mocked(setAudioModeAsync).mockReset();
+  vi.mocked(setAudioModeAsync).mockResolvedValue(undefined);
 });
 
 describe("useSharedAudioPlayer readiness", () => {
@@ -372,5 +375,65 @@ describe("useSharedAudioPlayer readiness", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("stops playing when its uri is revoked", async () => {
+    // Dictation commit/cancel resets the store while the preview is still
+    // audible; without a pause the orphaned clip plays out on its own.
+    const { result, rerender } = renderHook(
+      ({ uri }: { uri: string | null }) => useSharedAudioPlayer(uri),
+      { initialProps: { uri: "file:///a.ogg" as string | null } },
+    );
+    await settle();
+    await flushPreloads();
+
+    await act(async () => {
+      await result.current.play();
+    });
+    expect(result.current.isPlaying).toBe(true);
+
+    await act(async () => {
+      rerender({ uri: null });
+      await Promise.resolve();
+    });
+
+    expect(result.current.isPlaying).toBe(false);
+  });
+
+  it("does not start a clip that was stopped while the session was claimed", async () => {
+    const { result } = renderHook(() => useSharedAudioPlayer("file:///a.ogg"));
+    await settle();
+    await flushPreloads();
+    playCalls.length = 0;
+
+    // The audio session claim stalls, so the start is still in flight.
+    let releaseSession: (() => void) | null = null;
+    vi.mocked(setAudioModeAsync).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseSession = resolve;
+        }),
+    );
+
+    let start: Promise<void> = Promise.resolve();
+    await act(async () => {
+      start = result.current.playFromStart();
+      await Promise.resolve();
+    });
+    expect(playCalls).toEqual([]);
+
+    // The clip is stopped before the session is granted.
+    await act(async () => {
+      result.current.pause();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      releaseSession?.();
+      await start;
+    });
+
+    // The stop wins: the clip must not come back to life.
+    expect(playCalls).toEqual([]);
   });
 });

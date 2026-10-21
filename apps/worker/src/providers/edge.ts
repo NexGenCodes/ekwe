@@ -1,6 +1,7 @@
 import { connect } from "cloudflare:sockets";
 import { logger } from "@/core/logger";
 import { Env, SpeechAttempt } from "@/core/types";
+import { generateSecMsGecV2 } from "@/providers/edgeDrm";
 import { bytesToBase64 } from "@/utils/base64";
 import { withTimeout } from "@/utils/timeout";
 
@@ -8,7 +9,9 @@ const TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 const BING_HOST = "speech.platform.bing.com";
 const READALOUD_PATH = "/consumer/speech/synthesize/readaloud/edge/v1";
 const CHROMIUM_FULL_VERSION = "143.0.3650.75";
-const SEC_MS_GEC_VERSION = `1-${CHROMIUM_FULL_VERSION}`;
+// The service rejects the v1 token with 403 regardless of host. The version
+// prefix selects the token format, so it must stay in step with the generator.
+const SEC_MS_GEC_VERSION = `2-${CHROMIUM_FULL_VERSION}`;
 const AUDIO_FORMAT = "audio-24khz-48kbitrate-mono-mp3";
 const WS_MAGIC_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -216,25 +219,6 @@ function normalizeVoiceName(voice: string): string {
     name = nameParts.join("-");
   }
   return `Microsoft Server Speech Text to Speech Voice (${lang}-${region}, ${name})`;
-}
-
-async function makeSecMsGec(trustedToken: string): Promise<string> {
-  const winEpochTicks = 11644473600;
-  const secondsToHundredNs = 1e7;
-
-  let ticks = Date.now() / 1000;
-  ticks += winEpochTicks;
-  ticks -= ticks % 300;
-  ticks *= secondsToHundredNs;
-
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`${ticks.toFixed(0)}${trustedToken}`),
-  );
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("")
-    .toUpperCase();
 }
 
 function timestamp(): string {
@@ -524,6 +508,7 @@ class EdgeWsSession {
       `Sec-WebSocket-Key: ${key}`,
       "Sec-WebSocket-Version: 13",
       "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
+      "Origin: chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold",
       "Accept-Encoding: gzip, deflate, br, zstd",
       "Pragma: no-cache",
       "Cache-Control: no-cache",
@@ -716,7 +701,7 @@ async function synthOnce(
   token: string,
   signal: AbortSignal,
 ): Promise<SpeechAttempt> {
-  const gec = await makeSecMsGec(token);
+  const gec = generateSecMsGecV2();
   const connectionId = makeConnectionId();
   const upgradeUrl = buildSynthesisUrl(gec, connectionId, token);
 

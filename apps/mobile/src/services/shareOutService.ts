@@ -5,12 +5,13 @@ import type { HistoryOrigin } from "@ekwe/shared";
 
 import EkweNative from "../../modules/ekwe-native";
 import { EKWE_SHARE_SIGNATURE } from "@/constants/share";
+import { SHARE_TARGET_BY_ID, type ShareTarget } from "@/constants/shareTargets";
 import { logger } from "@/utils";
 import type { TelemetrySource } from "@/types/telemetry";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 
 /** Android share chooser title. iOS uses the first activity item instead. */
-const SHARE_CHOOSER_TITLE = "Send with Ekwe";
+const SHARE_CHOOSER_TITLE = "Share voice";
 
 /** Maps domain origins to frozen telemetry keys for stable dashboard reporting. */
 export const TELEMETRY_KEY: Record<ShareSource, TelemetrySource> = {
@@ -23,14 +24,19 @@ export const TELEMETRY_KEY: Record<ShareSource, TelemetrySource> = {
 };
 
 /** Fires `result_shared` after a successful share with the content kind. */
-const trackShare = (source: ShareSource, kind: "audio" | "text"): void => {
+const trackShare = (
+  source: ShareSource,
+  kind: "audio" | "text",
+  target?: ShareTarget,
+): void => {
   track(AnalyticsEvents.RESULT_SHARED, {
     source: TELEMETRY_KEY[source],
     kind,
+    ...(target ? { target } : {}),
   });
 };
 
-/** MIME type per file extension. Ogg/Opus carries `codecs=opus` for WhatsApp/Telegram voice note rendering. */
+/** MIME type per file extension. Ogg/Opus carries `codecs=opus`, which Telegram requires for voice-note rendering; WhatsApp's share path still creates an ordinary audio attachment. */
 const AUDIO_MIME_BY_EXT: Record<string, string> = {
   mp3: "audio/mpeg",
   wav: "audio/wav",
@@ -82,7 +88,7 @@ const prepareShareFile = async (uri: string): Promise<string> => {
 export type ShareSource = HistoryOrigin | "history" | "result";
 
 export const ShareOutService = {
-  /** Shares audio as a voice note, falling back to text if unavailable. */
+  /** Shares audio, as a voice note where the target supports it, falling back to text if unavailable. */
   shareArtifact: async (
     audioUri: string | null,
     text: string | null,
@@ -132,6 +138,71 @@ export const ShareOutService = {
       return true;
     } catch (err) {
       logger.error("[ShareOut] Audio share failed:", err);
+      return false;
+    }
+  },
+
+  /**
+   * Shares audio directly to WhatsApp or Telegram.
+   *
+   * WhatsApp receives the transcript as a caption but still renders the audio
+   * as a normal attachment; Telegram receives the same Ogg/Opus file without a
+   * caption so its voice-note classification is not disturbed.
+   */
+  shareTo: async (
+    target: ShareTarget,
+    uri: string,
+    message?: string,
+    source: ShareSource = "speech-studio",
+  ): Promise<boolean> => {
+    const config = SHARE_TARGET_BY_ID[target];
+
+    try {
+      const file = new File(uri);
+      if (!file.exists) {
+        logger.warn("[ShareOut] Audio file missing:", uri);
+        return false;
+      }
+
+      const trimmedMessage = message?.trim();
+      const caption =
+        config.includeCaption && trimmedMessage
+          ? `${trimmedMessage}${EKWE_SHARE_SIGNATURE}`
+          : null;
+      const sharedUri = await prepareShareFile(uri);
+      const mimeType = mimeFor(sharedUri);
+
+      let result = await EkweNative.shareAudio(
+        sharedUri,
+        mimeType,
+        caption,
+        SHARE_CHOOSER_TITLE,
+        config.packageName,
+      );
+
+      if (
+        !result.success &&
+        result.error === "TARGET_NOT_INSTALLED" &&
+        config.fallbackPackageName
+      ) {
+        result = await EkweNative.shareAudio(
+          sharedUri,
+          mimeType,
+          caption,
+          SHARE_CHOOSER_TITLE,
+          config.fallbackPackageName,
+        );
+      }
+
+      if (!result.success) {
+        logger.warn(`[ShareOut] ${config.label} share failed:`, result.error);
+        return false;
+      }
+
+      trackShare(source, "audio", target);
+      return true;
+    } catch (err) {
+      logger.error(`[ShareOut] ${config.label} share failed:`, err);
       return false;
     }
   },

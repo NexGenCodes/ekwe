@@ -26,7 +26,13 @@ export function FeatureRow({
   compact = false,
 }: FeatureRowProps): React.JSX.Element {
   return (
-    <Box style={compact ? styles.featureRowCompact : styles.featureRow}>
+    <Box
+      accessible
+      accessibilityLabel={`${feature.title}, ${
+        feature.included ? "included" : "not included"
+      }`}
+      style={compact ? styles.featureRowCompact : styles.featureRow}
+    >
       {feature.included ? (
         <Box
           style={[

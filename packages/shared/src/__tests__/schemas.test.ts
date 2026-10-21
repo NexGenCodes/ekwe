@@ -11,6 +11,7 @@ import {
   storePricingResponseSchema,
   synthesizeRequestSchema,
   synthesizeResponseSchema,
+  voicePreviewRequestSchema,
   transcribeResponseSchema,
   translateRequestSchema,
   translateResponseSchema,
@@ -528,33 +529,14 @@ describe("synthesizeRequestSchema", () => {
     expect(parsed.data?.gender).toBeUndefined();
   });
 
-  test("accepts the preview flag", () => {
+  test("strips a leftover preview flag rather than honoring it", () => {
     const parsed = synthesizeRequestSchema.safeParse({
       text: "Hello",
       targetLang: "en",
       isPreview: true,
     });
     expect(parsed.success).toBe(true);
-    expect(parsed.data?.isPreview).toBe(true);
-  });
-
-  test("rejects a preview flag that is not true", () => {
-    // Optional-and-literal, so `isPreview: false` and a forged `"yes"` cannot
-    // pass a truthiness check downstream and quietly skip the quota.
-    expect(
-      synthesizeRequestSchema.safeParse({
-        text: "Hello",
-        targetLang: "en",
-        isPreview: false,
-      }).success,
-    ).toBe(false);
-    expect(
-      synthesizeRequestSchema.safeParse({
-        text: "Hello",
-        targetLang: "en",
-        isPreview: "yes",
-      }).success,
-    ).toBe(false);
+    expect(parsed.success && "isPreview" in parsed.data).toBe(false);
   });
 
   test("bounds reroll so it cannot be used to mint a new cache entry per call", () => {
@@ -627,6 +609,44 @@ describe("synthesizeRequestSchema", () => {
       synthesizeRequestSchema.safeParse({
         text: "Hello",
         targetLang: "xx",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("voicePreviewRequestSchema", () => {
+  test("accepts a slot, gender, and language", () => {
+    expect(
+      voicePreviewRequestSchema.safeParse({
+        voiceId: "studio",
+        gender: "female",
+        lang: "en",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects an unknown slot or language", () => {
+    expect(
+      voicePreviewRequestSchema.safeParse({
+        voiceId: "platinum",
+        gender: "female",
+        lang: "en",
+      }).success,
+    ).toBe(false);
+    expect(
+      voicePreviewRequestSchema.safeParse({
+        voiceId: "studio",
+        gender: "female",
+        lang: "xx",
+      }).success,
+    ).toBe(false);
+  });
+
+  test("requires gender so the clip cannot fall back to a default voice", () => {
+    expect(
+      voicePreviewRequestSchema.safeParse({
+        voiceId: "studio",
+        lang: "en",
       }).success,
     ).toBe(false);
   });

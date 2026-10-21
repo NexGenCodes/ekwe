@@ -32,12 +32,19 @@ export function CheckoutSheet({
   onComplete,
 }: CheckoutSheetProps): React.ReactElement | null {
   useEffect(() => {
-    if (visible && session?.link) {
-      Linking.openURL(session.link).catch((_err) => {
-        AppAlert.error("Checkout Error", "Failed to open payment browser");
-        onDismiss();
-      });
+    if (!visible || !session) return;
+    if (!session.link) {
+      AppAlert.error(
+        "Payment Unavailable",
+        "The payment page could not be opened. Please try again.",
+      );
+      onDismiss();
+      return;
     }
+    Linking.openURL(session.link).catch((_err) => {
+      AppAlert.error("Checkout Error", "Failed to open payment browser");
+      onDismiss();
+    });
   }, [visible, session, onDismiss]);
 
   const handleVerify = useCallback(() => {

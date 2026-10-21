@@ -244,20 +244,35 @@ describe("initAuth", () => {
     expect(auth$.sessionLoaded.peek()).toBe(true);
   });
 
-  it("restores a cached session from mmkv while the background refresh is pending", async () => {
+  it("marks auth loaded while the background session refresh is pending", async () => {
     mmkvMock.getBoolean.mockReturnValue(true);
-    mmkvMock.getString.mockReturnValue(
-      JSON.stringify(makeSession("cached-user")),
+    let settleSession!: (value: {
+      data: { session: unknown };
+      error: null;
+    }) => void;
+    authMock.getSession.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settleSession = resolve;
+        }),
     );
-
-    authMock.getSession.mockImplementation(() => new Promise(() => {}));
-    vi.stubEnv("EXPO_PUBLIC_SUPABASE_URL", "https://abc.supabase.co");
 
     await initAuth();
 
-    expect(mmkvMock.getString).toHaveBeenCalledWith("sb-abc-auth-token");
-    expect(auth$.session.peek()?.user?.id).toBe("cached-user");
+    // The cached flag only gates whether the refresh kicks off; the session
+    // itself is Supabase's storage adapter's job, so nothing blocks loading.
+    expect(mmkvMock.getBoolean).toHaveBeenCalledWith("hasSession");
+    expect(authMock.getSession).toHaveBeenCalledTimes(1);
     expect(auth$.sessionLoaded.peek()).toBe(true);
+    expect(auth$.session.peek()).toBeNull();
+
+    settleSession({
+      data: { session: makeSession("cached-user") },
+      error: null,
+    });
+    await flushMicrotasks();
+
+    expect(auth$.session.peek()?.user?.id).toBe("cached-user");
   });
 
   it("clears the cached flag when the background refresh finds no session", async () => {

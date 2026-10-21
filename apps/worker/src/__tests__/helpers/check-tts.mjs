@@ -76,11 +76,16 @@ const PHRASES = {
 const DEFAULT_LANGS = ["en", "es", "fr", "de", "it", "pt", "nl", "ru"];
 const MIN_BYTES = 1_200;
 /**
- * Below this, the clip is too short to hold the reference phrase and comes back
- * as a single stray token — characters being read out, not speech. Wit answers
- * real speech in the 12-17 KB range for these phrases.
+ * Size above which a clip is trusted to hold real speech without consulting the
+ * recognizer. Wit answers real speech in the 12-17 KB range (MP3); character-
+ * reading output lands around 3.4 KB. Opus broke size-as-proof: Deepgram voices
+ * genuine speech in 2-5 KB, below any floor that would still catch Wit. Clips
+ * under this line fall through to the transcript check instead of being
+ * condemned by their byte count.
  */
 const DEGENERATE_BYTES = 6_000;
+/** Fraction of reference tokens Whisper must hear back to call a small clip real speech. */
+const TRANSCRIPT_FLOOR = 0.5;
 const MAX_BYTES = 8 * 1024 * 1024;
 
 /** Folds case, punctuation and diacritics so spelling variants do not read as misses. */
@@ -153,10 +158,31 @@ function witTts(key, text) {
   };
 }
 
-function deepgramTts(key, text, lang, gender = "vesta") {
+/**
+ * Aura-2 voices are per-language: `vesta` exists only for English, and asking
+ * for `aura-2-vesta-es` answers 400 "No such model/version combination found."
+ * First female voice per language, mirroring DEEPGRAM_FEMALE in
+ * src/providers/deepgram.ts — keep in sync.
+ */
+const DEEPGRAM_VOICES = {
+  en: "vesta",
+  es: "diana",
+  de: "elara",
+  fr: "agathe",
+  it: "livia",
+  nl: "daphne",
+  ja: "izanami",
+};
+
+function deepgramTts(key, text, lang) {
   return async () => {
-    const model = `aura-2-${gender}-${lang}`;
-    const params = new URLSearchParams({ model, encoding: "opus" });
+    const voice = DEEPGRAM_VOICES[lang] ?? "vesta";
+    const model = `aura-2-${voice}-${lang}`;
+    const params = new URLSearchParams({
+      model,
+      encoding: "opus",
+      container: "ogg",
+    });
     const res = await fetch(`https://api.deepgram.com/v1/speak?${params}`, {
       method: "POST",
       headers: {
@@ -171,6 +197,13 @@ function deepgramTts(key, text, lang, gender = "vesta") {
   };
 }
 
+/**
+ * Production prepends GEMINI_SPEECH_PROMPT ("Say the following:") — without it
+ * the model answers 400 "Model tried to generate text, but it should only be
+ * used for TTS." Keep in sync with src/providers/gemini.ts.
+ */
+const GEMINI_PROMPT = "Say the following: ";
+
 function geminiTts(keys, text) {
   return async () => {
     let last = 0;
@@ -181,7 +214,7 @@ function geminiTts(keys, text) {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": key },
           body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text }] }],
+            contents: [{ role: "user", parts: [{ text: GEMINI_PROMPT + text }] }],
             generationConfig: {
               responseModalities: ["AUDIO"],
               speechConfig: {
@@ -402,22 +435,29 @@ async function main() {
       //
       //   silent     - Wit returned its 576-byte no-audio payload. It cannot
       //                voice this script at all.
-      //   degenerate - audio exists but is far too short for the phrase and the
-      //                recognizer returns one meaningless token. This is what
-      //                "reading the characters out one by one" sounds like.
-      //   speaks     - plausible audio duration and a real transcript.
+      //   degenerate - audio exists but the recognizer cannot hear the phrase
+      //                back — clipped, or reading the characters one by one.
+      //   speaks     - the recognizer hears the reference phrase back, or the
+      //                clip is large enough that size alone is proof.
       //
+      // A byte floor alone used to separate these cleanly:
+      //   576 b      - Wit's silent no-audio payload
+      //   ~3.4 KB    - clipped, reading characters one at a time
+      //   7.4 KB +   - genuine speech
+      // Opus broke that calibration: Deepgram voices genuine speech in 2-5 KB,
+      // under any floor that would still catch Wit. Clips under the floor are
+      // therefore judged by whether Whisper hears the reference phrase back,
+      // not by their size. Word count must not be part of this: a one-word
+      // greeting ("Moro" in Shona) transcribes to exactly one token and is
+      // perfectly good audio.
       // Whisper's language label is reported but deliberately not the gate: on
       // clips this short it calls correct Polish and Finnish "English" while
       // transcribing them accurately, so gating on it would fail audio that is
       // genuinely correct.
-      // The byte floor alone separates the three cases cleanly:
-      //   576 b      - Wit's silent no-audio payload
-      //   ~3.4 KB    - clipped, reading characters one at a time
-      //   7.4 KB +   - genuine speech
-      // Word count must not be part of this: a one-word greeting ("Moro" in
-      // Shona) transcribes to exactly one token and is perfectly good audio.
-      const verdict = bytes < DEGENERATE_BYTES ? "degenerate" : "speaks";
+      const verdict =
+        bytes >= DEGENERATE_BYTES || s >= TRANSCRIPT_FLOOR
+          ? "speaks"
+          : "degenerate";
 
       if (verdict === "speaks") pass += 1;
       else fail += 1;

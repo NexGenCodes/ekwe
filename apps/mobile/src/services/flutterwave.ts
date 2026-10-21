@@ -38,10 +38,6 @@ function getWorkerBaseUrl(): string {
   return url;
 }
 
-export function getFlutterwavePublicKey(): string {
-  return process.env.EXPO_PUBLIC_FLUTTERWAVE_PUBLIC_KEY ?? "";
-}
-
 export function getFlutterwavePlanId(
   isAnnual: boolean,
 ): (typeof PRO_PRODUCT_IDS)["monthly"] | (typeof PRO_PRODUCT_IDS)["annual"] {

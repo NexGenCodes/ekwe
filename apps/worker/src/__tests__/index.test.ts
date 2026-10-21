@@ -594,5 +594,80 @@ describe("Worker Router (index.ts)", () => {
 
       expect(ack).not.toHaveBeenCalled();
     });
+
+    test("purges expired speech cache entries for purge_expired_speech_cache messages", async () => {
+      vi.mocked(env.SPEECH_CACHE!.list).mockResolvedValue({
+        objects: [],
+        truncated: false,
+      } as never);
+      const batch = {
+        queue: "ekwe-maintenance",
+        messages: [
+          {
+            id: "m-purge",
+            timestamp: new Date(0),
+            attempts: 1,
+            body: { type: "purge_expired_speech_cache" },
+            ack: vi.fn(),
+          },
+        ],
+        ackAll: vi.fn(),
+        retryAll: vi.fn(),
+      } as unknown as MessageBatch<unknown>;
+
+      await createWorker().queue(batch, env, {
+        waitUntil: vi.fn(),
+        passThroughOnException: () => {},
+      } as unknown as ExecutionContext);
+
+      expect(env.SPEECH_CACHE!.list).toHaveBeenCalled();
+    });
+
+    test("retries the speech cache purge when the bucket listing fails", async () => {
+      vi.mocked(env.SPEECH_CACHE!.list).mockRejectedValueOnce(
+        new Error("r2 down"),
+      );
+      const batch = {
+        queue: "ekwe-maintenance",
+        messages: [
+          {
+            id: "m-purge-fail",
+            timestamp: new Date(0),
+            attempts: 1,
+            body: { type: "purge_expired_speech_cache" },
+            ack: vi.fn(),
+          },
+        ],
+        ackAll: vi.fn(),
+        retryAll: vi.fn(),
+      } as unknown as MessageBatch<unknown>;
+
+      await expect(
+        createWorker().queue(batch, env, {
+          waitUntil: vi.fn(),
+          passThroughOnException: () => {},
+        } as unknown as ExecutionContext),
+      ).rejects.toThrow("r2 down");
+    });
+  });
+
+  describe("Scheduled handler", () => {
+    test("enqueues the speech cache purge with the other daily tasks", async () => {
+      const send = vi.fn(async () => {});
+      const ctx = mockExecutionContext() as unknown as ExecutionContext & {
+        _waitUntilFns: Promise<unknown>[];
+      };
+
+      createWorker().scheduled(
+        {} as ScheduledController,
+        { ...env, MAINTENANCE_QUEUE: { send } } as unknown as typeof env,
+        ctx,
+      );
+      await Promise.all(ctx._waitUntilFns);
+
+      expect(send).toHaveBeenCalledWith({ type: "purge_tombstones" });
+      expect(send).toHaveBeenCalledWith({ type: "purge_expired_speech_cache" });
+      expect(send).toHaveBeenCalledTimes(4);
+    });
   });
 });

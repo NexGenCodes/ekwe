@@ -461,7 +461,7 @@ export const Db = {
       .where(
         or(
           eq(outbox.id, id),
-          sql`${outbox.payload} LIKE '%"id":"' || ${id} || '"%'`,
+          sql`json_extract(${outbox.payload}, '$.id') = ${id}`,
         ),
       )
       .run();
@@ -514,7 +514,7 @@ export const Db = {
           eq(outbox.status, "pending"),
           or(
             eq(outbox.id, id),
-            sql`${outbox.payload} LIKE '%"id":"' || ${id} || '"%'`,
+            sql`json_extract(${outbox.payload}, '$.id') = ${id}`,
           ),
         ),
       )

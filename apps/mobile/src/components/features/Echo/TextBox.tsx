@@ -1,18 +1,15 @@
 import CheckCircle2 from "lucide-react-native/icons/circle-check";
 import Volume2 from "lucide-react-native/icons/volume-2";
 import VolumeX from "lucide-react-native/icons/volume-x";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import type { StyleProp, TextStyle } from "react-native";
 
 import { ScrollableTextBox } from "@/components/ScrollableTextBox";
 import { AnimatedCopyButton } from "@/components/AnimatedCopyButton";
 import { IconButton } from "@/components/IconButton";
 
-import { useSharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
 import type { WaveformPlaybackController } from "@/hooks/audio/useAudioWaveformPlayback";
-import { synthesizeSpeech } from "@/services/speech";
-
-import { claimSpeechFocus, releaseSpeechFocus } from "@/hooks/audio/audioFocus";
+import { useEchoSpeech } from "@/hooks/echo/useEchoSpeech";
 
 import { Box, Text, Spinner } from "@/components/ui";
 import { EkweError } from "@/constants/errors";
@@ -20,12 +17,10 @@ import { LANGUAGES, getLanguageFlag } from "@/constants/languages";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import { useTheme } from "@/hooks/ui";
-import { AnalyticsEvents, track } from "@/utils/analytics";
 import { withAlpha } from "@/utils/color";
 
 import logger from "@/utils/logger";
 import { AppToast } from "@/utils/toast";
-import { cleanEchoCache } from "@/utils/audioCache";
 
 interface TextBoxProps {
   text: string | null;
@@ -72,66 +67,55 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
     const hasSource = !!audioPlayer;
     const hasTts = (allowTts ?? !hasSource) && !!lang;
 
-    const [isSpeaking, setIsSpeaking] = useState(false);
-    const [isSpeechLoading, setIsSpeechLoading] = useState(false);
-    const [speechAudioUri, setSpeechAudioUri] = useState<string | null>(null);
-    const speechPlayer = useSharedAudioPlayer(speechAudioUri);
+    const handleSpeechError = useCallback(
+      (error: EkweError): void => {
+        const outage = error === EkweError.SPEECH_UNAVAILABLE;
+        const overLimit = error === EkweError.TEXT_TOO_LONG;
+        AppToast.error(
+          outage
+            ? "Voice temporarily unavailable"
+            : overLimit
+              ? "Text too long"
+              : "Speech Unavailable",
+          {
+            description: outage
+              ? "Every voice provider is busy right now. Try again in a moment."
+              : overLimit
+                ? "This result is longer than your plan allows. Upgrade to hear the full text."
+                : "Failed to generate speech.",
+            action: outage
+              ? {
+                  label: "Retry",
+                  onClick: (): void => speakRef.current(text ?? "", lang ?? ""),
+                }
+              : undefined,
+          },
+        );
+      },
+      [text, lang],
+    );
 
-    useEffect(() => {
-      if (
-        isSpeechLoading &&
-        speechAudioUri &&
-        speechPlayer.isReady &&
-        !speechPlayer.isDecoding
-      ) {
-        setIsSpeechLoading(false);
-        setIsSpeaking(true);
-        void speechPlayer.playFromStart();
-      }
-    }, [
-      isSpeechLoading,
-      speechAudioUri,
-      speechPlayer.isReady,
-      speechPlayer.isDecoding,
-      speechPlayer,
-    ]);
+    const { isSpeaking, isLoading, speak, stop } = useEchoSpeech({
+      onError: handleSpeechError,
+    });
 
+    // The toast captures `speak` at creation time; a ref keeps Retry calling
+    // the latest instance even after loading/speaking state has changed.
+    const speakRef = useRef(speak);
     useEffect(() => {
-      if (isSpeaking && speechPlayer.isEnded) {
-        setIsSpeaking(false);
-        releaseSpeechFocus();
-      }
-    }, [isSpeaking, speechPlayer.isEnded]);
+      speakRef.current = speak;
+    });
+
+    // Stop any in-flight synthesis or playback when the content or
+    // visibility changes so a stale clip can never autoplay for new text.
+    useEffect(() => {
+      stop();
+    }, [text, lang, hasTts, stop]);
 
     const langName = lang
       ? (LANGUAGES.find((l) => l.code === lang)?.englishName ?? lang)
       : null;
     const flag = lang ? getLanguageFlag(lang) : null;
-
-    useEffect(() => {
-      if (!hasTts) return;
-      if (isSpeaking || isSpeechLoading) {
-        speechPlayer.pause();
-        releaseSpeechFocus();
-        setIsSpeaking(false);
-        setIsSpeechLoading(false);
-      }
-
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hasTts, text, lang]);
-
-    useEffect(() => {
-      return (): void => {
-        speechPlayer.pause();
-        releaseSpeechFocus();
-        // The synthesized file was never cleaned up: every tap minted a new
-        // one in the cache directory, and `EchoFinalResult` remounts this
-        // component per tab, orphaning the previous file. The startup sweep
-        // was the only thing reclaiming them.
-        if (speechAudioUri) void cleanEchoCache(speechAudioUri);
-      };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [speechAudioUri]);
 
     const handleSourceToggle = useCallback(async (): Promise<void> => {
       if (!audioPlayer) return;
@@ -142,75 +126,15 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
       }
     }, [audioPlayer]);
 
-    const handleSpeakToggle = useCallback(async (): Promise<void> => {
-      if (isSpeechLoading || isSpeaking) return;
+    const handleSpeakToggle = useCallback((): void => {
       if (!text || !lang) {
         logger.warn("[TextBox] Speech skipped: no text or language");
         return;
       }
-
-      try {
-        speechPlayer.pause();
-        releaseSpeechFocus();
-      } catch (err) {
-        logger.warn("speechPlayer.pause failed", err);
-      }
-
-      track(AnalyticsEvents.SPEECH_PLAYED, { source: "echo", lang });
-
-      setIsSpeechLoading(true);
-      claimSpeechFocus(() => {
-        speechPlayer.pause();
-      });
-
-      try {
-        const result = await synthesizeSpeech(text, lang);
-        if (result.ok) {
-          setSpeechAudioUri(result.value.uri);
-        } else {
-          setIsSpeechLoading(false);
-          releaseSpeechFocus();
-          // A provider outage is transient and not the user's fault, so it gets
-          // its own wording and a retry. Reporting it as a generic failure —
-          // which is what this did — told the user their language was the
-          // problem and offered no way out of a busy provider.
-          const outage = result.error === EkweError.SPEECH_UNAVAILABLE;
-          AppToast.error(
-            outage ? "Voice temporarily unavailable" : "Speech Unavailable",
-            {
-              description: outage
-                ? "Every voice provider is busy right now. Try again in a moment."
-                : "Failed to generate speech.",
-              action: outage
-                ? {
-                    label: "Retry",
-                    onClick: (): void => void handleSpeakToggle(),
-                  }
-                : undefined,
-            },
-          );
-        }
-      } catch (err) {
-        setIsSpeechLoading(false);
-        releaseSpeechFocus();
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        logger.warn("[TextBox] Speech threw exception:", errorMsg);
-        AppToast.error("Speech Unavailable", {
-          description:
-            "Your device does not support text-to-speech for this language.",
-        });
-      }
-    }, [isSpeechLoading, isSpeaking, text, lang, speechPlayer]);
+      speak(text, lang);
+    }, [text, lang, speak]);
 
     const labelColor = withCheck ? color.brand : color.foreground;
-
-    const stopSpeaking = useCallback(async (): Promise<void> => {
-      if (!isSpeaking) return;
-      speechPlayer.pause();
-      releaseSpeechFocus();
-      setIsSpeaking(false);
-      setIsSpeechLoading(false);
-    }, [isSpeaking, speechPlayer]);
 
     return (
       <ScrollableTextBox
@@ -304,13 +228,13 @@ export const TextBox: React.FC<TextBoxProps> = React.memo(
                   accessibilityLabel={
                     isSpeaking ? "Stop speaking" : "Listen to result"
                   }
-                  onPress={isSpeaking ? stopSpeaking : handleSpeakToggle}
+                  onPress={isSpeaking ? stop : handleSpeakToggle}
                   size={36}
                   backgroundColor={
                     isSpeaking ? color.brand : withAlpha(color.foreground, 0.06)
                   }
                   icon={
-                    isSpeechLoading ? (
+                    isLoading ? (
                       <Spinner size="sm" color={color.brand} />
                     ) : isSpeaking ? (
                       <VolumeX size={18} color={color.onBrand} />

@@ -15,12 +15,14 @@ import { BackHandler, Keyboard } from "react-native";
 import Animated, { LinearTransition } from "react-native-reanimated";
 
 import { ExpressiveInput } from "@/components/home/ExpressiveInput";
+import { ShareVoiceSheet } from "@/components/home/ShareVoiceSheet";
 import { VoicePickerSheet } from "@/components/home/VoicePickerSheet";
 import { VoiceResultPanel } from "@/components/home/VoiceResultPanel";
 
 import { Box } from "@/components/ui";
 import { EkweError, ErrorMessages } from "@/constants/errors";
 import { getLanguageName } from "@/constants/languages";
+import { SHARE_TARGET_BY_ID, type ShareTarget } from "@/constants/shareTargets";
 import { spacing } from "@/constants/spacing";
 import { usePermissions, useVoiceDictation } from "@/hooks";
 import { useSharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
@@ -127,6 +129,7 @@ export const VoiceStudioInterface = forwardRef<
   const [amplitudes, setAmplitudes] = useState<number[] | undefined>(undefined);
 
   const [isPickerVisible, setIsPickerVisible] = useState(false);
+  const [isShareSheetVisible, setIsShareSheetVisible] = useState(false);
 
   const voice = useMemo(
     () => resolveVoiceSelection(voiceId, voiceGender),
@@ -144,6 +147,7 @@ export const VoiceStudioInterface = forwardRef<
 
   const dictatingRef = useRef(false);
   const convertSeqRef = useRef(0);
+  const pendingPlaybackRef = useRef<string | null>(null);
   /** Aborts in-flight conversions. */
   const convertAbortRef = useRef<AbortController | null>(null);
   /** Defers voice-change conversions. */
@@ -260,9 +264,21 @@ export const VoiceStudioInterface = forwardRef<
 
   useEffect(() => {
     return (): void => {
+      convertSeqRef.current += 1;
+      cancelScheduledConvert();
+      convertAbortRef.current?.abort();
+      player.pause();
+      sourcePlayer.pause();
+      preview.cancel();
       purgeSessionFiles();
     };
-  }, [purgeSessionFiles]);
+  }, [
+    cancelScheduledConvert,
+    player,
+    sourcePlayer,
+    preview,
+    purgeSessionFiles,
+  ]);
 
   useEffect(() => {
     if (dictationError) {
@@ -275,6 +291,7 @@ export const VoiceStudioInterface = forwardRef<
     convertSeqRef.current += 1;
     cancelScheduledConvert();
     convertAbortRef.current?.abort();
+    pendingPlaybackRef.current = null;
     resetCaptureId();
     player.pause();
     sourcePlayer.pause();
@@ -524,6 +541,8 @@ export const VoiceStudioInterface = forwardRef<
         commitArtifact(result.value.uri, result.value.playbackUri);
         setArtifactUri(result.value.uri);
         setArtifactPlaybackUri(result.value.playbackUri ?? null);
+        pendingPlaybackRef.current =
+          result.value.playbackUri ?? result.value.uri;
         setRenderedVoiceKey(currentVoiceKey);
 
         // Discard results with empty transcripts.
@@ -604,6 +623,7 @@ export const VoiceStudioInterface = forwardRef<
       commitArtifact(result.value.uri, result.value.playbackUri);
       setArtifactUri(result.value.uri);
       setArtifactPlaybackUri(result.value.playbackUri ?? null);
+      pendingPlaybackRef.current = result.value.playbackUri ?? result.value.uri;
       setRenderedVoiceKey(currentVoiceKey);
 
       const typedText = result.value.transcript?.trim() || text.trim();
@@ -648,12 +668,25 @@ export const VoiceStudioInterface = forwardRef<
   );
 
   useEffect(() => {
-    if ((stage !== "converting" && stage !== "re-rendering") || !artifactUri)
+    const target = pendingPlaybackRef.current;
+    if (!target) return;
+    if (stage !== "converting" && stage !== "re-rendering") {
+      pendingPlaybackRef.current = null;
       return;
-    if (player.isReady && !player.isDecoding) {
+    }
+    if ((artifactPlaybackUri ?? artifactUri) !== target) return;
+    if (player.loadError || (player.isReady && !player.isDecoding)) {
+      pendingPlaybackRef.current = null;
       setStage("ready");
     }
-  }, [stage, artifactUri, player.isReady, player.isDecoding]);
+  }, [
+    stage,
+    artifactUri,
+    artifactPlaybackUri,
+    player.isReady,
+    player.isDecoding,
+    player.loadError,
+  ]);
 
   const handleConvert = useCallback(() => {
     if (sourceAudio) {
@@ -670,12 +703,16 @@ export const VoiceStudioInterface = forwardRef<
   const handleBack = useCallback(() => {
     if (isReturnAudioLoading) return;
     void triggerHaptic();
+    convertSeqRef.current += 1;
+    cancelScheduledConvert();
+    convertAbortRef.current?.abort();
+    pendingPlaybackRef.current = null;
     playerRef.current.pause();
     sourcePlayerRef.current.pause();
-    // Archive text before navigating back.
+    preview.cancel();
     archiveIfUnsaved();
     setStage("composer");
-  }, [isReturnAudioLoading, archiveIfUnsaved]);
+  }, [isReturnAudioLoading, archiveIfUnsaved, cancelScheduledConvert, preview]);
 
   useEffect(() => {
     if (stage !== "ready") return;
@@ -732,6 +769,7 @@ export const VoiceStudioInterface = forwardRef<
       // Keep existing artifact info on screen instead of wiping it
 
       const restore = (): void => {
+        pendingPlaybackRef.current = null;
         setArtifactUri(prevArtifactUri);
         setArtifactPlaybackUri(prevArtifactPlaybackUri);
         setArtifactDurationMs(prevDurationMs);
@@ -792,6 +830,7 @@ export const VoiceStudioInterface = forwardRef<
       commitArtifact(result.value.uri, result.value.playbackUri);
       setArtifactUri(result.value.uri);
       setArtifactPlaybackUri(result.value.playbackUri ?? null);
+      pendingPlaybackRef.current = result.value.playbackUri ?? result.value.uri;
       setRenderedVoiceKey(currentVoiceKey);
 
       publishResult({
@@ -813,8 +852,6 @@ export const VoiceStudioInterface = forwardRef<
         resolvedSourceLang: resolvedSourceLangRef.current,
         spokenLang,
       });
-
-      setStage("ready");
     },
     [
       player,
@@ -856,14 +893,42 @@ export const VoiceStudioInterface = forwardRef<
     if (typed) void runConvert({ text: typed });
   }, [resultText, sourceAudio, sourceText, runConvert, renderInVoice]);
 
-  const handleShare = useCallback(async () => {
+  const handleShare = useCallback(() => {
     void triggerHaptic();
-    await ShareOutService.shareArtifact(
-      artifactUri,
-      resultText,
-      "speech-studio",
-    );
-  }, [artifactUri, resultText]);
+    setIsShareSheetVisible(true);
+  }, []);
+
+  const handleCloseShareSheet = useCallback(() => {
+    setIsShareSheetVisible(false);
+  }, []);
+
+  const handleShareTarget = useCallback(
+    async (target: ShareTarget) => {
+      setIsShareSheetVisible(false);
+      const config = SHARE_TARGET_BY_ID[target];
+
+      if (!artifactUri) {
+        AppToast.error("Voice not ready", {
+          description: "Wait for the voice to finish converting.",
+        });
+        return;
+      }
+
+      const shared = await ShareOutService.shareTo(
+        target,
+        artifactUri,
+        resultText,
+        "speech-studio",
+      );
+
+      if (!shared) {
+        AppToast.error(`${config.label} unavailable`, {
+          description: `Install ${config.label} or use the system share sheet.`,
+        });
+      }
+    },
+    [artifactUri, resultText],
+  );
 
   const handlePreviewVoice = useCallback(
     async (previewed: VoiceSelection): Promise<void> => {
@@ -1066,6 +1131,12 @@ export const VoiceStudioInterface = forwardRef<
           isConverting={stage === "re-rendering"}
         />
       )}
+
+      <ShareVoiceSheet
+        visible={isShareSheetVisible}
+        onClose={handleCloseShareSheet}
+        onSelect={handleShareTarget}
+      />
 
       <VoicePickerSheet
         visible={isPickerVisible}

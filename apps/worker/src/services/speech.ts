@@ -222,6 +222,33 @@ async function writeR2SpeechCache(
   }
 }
 
+/**
+ * Reclaims R2 objects whose `expiresAt` has passed, plus legacy objects that
+ * carry no `expiresAt` metadata at all. KV entries self-expire via TTL; R2
+ * expiry is lazy (only on read), so unread objects would otherwise linger
+ * forever. Safe to run repeatedly: fresh objects are skipped.
+ */
+export async function purgeExpiredSpeechCache(env: Env): Promise<number> {
+  const bucket = env.SPEECH_CACHE;
+  if (!bucket) return 0;
+
+  let deleted = 0;
+  const now = Math.floor(Date.now() / 1000);
+  let cursor: string | undefined;
+  do {
+    const page = await bucket.list({ cursor });
+    for (const obj of page.objects) {
+      const expiresAt = Number(obj.customMetadata?.[R2_EXPIRES_AT_META] ?? 0);
+      if (expiresAt >= now) continue;
+      await bucket.delete(obj.key);
+      deleted += 1;
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  logger.info(`[speech] R2 cache purge removed ${deleted} object(s)`);
+  return deleted;
+}
+
 function speechDownKey(provider: string, date: string): string {
   return `speech:down:${provider}:${date}`;
 }

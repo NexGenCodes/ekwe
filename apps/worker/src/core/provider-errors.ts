@@ -35,19 +35,6 @@ export class ProviderHttpError extends Error {
   }
 }
 
-/** The attempt exceeded its slice of the pipeline budget. */
-export class ProviderTimeoutError extends Error {
-  readonly provider: string;
-  readonly timeoutMs: number;
-
-  constructor(provider: string, timeoutMs: number) {
-    super(`${provider} timed out after ${timeoutMs}ms`);
-    this.name = "ProviderTimeoutError";
-    this.provider = provider;
-    this.timeoutMs = timeoutMs;
-  }
-}
-
 /** DNS, TLS, reset, hang-up — the request never landed. */
 export class ProviderTransportError extends Error {
   readonly provider: string;
@@ -107,9 +94,6 @@ export function isRetryableClass(klass: ProviderErrorClass): boolean {
 export function classifyError(error: unknown): ProviderErrorClass {
   if (error instanceof Error && error.name === "ProviderHttpError") {
     return classifyHttpStatus((error as ProviderHttpError).status);
-  }
-  if (error instanceof Error && error.name === "ProviderTimeoutError") {
-    return "timeout";
   }
   if (error instanceof Error && error.name === "ProviderTransportError") {
     return "network";

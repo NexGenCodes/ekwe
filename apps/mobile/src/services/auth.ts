@@ -154,38 +154,20 @@ export const initAuth = async (): Promise<void> => {
   const cachedSession = mmkv.getBoolean(SESSION_CACHE_KEY);
 
   if (cachedSession) {
-    try {
-      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "";
-      const projectRef = supabaseUrl.match(
-        /https:\/\/(.*?)\.supabase\.co/,
-      )?.[1];
-      const storageKey = projectRef
-        ? `sb-${projectRef}-auth-token`
-        : "supabase.auth.token";
-
-      const rawSession = mmkv.getString(storageKey);
-      if (rawSession) {
-        const parsed = JSON.parse(rawSession);
-        authActions.setSession(parsed);
-      }
-
-      supabase.auth
-        .getSession()
-        .then(({ data: { session } }) => {
-          if (session) {
-            authActions.setSession(session);
-            mirrorSessionToSharedContainer(session, buildSettingsSharedPrefs());
-          } else {
-            mmkv.set(SESSION_CACHE_KEY, false);
-            mirrorSessionToSharedContainer(null, buildSettingsSharedPrefs());
-          }
-        })
-        .catch((err) => {
-          logger.error("[Auth] Background getSession error:", err);
-        });
-    } catch (err) {
-      logger.error("[Auth] MMKV session parse error:", err);
-    }
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (session) {
+          authActions.setSession(session);
+          mirrorSessionToSharedContainer(session, buildSettingsSharedPrefs());
+        } else {
+          mmkv.set(SESSION_CACHE_KEY, false);
+          mirrorSessionToSharedContainer(null, buildSettingsSharedPrefs());
+        }
+      })
+      .catch((err) => {
+        logger.error("[Auth] Background getSession error:", err);
+      });
   }
 
   authActions.setSessionLoaded(true);

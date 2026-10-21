@@ -31,23 +31,25 @@ export const createAudioFocus = (): {
 
 export const __resetAudioFocus = (): void => {
   owner = null;
-  speechFocusHandle = null;
   recordingLocked = false;
   recordingFocusToken = null;
 };
 
-let speechFocusHandle: {
-  claim: (p: () => void) => void;
-  release: () => void;
-} | null = null;
-
-export const claimSpeechFocus = (stopSpeech: () => void): void => {
-  speechFocusHandle ??= createAudioFocus();
-  speechFocusHandle.claim(stopSpeech);
-};
-
-export const releaseSpeechFocus = (): void => {
-  speechFocusHandle?.release();
+/**
+ * Stops whatever currently owns focus without claiming it. Pre-play callers use
+ * this so the upcoming player can claim focus itself; claiming here would make
+ * that player pause itself when it starts and abort the start token.
+ */
+export const pauseActiveAudio = (): void => {
+  if (recordingLocked) return;
+  const current = owner;
+  owner = null;
+  if (!current) return;
+  try {
+    current.pauseNow();
+  } catch {
+    // ignore — a stale owner may already be released
+  }
 };
 
 let recordingFocusToken: symbol | null = null;

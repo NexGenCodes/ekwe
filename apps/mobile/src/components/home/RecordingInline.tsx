@@ -317,7 +317,8 @@ export function RecordingInline({
                 barCount={BARS}
                 interactive={false}
                 activeColor={color.brand}
-                inactiveColor={color.foreground}
+                inactiveColor={color.muted}
+                liveActive={isRecording}
               />
             )}
           </Box>

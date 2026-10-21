@@ -5,6 +5,7 @@ import { WITAI_SAFE_DURATION_MS } from "@ekwe/shared/plans";
 import { EkweError } from "@/constants/errors";
 import type { ProcessedAudio } from "@/services/audioProcessor";
 import { transcribeAudio } from "@/services/transcribeAudio";
+import { auth$ } from "@/store/auth";
 
 const uploadMultipartMock = vi.hoisted(() => vi.fn());
 const getSessionMock = vi.hoisted(() => vi.fn());
@@ -112,6 +113,7 @@ const resolveCall = (): {
 
 describe("transcribeAudio upload artifact", () => {
   beforeEach(() => {
+    auth$.isPro.set(false);
     nativeMock.resolveAudio.mockReset().mockResolvedValue(okResult);
     nativeMock.probeAudioDurationMs.mockReset().mockResolvedValue(60_000);
     uploadMultipartMock.mockReset().mockResolvedValue(okUpload());
@@ -184,7 +186,18 @@ describe("transcribeAudio upload artifact", () => {
     expect(uploadedUri()).toMatch(/^file:\/\/\/cache\/ekwe_opus_/);
   });
 
+  it("rejects audio over the free plan's duration limit before uploading", async () => {
+    const result = await transcribeAudio(
+      audio("file:///cache/recording.ogg", 120_001),
+      "en",
+    );
+
+    expect(result).toEqual({ ok: false, error: EkweError.AUDIO_TOO_LONG });
+    expect(nativeMock.resolveAudio).not.toHaveBeenCalled();
+  });
+
   it("skips Vorbis when duration is past the cap (Opus only)", async () => {
+    auth$.isPro.set(true);
     await transcribeAudio(
       audio("file:///cache/recording.ogg", WITAI_SAFE_DURATION_MS + 1),
       "en",
@@ -196,6 +209,7 @@ describe("transcribeAudio upload artifact", () => {
   });
 
   it("converts at exactly the cap", async () => {
+    auth$.isPro.set(true);
     await transcribeAudio(
       audio("file:///cache/recording.ogg", WITAI_SAFE_DURATION_MS),
       "en",

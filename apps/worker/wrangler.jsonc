@@ -10,7 +10,7 @@
   // maximum (300000) so a duration-scaled transcription budget
   // (TRANSCRIBE_MAX_BUDGET_MS) stays reachable for long clips.
 
-  // Daily history retention cleanup (free: 30d, pro: 365d) — calls
+  // Daily history retention cleanup (free: 14d, pro: 30d) — calls
   // cleanup_expired_history via the service role in the `scheduled` handler.
   "triggers": {
     "crons": ["0 3 * * *"]

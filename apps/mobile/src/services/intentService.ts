@@ -5,6 +5,17 @@ import { isAndroid } from "@/utils";
 import logger from "@/utils/logger";
 import type { OpusTranscodeResult } from "../../modules/ekwe-native/src/EkweNative.types";
 
+/**
+ * A JS-only OTA update can run on a binary whose native module predates the
+ * `options` argument. Expo Modules rejects the extra argument with
+ * `InvalidArgsNumberException`; on R8-minified Android builds that surfaces as
+ * a `NoSuchMethodError` instead of a readable argument error.
+ */
+function isNativeArgsMismatch(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  return /InvalidArgsNumberException|NoSuchMethodError/i.test(message);
+}
+
 export const IntentService = {
   resolveToFileUri: async (rawUri: string): Promise<string | null> => {
     if (isAndroid && rawUri.startsWith("content://")) {
@@ -25,15 +36,61 @@ export const IntentService = {
       (isAndroid && contentUri.startsWith("content://")) ||
       (!isAndroid && Boolean(contentUri))
     ) {
+      const maxDurationMs = options?.maxDurationMs;
       try {
-        return await EkweNative.resolveAndTranscodeToOpus(
+        // Only pass `options` when it carries a value. A 3-argument call is
+        // accepted by both the current native module and the pre-options
+        // signature, so the common path cannot trip an OTA/native mismatch.
+        return maxDurationMs
+          ? await EkweNative.resolveAndTranscodeToOpus(
+              contentUri,
+              outputPath,
+              MAX_AUDIO_BYTES,
+              { maxDurationMs },
+            )
+          : await EkweNative.resolveAndTranscodeToOpus(
+              contentUri,
+              outputPath,
+              MAX_AUDIO_BYTES,
+            );
+      } catch (err) {
+        if (!maxDurationMs || !isNativeArgsMismatch(err)) {
+          logger.error(
+            "[IntentService] resolveAndTranscodeToOpus failed:",
+            err,
+          );
+          return null;
+        }
+      }
+
+      // An OTA update shipped the 4-argument call to a binary built before
+      // `options` existed. Retry the legacy signature rather than failing the
+      // share; the legacy native cap is wider than the plan cap, so enforce the
+      // caller's limit on the returned duration.
+      try {
+        const result = await EkweNative.resolveAndTranscodeToOpus(
           contentUri,
           outputPath,
           MAX_AUDIO_BYTES,
-          options ?? null,
         );
+        if (
+          result.success &&
+          maxDurationMs > 0 &&
+          result.durationMs > maxDurationMs
+        ) {
+          return {
+            ...result,
+            success: false,
+            error: "AUDIO_TOO_LONG",
+            waveform: [],
+          };
+        }
+        return result;
       } catch (err) {
-        logger.error("[IntentService] resolveAndTranscodeToOpus failed:", err);
+        logger.error(
+          "[IntentService] resolveAndTranscodeToOpus legacy call failed:",
+          err,
+        );
         return null;
       }
     }

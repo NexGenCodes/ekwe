@@ -46,20 +46,24 @@ describe("health circuit breaker", () => {
     expect(await isProviderDegraded(env, "groq")).toBe(false);
   });
 
-  test("logs an error (Sentry-bound) when the breaker trips open", async () => {
-    const spy = vi.spyOn(logger, "error");
+  test("logs a warning, not a Sentry error, when the breaker trips open", async () => {
+    const warnSpy = vi.spyOn(logger, "warn");
+    const errorSpy = vi.spyOn(logger, "error");
     const env = mockEnv();
     for (let i = 0; i < HEALTH_TRIP_THRESHOLD; i++) {
       await reportProviderOutcome(env, "gladia", false);
     }
     expect(await isProviderDegraded(env, "gladia")).toBe(true);
 
-    const alerts = spy.mock.calls.filter(([msg]) =>
+    const alerts = warnSpy.mock.calls.filter(([msg]) =>
       String(msg).includes("[health]"),
     );
     expect(alerts.length).toBe(1);
     expect(alerts[0]![0]).toContain('"gladia" tripped open');
     expect(alerts[0]![1]).toMatchObject({ failures: HEALTH_TRIP_THRESHOLD });
+    expect(
+      errorSpy.mock.calls.filter(([msg]) => String(msg).includes("[health]")),
+    ).toHaveLength(0);
   });
 
   test("keeps providers independent", async () => {

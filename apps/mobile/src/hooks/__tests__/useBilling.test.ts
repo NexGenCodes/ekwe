@@ -18,22 +18,10 @@ vi.mock("@/hooks/billing/useActivePricing", () => ({
   }),
 }));
 
-vi.mock("@/hooks/billing/usePaymentProvider", () => ({
-  usePaymentProvider: () => ({
-    provider: "flutterwave",
-    availableProviders: ["flutterwave"],
-    featureFlags: {
-      flutterwave_enabled: true,
-      default_provider: "flutterwave",
-    },
-    isLoading: false,
-    isFlutterwave: true,
-  }),
-}));
-
 vi.mock("@/services/flutterwave", () => ({
   openFlutterwaveCheckout: vi.fn(),
   reconcileFlutterwaveStatus: vi.fn(),
+  verifyTransaction: vi.fn(),
   isFlutterwaveAvailable: vi.fn(),
   getFlutterwavePlanId: vi.fn((isAnnual: boolean) =>
     isAnnual ? "ekwe_pro_annual" : "ekwe_pro_monthly",
@@ -64,7 +52,6 @@ vi.mock("@/store", () => {
     setSession: vi.fn(),
     setIsPro: vi.fn(),
     setEntitlementSynced: vi.fn(),
-    resetEntitlementForProviderSwitch: vi.fn(),
   };
   return { auth$: { session, isPro }, authActions };
 });
@@ -72,6 +59,7 @@ vi.mock("@/store", () => {
 import {
   openFlutterwaveCheckout,
   reconcileFlutterwaveStatus,
+  verifyTransaction,
   isFlutterwaveAvailable,
 } from "@/services/flutterwave";
 import { supabase } from "@/services/supabase";
@@ -83,6 +71,7 @@ const mockIsPro = auth$.isPro.get as Mock;
 const mockRefreshSession = supabase.auth.refreshSession as Mock;
 const mockOpenCheckout = openFlutterwaveCheckout as Mock;
 const mockReconcile = reconcileFlutterwaveStatus as Mock;
+const mockVerify = verifyTransaction as Mock;
 const mockIsAvailable = isFlutterwaveAvailable as Mock;
 
 const PRO_SESSION = {
@@ -102,6 +91,7 @@ describe("useBilling", () => {
       data: { session: PRO_SESSION },
       error: null,
     });
+    mockVerify.mockResolvedValue({ ok: false });
     mockReconcile.mockResolvedValue(false);
     vi.useRealTimers();
   });
@@ -144,6 +134,7 @@ describe("useBilling", () => {
           tx_ref: "ekwe_test-user-123_monthly_1234",
           amount: 2,
           currency: "USD",
+          link: "https://checkout.flutterwave.com/pay/test",
         },
       });
       mockReconcile.mockResolvedValue(true);
@@ -160,6 +151,7 @@ describe("useBilling", () => {
         tx_ref: "ekwe_test-user-123_monthly_1234",
         amount: 2,
         currency: "USD",
+        link: "https://checkout.flutterwave.com/pay/test",
       });
       expect(result.current.checkoutPlan).toBe("ekwe_pro_annual");
 
@@ -186,6 +178,7 @@ describe("useBilling", () => {
           tx_ref: "ekwe_test-user-123_monthly_1234",
           amount: 2,
           currency: "USD",
+          link: "https://checkout.flutterwave.com/pay/test",
         },
       });
       mockReconcile.mockResolvedValue(true);
@@ -216,13 +209,36 @@ describe("useBilling", () => {
       expect(AppAlert.success).not.toHaveBeenCalled();
     });
 
-    it("silently handles when the purchase succeeds but pro never reconciles", async () => {
+    it("does not open the sheet when the checkout has no payment link", async () => {
       mockOpenCheckout.mockResolvedValue({
         canceled: false,
         session: {
           tx_ref: "ekwe_test-user-123_monthly_1234",
           amount: 2,
           currency: "USD",
+        },
+      });
+      const { result } = await renderHook(() => useBilling());
+
+      await act(async () => {
+        await result.current.handleUpgrade();
+      });
+
+      expect(AppAlert.error).toHaveBeenCalledWith(
+        "Payment Unavailable",
+        expect.any(String),
+      );
+      expect(result.current.showCheckout).toBe(false);
+    });
+
+    it("tells the user when the payment cannot be confirmed yet", async () => {
+      mockOpenCheckout.mockResolvedValue({
+        canceled: false,
+        session: {
+          tx_ref: "ekwe_test-user-123_monthly_1234",
+          amount: 2,
+          currency: "USD",
+          link: "https://checkout.flutterwave.com/pay/test",
         },
       });
       mockReconcile.mockResolvedValue(false);
@@ -240,7 +256,11 @@ describe("useBilling", () => {
         });
       });
 
-      expect(AppAlert.info).not.toHaveBeenCalled();
+      expect(AppAlert.info).toHaveBeenCalledWith(
+        "Payment Pending",
+        expect.any(String),
+      );
+      expect(AppAlert.success).not.toHaveBeenCalled();
     });
 
     it("shows upgrade-failed for checkout errors", async () => {
@@ -268,21 +288,6 @@ describe("useBilling", () => {
     });
   });
 
-  describe("handleManage", () => {
-    it("directs user to billing portal", async () => {
-      const { result } = await renderHook(() => useBilling());
-
-      await act(async () => {
-        await result.current.handleManage();
-      });
-
-      expect(AppAlert.info).toHaveBeenCalledWith(
-        "Manage Subscription",
-        expect.any(String),
-      );
-    });
-  });
-
   describe("handleRestore", () => {
     it("refreshes session and reports pro status", async () => {
       const { result } = await renderHook(() => useBilling());
@@ -294,12 +299,12 @@ describe("useBilling", () => {
       expect(mockRefreshSession).toHaveBeenCalled();
       expect(authActions.setIsPro).toHaveBeenCalledWith(true);
       expect(AppAlert.success).toHaveBeenCalledWith(
-        "Subscription Active",
+        "Pro Active",
         expect.any(String),
       );
     });
 
-    it("reports no subscription when session is free", async () => {
+    it("reports no Pro access when session is free", async () => {
       mockRefreshSession.mockResolvedValue({
         data: { session: FREE_SESSION },
         error: null,
@@ -312,7 +317,7 @@ describe("useBilling", () => {
 
       expect(authActions.setIsPro).toHaveBeenCalledWith(false);
       expect(AppAlert.info).toHaveBeenCalledWith(
-        "No Active Subscription",
+        "No Active Pro Access",
         expect.any(String),
       );
     });

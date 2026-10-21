@@ -26,7 +26,7 @@ export interface ProPlanCardProps {
   isDark: boolean;
   proPlan: (typeof BILLING_PLANS)["pro"];
   handleUpgrade: () => Promise<void>;
-  handleManage: () => Promise<void>;
+  handleRestore: () => Promise<void>;
 }
 
 export function ProPlanCard({
@@ -37,7 +37,7 @@ export function ProPlanCard({
   isDark,
   proPlan,
   handleUpgrade,
-  handleManage,
+  handleRestore,
 }: ProPlanCardProps): React.JSX.Element {
   const glassBg = isDark ? color.card : color.background;
   const dividerBg = color.border;
@@ -206,21 +206,22 @@ export function ProPlanCard({
                 variant="body"
                 style={[styles.priceSuffix, { color: color.muted }]}
               >
-                / month
+                {isAnnual ? "/ month" : "/ 30 days"}
               </Text>
             </Box>
-            {isAnnual && (
-              <Text variant="bodySmall" style={{ color: color.brand }}>
-                Billed {pricing.symbol}
-                {formatAmount(pricing.annualAmount, pricing.currency)} once a
-                year
-              </Text>
-            )}
+            <Text variant="bodySmall" style={{ color: color.brand }}>
+              {isAnnual
+                ? `One-time payment of ${pricing.symbol}${formatAmount(
+                    pricing.annualAmount,
+                    pricing.currency,
+                  )} for 12 months`
+                : "One-time payment for 30 days"}
+            </Text>
             <Text
               variant="caption"
               style={{ color: color.muted, letterSpacing: 0.3 }}
             >
-              Prices shown in {pricing.currency}
+              Prices shown in {pricing.currency} · No auto-renewal
             </Text>
           </>
         )}
@@ -240,9 +241,9 @@ export function ProPlanCard({
       ))}
       <Box style={styles.ctaContainer}>
         <Button
-          label={isPro ? "Manage Subscription" : "Go Pro"}
+          label={isPro ? "Check Pro Status" : "Go Pro"}
           variant={isPro ? "outline" : "primary"}
-          onPress={isPro ? handleManage : handleUpgrade}
+          onPress={isPro ? handleRestore : handleUpgrade}
           size="large"
           loading={loading}
           disabled={loading || isPending}

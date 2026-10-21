@@ -267,7 +267,7 @@ export default function ProfileScreen(): React.JSX.Element {
               subtitle={
                 isPro
                   ? PLAN_LIMITS.pro.dailyTranslateLimit === 0
-                    ? "Unlimited translations · Premium voices · No ads"
+                    ? "Unlimited translations · Premium voices"
                     : `${PLAN_LIMITS.pro.dailyTranslateLimit.toLocaleString(
                         "en-US",
                       )} translations per day`

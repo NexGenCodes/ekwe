@@ -5,8 +5,6 @@ import { abortableDelay } from "@/utils/fetch";
 import { classifyError, isRetryableClass } from "@/core/provider-errors";
 import type { SkipReason } from "@/core/route-eligibility";
 
-export type { ProviderErrorClass } from "@/core/provider-errors";
-
 /**
  * An attempt at or above this is logged at warn with `slow: true`, so provider
  * latency regressions surface on their own instead of hiding in the info feed.

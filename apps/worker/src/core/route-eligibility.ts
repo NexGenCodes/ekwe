@@ -33,8 +33,6 @@ export interface SkipVerdict {
   readonly detail?: string;
 }
 
-const ELIGIBLE: SkipVerdict = { eligible: true };
-
 function skip(reason: SkipReason, detail?: string): SkipVerdict {
   return detail === undefined
     ? { eligible: false, reason }
@@ -276,13 +274,4 @@ export function logSkips(route: string, attempts: readonly Attempt[]): void {
       `[${route}] Skipping ${attempt.provider} (${attempt.reason}${attempt.detail ? `: ${attempt.detail}` : ""})`,
     );
   }
-}
-
-export function codecVerdict(provider: string, codec: AudioCodec): SkipVerdict {
-  const limits = sttLimits(provider);
-  if (!limits || limits.codecs === "any" || codec === "unknown")
-    return ELIGIBLE;
-  return limits.codecs.includes(codec)
-    ? ELIGIBLE
-    : skip("unsupported-codec", codec);
 }

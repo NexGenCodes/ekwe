@@ -61,6 +61,14 @@ export const useSharedAudioPlayer = (
   durationMsOverride?: number | null,
 ): SharedAudioPlayer => {
   const [progress, setProgress] = useState(0);
+  // Consumers only ever see whole seconds, so skipping updates that do not
+  // change the rounded value keeps playback from re-rendering the whole
+  // consumer tree on every status tick.
+  const commitProgress = useCallback((next: number): void => {
+    setProgress((prev) =>
+      Math.round(prev) === Math.round(next) ? prev : next,
+    );
+  }, []);
   const progressSV = useSharedValue(0);
 
   const [duration, setDuration] = useState(0);
@@ -84,6 +92,9 @@ export const useSharedAudioPlayer = (
   /** The `uri` that most recently completed a load. */
   const [loadedUri, setLoadedUri] = useState<string | null>(null);
   const wasLoadedRef = useRef(false);
+  /** Latest `uri` prop, for effects that must not re-run when it changes. */
+  const uriRef = useRef(uri);
+  uriRef.current = uri;
 
   useEffect(() => {
     let cancelled = false;
@@ -158,8 +169,8 @@ export const useSharedAudioPlayer = (
     isEndedRef.current = false;
     didJustFinishRef.current = false;
     progressSV.value = 0;
-    setProgress(0);
-  }, [uri, progressSV]);
+    commitProgress(0);
+  }, [uri, progressSV, commitProgress]);
 
   const [isEnded, setIsEnded] = useState(false);
 
@@ -178,6 +189,12 @@ export const useSharedAudioPlayer = (
   const focusRef = useRef(createAudioFocus());
   const pauseRef = useRef<() => void>(() => {});
   const focusClaimedRef = useRef(false);
+  /**
+   * Bumped on every stop. A start that is still awaiting the audio session
+   * checks it before touching the native player, so a clip cannot come back
+   * to life after it was stopped or replaced.
+   */
+  const startTokenRef = useRef(0);
 
   const player = useAudioPlayer(playableSource, { downloadFirst: true });
 
@@ -279,9 +296,11 @@ export const useSharedAudioPlayer = (
     logger.debug(
       isPlaying ? "[Playback] started" : "[Playback] stopped",
       "id=" + instanceId,
-      shortUri(uri),
+      shortUri(uriRef.current),
     );
-  }, [isPlaying, isPlayingSV, frameCallback, uri, instanceId]);
+    // `uri` is deliberately not a dependency: a source swap mid-playback used
+    // to re-run this effect and log a phantom "started" for a null uri.
+  }, [isPlaying, isPlayingSV, frameCallback, instanceId]);
 
   useEffect(() => {
     isEndedRef.current = isEnded;
@@ -302,11 +321,11 @@ export const useSharedAudioPlayer = (
     // Only clamp to end when audio finished and is not actively playing.
     if (status.didJustFinish && !status.playing && !didJustFinishRef.current) {
       progressSV.value = dur > 0 ? dur : status.currentTime;
-      setProgress(status.currentTime);
+      commitProgress(status.currentTime);
       triggerHaptic();
       return;
     }
-    setProgress(status.currentTime);
+    commitProgress(status.currentTime);
     progressSV.value = status.currentTime;
   }, [
     status.currentTime,
@@ -315,6 +334,7 @@ export const useSharedAudioPlayer = (
     progressSV,
     durationSV,
     resolvedDuration,
+    commitProgress,
   ]);
 
   useEffect(() => {
@@ -350,6 +370,7 @@ export const useSharedAudioPlayer = (
 
   const play = useCallback(async (): Promise<void> => {
     if (releasedRef.current) return;
+    const token = startTokenRef.current;
     try {
       focusRef.current.claim(() => pauseRef.current());
       focusClaimedRef.current = true;
@@ -358,6 +379,8 @@ export const useSharedAudioPlayer = (
         playsInSilentMode: true,
       });
       await setIsAudioActiveAsync(true);
+      // Stopped while the audio session was being claimed: stay silent.
+      if (releasedRef.current || token !== startTokenRef.current) return;
       player.setPlaybackRate(playbackRate);
 
       const dur = resolvedDuration || player.duration;
@@ -374,17 +397,18 @@ export const useSharedAudioPlayer = (
       if (atEnd) {
         await player.seekTo(0);
         progressSV.value = 0;
-        setProgress(0);
+        commitProgress(0);
       }
       player.play();
       triggerHaptic();
     } catch (error) {
       logger.error("[SharedAudioPlayer] Play failed:", error);
     }
-  }, [player, progressSV, resolvedDuration, playbackRate]);
+  }, [player, progressSV, resolvedDuration, playbackRate, commitProgress]);
 
   const playFromStart = useCallback(async (): Promise<void> => {
     if (releasedRef.current) return;
+    const token = startTokenRef.current;
     try {
       setIsEnded(false);
       isEndedRef.current = false;
@@ -401,22 +425,28 @@ export const useSharedAudioPlayer = (
         playsInSilentMode: true,
       });
       await setIsAudioActiveAsync(true);
+      // Stopped while the audio session was being claimed: stay silent.
+      if (releasedRef.current || token !== startTokenRef.current) return;
       try {
         await player.seekTo(0);
       } catch (error) {
         logger.warn("[SharedAudioPlayer] seekTo(0) failed:", error);
       }
+      // The stop may have landed during the seek as well.
+      if (releasedRef.current || token !== startTokenRef.current) return;
       progressSV.value = 0;
-      setProgress(0);
+      commitProgress(0);
       player.play();
       triggerHaptic();
     } catch (error) {
       logger.error("[SharedAudioPlayer] PlayFromStart failed:", error);
     }
-  }, [player, progressSV, rateSV, playbackRate]);
+  }, [player, progressSV, rateSV, playbackRate, commitProgress]);
 
   const pause = useCallback((): void => {
     if (releasedRef.current) return;
+    // Invalidate any start that is still waiting on the audio session.
+    startTokenRef.current += 1;
     try {
       player.pause();
     } catch (error) {
@@ -434,6 +464,13 @@ export const useSharedAudioPlayer = (
   }, [player]);
 
   pauseRef.current = pause;
+
+  // A source revoked or replaced mid-playback must not keep playing: the
+  // dictation store resets capturedUri on commit/cancel while the preview is
+  // still audible, and without this the orphaned clip plays out on its own.
+  useEffect(() => {
+    if (isPlayingRef.current) pauseRef.current();
+  }, [uri]);
 
   const setPlaybackRate = useCallback(
     (rate: number) => {
@@ -509,7 +546,7 @@ export const useSharedAudioPlayer = (
       const target = atEnd ? 0 : clampedPos;
       player.seekTo(target);
       progressSV.value = target;
-      setProgress(target);
+      commitProgress(target);
 
       await waitForSeekSettle(target);
       if (wasPlaying) {
@@ -524,6 +561,7 @@ export const useSharedAudioPlayer = (
       resolvedDuration,
       waitForSeekSettle,
       play,
+      commitProgress,
     ],
   );
 

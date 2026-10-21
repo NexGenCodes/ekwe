@@ -1,9 +1,8 @@
 import {
-  claimSpeechFocus,
+  pauseActiveAudio,
   claimRecordingFocus,
   createAudioFocus,
   releaseRecordingFocus,
-  releaseSpeechFocus,
   __resetAudioFocus,
 } from "@/hooks/audio/audioFocus";
 
@@ -72,33 +71,30 @@ describe("audioFocus (single-player coordinator)", () => {
     expect(pauses).toEqual(["a", "b"]);
   });
 
-  it("speech claiming focus pauses a playing native player", () => {
+  it("pausing active audio stops a playing player without owning focus", () => {
     const pauses: number[] = [];
     const a = createAudioFocus();
     a.claim(() => pauses.push(1));
-    claimSpeechFocus(() => pauses.push(99));
+    pauseActiveAudio();
+
+    const b = createAudioFocus();
+    b.claim(() => pauses.push(2));
     expect(pauses).toEqual([1]);
   });
 
-  it("speech yielding focus lets a native player claim without pausing it", () => {
-    const pauses: number[] = [];
-    claimSpeechFocus(() => pauses.push(99));
-    releaseSpeechFocus();
-    const a = createAudioFocus();
-    a.claim(() => pauses.push(1));
-    expect(pauses).toEqual([]);
+  it("a pre-play pause lets the speech player claim without pausing itself", () => {
+    const pauses: string[] = [];
+    const source = createAudioFocus();
+    source.claim(() => pauses.push("source"));
+    pauseActiveAudio();
+
+    const speech = createAudioFocus();
+    speech.claim(() => pauses.push("speech"));
+    expect(pauses).toEqual(["source"]);
   });
 
-  it("a native player claiming focus stops speaking speech", () => {
-    const stopped: number[] = [];
-    claimSpeechFocus(() => stopped.push(9));
-    const a = createAudioFocus();
-    a.claim(() => {});
-    expect(stopped).toEqual([9]);
-  });
-
-  it("releasing speech focus when idle is safe", () => {
-    expect(() => releaseSpeechFocus()).not.toThrow();
+  it("pausing active audio when idle is safe", () => {
+    expect(() => pauseActiveAudio()).not.toThrow();
   });
 });
 
@@ -115,13 +111,6 @@ describe("audioFocus (recording focus)", () => {
     expect(pauses).toEqual([1]);
   });
 
-  it("claims focus and pauses active speech", () => {
-    const stops: number[] = [];
-    claimSpeechFocus(() => stops.push(1));
-    claimRecordingFocus(() => {});
-    expect(stops).toEqual([1]);
-  });
-
   it("blocks new player claims while recording is active", () => {
     const pauses: string[] = [];
     claimRecordingFocus(() => {});
@@ -131,11 +120,15 @@ describe("audioFocus (recording focus)", () => {
     expect(pauses).toEqual([]);
   });
 
-  it("blocks new speech claims while recording is active", () => {
-    const stops: string[] = [];
+  it("pausing active audio is a no-op while recording is active", () => {
+    const pauses: string[] = [];
+    const a = createAudioFocus();
+    a.claim(() => pauses.push("a"));
     claimRecordingFocus(() => {});
-    claimSpeechFocus(() => stops.push("1"));
-    expect(stops).toEqual([]);
+    expect(pauses).toEqual(["a"]);
+
+    pauseActiveAudio();
+    expect(pauses).toEqual(["a"]);
   });
 
   it("claimRecordingFocus is idempotent (second call is no-op)", () => {
@@ -171,8 +164,11 @@ describe("audioFocus (recording focus)", () => {
     a.claim(() => pauses.push("a"));
     claimRecordingFocus(() => {});
     expect(pauses).toEqual(["a"]);
+
     releaseRecordingFocus();
-    claimSpeechFocus(() => pauses.push("tts"));
+    pauseActiveAudio();
+    const speech = createAudioFocus();
+    speech.claim(() => pauses.push("speech"));
     expect(pauses).toEqual(["a"]);
   });
 });

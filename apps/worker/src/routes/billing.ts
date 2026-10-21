@@ -51,52 +51,70 @@ export async function handleCheckout(
     "",
   )}_${crypto.randomUUID()}`;
 
-  let paymentLink = "";
-  if (env.FLUTTERWAVE_SECRET) {
-    try {
-      const flwReq = await fetch("https://api.flutterwave.com/v3/payments", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.FLUTTERWAVE_SECRET}`,
-          "Content-Type": "application/json",
+  if (!env.FLUTTERWAVE_SECRET) {
+    logger.error("[billing/checkout] FLUTTERWAVE_SECRET not configured");
+    return Response.json(
+      { error: WORKER_ERROR_CODES.PAYMENT_PROVIDER_UNAVAILABLE },
+      { status: 503 },
+    );
+  }
+
+  let paymentLink: string | null = null;
+  try {
+    const flwReq = await fetch(FLUTTERWAVE_PAYMENTS_PATH, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.FLUTTERWAVE_SECRET}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        tx_ref: txRef,
+        amount: amount.toString(),
+        currency: currency,
+        redirect_url: CHECKOUT_REDIRECT_URL,
+        customer: {
+          email: auth.userEmail,
         },
-        body: JSON.stringify({
-          tx_ref: txRef,
-          amount: amount.toString(),
-          currency: currency,
-          redirect_url: "https://ekwe.app/checkout/callback",
-          customer: {
-            email: auth.userEmail,
-          },
-          customizations: {
-            title: "Ekwe Pro",
-            description: `Upgrade to Ekwe Pro (${body.plan.replace("ekwe_pro_", "")})`,
-          },
-        }),
-      });
-      if (flwReq.ok) {
-        const flwData: { status?: string; data?: { link?: string } } =
-          await flwReq.json();
-        if (flwData.status === "success" && flwData.data?.link) {
-          paymentLink = flwData.data.link;
-        }
-      } else {
-        logger.error(
-          "[billing/checkout] Flutterwave payments API returned error",
-          {
-            status: flwReq.status,
-            body: await flwReq.text().catch(() => ""),
-          },
-        );
+        customizations: {
+          title: "Ekwe Pro",
+          description: `Upgrade to Ekwe Pro (${body.plan.replace("ekwe_pro_", "")})`,
+        },
+      }),
+    });
+    if (flwReq.ok) {
+      const flwData: { status?: string; data?: { link?: string } } =
+        await flwReq.json();
+      if (flwData.status === "success" && flwData.data?.link) {
+        paymentLink = flwData.data.link;
       }
-    } catch (err) {
+    } else {
       logger.error(
-        "[billing/checkout] Flutterwave payments API request failed",
+        "[billing/checkout] Flutterwave payments API returned error",
         {
-          error: describeError(err),
+          status: flwReq.status,
+          body: await flwReq.text().catch(() => ""),
         },
       );
     }
+  } catch (err) {
+    logger.error("[billing/checkout] Flutterwave payments API request failed", {
+      error: describeError(err),
+    });
+  }
+
+  if (!paymentLink) {
+    logger.error("[billing/checkout] Flutterwave returned no payment link", {
+      tx_ref: txRef,
+      amount,
+      currency,
+    });
+    return Response.json(
+      {
+        error: WORKER_ERROR_CODES.PAYMENT_INITIALIZATION_FAILED,
+        message: "Could not start payment, please try again later",
+      },
+      { status: 502 },
+    );
   }
 
   const responseBody = {
@@ -104,17 +122,18 @@ export async function handleCheckout(
     amount,
     currency,
     public_key: env.FLUTTERWAVE_PUBLIC ?? "",
-    ...(paymentLink ? { link: paymentLink } : {}),
+    link: paymentLink,
   };
   logger.info("[billing] Checkout session authorized", {
     tx_ref: txRef,
     amount,
     currency,
-    has_link: !!paymentLink,
   });
   return Response.json(checkoutResponseSchema.parse(responseBody));
 }
 
+const FLUTTERWAVE_PAYMENTS_PATH = "https://api.flutterwave.com/v3/payments";
+const CHECKOUT_REDIRECT_URL = "https://www.ekwe.app";
 const VERIFY_TRANSACTION_PATH =
   "https://api.flutterwave.com/v3/transactions/{id}/verify";
 

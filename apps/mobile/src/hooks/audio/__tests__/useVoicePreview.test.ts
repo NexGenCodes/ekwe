@@ -22,6 +22,8 @@ let isPlaying = false;
 let isLoaded = true;
 let isDecoding = false;
 let isReady = true;
+let isEnded = false;
+let loadError: string | null = null;
 
 vi.mock("@/hooks/audio/useSharedAudioPlayer", () => ({
   useSharedAudioPlayer: () => ({
@@ -34,28 +36,27 @@ vi.mock("@/hooks/audio/useSharedAudioPlayer", () => ({
     progress: 0,
     progressSV: { value: 0 },
     duration: 0,
-    isEnded: false,
+    isEnded,
     playbackRate: 1,
     play: vi.fn(),
     release: vi.fn(),
     setPlaybackRate: vi.fn(),
     beginScrub: vi.fn(),
     endScrub: vi.fn(),
-    loadError: null,
+    loadError,
     retryLoad: vi.fn(),
   }),
 }));
 
 vi.mock("@/services/speech", () => ({
-  synthesizeSpeech: (
-    text: string,
-    lang: string,
-    options: { voiceId?: string; gender?: string },
+  synthesizeVoicePreview: (
+    voiceId: string,
+    gender: string,
   ): Promise<unknown> => {
     return new Promise((resolve) => {
       pending.push({
-        voiceId: options.voiceId ?? "",
-        gender: options.gender ?? "",
+        voiceId,
+        gender,
         settle: resolve,
       });
     });
@@ -64,9 +65,11 @@ vi.mock("@/services/speech", () => ({
 
 /** Set to false to simulate a cache move that could not happen. */
 let persistSucceeds = true;
+/** The memoized clip the cache reports, or null for a cache miss. */
+let cachedPreviewUri: string | null = null;
 
 vi.mock("@/utils/voicePreviewCache", () => ({
-  getCachedPreviewUri: () => null,
+  getCachedPreviewUri: () => cachedPreviewUri,
   persistPreview: (uri: string, key: string) =>
     Promise.resolve(
       persistSucceeds ? `file:///mock/cache/ekwe_vpreview_v1_${key}.ogg` : uri,
@@ -115,7 +118,10 @@ beforeEach(() => {
   isLoaded = true;
   isDecoding = false;
   isReady = true;
+  isEnded = false;
+  loadError = null;
   persistSucceeds = true;
+  cachedPreviewUri = null;
 });
 
 describe("useVoicePreview", () => {
@@ -156,7 +162,26 @@ describe("useVoicePreview", () => {
 
     expect(playFromStart).toHaveBeenCalledTimes(1);
     expect(result.current.phase).toBe("playing");
-    expect(result.current.activeKey).toBe(`${getStandardSlot().id}_female_en`);
+  });
+
+  it("fails the preview when the player cannot load the clip", async () => {
+    const { result, rerender } = mount();
+
+    act(() => {
+      result.current.preview(selection(getStandardSlot().id, "female"));
+    });
+    isReady = false;
+    await resolvePending(0, "file:///female.ogg");
+    expect(result.current.phase).toBe("loading");
+
+    // The native load fails, so readiness never arrives and the spinner
+    // would otherwise never clear.
+    loadError = "decode failed";
+    rerender();
+
+    expect(result.current.phase).toBeNull();
+    expect(result.current.activeKey).toBeNull();
+    expect(onError).toHaveBeenCalledWith(EkweError.SPEECH_FAIL);
   });
 
   it("keeps the spinner up until the clip finishes decoding", async () => {
@@ -194,7 +219,7 @@ describe("useVoicePreview", () => {
     await resolvePending(0, "file:///standard.ogg");
 
     expect(playFromStart).toHaveBeenCalledTimes(1);
-    expect(result.current.activeKey).toBe(`${STUDIO_VOICE_ID}_female_en`);
+    expect(result.current.activeKey).toBe(`${STUDIO_VOICE_ID}_female`);
   });
 
   it("stops the sounding preview when its own button is tapped again", async () => {
@@ -237,6 +262,76 @@ describe("useVoicePreview", () => {
 
     expect(pause).toHaveBeenCalled();
     expect(pending[1].gender).toBe("male");
+  });
+
+  it("does not replay the previous clip while the next voice loads", async () => {
+    const { result } = mount();
+
+    // The first voice is auditioned and plays.
+    act(() => {
+      result.current.preview(selection(getStandardSlot().id, "female"));
+    });
+    await resolvePending(0, "file:///female.ogg");
+    expect(playFromStart).toHaveBeenCalledTimes(1);
+
+    // The second voice is requested. The clip that is already loaded is still
+    // reported as ready, so it must not be started again behind the request.
+    act(() => {
+      result.current.preview(selection(STUDIO_VOICE_ID, "male"));
+    });
+    expect(playFromStart).toHaveBeenCalledTimes(1);
+
+    // The second clip lands and takes over.
+    await resolvePending(1, "file:///studio.ogg");
+    expect(playFromStart).toHaveBeenCalledTimes(2);
+    expect(result.current.activeKey).toBe(`${STUDIO_VOICE_ID}_male`);
+  });
+
+  it("does not replay the previous clip when a memoized clip is requested", async () => {
+    const { result } = mount();
+
+    act(() => {
+      result.current.preview(selection(getStandardSlot().id, "female"));
+    });
+    await resolvePending(0, "file:///female.ogg");
+    expect(playFromStart).toHaveBeenCalledTimes(1);
+
+    // The next voice is already memoized, so it resolves without a request.
+    cachedPreviewUri = "file:///mock/cache/ekwe_vpreview_v1_studio_male_en.ogg";
+    act(() => {
+      result.current.preview(selection(STUDIO_VOICE_ID, "male"));
+    });
+
+    // Only the memoized clip plays, and it plays once.
+    expect(playFromStart).toHaveBeenCalledTimes(2);
+    expect(result.current.activeKey).toBe(`${STUDIO_VOICE_ID}_male`);
+  });
+
+  it("replays a finished clip only once its request comes back", async () => {
+    const { result, rerender } = mount();
+    const target = selection(getStandardSlot().id, "female");
+
+    act(() => {
+      result.current.preview(target);
+    });
+    await resolvePending(0, "file:///female.ogg");
+    expect(playFromStart).toHaveBeenCalledTimes(1);
+
+    // The clip reaches its end.
+    isPlaying = false;
+    isEnded = true;
+    rerender();
+    expect(result.current.phase).toBeNull();
+
+    // Tapping the same card again asks for the clip once more. The finished
+    // clip must not restart while that request is in flight.
+    act(() => {
+      result.current.preview(target);
+    });
+    expect(playFromStart).toHaveBeenCalledTimes(1);
+
+    await resolvePending(1, "file:///female.ogg");
+    expect(playFromStart).toHaveBeenCalledTimes(2);
   });
 
   it("surfaces a failure and returns to an idle button", async () => {
@@ -289,6 +384,27 @@ describe("useVoicePreview", () => {
 
     expect(playFromStart).toHaveBeenCalledTimes(1);
     expect(result.current.phase).toBe("playing");
+  });
+
+  it("returns to a Play button once the clip ends", async () => {
+    const { result, rerender } = mount();
+
+    act(() => {
+      result.current.preview(selection(getStandardSlot().id, "female"));
+    });
+    await resolvePending(0, "file:///female.ogg");
+    isPlaying = true;
+    rerender();
+    expect(result.current.phase).toBe("playing");
+
+    // The clip reaches its end: no pause icon, and other voices unlock.
+    isPlaying = false;
+    isEnded = true;
+    rerender();
+
+    expect(result.current.phase).toBeNull();
+    // The card stays the active one so its own tap replays from cache.
+    expect(result.current.activeKey).toBe(`${getStandardSlot().id}_female`);
   });
 
   it("keeps the memoized clip on reset instead of deleting it", async () => {

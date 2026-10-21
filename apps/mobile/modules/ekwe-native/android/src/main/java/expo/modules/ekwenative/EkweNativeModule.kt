@@ -1,5 +1,6 @@
 package expo.modules.ekwenative
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -330,31 +331,32 @@ class EkweNativeModule : Module() {
     // Built here rather than through expo-sharing because that module sets the
     // type with Intent.setTypeAndNormalize(), which truncates at the first ";"
     // (AOSP Intent.normalizeMimeType). "audio/ogg; codecs=opus" would arrive as
-    // "audio/ogg", and that parameter is load-bearing:
-    //   * WhatsApp allow-lists exactly "audio/ogg; codecs=opus" (plus audio/m4a
-    //     and audio/x-m4a) to render an incoming file as a PTT voice note.
+    // "audio/ogg", and that parameter is load-bearing for Telegram:
     //   * Telegram requires the type to both start with "audio/ogg" and contain
     //     "codecs=opus" before it treats the file as a voice message.
-    // Anything else lands as an ordinary audio attachment.
+    //   * WhatsApp does not create a PTT from a share intent. Its share path
+    //     always creates an ordinary audio attachment; the PTT fields
+    //     (`ptt`, `seconds`, `waveform`) are protobuf metadata that only
+    //     WhatsApp's own recording/send pipeline or the Web/Cloud API can set.
+    // Do not expect a WhatsApp voice-note waveform from ACTION_SEND.
     //
-    // This intent carries the stream and NOTHING else. Attaching EXTRA_TEXT
-    // alongside EXTRA_STREAM makes it a composite send — "some text plus an
-    // attachment" — and WhatsApp then classifies it as a document and renders
-    // the file card instead of a voice note, waveform included. The MIME above
-    // is only consulted for a stream-only send, so the caption has to be dropped
-    // here rather than merely being secondary. iOS gets away with the same
-    // caption because UIActivityViewController hands the target two independent
-    // items; Android folds them into one intent, which is why only Android ever
-    // showed a file. A transcript can still be shared, as its own text share.
+    // This intent carries the stream and, when present, the caption in
+    // EXTRA_TEXT. The caption is a normal audio caption for targets that
+    // support it; it does not change WhatsApp's message type or add a waveform.
     //
-    // `text` is accepted and ignored so the JS signature stays in step with
-    // iOS, which does pass the caption.
+    // When `targetPackage` is set the chooser is bypassed and the intent is
+    // sent directly to that app; this is what powers the two-target sheet.
+    // Without it the normal system chooser is shown.
     //
     // Resolves once the chooser is on screen, not once the user picks a target:
     // callers only need to know the share was launched, and the receiving app
     // may still be reading the file long after this returns.
     AsyncFunction("shareAudio") {
-        filePath: String, mimeType: String, text: String?, chooserTitle: String? ->
+        filePath: String,
+        mimeType: String,
+        text: String?,
+        chooserTitle: String?,
+        targetPackage: String? ->
       val context = appContext.reactContext
         ?: return@AsyncFunction mapOf("success" to false, "error" to "No context")
       val activity = appContext.currentActivity
@@ -376,13 +378,26 @@ class EkweNativeModule : Module() {
           putExtra(Intent.EXTRA_STREAM, contentUri)
           // setType, deliberately NOT setTypeAndNormalize — see note above.
           setType(mimeType)
-          // Deliberately no EXTRA_TEXT. See the stream-only note above: a
-          // caption on this intent costs the voice-note rendering. Logged so the
-          // dropped caption is visible when a share is debugged.
           if (!text.isNullOrBlank()) {
-            Log.d("EkweNative", "shareAudio: dropping caption to keep the PTT send stream-only")
+            putExtra(Intent.EXTRA_TEXT, text)
           }
+          clipData = ClipData.newUri(context.contentResolver, "Ekwe voice", contentUri)
           addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        val target = targetPackage?.takeIf { it.isNotBlank() }
+        if (target != null) {
+          send.setPackage(target)
+          val resolved = context.packageManager.resolveActivity(
+            send,
+            PackageManager.MATCH_DEFAULT_ONLY,
+          )
+          if (resolved == null) {
+            return@AsyncFunction mapOf(
+              "success" to false,
+              "error" to "TARGET_NOT_INSTALLED",
+            )
+          }
         }
 
         // The chooser does not reliably propagate the read grant on OEM
@@ -402,7 +417,11 @@ class EkweNativeModule : Module() {
             }
           }
 
-        activity.startActivity(Intent.createChooser(send, chooserTitle ?: "Share"))
+        if (target != null) {
+          activity.startActivity(send)
+        } else {
+          activity.startActivity(Intent.createChooser(send, chooserTitle ?: "Share"))
+        }
         mapOf("success" to true, "error" to "")
       } catch (e: Exception) {
         Log.e("EkweNative", "shareAudio failed for $filePath", e)

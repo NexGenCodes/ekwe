@@ -36,9 +36,9 @@ INSERT INTO public.app_config (
 )
 VALUES (
   1,
-  true,
   false,
-  'revenuecat',
+  true,
+  'flutterwave',
   2.23,
   0,
   20,

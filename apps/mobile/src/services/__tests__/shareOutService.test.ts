@@ -61,9 +61,9 @@ vi.mock("expo-file-system", () => {
 const ARTIFACT = "file:///cache/ekwe_converted_123_abc.ogg";
 
 describe("mimeFor", () => {
-  it("declares the codecs parameter for Ogg/Opus, which is what earns voice-note rendering", () => {
-    // WhatsApp allow-lists exactly this string for PTT, and Telegram requires
-    // type.contains("codecs=opus"). Plain "audio/ogg" is a document there.
+  it("declares the codecs parameter for Ogg/Opus, which Telegram requires for voice-note rendering", () => {
+    // Telegram requires type.contains("codecs=opus"). WhatsApp's share path
+    // still creates an ordinary audio attachment regardless of this MIME.
     expect(mimeFor("file:///cache/voice.ogg")).toBe("audio/ogg; codecs=opus");
     expect(mimeFor("file:///cache/voice.opus")).toBe("audio/ogg; codecs=opus");
     expect(mimeFor("file:///cache/voice.OGG")).toBe("audio/ogg; codecs=opus");
@@ -98,22 +98,18 @@ describe("ShareOutService.shareAudio", () => {
     expect(shareAudioMock).toHaveBeenCalledTimes(1);
     const [path, mime, text] = shareAudioMock.mock.calls[0];
     expect(mime).toBe("audio/ogg; codecs=opus");
-    // The caption is still composed and still handed to native, which decides
-    // per-platform what to do with it: iOS can pair it with the audio, Android
-    // must not, because EXTRA_TEXT next to EXTRA_STREAM turns the send into a
-    // document and costs the voice-note rendering.
+    // The caption is still composed and handed to native: iOS pairs it with
+    // the audio, and Android attaches it as EXTRA_TEXT.
     expect(text).toBe(
       "hola mundo\n\n— Shared with Ekwe · Speak, we'll handle the rest",
     );
     expect(path).toBeTruthy();
   });
 
-  it("titles the chooser with the app, not a capture-surface feature name", async () => {
+  it("titles the chooser with the outgoing share action", async () => {
     await ShareOutService.shareAudio(ARTIFACT, "hi");
 
-    // Share-out is not a capture surface, so it borrows no feature name —
-    // "Echo" is the share-in sheet.
-    expect(shareAudioMock.mock.calls[0][3]).toBe("Send with Ekwe");
+    expect(shareAudioMock.mock.calls[0][3]).toBe("Share voice");
   });
 
   it("shares a human-readable copy so the original stays available for playback", async () => {
@@ -215,6 +211,81 @@ const analyticsMock = vi.hoisted(() => ({ track: vi.fn() }));
 vi.mock("@/utils/analytics", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/utils/analytics")>();
   return { ...actual, track: analyticsMock.track };
+});
+
+describe("ShareOutService.shareTo", () => {
+  beforeEach(() => {
+    fileMock.exists = true;
+    fileMock.extension = ".ogg";
+    fileMock.copied = [];
+    fileMock.copyThrows = false;
+    fileMock.bytesThrows = false;
+    shareAudioMock.mockReset().mockResolvedValue({ success: true, error: "" });
+    analyticsMock.track.mockReset();
+  });
+
+  it("targets WhatsApp and includes the transcript as a caption", async () => {
+    expect(await ShareOutService.shareTo("whatsapp", ARTIFACT, "hola")).toBe(
+      true,
+    );
+
+    const [, mime, text, , targetPackage] = shareAudioMock.mock.calls[0];
+    expect(mime).toBe("audio/ogg; codecs=opus");
+    expect(text).toBe(
+      "hola\n\n— Shared with Ekwe · Speak, we'll handle the rest",
+    );
+    expect(targetPackage).toBe("com.whatsapp");
+  });
+
+  it("targets Telegram without a caption so it stays a voice note", async () => {
+    expect(await ShareOutService.shareTo("telegram", ARTIFACT, "hola")).toBe(
+      true,
+    );
+
+    const [, , text, , targetPackage] = shareAudioMock.mock.calls[0];
+    expect(text).toBeNull();
+    expect(targetPackage).toBe("org.telegram.messenger");
+  });
+
+  it("falls back to WhatsApp Business when regular WhatsApp is missing", async () => {
+    shareAudioMock
+      .mockResolvedValueOnce({
+        success: false,
+        error: "TARGET_NOT_INSTALLED",
+      })
+      .mockResolvedValueOnce({ success: true, error: "" });
+
+    expect(await ShareOutService.shareTo("whatsapp", ARTIFACT, "hola")).toBe(
+      true,
+    );
+    expect(shareAudioMock.mock.calls.map((call) => call[4])).toEqual([
+      "com.whatsapp",
+      "com.whatsapp.w4b",
+    ]);
+  });
+
+  it("returns false when neither the target nor its fallback is available", async () => {
+    shareAudioMock.mockResolvedValue({
+      success: false,
+      error: "TARGET_NOT_INSTALLED",
+    });
+
+    expect(await ShareOutService.shareTo("whatsapp", ARTIFACT, "hola")).toBe(
+      false,
+    );
+    expect(shareAudioMock).toHaveBeenCalledTimes(2);
+    expect(analyticsMock.track).not.toHaveBeenCalled();
+  });
+
+  it("records the selected target only after a successful share", async () => {
+    await ShareOutService.shareTo("telegram", ARTIFACT, "hola");
+
+    expect(analyticsMock.track).toHaveBeenCalledWith(expect.any(String), {
+      source: "studio",
+      kind: "audio",
+      target: "telegram",
+    });
+  });
 });
 
 describe("ShareOutService.shareArtifact", () => {

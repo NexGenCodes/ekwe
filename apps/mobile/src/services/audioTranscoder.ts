@@ -199,19 +199,6 @@ class AudioTranscoderClass {
     const sourcePath = stripFileScheme(sourceUri);
     const needsVorbis = shouldUploadVorbis(effectiveDuration, sourceLang);
 
-    // DEBUG: proves the Vorbis-vs-Opus decision inputs. Remove after verifying.
-    logger.debug(
-      "[Upload] decision:",
-      JSON.stringify({
-        source: sourceUri.slice(-48),
-        knownDurationMs: durationMs,
-        effectiveDurationMs: effectiveDuration,
-        sourceLang,
-        needsVorbis,
-        isOwnOpus: isOwnOpus(sourceUri),
-      }),
-    );
-
     if (!needsVorbis && isOwnOpus(sourceUri)) {
       return asIs();
     }
@@ -246,20 +233,6 @@ class AudioTranscoderClass {
           "[AudioTranscoder] resolveAudio failed, uploading source as-is",
           result.error,
         );
-        // DEBUG: `result.durationMs` is the native MediaMetadataRetriever probe.
-        // Compare with the granule-based probe to spot encoder sentinel misprobes.
-        // Remove after confirming.
-        logger.warn(
-          "[ProbeDebug] resolveAudio (prepareUploadArtifact):",
-          JSON.stringify({
-            error: result.error,
-            metadataProbeMs: result.durationMs,
-            granuleProbeMs: await EkweNative.probeAudioDurationMs(sourcePath),
-            knownDurationMs: durationMs,
-            effectiveDurationMs: effectiveDuration,
-            sourcePath,
-          }),
-        );
         cleanupTemps();
         return asIs();
       }
@@ -273,18 +246,6 @@ class AudioTranscoderClass {
       }
 
       const uploadUri = needsVorbis && vorbisPath ? vorbisPath : opusPath;
-      // DEBUG: confirms which file is uploaded and that the Vorbis file exists
-      // with content. Remove after verifying.
-      logger.debug(
-        "[Upload] artifact:",
-        JSON.stringify({
-          upload: uploadUri.slice(-48),
-          isVorbis: uploadUri === vorbisPath,
-          vorbisSuccess: result.vorbisSuccess,
-          vorbisBytes: vorbisPath ? new File(vorbisPath).size : 0,
-          opusBytes: new File(opusPath).size,
-        }),
-      );
 
       return {
         uri: uploadUri,

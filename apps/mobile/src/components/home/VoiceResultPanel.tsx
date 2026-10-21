@@ -1,4 +1,6 @@
 import AudioLines from "lucide-react-native/icons/audio-lines";
+import ChevronDown from "lucide-react-native/icons/chevron-down";
+import ChevronRight from "lucide-react-native/icons/chevron-right";
 import Pause from "lucide-react-native/icons/pause";
 import Pencil from "lucide-react-native/icons/pencil";
 import Play from "lucide-react-native/icons/play";
@@ -195,6 +197,7 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
   );
 
   const [displaySeconds, setDisplaySeconds] = useState(0);
+  const [showOriginal, setShowOriginal] = useState(false);
   useAnimatedReaction(
     () => Math.floor(player.progressSV.value),
     (seconds) => {
@@ -316,17 +319,44 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
       </Box>
 
       {hasTranslation && transcriptText.trim().length > 0 && (
-        <Text
-          variant="caption"
-          numberOfLines={2}
-          style={{
-            color: color.onBrand,
-            fontStyle: "italic",
-            marginBottom: spacing.sm,
-          }}
-        >
-          {`said: "${transcriptText}"`}
-        </Text>
+        <>
+          <Pressable
+            onPress={() => setShowOriginal((v) => !v)}
+            accessibilityRole="button"
+            accessibilityLabel={
+              showOriginal ? "Hide original" : "Show original"
+            }
+            hitSlop={8}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: spacing.xs,
+              marginBottom: spacing.xs,
+            }}
+          >
+            {showOriginal ? (
+              <ChevronDown size={iconSize.sm} color={color.onBrand} />
+            ) : (
+              <ChevronRight size={iconSize.sm} color={color.onBrand} />
+            )}
+            <Text variant="caption" style={{ color: color.onBrand }}>
+              {showOriginal ? "Hide original" : "Show original"}
+            </Text>
+          </Pressable>
+          {showOriginal && (
+            <Text
+              variant="caption"
+              numberOfLines={3}
+              style={{
+                color: color.onBrand,
+                fontStyle: "italic",
+                marginBottom: spacing.sm,
+              }}
+            >
+              {`said: "${transcriptText}"`}
+            </Text>
+          )}
+        </>
       )}
 
       {}
@@ -340,11 +370,17 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         }}
       >
         <Pressable
-          onPress={onTogglePlay}
+          onPress={isConverting ? undefined : onTogglePlay}
+          disabled={isConverting}
           accessibilityRole="button"
           accessibilityLabel={
-            isPlaying ? "Pause voice note" : "Play voice note"
+            isConverting
+              ? "Rendering audio"
+              : isPlaying
+                ? "Pause voice note"
+                : "Play voice note"
           }
+          accessibilityState={{ disabled: isConverting, busy: isConverting }}
           hitSlop={8}
           style={({ pressed }) => [
             {
@@ -354,11 +390,14 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
               alignItems: "center",
               justifyContent: "center",
               backgroundColor: withAlpha(color.onBrand, 0.18),
+              opacity: isConverting ? 0.5 : 1,
             },
-            pressed && { transform: [{ scale: 0.92 }] },
+            pressed && !isConverting && { transform: [{ scale: 0.92 }] },
           ]}
         >
-          {isPlaying ? (
+          {isConverting ? (
+            <Spinner size="sm" color={color.onBrand} />
+          ) : isPlaying ? (
             <Pause size={iconSize.md} color={color.onBrand} />
           ) : (
             <Play
@@ -384,7 +423,7 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
             barWidth={3}
             barGap={2}
             height={34}
-            interactive
+            interactive={!isConverting}
             activeColor={color.onBrand}
             inactiveColor={withAlpha(color.onBrand, 0.35)}
             onSeek={handleSeek}
@@ -427,34 +466,37 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
           marginBottom: spacing.md,
         }}
       >
-        <ActionChip
-          icon={<AudioLines size={iconSize.sm} color={color.onBrand} />}
-          label="Voices"
-          onPress={onChangeVoice}
-          tint={color.onBrand}
-        />
-        <ActionChip
-          icon={
-            isConverting ? (
-              <ActivityIndicator size="small" color={color.brand} />
-            ) : (
-              <RefreshCw size={iconSize.sm} color={color.brand} />
-            )
-          }
-          label={isConverting ? "Re-converting…" : "Re-convert"}
-          onPress={onConvert}
-          tint={color.onBrand}
-          variant="primary"
-          disabled={!canConvert || isConverting}
-          busy={isConverting}
-        />
+        {canConvert ? (
+          <ActionChip
+            icon={
+              isConverting ? (
+                <ActivityIndicator size="small" color={color.brand} />
+              ) : (
+                <RefreshCw size={iconSize.sm} color={color.brand} />
+              )
+            }
+            label={isConverting ? "Re-rendering…" : "Re-render with this voice"}
+            onPress={onConvert}
+            tint={color.onBrand}
+            variant="primary"
+            disabled={isConverting}
+            busy={isConverting}
+          />
+        ) : (
+          <ActionChip
+            icon={<AudioLines size={iconSize.sm} color={color.onBrand} />}
+            label="Voices"
+            onPress={onChangeVoice}
+            tint={color.onBrand}
+          />
+        )}
       </Box>
 
       {}
       <Pressable
         onPress={onShare}
         accessibilityRole="button"
-        accessibilityLabel="Share voice note"
+        accessibilityLabel="Share voice"
         hitSlop={8}
         style={({ pressed }) => [
           {
@@ -471,7 +513,7 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
       >
         <Share size={iconSize.sm} color={color.brand} strokeWidth={2.2} />
         <Text variant="heading3" style={{ color: color.brand }}>
-          Share voice note
+          Share voice
         </Text>
       </Pressable>
     </Animated.View>

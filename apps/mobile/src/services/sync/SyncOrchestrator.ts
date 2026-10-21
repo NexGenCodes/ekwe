@@ -82,7 +82,7 @@ class SyncOrchestrator {
       const userId = this.loadedUserId;
       if (userId) {
         this.realtime
-          .startRealtimeListener(userId)
+          .ensureRealtimeListener(userId)
           .catch((err) =>
             logger.error("[Sync] Realtime join after reconnect failed", err),
           );

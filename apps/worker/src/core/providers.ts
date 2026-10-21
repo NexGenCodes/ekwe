@@ -4,7 +4,6 @@ import {
   LANGUAGE_CAPABILITIES,
   isLanguageSupported,
 } from "@ekwe/shared/languageCapabilities";
-import { sttLimits } from "@ekwe/shared/providerLimits";
 
 type TranscribeProvider =
   | "witai"
@@ -151,19 +150,3 @@ export const PROVIDER_TIMEOUT = {
   mistral: { premium: 6_000, free: 10_000 },
   openrouter: { premium: 12_000, free: 15_000 },
 } as const;
-
-/**
- * Whether a provider can be asked to infer a language.
- *
- * This used to live here as `PROVIDER_SKIP_AUTO`, a bare
- * `Record<string, boolean>` read with `?? false`. That made "unsupported" and
- * "nobody has declared this" the same value, so a provider added to a pipeline
- * without touching this table would silently join the auto path — the exact
- * mistake Wit and Cohere are excluded for. It now lives in the shared limits
- * registry as `stt.autoDetect`, which is `satisfies`-typed against the provider
- * list, so the compiler rejects an undeclared provider.
- */
-export function providerSupportsAutoDetect(provider: string): boolean {
-  const limits = sttLimits(provider);
-  return limits?.autoDetect === "supported";
-}

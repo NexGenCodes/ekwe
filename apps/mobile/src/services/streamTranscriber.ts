@@ -5,8 +5,8 @@ import {
   type StreamTranscriptEvent,
 } from "@ekwe/shared";
 
-import { PLAN_LIMITS } from "@/constants/billing";
 import logger from "@/utils/logger";
+import { getActivePlanLimits } from "@/utils/planLimits";
 
 export interface StreamConfig {
   token: string;
@@ -79,7 +79,7 @@ class StreamTranscriberClass {
           frameSizeMs: 20,
         });
 
-        const maxDuration = PLAN_LIMITS.pro.maxStreamDurationMs;
+        const maxDuration = getActivePlanLimits().maxStreamDurationMs;
         if (maxDuration > 0) {
           this.durationTimer = setTimeout(() => {
             logger.info(

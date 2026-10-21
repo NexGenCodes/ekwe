@@ -1,5 +1,6 @@
 import type { FlutterwaveCurrency } from "./money";
 import { WITAI_SAFE_DURATION_MS } from "./providerLimits";
+import { HISTORY_TTL_FREE_DAYS, HISTORY_TTL_PAID_DAYS } from "./retention";
 
 export interface PlanLimits {
   maxAudioBytes: number;
@@ -63,7 +64,7 @@ export const FREE_LIMITS: PlanLimits = {
   dictationDurationMs: 120_000,
   maxStreamDurationMs: 0,
   maxConcurrentStreams: 0,
-  historyRemoteTtlDays: 30,
+  historyRemoteTtlDays: HISTORY_TTL_FREE_DAYS,
   streamingAllowed: false,
   transliterationAllowed: false,
   customAvatarIcons: false,
@@ -87,7 +88,7 @@ export const PREMIUM_LIMITS: PlanLimits = {
   dictationDurationMs: 1_800_000,
   maxStreamDurationMs: 120_000,
   maxConcurrentStreams: 8,
-  historyRemoteTtlDays: 365,
+  historyRemoteTtlDays: HISTORY_TTL_PAID_DAYS,
   streamingAllowed: true,
   transliterationAllowed: true,
   customAvatarIcons: true,
@@ -202,7 +203,7 @@ export function shouldUploadVorbis(
   return durationMs > 0 && durationMs <= WITAI_SAFE_DURATION_MS;
 }
 
-export const SPEECH_MAX_TEXT_CHARS = 2400;
+export const SPEECH_MAX_TEXT_CHARS = PREMIUM_LIMITS.maxTextChars;
 
 export const TRANSLATE_EXPANSION_CUSHION = 1.4;
 

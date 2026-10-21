@@ -153,10 +153,6 @@ export async function rotateKeysDetailed(
       res = await execute(key);
     } catch (err) {
       if (err instanceof Error && err.message === CLIENT_ABORTED) throw err;
-      if (err instanceof Error && err.name === "ProviderTimeoutError") {
-        lastError = err;
-        break;
-      }
       lastError = err;
       logger.warn("[keys] Rotation attempt failed", {
         error: err instanceof Error ? err.message : String(err),

@@ -1,8 +1,7 @@
 import { useValue } from "@legendapp/state/react";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 
 import { useActivePricing } from "@/hooks/billing/useActivePricing";
-import { usePaymentProvider } from "@/hooks/billing/usePaymentProvider";
 import { BILLING_PLANS } from "@/constants/billing";
 import { supabase } from "@/services/supabase";
 import {
@@ -23,16 +22,11 @@ export interface UseBillingReturn {
   isAnnual: boolean;
   setIsAnnual: (isAnnual: boolean) => void;
   handleUpgrade: () => Promise<void>;
-  handleManage: () => Promise<void>;
   handleRestore: () => Promise<void>;
   freePlan: typeof BILLING_PLANS.free;
   proPlan: typeof BILLING_PLANS.pro;
   annualSavingPercent: number;
   loading: boolean;
-
-  provider: "flutterwave" | null;
-
-  availableProviders: "flutterwave"[];
 
   showCheckout: boolean;
 
@@ -62,18 +56,9 @@ export function useBilling(): UseBillingReturn {
     useState<CheckoutSession | null>(null);
   const [checkoutPlan, setCheckoutPlan] = useState<string | null>(null);
   const { pricing } = useActivePricing();
-  const { provider, availableProviders } = usePaymentProvider();
 
   const checkoutSessionRef = useRef<CheckoutSession | null>(null);
   const checkoutPlanRef = useRef<string | null>(null);
-
-  const prevProviderRef = useRef(provider);
-  useEffect(() => {
-    if (prevProviderRef.current !== provider) {
-      authActions.resetEntitlementForProviderSwitch();
-      prevProviderRef.current = provider;
-    }
-  }, [provider]);
 
   const handleUpgrade = async (): Promise<void> => {
     const session = auth$.session.get();
@@ -97,6 +82,13 @@ export function useBilling(): UseBillingReturn {
     try {
       const outcome = await openFlutterwaveCheckout(isAnnual);
       if (outcome.canceled || !outcome.session) return;
+      if (!outcome.session.link) {
+        AppAlert.error(
+          "Payment Unavailable",
+          "Could not open the payment page. Please try again later.",
+        );
+        return;
+      }
       setCheckoutSession(outcome.session);
       setCheckoutPlan(getFlutterwavePlanId(isAnnual));
       checkoutSessionRef.current = outcome.session;
@@ -132,7 +124,7 @@ export function useBilling(): UseBillingReturn {
             const result = await verifyTransaction(txId);
             if (result.ok) {
               authActions.setIsPro(true);
-              authActions.setEntitlementSynced(true, "flutterwave");
+              authActions.setEntitlementSynced(true);
               track(AnalyticsEvents.PURCHASE_SUCCESS, {
                 plan: checkoutPlanRef.current ?? null,
                 amount: session?.amount ?? null,
@@ -140,7 +132,7 @@ export function useBilling(): UseBillingReturn {
               });
               AppAlert.success(
                 "Welcome to Pro!",
-                "Your subscription is active. Thank you for supporting Ekwe!",
+                "Your Pro access is active. Thank you for supporting Ekwe!",
               );
               return;
             }
@@ -153,7 +145,7 @@ export function useBilling(): UseBillingReturn {
       const upgraded = await reconcileFlutterwaveStatus();
       if (upgraded) {
         authActions.setIsPro(true);
-        authActions.setEntitlementSynced(true, "flutterwave");
+        authActions.setEntitlementSynced(true);
         track(AnalyticsEvents.PURCHASE_SUCCESS, {
           plan: checkoutPlanRef.current ?? null,
           amount: session?.amount ?? null,
@@ -161,9 +153,15 @@ export function useBilling(): UseBillingReturn {
         });
         AppAlert.success(
           "Welcome to Pro!",
-          "Your subscription is active. Thank you for supporting Ekwe!",
+          "Your Pro access is active. Thank you for supporting Ekwe!",
         );
+        return;
       }
+
+      AppAlert.info(
+        "Payment Pending",
+        "We could not confirm your payment yet. If you were charged, Pro will activate automatically once the payment provider confirms it.",
+      );
     },
     [],
   );
@@ -176,13 +174,6 @@ export function useBilling(): UseBillingReturn {
     checkoutPlanRef.current = null;
   }, []);
 
-  const handleManage = async (): Promise<void> => {
-    AppAlert.info(
-      "Manage Subscription",
-      "To manage or cancel your subscription, please visit your billing portal or contact support.",
-    );
-  };
-
   const handleRestore = async (): Promise<void> => {
     try {
       const { data: sessionData, error } = await supabase.auth.refreshSession();
@@ -191,25 +182,22 @@ export function useBilling(): UseBillingReturn {
       const upgraded = sessionData.session?.user?.app_metadata?.is_pro === true;
       authActions.setIsPro(upgraded);
       if (upgraded) {
-        authActions.setEntitlementSynced(true, "flutterwave");
+        authActions.setEntitlementSynced(true);
       }
 
       if (upgraded) {
-        AppAlert.success(
-          "Subscription Active",
-          "Your Pro subscription is active.",
-        );
+        AppAlert.success("Pro Active", "Your Pro access is active.");
       } else {
         AppAlert.info(
-          "No Active Subscription",
-          "We could not find an active Pro subscription on this account. If you believe this is an error, please contact support.",
+          "No Active Pro Access",
+          "We could not find active Pro access on this account. If you believe this is an error, please contact support.",
         );
       }
     } catch (err) {
-      logger.error("[billing] Restore check failed", err);
+      logger.error("[billing] Pro status check failed", err);
       AppAlert.error(
-        "Restore Failed",
-        "Could not check your subscription status. Please check your connection and try again.",
+        "Status Check Failed",
+        "Could not check your Pro status. Please check your connection and try again.",
       );
     }
   };
@@ -219,14 +207,11 @@ export function useBilling(): UseBillingReturn {
     isAnnual,
     setIsAnnual,
     handleUpgrade,
-    handleManage,
     handleRestore,
     freePlan: BILLING_PLANS.free,
     proPlan: BILLING_PLANS.pro,
     annualSavingPercent: pricing.annualSavingPercent,
     loading,
-    provider,
-    availableProviders,
     showCheckout,
     checkoutSession,
     checkoutPlan,

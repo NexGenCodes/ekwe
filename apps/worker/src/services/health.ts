@@ -151,7 +151,10 @@ export async function reportProviderOutcome(
         ? HEALTH_REOPEN_MS
         : HEALTH_OPEN_MS;
     await writeState(env, provider, base);
-    logger.error(
+    // Tripping is the breaker doing its job, and a provider's outage is
+    // already reported by the call that failed. Logging at error level would
+    // file a Sentry issue for every expected opening; warn keeps it in logs.
+    logger.warn(
       `[health] "${provider}" ${probeFailed ? "re" : ""}opened for ${base.openMs}ms`,
       { failures: base.failures },
     );
@@ -159,7 +162,7 @@ export async function reportProviderOutcome(
     base.trippedAtEpochMs = now;
     base.openMs = HEALTH_OPEN_MS;
     await writeState(env, provider, base);
-    logger.error(`[health] "${provider}" tripped open for ${base.openMs}ms`, {
+    logger.warn(`[health] "${provider}" tripped open for ${base.openMs}ms`, {
       failures: base.failures,
     });
   } else {

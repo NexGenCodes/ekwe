@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -7,6 +7,7 @@ import Animated, {
   SharedValue,
   useAnimatedReaction,
   runOnJS,
+  withTiming,
 } from "react-native-reanimated";
 
 import { Box } from "@/components/ui";
@@ -18,6 +19,21 @@ const DEFAULT_BAR_W = 4;
 const DEFAULT_BAR_GAP = 2;
 const DEFAULT_MIN_H = 2;
 const DEFAULT_RANGE = 36;
+
+/**
+ * Live (recording) tuning.
+ *
+ * The native meter reports RMS, which sits far below a peak scale and never
+ * reaches 1, so the live bars are auto-gained against a rolling maximum
+ * instead of being drawn at face value. One bar is committed per interval
+ * rather than per frame: at 60fps the whole window scrolls past in under a
+ * second, which reads as a flicker instead of a recording.
+ */
+const LIVE_BAR_INTERVAL_MS = 70;
+const LIVE_GAIN_RELEASE = 0.94;
+const LIVE_MIN_GAIN = 0.008;
+const LIVE_HEIGHT_CURVE = 0.75;
+const LIVE_BAR_ANIM_MS = 90;
 
 export interface AudioWaveformProps {
   /**
@@ -36,6 +52,10 @@ export interface AudioWaveformProps {
   activeColor?: string;
   inactiveColor?: string;
   interactive?: boolean;
+  /** Live mode only: whether the recorder is still feeding the meter. */
+  liveActive?: boolean;
+  /** Live mode only: how much audio each live bar covers. */
+  liveBarIntervalMs?: number;
   onSeek?: (progress: number) => void;
   onSeeking?: (progress: number) => void;
   onScrubStateChange?: (isScrubbing: boolean) => void;
@@ -55,6 +75,8 @@ interface BarItemProps {
   minBarHeight: number;
   activeColor: string;
   inactiveColor: string;
+  /** Live mode: the committed bar heights, oldest first. */
+  liveBars?: SharedValue<number[]>;
 }
 
 const BarItem = React.memo(function BarItem({
@@ -70,11 +92,49 @@ const BarItem = React.memo(function BarItem({
   minBarHeight,
   activeColor,
   inactiveColor,
+  liveBars,
 }: BarItemProps) {
   const style = useAnimatedStyle(() => {
-    const h = Math.max(minBarHeight, barHeights.value[index] ?? minBarHeight);
     const step = Math.max(minBarHeight, measuredWidth.value / barCount);
     const w = Math.max(minBarHeight, Math.min(barWidth, step - barGap));
+
+    if (liveBars) {
+      const bars = liveBars.value;
+      const raw = index < bars.length ? bars[index] : undefined;
+
+      // Not recorded yet: a muted hairline the live bars grow over.
+      if (raw === undefined) {
+        return {
+          position: "absolute",
+          left: index * step,
+          top: (canvasHeight - minBarHeight) / 2,
+          width: w,
+          height: minBarHeight,
+          borderRadius: w / 2,
+          backgroundColor: inactiveColor,
+        };
+      }
+
+      const h = Math.round(
+        minBarHeight +
+          Math.pow(raw, LIVE_HEIGHT_CURVE) * (canvasHeight - minBarHeight),
+      );
+      return {
+        position: "absolute",
+        left: index * step,
+        // The height and its offset animate together so a bar grows from the
+        // centre instead of snapping.
+        top: withTiming(Math.max(0, (canvasHeight - h) / 2), {
+          duration: LIVE_BAR_ANIM_MS,
+        }),
+        width: w,
+        height: withTiming(h, { duration: LIVE_BAR_ANIM_MS }),
+        borderRadius: w / 2,
+        backgroundColor: activeColor,
+      };
+    }
+
+    const h = Math.max(minBarHeight, barHeights.value[index] ?? minBarHeight);
     const y = Math.max(0, (canvasHeight - h) / 2);
     const dur = duration > 0 ? duration : 1;
     const frac = progressSV ? progressSV.value / dur : 1;
@@ -105,6 +165,8 @@ export function AudioWaveform({
   activeColor,
   inactiveColor,
   interactive = true,
+  liveActive = true,
+  liveBarIntervalMs = LIVE_BAR_INTERVAL_MS,
   onSeek,
   onSeeking,
   onScrubStateChange,
@@ -116,10 +178,23 @@ export function AudioWaveform({
   const finalInactiveColor = inactiveColor ?? color.foreground;
 
   const isSharedValue = !!amplitudes && "value" in amplitudes;
-  const liveAmplitude =
-    isSharedValue && !Array.isArray((amplitudes as SharedValue<number>).value)
-      ? (amplitudes as SharedValue<number>)
-      : null;
+  // Reanimated strict mode forbids reading `.value` during render, so the
+  // scalar-vs-array discrimination happens after commit instead. A given
+  // shared value never changes kind, so one check per source is enough; the
+  // first (static) render is harmless because the live paths only arm once
+  // `liveAmplitude` resolves.
+  const [liveAmplitude, setLiveAmplitude] =
+    useState<SharedValue<number> | null>(null);
+  useEffect(() => {
+    if (!isSharedValue) {
+      setLiveAmplitude(null);
+      return;
+    }
+    const sv = amplitudes as SharedValue<number | number[]>;
+    setLiveAmplitude(
+      Array.isArray(sv.value) ? null : (sv as SharedValue<number>),
+    );
+  }, [amplitudes, isSharedValue]);
 
   const localAmplitudes = useSharedValue<number[]>(
     isSharedValue ? [] : ((amplitudes as number[]) ?? []),
@@ -142,8 +217,25 @@ export function AudioWaveform({
   const barHeights = useSharedValue<number[]>(initialBars.current);
   const measuredWidth = useSharedValue(200);
 
+  /**
+   * Live recording state. `liveBars` holds the committed envelope, oldest
+   * first, capped at `barCount`: once it is full the oldest bar is dropped,
+   * which is what makes the waveform slide.
+   */
+  const liveBars = useSharedValue<number[]>([]);
+  /** The most recent meter reading. */
+  const liveLevel = useSharedValue(0);
+  /** The loudest sample seen since the last bar was committed. */
+  const livePeak = useSharedValue(0);
+  /** Rolling maximum the live bars are normalised against. */
+  const liveGain = useSharedValue(0);
+  /** Bumped on every bar interval to drive the commit on the UI thread. */
+  const liveTick = useSharedValue(0);
+
   useAnimatedReaction(
-    () => peaksSV.value,
+    // Live mode feeds the meter through its own path, so the static array
+    // never changes here.
+    () => (liveAmplitude ? null : peaksSV.value),
     (amps) => {
       if (!amps || amps.length === 0) return;
 
@@ -176,24 +268,81 @@ export function AudioWaveform({
 
       if (changed) barHeights.value = next;
     },
-    [peaksSV, barCount, minBarHeight],
+    [peaksSV, barCount, minBarHeight, liveAmplitude],
   );
 
+  // The meter reports the instantaneous level at frame rate. Only the loudest
+  // sample of each bar window is kept, so a syllable is not lost between two
+  // quiet frames.
   useAnimatedReaction(
     () => (liveAmplitude ? liveAmplitude.value : -1),
     (value) => {
       if (liveAmplitude === null || value < 0) return;
-
-      const prev = barHeights.value;
-      const next = new Array(barCount);
-      for (let i = 0; i < barCount - 1; i++) next[i] = prev[i + 1];
-      next[barCount - 1] = Math.round(
-        Math.min(1, Math.max(0, value)) ** 0.5 * DEFAULT_RANGE,
-      );
-      barHeights.value = next;
+      if (value > livePeak.value) livePeak.value = value;
+      liveLevel.value = value;
     },
-    [liveAmplitude, barCount],
+    [liveAmplitude],
   );
+
+  // Commit one bar per interval.
+  useAnimatedReaction(
+    () => liveTick.value,
+    () => {
+      // A level that never changed during the window is still the level, so
+      // the current reading counts even when no change was reported.
+      const peak = Math.max(livePeak.value, liveLevel.value);
+      livePeak.value = 0;
+
+      // Instant attack, slow release: a quiet passage still reads as speech,
+      // and a loud passage does not leave the waveform pinned afterwards.
+      const gain = liveGain.value;
+      liveGain.value = Math.max(
+        peak > gain ? peak : gain * LIVE_GAIN_RELEASE,
+        LIVE_MIN_GAIN,
+      );
+      const normalized = Math.min(1, peak / liveGain.value);
+
+      const bars = liveBars.value;
+      const next = bars.length >= barCount ? bars.slice(1) : bars.slice();
+      next.push(normalized);
+      liveBars.value = next;
+    },
+    [liveTick, barCount],
+  );
+
+  // The interval runs on the JS thread so the waveform keeps advancing even
+  // while the meter sits at a constant level.
+  useEffect(() => {
+    if (!liveAmplitude || !liveActive) {
+      liveBars.value = [];
+      liveLevel.value = 0;
+      livePeak.value = 0;
+      liveGain.value = 0;
+      return;
+    }
+
+    liveBars.value = [];
+    liveLevel.value = 0;
+    livePeak.value = 0;
+    liveGain.value = 0;
+
+    const id = setInterval(() => {
+      liveTick.value = liveTick.value + 1;
+    }, liveBarIntervalMs);
+
+    return (): void => {
+      clearInterval(id);
+    };
+  }, [
+    liveAmplitude,
+    liveActive,
+    liveBarIntervalMs,
+    liveBars,
+    liveLevel,
+    livePeak,
+    liveGain,
+    liveTick,
+  ]);
 
   const handleLayout = (event: LayoutChangeEvent): void => {
     measuredWidth.value = event.nativeEvent.layout.width;
@@ -329,6 +478,7 @@ export function AudioWaveform({
               minBarHeight={minBarHeight}
               activeColor={finalActiveColor}
               inactiveColor={finalInactiveColor}
+              liveBars={liveAmplitude ? liveBars : undefined}
             />
           ))}
         </Animated.View>

@@ -8,7 +8,8 @@ import {
 } from "@/services/transcribeAudio";
 import { Result, err } from "@/types/Result";
 import logger from "@/utils/logger";
-import { MAX_AUDIO_INPUT_BYTES, PREMIUM_LIMITS } from "@ekwe/shared/plans";
+import { getActivePlanLimits } from "@/utils/planLimits";
+import { MAX_AUDIO_INPUT_BYTES } from "@ekwe/shared/plans";
 
 export interface BatchAudioInput {
   uri: string;
@@ -54,7 +55,7 @@ class BatchTranscriber {
 
       if (
         input.durationMs > 0 &&
-        input.durationMs > PREMIUM_LIMITS.dictationDurationMs
+        input.durationMs > getActivePlanLimits().dictationDurationMs
       ) {
         logger.warn("[BatchTranscriber] Audio too long:", input.durationMs);
         return err(EkweError.AUDIO_TOO_LONG);

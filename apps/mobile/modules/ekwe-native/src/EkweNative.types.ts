@@ -150,6 +150,7 @@ export type EkweNativeModuleType = {
     mimeType?: string | null,
     text?: string | null,
     chooserTitle?: string | null,
+    targetPackage?: string | null,
   ): Promise<ShareAudioResult>;
 
   writeSharedFile(fileName: string, content: string): Promise<boolean>;

@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EkweError } from "@/constants/errors";
 import { err } from "@/types/Result";
 
-import { synthesizeAudio, synthesizeSpeech } from "@/services/speech";
+import {
+  synthesizeAudio,
+  synthesizeSpeech,
+  synthesizeVoicePreview,
+} from "@/services/speech";
 
 const getSessionMock = vi.hoisted(() => vi.fn());
 const getWorkerUrlMock = vi.hoisted(() => vi.fn());
@@ -86,6 +90,7 @@ import { MAX_AUDIO_BYTES, PREMIUM_LIMITS } from "@ekwe/shared/plans";
 
 import { Paths } from "expo-file-system";
 
+import { auth$ } from "@/store/auth";
 import { networkActions } from "@/store/network";
 import { settingsActions } from "@/store/settings";
 
@@ -186,6 +191,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  auth$.isPro.set(false);
   networkActions.set({ isConnected: null, isInternetReachable: null });
   settingsActions.setVoiceGender("default");
   settingsActions.setVoiceId(null);
@@ -199,9 +205,17 @@ describe("synthesizeSpeech", () => {
     expect(result).toEqual(err(EkweError.SPEECH_FAIL));
   });
 
-  it("rejects text over the shared char limit", async () => {
-    const result = await synthesizeSpeech("x".repeat(2401), "en");
-    expect(result).toEqual(err(EkweError.SPEECH_FAIL));
+  it("rejects text over the free plan's char limit", async () => {
+    const result = await synthesizeSpeech("x".repeat(1501), "en");
+    expect(result).toEqual(err(EkweError.TEXT_TOO_LONG));
+  });
+
+  it("allows pro-length text for a pro account", async () => {
+    auth$.isPro.set(true);
+    const fetchSpy = mockSynthFetch("audio/wav");
+    const result = await synthesizeSpeech("x".repeat(2400), "en");
+    expect(result.ok).toBe(true);
+    fetchSpy.mockRestore();
   });
 
   it("rejects while the device is definitively offline", async () => {
@@ -235,6 +249,20 @@ describe("synthesizeSpeech", () => {
     expect(transcodeMock).toHaveBeenCalledWith(
       expect.stringMatching(/^file:\/\/\/cache\/ekwe_speech_.*\.wav$/),
     );
+    fetchSpy.mockRestore();
+  });
+
+  it("keeps the provider format for playback clips and skips the Ogg transcode", async () => {
+    const fetchSpy = mockSynthFetch("audio/mpeg");
+    const result = await synthesizeSpeech("hello", "en", {
+      delivery: "playback",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.ok ? result.value.uri : "").toMatch(
+      /^file:\/\/\/cache\/ekwe_speech_.*\.mp3$/,
+    );
+    expect(transcodeMock).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
 
@@ -725,35 +753,14 @@ describe("synthesizeSpeech delivery", () => {
     fetchSpy.mockRestore();
   });
 
-  it("declares a voice preview so the worker can serve it free of quota", async () => {
-    const fetchSpy = mockSynthFetch("audio/mpeg");
-
-    await synthesizeSpeech("hello", "en", {
-      delivery: "playback",
-      isPreview: true,
-    });
-
-    expect(fetchBody().isPreview).toBe(true);
-    fetchSpy.mockRestore();
-  });
-
   it("sends no preview flag for ordinary synthesis", async () => {
+    // Previews moved to their own endpoint; /synthesize must never carry a
+    // client-controlled preview flag again.
     const fetchSpy = mockSynthFetch("audio/mpeg");
 
     await synthesizeSpeech("hello", "en");
 
     expect(fetchBody().isPreview).toBeUndefined();
-    fetchSpy.mockRestore();
-  });
-
-  it("sends no reroll for a preview, so its cache key stays shared", async () => {
-    // A per-tap reroll made every preview its own cache entry, so each user
-    // paid the provider again for a clip identical to everyone else's.
-    const fetchSpy = mockSynthFetch("audio/mpeg");
-
-    await synthesizeSpeech("hello", "en", { isPreview: true });
-
-    expect(fetchBody().reroll).toBeUndefined();
     fetchSpy.mockRestore();
   });
 
@@ -784,6 +791,41 @@ describe("synthesizeSpeech delivery", () => {
         /^file:\/\/\/cache\/ekwe_speech_.*\.ogg$/,
       );
     }
+    fetchSpy.mockRestore();
+  });
+});
+
+describe("synthesizeVoicePreview", () => {
+  it("posts voice, gender and lang to the dedicated endpoint", async () => {
+    const fetchSpy = mockSynthFetch("audio/mpeg");
+
+    const result = await synthesizeVoicePreview("standard", "female", "en");
+
+    expect(String(synthCall()[0])).toBe("https://worker.test/voice-preview");
+    expect(fetchBody()).toEqual({
+      voiceId: "standard",
+      gender: "female",
+      lang: "en",
+    });
+    expect(result.ok).toBe(true);
+    expectRiffBytes();
+    fetchSpy.mockRestore();
+  });
+
+  it("rejects while the device is definitively offline", async () => {
+    networkActions.set({ isConnected: false, isInternetReachable: false });
+
+    const result = await synthesizeVoicePreview("standard", "female", "en");
+
+    expect(result).toEqual(err(EkweError.NETWORK_LOST));
+  });
+
+  it("surfaces a rejected preview as a speech failure", async () => {
+    const fetchSpy = mockSynthFetch("audio/mpeg", 400);
+
+    const result = await synthesizeVoicePreview("studio-2", "male", "en");
+
+    expect(result).toEqual(err(EkweError.SPEECH_FAIL));
     fetchSpy.mockRestore();
   });
 });

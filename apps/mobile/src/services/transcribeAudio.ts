@@ -1,11 +1,7 @@
 import { File as ExpoFile } from "expo-file-system";
 
 import { transcribeResponseSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
-import {
-  MAX_AUDIO_BYTES as MAX_FILE_SIZE_BYTES,
-  MAX_AUDIO_INPUT_BYTES,
-  PREMIUM_LIMITS,
-} from "@ekwe/shared/plans";
+import { MAX_AUDIO_INPUT_BYTES } from "@ekwe/shared/plans";
 import { EkweError } from "@/constants/errors";
 import { ProcessedAudio } from "@/services/audioProcessor";
 import { AudioTranscoder } from "@/services/audioTranscoder";
@@ -14,6 +10,7 @@ import { supabase } from "@/services/supabase";
 import { Result, ok, err } from "@/types/Result";
 import { resolveDetectedLanguage } from "@/utils/languageUtils";
 import logger from "@/utils/logger";
+import { getActivePlanLimits } from "@/utils/planLimits";
 import { isDefinitelyOffline } from "@/utils/connectivity";
 import { getWorkerUrl, mapWorkerError, isTimeoutError } from "@/utils/http";
 import EkweNative from "../../modules/ekwe-native";
@@ -52,7 +49,7 @@ export async function transcribeAudio(
 
     if (
       audio.durationMs > 0 &&
-      audio.durationMs > PREMIUM_LIMITS.dictationDurationMs
+      audio.durationMs > getActivePlanLimits().dictationDurationMs
     ) {
       return err(EkweError.AUDIO_TOO_LONG);
     }
@@ -79,7 +76,10 @@ export async function transcribeAudio(
         : null;
 
     const uploadFile = new ExpoFile(artifact.uri);
-    if (uploadFile.size && uploadFile.size > MAX_FILE_SIZE_BYTES) {
+    if (
+      uploadFile.size &&
+      uploadFile.size > getActivePlanLimits().maxAudioBytes
+    ) {
       return err(EkweError.FILE_TOO_LARGE);
     }
 

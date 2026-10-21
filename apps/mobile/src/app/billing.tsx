@@ -38,7 +38,6 @@ export default function BillingScreen(): React.ReactElement {
     isAnnual,
     setIsAnnual,
     handleUpgrade,
-    handleManage,
     handleRestore,
     freePlan,
     proPlan,
@@ -187,8 +186,8 @@ export default function BillingScreen(): React.ReactElement {
               style={[styles.heroSubtitle, { color: color.muted }]}
             >
               {isPro
-                ? "Enjoy every premium feature and an ad-free experience."
-                : "Premium voices, live dictation, higher limits, and zero ads."}
+                ? "Enjoy every premium feature."
+                : "Premium voices, live dictation, and higher limits."}
             </Text>
           </Animated.View>
         </Box>
@@ -252,7 +251,7 @@ export default function BillingScreen(): React.ReactElement {
               isDark={isDark}
               proPlan={proPlan}
               handleUpgrade={handleUpgrade}
-              handleManage={handleManage}
+              handleRestore={handleRestore}
             />
           </Animated.View>
           <Animated.View
@@ -283,7 +282,7 @@ export default function BillingScreen(): React.ReactElement {
             variant="bodySmall"
             style={[styles.footerText, { color: color.muted }]}
           >
-            Cancel anytime. No hidden fees.
+            One-time purchase. No auto-renewal.
           </Text>
           {!isPro && (
             <Pressable
@@ -292,9 +291,9 @@ export default function BillingScreen(): React.ReactElement {
                 void handleRestore();
               }}
               style={{ marginTop: spacing.sm }}
-              accessibilityLabel="Check your subscription status"
+              accessibilityLabel="Check your Pro status"
               accessibilityRole="link"
-              accessibilityHint="Checks whether your account has an active Pro subscription"
+              accessibilityHint="Checks whether your account has active Pro access"
             >
               <Text
                 variant="bodySmall"
@@ -303,7 +302,7 @@ export default function BillingScreen(): React.ReactElement {
                   textDecorationLine: "underline",
                 }}
               >
-                Check subscription status
+                Check Pro status
               </Text>
             </Pressable>
           )}

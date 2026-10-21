@@ -74,6 +74,7 @@ export const cleanAudioArtifacts = async (
 const TRANSIENT_CACHE_PREFIXES = [
   "ekwe_recording_",
   "ekwe_speech_",
+  "ekwe_espeak_",
   "ekwe_converted_",
   "ekwe_decoded_",
   "ekwe_opus_",

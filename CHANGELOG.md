@@ -133,6 +133,22 @@ All notable changes to the Ekwe Android app are documented here.
 
 ### Fixed
 
+- Edge TTS synthesis no longer fails with `403 Forbidden` on every request.
+  Microsoft made the v2 `Sec-MS-GEC` token mandatory in October 2026; the
+  Worker now sends the `<16 hex>-<64 hex>` token with the `2-` version prefix
+  instead of the retired single SHA-256 digest.
+- The nightly tombstone purge no longer fails with
+  `history_purge_tombstones is service_role only`. The function reads the
+  `role` setting, which PostgREST sets per request but a Hyperdrive connection
+  leaves unset; the queue now switches to `service_role` inside the
+  transaction and it reverts when the transaction ends.
+- Circuit-breaker openings are logged at warning level instead of error.
+  A provider outage is already reported by the request that failed, so each
+  expected opening filed a duplicate Sentry issue.
+- Shared audio sent from another app no longer fails on a binary built before
+  the native `options` argument existed. The call falls back to the older
+  native signature, and `runtimeVersion` now uses the native fingerprint so a
+  JS-only update cannot be delivered across a native API change.
 - Outgoing voice notes now declare `audio/ogg; codecs=opus` verbatim.
   `expo-sharing` set the type via `Intent.setTypeAndNormalize`, which strips
   everything after the `;`, so WhatsApp and Telegram received a bare

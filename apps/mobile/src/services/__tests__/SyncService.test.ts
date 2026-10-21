@@ -1224,6 +1224,113 @@ describe("syncService", () => {
     });
   });
 
+  describe("realtime connectivity recovery", () => {
+    type StatusHandler = (status: string, err?: Error) => void;
+
+    function mockChannel(statuses: string[]): {
+      channel: ReturnType<typeof vi.fn>;
+      emit: (i: number) => void;
+    } {
+      const handlers: StatusHandler[] = [];
+      const channel = vi.fn(() => {
+        const chain: Record<string, unknown> = {};
+        chain.on = vi.fn(() => chain);
+        chain.subscribe = vi.fn((cb: StatusHandler) => {
+          handlers.push(cb);
+          return chain;
+        });
+        return chain;
+      });
+      return {
+        channel,
+        emit: (i: number) => handlers[i]?.(statuses[i] ?? "CLOSED"),
+      };
+    }
+
+    const flush = async (): Promise<void> => {
+      await vi.advanceTimersByTimeAsync(0);
+    };
+
+    let online: ((isOnline: boolean) => void) | null = null;
+
+    beforeEach(async () => {
+      vi.useFakeTimers();
+      SyncService.stop();
+      online = null;
+      const { subscribeToNetwork } = await import("@/utils/connectivity");
+      vi.mocked(subscribeToNetwork).mockImplementation((cb) => {
+        online = cb as (isOnline: boolean) => void;
+        return vi.fn();
+      });
+      vi.mocked(supabase.auth.getSession).mockResolvedValue({
+        data: { session: { access_token: "test-jwt" } },
+        error: null,
+      } as never);
+    });
+
+    afterEach(() => {
+      SyncService.stop();
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    });
+
+    it("shares the in-flight join when connectivity fires during boot", async () => {
+      // Boot joins on INITIAL_SESSION and NetInfo emits immediately on
+      // subscribe; the second trigger must not supersede the first handshake.
+      await SyncService.start();
+      const { channel } = mockChannel(["SUBSCRIBED"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      online?.(true);
+      await flush();
+
+      expect(channel).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not tear down a healthy channel when connectivity re-fires", async () => {
+      await SyncService.start();
+      const { channel, emit } = mockChannel(["SUBSCRIBED", "SUBSCRIBED"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      await flush();
+      emit(0);
+      await flush();
+
+      online?.(true);
+      online?.(true);
+      await flush();
+
+      expect(channel).toHaveBeenCalledTimes(1);
+    });
+
+    it("rejoins immediately when connectivity returns after the channel closed", async () => {
+      await SyncService.start();
+      const { channel, emit } = mockChannel(["CLOSED", "SUBSCRIBED"]);
+      vi.mocked(supabase.channel).mockImplementation(
+        channel as unknown as typeof supabase.channel,
+      );
+
+      SyncService.onUserSignedIn("user123");
+      await flush();
+      emit(0);
+      await flush();
+
+      online?.(true);
+      await flush();
+
+      expect(channel).toHaveBeenCalledTimes(2);
+      // The superseded backoff timer must stay dead: no third channel.
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(channel).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe("realtime delete echo guard", () => {
     type RowHandler = (payload: { old?: Record<string, unknown> }) => void;
 

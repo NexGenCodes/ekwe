@@ -264,7 +264,7 @@ export async function checkPreflight(
   }
 
   // The session check and the quota check are independent reads, and this runs
-  // in front of every billable request. Issued back to back, they cost one
+  // in front of every billable request. Issued in parallel, they cost one
   // round trip instead of two. The session result only short-circuits; it
   // never changes what the quota check returns.
   const [sessionActive, quota] = await Promise.all([

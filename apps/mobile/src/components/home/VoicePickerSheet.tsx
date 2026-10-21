@@ -169,11 +169,9 @@ function VoiceCard({
         </Text>
       </Box>
 
-      {}
       {onPreview && (
         <Pressable
           onPress={onPreview}
-          disabled={previewPhase === "loading"}
           hitSlop={8}
           accessible
           accessibilityRole="button"
