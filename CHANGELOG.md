@@ -192,6 +192,15 @@ All notable changes to the Ekwe Android app are documented here.
 - Premium text input is capped at 2,400 characters per request, down from
   10,000.
 
+## [1.2.13] - 2026-10-21
+
+### Fixed
+
+- Edge TTS synthesis works again after Microsoft made the v2 Sec-MS-GEC token mandatory.
+- Nightly history tombstone cleanup no longer fails on the direct database connection.
+- Provider circuit-breaker openings no longer file duplicate Sentry issues.
+- Shared audio sent from another app works on builds that predate the native `options` argument; runtime updates are now pinned to the native fingerprint.
+
 ## [1.2.6] - 2026-09-10
 
 ### Changed
