@@ -192,6 +192,28 @@ All notable changes to the Ekwe Android app are documented here.
 - Premium text input is capped at 2,400 characters per request, down from
   10,000.
 
+## [1.3.0] - 2026-10-23
+
+### Changed
+
+- The backend is now Cloudflare-only. D1 is the production database; Supabase,
+  the legacy Postgres package, and the unused cache database were removed from
+  the codebase.
+- Authentication, sync, billing, and usage enforcement now run through the
+  Worker. D1 migrations are applied as part of the Worker deploy.
+- AI usage now shares one monthly credit pool across translation,
+  transcription, speech, and live dictation. FREE and PAID caps are enforced
+  server-side.
+- User-facing plans are named FREE and PAID consistently across the app, share
+  extension, website, and API messages.
+- The mobile app now owns its SQLite schema, and sync uses the Worker's
+  D1-backed history and outbox contract.
+
+### Removed
+
+- Supabase, the legacy `packages/db` Postgres package, and the unused
+  `ekwe-cache` D1 database.
+
 ## [1.2.13] - 2026-10-21
 
 ### Fixed
