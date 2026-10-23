@@ -1,4 +1,3 @@
-import { User } from "@supabase/supabase-js";
 import { Image as ExpoImage } from "expo-image";
 import Lock from "lucide-react-native/icons/lock";
 import Edit3 from "lucide-react-native/icons/pen-line";
@@ -12,6 +11,7 @@ import { shadows } from "@/constants";
 import { borderRadius, iconSize } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import type { AuthUser } from "@/store/auth";
 import { withAlpha } from "@/utils/color";
 import { isIOS } from "@/utils";
 
@@ -21,7 +21,7 @@ interface AvatarIconData {
 }
 
 interface ProfileIdentityProps {
-  user: User;
+  user: AuthUser;
   isPro: boolean;
   currentIconData: AvatarIconData | null;
   userName: string;
@@ -86,9 +86,9 @@ export function ProfileIdentity({
                 color: currentIconData.color,
               })}
             </Box>
-          ) : user?.user_metadata?.avatar_url ? (
+          ) : user?.avatarUrl ? (
             <ExpoImage
-              source={{ uri: user.user_metadata.avatar_url }}
+              source={{ uri: user.avatarUrl }}
               contentFit="cover"
               transition={300}
               cachePolicy="memory-disk"
@@ -123,7 +123,7 @@ export function ProfileIdentity({
           onPress={onEditAvatar}
           accessibilityLabel={
             avatarLocked
-              ? "Avatar customization is a Pro feature"
+              ? "Avatar customization is a paid feature"
               : "Edit avatar"
           }
           style={[
@@ -160,7 +160,7 @@ export function ProfileIdentity({
           <Box
             accessible
             accessibilityRole="text"
-            accessibilityLabel="Pro account"
+            accessibilityLabel="Paid account"
             style={[
               styles.planChip,
               {
@@ -177,7 +177,7 @@ export function ProfileIdentity({
                 textTransform: "uppercase",
               }}
             >
-              Pro
+              Paid
             </Text>
           </Box>
         ) : (

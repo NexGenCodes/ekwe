@@ -7,12 +7,12 @@ import { AnalyticsEvents } from "@/utils/analytics";
 
 import { translateText } from "@/services/translateText";
 
-const getSessionMock = vi.hoisted(() => vi.fn());
+const ensureAccessTokenMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 const breadcrumbMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@/services/supabase", () => ({
-  supabase: { auth: { getSession: getSessionMock } },
+vi.mock("@/services/backend", () => ({
+  ensureAccessToken: ensureAccessTokenMock,
 }));
 
 vi.mock("@/utils/logger", async (importOriginal) => {
@@ -57,8 +57,8 @@ const validResponse = {
 };
 
 beforeEach(() => {
-  vi.mocked(getSessionMock).mockReset();
-  getSessionMock.mockResolvedValue({ data: { session: null }, error: null });
+  vi.mocked(ensureAccessTokenMock).mockReset();
+  ensureAccessTokenMock.mockResolvedValue(null);
   vi.mocked(getWorkerUrl).mockReturnValue("https://worker.test");
   vi.mocked(fetchWithRetry).mockReset();
   vi.mocked(isOfflineNetworkError).mockReturnValue(false);
@@ -222,10 +222,7 @@ describe("translateText", () => {
   });
 
   it("sends the session token in the Authorization header", async () => {
-    getSessionMock.mockResolvedValue({
-      data: { session: { access_token: "token-abc" } },
-      error: null,
-    });
+    ensureAccessTokenMock.mockResolvedValue("token-abc");
     vi.mocked(fetchWithRetry).mockResolvedValue(jsonResponse(validResponse));
     await translateText("hello", "auto", "en");
     expect(fetchWithRetry).toHaveBeenCalledWith(

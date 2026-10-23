@@ -83,9 +83,9 @@ interface SessionState {
   tier: Tier;
   maxAudioBytes: number;
   lastIdleResetAt: number;
-  /** True once any usage has been reported for this session. */
-  billed: boolean;
-  /** Units reported so far, so each report is an increment rather than a total. */
+  /** True once the session has been counted against the daily stream cap. */
+  usageCharged: boolean;
+  /** Minutes reported so far, for logging and metrics only. */
   billedMinutes: number;
   /** Start of the stretch not yet reported, so sub-minute time is not lost. */
   billedSince: number;
@@ -214,7 +214,6 @@ export class StreamDurableObject extends DurableObject<Env> {
     const url = new URL(request.url);
     const tier = (url.searchParams.get("tier") as Tier | null) ?? "FREE";
     const lang = url.searchParams.get("lang") || "en";
-    const sessionId = url.searchParams.get("sid");
     const limits = getLimits(tier);
     const userId = this.ctx.id.name ?? "";
 
@@ -232,13 +231,16 @@ export class StreamDurableObject extends DurableObject<Env> {
       );
     }
 
+    // A stream is a long-lived session, not a request: the concurrency cap
+    // above is its admission guard, and a cooldown would make more than one
+    // connection per window impossible. Kept for the allow/deny telemetry.
     const gate = await runPreflightGate(
       this.env,
       this.ctx,
       userId,
       tier,
       "stream",
-      sessionId,
+      true,
     );
     if (!gate.ok) {
       logger.warn("[stream-do] Stream quota gate denied", {
@@ -266,7 +268,7 @@ export class StreamDurableObject extends DurableObject<Env> {
       tier,
       maxAudioBytes: limits.maxAudioBytes,
       lastIdleResetAt: Date.now(),
-      billed: false,
+      usageCharged: false,
       billedMinutes: 0,
       billedSince: Date.now(),
     };
@@ -667,14 +669,24 @@ export class StreamDurableObject extends DurableObject<Env> {
   }
 
   /**
-   * Reports usage accrued since the last call, in whole minutes. The remainder
-   * carries forward; the closing call rounds up, so a real session bills >= 1.
+   * Counts one live session against the daily cap, once. Stream time is still
+   * tracked in whole minutes for the log line, but the cap is per session.
    */
   private billStint(ws: WebSocket, closing = false): void {
     try {
       const state = ws.deserializeAttachment() as SessionState | null;
       if (!state) return;
       if (!state.providerEverStarted) return;
+
+      if (!state.usageCharged) {
+        state.usageCharged = true;
+        trackBillableSuccess(
+          this.env,
+          this.ctx.id.name ?? "",
+          "stream",
+          this.ctx as unknown as ExecutionContext,
+        );
+      }
 
       const now = Date.now();
       const elapsedMs = now - state.billedSince;
@@ -688,19 +700,19 @@ export class StreamDurableObject extends DurableObject<Env> {
         closing || remainderMs === 0 ? now : now - remainderMs;
 
       if (minutes > 0) {
-        state.billed = true;
         state.billedMinutes += minutes;
-        logger.info("[stream-do] Billing stream usage", {
-          minutes,
-          total: state.billedMinutes,
-        });
         trackBillableSuccess(
           this.env,
           this.ctx.id.name ?? "",
           "stream",
           this.ctx as unknown as ExecutionContext,
-          minutes,
+          0,
+          minutes * 60_000,
         );
+        logger.info("[stream-do] Billing stream usage", {
+          minutes,
+          total: state.billedMinutes,
+        });
       }
       ws.serializeAttachment(state);
     } catch (err) {

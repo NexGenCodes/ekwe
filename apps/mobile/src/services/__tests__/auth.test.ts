@@ -1,104 +1,13 @@
-import { AuthApiError } from "@supabase/supabase-js";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AuthSession } from "@/store/auth";
 
-import { auth$, authActions, networkActions } from "@/store";
+vi.mock("@/services/backend", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/backend")>();
+  return { ...actual, apiJson: vi.fn(), apiFetch: vi.fn() };
+});
 
-import {
-  cleanupAuth,
-  deleteAccount,
-  getPendingLinkProvider,
-  initAuth,
-  linkSocialIdentity,
-  sendOtp,
-  signInWithApple,
-  signInWithGoogle,
-  signOut,
-  verifyOtp,
-} from "@/services/auth";
-
-const authMock = vi.hoisted(() => ({
-  onAuthStateChange: vi.fn(),
-  getSession: vi.fn(),
-  signInWithOtp: vi.fn(),
-  verifyOtp: vi.fn(),
-  signInWithIdToken: vi.fn(),
-  linkIdentity: vi.fn(),
-  updateUser: vi.fn(),
-  signOut: vi.fn(),
-  rpc: vi.fn(),
-}));
-const setupAppStateListenerMock = vi.hoisted(() => vi.fn());
-
-const googleSigninMock = vi.hoisted(() => ({
-  configure: vi.fn(),
-  signIn: vi.fn(),
-  getTokens: vi.fn(),
-  signOut: vi.fn(),
-}));
-
-const appleSignInAsyncMock = vi.hoisted(() => vi.fn());
-
-const mmkvMock = vi.hoisted(() => ({
-  getString: vi.fn(),
-  set: vi.fn(),
-  getBoolean: vi.fn(),
-  getAllKeys: vi.fn(() => [] as string[]),
-  remove: vi.fn(),
-}));
-
-const syncMock = vi.hoisted(() => ({
-  onUserSignedIn: vi.fn(),
-  onUserSignedOut: vi.fn(),
-  loadInitialHistory: vi.fn(),
-  drain: vi.fn(),
-  purgeLocalHistory: vi.fn(),
-  clearSyncCursor: vi.fn(),
-}));
-
-const dbMock = vi.hoisted(() => ({
-  countUnsyncedOutbox: vi.fn<() => number>(() => 0),
-}));
-
-const posthogClientMock = vi.hoisted(() => ({ reset: vi.fn() }));
-
-const historyServiceMock = vi.hoisted(() => ({
-  importSharedEchoHistory: vi.fn(async () => undefined),
-}));
-
-const loggerMock = vi.hoisted(() => ({
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-}));
-
-const trackMock = vi.hoisted(() => vi.fn());
-const identifyMock = vi.hoisted(() => vi.fn());
-const registerPushMock = vi.hoisted(() => vi.fn(async () => "push-token"));
-const utilsState = vi.hoisted(() => ({ isIOS: true }));
-
-vi.mock("@/services/supabase", () => ({
-  supabase: { auth: authMock, rpc: authMock.rpc },
-  setupAppStateListener: setupAppStateListenerMock,
-}));
-
-vi.mock("@react-native-google-signin/google-signin", () => ({
-  GoogleSignin: googleSigninMock,
-}));
-
-vi.mock("expo-apple-authentication", () => ({
-  signInAsync: appleSignInAsyncMock,
-  AppleAuthenticationScope: { FULL_NAME: "FULL_NAME", EMAIL: "EMAIL" },
-}));
-
-vi.mock("@/services/mmkv", () => ({ mmkv: mmkvMock }));
-
-vi.mock("@/services/syncService", () => ({ SyncService: syncMock }));
-
-vi.mock("@/services/db", () => ({ Db: dbMock }));
-
-vi.mock("@/services/posthog", () => ({
-  getPosthogClient: vi.fn(() => posthogClientMock),
+vi.mock("@/services/appCheck", () => ({
+  getAppCheckToken: vi.fn(async () => null),
 }));
 
 vi.mock("@/services/sharedContainer", () => ({
@@ -106,756 +15,445 @@ vi.mock("@/services/sharedContainer", () => ({
   mirrorSettingsToShared: vi.fn(),
 }));
 
-vi.mock("@/services/appCheck", () => ({
-  getAppCheckToken: vi.fn(async () => "app-check-token"),
-}));
-
-vi.mock("@/services/notifications", () => ({
-  registerForPushNotifications: registerPushMock,
+vi.mock("@/services/syncService", () => ({
+  SyncService: {
+    onUserSignedIn: vi.fn(),
+    onUserSignedOut: vi.fn(),
+    loadInitialHistory: vi.fn(),
+    drain: vi.fn(async () => undefined),
+    purgeLocalHistory: vi.fn(),
+    clearSyncCursor: vi.fn(),
+  },
 }));
 
 vi.mock("@/services/historyService", () => ({
-  HistoryService: historyServiceMock,
+  HistoryService: { importSharedEchoHistory: vi.fn(async () => undefined) },
+}));
+
+vi.mock("@/services/notifications", () => ({
+  registerForPushNotifications: vi.fn(async () => undefined),
+}));
+
+vi.mock("@/services/posthog", () => ({
+  getPosthogClient: vi.fn(() => null),
+}));
+
+vi.mock("@/store/resetUserScoped", () => ({
+  resetUserScopedState: vi.fn(),
+}));
+
+vi.mock("@/utils/analytics", () => ({
+  AnalyticsEvents: new Proxy({}, { get: (_t, key) => String(key) }),
+  identify: vi.fn(),
+  track: vi.fn(),
 }));
 
 vi.mock("@/utils/logger", () => ({
-  default: loggerMock,
+  default: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
   addSentryBreadcrumb: vi.fn(),
   setSentryUser: vi.fn(),
 }));
 
-vi.mock("@/utils/http", () => ({
-  getWorkerUrl: vi.fn(() => "https://worker.test"),
-}));
-
-vi.mock("@/utils/analytics", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/utils/analytics")>();
-  return { ...actual, track: trackMock, identify: identifyMock };
-});
-
-vi.mock("@/utils", () => ({
-  get isIOS() {
-    return utilsState.isIOS;
+vi.mock("@react-native-google-signin/google-signin", () => ({
+  GoogleSignin: {
+    configure: vi.fn(),
+    signIn: vi.fn(),
+    signOut: vi.fn(async () => undefined),
   },
 }));
 
-import { AnalyticsEvents } from "@/utils/analytics";
-import { setupAppStateListener } from "@/services/supabase";
-import { getWorkerUrl } from "@/utils/http";
+vi.mock("expo-apple-authentication", () => ({
+  signInAsync: vi.fn(),
+  AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
+}));
 
-function makeSession(
-  userId = "user-1",
-  isProValue?: boolean,
-): Record<string, unknown> {
-  return {
-    access_token: "access-token-123",
-    refresh_token: "refresh-token-123",
-    user: {
-      id: userId,
-      email: "a@b.com",
-      app_metadata: { is_pro: isProValue },
-    },
+import * as AppleAuthentication from "expo-apple-authentication";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
+
+import { apiFetch, apiJson, ApiError } from "@/services/backend";
+import { Db } from "@/services/db";
+import {
+  deleteAccount,
+  fetchSessionUser,
+  initAuth,
+  sendOtp,
+  signInWithApple,
+  signInWithGoogle,
+  signOut,
+  updateProfile,
+  verifyOtp,
+} from "@/services/auth";
+import { SyncService } from "@/services/syncService";
+import { mirrorSessionToSharedContainer } from "@/services/sharedContainer";
+import { auth$, authActions } from "@/store/auth";
+
+const NOW = Date.now();
+
+const user = {
+  id: "u1",
+  email: "person@ekwe.app",
+  tier: "FREE" as const,
+  displayName: null,
+  avatarUrl: null,
+  avatarIcon: null,
+  proExpiresAt: null,
+};
+
+const sessionResponse = {
+  user,
+  accessToken: "access",
+  expiresAt: NOW + 1_800_000,
+  refreshToken: "refresh",
+  refreshExpiresAt: NOW + 2_592_000_000,
+};
+
+function signedIn(tier: "FREE" | "PREMIUM" = "FREE"): void {
+  const session: AuthSession = {
+    ...sessionResponse,
+    user: { ...user, tier },
   };
+  authActions.setSession(session);
 }
 
-let listenerCb: ((event: string, session: unknown) => void) | null = null;
-let subscription: { unsubscribe: () => void } = { unsubscribe: vi.fn() };
+function mockRoutes(routes: Record<string, unknown>): void {
+  vi.mocked(apiJson).mockImplementation(async (path: string) => {
+    if (!(path in routes)) throw new Error(`unexpected request: ${path}`);
+    const value = routes[path];
+    if (value instanceof Error) throw value;
+    return value as never;
+  });
+}
 
-const flushMicrotasks = (): Promise<void> =>
-  new Promise((r) => setTimeout(r, 0));
-
-beforeEach(async () => {
-  vi.resetAllMocks();
+beforeEach(() => {
+  vi.restoreAllMocks();
+  vi.clearAllMocks();
   authActions.setSession(null);
-  authActions.setIsPro(false);
-  authActions.setEntitlementSynced(false);
   authActions.setInitialized(false);
   authActions.setSessionLoaded(false);
-  networkActions.set({ isConnected: null, isInternetReachable: null });
-  utilsState.isIOS = true;
-
-  authMock.getSession.mockResolvedValue({
-    data: { session: null },
-    error: null,
-  });
-  authMock.signInWithOtp.mockResolvedValue({ data: {}, error: null });
-  authMock.verifyOtp.mockResolvedValue({
-    data: { session: makeSession() },
-    error: null,
-  });
-  authMock.signInWithIdToken.mockResolvedValue({
-    data: { user: null },
-    error: null,
-  });
-  authMock.linkIdentity.mockResolvedValue({ data: {}, error: null });
-  authMock.updateUser.mockResolvedValue({ data: { user: null }, error: null });
-  authMock.signOut.mockResolvedValue({ error: null });
-  authMock.rpc.mockResolvedValue({ data: null, error: null });
-
-  vi.mocked(getWorkerUrl).mockReturnValue("https://worker.test");
-  registerPushMock.mockResolvedValue("push-token");
-  historyServiceMock.importSharedEchoHistory.mockResolvedValue(undefined);
-
-  mmkvMock.getBoolean.mockReturnValue(undefined);
-  mmkvMock.getString.mockReturnValue(undefined);
-
-  googleSigninMock.getTokens.mockResolvedValue({
-    idToken: "google-id-token",
-    accessToken: "google-access-token",
-  });
-  appleSignInAsyncMock.mockResolvedValue({
-    identityToken: "apple-id-token",
-  });
-
-  authMock.onAuthStateChange.mockImplementation(
-    (cb: (event: string, session: unknown) => void) => {
-      listenerCb = cb;
-      subscription = { unsubscribe: vi.fn() };
-      return { data: { subscription } };
-    },
-  );
-
-  await linkSocialIdentity();
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-  vi.unstubAllEnvs();
+  vi.stubEnv("EXPO_PUBLIC_WORKER_URL", "https://worker.test");
+  vi.mocked(apiFetch).mockResolvedValue(new Response(null, { status: 204 }));
+  vi.spyOn(Db, "countUnsyncedOutbox").mockReturnValue(0);
 });
 
 describe("initAuth", () => {
-  it("returns immediately when already initialized", async () => {
-    authActions.setInitialized(true);
-    await initAuth();
-    expect(setupAppStateListener).not.toHaveBeenCalled();
-    expect(googleSigninMock.configure).not.toHaveBeenCalled();
-  });
-
-  it("configures the listener, google sign-in, and marks initialized", async () => {
+  it("configures Google and marks the session loaded", async () => {
     await initAuth();
 
-    expect(setupAppStateListener).toHaveBeenCalledTimes(1);
-    expect(googleSigninMock.configure).toHaveBeenCalledWith({
-      webClientId: undefined,
-      iosClientId: undefined,
-    });
-    expect(authMock.onAuthStateChange).toHaveBeenCalledTimes(1);
+    expect(GoogleSignin.configure).toHaveBeenCalled();
     expect(auth$.isInitialized.peek()).toBe(true);
     expect(auth$.sessionLoaded.peek()).toBe(true);
   });
 
-  it("marks auth loaded while the background session refresh is pending", async () => {
-    mmkvMock.getBoolean.mockReturnValue(true);
-    let settleSession!: (value: {
-      data: { session: unknown };
-      error: null;
-    }) => void;
-    authMock.getSession.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          settleSession = resolve;
-        }),
-    );
-
+  it("is idempotent", async () => {
+    await initAuth();
     await initAuth();
 
-    // The cached flag only gates whether the refresh kicks off; the session
-    // itself is Supabase's storage adapter's job, so nothing blocks loading.
-    expect(mmkvMock.getBoolean).toHaveBeenCalledWith("hasSession");
-    expect(authMock.getSession).toHaveBeenCalledTimes(1);
-    expect(auth$.sessionLoaded.peek()).toBe(true);
-    expect(auth$.session.peek()).toBeNull();
-
-    settleSession({
-      data: { session: makeSession("cached-user") },
-      error: null,
-    });
-    await flushMicrotasks();
-
-    expect(auth$.session.peek()?.user?.id).toBe("cached-user");
-  });
-
-  it("clears the cached flag when the background refresh finds no session", async () => {
-    mmkvMock.getBoolean.mockReturnValue(true);
-    mmkvMock.getString.mockReturnValue(
-      JSON.stringify(makeSession("cached-user")),
-    );
-    authActions.setSession(null);
-    vi.stubEnv("EXPO_PUBLIC_SUPABASE_URL", "https://abc.supabase.co");
-
-    await initAuth();
-    await flushMicrotasks();
-
-    expect(mmkvMock.set).toHaveBeenCalledWith("hasSession", false);
-    expect(auth$.sessionLoaded.peek()).toBe(true);
-  });
-});
-
-describe("auth state change handler", () => {
-  beforeEach(async () => {
-    await initAuth();
-  });
-
-  it("handles SIGNED_IN by identifying, registering push, and importing share history", async () => {
-    const session = makeSession("u1") as never;
-    listenerCb?.("SIGNED_IN", session);
-
-    await flushMicrotasks();
-
-    expect(identifyMock).toHaveBeenCalledWith("u1", {
-      email: "a@b.com",
-      is_pro: false,
-    });
-    expect(registerPushMock).toHaveBeenCalledTimes(1);
-    expect(syncMock.onUserSignedIn).toHaveBeenCalledWith("u1");
-    expect(historyServiceMock.importSharedEchoHistory).toHaveBeenCalledWith(
-      session,
-    );
-  });
-
-  it("registers the push token only for SIGNED_IN, not INITIAL_SESSION", async () => {
-    listenerCb?.("INITIAL_SESSION", makeSession("u1") as never);
-    await flushMicrotasks();
-
-    expect(identifyMock).toHaveBeenCalledWith("u1", expect.anything());
-    expect(registerPushMock).not.toHaveBeenCalled();
-    expect(historyServiceMock.importSharedEchoHistory).toHaveBeenCalledTimes(1);
-  });
-
-  it("invalidates caches and reloads history on SIGNED_OUT", async () => {
-    listenerCb?.("SIGNED_OUT", null);
-    await flushMicrotasks();
-
-    expect(syncMock.onUserSignedOut).toHaveBeenCalled();
-    expect(syncMock.loadInitialHistory).toHaveBeenCalled();
-    expect(mmkvMock.set).toHaveBeenCalledWith("hasSession", false);
-    expect(syncMock.onUserSignedIn).not.toHaveBeenCalled();
-  });
-});
-
-describe("cleanupAuth", () => {
-  it("unsubscribes and resets the initialized flag", async () => {
-    await initAuth();
-    const before = subscription;
-    cleanupAuth();
-    expect(before.unsubscribe).toHaveBeenCalled();
-    expect(auth$.isInitialized.peek()).toBe(false);
+    expect(GoogleSignin.configure).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("sendOtp", () => {
-  it("fails fast while offline through the worker", async () => {
-    networkActions.set({ isConnected: false, isInternetReachable: false });
-    const result = await sendOtp("  user@example.com  ");
-    expect(result).toEqual({
-      ok: false,
-      error: "No internet connection. Please connect and try again.",
-    });
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.AUTH_OTP_FAILED, {
-      method: "otp",
-      error: "network_lost",
-    });
-  });
+  it("asks the worker for a code", async () => {
+    mockRoutes({ "/auth/otp": { ok: true } });
 
-  it("sends the code via the worker", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(null, { status: 200 }));
-    const result = await sendOtp("  user@example.com  ");
+    const result = await sendOtp(" Person@Ekwe.app ");
 
     expect(result).toEqual({ ok: true, needsOtp: true });
-    expect(fetchSpy).toHaveBeenCalledWith("https://worker.test/auth/otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: "user@example.com",
-        appCheckToken: "app-check-token",
+    expect(apiJson).toHaveBeenCalledWith(
+      "/auth/otp",
+      expect.objectContaining({
+        method: "POST",
+        auth: false,
+        body: expect.objectContaining({ email: "Person@Ekwe.app" }),
       }),
-      signal: expect.any(AbortSignal),
-    });
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.AUTH_OTP_SENT, {
-      method: "otp",
-    });
-  });
-
-  it("surfaces a 403 bot-verification failure", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(null, { status: 403 }));
-    const result = await sendOtp("user@example.com");
-    expect(result).toEqual({
-      ok: false,
-      error: "We couldn't verify you're human. Please try again.",
-    });
-    fetchSpy.mockRestore();
-  });
-
-  it("surfaces a 429 rate limit", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(null, { status: 429 }));
-    const result = await sendOtp("user@example.com");
-    expect(result).toEqual({
-      ok: false,
-      error: "Too many requests. Please wait a moment and try again.",
-    });
-    fetchSpy.mockRestore();
-  });
-
-  it("reports an abort as a timeout", async () => {
-    vi.useFakeTimers();
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
-      (_url, opts) =>
-        new Promise<Response>((_resolve, reject) => {
-          const signal = opts?.signal as AbortSignal;
-          signal.addEventListener("abort", () => {
-            const e = new Error("Aborted");
-            e.name = "AbortError";
-            reject(e);
-          });
-        }),
     );
-    const promise = sendOtp("user@example.com");
-
-    await Promise.resolve();
-    vi.advanceTimersByTime(16_000);
-    const result = await promise;
-    expect(result).toEqual({
-      ok: false,
-      error: "The request timed out. Please try again.",
-    });
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.AUTH_OTP_FAILED, {
-      method: "otp",
-      error: "timeout",
-    });
-    fetchSpy.mockRestore();
   });
 
-  it("falls back to Supabase directly without a worker URL", async () => {
-    vi.mocked(getWorkerUrl).mockReturnValue("");
-    const result = await sendOtp("user@example.com");
-    expect(result).toEqual({ ok: true, needsOtp: true });
-    expect(authMock.signInWithOtp).toHaveBeenCalledWith({
-      email: "user@example.com",
+  it("maps a bot-verification rejection", async () => {
+    mockRoutes({
+      "/auth/otp": new ApiError(403, "turnstile_failed", "nope"),
     });
+
+    const result = await sendOtp("person@ekwe.app");
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/verify you're human/i);
   });
 
-  it("maps a direct sign-in error to safe copy", async () => {
-    vi.mocked(getWorkerUrl).mockReturnValue("");
-    authMock.signInWithOtp.mockResolvedValue({
-      data: {},
-      error: new AuthApiError(
-        "Invalid login credentials",
-        400,
-        "invalid_credentials",
-      ),
+  it("maps a rate limit", async () => {
+    mockRoutes({
+      "/auth/otp": new ApiError(429, "rate_limited", "Too many requests"),
     });
-    const result = await sendOtp("user@example.com");
+
+    const result = await sendOtp("person@ekwe.app");
+
+    expect(result).toEqual({ ok: false, error: "Too many requests" });
+  });
+
+  it("fails fast without a worker URL", async () => {
+    vi.stubEnv("EXPO_PUBLIC_WORKER_URL", "");
+
+    const result = await sendOtp("person@ekwe.app");
+
     expect(result).toEqual({
       ok: false,
-      error: "The details you entered don't match. Please try again.",
+      error: "Sign-in is unavailable right now.",
     });
+    expect(apiJson).not.toHaveBeenCalled();
   });
 });
 
 describe("verifyOtp", () => {
-  it("fails fast when offline", async () => {
-    networkActions.set({ isConnected: false, isInternetReachable: false });
-    const result = await verifyOtp("user@example.com", "123456");
-    expect(result).toEqual({
-      ok: false,
-      error: "No internet connection. Please connect and try again.",
+  it("establishes the session on a valid code", async () => {
+    mockRoutes({ "/auth/verify": sessionResponse });
+
+    const result = await verifyOtp(" person@ekwe.app ", " 123456 ");
+
+    expect(result).toEqual({ ok: true });
+    expect(apiJson).toHaveBeenCalledWith(
+      "/auth/verify",
+      expect.objectContaining({
+        body: { email: "person@ekwe.app", code: "123456" },
+      }),
+    );
+    expect(auth$.session.peek()).toMatchObject({
+      accessToken: "access",
+      user: { id: "u1" },
     });
+    expect(SyncService.onUserSignedIn).toHaveBeenCalledWith("u1");
   });
 
-  it("maps an otp_expired error to safe copy", async () => {
-    authMock.verifyOtp.mockResolvedValue({
-      data: {},
-      error: new AuthApiError(
-        "Token has expired or is invalid",
+  it("returns the server message for an expired code", async () => {
+    mockRoutes({
+      "/auth/verify": new ApiError(
         400,
         "otp_expired",
+        "That code has expired.",
       ),
     });
-    const result = await verifyOtp("user@example.com", "123456");
-    expect(result).toEqual({
-      ok: false,
-      error: "That code expired. Request a new one and try again.",
-    });
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.AUTH_VERIFY_FAILED, {
-      method: "otp",
-      type: "email",
-      error: "Token has expired or is invalid",
-    });
+
+    const result = await verifyOtp("person@ekwe.app", "123456");
+
+    expect(result).toEqual({ ok: false, error: "That code has expired." });
+    expect(auth$.session.peek()).toBeNull();
   });
 
-  it("reports a missing session", async () => {
-    authMock.verifyOtp.mockResolvedValue({
-      data: { session: null },
-      error: null,
-    });
-    const result = await verifyOtp("user@example.com", "123456");
-    expect(result).toEqual({
-      ok: false,
-      error: "Verification didn't complete. Try again.",
-    });
-  });
+  it("returns a neutral message for an unexpected shape", async () => {
+    mockRoutes({ "/auth/verify": { unexpected: true } });
 
-  it("tracks a sign-in on success", async () => {
-    const result = await verifyOtp("user@example.com", "123456");
-    expect(result).toEqual({ ok: true });
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.SIGN_IN, {
-      method: "otp",
-    });
-  });
+    const result = await verifyOtp("person@ekwe.app", "123456");
 
-  it("tracks a sign-up for the signup type", async () => {
-    const result = await verifyOtp("user@example.com", "123456", "signup");
-    expect(result).toEqual({ ok: true });
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.SIGN_UP, {
-      method: "otp",
-    });
-  });
-
-  it("returns a neutral message on an unexpected throw", async () => {
-    authMock.verifyOtp.mockRejectedValue(new Error("boom"));
-    const result = await verifyOtp("user@example.com", "123456");
-    expect(result).toEqual({
-      ok: false,
-      error: "That code didn't match. Check and try again.",
-    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/didn't match/i);
   });
 });
 
 describe("signInWithApple", () => {
-  it("rejects on non-iOS platforms", async () => {
-    utilsState.isIOS = false;
-    const result = await signInWithApple();
-    expect(result).toEqual({
-      ok: false,
-      error: "Apple Sign In is available on iOS only.",
-    });
-    expect(appleSignInAsyncMock).not.toHaveBeenCalled();
-  });
-
-  it("rejects when no identity token is returned", async () => {
-    appleSignInAsyncMock.mockResolvedValue({ identityToken: null });
-    const result = await signInWithApple();
-    expect(result).toEqual({
-      ok: false,
-      error: "Apple Sign In couldn't be completed.",
-    });
-  });
-
-  it("offers the email-link flow when the social account already exists", async () => {
-    appleSignInAsyncMock.mockResolvedValue({
-      identityToken: "apple-id-token",
-      email: "existing@example.com",
-    });
-    authMock.signInWithIdToken.mockResolvedValue({
-      data: { user: null },
-      error: new AuthApiError(
-        "User already registered",
-        400,
-        "user_already_exists",
-      ),
-    });
-
-    const result = await signInWithApple();
-    expect(result).toEqual({
-      ok: false,
-      needsLink: { provider: "apple", email: "existing@example.com" },
-    });
-    expect(getPendingLinkProvider()).toBe("apple");
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.AUTH_NEEDS_LINK, {
-      method: "apple",
-    });
-  });
-
-  it("maps a non-link error to safe copy", async () => {
-    appleSignInAsyncMock.mockResolvedValue({ identityToken: "apple-id-token" });
-    authMock.signInWithIdToken.mockResolvedValue({
-      data: { user: null },
-      error: new AuthApiError(
-        "Invalid login credentials",
-        400,
-        "invalid_credentials",
-      ),
-    });
-    const result = await signInWithApple();
-    expect(result).toEqual({
-      ok: false,
-      error: "The details you entered don't match. Please try again.",
-    });
-  });
-
-  it("succeeds without a full name", async () => {
-    const result = await signInWithApple();
-    expect(result).toEqual({ ok: true });
-    expect(authMock.updateUser).not.toHaveBeenCalled();
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.SIGN_IN, {
-      method: "apple",
-    });
-  });
-
-  it("updates the user's full name when provided", async () => {
-    appleSignInAsyncMock.mockResolvedValue({
-      identityToken: "apple-id-token",
+  it("sends the raw nonce and the identity token", async () => {
+    vi.mocked(AppleAuthentication.signInAsync).mockResolvedValue({
+      identityToken: "apple-token",
       fullName: { givenName: "Ada", familyName: "Lovelace" },
-    });
+    } as never);
+    mockRoutes({ "/auth/apple": sessionResponse });
+
     const result = await signInWithApple();
+
     expect(result).toEqual({ ok: true });
-    expect(authMock.updateUser).toHaveBeenCalledWith({
-      data: { full_name: "Ada Lovelace" },
-    });
-  });
-
-  it("returns ok:false silently when the user cancels", async () => {
-    appleSignInAsyncMock.mockRejectedValue(
-      Object.assign(new Error("canceled"), { code: "ERR_REQUEST_CANCELED" }),
+    expect(AppleAuthentication.signInAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ nonce: expect.any(String) }),
     );
-    const result = await signInWithApple();
-    expect(result).toEqual({ ok: false, error: undefined });
+    expect(apiJson).toHaveBeenCalledWith(
+      "/auth/apple",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          identityToken: "apple-token",
+          nonce: expect.any(String),
+          fullName: "Ada Lovelace",
+        }),
+      }),
+    );
+    expect(auth$.session.peek()?.accessToken).toBe("access");
   });
 
-  it("returns a safe message on an unexpected failure", async () => {
-    appleSignInAsyncMock.mockRejectedValue(new Error("boom"));
-    const result = await signInWithApple();
-    expect(result).toEqual({
-      ok: false,
-      error: "Apple Sign In failed. Please try again.",
+  it("stays silent when the user cancels", async () => {
+    const cancel = Object.assign(new Error("canceled"), {
+      code: "ERR_REQUEST_CANCELED",
     });
+    vi.mocked(AppleAuthentication.signInAsync).mockRejectedValue(cancel);
+
+    const result = await signInWithApple();
+
+    expect(result).toEqual({ ok: false });
+    expect(apiJson).not.toHaveBeenCalled();
+  });
+
+  it("rejects a credential without an identity token", async () => {
+    vi.mocked(AppleAuthentication.signInAsync).mockResolvedValue({
+      identityToken: null,
+    } as never);
+
+    const result = await signInWithApple();
+
+    expect(result.ok).toBe(false);
+    expect(apiJson).not.toHaveBeenCalled();
   });
 });
 
 describe("signInWithGoogle", () => {
-  it("returns ok:false silently when the user cancels", async () => {
-    googleSigninMock.signIn.mockResolvedValue({ type: "cancelled" });
-    const result = await signInWithGoogle();
-    expect(result).toEqual({ ok: false, error: undefined });
-    expect(googleSigninMock.getTokens).not.toHaveBeenCalled();
-  });
-
-  it("rejects when no id token is returned", async () => {
-    googleSigninMock.signIn.mockResolvedValue({
+  it("exchanges the id token for a session", async () => {
+    vi.mocked(GoogleSignin.signIn).mockResolvedValue({
       type: "success",
-      data: { idToken: null, user: { email: "a@b.com" } },
-    });
-    const result = await signInWithGoogle();
-    expect(result).toEqual({
-      ok: false,
-      error: "Google Sign In couldn't be completed.",
-    });
-  });
+      data: { idToken: "google-token" },
+    } as never);
+    mockRoutes({ "/auth/google": sessionResponse });
 
-  it("offers the email-link flow when the social account already exists", async () => {
-    googleSigninMock.signIn.mockResolvedValue({
-      type: "success",
-      data: {
-        idToken: "google-id-token",
-        user: { email: "existing@example.com" },
-      },
-    });
-    authMock.signInWithIdToken.mockResolvedValue({
-      data: { user: null },
-      error: new AuthApiError(
-        "User already registered",
-        400,
-        "user_already_exists",
-      ),
-    });
     const result = await signInWithGoogle();
-    expect(result).toEqual({
-      ok: false,
-      needsLink: { provider: "google", email: "existing@example.com" },
-    });
-    expect(getPendingLinkProvider()).toBe("google");
-  });
 
-  it("succeeds", async () => {
-    googleSigninMock.signIn.mockResolvedValue({
-      type: "success",
-      data: { idToken: "google-id-token", user: { email: "a@b.com" } },
-    });
-    const result = await signInWithGoogle();
     expect(result).toEqual({ ok: true });
-    expect(googleSigninMock.getTokens).not.toHaveBeenCalled();
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.SIGN_IN, {
-      method: "google",
-    });
+    expect(apiJson).toHaveBeenCalledWith(
+      "/auth/google",
+      expect.objectContaining({ body: { idToken: "google-token" } }),
+    );
   });
 
-  it("returns a safe message on an unexpected failure", async () => {
-    googleSigninMock.signIn.mockRejectedValue(new Error("boom"));
+  it("stays silent when the user cancels", async () => {
+    vi.mocked(GoogleSignin.signIn).mockResolvedValue({
+      type: "cancelled",
+    } as never);
+
     const result = await signInWithGoogle();
-    expect(result).toEqual({
-      ok: false,
-      error: "Google Sign In failed. Please try again.",
-    });
+
+    expect(result).toEqual({ ok: false });
+    expect(apiJson).not.toHaveBeenCalled();
   });
 });
 
-describe("linkSocialIdentity", () => {
-  it("expires when no link is pending", async () => {
-    const result = await linkSocialIdentity();
-    expect(result).toEqual({
-      ok: false,
-      error: "That link expired. Please sign in again.",
-    });
+describe("fetchSessionUser", () => {
+  it("updates the stored user", async () => {
+    signedIn("FREE");
+    mockRoutes({ "/auth/session": { user: { ...user, tier: "PREMIUM" } } });
+
+    const result = await fetchSessionUser();
+
+    expect(result?.tier).toBe("PREMIUM");
+    expect(auth$.isPro.peek()).toBe(true);
   });
 
-  it("links a pending provider", async () => {
-    googleSigninMock.signIn.mockResolvedValue({
-      type: "success",
-      data: { idToken: "google-id-token", user: { email: "x@y.com" } },
+  it("signs out when the token is rejected", async () => {
+    signedIn();
+    mockRoutes({
+      "/auth/session": new ApiError(401, "unauthorized", "expired"),
     });
-    authMock.signInWithIdToken.mockResolvedValue({
-      data: { user: null },
-      error: new AuthApiError(
-        "User already registered",
-        400,
-        "user_already_exists",
-      ),
-    });
-    await signInWithGoogle();
-    expect(getPendingLinkProvider()).toBe("google");
 
-    const result = await linkSocialIdentity();
-    expect(result).toEqual({ ok: true });
-    expect(authMock.linkIdentity).toHaveBeenCalledWith({
-      provider: "google",
-      token: "google-id-token",
-    });
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.AUTH_LINKED, {
-      provider: "google",
-    });
+    const result = await fetchSessionUser();
+
+    expect(result).toBeNull();
+    expect(auth$.session.peek()).toBeNull();
+    expect(SyncService.onUserSignedOut).toHaveBeenCalled();
   });
 
-  it("maps a link failure to safe copy", async () => {
-    googleSigninMock.signIn.mockResolvedValue({
-      type: "success",
-      data: { idToken: "google-id-token", user: { email: "x@y.com" } },
-    });
-    authMock.signInWithIdToken.mockResolvedValue({
-      data: { user: null },
-      error: new AuthApiError(
-        "User already registered",
-        400,
-        "user_already_exists",
-      ),
-    });
-    await signInWithGoogle();
+  it("returns null when signed out", async () => {
+    expect(await fetchSessionUser()).toBeNull();
+    expect(apiJson).not.toHaveBeenCalled();
+  });
+});
 
-    authMock.linkIdentity.mockResolvedValue({
-      data: {},
-      error: new AuthApiError("Failed", 400, "validation_failed"),
+describe("updateProfile", () => {
+  it("patches the profile and stores the result", async () => {
+    signedIn();
+    mockRoutes({
+      "/auth/profile": { user: { ...user, avatarIcon: "star" } },
     });
-    const result = await linkSocialIdentity();
-    expect(result).toEqual({
-      ok: false,
-      error: "The details you entered don't match. Please try again.",
-    });
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.AUTH_LINK_FAILED, {
-      provider: "google",
-      error: "Failed",
-    });
+
+    const result = await updateProfile({ avatarIcon: "star" });
+
+    expect(apiJson).toHaveBeenCalledWith(
+      "/auth/profile",
+      expect.objectContaining({
+        method: "PATCH",
+        body: { avatarIcon: "star" },
+      }),
+    );
+    expect(result?.avatarIcon).toBe("star");
+    expect(auth$.user.peek()?.avatarIcon).toBe("star");
+    expect(mirrorSessionToSharedContainer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: expect.objectContaining({ avatarIcon: "star" }),
+      }),
+      expect.any(Object),
+    );
   });
 });
 
 describe("signOut", () => {
-  it("signs out and clears local state", async () => {
-    authActions.setSession(makeSession("u1") as never);
+  it("clears local state and the server session", async () => {
+    signedIn("PREMIUM");
+
     const result = await signOut();
 
     expect(result).toEqual({ ok: true });
-    expect(syncMock.drain).toHaveBeenCalled();
-    expect(syncMock.purgeLocalHistory).toHaveBeenCalledWith("u1");
-    expect(syncMock.clearSyncCursor).toHaveBeenCalledWith("u1");
-    expect(authMock.signOut).toHaveBeenCalled();
-    expect(googleSigninMock.signOut).toHaveBeenCalled();
-    expect(mmkvMock.set).toHaveBeenCalledWith("hasSession", false);
-    expect(posthogClientMock.reset).toHaveBeenCalled();
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.SIGN_OUT);
+    expect(SyncService.drain).toHaveBeenCalled();
+    expect(SyncService.purgeLocalHistory).toHaveBeenCalledWith("u1");
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/auth/logout",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(auth$.session.peek()).toBeNull();
   });
 
-  it("keeps local history when the outbox still has rows", async () => {
-    authActions.setSession(makeSession("u1") as never);
-    dbMock.countUnsyncedOutbox.mockReturnValue(1);
+  it("keeps local history while rows are still queued", async () => {
+    signedIn();
+    vi.mocked(Db.countUnsyncedOutbox).mockReturnValueOnce(2);
+
+    await signOut();
+
+    expect(SyncService.purgeLocalHistory).not.toHaveBeenCalled();
+    expect(SyncService.clearSyncCursor).not.toHaveBeenCalled();
+    expect(auth$.session.peek()).toBeNull();
+  });
+
+  it("signs out locally even when the request fails", async () => {
+    signedIn();
+    vi.mocked(apiFetch).mockRejectedValue(new Error("offline"));
+
     const result = await signOut();
+
     expect(result).toEqual({ ok: true });
-    expect(syncMock.purgeLocalHistory).not.toHaveBeenCalled();
-    expect(syncMock.clearSyncCursor).not.toHaveBeenCalled();
-    expect(loggerMock.warn).toHaveBeenCalled();
-  });
-
-  it("keeps local history when rows are dead and no longer retry-eligible", async () => {
-    authActions.setSession(makeSession("u1") as never);
-    dbMock.countUnsyncedOutbox.mockReturnValue(3);
-    await signOut();
-    expect(syncMock.purgeLocalHistory).not.toHaveBeenCalled();
-    expect(syncMock.clearSyncCursor).not.toHaveBeenCalled();
-  });
-
-  it("waits for the outbox to flush before deciding to purge", async () => {
-    authActions.setSession(makeSession("u1") as never);
-    const order: string[] = [];
-    syncMock.drain.mockImplementation(async () => {
-      await Promise.resolve();
-      order.push("drained");
-      dbMock.countUnsyncedOutbox.mockReturnValue(0);
-    });
-    dbMock.countUnsyncedOutbox.mockReturnValue(1);
-
-    await signOut();
-
-    expect(order).toEqual(["drained"]);
-    expect(syncMock.purgeLocalHistory).toHaveBeenCalledWith("u1");
-  });
-
-  it("still clears local state when the sign-out call fails", async () => {
-    authActions.setSession(makeSession("u1") as never);
-    authMock.signOut.mockResolvedValue({
-      error: new AuthApiError("Network", 500, "unknown"),
-    });
-    const result = await signOut();
-    expect(result).toEqual({
-      ok: false,
-      error: "That didn't work. Please try again.",
-    });
+    expect(auth$.session.peek()).toBeNull();
   });
 });
 
 describe("deleteAccount", () => {
-  it("does not delete locally when the RPC fails", async () => {
-    authActions.setSession(makeSession("u1") as never);
-    authMock.rpc.mockResolvedValue({
-      data: null,
-      error: new Error("rpc denied"),
-    });
-    const result = await deleteAccount();
-    expect(result).toEqual({
-      ok: false,
-      error: "Please contact support to complete account deletion.",
-    });
-    expect(syncMock.purgeLocalHistory).not.toHaveBeenCalled();
-  });
+  it("deletes the account and purges local data", async () => {
+    signedIn();
 
-  it("deletes the account and purges local history", async () => {
-    authActions.setSession(makeSession("u1") as never);
     const result = await deleteAccount();
+
     expect(result).toEqual({ ok: true });
-    expect(authMock.rpc).toHaveBeenCalledWith("delete_user");
-    expect(syncMock.purgeLocalHistory).toHaveBeenCalledWith("u1");
-    expect(posthogClientMock.reset).toHaveBeenCalled();
-    expect(trackMock).toHaveBeenCalledWith(AnalyticsEvents.DELETE_ACCOUNT);
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/auth/account",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(SyncService.purgeLocalHistory).toHaveBeenCalledWith("u1");
+    expect(auth$.session.peek()).toBeNull();
   });
 
-  it("returns a support message on an unexpected failure", async () => {
-    authMock.rpc.mockRejectedValue(new Error("boom"));
+  it("keeps the session when the server refuses", async () => {
+    signedIn();
+    vi.mocked(apiFetch).mockRejectedValue(
+      new ApiError(409, "active_subscription", "Cancel your plan first."),
+    );
+
     const result = await deleteAccount();
-    expect(result).toEqual({
-      ok: false,
-      error: "Something went wrong. Please contact support for help.",
-    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("Cancel your plan first.");
+    expect(auth$.session.peek()).not.toBeNull();
+    expect(SyncService.purgeLocalHistory).not.toHaveBeenCalled();
   });
 });

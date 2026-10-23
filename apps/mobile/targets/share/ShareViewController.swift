@@ -8,8 +8,8 @@ import UniformTypeIdentifiers
 ///
 /// There is NO deep-link handoff: the entire echo pipeline (decode → waveform →
 /// pick language → transcribe → translate → result) runs natively in this
-/// extension process, authenticated with the Supabase session the app mirrored
-/// into the shared App Group container.
+/// extension process, authenticated with the session the app mirrored into the
+/// shared App Group container.
 @available(iOS 16.4, *)
 final class ShareViewController: UIViewController {
 

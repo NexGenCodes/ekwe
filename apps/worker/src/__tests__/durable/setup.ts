@@ -1,3 +1,4 @@
+import { env } from "cloudflare:test";
 import { vi, beforeAll, afterEach, afterAll } from "vitest";
 import { network } from "@/__tests__/msw/network";
 import { resetWsKeyPenalties } from "@/utils/stream";
@@ -45,8 +46,14 @@ vi.mock("@/db", () => ({
   getDb: () => mockDb,
 }));
 
-beforeAll(() => {
+beforeAll(async () => {
   network.enable();
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS user_daily_usage (user_id TEXT NOT NULL, day TEXT NOT NULL, translate_count INTEGER NOT NULL DEFAULT 0, transcribe_count INTEGER NOT NULL DEFAULT 0, transcribe_ms INTEGER NOT NULL DEFAULT 0, speech_chars INTEGER NOT NULL DEFAULT 0, stream_count INTEGER NOT NULL DEFAULT 0, stream_ms INTEGER NOT NULL DEFAULT 0, ai_credits REAL NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL, PRIMARY KEY (user_id, day))",
+  );
+  await env.DB.exec(
+    "CREATE TABLE IF NOT EXISTS user_monthly_usage (user_id TEXT NOT NULL, month TEXT NOT NULL, translate_count INTEGER NOT NULL DEFAULT 0, transcribe_count INTEGER NOT NULL DEFAULT 0, transcribe_ms INTEGER NOT NULL DEFAULT 0, speech_chars INTEGER NOT NULL DEFAULT 0, stream_count INTEGER NOT NULL DEFAULT 0, stream_ms INTEGER NOT NULL DEFAULT 0, ai_credits REAL NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL, PRIMARY KEY (user_id, month))",
+  );
 });
 
 afterEach(() => {

@@ -2,7 +2,7 @@ import { useValue } from "@legendapp/state/react";
 import { useMemo } from "react";
 
 import { PLAN_FEATURES, PLAN_LIMITS } from "@/constants/billing";
-import { HISTORY_LOCAL_TTL_DAYS } from "@/constants/retention";
+import { historyLocalTtlDays } from "@/constants/retention";
 import { auth$ } from "@/store";
 
 interface PlanLimits {
@@ -26,7 +26,7 @@ export function usePermissions(): PlanLimits {
     () => ({
       maxSelectedLanguages: limits.maxLanguages,
       dictationDurationMs: limits.dictationDurationMs,
-      historyLocalTtlDays: HISTORY_LOCAL_TTL_DAYS,
+      historyLocalTtlDays: historyLocalTtlDays(isPro),
       historyRemoteTtlDays: limits.historyRemoteTtlDays,
       textTranslationMaxChars: limits.maxTextChars,
       autoLanguageDetect: limits.autoDetectAllowed,

@@ -1,644 +1,390 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import { checkPreflight, runPreflightGate } from "@/services/preflight";
-import { getLimits } from "@/core/limits";
+import { beforeEach, describe, expect, test } from "vitest";
+import type { Env } from "@/core/types";
+import { nextUtcMidnightMs, runPreflightGate } from "@/services/preflight";
 import {
-  executeQueryChunks,
-  jsonBody,
-  mockDb,
-  mockEnv,
-  mockExecutionContext,
-} from "@/__tests__/setup";
+  FREE_LIMITS,
+  WORKER_ERROR_CODES,
+  utcDay,
+  utcMonth,
+} from "@ekwe/shared";
+import {
+  createTestDatabase,
+  type TestDatabase,
+} from "@/__tests__/helpers/sqlite-d1";
 
-/**
- * Helper: create a mockDb.execute implementation that routes by query string.
- * Production calls two RPCs concurrently:
- *   1. `check_session_active(sessionId)`  → { active: boolean }
- *   2. `check_preflight(10 args)`        → { preflight: PreflightResponse }
- *
- * The wrapper is not incidental: a scalar-returning function selected with
- * `SELECT * FROM check_preflight(...)` yields ONE column named after the
- * function, so the driver row is `{ check_preflight: {...} }`. Mocking the
- * bare object here is what let that ship and break every request.
- */
-function stubPreflight(
-  preflight: Record<string, unknown>,
-  opts?: { sessionActive?: boolean },
-) {
-  mockDb.execute.mockImplementation(async (query) => {
-    const q = JSON.stringify(query);
-    if (q.includes("check_session_active")) {
-      return [{ active: opts?.sessionActive ?? true }];
-    }
-    if (q.includes("check_preflight")) {
-      return [{ preflight }];
-    }
-    return [];
-  });
+const USER_ID = "22222222-2222-4222-8222-222222222222";
+const FREE_TRANSLATE_CAP = FREE_LIMITS.dailyTranslateLimit ?? 0;
+
+function makeEnv(database: TestDatabase): Env {
+  return { DB: database.d1 } as unknown as Env;
 }
 
-describe("checkPreflight (cooldown + quota gate)", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-    stubPreflight({
-      allowed: true,
-      tier_active: "FREE",
-      quota_total: 25,
-      quota_remaining: 25,
-    });
-  });
+function makeCtx(): {
+  ctx: { waitUntil: (promise: Promise<unknown>) => void };
+  settled: () => Promise<void>;
+} {
+  const pending: Promise<unknown>[] = [];
+  return {
+    ctx: { waitUntil: (promise) => void pending.push(promise) },
+    settled: async () => {
+      await Promise.allSettled(pending);
+    },
+  };
+}
 
-  test("sends both tiers' per-type limits and usage type for FREE translate", async () => {
-    stubPreflight({
-      allowed: true,
-      tier_active: "FREE",
-      quota_total: 25,
-      quota_remaining: 24,
-    });
+function seedCooldown(database: TestDatabase, lastRequestAt: number): void {
+  const now = Date.now();
+  database.sqlite
+    .prepare(
+      `INSERT INTO user_cooldowns (user_id, last_request_at, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT (user_id) DO UPDATE SET
+         last_request_at = excluded.last_request_at,
+         updated_at = excluded.updated_at`,
+    )
+    .run(USER_ID, lastRequestAt, now);
+}
 
-    const res = await checkPreflight(
-      mockEnv(),
-      "uid-1",
-      "FREE",
-      "translate",
-      null,
+function seedUsage(
+  database: TestDatabase,
+  counts: {
+    translate?: number;
+    transcribeMinutes?: number;
+    speech?: number;
+  },
+): void {
+  const transcribeMs = Math.round((counts.transcribeMinutes ?? 0) * 60_000);
+  database.sqlite
+    .prepare(
+      `INSERT INTO user_daily_usage
+         (user_id, day, translate_count, transcribe_count, transcribe_ms,
+          speech_chars, stream_count, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+    )
+    .run(
+      USER_ID,
+      utcDay(Date.now()),
+      counts.translate ?? 0,
+      counts.transcribeMinutes ?? 0,
+      transcribeMs,
+      counts.speech ?? 0,
+      Date.now(),
     );
+}
 
-    expect(res.quota_remaining).toBe(24);
-
-    const preflightCall = mockDb.execute.mock.calls.find((c) =>
-      JSON.stringify(c[0]).includes("check_preflight"),
+function seedMonthlyUsage(
+  database: TestDatabase,
+  usage: {
+    translate?: number;
+    transcribeMinutes?: number;
+    speech?: number;
+    aiCredits?: number;
+  },
+): void {
+  database.sqlite
+    .prepare(
+      `INSERT INTO user_monthly_usage
+         (user_id, month, translate_count, transcribe_count, transcribe_ms,
+          speech_chars, stream_count, stream_ms, ai_credits, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+    )
+    .run(
+      USER_ID,
+      utcMonth(Date.now()),
+      usage.translate ?? 0,
+      usage.transcribeMinutes ?? 0,
+      Math.round((usage.transcribeMinutes ?? 0) * 60_000),
+      usage.speech ?? 0,
+      usage.aiCredits ?? 0,
+      Date.now(),
     );
-    expect(preflightCall).toBeDefined();
-    const chunks = executeQueryChunks(preflightCall![0]);
-    expect(chunks[1]).toBe("uid-1"); // userId
-    expect(chunks[3]).toBe("translate"); // type
-    expect(chunks[5]).toBe(3); // freeCooldownSeconds
-    expect(chunks[7]).toBe(25); // freeDailyLimit
-    expect(chunks[9]).toBe(1); // premiumCooldownSeconds
-    expect(chunks[11]).toBe(0); // premiumDailyLimit (unlimited)
-    expect(chunks[13]).toBe(500); // premiumThrottleThreshold
-    expect(chunks[15]).toBe(3); // throttleCooldownSeconds
-  });
+}
 
-  test("sends the unlimited premium transcribe limit with its throttle threshold", async () => {
-    stubPreflight({ allowed: true, tier_active: "PREMIUM" });
+function lastRequestAt(database: TestDatabase): number | undefined {
+  const row = database.sqlite
+    .prepare(`SELECT last_request_at FROM user_cooldowns WHERE user_id = ?`)
+    .get(USER_ID) as { last_request_at: number } | undefined;
+  return row?.last_request_at;
+}
 
-    await checkPreflight(mockEnv(), "uid-2", "PREMIUM", "transcribe", null);
-
-    const preflightCall = mockDb.execute.mock.calls.find((c) =>
-      JSON.stringify(c[0]).includes("check_preflight"),
-    );
-    const chunks = executeQueryChunks(preflightCall![0]);
-    expect(chunks[3]).toBe("transcribe");
-    expect(chunks[11]).toBe(0);
-    expect(chunks[13]).toBe(500);
-    expect(chunks[7]).toBe(25);
-    expect(chunks[15]).toBe(3);
-  });
-
-  test("sends the unlimited premium translate limit with its throttle threshold", async () => {
-    stubPreflight({ allowed: true, tier_active: "PREMIUM" });
-
-    await checkPreflight(mockEnv(), "uid-5", "PREMIUM", "translate", null);
-
-    const preflightCall = mockDb.execute.mock.calls.find((c) =>
-      JSON.stringify(c[0]).includes("check_preflight"),
-    );
-    const chunks = executeQueryChunks(preflightCall![0]);
-    expect(chunks[3]).toBe("translate");
-    expect(chunks[11]).toBe(0); // premiumDailyLimit (unlimited)
-    expect(chunks[13]).toBe(500); // premiumThrottleThreshold
-    expect(chunks[7]).toBe(25); // freeDailyLimit
-    expect(chunks[15]).toBe(3); // throttleCooldownSeconds
-  });
-
-  test("sends the premium speech char limit and this request's charge for a speech gate", async () => {
-    stubPreflight({ allowed: true, tier_active: "PREMIUM" });
-
-    await checkPreflight(mockEnv(), "uid-tts", "PREMIUM", "speech", null, 42);
-
-    const preflightCall = mockDb.execute.mock.calls.find((c) =>
-      JSON.stringify(c[0]).includes("check_preflight"),
-    );
-    const chunks = executeQueryChunks(preflightCall![0]);
-    expect(chunks[3]).toBe("speech");
-    expect(chunks[7]).toBe(getLimits("FREE").dailySpeechCharsLimit);
-    expect(chunks[17]).toBe(getLimits("PREMIUM").dailySpeechCharsLimit);
-    expect(chunks[19]).toBe(42);
-    expect(chunks[13]).toBe(0); // premiumThrottleThreshold for speech
-  });
-
-  test("sends a zero char charge for non-speech usage types", async () => {
-    stubPreflight({ allowed: true, tier_active: "FREE" });
-
-    await checkPreflight(mockEnv(), "uid-free", "FREE", "translate", null);
-
-    const preflightCall = mockDb.execute.mock.calls.find((c) =>
-      JSON.stringify(c[0]).includes("check_preflight"),
-    );
-    const chunks = executeQueryChunks(preflightCall![0]);
-    expect(chunks[3]).toBe("translate");
-    expect(chunks[19]).toBe(0); // chargeChars
-  });
-
-  test("fails closed to PREFLIGHT_UNAVAILABLE when the RPC returns an error", async () => {
-    mockDb.execute.mockImplementation(async (query) => {
-      const q = JSON.stringify(query);
-      if (q.includes("check_preflight")) {
-        throw new Error("boom");
-      }
-      return [];
-    });
-
-    const res = await checkPreflight(
-      mockEnv(),
-      "uid-3",
-      "FREE",
-      "translate",
-      null,
-    );
-
-    expect(res).toMatchObject({
-      allowed: false,
-      tier_active: "FREE",
-      reason: "PREFLIGHT_UNAVAILABLE",
-    });
-  });
-
-  test("fails closed to PREFLIGHT_CONFIG_ERROR when env vars are missing", async () => {
-    const res = await checkPreflight(
-      mockEnv({ HYPERDRIVE: undefined }),
-      "uid-4",
-      "FREE",
-      "translate",
-      null,
-    );
-
-    expect(res).toMatchObject({
-      allowed: false,
-      reason: "PREFLIGHT_CONFIG_ERROR",
-    });
-  });
-
-  test("rejects with SESSION_INACTIVE when the session was revoked", async () => {
-    stubPreflight(
-      { allowed: true, tier_active: "FREE" },
-      { sessionActive: false },
-    );
-
-    const res = await checkPreflight(
-      mockEnv(),
-      "uid-6",
-      "FREE",
-      "translate",
-      "session-abc",
-    );
-
-    // Verify the session check received the session ID
-    const sessionCall = mockDb.execute.mock.calls.find((c) =>
-      JSON.stringify(c[0]).includes("check_session_active"),
-    );
-    expect(sessionCall).toBeDefined();
-    expect(executeQueryChunks(sessionCall![0])[1]).toBe("session-abc");
-
-    expect(res).toMatchObject({
-      allowed: false,
-      tier_active: "FREE",
-      reason: "SESSION_INACTIVE",
-    });
-  });
-
-  test("fails open when the session-active RPC errors, still gating on quota", async () => {
-    let preflightCalls = 0;
-    mockDb.execute.mockImplementation(async (query) => {
-      const q = JSON.stringify(query);
-      if (q.includes("check_session_active")) {
-        throw new Error("boom");
-      }
-      if (q.includes("check_preflight")) {
-        preflightCalls += 1;
-        return [{ preflight: { allowed: true, tier_active: "FREE" } }];
-      }
-      return [];
-    });
-
-    const res = await checkPreflight(
-      mockEnv(),
-      "uid-7",
-      "FREE",
-      "translate",
-      "session-def",
-    );
-
-    expect(preflightCalls).toBe(1);
-    expect(res.allowed).toBe(true);
-  });
-});
-
-describe("runPreflightGate (cached cooldown + quota gate)", () => {
-  const ctx = { waitUntil: vi.fn() } as unknown as ExecutionContext;
+describe("runPreflightGate", () => {
+  let database: TestDatabase;
+  let env: Env;
 
   beforeEach(() => {
-    vi.restoreAllMocks();
+    database = createTestDatabase();
+    env = makeEnv(database);
   });
 
-  function rpcSpy() {
-    let calls = 0;
-    mockDb.execute.mockImplementation(async (query) => {
-      const q = JSON.stringify(query);
-      if (q.includes("check_preflight")) {
-        calls += 1;
-        return [
-          {
-            preflight: {
-              allowed: true,
-              tier_active: "FREE",
-              quota_total: 25,
-              quota_remaining: 24,
-            },
-          },
-        ];
-      }
-      return [];
-    });
-    return () => calls;
-  }
+  test("allows the first request and records the cooldown", async () => {
+    const { ctx, settled } = makeCtx();
+    const before = Date.now();
 
-  test("checks the quota on every request and never reads or writes KV", async () => {
-    const env = mockEnv();
-    const calls = rpcSpy();
-    const getSpy = vi.spyOn(env.EKWE_KV, "get");
-    const putSpy = vi.spyOn(env.EKWE_KV, "put");
-
-    const first = await runPreflightGate(
+    const result = await runPreflightGate(
       env,
       ctx,
-      "uid-g1",
+      USER_ID,
       "FREE",
       "translate",
-      null,
     );
-    expect(first.ok).toBe(true);
-    expect(calls()).toBe(1);
+    await settled();
 
-    const second = await runPreflightGate(
-      env,
-      ctx,
-      "uid-g1",
-      "FREE",
-      "translate",
-      null,
-    );
-    expect(second.ok).toBe(true);
-    // Authoritative every time — the cooldown and quota are enforced in SQL.
-    expect(calls()).toBe(2);
-    expect(getSpy).not.toHaveBeenCalled();
-    expect(putSpy).not.toHaveBeenCalled();
-  });
-
-  test("never admits a request using another request's quota decision", async () => {
-    const env = mockEnv();
-    const ctxLocal = mockExecutionContext();
-    const chargeChars: number[] = [];
-    mockDb.execute.mockImplementation(async (query) => {
-      const q = JSON.stringify(query);
-      if (q.includes("check_preflight")) {
-        const chunks = executeQueryChunks(query);
-        const charge = chunks[19] as number; // chargeChars position
-        chargeChars.push(charge);
-        return [
-          {
-            preflight: {
-              allowed: charge <= 100,
-              tier_active: "FREE",
-              reason: charge <= 100 ? undefined : "QUOTA_EXCEEDED",
-              quota_total: 100,
-              quota_remaining: charge <= 100 ? 50 : 0,
-            },
-          },
-        ];
-      }
-      return [];
-    });
-
-    const small = await runPreflightGate(
-      env,
-      ctxLocal,
-      "uid-charge",
-      "FREE",
-      "speech",
-      null,
-      50,
-    );
-    expect(small.ok).toBe(true);
-
-    const large = await runPreflightGate(
-      env,
-      ctxLocal,
-      "uid-charge",
-      "FREE",
-      "speech",
-      null,
-      900,
-    );
-    expect(large.ok).toBe(false);
-    if (!large.ok) {
-      expect(large.response.status).toBe(429);
-    }
-    expect(chargeChars).toEqual([50, 900]);
-  });
-
-  test("returns a 429 EKWE_QUOTA_EXCEEDED response when the quota is exhausted", async () => {
-    mockDb.execute.mockImplementation(async (query) => {
-      const q = JSON.stringify(query);
-      if (q.includes("check_preflight")) {
-        return [
-          {
-            preflight: {
-              allowed: false,
-              reason: "QUOTA_EXCEEDED",
-              quota_total: 25,
-              quota_remaining: 0,
-            },
-          },
-        ];
-      }
-      return [];
-    });
-
-    const gate = await runPreflightGate(
-      mockEnv(),
-      ctx,
-      "uid-g4",
-      "FREE",
-      "translate",
-      null,
-    );
-
-    expect(gate.ok).toBe(false);
-    if (!gate.ok) {
-      expect(gate.response.status).toBe(429);
-      expect(gate.response.headers.get("Retry-After")).toBeTruthy();
-      const body = await jsonBody(gate.response);
-      expect(body).toMatchObject({
-        error: "EKWE_QUOTA_EXCEEDED",
-        quota_total: 25,
-        quota_remaining: 0,
-      });
-    }
-  });
-
-  test("returns a 429 EKWE_RATE_LIMIT response with the remaining cooldown", async () => {
-    mockDb.execute.mockImplementation(async (query) => {
-      const q = JSON.stringify(query);
-      if (q.includes("check_preflight")) {
-        return [
-          {
-            preflight: {
-              allowed: false,
-              reason: "RATE_LIMIT",
-              cooldown_remaining: 12.4,
-            },
-          },
-        ];
-      }
-      return [];
-    });
-
-    const gate = await runPreflightGate(
-      mockEnv(),
-      ctx,
-      "uid-g5",
-      "FREE",
-      "translate",
-      null,
-    );
-
-    expect(gate.ok).toBe(false);
-    if (!gate.ok) {
-      expect(gate.response.status).toBe(429);
-      expect(gate.response.headers.get("Retry-After")).toBe("13");
-      const body = await jsonBody(gate.response);
-      expect(body).toMatchObject({ error: "EKWE_RATE_LIMIT" });
-    }
-  });
-
-  test("passes through a throttled PREMIUM response without blocking", async () => {
-    mockDb.execute.mockImplementation(async (query) => {
-      const q = JSON.stringify(query);
-      if (q.includes("check_preflight")) {
-        return [
-          {
-            preflight: {
-              allowed: true,
-              tier_active: "PREMIUM",
-              throttled: true,
-              quota_total: 0,
-              quota_remaining: 0,
-            },
-          },
-        ];
-      }
-      return [];
-    });
-
-    const gate = await runPreflightGate(
-      mockEnv(),
-      ctx,
-      "uid-g6",
-      "PREMIUM",
-      "translate",
-      null,
-    );
-
-    expect(gate.ok).toBe(true);
-    if (gate.ok) {
-      expect(gate.preflight.throttled).toBe(true);
-    }
-  });
-
-  test("returns a 401 UNAUTHORIZED response when the session is inactive", async () => {
-    mockDb.execute.mockImplementation(async (query) => {
-      const q = JSON.stringify(query);
-      if (q.includes("check_session_active")) {
-        return [{ active: false }];
-      }
-      if (q.includes("check_preflight")) {
-        return [{ preflight: { allowed: true, tier_active: "FREE" } }];
-      }
-      return [];
-    });
-
-    const gate = await runPreflightGate(
-      mockEnv(),
-      ctx,
-      "uid-g7",
-      "FREE",
-      "translate",
-      "session-inactive",
-    );
-
-    expect(gate.ok).toBe(false);
-    if (!gate.ok) {
-      expect(gate.response.status).toBe(401);
-      const body = await jsonBody(gate.response);
-      expect(body).toMatchObject({ error: "UNAUTHORIZED" });
-    }
-  });
-
-  test("issues the session and quota checks concurrently", async () => {
-    // Both are independent reads in front of every billable request, so they
-    // must not serialise into two round trips.
-    const order: string[] = [];
-    let releaseQuota: (() => void) | null = null;
-    const quotaBlocked = new Promise<void>((resolve) => {
-      releaseQuota = resolve;
-    });
-
-    mockDb.execute.mockImplementation(async (query) => {
-      const q = JSON.stringify(query);
-      if (q.includes("check_session_active")) {
-        order.push("session:start");
-        await new Promise((r) => setTimeout(r, 20));
-        order.push("session:end");
-        return [{ active: true }];
-      }
-      if (q.includes("check_preflight")) {
-        order.push("quota:start");
-        await quotaBlocked;
-        order.push("quota:end");
-        return [{ preflight: { allowed: true, tier_active: "FREE" } }];
-      }
-      return [];
-    });
-
-    const env = mockEnv();
-    const ctxLocal = mockExecutionContext();
-
-    const gate = runPreflightGate(
-      env,
-      ctxLocal,
-      "uid-c",
-      "FREE",
-      "speech",
-      "sess-1",
-    );
-
-    // Let the session call get going, then confirm the quota call started
-    // before the session call finished.
-    await new Promise((r) => setTimeout(r, 5));
-    expect(order).toContain("session:start");
-    expect(order).toContain("quota:start");
-    expect(order).not.toContain("session:end");
-
-    releaseQuota!();
-    const result = await gate;
     expect(result.ok).toBe(true);
-    expect(order.indexOf("quota:start")).toBeLessThan(
-      order.indexOf("session:end"),
-    );
+    if (result.ok) expect(result.tier).toBe("FREE");
+    expect(lastRequestAt(database)).toBeGreaterThanOrEqual(before);
   });
 
-  test("still denies on an inactive session even though the quota check ran", async () => {
-    mockDb.execute.mockImplementation(async (query) => {
-      const q = JSON.stringify(query);
-      if (q.includes("check_session_active")) {
-        return [{ active: false }];
-      }
-      if (q.includes("check_preflight")) {
-        return [{ preflight: { allowed: true, tier_active: "PREMIUM" } }];
-      }
-      return [];
+  test("denies a second request inside the FREE cooldown", async () => {
+    const { ctx, settled } = makeCtx();
+    await runPreflightGate(env, ctx, USER_ID, "FREE", "translate");
+
+    const denied = await runPreflightGate(
+      env,
+      ctx,
+      USER_ID,
+      "FREE",
+      "translate",
+    );
+    await settled();
+
+    expect(denied.ok).toBe(false);
+    if (denied.ok) return;
+
+    expect(denied.response.status).toBe(429);
+    const retryAfter = Number(denied.response.headers.get("Retry-After"));
+    expect(retryAfter).toBeGreaterThanOrEqual(1);
+    expect(retryAfter).toBeLessThanOrEqual(3);
+
+    const body = (await denied.response.json()) as { error: string };
+    expect(body.error).toBe(WORKER_ERROR_CODES.EKWE_RATE_LIMIT);
+  });
+
+  test("allows again once the cooldown has elapsed", async () => {
+    seedCooldown(database, Date.now() - 5_000);
+
+    const { ctx, settled } = makeCtx();
+    const result = await runPreflightGate(env, ctx, USER_ID, "FREE", "speech");
+    await settled();
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("premium has a shorter window than free", async () => {
+    seedCooldown(database, Date.now() - 1_500);
+
+    const { ctx, settled } = makeCtx();
+    const free = await runPreflightGate(env, ctx, USER_ID, "FREE", "translate");
+    const premium = await runPreflightGate(
+      env,
+      ctx,
+      USER_ID,
+      "PREMIUM",
+      "translate",
+    );
+    await settled();
+
+    expect(free.ok).toBe(false);
+    expect(premium.ok).toBe(true);
+  });
+
+  test("skips the cooldown when the request already charged one", async () => {
+    const { ctx, settled } = makeCtx();
+    await runPreflightGate(env, ctx, USER_ID, "FREE", "transcribe");
+    const stamped = lastRequestAt(database);
+
+    const skipped = await runPreflightGate(
+      env,
+      ctx,
+      USER_ID,
+      "FREE",
+      "translate",
+      true,
+    );
+    await settled();
+
+    expect(skipped.ok).toBe(true);
+    expect(lastRequestAt(database)).toBe(stamped);
+  });
+
+  test("denies a FREE translation once the daily cap is reached", async () => {
+    seedCooldown(database, Date.now() - 5_000);
+    seedUsage(database, { translate: FREE_TRANSLATE_CAP });
+
+    const { ctx, settled } = makeCtx();
+    const result = await runPreflightGate(
+      env,
+      ctx,
+      USER_ID,
+      "FREE",
+      "translate",
+    );
+    await settled();
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    expect(result.response.status).toBe(429);
+    expect(Number(result.response.headers.get("Retry-After"))).toBeGreaterThan(
+      0,
+    );
+    const body = (await result.response.json()) as {
+      error: string;
+      quota_total: number;
+      quota_remaining: number;
+    };
+    expect(body.error).toBe(WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED);
+    expect(body.quota_total).toBe(FREE_TRANSLATE_CAP);
+    expect(body.quota_remaining).toBe(0);
+  });
+
+  test("allows the last FREE translation below the cap", async () => {
+    seedCooldown(database, Date.now() - 5_000);
+    seedUsage(database, { translate: FREE_TRANSLATE_CAP - 1 });
+
+    const { ctx, settled } = makeCtx();
+    const result = await runPreflightGate(
+      env,
+      ctx,
+      USER_ID,
+      "FREE",
+      "translate",
+    );
+    await settled();
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("speech charges the characters it is about to speak", async () => {
+    seedCooldown(database, Date.now() - 5_000);
+    seedUsage(database, { speech: FREE_LIMITS.dailySpeechCharsLimit - 10 });
+
+    const { ctx, settled } = makeCtx();
+    const tooLong = await runPreflightGate(
+      env,
+      ctx,
+      USER_ID,
+      "FREE",
+      "speech",
+      false,
+      11,
+    );
+    await settled();
+
+    expect(tooLong.ok).toBe(false);
+    if (!tooLong.ok) {
+      const body = (await tooLong.response.json()) as { error: string };
+      expect(body.error).toBe(WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED);
+    }
+
+    seedCooldown(database, Date.now() - 5_000);
+    const fits = await runPreflightGate(
+      env,
+      ctx,
+      USER_ID,
+      "FREE",
+      "speech",
+      false,
+      10,
+    );
+    await settled();
+
+    expect(fits.ok).toBe(true);
+  });
+
+  test("denies every AI feature once the shared monthly budget is spent", async () => {
+    seedCooldown(database, Date.now() - 5_000);
+    seedMonthlyUsage(database, {
+      aiCredits: FREE_LIMITS.monthlyAiCreditsLimit,
     });
 
-    const env = mockEnv();
-    const ctxLocal = mockExecutionContext();
-
-    const gate = await runPreflightGate(
+    const { ctx, settled } = makeCtx();
+    const result = await runPreflightGate(
       env,
-      ctxLocal,
-      "uid-d",
-      "PREMIUM",
-      "speech",
-      "sess-dead",
+      ctx,
+      USER_ID,
+      "FREE",
+      "translate",
     );
+    await settled();
 
-    expect(gate.ok).toBe(false);
-    if (!gate.ok) {
-      expect(gate.response.status).toBe(401);
-    }
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    expect(result.response.status).toBe(429);
+    const body = (await result.response.json()) as {
+      error: string;
+      quota_scope: string;
+      quota_total: number;
+      quota_remaining: number;
+    };
+    expect(body.error).toBe(WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED);
+    expect(body.quota_scope).toBe("budget");
+    expect(body.quota_total).toBe(FREE_LIMITS.monthlyAiCreditsLimit);
+    expect(body.quota_remaining).toBe(0);
+  });
+
+  test("denies FREE transcription once the daily minute cap is reached", async () => {
+    seedCooldown(database, Date.now() - 5_000);
+    seedUsage(database, {
+      transcribeMinutes: FREE_LIMITS.dailyTranscribeMinutesLimit,
+    });
+
+    const { ctx, settled } = makeCtx();
+    const result = await runPreflightGate(
+      env,
+      ctx,
+      USER_ID,
+      "FREE",
+      "transcribe",
+      false,
+      0,
+      1_000,
+    );
+    await settled();
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.response.status).toBe(429);
+    const body = (await result.response.json()) as {
+      quota_scope: string;
+      quota_total: number;
+    };
+    expect(body.quota_scope).toBe("daily");
+    expect(body.quota_total).toBe(FREE_LIMITS.dailyTranscribeMinutesLimit);
+  });
+
+  test("fails closed when the cooldown write fails", async () => {
+    const broken = {
+      DB: {
+        prepare() {
+          throw new Error("D1 unavailable");
+        },
+      },
+    } as unknown as Env;
+
+    const { ctx, settled } = makeCtx();
+    const result = await runPreflightGate(
+      broken,
+      ctx,
+      USER_ID,
+      "FREE",
+      "translate",
+    );
+    await settled();
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.response.status).toBe(503);
+    const body = (await result.response.json()) as { error: string };
+    expect(body.error).toBe(WORKER_ERROR_CODES.SERVICE_UNAVAILABLE);
   });
 });
 
-describe("check_preflight row shape", () => {
-  // Regression: the deployed worker answered EVERY billable request with 429
-  // "Please wait 0 seconds." between Oct 5 and Oct 6. `SELECT * FROM
-  // check_preflight(...)` returns one column named after the function, so
-  // `result[0].allowed` was undefined, the deny branch ran, and `reason` was
-  // undefined too — which the catch-all reported as a rate limit. Pin both the
-  // SQL alias and the unwrap so the shape cannot silently change again.
-  beforeEach(() => {
-    mockDb.execute.mockReset();
-    mockDb.execute.mockResolvedValue([]);
-  });
-
-  test("aliases the function so the driver row is { preflight }", async () => {
-    stubPreflight({ allowed: true, tier_active: "FREE" });
-    await checkPreflight(mockEnv(), "uid-shape", "FREE", "translate", null);
-    const call = mockDb.execute.mock.calls.find((c) =>
-      JSON.stringify(c[0]).includes("check_preflight"),
-    );
-    expect(JSON.stringify(call?.[0])).toContain("AS preflight");
-  });
-
-  test("reads allowed/reason through the preflight wrapper", async () => {
-    stubPreflight({ allowed: true, tier_active: "FREE", quota_remaining: 25 });
-    const res = await checkPreflight(
-      mockEnv(),
-      "uid-shape",
-      "FREE",
-      "translate",
-      null,
-    );
-    expect(res.allowed).toBe(true);
-    expect(res.quota_remaining).toBe(25);
-  });
-
-  test("a genuine RATE_LIMIT still yields 429 with a positive Retry-After", async () => {
-    stubPreflight({
-      allowed: false,
-      reason: "RATE_LIMIT",
-      cooldown_remaining: 2.4,
-    });
-    const gate = await runPreflightGate(
-      mockEnv(),
-      mockExecutionContext(),
-      "uid-shape",
-      "FREE",
-      "translate",
-      null,
-    );
-    expect(gate.ok).toBe(false);
-    if (!gate.ok) {
-      expect(gate.response.status).toBe(429);
-      expect(gate.response.headers.get("Retry-After")).toBe("3");
-    }
-  });
-
-  test("an unrecognised reason is a 500, never a rate limit", async () => {
-    stubPreflight({ allowed: false });
-    const gate = await runPreflightGate(
-      mockEnv(),
-      mockExecutionContext(),
-      "uid-shape",
-      "FREE",
-      "translate",
-      null,
-    );
-    expect(gate.ok).toBe(false);
-    if (!gate.ok) {
-      expect(gate.response.status).toBe(500);
-      expect(gate.response.headers.get("Retry-After")).toBeNull();
-    }
+describe("nextUtcMidnightMs", () => {
+  test("is the next UTC day boundary", () => {
+    const next = nextUtcMidnightMs();
+    expect(next).toBeGreaterThan(Date.now());
+    expect(next % 86_400_000).toBe(0);
+    expect(next - Date.now()).toBeLessThanOrEqual(86_400_000);
   });
 });

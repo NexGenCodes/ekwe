@@ -38,7 +38,7 @@ export default function WelcomeScreen(): React.JSX.Element {
     if (result.ok && result.needsOtp) {
       pushOnce(router, {
         pathname: "/(auth)/verify",
-        params: { email: data.email.trim(), source: "login" },
+        params: { email: data.email.trim() },
       });
     }
   };

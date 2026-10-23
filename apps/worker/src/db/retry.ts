@@ -1,30 +1,5 @@
 import { logger } from "@/core/logger";
-import { getDb } from "@/db";
-import type { Env } from "@/core/types";
 
-type Db = ReturnType<typeof getDb>;
-
-const CONNECTION_LOST_CODES = new Set([
-  "ECONNRESET",
-  "EPIPE",
-  "ETIMEDOUT",
-  "EHOSTUNREACH",
-  "ENETUNREACH",
-  "ECONNREFUSED",
-  "CONNECTION_CLOSED_ERROR",
-  "CONNECTION_ENDED",
-  "57P01", // admin_shutdown
-  "08000", // connection_exception
-  "08001", // sqlclient_unable_to_establish_sqlconnection
-  "08003", // connection_does_not_exist
-  "08006", // connection_failure
-]);
-
-/**
- * Joins the message chain. Cloudflare raises a dropped socket as
- * `Network connection lost.` off `cause`, so reading only `error.message`
- * logs the SQL text and nothing about what actually failed.
- */
 export function describeError(error: unknown): string {
   const parts: string[] = [];
   let current: unknown = error;
@@ -38,35 +13,42 @@ export function describeError(error: unknown): string {
   return parts.join(" | ");
 }
 
-export function isConnectionLost(error: unknown): boolean {
+export function isTransient(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
-  if (typeof code === "string" && CONNECTION_LOST_CODES.has(code)) return true;
+  if (code === "SQLITE_BUSY" || code === "SQLITE_LOCKED") return true;
+
   const text = describeError(error).toLowerCase();
   return (
-    text.includes("network connection lost") ||
-    text.includes("connection terminated") ||
-    text.includes("socket hang up") ||
-    text.includes("connection closed") ||
-    text.includes("open slot in the pool")
+    text.includes("sqlite_busy") ||
+    text.includes("sqlite_locked") ||
+    text.includes("database is locked") ||
+    text.includes("network connection lost")
   );
 }
 
 /**
- * Runs a read or idempotent write, retrying once on a new connection when the
- * socket dies.
- *
- * Never wrap an incrementing counter: replaying it after a lost response would
- * charge twice (see `consume_usage`, left unwrapped at its call site).
+ * D1 has one writer, so concurrent requests collide on SQLITE_BUSY rather than
+ * on a dropped socket. Only wrap idempotent statements: the retry replays.
  */
-export async function retryOnConnectionLoss<T>(
-  query: (db: Db) => Promise<T>,
-  env: Env,
+export async function retryTransient<T>(
+  fn: () => Promise<T>,
+  attempts = 3,
 ): Promise<T> {
-  try {
-    return await query(getDb(env));
-  } catch (error) {
-    if (!isConnectionLost(error)) throw error;
-    logger.warn("[db] connection lost, retrying on a new connection");
-    return await query(getDb(env));
+  let last: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      last = error;
+      if (!isTransient(error) || attempt === attempts - 1) break;
+      logger.warn("[db] transient error, retrying", {
+        attempt: attempt + 1,
+        error: describeError(error),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 25 * 2 ** attempt));
+    }
   }
+
+  throw last;
 }

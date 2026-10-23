@@ -7,6 +7,7 @@ import {
   LOCAL_PRICES,
   PRO_PRODUCT_IDS,
   SPEECH_MAX_TEXT_CHARS,
+  aiCreditsForUsage,
 } from "../plans";
 import { FLUTTERWAVE_CURRENCIES } from "../money";
 import { HISTORY_TTL_FREE_DAYS, HISTORY_TTL_PAID_DAYS } from "../retention";
@@ -51,6 +52,47 @@ describe("Plan Limits (FREE vs PREMIUM)", () => {
 
     expect(FREE_LIMITS.transliterationAllowed).toBe(false);
     expect(PREMIUM_LIMITS.transliterationAllowed).toBe(true);
+  });
+
+  it("the shared credit pool covers every monthly feature cap", () => {
+    for (const limits of [FREE_LIMITS, PREMIUM_LIMITS]) {
+      const maxCredits =
+        aiCreditsForUsage("translate", {
+          chars: limits.monthlyTranslateLimit * 1_000,
+        }) +
+        aiCreditsForUsage("transcribe", {
+          durationMs: limits.monthlyTranscribeMinutesLimit * 60_000,
+        }) +
+        aiCreditsForUsage("speech", {
+          chars: limits.monthlySpeechCharsLimit,
+        }) +
+        aiCreditsForUsage("stream", {
+          durationMs: limits.monthlyStreamMinutesLimit * 60_000,
+        });
+
+      expect(maxCredits).toBeLessThanOrEqual(limits.monthlyAiCreditsLimit);
+    }
+  });
+
+  it("Premium has higher daily and monthly AI caps than FREE", () => {
+    expect(PREMIUM_LIMITS.dailyTranslateLimit).toBeGreaterThan(
+      FREE_LIMITS.dailyTranslateLimit,
+    );
+    expect(PREMIUM_LIMITS.dailyTranscribeMinutesLimit).toBeGreaterThan(
+      FREE_LIMITS.dailyTranscribeMinutesLimit,
+    );
+    expect(PREMIUM_LIMITS.monthlyTranslateLimit).toBeGreaterThan(
+      FREE_LIMITS.monthlyTranslateLimit,
+    );
+    expect(PREMIUM_LIMITS.monthlyTranscribeMinutesLimit).toBeGreaterThan(
+      FREE_LIMITS.monthlyTranscribeMinutesLimit,
+    );
+    expect(PREMIUM_LIMITS.monthlySpeechCharsLimit).toBeGreaterThan(
+      FREE_LIMITS.monthlySpeechCharsLimit,
+    );
+    expect(PREMIUM_LIMITS.monthlyAiCreditsLimit).toBeGreaterThan(
+      FREE_LIMITS.monthlyAiCreditsLimit,
+    );
   });
 });
 

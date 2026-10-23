@@ -1,7 +1,16 @@
 import type { SQLiteBindParams } from "expo-sqlite";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import { openDatabaseSync } from "expo-sqlite";
-import { eq, and, desc, sql, or, inArray, placeholder } from "drizzle-orm";
+import {
+  eq,
+  and,
+  desc,
+  sql,
+  or,
+  isNull,
+  inArray,
+  placeholder,
+} from "drizzle-orm";
 import { history, outbox } from "@ekwe/db/local-schema";
 
 import migrations from "../../drizzle/migrations";
@@ -139,10 +148,13 @@ ensureTables();
 // Use `.run()` / `.all()` / `.get()`, never `.execute()` (sync driver no-op).
 // ---------------------------------------------------------------------------
 
+/** Live rows only — tombstones are filtered out of every user-facing read. */
+const liveRow = isNull(history.deletedAt);
+
 const _recentHistoryStmt = db
   .select()
   .from(history)
-  .where(eq(history.userId, placeholder("userId")))
+  .where(and(eq(history.userId, placeholder("userId")), liveRow))
   .orderBy(desc(history.createdAt))
   .limit(placeholder("limit"))
   .prepare();
@@ -150,7 +162,7 @@ const _recentHistoryStmt = db
 const _historyPageFirstStmt = db
   .select()
   .from(history)
-  .where(eq(history.userId, placeholder("userId")))
+  .where(and(eq(history.userId, placeholder("userId")), liveRow))
   .orderBy(desc(history.createdAt), desc(history.id))
   .limit(placeholder("limit"))
   .prepare();
@@ -163,15 +175,37 @@ const _captureStmt = db
     and(
       eq(history.userId, placeholder("userId")),
       eq(history.captureId, placeholder("captureId")),
+      liveRow,
     ),
   )
   .orderBy(desc(history.createdAt))
   .limit(1)
   .prepare();
 
-const _deleteHistoryStmt = db
-  .delete(history)
+const _markDeletedStmt = db
+  .update(history)
+  .set({ deletedAt: sql`${placeholder("deletedAt")}` })
   .where(eq(history.id, placeholder("id")))
+  .prepare();
+
+const _clearDeletedStmt = db
+  .update(history)
+  .set({ deletedAt: null })
+  .where(eq(history.id, placeholder("id")))
+  .prepare();
+
+/** Includes tombstones — used by delete/restore to read the row's revision. */
+const _historyByIdStmt = db
+  .select()
+  .from(history)
+  .where(eq(history.id, placeholder("id")))
+  .limit(1)
+  .prepare();
+
+const _allHistoryStmt = db
+  .select()
+  .from(history)
+  .where(eq(history.userId, placeholder("userId")))
   .prepare();
 
 const _deleteOutboxStmt = db
@@ -238,18 +272,41 @@ export const Db = {
     }
   },
 
+  /**
+   * Writes the full row state, including `deletedAt`. Pass null to clear a
+   * tombstone (restore) and a timestamp to write one.
+   */
   insertHistory: (row: typeof history.$inferInsert): void => {
+    const values = { ...row, deletedAt: row.deletedAt ?? null };
     db.insert(history)
-      .values(row)
+      .values(values)
       .onConflictDoUpdate({
         target: history.id,
-        set: row,
+        set: values,
       })
       .run();
   },
 
-  deleteHistory: (id: string): void => {
-    _deleteHistoryStmt.run({ id });
+  /** Soft-deletes: keeps the row (and its revision) as a local tombstone. */
+  markHistoryDeleted: (id: string, deletedAt: number = Date.now()): void => {
+    _markDeletedStmt.run({ id, deletedAt });
+  },
+
+  /** Clears a tombstone so an Undo can push a restore against its revision. */
+  clearHistoryDeleted: (id: string): void => {
+    _clearDeletedStmt.run({ id });
+  },
+
+  /** Marks a row the server reports as deleted, keeping its revision. */
+  applyRemoteDeletion: (
+    id: string,
+    revision: number,
+    deletedAt: number = Date.now(),
+  ): void => {
+    db.update(history)
+      .set({ deletedAt, revision })
+      .where(eq(history.id, id))
+      .run();
   },
 
   /** Records the server-confirmed revision for conflict resolution. */
@@ -266,6 +323,17 @@ export const Db = {
       .limit(1)
       .all();
     return rows[0]?.revision ?? null;
+  },
+
+  /** Reads a row including its tombstone, when one exists. */
+  getHistoryById: (id: string): HistoryRow | null => {
+    return _historyByIdStmt.all({ id })[0] ?? null;
+  },
+
+  /** Every row for a user, including tombstones. */
+  getAllHistory: (userId: string): HistoryRow[] => {
+    if (!userId) return [];
+    return _allHistoryStmt.all({ userId });
   },
 
   /** Finds the row for a capture ID. Returns null for empty IDs to prevent legacy row collisions. */
@@ -337,6 +405,7 @@ export const Db = {
       .where(
         and(
           eq(history.userId, userId),
+          liveRow,
           or(
             sql`${history.createdAt} < ${before.created_at}`,
             and(
@@ -369,6 +438,7 @@ export const Db = {
       .where(
         and(
           eq(history.userId, userId),
+          liveRow,
           sql`${history.id} IN (SELECT id FROM history_fts WHERE history_fts MATCH ${ftsQuery})`,
         ),
       )
@@ -398,6 +468,7 @@ export const Db = {
       .where(
         and(
           eq(history.userId, userId),
+          liveRow,
           sql`${history.id} IN (SELECT id FROM history_fts WHERE history_fts MATCH ${`"${sanitized}"*`})`,
         ),
       )
@@ -415,16 +486,33 @@ export const Db = {
     const cutoff = new Date(
       Date.now() - ttlDays * 24 * 60 * 60 * 1000,
     ).toISOString();
-    const conditions = [sql`${history.createdAt} < ${cutoff}`];
+    const conditions = [
+      liveRow,
+      sql`${history.createdAt} < ${cutoff}`,
+      // Never drop a row that still has an unacknowledged write queued.
+      sql`NOT EXISTS (SELECT 1 FROM ${outbox} WHERE json_extract(${outbox.payload}, '$.id') = ${history.id})`,
+    ];
     if (userId) conditions.push(eq(history.userId, userId));
-    conditions.push(
-      sql`NOT EXISTS (SELECT 1 FROM ${outbox} WHERE ${outbox.id} = ${history.id})`,
-    );
     const deleted = db
       .delete(history)
       .where(and(...conditions))
       .run();
     return deleted.changes ?? 0;
+  },
+
+  /** Hard-deletes tombstones past the retention window. */
+  purgeExpiredTombstones: (ttlDays: number): number => {
+    const cutoff = Date.now() - ttlDays * 24 * 60 * 60 * 1000;
+    const purged = db
+      .delete(history)
+      .where(
+        and(
+          sql`${history.deletedAt} IS NOT NULL`,
+          sql`${history.deletedAt} < ${cutoff}`,
+        ),
+      )
+      .run();
+    return purged.changes ?? 0;
   },
 
   insertOutbox: (row: typeof outbox.$inferInsert): void => {

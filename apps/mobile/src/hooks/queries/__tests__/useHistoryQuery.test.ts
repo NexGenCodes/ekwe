@@ -5,17 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useHistoryQuery } from "@/hooks/queries/useHistoryQuery";
 
 const getHistoryPage = vi.fn();
-const fetchOlderHistory = vi.fn();
 
 vi.mock("@/services/db", () => ({
   Db: {
     getHistoryPage: (...args: unknown[]) => getHistoryPage(...args),
-  },
-}));
-
-vi.mock("@/services/syncService", () => ({
-  SyncService: {
-    fetchOlderHistory: (...args: unknown[]) => fetchOlderHistory(...args),
   },
 }));
 
@@ -33,12 +26,34 @@ vi.mock("@/utils/logger", () => ({
   default: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
+function localRow(id: string, timestamp: number) {
+  return {
+    id,
+    userId: "user-a",
+    createdAt: new Date(timestamp).toISOString(),
+    captureId: null,
+    origin: "echo",
+    input: "audio",
+    sourceLang: "en",
+    targetLang: "fr",
+    transcript: "hello",
+    translationText: "bonjour",
+    transliterationText: null,
+    duration: 1,
+    sourceApp: "",
+    voiceId: null,
+    sttProvider: "deepgram",
+    mtProvider: "gemini",
+    entryType: "translation",
+    revision: 0,
+    deletedAt: null,
+  };
+}
+
 describe("useHistoryQuery", () => {
   beforeEach(() => {
     getHistoryPage.mockReset();
-    fetchOlderHistory.mockReset();
     getHistoryPage.mockReturnValue([]);
-    fetchOlderHistory.mockResolvedValue([]);
   });
 
   it("loads once per user and again when the account changes", async () => {
@@ -84,26 +99,55 @@ describe("useHistoryQuery", () => {
     });
   });
 
-  it("reports initial loading until the first page resolves", async () => {
-    let resolveFetch: (value: unknown[]) => void = () => {};
-    fetchOlderHistory.mockReturnValue(
-      new Promise((resolve) => {
-        resolveFetch = resolve;
-      }),
-    );
-
+  it("clears the initial loading flag after the first page resolves", async () => {
     const { result } = renderHook(() => useHistoryQuery("user-d"));
-
-    await waitFor(() => {
-      expect(result.current.isInitialLoading).toBe(true);
-    });
-
-    await act(async () => {
-      resolveFetch([]);
-    });
 
     await waitFor(() => {
       expect(result.current.isInitialLoading).toBe(false);
     });
+    expect(getHistoryPage).toHaveBeenCalledWith("user-d", 20, null);
+  });
+
+  it("keeps paging while a full page comes back", async () => {
+    getHistoryPage.mockReturnValue(
+      Array.from({ length: 20 }, (_, i) =>
+        localRow(`row-${i}`, Date.now() - i * 1000),
+      ),
+    );
+
+    const { result } = renderHook(() => useHistoryQuery("user-a"));
+    await waitFor(() => {
+      expect(getHistoryPage).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    expect(getHistoryPage).toHaveBeenCalledTimes(2);
+    expect(getHistoryPage).toHaveBeenLastCalledWith(
+      "user-a",
+      20,
+      expect.objectContaining({ id: "row-19" }),
+    );
+    expect(result.current.hasMore).toBe(true);
+  });
+
+  it("stops paging on a partial page", async () => {
+    getHistoryPage.mockReturnValue([
+      localRow("row-1", Date.now()),
+      localRow("row-2", Date.now() - 1000),
+    ]);
+
+    const { result } = renderHook(() => useHistoryQuery("user-a"));
+    await waitFor(() => {
+      expect(getHistoryPage).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      await result.current.loadMore();
+    });
+
+    expect(result.current.hasMore).toBe(false);
   });
 });

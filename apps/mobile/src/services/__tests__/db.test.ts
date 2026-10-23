@@ -84,7 +84,7 @@ describe("Db service", () => {
   // re-pushing the same rows forever: every drain "succeeded" and deleted
   // nothing.
   it("should run prepared mutations instead of deferring them", () => {
-    Db.deleteHistory("row-1");
+    Db.markHistoryDeleted("row-1", 1_700_000_000_000);
     Db.deleteOutbox("row-1");
     Db.markOutboxInFlight("row-1");
     Db.reviveInFlight();

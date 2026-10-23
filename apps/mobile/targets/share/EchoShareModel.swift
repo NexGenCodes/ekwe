@@ -27,7 +27,7 @@ struct EchoPickLanguage: Identifiable {
 /// This now runs the ENTIRE echo flow natively (no JS runtime, no handoff to a
 /// deep link): the audio is decoded and previewed with AVAudio, then uploaded
 /// to the Cloudflare Worker for transcription and optional translation. All
-/// authenticated with the Supabase session restored from the shared App Group
+/// authenticated with the session restored from the shared App Group
 /// container.
 ///
 ///   PickLanguage → Preview → Transcribing → TranscriptResult
@@ -83,7 +83,7 @@ final class EchoShareModel: NSObject, ObservableObject {
     @Published private(set) var rate: Double = 1
 
     /// Whether the signed-in user's tier allows auto language detection
-    /// (mirrored from the app's is_pro flag). Free users see a locked card.
+    /// (mirrored from the app's paid tier). Free users see a locked card.
     @Published private(set) var autoDetectAllowed = false
 
     // MARK: - Dependencies

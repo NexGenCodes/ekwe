@@ -19,10 +19,6 @@ vi.mock("@/services/mmkv", () => ({
   mmkv: { getString: vi.fn(), set: vi.fn(), getBoolean: vi.fn() },
 }));
 
-vi.mock("@/services/supabase", () => ({
-  supabase: { auth: { refreshSession: vi.fn() } },
-}));
-
 afterEach(() => {
   networkActions.set({ isConnected: null, isInternetReachable: null });
 });

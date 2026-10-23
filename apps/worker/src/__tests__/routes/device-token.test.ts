@@ -1,8 +1,14 @@
-import { describe, test, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import { handleRegisterDeviceToken } from "@/routes/device-token";
 import type { AuthResult } from "@/core/auth";
-import { mockDb, mockEnv } from "@/__tests__/setup";
-import { PgDialect } from "drizzle-orm/pg-core";
+import type { Env } from "@/core/types";
+import {
+  createTestDatabase,
+  type TestDatabase,
+} from "@/__tests__/helpers/sqlite-d1";
+
+const USER_ID = "3f7c1d2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f";
+const OTHER_USER_ID = "4a8d2e3f-6c7b-4d9e-8f01-2b3c4d5e6f70";
 
 const auth = (userId: string): AuthResult => ({
   userId,
@@ -11,87 +17,119 @@ const auth = (userId: string): AuthResult => ({
   sessionId: null,
 });
 
-type ConflictArg = {
-  target: unknown;
-  set: Record<string, unknown>;
-};
-
-function conflictArg(): ConflictArg {
-  const call = mockDb.onConflictDoUpdate.mock.calls[0];
-  expect(call, "onConflictDoUpdate was never called").toBeDefined();
-  return call[0] as ConflictArg;
+function makeEnv(database: TestDatabase): Env {
+  return { DB: database.d1, APP_ENV: "test" } as unknown as Env;
 }
 
-/** Renders a Drizzle `sql` fragment the way the pg driver would. */
-function sqlText(value: unknown): string {
-  return new PgDialect().sqlToQuery(value as never).sql;
+function seedUser(database: TestDatabase, id: string): void {
+  const now = Date.now();
+  database.sqlite
+    .prepare(
+      `INSERT INTO users (id, email, email_norm, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(id, `${id}@test.dev`, `${id}@test.dev`, now, now);
+}
+
+function stored(database: TestDatabase, token: string) {
+  return database.sqlite
+    .prepare(
+      `SELECT user_id, platform, app_version, is_active
+         FROM push_tokens WHERE push_token = ?`,
+    )
+    .get(token) as
+    | {
+        user_id: string | null;
+        platform: string;
+        app_version: string | null;
+        is_active: number;
+      }
+    | undefined;
 }
 
 describe("handleRegisterDeviceToken", () => {
+  let database: TestDatabase;
+
   beforeEach(() => {
-    vi.clearAllMocks();
+    database = createTestDatabase();
+    seedUser(database, USER_ID);
+    seedUser(database, OTHER_USER_ID);
   });
 
-  test("registers an anonymous token with no owner", async () => {
+  test("binds a token to the authenticated user", async () => {
     const res = await handleRegisterDeviceToken(
       { push_token: "ExponentPushToken[abc]", platform: "android" },
-      mockEnv(),
-      null,
+      makeEnv(database),
+      auth(USER_ID),
     );
 
     expect(res.status).toBe(200);
-    const values = mockDb.values.mock.calls[0][0] as Record<string, unknown>;
-    expect(values.userId).toBeNull();
+    expect(stored(database, "ExponentPushToken[abc]")).toMatchObject({
+      user_id: USER_ID,
+      platform: "android",
+      is_active: 1,
+    });
   });
 
-  test("a conflict never clears or reassigns an existing owner", async () => {
+  test("a re-registration updates the device and keeps the owner", async () => {
+    const env = makeEnv(database);
+    await handleRegisterDeviceToken(
+      {
+        push_token: "ExponentPushToken[abc]",
+        platform: "android",
+        app_version: "1.0.0",
+      },
+      env,
+      auth(USER_ID),
+    );
+    await handleRegisterDeviceToken(
+      {
+        push_token: "ExponentPushToken[abc]",
+        platform: "ios",
+        app_version: "1.1.0",
+      },
+      env,
+      auth(USER_ID),
+    );
+
+    expect(stored(database, "ExponentPushToken[abc]")).toMatchObject({
+      user_id: USER_ID,
+      platform: "ios",
+      app_version: "1.1.0",
+    });
+  });
+
+  test("another account cannot take over an owned token", async () => {
+    const env = makeEnv(database);
     await handleRegisterDeviceToken(
       { push_token: "ExponentPushToken[abc]", platform: "android" },
-      mockEnv(),
-      null,
+      env,
+      auth(USER_ID),
     );
 
-    const { set } = conflictArg();
-
-    // The owner column must be a conditional expression, not a literal that
-    // would overwrite whatever the row already records.
-    expect(sqlText(set.userId)).toMatch(/COALESCE/i);
-
-    // Nothing else in the conflict clause may reintroduce a plain owner write.
-    for (const [key, value] of Object.entries(set)) {
-      if (key === "userId") continue;
-      expect(
-        (value as Record<string, unknown>)?.userId,
-        `set.${key} must not carry userId`,
-      ).toBeUndefined();
-    }
-  });
-
-  test("an authenticated call still records its own user id on insert", async () => {
-    const userId = "3f7c1d2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f";
-
     const res = await handleRegisterDeviceToken(
-      { push_token: "ExponentPushToken[xyz]", platform: "ios" },
-      mockEnv(),
-      auth(userId),
+      { push_token: "ExponentPushToken[abc]", platform: "ios" },
+      env,
+      auth(OTHER_USER_ID),
     );
 
     expect(res.status).toBe(200);
-    const values = mockDb.values.mock.calls[0][0] as Record<string, unknown>;
-    expect(values.userId).toBe(userId);
-    expect(sqlText(conflictArg().set.userId)).toMatch(/COALESCE/i);
+    expect(stored(database, "ExponentPushToken[abc]")?.user_id).toBe(USER_ID);
   });
 
-  test("a db failure surfaces as a 502, not a 500", async () => {
-    mockDb.execute.mockRejectedValueOnce(new Error("boom") as never);
-    mockDb.insert.mockImplementationOnce((() => {
-      throw new Error("connection lost");
-    }) as never);
+  test("a database failure surfaces as a 502", async () => {
+    const env = {
+      DB: {
+        prepare: () => {
+          throw new Error("boom");
+        },
+      },
+    } as unknown as Env;
 
     const res = await handleRegisterDeviceToken(
       { push_token: "ExponentPushToken[abc]", platform: "android" },
-      mockEnv(),
-      null,
+      env,
+      auth(USER_ID),
     );
 
     expect(res.status).toBe(502);

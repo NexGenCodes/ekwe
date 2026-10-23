@@ -180,7 +180,7 @@ describe("Webhook Endpoint", () => {
         prepare() {
           throw new Error("D1 unavailable");
         },
-      } as unknown as Env["EKWE_D1"];
+      } as unknown as Env["DB"];
 
       const req = await flutterwaveSignedRequest(
         JSON.stringify({ id: 88888, event: "charge.completed", data: {} }),
@@ -188,7 +188,7 @@ describe("Webhook Endpoint", () => {
 
       const res = await handleWebhook(
         req,
-        mockEnv({ FLUTTERWAVE_WEBHOOK_SECRET: SECRET, EKWE_D1: throwingD1 }),
+        mockEnv({ FLUTTERWAVE_WEBHOOK_SECRET: SECRET, DB: throwingD1 }),
         ctx,
       );
       expect(res.status).toBe(500);

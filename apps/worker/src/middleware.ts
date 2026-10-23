@@ -1,6 +1,6 @@
 import { Context, Next } from "hono";
 import type { AppEnv } from "@/app";
-import type { Tier, UsageType } from "@/core/types";
+import type { UsageType } from "@/core/types";
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { error } from "@/core/http";
 import { logger } from "@/core/logger";
@@ -78,28 +78,6 @@ export const authMiddleware =
     await next();
   };
 
-export const optionalAuthMiddleware =
-  (isStream = false) =>
-  async (c: Context<AppEnv>, next: Next) => {
-    const token = extractToken(c.req.raw, isStream);
-    let auth = null;
-    const timings = c.get("timings");
-    if (token) {
-      auth = await timings.measure("auth", () => authenticate(token, c.env));
-    }
-
-    c.set("auth", auth);
-    if (auth) {
-      c.set("tier", auth.tier);
-      c.set("pipelineTier", auth.tier);
-    }
-
-    const limited = await rateLimit(c, auth?.userId ?? null, isStream);
-    if (limited) return limited;
-
-    await next();
-  };
-
 export const adminAuthMiddleware = async (c: Context<AppEnv>, next: Next) => {
   if (!(await isAdminAuthorized(c.env, c.req.raw))) {
     logger.warn("[auth] Admin secret rejected", { path: c.req.path });
@@ -119,26 +97,12 @@ export const preflightMiddleware =
         auth!.userId,
         auth!.tier,
         usageType,
-        auth!.sessionId,
       ),
     );
     if (!gate.ok) return gate.response;
 
-    c.set("tier", gate.preflight.tier_active);
-    const pipelineTier: Tier = gate.preflight.throttled
-      ? "FREE"
-      : gate.preflight.tier_active;
-    c.set("pipelineTier", pipelineTier);
-
-    if (gate.preflight.throttled) {
-      logger.info("[preflight] throttled", {
-        userId: auth!.userId,
-        type: usageType,
-        tier: gate.preflight.tier_active,
-        pipelineTier,
-        cooldownRemaining: gate.preflight.cooldown_remaining,
-      });
-    }
+    c.set("tier", gate.tier);
+    c.set("pipelineTier", gate.tier);
 
     await next();
   };

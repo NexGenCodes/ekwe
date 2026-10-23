@@ -39,7 +39,7 @@ export const LEGAL_DOCUMENTS: Record<string, LegalDocument> = {
       },
       {
         title: "Third Parties We Work With",
-        body: "Ekwe uses other companies to provide its service. Each has its own privacy policy:\n\n• Supabase (authentication & database)\n• PostHog (product analytics)\n• Flutterwave (payment processing)\n• Cloudflare Workers (backend API)\n• Apple (Sign In with Apple, App Store)\n• Google (Google Sign-In, Google Play Services)\n• Expo (development & build toolchain)\n• Sentry (crash reporting)\n• AI service providers (transcription & translation processing)\n\nWe may share your information:\n\n• If required by law (e.g., a court order)\n• To protect our rights, your safety, or the safety of others\n• To investigate fraud or respond to a government request\n• With trusted partners who have agreed to follow this privacy policy",
+        body: "Ekwe uses other companies to provide its service. Each has its own privacy policy:\n\n• Cloudflare (authentication, database & backend API)\n• Brevo (email delivery)\n• PostHog (product analytics)\n• Flutterwave (payment processing)\n• Apple (Sign In with Apple, App Store)\n• Google (Google Sign-In, Google Play Services)\n• Expo (development & build toolchain)\n• Sentry (crash reporting)\n• AI service providers (transcription & translation processing)\n\nWe may share your information:\n\n• If required by law (e.g., a court order)\n• To protect our rights, your safety, or the safety of others\n• To investigate fraud or respond to a government request\n• With trusted partners who have agreed to follow this privacy policy",
       },
       {
         title: "Your Choices",
@@ -94,7 +94,7 @@ export const LEGAL_DOCUMENTS: Record<string, LegalDocument> = {
       },
       {
         title: "Third-Party Services",
-        body: "Ekwe uses third-party services that have their own terms:\n\n• Supabase (authentication & database)\n• PostHog (product analytics)\n• Flutterwave (payment processing)\n• Cloudflare Workers (backend API)\n• Apple (Sign In with Apple, App Store)\n• Google (Google Sign-In, Google Play Services)\n• Expo (development & build toolchain)\n• Sentry (crash reporting)\n• AI service providers (transcription & translation processing)",
+        body: "Ekwe uses third-party services that have their own terms:\n\n• Cloudflare (authentication, database & backend API)\n• Brevo (email delivery)\n• PostHog (product analytics)\n• Flutterwave (payment processing)\n• Apple (Sign In with Apple, App Store)\n• Google (Google Sign-In, Google Play Services)\n• Expo (development & build toolchain)\n• Sentry (crash reporting)\n• AI service providers (transcription & translation processing)",
       },
       {
         title: "Internet & Data Charges",

@@ -42,20 +42,13 @@ import { duration, borderRadius, spacing } from "@/constants";
 import { PLAN_LIMITS } from "@/constants/billing";
 import { EkweError, ErrorMessages } from "@/constants/errors";
 import { useLogout, useTheme, usePermissions, useReduceMotion } from "@/hooks";
-import { deleteAccount } from "@/services/auth";
+import { deleteAccount, updateProfile } from "@/services/auth";
 import {
   checkForApkUpdate,
   resolveApkDownloadUrl,
 } from "@/services/otaUpdates";
 import { SyncService } from "@/services/syncService";
-import { supabase } from "@/services/supabase";
-import {
-  auth$,
-  authActions,
-  settings$,
-  settingsActions,
-  update$,
-} from "@/store";
+import { auth$, settings$, settingsActions, update$ } from "@/store";
 import { AppAlert, isIOS } from "@/utils";
 
 import { resolveVoiceSelection, type VoiceSelection } from "@/utils/voices";
@@ -144,8 +137,7 @@ export default function ProfileScreen(): React.JSX.Element {
     }
   }, [isCheckingUpdate]);
 
-  const rawName =
-    user?.user_metadata?.full_name || user?.user_metadata?.name || "";
+  const rawName = user?.displayName ?? "";
   const userEmail = user?.email || "";
 
   const fallbackName = userEmail.split("@")[0] || "User";
@@ -153,20 +145,15 @@ export default function ProfileScreen(): React.JSX.Element {
 
   const [isIconModalVisible, setIsIconModalVisible] = useState(false);
 
-  const currentIconData = user?.user_metadata?.avatar_icon
-    ? (AVATAR_ICONS.find((i) => i.name === user?.user_metadata?.avatar_icon) ??
-      null)
+  const currentIconData = user?.avatarIcon
+    ? (AVATAR_ICONS.find((i) => i.name === user.avatarIcon) ?? null)
     : null;
 
   const handleUpdateIcon = async (iconName: string): Promise<void> => {
     setIsIconModalVisible(false);
     await triggerHaptic();
     try {
-      const { data, error } = await supabase.auth.updateUser({
-        data: { avatar_icon: iconName || null },
-      });
-      if (error) throw error;
-      if (data.user) authActions.setUser(data.user);
+      await updateProfile({ avatarIcon: iconName || null });
     } catch (e) {
       logger.error("Failed to update avatar icon:", e);
       AppAlert.error("Error", "Could not update your avatar.");
@@ -263,15 +250,13 @@ export default function ProfileScreen(): React.JSX.Element {
               icon={CreditCard}
               sfIcon="creditcard.fill"
               iconColor={isPro ? color.brand : color.foreground}
-              title={isPro ? "Ekwe Pro" : "Plan & Billing"}
+              title={isPro ? "Ekwe Paid" : "Plan & Billing"}
               subtitle={
                 isPro
-                  ? PLAN_LIMITS.pro.dailyTranslateLimit === 0
-                    ? "Unlimited translations · Premium voices"
-                    : `${PLAN_LIMITS.pro.dailyTranslateLimit.toLocaleString(
-                        "en-US",
-                      )} translations per day`
-                  : "Free Tier · Standard limits"
+                  ? `${PLAN_LIMITS.pro.monthlyTranslateLimit.toLocaleString(
+                      "en-US",
+                    )} translations/month · ${PLAN_LIMITS.pro.monthlyTranscribeMinutesLimit} transcription min/month · No ads`
+                  : `Free Tier · ${PLAN_LIMITS.free.dailyTranslateLimit} translations/day · Ads supported`
               }
               onPress={async () => {
                 await triggerHaptic();
@@ -739,7 +724,7 @@ export default function ProfileScreen(): React.JSX.Element {
         visible={isIconModalVisible}
         onClose={() => setIsIconModalVisible(false)}
         onSelect={handleUpdateIcon}
-        currentIcon={user?.user_metadata?.avatar_icon}
+        currentIcon={user?.avatarIcon ?? undefined}
       />
 
       <ThemePickerModal

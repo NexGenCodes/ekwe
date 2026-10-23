@@ -10,8 +10,9 @@
   // maximum (300000) so a duration-scaled transcription budget
   // (TRANSCRIBE_MAX_BUDGET_MS) stays reachable for long clips.
 
-  // Daily history retention cleanup (free: 14d, pro: 30d) — calls
-  // cleanup_expired_history via the service role in the `scheduled` handler.
+  // Daily maintenance: cache cleanup, history retention (free: 14d,
+  // pro: 30d), tombstone purge, R2 speech-cache purge, and Flutterwave
+  // reconciliation. Runs directly in the `scheduled` handler.
   "triggers": {
     "crons": ["0 3 * * *"]
   },
@@ -19,7 +20,7 @@
   // Billing provider secrets (set via `wrangler secret put <NAME>`):
   // - FLUTTERWAVE_SECRET: Flutterwave API secret key (FLWSECK_... or
   //   FLWSECK_TEST-...). In production this MUST be a live key: a test-mode
-  //   secret would let anyone bypass payment and grant Pro for free.
+  //   secret would let anyone bypass payment and grant the paid plan for free.
   // - FLUTTERWAVE_PUBLIC: matching Flutterwave public key (FLWPUBK_... or
   //   FLWPUBK_TEST-...). Returned to the client in the checkout response so
   //   the SDK always charges against the key matching the configured secret.
@@ -37,7 +38,6 @@
   },
 
   "vars": {
-    "SUPABASE_URL": "https://zsjcgebczzbmaarfcdny.supabase.co",
     "ALLOWED_ORIGINS": "https://ekwe.pages.dev",
     "FIREBASE_PROJECT_NUMBER": "239869950724",
     "REQUIRE_APP_CHECK": "false",
@@ -51,7 +51,22 @@
     "SENTRY_DSN": "https://47d4580978ca72b625ee6460335410bd@o4510603967332352.ingest.us.sentry.io/4511942034259968",
     // Default to production so deploys never ship with debug logging / dev CORS.
     // Override to "development" locally via .dev.vars (precedence over vars).
-    "APP_ENV": "production"
+    "APP_ENV": "production",
+    "JWT_ISSUER": "https://ekwe-proxy.workers.dev",
+    "JWT_PUBLIC_JWK": "{\"crv\":\"Ed25519\",\"x\":\"mvDDmzCiZLRU-8zu_b_OBM5FA5xVX7JaJwrvdrfr7UI\",\"kty\":\"OKP\"}",
+    "APPLE_BUNDLE_ID": "com.ekwe.app",
+    // Google OAuth client ids (iOS + web) the worker accepts as the
+    // audience for a Google id token. Comma separated.
+    "GOOGLE_CLIENT_IDS": "508960750849-jo3qc5r65ip3oc6e8e3pc8ju9vacjko1.apps.googleusercontent.com,508960750849-u120m2v71v74uk9dbmfd06neppsc732h.apps.googleusercontent.com",
+    // Flips the sync push cap and the subrequest budget. Set to "true" when the
+    // account moves to Workers Paid; native Free caps the batch at 25 rows.
+    "WORKERS_PAID": "false",
+    // Sender for the OTP email. This is the Brevo account's own verified
+    // sender: no domain is owned yet, and Brevo's free tier only mails the
+    // account owner until a sending domain is verified. Swap to
+    // "noreply@ekwe.app" once ekwe.app is verified in Brevo.
+    "BREVO_SENDER": "emmanuelforchinagorom@gmail.com",
+    "BREVO_SENDER_NAME": "Ekwe"
   },
 
   "observability": {
@@ -60,7 +75,7 @@
     "traces": { "enabled": true, "head_sampling_rate": 0.01 }
   },
 
-  // KV: blacklist, TTS cache, FX rates, webhook idempotency, preflight cache
+  // KV: provider health, small TTS cache, FX rates, key memoisation.
   "kv_namespaces": [
     {
       "binding": "EKWE_KV",
@@ -68,13 +83,12 @@
     }
   ],
 
-  // D1 translation/transcription cache — 100K writes/day free (100x KV's 1K).
-  // Created via: wrangler d1 create ekwe-cache
+  // Created via: wrangler d1 create ekwe
   "d1_databases": [
     {
-      "binding": "EKWE_D1",
-      "database_name": "ekwe-cache",
-      "database_id": "1af43324-74dd-40c5-9bb8-e2e70588e16f"
+      "binding": "DB",
+      "database_name": "ekwe",
+      "database_id": "6444e108-7b53-4e69-89d3-66c8e805f31e"
     }
   ],
 
@@ -86,23 +100,6 @@
     {
       "binding": "SPEECH_CACHE",
       "bucket_name": "ekwe-speech-cache"
-    }
-  ],
-
-  // Postgres connection pool for Supabase. The worker speaks the Postgres wire
-  // protocol, so it cannot use the Neon HTTP driver: Hyperdrive keeps a warm,
-  // pooled connection set to Supavisor at the Cloudflare edge, which avoids the
-  // TCP+TLS handshake that short-lived isolates would otherwise pay on every
-  // query. Create the config once with:
-  //   wrangler hyperdrive create ekwe-db \
-  //     --connection-string "postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres"
-  // then paste the returned id below. `localConnectionString` is only read by
-  // `wrangler dev`; it points at `supabase start` (local Supabase, port 54322).
-  "hyperdrive": [
-    {
-      "binding": "HYPERDRIVE",
-      "id": "53b7e8f069ce4817978a5dcc70f114ec",
-      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
     }
   ],
 
@@ -156,32 +153,6 @@
     ]
   },
 
-  // Queue: maintenance tasks (cleanup_expired_history RPC). The DLQ
-  // (ekwe-maintenance-dlq) is consumed by this same script: messages that
-  // exhausted ekwe-maintenance's retries are reported to Sentry via the
-  // queue handler and acked, so they never linger (DLQ messages auto-delete
-  // after 4 days even without a consumer).
-  "queues": {
-    "producers": [
-      {
-        "binding": "MAINTENANCE_QUEUE",
-        "queue": "ekwe-maintenance"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "ekwe-maintenance",
-        "max_retries": 3,
-        "dead_letter_queue": "ekwe-maintenance-dlq"
-      },
-      {
-        "queue": "ekwe-maintenance-dlq",
-        "max_batch_size": 10,
-        "max_batch_timeout": 30,
-        "max_retries": 2
-      }
-    ]
-  },
 
   // DO migrations — new SQLite-backed classes
   "migrations": [

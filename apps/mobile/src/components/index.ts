@@ -31,7 +31,7 @@ export * from "@/components/ToastContainer";
 export * from "@/components/Disclaimer";
 export * from "@/components/OtpInput";
 export * from "@/components/AuthBackground";
-export * from "@/components/ProBadge";
+export * from "@/components/PaidBadge";
 export * from "@/components/LockedPressable";
 
 export * from "@/components/home";

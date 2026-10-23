@@ -1,13 +1,31 @@
 import { observable } from "@legendapp/state";
-import { Session, User } from "@supabase/supabase-js";
-import { resetPersonalSettings, registerIsProProvider } from "@/store/settings";
+import type { Tier } from "@ekwe/shared";
+
+import { registerIsProProvider, resetPersonalSettings } from "@/store/settings";
 import { setSentryUser } from "@/utils/logger";
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  tier: Tier;
+  displayName: string | null;
+  avatarUrl: string | null;
+  avatarIcon: string | null;
+  proExpiresAt: number | null;
+}
+
+export interface AuthSession {
+  user: AuthUser;
+  accessToken: string;
+  expiresAt: number;
+  refreshToken: string;
+  refreshExpiresAt: number;
+}
+
 interface AuthState {
-  session: Session | null;
-  user: User | null;
+  session: AuthSession | null;
+  user: AuthUser | null;
   isPro: boolean;
-  isProEntitlementSynced: boolean;
   isInitialized: boolean;
   sessionLoaded: boolean;
 }
@@ -16,7 +34,6 @@ const initialAuth: AuthState = {
   session: null,
   user: null,
   isPro: false,
-  isProEntitlementSynced: false,
   isInitialized: false,
   sessionLoaded: false,
 };
@@ -26,44 +43,33 @@ export const auth$ = observable<AuthState>(initialAuth);
 registerIsProProvider(() => auth$.isPro.peek());
 
 export function getToken(): string | null {
-  const session = auth$.session.peek();
-  return session?.access_token ?? null;
+  return auth$.session.peek()?.accessToken ?? null;
 }
 
 export const authActions = {
-  setSession: (session: Session | null): void => {
-    const metadataIsPro = session?.user?.app_metadata?.is_pro === true;
+  setSession: (session: AuthSession | null): void => {
     const previousUser = auth$.user.peek();
-    const sameUser = !!previousUser && session?.user?.id === previousUser.id;
-
-    const entitlementSynced = auth$.isProEntitlementSynced.peek();
-    const isPro = session
-      ? sameUser && entitlementSynced
-        ? auth$.isPro.peek()
-        : metadataIsPro || (sameUser && auth$.isPro.peek())
-      : false;
+    const sameUser = !!previousUser && session?.user.id === previousUser.id;
 
     auth$.assign({
       session,
-      user: session?.user || null,
-      isPro,
-      isProEntitlementSynced: sameUser ? entitlementSynced : false,
+      user: session?.user ?? null,
+      // The worker mints the tier into the session, so the session is the
+      // single source of truth for the paid plan.
+      isPro: session?.user.tier === "PREMIUM",
     });
 
-    setSentryUser(session?.user ? { id: session.user.id } : null);
+    setSentryUser(session ? { id: session.user.id } : null);
 
-    if (previousUser && !sameUser) {
-      resetPersonalSettings();
+    if (previousUser && !sameUser) resetPersonalSettings();
+  },
+  setUser: (user: AuthUser | null): void => {
+    const session = auth$.session.peek();
+    if (user && session && session.user.id !== user.id) return;
+    if (session && user) {
+      auth$.session.set({ ...session, user });
     }
-  },
-  setUser: (user: User | null): void => {
-    auth$.user.set(user);
-  },
-  setIsPro: (isPro: boolean): void => {
-    auth$.isPro.set(isPro);
-  },
-  setEntitlementSynced: (synced: boolean): void => {
-    auth$.isProEntitlementSynced.set(synced);
+    auth$.assign({ user, isPro: user?.tier === "PREMIUM" });
   },
   setInitialized: (initialized: boolean): void => {
     auth$.isInitialized.set(initialized);

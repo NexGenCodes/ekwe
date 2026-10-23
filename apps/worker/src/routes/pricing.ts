@@ -11,9 +11,7 @@ import type { FlutterwaveCurrency } from "@ekwe/shared/money";
 import { LocalPrice, LOCAL_PRICES } from "@ekwe/shared/plans";
 import { storePricingResponseSchema, WORKER_ERROR_CODES } from "@ekwe/shared";
 import { withCache } from "@/core/cache";
-import { describeError, retryOnConnectionLoss } from "@/db/retry";
-import { appConfig } from "@ekwe/db/schema";
-import { eq } from "drizzle-orm";
+import { describeError, retryTransient } from "@/db/retry";
 
 export interface LocalPlanPrices {
   currency: FlutterwaveCurrency;
@@ -28,6 +26,13 @@ interface SubscriptionConfig {
   discountPercent: number;
   annualDiscountPercent: number;
   localPrices: Record<string, LocalPrice>;
+}
+
+interface AppConfigRow {
+  base_price_usd: number;
+  discount_percent: number;
+  annual_discount_percent: number;
+  local_prices: string;
 }
 
 const CONFIG_CACHE_TTL_MS = 10_000;
@@ -57,9 +62,19 @@ function toFinite(value: unknown, fallback: number): number {
 
 function parseLocalPrices(raw: unknown): Record<string, LocalPrice> {
   const parsed: Record<string, LocalPrice> = {};
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return parsed;
+  let decoded: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      decoded = JSON.parse(raw);
+    } catch {
+      return parsed;
+    }
+  }
+  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
+    return parsed;
+  }
 
-  for (const [code, value] of Object.entries(raw)) {
+  for (const [code, value] of Object.entries(decoded)) {
     const normalizedCode = code.toUpperCase();
     if (
       !isSupportedPaymentCurrency(normalizedCode) ||
@@ -88,9 +103,11 @@ async function loadSubscriptionConfig(
 
   let load: ConfigLoad;
   try {
-    const [row] = await retryOnConnectionLoss(
-      (client) => client.select().from(appConfig).where(eq(appConfig.id, 1)),
-      env,
+    const row = await retryTransient(() =>
+      env.DB.prepare(
+        `SELECT base_price_usd, discount_percent, annual_discount_percent, local_prices
+           FROM app_config WHERE id = 1`,
+      ).first<AppConfigRow>(),
     );
 
     if (!row) {
@@ -100,16 +117,19 @@ async function loadSubscriptionConfig(
       load = {
         kind: "loaded",
         config: {
-          basePriceUsd: toFinite(row.basePriceUsd, DEFAULT_CONFIG.basePriceUsd),
+          basePriceUsd: toFinite(
+            row.base_price_usd,
+            DEFAULT_CONFIG.basePriceUsd,
+          ),
           discountPercent: toFinite(
-            row.discountPercent,
+            row.discount_percent,
             DEFAULT_CONFIG.discountPercent,
           ),
           annualDiscountPercent: toFinite(
-            row.annualDiscountPercent,
+            row.annual_discount_percent,
             DEFAULT_CONFIG.annualDiscountPercent,
           ),
-          localPrices: parseLocalPrices(row.localPrices),
+          localPrices: parseLocalPrices(row.local_prices),
         },
       };
     }

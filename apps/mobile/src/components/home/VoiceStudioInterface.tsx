@@ -514,7 +514,7 @@ export const VoiceStudioInterface = forwardRef<
           const throttled = result.error === EkweError.RATE_LIMITED;
           AppToast.error(
             entitlement
-              ? "Pro voice required"
+              ? "Paid voice required"
               : throttled
                 ? "Please wait"
                 : "Convert failed",

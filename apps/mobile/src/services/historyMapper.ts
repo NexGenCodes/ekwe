@@ -5,31 +5,6 @@ import type { HistoryRow } from "@/services/db";
 import type { EntryType, HistoryEntry } from "@/store";
 
 /**
- * Structural shape of a `history` row as it arrives from Postgres. Declared
- * here rather than imported so the mapper can be shared without depending on
- * the sync service's internals.
- */
-export interface HistoryCloudRow {
-  id: string;
-  user_id: string;
-  created_at: string;
-  capture_id: string | null;
-  origin: string | null;
-  input: string | null;
-  source_lang: string;
-  target_lang: string;
-  transcript: string;
-  translation_text: string | null;
-  transliteration_text: string | null;
-  duration: number | null;
-  source_app: string | null;
-  voice_id: string | null;
-  stt_provider: string | null;
-  mt_provider: string | null;
-  type: string | null;
-}
-
-/**
  * A row's `origin` column is trustworthy when it holds a known value. Anything
  * else is filed under the fallback — which for every row that could still be
  * reached is Echo, since the column was introduced as `NOT NULL DEFAULT
@@ -59,7 +34,7 @@ function normalizeSourceApp(
   return trimmed ? trimmed : null;
 }
 
-function normalizeEntryType(type: string | null | undefined): EntryType {
+export function normalizeEntryType(type: string | null | undefined): EntryType {
   return type === "translation" ? "translation" : "transcription";
 }
 
@@ -84,30 +59,6 @@ export function historyRowToEntry(row: HistoryRow): HistoryEntry {
     mtProvider: row.mtProvider ?? null,
     timestamp: new Date(row.createdAt).getTime(),
     type: normalizeEntryType(row.entryType),
-  };
-}
-
-export function cloudRowToEntry(row: HistoryCloudRow): HistoryEntry {
-  const duration = row.duration ?? 0;
-  const sourceApp = normalizeSourceApp(row.source_app);
-  const origin = resolveOriginField(row.origin);
-  return {
-    id: row.id,
-    captureId: row.capture_id ?? null,
-    origin,
-    input: resolveInputField(row.input, origin, duration),
-    sourceLang: row.source_lang,
-    targetLang: row.target_lang,
-    transcript: row.transcript,
-    translation: row.translation_text ?? null,
-    transliteration: row.transliteration_text ?? null,
-    duration,
-    sourceApp,
-    voiceId: row.voice_id ?? null,
-    sttProvider: row.stt_provider ?? "",
-    mtProvider: row.mt_provider ?? null,
-    timestamp: new Date(row.created_at).getTime(),
-    type: normalizeEntryType(row.type),
   };
 }
 

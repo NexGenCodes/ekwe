@@ -3,7 +3,7 @@ import Globe from "lucide-react-native/icons/globe";
 import React, { useMemo } from "react";
 
 import { LanguageFlag } from "@/components/language";
-import { ProBadge } from "@/components/ProBadge";
+import { PaidBadge } from "@/components/PaidBadge";
 import { Box, Pressable, Text } from "@/components/ui";
 import { ECHO_CONSTANTS, STEP_METADATA } from "@/constants/echo";
 import { LANGUAGES, type Language } from "@/constants/languages";
@@ -48,8 +48,8 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
         onSelect("auto");
       } else {
         AppAlert.info(
-          "Ekwe Pro",
-          "Auto-detecting languages is a premium feature. Upgrade to Pro to use this.",
+          "Ekwe Paid",
+          "Auto-detecting languages requires the paid plan. Upgrade to use it.",
         );
       }
     };
@@ -73,7 +73,9 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
           }${option.locked ? ", premium feature" : ""}`}
           accessibilityRole="button"
           accessibilityHint={
-            option.locked ? "Double tap to learn about Ekwe Pro" : undefined
+            option.locked
+              ? "Double tap to learn about the paid plan"
+              : undefined
           }
           accessibilityState={{ selected: isSelected }}
           style={{
@@ -114,7 +116,7 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
           </Text>
           {option.locked ? (
             <Box style={{ marginTop: spacing.xs }}>
-              <ProBadge size="sm" />
+              <PaidBadge size="sm" />
             </Box>
           ) : null}
         </Pressable>

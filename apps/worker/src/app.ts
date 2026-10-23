@@ -6,7 +6,12 @@ import type { AuthResult } from "@/core/auth";
 import { RequestTimings } from "@/core/timing";
 import { isDevOrigin } from "@/core/cors";
 import { recordRequestEvent } from "@/utils/analytics";
-import { WORKER_ERROR_CODES } from "@ekwe/shared";
+import {
+  MAX_HISTORY_BATCH_BYTES,
+  SYNC_PULL_ROWS,
+  WORKER_ERROR_CODES,
+  syncPushRows,
+} from "@ekwe/shared";
 import { HttpError, error } from "@/core/http";
 import { HTTPException } from "hono/http-exception";
 import { CLIENT_ABORTED } from "@/core/types";
@@ -17,9 +22,12 @@ import { handleStorePricing } from "@/routes/pricing";
 import { handleWebhook } from "@/routes/webhook";
 import { handleGetUpdateManifest } from "@/routes/admin";
 
-import { authRouter, billingRouter, usageRouter } from "@/routers/auth-billing";
+import { authRouter } from "@/auth/router";
+import { publicJwks } from "@/auth/jwt";
+import { billingRouter, usageRouter } from "@/routers/auth-billing";
 import { speechRouter } from "@/routers/speech";
 import { adminRouter, deviceRouter } from "@/routers/admin";
+import { syncRouter } from "@/routers/sync";
 
 export type AppEnv = {
   Bindings: Env;
@@ -130,7 +138,7 @@ app.get("/health", async (c) => {
 
   let d1 = "ok";
   try {
-    await c.env.EKWE_D1.prepare("SELECT 1").bind().first();
+    await c.env.DB.prepare("SELECT 1").bind().first();
   } catch {
     d1 = "error";
   }
@@ -157,6 +165,20 @@ app.get("/pricing", (c) =>
   ),
 );
 
+app.get("/config", (c) =>
+  c.json(
+    {
+      syncPullRows: SYNC_PULL_ROWS,
+      syncPushRows: syncPushRows(
+        (c.env.WORKERS_PAID as string | undefined) === "true",
+      ),
+      maxHistoryBatchBytes: MAX_HISTORY_BATCH_BYTES,
+    },
+    200,
+    { "Cache-Control": "public, max-age=300" },
+  ),
+);
+
 app.post("/webhook", (c) =>
   handleWebhook(
     c.req.raw,
@@ -173,10 +195,17 @@ app.get("/update/manifest", (c) =>
   ),
 );
 
+app.get("/.well-known/jwks.json", (c) => {
+  return c.json(publicJwks(c.env), 200, {
+    "Cache-Control": "public, max-age=3600",
+  });
+});
+
 // ── Mounted sub-routers ───────────────────────────────────────────────
 app.route("/auth", authRouter);
 app.route("/billing", billingRouter);
 app.route("/usage", usageRouter);
+app.route("/sync", syncRouter);
 app.route("/devices", deviceRouter);
 app.route("/admin", adminRouter);
 app.route("/", speechRouter);

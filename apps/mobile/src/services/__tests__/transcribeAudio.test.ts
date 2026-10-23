@@ -8,7 +8,7 @@ import { transcribeAudio } from "@/services/transcribeAudio";
 import { auth$ } from "@/store/auth";
 
 const uploadMultipartMock = vi.hoisted(() => vi.fn());
-const getSessionMock = vi.hoisted(() => vi.fn());
+const ensureAccessTokenMock = vi.hoisted(() => vi.fn());
 const getWorkerUrlMock = vi.hoisted(() => vi.fn());
 const isDefinitelyOfflineMock = vi.hoisted(() => vi.fn());
 
@@ -53,8 +53,8 @@ vi.mock("expo-file-system", () => {
 
 vi.mock("@/services/audioProcessor", () => ({ AudioProcessor: {} }));
 
-vi.mock("@/services/supabase", () => ({
-  supabase: { auth: { getSession: getSessionMock } },
+vi.mock("@/services/backend", () => ({
+  ensureAccessToken: ensureAccessTokenMock,
 }));
 
 vi.mock("@/services/uploadMultipart", () => ({
@@ -118,9 +118,7 @@ describe("transcribeAudio upload artifact", () => {
     nativeMock.probeAudioDurationMs.mockReset().mockResolvedValue(60_000);
     uploadMultipartMock.mockReset().mockResolvedValue(okUpload());
     nativeMock.deleteFile.mockReset().mockResolvedValue(true);
-    getSessionMock.mockResolvedValue({
-      data: { session: { access_token: "token" } },
-    });
+    ensureAccessTokenMock.mockResolvedValue("token");
     getWorkerUrlMock.mockReturnValue(WORKER_URL);
     isDefinitelyOfflineMock.mockReturnValue(false);
     fsMock.exists = true;

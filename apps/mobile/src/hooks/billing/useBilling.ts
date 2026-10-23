@@ -3,7 +3,7 @@ import { useState, useRef, useCallback } from "react";
 
 import { useActivePricing } from "@/hooks/billing/useActivePricing";
 import { BILLING_PLANS } from "@/constants/billing";
-import { supabase } from "@/services/supabase";
+import { fetchSessionUser } from "@/services/auth";
 import {
   openFlutterwaveCheckout,
   reconcileFlutterwaveStatus,
@@ -12,7 +12,7 @@ import {
   getFlutterwavePlanId,
   type CheckoutSession,
 } from "@/services/flutterwave";
-import { auth$, authActions } from "@/store";
+import { auth$ } from "@/store";
 import { AppAlert } from "@/utils/alert";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 import logger from "@/utils/logger";
@@ -24,7 +24,7 @@ export interface UseBillingReturn {
   handleUpgrade: () => Promise<void>;
   handleRestore: () => Promise<void>;
   freePlan: typeof BILLING_PLANS.free;
-  proPlan: typeof BILLING_PLANS.pro;
+  paidPlan: typeof BILLING_PLANS.pro;
   annualSavingPercent: number;
   loading: boolean;
 
@@ -65,7 +65,7 @@ export function useBilling(): UseBillingReturn {
     if (!session) {
       AppAlert.info(
         "Account Required",
-        "Please sign in or create an account to upgrade to Ekwe Pro.",
+        "Please sign in or create an account to upgrade to Ekwe Paid.",
       );
       return;
     }
@@ -123,18 +123,19 @@ export function useBilling(): UseBillingReturn {
           if (!Number.isNaN(txId)) {
             const result = await verifyTransaction(txId);
             if (result.ok) {
-              authActions.setIsPro(true);
-              authActions.setEntitlementSynced(true);
-              track(AnalyticsEvents.PURCHASE_SUCCESS, {
-                plan: checkoutPlanRef.current ?? null,
-                amount: session?.amount ?? null,
-                currency: session?.currency ?? null,
-              });
-              AppAlert.success(
-                "Welcome to Pro!",
-                "Your Pro access is active. Thank you for supporting Ekwe!",
-              );
-              return;
+              const user = await fetchSessionUser();
+              if (user?.tier === "PREMIUM") {
+                track(AnalyticsEvents.PURCHASE_SUCCESS, {
+                  plan: checkoutPlanRef.current ?? null,
+                  amount: session?.amount ?? null,
+                  currency: session?.currency ?? null,
+                });
+                AppAlert.success(
+                  "Welcome to Ekwe Paid!",
+                  "Your paid plan is active. Thank you for supporting Ekwe!",
+                );
+                return;
+              }
             }
           }
         } catch {
@@ -144,23 +145,21 @@ export function useBilling(): UseBillingReturn {
 
       const upgraded = await reconcileFlutterwaveStatus();
       if (upgraded) {
-        authActions.setIsPro(true);
-        authActions.setEntitlementSynced(true);
         track(AnalyticsEvents.PURCHASE_SUCCESS, {
           plan: checkoutPlanRef.current ?? null,
           amount: session?.amount ?? null,
           currency: session?.currency ?? null,
         });
         AppAlert.success(
-          "Welcome to Pro!",
-          "Your Pro access is active. Thank you for supporting Ekwe!",
+          "Welcome to Ekwe Paid!",
+          "Your paid plan is active. Thank you for supporting Ekwe!",
         );
         return;
       }
 
       AppAlert.info(
         "Payment Pending",
-        "We could not confirm your payment yet. If you were charged, Pro will activate automatically once the payment provider confirms it.",
+        "We could not confirm your payment yet. If you were charged, the paid plan will activate automatically once the payment provider confirms it.",
       );
     },
     [],
@@ -176,28 +175,22 @@ export function useBilling(): UseBillingReturn {
 
   const handleRestore = async (): Promise<void> => {
     try {
-      const { data: sessionData, error } = await supabase.auth.refreshSession();
-      if (error) throw error;
-
-      const upgraded = sessionData.session?.user?.app_metadata?.is_pro === true;
-      authActions.setIsPro(upgraded);
-      if (upgraded) {
-        authActions.setEntitlementSynced(true);
-      }
+      const user = await fetchSessionUser();
+      const upgraded = user?.tier === "PREMIUM";
 
       if (upgraded) {
-        AppAlert.success("Pro Active", "Your Pro access is active.");
+        AppAlert.success("Paid Plan Active", "Your paid plan is active.");
       } else {
         AppAlert.info(
-          "No Active Pro Access",
-          "We could not find active Pro access on this account. If you believe this is an error, please contact support.",
+          "No Active Paid Plan",
+          "We could not find an active paid plan on this account. If you believe this is an error, please contact support.",
         );
       }
     } catch (err) {
-      logger.error("[billing] Pro status check failed", err);
+      logger.error("[billing] paid status check failed", err);
       AppAlert.error(
         "Status Check Failed",
-        "Could not check your Pro status. Please check your connection and try again.",
+        "Could not check your paid plan status. Please check your connection and try again.",
       );
     }
   };
@@ -209,7 +202,7 @@ export function useBilling(): UseBillingReturn {
     handleUpgrade,
     handleRestore,
     freePlan: BILLING_PLANS.free,
-    proPlan: BILLING_PLANS.pro,
+    paidPlan: BILLING_PLANS.pro,
     annualSavingPercent: pricing.annualSavingPercent,
     loading,
     showCheckout,

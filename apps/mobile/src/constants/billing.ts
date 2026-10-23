@@ -35,18 +35,27 @@ const fmtMB = (bytes: number): string => `${Math.round(bytes / 1_048_576)} MB`;
 const fmtHistory = (days: number): string =>
   days % 365 === 0 ? `${days / 365}-year` : `${days}-day`;
 
-const dailyCaps = (translate: number, transcribe: number): string =>
-  translate === 0 && transcribe === 0
-    ? "Unlimited translations & transcriptions"
-    : `${fmtInt(translate)} translations & ${fmtInt(transcribe)} transcriptions per day`;
+const dailyCaps = (limits: PlanLimits): string =>
+  `${fmtInt(limits.dailyTranslateLimit)} translations/day · ${fmtInt(
+    limits.dailyTranscribeMinutesLimit,
+  )} transcription min/day`;
+
+const monthlyCaps = (limits: PlanLimits): string =>
+  `${fmtInt(limits.monthlyTranslateLimit)} translations/month · ${fmtInt(
+    limits.monthlyTranscribeMinutesLimit,
+  )} transcription min/month`;
+
+const sharedBudget = (limits: PlanLimits): string =>
+  `${fmtInt(limits.monthlyAiCreditsLimit)} shared AI credits/month`;
 
 const speechFeature = (limits: PlanLimits): string => {
-  if (limits.dailySpeechCharsLimit === 0) return "No text-to-speech";
   const voices =
     limits.speechQuality === "premium"
       ? "Standard + Studio voices"
       : "Standard voice";
-  return `${voices} · ${fmtInt(limits.dailySpeechCharsLimit)} speech characters/day`;
+  return limits.dailySpeechCharsLimit > 0
+    ? `${voices} · ${fmtInt(limits.dailySpeechCharsLimit)} speech chars/day`
+    : `${voices} · No speech on this plan`;
 };
 
 const contentLimits = (limits: PlanLimits): string =>
@@ -54,27 +63,33 @@ const contentLimits = (limits: PlanLimits): string =>
     limits.dictationDurationMs,
   )} · audio uploads up to ${fmtMB(limits.maxAudioBytes)}`;
 
-const liveDictation = (limits: PlanLimits): string =>
-  limits.maxStreamDurationMs > 0
-    ? `Live dictation · up to ${fmtMinutes(
-        limits.maxStreamDurationMs,
-      )}/session, ${fmtInt(limits.dailyStreamLimit)} sessions/day, ${fmtInt(
-        limits.maxConcurrentStreams,
-      )} at once`
-    : "Live dictation";
+const liveDictation = (limits: PlanLimits): string => {
+  if (limits.maxStreamDurationMs <= 0) return "Live dictation";
+  const sessionCap = `${fmtInt(limits.dailyStreamLimit)} sessions/day`;
+  return `Live dictation · up to ${fmtMinutes(
+    limits.maxStreamDurationMs,
+  )}/session, ${sessionCap}, ${fmtInt(
+    limits.monthlyStreamMinutesLimit,
+  )} min/month, ${fmtInt(limits.maxConcurrentStreams)} at once`;
+};
 
 export const BILLING_PLANS = {
   free: {
     id: "free" as const,
     name: "Free",
-    tagline: "Core translation tools at no cost.",
+    tagline: "Core translation tools, supported by ads.",
     price: 0,
     features: [
       {
-        title: dailyCaps(
-          PLAN_LIMITS.free.dailyTranslateLimit,
-          PLAN_LIMITS.free.dailyTranscribeLimit,
-        ),
+        title: dailyCaps(PLAN_LIMITS.free),
+        included: true,
+      },
+      {
+        title: monthlyCaps(PLAN_LIMITS.free),
+        included: true,
+      },
+      {
+        title: sharedBudget(PLAN_LIMITS.free),
         included: true,
       },
       {
@@ -89,6 +104,7 @@ export const BILLING_PLANS = {
         title: `${fmtHistory(PLAN_LIMITS.free.historyRemoteTtlDays)} cloud history`,
         included: true,
       },
+      { title: "Ad-supported", included: true },
       { title: "Automatic language detection", included: false },
       { title: "Live dictation", included: false },
       { title: "Romanized readings for non-Latin scripts", included: false },
@@ -98,14 +114,19 @@ export const BILLING_PLANS = {
   },
   pro: {
     id: "pro" as const,
-    name: "Pro",
-    tagline: "Unlimited translation, live dictation, and Studio voices.",
+    name: "Paid",
+    tagline: "More translation, transcription, and no ads.",
     features: [
       {
-        title: dailyCaps(
-          PLAN_LIMITS.pro.dailyTranslateLimit,
-          PLAN_LIMITS.pro.dailyTranscribeLimit,
-        ),
+        title: dailyCaps(PLAN_LIMITS.pro),
+        included: true,
+      },
+      {
+        title: monthlyCaps(PLAN_LIMITS.pro),
+        included: true,
+      },
+      {
+        title: sharedBudget(PLAN_LIMITS.pro),
         included: true,
       },
       {
@@ -120,6 +141,7 @@ export const BILLING_PLANS = {
         title: `${fmtHistory(PLAN_LIMITS.pro.historyRemoteTtlDays)} cloud history`,
         included: true,
       },
+      { title: "No ads", included: true },
       { title: "Automatic language detection", included: true },
       {
         title: liveDictation(PLAN_LIMITS.pro),

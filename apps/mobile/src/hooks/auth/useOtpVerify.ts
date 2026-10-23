@@ -7,11 +7,7 @@ interface OtpVerifyHook {
   isLoading: boolean;
   error: string;
   cooldown: number;
-  verify: (
-    email: string,
-    token: string,
-    type?: "signup" | "email",
-  ) => Promise<AuthResult>;
+  verify: (email: string, token: string) => Promise<AuthResult>;
   resend: (email: string) => Promise<boolean>;
 }
 
@@ -28,15 +24,11 @@ export function useOtpVerify(): OtpVerifyHook {
   }, [cooldown]);
 
   const verify = useCallback(
-    async (
-      email: string,
-      token: string,
-      type: "signup" | "email" = "email",
-    ): Promise<AuthResult> => {
+    async (email: string, token: string): Promise<AuthResult> => {
       setIsLoading(true);
       setError("");
       try {
-        const result = await verifyOtp(email, token, type);
+        const result = await verifyOtp(email, token);
         if (!result.ok) setError(result.error || "Verification failed");
         return result;
       } finally {

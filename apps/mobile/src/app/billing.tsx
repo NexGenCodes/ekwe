@@ -17,7 +17,7 @@ import { IconContainer } from "@/components/IconContainer";
 import { BillingToggle } from "@/components/billing/BillingToggle";
 import { CheckoutSheet } from "@/components/billing/CheckoutSheet";
 import { FreePlanCard } from "@/components/billing/FreePlanCard";
-import { ProPlanCard } from "@/components/billing/ProPlanCard";
+import { PaidPlanCard } from "@/components/billing/PaidPlanCard";
 import { Box, Text, Pressable, ScrollArea, Spinner } from "@/components/ui";
 import { shadows } from "@/constants";
 import { useTheme, useTokens } from "@/hooks";
@@ -40,7 +40,7 @@ export default function BillingScreen(): React.ReactElement {
     handleUpgrade,
     handleRestore,
     freePlan,
-    proPlan,
+    paidPlan,
     annualSavingPercent,
     loading,
     showCheckout,
@@ -179,7 +179,7 @@ export default function BillingScreen(): React.ReactElement {
               variant="heading1"
               style={[styles.heroTitle, { color: color.foreground }]}
             >
-              {isPro ? "You're on Ekwe Pro" : "Unlock Ekwe Pro"}
+              {isPro ? "You're on Ekwe Paid" : "Unlock Ekwe Paid"}
             </Text>
             <Text
               variant="body"
@@ -243,13 +243,13 @@ export default function BillingScreen(): React.ReactElement {
           <Animated.View
             entering={FadeInDown.duration(duration.slow).delay(150)}
           >
-            <ProPlanCard
+            <PaidPlanCard
               isPro={isPro}
               isAnnual={isAnnual}
               loading={loading}
               color={color}
               isDark={isDark}
-              proPlan={proPlan}
+              paidPlan={paidPlan}
               handleUpgrade={handleUpgrade}
               handleRestore={handleRestore}
             />
@@ -291,9 +291,9 @@ export default function BillingScreen(): React.ReactElement {
                 void handleRestore();
               }}
               style={{ marginTop: spacing.sm }}
-              accessibilityLabel="Check your Pro status"
+              accessibilityLabel="Check your plan status"
               accessibilityRole="link"
-              accessibilityHint="Checks whether your account has active Pro access"
+              accessibilityHint="Checks whether your account has an active paid plan"
             >
               <Text
                 variant="bodySmall"
@@ -302,7 +302,7 @@ export default function BillingScreen(): React.ReactElement {
                   textDecorationLine: "underline",
                 }}
               >
-                Check Pro status
+                Check plan status
               </Text>
             </Pressable>
           )}

@@ -32,7 +32,7 @@ export const EkweError = {
   AUDIO_TOO_LONG: WORKER_ERROR_CODES.AUDIO_TOO_LONG,
   TEXT_TOO_LONG: WORKER_ERROR_CODES.TEXT_TOO_LONG,
   SPEECH_FAIL: "EKWE_SPEECH_FAIL",
-  /** A free account asked for a Pro voice. */
+  /** A free account asked for a paid voice. */
   PREMIUM_REQUIRED: WORKER_ERROR_CODES.PREMIUM_FEATURE_REQUIRED,
   /** Every speech provider was down or rate limited. Worth a retry later. */
   SPEECH_UNAVAILABLE: WORKER_ERROR_CODES.SPEECH_UNAVAILABLE,
@@ -72,18 +72,18 @@ export const ErrorMessages: Record<EkweError, string> = {
   [EkweError.TRANSLATION_FAIL]: "Translation failed. Please try again.",
   [EkweError.RATE_LIMITED]: "Please wait a moment before trying again.",
   [EkweError.QUOTA_EXCEEDED]:
-    "You've reached today's limit. It resets at midnight.",
+    "You've reached today's limit. Try again tomorrow.",
   [EkweError.ALL_PROVIDERS_FAIL]:
     "Transcription is busy right now. Try again in a moment.",
   [EkweError.AUDIO_RECORD_FAIL]: "Could not start recording. Please try again.",
   [EkweError.AUDIO_EMPTY]:
     "No audio was captured. Make sure the voice note is audible.",
-  [EkweError.FILE_TOO_LARGE]: `This file is too large for your plan. Free: ${FREE_MAX_MB}MB · Pro: ${PRO_MAX_MB}MB.`,
-  [EkweError.AUDIO_TOO_LONG]: `This audio is too long for your plan. Free: ${FREE_MAX_MIN} min per file · Pro: ${PRO_MAX_MIN} min.`,
+  [EkweError.FILE_TOO_LARGE]: `This file is too large for your plan. Free: ${FREE_MAX_MB}MB · Paid: ${PRO_MAX_MB}MB.`,
+  [EkweError.AUDIO_TOO_LONG]: `This audio is too long for your plan. Free: ${FREE_MAX_MIN} min per file · Paid: ${PRO_MAX_MIN} min.`,
   [EkweError.TEXT_TOO_LONG]:
     "This text is too long for your plan. Try a shorter passage.",
   [EkweError.SPEECH_FAIL]: "Speech failed. Please try again.",
-  [EkweError.PREMIUM_REQUIRED]: "This voice requires Ekwe Pro.",
+  [EkweError.PREMIUM_REQUIRED]: "This voice requires Ekwe Paid.",
   [EkweError.SPEECH_UNAVAILABLE]:
     "Voice is temporarily unavailable. Please try again shortly.",
   [EkweError.SPEECH_TIMEOUT]:

@@ -12,7 +12,7 @@ export async function d1Get(
       .first<{ result: string; expires_at: number }>();
 
     if (!row) return null;
-    if (row.expires_at < Date.now() / 1000) {
+    if (row.expires_at < Date.now()) {
       return null;
     }
     return row.result;
@@ -31,8 +31,8 @@ export async function d1Put(
   result: string,
   ttlSeconds: number,
 ): Promise<void> {
-  const now = Math.floor(Date.now() / 1000);
-  const expiresAt = now + ttlSeconds;
+  const now = Date.now();
+  const expiresAt = now + ttlSeconds * 1000;
   try {
     await db
       .prepare(
@@ -58,7 +58,7 @@ export async function d1Cleanup(
     | "webhook_idempotency",
 ): Promise<number> {
   try {
-    const now = Math.floor(Date.now() / 1000);
+    const now = Date.now();
     const { meta } = await db
       .prepare(`DELETE FROM ${table} WHERE expires_at < ?`)
       .bind(now)
@@ -88,7 +88,7 @@ export async function d1GetLang(
       .first<{ detected_lang: string; expires_at: number }>();
 
     if (!row) return null;
-    if (row.expires_at < Date.now() / 1000) {
+    if (row.expires_at < Date.now()) {
       db.prepare(`DELETE FROM cache_lang WHERE cache_key = ?`)
         .bind(cacheKey)
         .run()
@@ -108,8 +108,8 @@ export async function d1PutLang(
   detectedLang: string,
   ttlSeconds: number,
 ): Promise<void> {
-  const now = Math.floor(Date.now() / 1000);
-  const expiresAt = now + ttlSeconds;
+  const now = Date.now();
+  const expiresAt = now + ttlSeconds * 1000;
   try {
     await db
       .prepare(

@@ -28,8 +28,8 @@ vi.mock("@/services/flutterwave", () => ({
   ),
 }));
 
-vi.mock("@/services/supabase", () => ({
-  supabase: { auth: { refreshSession: vi.fn() } },
+vi.mock("@/services/auth", () => ({
+  fetchSessionUser: vi.fn(),
 }));
 
 vi.mock("@/services/mmkv", () => ({
@@ -48,11 +48,7 @@ vi.mock("@/utils/analytics", () => ({
 vi.mock("@/store", () => {
   const session = { get: vi.fn(() => null) };
   const isPro = { get: vi.fn(() => false) };
-  const authActions = {
-    setSession: vi.fn(),
-    setIsPro: vi.fn(),
-    setEntitlementSynced: vi.fn(),
-  };
+  const authActions = { setSession: vi.fn() };
   return { auth$: { session, isPro }, authActions };
 });
 
@@ -62,24 +58,20 @@ import {
   verifyTransaction,
   isFlutterwaveAvailable,
 } from "@/services/flutterwave";
-import { supabase } from "@/services/supabase";
+import { fetchSessionUser } from "@/services/auth";
 import { AppAlert } from "@/utils/alert";
-import { auth$, authActions } from "@/store";
+import { auth$ } from "@/store";
 
 const mockSession = auth$.session.get as Mock;
 const mockIsPro = auth$.isPro.get as Mock;
-const mockRefreshSession = supabase.auth.refreshSession as Mock;
+const mockFetchUser = fetchSessionUser as Mock;
 const mockOpenCheckout = openFlutterwaveCheckout as Mock;
 const mockReconcile = reconcileFlutterwaveStatus as Mock;
 const mockVerify = verifyTransaction as Mock;
 const mockIsAvailable = isFlutterwaveAvailable as Mock;
 
-const PRO_SESSION = {
-  user: { app_metadata: { is_pro: true } },
-};
-const FREE_SESSION = {
-  user: { app_metadata: { is_pro: false } },
-};
+const PREMIUM_USER = { id: "u1", email: "a@b.co", tier: "PREMIUM" };
+const FREE_USER = { id: "u1", email: "a@b.co", tier: "FREE" };
 
 describe("useBilling", () => {
   beforeEach(() => {
@@ -87,10 +79,7 @@ describe("useBilling", () => {
     mockSession.mockReturnValue({ user: {} });
     mockIsPro.mockReturnValue(false);
     mockIsAvailable.mockReturnValue(true);
-    mockRefreshSession.mockResolvedValue({
-      data: { session: PRO_SESSION },
-      error: null,
-    });
+    mockFetchUser.mockResolvedValue(PREMIUM_USER);
     mockVerify.mockResolvedValue({ ok: false });
     mockReconcile.mockResolvedValue(false);
     vi.useRealTimers();
@@ -164,9 +153,8 @@ describe("useBilling", () => {
       });
 
       expect(mockReconcile).toHaveBeenCalled();
-      expect(authActions.setIsPro).toHaveBeenCalledWith(true);
       expect(AppAlert.success).toHaveBeenCalledWith(
-        "Welcome to Pro!",
+        "Welcome to Ekwe Paid!",
         expect.any(String),
       );
     });
@@ -289,35 +277,31 @@ describe("useBilling", () => {
   });
 
   describe("handleRestore", () => {
-    it("refreshes session and reports pro status", async () => {
+    it("reports Paid when the worker says the account is Premium", async () => {
+      mockFetchUser.mockResolvedValue(PREMIUM_USER);
       const { result } = await renderHook(() => useBilling());
 
       await act(async () => {
         await result.current.handleRestore();
       });
 
-      expect(mockRefreshSession).toHaveBeenCalled();
-      expect(authActions.setIsPro).toHaveBeenCalledWith(true);
+      expect(mockFetchUser).toHaveBeenCalled();
       expect(AppAlert.success).toHaveBeenCalledWith(
-        "Pro Active",
+        "Paid Plan Active",
         expect.any(String),
       );
     });
 
-    it("reports no Pro access when session is free", async () => {
-      mockRefreshSession.mockResolvedValue({
-        data: { session: FREE_SESSION },
-        error: null,
-      });
+    it("reports no paid access when the account is free", async () => {
+      mockFetchUser.mockResolvedValue(FREE_USER);
       const { result } = await renderHook(() => useBilling());
 
       await act(async () => {
         await result.current.handleRestore();
       });
 
-      expect(authActions.setIsPro).toHaveBeenCalledWith(false);
       expect(AppAlert.info).toHaveBeenCalledWith(
-        "No Active Pro Access",
+        "No Active Paid Plan",
         expect.any(String),
       );
     });

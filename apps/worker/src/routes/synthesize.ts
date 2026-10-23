@@ -25,7 +25,7 @@ import type { z } from "zod";
 import { sanitizeTranslationText } from "@/core/sanitize";
 import { hashKey } from "@/utils/keys";
 import { signSpeechUrl } from "@/utils/speech-url";
-import { ingestAudioUpload } from "@/services/audio";
+import { ingestAudioUpload, resolveBilledDurationMs } from "@/services/audio";
 import { detectTextLanguage } from "@/services/auto-detect";
 import { runPreflightGate } from "@/services/preflight";
 import {
@@ -34,7 +34,7 @@ import {
   runTranslate,
   writeTranslateCache,
 } from "@/services/translate";
-import { releaseUsage } from "@/services/usage";
+import { trackBillableSuccess } from "@/services/usage";
 import {
   buildTranscribeCacheKey,
   readTranscribeCache,
@@ -82,9 +82,8 @@ async function reserveSpeechGate(
   ctx: ExecutionContext,
   userId: string,
   jwtTier: Tier,
-  sessionId: string | null,
-  chargeChars: number,
   gateCharge: { skipCooldown: () => boolean; markCharged: () => void },
+  chargeChars: number,
 ): Promise<SpeechGate> {
   const skipCooldown = gateCharge.skipCooldown();
   gateCharge.markCharged();
@@ -94,9 +93,8 @@ async function reserveSpeechGate(
     userId,
     jwtTier,
     "speech",
-    sessionId,
-    chargeChars,
     skipCooldown,
+    chargeChars,
   );
   if (!gate.ok) {
     return {
@@ -107,7 +105,7 @@ async function reserveSpeechGate(
   }
   return {
     ok: true,
-    tier: gate.preflight.throttled ? "FREE" : gate.preflight.tier_active,
+    tier: gate.tier,
   };
 }
 
@@ -121,7 +119,7 @@ function guardVoiceEntitlement(
     return Response.json(
       {
         error: WORKER_ERROR_CODES.PREMIUM_FEATURE_REQUIRED,
-        message: "Studio voices require Ekwe Pro.",
+        message: "Studio voices require Ekwe Paid.",
       },
       { status: 403 },
     );
@@ -139,7 +137,6 @@ interface TranslateStageOptions {
   signal: AbortSignal;
   budgetMs: number;
   ctx: ExecutionContext;
-  sessionId: string | null;
   gateCharge: { skipCooldown: () => boolean; markCharged: () => void };
 }
 
@@ -159,7 +156,6 @@ async function translateStage(
     signal,
     budgetMs,
     ctx,
-    sessionId,
     gateCharge,
   } = options;
 
@@ -171,13 +167,12 @@ async function translateStage(
     userId,
     tier,
     "translate",
-    sessionId,
-    0,
     skipCooldown,
+    text.length,
   );
   if (!gate.ok) return { ok: false, response: gate.response };
   if (signal.aborted) throw new Error(CLIENT_ABORTED);
-  const pipelineTier = gate.preflight.throttled ? "FREE" : tier;
+  const pipelineTier = gate.tier;
 
   let cacheKey: string | null = null;
   try {
@@ -188,7 +183,6 @@ async function translateStage(
 
     const cached = await readTranslateCache(env, cacheKey);
     if (cached) {
-      releaseUsage(env, userId, "translate", ctx);
       return { ok: true, result: cached };
     }
   } catch (err) {
@@ -210,7 +204,6 @@ async function translateStage(
   });
 
   if (!result) {
-    releaseUsage(env, userId, "translate", ctx);
     return {
       ok: false,
       response: Response.json(
@@ -223,6 +216,7 @@ async function translateStage(
   if (cacheKey) {
     ctx.waitUntil(writeTranslateCache(env, cacheKey, userId, tier, result));
   }
+  trackBillableSuccess(env, userId, "translate", ctx, text.length);
   return { ok: true, result };
 }
 
@@ -281,7 +275,6 @@ interface FinishSpeechOptions {
   signal: AbortSignal;
   ctx: ExecutionContext;
   userId: string;
-  sessionId: string | null;
   /** Distinguishes successive renders of identical text. */
   reroll?: number;
   remainingMs: () => number;
@@ -301,7 +294,6 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     signal,
     ctx,
     userId,
-    sessionId,
     reroll,
     remainingMs,
     timings,
@@ -352,9 +344,8 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     ctx,
     userId,
     jwtTier,
-    sessionId,
-    cleanSpoken.length,
     gateCharge,
+    cleanSpoken.length,
   );
 
   const speculative = timings
@@ -404,7 +395,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     cacheKey = speculativeResult.key;
     cached = speculativeResult.hit;
   } else {
-    // Pro slot downgraded by gate; invalidate speculative read and retry at new execution tier.
+    // Paid slot downgraded by gate; invalidate speculative read and retry at new execution tier.
     const recheck = await buildSpeechCacheKey(
       cleanSpoken,
       spokenLang,
@@ -431,9 +422,6 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
 
   if (cached) {
     logger.info(`[synthesize] Speech cache hit tier=${executionTier}`);
-    if (reserved.ok) {
-      releaseUsage(env, userId, "speech", ctx, cleanSpoken.length);
-    }
     timings.start("encode");
     const res = await buildSpeechResponse(env, cached, meta, cacheKey);
     timings.end("encode");
@@ -455,9 +443,6 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     getProviderNamesFor("tts", executionTier),
   );
   if (!speechSupportGuard.allowed) {
-    if (reserved.ok) {
-      releaseUsage(env, userId, "speech", ctx, cleanSpoken.length);
-    }
     return speechSupportGuard.response;
   }
 
@@ -475,7 +460,6 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     }),
   );
   if (!result) {
-    releaseUsage(env, userId, "speech", ctx, cleanSpoken.length);
     return Response.json(
       {
         error: WORKER_ERROR_CODES.SPEECH_UNAVAILABLE,
@@ -486,6 +470,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     );
   }
 
+  trackBillableSuccess(env, userId, "speech", ctx, cleanSpoken.length);
   timings.start("encode");
   const res = await buildSpeechResponse(env, result, meta, cacheKey);
   timings.end("encode");
@@ -498,7 +483,6 @@ export async function synthesizeFromText(
   tier: Tier,
   signal: AbortSignal,
   userId: string,
-  sessionId: string | null,
   ctx: ExecutionContext,
   remainingMs: () => number,
   timings: RequestTimings,
@@ -549,7 +533,6 @@ export async function synthesizeFromText(
       signal,
       budgetMs: Math.min(TRANSLATE_TOTAL_MS, remainingMs()),
       ctx,
-      sessionId,
       gateCharge,
     });
     if (!translation.ok) return translation.response;
@@ -580,7 +563,6 @@ export async function synthesizeFromText(
         signal,
         budgetMs: Math.min(TRANSLATE_TOTAL_MS, remainingMs()),
         ctx,
-        sessionId,
         gateCharge,
       });
       if (!translation.ok) return translation.response;
@@ -603,7 +585,6 @@ export async function synthesizeFromText(
     signal,
     ctx,
     userId,
-    sessionId,
     reroll,
     remainingMs,
     timings,
@@ -619,10 +600,6 @@ export async function synthesizeFromText(
     },
   });
 
-  if (!speechResponse.ok && translated) {
-    releaseUsage(env, userId, "translate", ctx);
-  }
-
   return speechResponse;
 }
 
@@ -632,27 +609,12 @@ export async function synthesizeFromAudio(
   tier: Tier,
   signal: AbortSignal,
   userId: string,
-  sessionId: string | null,
   ctx: ExecutionContext,
   remainingMs: () => number,
   timings: RequestTimings,
   gateCharge: { skipCooldown: () => boolean; markCharged: () => void },
 ): Promise<Response> {
-  // Return the preflight charge on abort; a mid-pipeline disconnect otherwise
-  // throws past every early return and discards paid provider calls.
-  let charged = true;
-  const settle = (): void => {
-    if (!charged) return;
-    charged = false;
-    releaseUsage(env, userId, "transcribe", ctx);
-  };
-
-  try {
-    return await runFromAudio();
-  } catch (err) {
-    settle();
-    throw err;
-  }
+  return runFromAudio();
 
   async function runFromAudio(): Promise<Response> {
     const ingest = await ingestAudioUpload(request, tier);
@@ -708,6 +670,8 @@ export async function synthesizeFromAudio(
 
     const transcribeSkip = gateCharge.skipCooldown();
     gateCharge.markCharged();
+    const maxClipMs = getLimits(tier).dictationDurationMs;
+    const gateDurationMs = Math.min(durationMs ?? 0, maxClipMs);
     const transcribeGate = await timings.measure("stt.gate", () =>
       runPreflightGate(
         env,
@@ -715,19 +679,18 @@ export async function synthesizeFromAudio(
         userId,
         tier,
         "transcribe",
-        sessionId,
-        0,
         transcribeSkip,
+        0,
+        gateDurationMs,
       ),
     );
     if (!transcribeGate.ok) return transcribeGate.response;
     if (signal.aborted) throw new Error(CLIENT_ABORTED);
-    const sttPipelineTier = transcribeGate.preflight.throttled ? "FREE" : tier;
+    const sttPipelineTier = transcribeGate.tier;
 
     let cacheKey: string | null = null;
     let transcript: string | null = null;
     let detectedLang: string | null = null;
-    let transcribeCharged = true;
     try {
       cacheKey = buildTranscribeCacheKey({
         userId,
@@ -740,8 +703,6 @@ export async function synthesizeFromAudio(
       if (cached) {
         transcript = cached.text;
         detectedLang = cached.language ?? null;
-        releaseUsage(env, userId, "transcribe", ctx);
-        transcribeCharged = false;
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -760,11 +721,10 @@ export async function synthesizeFromAudio(
           env,
           signal,
           budgetMs: Math.min(TRANSCRIBE_TOTAL_MS, remainingMs()),
-          durationMs: durationMs ?? 0,
+          durationMs: gateDurationMs,
         }),
       );
       if (!result) {
-        releaseUsage(env, userId, "transcribe", ctx);
         return Response.json(
           { error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL },
           { status: 503 },
@@ -772,6 +732,17 @@ export async function synthesizeFromAudio(
       }
       transcript = result.text;
       detectedLang = result.language ?? null;
+      trackBillableSuccess(
+        env,
+        userId,
+        "transcribe",
+        ctx,
+        0,
+        Math.min(
+          resolveBilledDurationMs(durationMs, result.duration),
+          maxClipMs,
+        ),
+      );
 
       if (cacheKey) {
         const prepared = stripTranscriptLanguage(result, tier);
@@ -783,9 +754,6 @@ export async function synthesizeFromAudio(
 
     let spokenText = sanitizeTranslationText(transcript);
     if (!spokenText) {
-      if (transcribeCharged) {
-        releaseUsage(env, userId, "transcribe", ctx);
-      }
       return Response.json(
         { error: WORKER_ERROR_CODES.EKWE_EMPTY_TRANSCRIPT },
         { status: 400 },
@@ -820,16 +788,10 @@ export async function synthesizeFromAudio(
             signal,
             budgetMs: Math.min(TRANSLATE_TOTAL_MS, remainingMs()),
             ctx,
-            sessionId,
             gateCharge,
           }),
         );
-        if (!translation.ok) {
-          if (transcribeCharged) {
-            releaseUsage(env, userId, "transcribe", ctx);
-          }
-          return translation.response;
-        }
+        if (!translation.ok) return translation.response;
         spokenText = translation.result.translation;
         translated = true;
         effectiveSource = sourceCode;
@@ -848,7 +810,6 @@ export async function synthesizeFromAudio(
       signal,
       ctx,
       userId,
-      sessionId,
       remainingMs,
       timings,
       gateCharge,
@@ -862,15 +823,6 @@ export async function synthesizeFromAudio(
         translationTruncated,
       },
     });
-
-    if (!speechResponse.ok) {
-      if (transcribeCharged) {
-        releaseUsage(env, userId, "transcribe", ctx);
-      }
-      if (translated) {
-        releaseUsage(env, userId, "translate", ctx);
-      }
-    }
 
     return speechResponse;
   }

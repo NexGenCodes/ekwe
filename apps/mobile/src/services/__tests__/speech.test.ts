@@ -9,7 +9,7 @@ import {
   synthesizeVoicePreview,
 } from "@/services/speech";
 
-const getSessionMock = vi.hoisted(() => vi.fn());
+const ensureAccessTokenMock = vi.hoisted(() => vi.fn());
 const getWorkerUrlMock = vi.hoisted(() => vi.fn());
 const uploadMultipartMock = vi.hoisted(() => vi.fn());
 const transcodeMock = vi.hoisted(() => vi.fn());
@@ -65,8 +65,8 @@ vi.mock("@/services/audioTranscoder", () => ({
   },
 }));
 
-vi.mock("@/services/supabase", () => ({
-  supabase: { auth: { getSession: getSessionMock } },
+vi.mock("@/services/backend", () => ({
+  ensureAccessToken: ensureAccessTokenMock,
 }));
 
 vi.mock("@/utils/http", () => ({
@@ -163,8 +163,8 @@ const expectRiffBytes = (): void => {
 };
 
 beforeEach(() => {
-  getSessionMock.mockReset();
-  getSessionMock.mockResolvedValue({ data: { session: null }, error: null });
+  ensureAccessTokenMock.mockReset();
+  ensureAccessTokenMock.mockResolvedValue(null);
   getWorkerUrlMock.mockReset();
   getWorkerUrlMock.mockReturnValue("https://worker.test");
   uploadMultipartMock.mockReset();
@@ -285,10 +285,7 @@ describe("synthesizeSpeech", () => {
   });
 
   it("sends the session token when signed in", async () => {
-    getSessionMock.mockResolvedValue({
-      data: { session: { access_token: "token-zzz" } },
-      error: null,
-    });
+    ensureAccessTokenMock.mockResolvedValue("token-zzz");
     const fetchSpy = mockSynthFetch("audio/wav");
     await synthesizeSpeech("hello", "en");
     const init = synthCall()[1] as RequestInit;

@@ -8,11 +8,13 @@ import Lock from "lucide-react-native/icons/lock";
 import { isIOS } from "@/utils";
 import { Image as ExpoImage } from "expo-image";
 
-interface ProBadgeProps {
+interface PaidBadgeProps {
   size?: "sm" | "md";
 }
 
-export const ProBadge = ({ size = "sm" }: ProBadgeProps): React.JSX.Element => {
+export const PaidBadge = ({
+  size = "sm",
+}: PaidBadgeProps): React.JSX.Element => {
   const { color } = useTheme();
   const iconSize = size === "sm" ? 12 : 14;
 
@@ -45,7 +47,7 @@ export const ProBadge = ({ size = "sm" }: ProBadgeProps): React.JSX.Element => {
           fontSize: size === "sm" ? 11 : 12,
         }}
       >
-        Pro
+        Paid
       </Text>
     </Box>
   );

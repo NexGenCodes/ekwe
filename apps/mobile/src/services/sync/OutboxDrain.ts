@@ -1,38 +1,108 @@
 /**
- * OutboxDrain — serialises outbox entries and pushes them to the cloud.
+ * OutboxDrain — pushes queued local writes to the worker.
  *
- * Owns: scheduleDrain, drain, runDrain, retryDeadOutbox, refreshDeadCount.
- * Includes an exponential-backoff circuit breaker on `scheduleDrain`.
+ * Each outbox payload is the full wire row, so a delete is just a row with
+ * `deletedAt` set and an Undo is the same row with `restore: true` and the
+ * tombstone's revision. Push batches are chunked by both the row cap and the
+ * body cap, and chunks are spaced past the server's push cooldown.
  */
+
+import * as Crypto from "expo-crypto";
 
 import { observable } from "@legendapp/state";
 
-import { Db, type OutboxRow } from "@/services/db";
-import { buildDeleteOutboxPayload } from "@/services/outboxPayload";
-
-import { historyOutboxPayloadSchema } from "@ekwe/shared";
-
-import { supabase } from "@/services/supabase";
+import { ApiError, apiJson } from "@/services/backend";
+import { Db } from "@/services/db";
+import { parseOutboxRow, serializeOutboxRow } from "@/services/outboxPayload";
 import { auth$, history$ } from "@/store";
-import { logger } from "@/utils";
+import { SYNC_PUSH_ROWS_FREE, MAX_HISTORY_BATCH_BYTES } from "@ekwe/shared";
+import logger from "@/utils/logger";
 import { checkIsOnline } from "@/utils/connectivity";
 
 import {
-  type CloudRow,
-  type HistoryUpsertResult,
-  type HistoryDeleteResult,
-  toError,
-  DRAIN_TIMEOUT_MS,
   DRAIN_BASE_DELAY_MS,
   DRAIN_MAX_BACKOFF_MS,
+  DRAIN_TIMEOUT_MS,
+  PUSH_BODY_HEADROOM_BYTES,
+  PUSH_CHUNK_GAP_MS,
+  PUSH_RATE_LIMIT_BACKOFF_MS,
+  PUSH_RATE_LIMIT_RETRIES,
 } from "./shared";
-import { cloudRowToEntry } from "@/services/historyMapper";
+import {
+  syncPushResponseSchema,
+  wireRowToEntry,
+  wireRowToLocal,
+  type SyncedRow,
+  type SyncPushResponse,
+  type SyncPushResult,
+} from "./wireRows";
+import type { HistoryRow as WireHistoryRow } from "@ekwe/shared";
+
+interface QueuedRow {
+  outboxId: string;
+  row: WireHistoryRow;
+}
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/** UTF-8 length, used to keep a push under the worker's body limit. */
+function utf8ByteLength(value: string): number {
+  let bytes = 0;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      // Surrogate pair: one four-byte character.
+      bytes += 4;
+      i++;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
+/** Splits queued rows into requests the worker will accept. */
+function chunkQueuedRows(
+  items: QueuedRow[],
+  maxRows: number,
+  maxBytes: number,
+): QueuedRow[][] {
+  const chunks: QueuedRow[][] = [];
+  let current: QueuedRow[] = [];
+  let bytes = 0;
+
+  for (const item of items) {
+    const size = utf8ByteLength(JSON.stringify(item.row)) + 1;
+    const full = current.length >= maxRows;
+    const overBudget = current.length > 0 && bytes + size > maxBytes;
+
+    if (current.length > 0 && (full || overBudget)) {
+      chunks.push(current);
+      current = [];
+      bytes = 0;
+    }
+
+    current.push(item);
+    bytes += size;
+  }
+
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
 
 export class OutboxDrain {
   private drainQueue: Promise<void> = Promise.resolve();
   private drainTimeout: NodeJS.Timeout | null = null;
   /** Consecutive drain failures; drives exponential backoff on scheduleDrain. */
   private drainConsecutiveFailures = 0;
+
+  private pushRows: number | null = null;
+  private pushBytes = MAX_HISTORY_BATCH_BYTES - PUSH_BODY_HEADROOM_BYTES;
 
   deadCount = observable(0);
 
@@ -55,12 +125,8 @@ export class OutboxDrain {
       Math.pow(2, Math.min(this.drainConsecutiveFailures, 10));
     const capped = Math.min(base, DRAIN_MAX_BACKOFF_MS);
     const jitter = capped * (0.5 + Math.random() * 0.5);
-    const delay = Math.round(jitter);
-    if (this.drainConsecutiveFailures > 0) {
-      logger.info(
-        `[Sync] Drain backoff: attempt ${this.drainConsecutiveFailures + 1}, delay ${delay}ms`,
-      );
-    }
+    const wait = Math.round(jitter);
+
     this.drainTimeout = setTimeout(() => {
       this.drainTimeout = null;
       this.drain()
@@ -71,7 +137,7 @@ export class OutboxDrain {
           this.drainConsecutiveFailures++;
           logger.error("[Sync] Scheduled drain failed", err);
         });
-    }, delay);
+    }, wait);
   }
 
   drain(): Promise<void> {
@@ -87,258 +153,205 @@ export class OutboxDrain {
   }
 
   private async runDrain(): Promise<void> {
-    let entries: OutboxRow[] = [];
-    const attempted = new Set<string>();
-    /** Track unparsed payloads to preserve them in the retry/dead-letter queue. */
-    const unparsed = new Set<string>();
-    /** Track entries successfully processed or definitively refused by the server. */
-    const settled = new Set<string>();
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), DRAIN_TIMEOUT_MS);
+    const userId = auth$.user.peek()?.id;
+    if (!userId) return;
+    if (!(await checkIsOnline())) return;
+
+    const entries = Db.getPendingOutbox(userId);
+    if (entries.length === 0) return;
+
+    const queued: QueuedRow[] = [];
+    for (const entry of entries) {
+      Db.markOutboxInFlight(entry.id);
+      const row = parseOutboxRow(entry.payload);
+      if (!row) {
+        logger.error("[Sync] Invalid outbox payload", entry.id);
+        Db.incrementOutboxRetry(entry.id);
+        continue;
+      }
+      queued.push({ outboxId: entry.id, row });
+    }
 
     try {
-      const userId = auth$.user.get()?.id;
-      if (!userId) return;
+      if (queued.length > 0) {
+        const limits = await this.pushLimits();
+        const chunks = chunkQueuedRows(queued, limits.maxRows, limits.maxBytes);
 
-      const online = await checkIsOnline();
-      if (!online) return;
-
-      entries = Db.getPendingOutbox(userId);
-      if (entries.length === 0) return;
-
-      logger.info(
-        "[Sync] Draining",
-        entries.length,
-        "pending entries (batching)",
-      );
-
-      const toUpsert = [];
-      const toDelete = [];
-      const deleteAllIds: string[] = [];
-      /** Target history id -> the outbox row ids that ask for it. */
-      const deleteEntriesByTarget = new Map<string, string[]>();
-      let deleteAll = false;
-
-      for (const entry of entries) {
-        Db.markOutboxInFlight(entry.id);
-        try {
-          const parsed = historyOutboxPayloadSchema.safeParse(
-            JSON.parse(entry.payload),
-          );
-          if (!parsed.success) {
-            throw new Error(
-              `Invalid outbox payload: ${
-                parsed.error.issues[0]?.message ?? "unknown validation error"
-              }`,
-            );
-          }
-          const payload = parsed.data;
-          attempted.add(entry.id);
-          if (payload.action === "delete_all") {
-            deleteAll = true;
-            deleteAllIds.push(entry.id);
-          } else if (payload.action === "delete") {
-            const targetId = payload.id || entry.id;
-            toDelete.push({
-              id: targetId,
-              base_revision: payload.base_revision ?? null,
-            });
-            const existing = deleteEntriesByTarget.get(targetId);
-            if (existing) existing.push(entry.id);
-            else deleteEntriesByTarget.set(targetId, [entry.id]);
-          } else {
-            toUpsert.push({
-              id: entry.id,
-              user_id: entry.userId,
-              type: payload.type,
-              capture_id: payload.capture_id ?? null,
-              origin: payload.origin ?? "echo",
-              input: payload.input ?? "audio",
-              source_lang: payload.source_lang,
-              target_lang: payload.target_lang,
-              transcript: payload.transcript,
-              translation_text: payload.translation_text,
-              transliteration_text: payload.transliteration_text,
-              duration: payload.duration,
-              source_app: payload.source_app ?? "",
-              voice_id: payload.voice_id ?? null,
-              stt_provider: payload.stt_provider ?? "",
-              mt_provider: payload.mt_provider ?? null,
-              created_at: payload.created_at,
-              base_revision: payload.base_revision ?? null,
-              restore: payload.restore ?? false,
-            });
-          }
-        } catch (e) {
-          logger.error("[Sync] Invalid payload in outbox", entry.id, e);
-          unparsed.add(entry.id);
-          Db.incrementOutboxRetry(entry.id);
+        for (let index = 0; index < chunks.length; index++) {
+          if (index > 0) await delay(PUSH_CHUNK_GAP_MS);
+          await this.pushChunk(chunks[index], userId);
         }
-      }
-
-      if (deleteAll) {
-        const { data, error } = await supabase
-          .rpc("history_delete_all")
-          .abortSignal(controller.signal);
-        if (error) throw toError(error);
-        const wiped = typeof data === "number" ? data : 0;
-        logger.info("[Sync] Tombstoned", wiped, "row(s) for delete_all");
-        for (const id of deleteAllIds) settled.add(id);
-      }
-
-      if (toDelete.length > 0) {
-        const { data, error } = await supabase
-          .rpc("history_delete_if_fresh", { p_rows: toDelete })
-          .abortSignal(controller.signal);
-        if (error) throw toError(error);
-
-        for (const result of (data ?? []) as HistoryDeleteResult[]) {
-          for (const entryId of deleteEntriesByTarget.get(result.id) ?? []) {
-            settled.add(entryId);
-          }
-          if (result.outcome === "conflict") {
-            logger.warn(
-              "[Sync] Refused stale delete for",
-              result.id,
-              "; retrying against the current revision",
-            );
-            this.requeueDelete(result.id, userId, result.revision);
-          }
-        }
-      }
-
-      if (toUpsert.length > 0) {
-        const { data, error } = await supabase
-          .rpc("history_upsert_if_fresh", { p_rows: toUpsert })
-          .abortSignal(controller.signal);
-        if (error) throw toError(error);
-
-        const conflicts: string[] = [];
-        const remotelyDeleted: string[] = [];
-        for (const result of (data ?? []) as HistoryUpsertResult[]) {
-          settled.add(result.id);
-
-          if (result.outcome === "conflict") {
-            if (result.server_row)
-              this.adoptServerRow(result.server_row as CloudRow);
-            conflicts.push(result.id);
-            continue;
-          }
-
-          if (result.outcome === "deleted") {
-            this.forgetDeletedRow(result.id);
-            remotelyDeleted.push(result.id);
-            continue;
-          }
-
-          if (typeof result.revision === "number") {
-            Db.setHistoryRevision(result.id, result.revision);
-          }
-        }
-        if (conflicts.length > 0) {
-          logger.warn(
-            "[Sync] Refused stale writes for",
-            conflicts.length,
-            "row(s); adopted the server copy:",
-            conflicts,
-          );
-        }
-        if (remotelyDeleted.length > 0) {
-          logger.info(
-            "[Sync] Dropped local copy of",
-            remotelyDeleted.length,
-            "row(s) deleted elsewhere:",
-            remotelyDeleted,
-          );
-        }
-      }
-
-      for (const entry of entries) {
-        if (unparsed.has(entry.id) || !settled.has(entry.id)) continue;
-        Db.deleteOutbox(entry.id);
-      }
-      logger.info(
-        "[Sync] Batch pushed",
-        toUpsert.length,
-        "upserts,",
-        toDelete.length,
-        "deletes.",
-      );
-
-      const remaining = Db.getPendingOutbox(userId).filter(
-        (row) => !unparsed.has(row.id),
-      );
-      if (remaining.length > 0) {
-        logger.info(
-          "[Sync] Outbox still queued after drain:",
-          remaining.map((row) => row.id),
-        );
-      }
-    } catch (rawErr) {
-      const err = toError(rawErr);
-      const isTimeout = err.name === "AbortError";
-      logger.error(
-        isTimeout
-          ? "[Sync] Batch drain timed out, reverting in-flight rows"
-          : "[Sync] Batch drain failed",
-        err,
-      );
-      for (const id of attempted) {
-        Db.incrementOutboxRetry(id);
       }
     } finally {
-      clearTimeout(timeoutId);
       this.refreshDeadCount();
+    }
+
+    const remaining = Db.getPendingOutbox(userId);
+    if (remaining.length > 0) {
+      logger.info("[Sync] Outbox still queued after drain:", remaining.length);
     }
   }
 
-  /** Removes a row reported as deleted by the authoritative server. */
-  private forgetDeletedRow(id: string): void {
-    Db.deleteHistory(id);
-    Db.deleteOutboxForHistory(id);
-    history$[id].delete();
+  private async pushChunk(chunk: QueuedRow[], userId: string): Promise<void> {
+    const rows = chunk.map((item) => item.row);
+    let attempt = 0;
+
+    for (;;) {
+      try {
+        const raw = await apiJson("/sync/push", {
+          method: "POST",
+          body: { rows },
+          timeoutMs: DRAIN_TIMEOUT_MS,
+          retries: 1,
+        });
+        this.applyResults(chunk, syncPushResponseSchema.parse(raw), userId);
+        return;
+      } catch (err) {
+        if (
+          err instanceof ApiError &&
+          err.status === 429 &&
+          attempt < PUSH_RATE_LIMIT_RETRIES
+        ) {
+          attempt++;
+          await delay(PUSH_RATE_LIMIT_BACKOFF_MS);
+          continue;
+        }
+
+        for (const item of chunk) Db.incrementOutboxRetry(item.outboxId);
+        logger.error("[Sync] Push chunk failed", err);
+        return;
+      }
+    }
   }
 
-  /** Re-queues a stale delete request against the server's current revision. */
-  private requeueDelete(
-    id: string,
+  private applyResults(
+    chunk: QueuedRow[],
+    response: SyncPushResponse,
     userId: string,
-    revision: number | null,
   ): void {
+    const byId = new Map(response.results.map((result) => [result.id, result]));
+
+    for (const item of chunk) {
+      const result = byId.get(item.row.id);
+      if (!result) {
+        Db.incrementOutboxRetry(item.outboxId);
+        logger.warn("[Sync] No push result for", item.row.id);
+        continue;
+      }
+
+      switch (result.status) {
+        case "ok":
+          if (typeof result.revision === "number") {
+            Db.setHistoryRevision(item.row.id, result.revision);
+          }
+          Db.deleteOutbox(item.outboxId);
+          break;
+
+        case "deleted":
+          Db.applyRemoteDeletion(
+            item.row.id,
+            result.revision ?? item.row.revision,
+          );
+          history$[item.row.id].delete();
+          Db.deleteOutbox(item.outboxId);
+          break;
+
+        case "conflict":
+          if (item.row.deletedAt != null) {
+            this.requeueDelete(item, result, userId);
+          } else if (result.row) {
+            this.adoptServerRow(result.row, userId);
+          } else if (typeof result.revision === "number") {
+            Db.setHistoryRevision(item.row.id, result.revision);
+          }
+          Db.deleteOutbox(item.outboxId);
+          break;
+
+        case "not_found":
+          logger.warn("[Sync] Server has no row for", item.row.id);
+          Db.deleteOutbox(item.outboxId);
+          break;
+      }
+    }
+  }
+
+  /**
+   * A delete whose base revision was stale is re-queued against the revision
+   * the server just reported. If the revision did not move, the server's copy
+   * wins so a conflicting delete cannot loop.
+   */
+  private requeueDelete(
+    item: QueuedRow,
+    result: SyncPushResult,
+    userId: string,
+  ): void {
+    const revision = result.revision ?? result.row?.revision;
+    if (typeof revision !== "number" || revision === item.row.revision) {
+      if (result.row) this.adoptServerRow(result.row, userId);
+      return;
+    }
+
+    Db.setHistoryRevision(item.row.id, revision);
     Db.insertOutbox({
-      id,
-      payload: buildDeleteOutboxPayload(id, revision),
+      id: Crypto.randomUUID(),
+      payload: serializeOutboxRow({
+        ...item.row,
+        revision,
+        deletedAt: item.row.deletedAt ?? Date.now(),
+        restore: false,
+      }),
       userId,
       createdAt: new Date().toISOString(),
     });
   }
 
-  /** Adopts the server's row data when a local push is refused as stale. */
-  private adoptServerRow(row: CloudRow): void {
-    const entry = cloudRowToEntry(row);
-    const revision = row.revision ?? null;
+  /** Adopts the server's row when a local push is refused as stale. */
+  private adoptServerRow(row: SyncedRow, userId: string): void {
+    Db.insertHistory(wireRowToLocal(row, userId));
+    if (row.deletedAt != null) {
+      history$[row.id].delete();
+    } else {
+      history$[row.id].set(wireRowToEntry(row));
+    }
+  }
 
-    Db.insertHistory({
-      id: row.id,
-      userId: row.user_id,
-      captureId: entry.captureId,
-      origin: entry.origin,
-      input: entry.input,
-      sourceLang: entry.sourceLang,
-      targetLang: entry.targetLang,
-      transcript: entry.transcript,
-      translationText: entry.translation,
-      transliterationText: entry.transliteration,
-      duration: entry.duration,
-      sourceApp: entry.sourceApp ?? "",
-      voiceId: entry.voiceId,
-      sttProvider: entry.sttProvider,
-      mtProvider: entry.mtProvider,
-      createdAt: row.created_at,
-      entryType: entry.type ?? "transcription",
-      revision: revision ?? 0,
-    });
+  /**
+   * Row and byte caps for a push. The worker publishes both on `/config`, so a
+   * paid worker is not chunked at the Free row cap.
+   */
+  private async pushLimits(): Promise<{ maxRows: number; maxBytes: number }> {
+    if (this.pushRows === null) {
+      try {
+        const config = await apiJson<{
+          syncPushRows?: unknown;
+          maxHistoryBatchBytes?: unknown;
+        }>("/config", { auth: false, retries: 1, timeoutMs: 10_000 });
 
-    history$[row.id].set(entry);
+        if (
+          typeof config.syncPushRows === "number" &&
+          Number.isInteger(config.syncPushRows) &&
+          config.syncPushRows > 0
+        ) {
+          this.pushRows = config.syncPushRows;
+        }
+        if (
+          typeof config.maxHistoryBatchBytes === "number" &&
+          config.maxHistoryBatchBytes > PUSH_BODY_HEADROOM_BYTES
+        ) {
+          this.pushBytes =
+            config.maxHistoryBatchBytes - PUSH_BODY_HEADROOM_BYTES;
+        }
+      } catch (err) {
+        logger.warn(
+          "[Sync] /config unavailable; using default push limits",
+          err,
+        );
+      }
+    }
+
+    return {
+      maxRows: this.pushRows ?? SYNC_PUSH_ROWS_FREE,
+      maxBytes: this.pushBytes,
+    };
   }
 }

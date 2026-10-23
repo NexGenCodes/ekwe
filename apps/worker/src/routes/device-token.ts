@@ -3,9 +3,7 @@ import {
   registerPushTokenRequestSchema,
 } from "@ekwe/shared";
 import { Env } from "@/core/types";
-import { describeError, retryOnConnectionLoss } from "@/db/retry";
-import { pushTokens } from "@ekwe/db/schema";
-import { sql } from "drizzle-orm";
+import { describeError, retryTransient } from "@/db/retry";
 import type { z } from "zod";
 
 import { type AuthResult } from "@/core/auth";
@@ -14,35 +12,33 @@ import { logger } from "@/core/logger";
 export async function handleRegisterDeviceToken(
   body: z.infer<typeof registerPushTokenRequestSchema>,
   env: Env,
-  auth: AuthResult | null,
+  auth: AuthResult,
 ): Promise<Response> {
-  const values = {
-    pushToken: body.push_token,
-    platform: body.platform,
-    appVersion: body.app_version ?? null,
-    userId: auth?.userId ?? null,
-  };
+  const now = Date.now();
 
   try {
-    await retryOnConnectionLoss(
-      (client) =>
-        client
-          .insert(pushTokens)
-          .values(values)
-          .onConflictDoUpdate({
-            target: pushTokens.pushToken,
-            set: {
-              platform: values.platform,
-              appVersion: values.appVersion,
-              isActive: true,
-              lastUsedAt: sql`now()`,
-              // Keeps the recorded owner, so a token can only be claimed while
-              // unowned: no auth header cannot detach it, and another account
-              // cannot re-point it. Anonymous registration still works.
-              userId: sql`COALESCE(${pushTokens.userId}, ${values.userId}::uuid)`,
-            },
-          }),
-      env,
+    await retryTransient(() =>
+      env.DB.prepare(
+        `INSERT INTO push_tokens
+           (id, user_id, push_token, platform, app_version, is_active, last_used_at, created_at)
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+         ON CONFLICT (push_token) DO UPDATE SET
+           platform = excluded.platform,
+           app_version = excluded.app_version,
+           is_active = 1,
+           last_used_at = excluded.last_used_at
+         WHERE push_tokens.user_id = excluded.user_id`,
+      )
+        .bind(
+          crypto.randomUUID(),
+          auth.userId,
+          body.push_token,
+          body.platform,
+          body.app_version ?? null,
+          now,
+          now,
+        )
+        .run(),
     );
   } catch (error) {
     logger.error("[device-token] failed to upsert push token", {

@@ -1,4 +1,5 @@
 export { APP_VERSION, APP_VERSION_CODE } from "./version";
+export * from "./sync";
 export * from "./token";
 export { type Logger, makeLogEntry, scrubSentryEvent } from "./observability";
 export {
@@ -67,6 +68,8 @@ export {
   PRO_PRODUCT_IDS,
   SPEECH_MAX_TEXT_CHARS,
   TRANSLATE_EXPANSION_CUSHION,
+  AI_CREDIT_COSTS,
+  aiCreditsForUsage,
 } from "./plans";
 export type {
   PlanLimits,
@@ -75,6 +78,7 @@ export type {
   PlanPricing,
   PlanConfigPlans,
   LocalPrice,
+  UsageCharge,
 } from "./plans";
 export {
   getDecimals,

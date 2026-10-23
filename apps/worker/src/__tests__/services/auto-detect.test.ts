@@ -54,9 +54,9 @@ function createFakeD1() {
   return { db: db as unknown as D1Database, rows, statements };
 }
 
-// Auto-detect reads the cache through `env.EKWE_D1`.
+// Auto-detect reads the cache through `env.DB`.
 function envWith(db: D1Database, kv?: Env["EKWE_KV"]): Env {
-  return { EKWE_D1: db, EKWE_KV: kv } as unknown as Env;
+  return { DB: db, EKWE_KV: kv } as unknown as Env;
 }
 
 const never = new AbortController().signal;

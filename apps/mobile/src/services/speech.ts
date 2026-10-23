@@ -9,7 +9,7 @@ import { MAX_AUDIO_INPUT_BYTES } from "@ekwe/shared/plans";
 
 import { EkweError } from "@/constants/errors";
 import { AudioTranscoder } from "@/services/audioTranscoder";
-import { supabase } from "@/services/supabase";
+import { ensureAccessToken } from "@/services/backend";
 import { getMimeType, uploadMultipart } from "@/services/uploadMultipart";
 import { settings$ } from "@/store/settings";
 import { Result, ok, err } from "@/types/Result";
@@ -17,6 +17,7 @@ import logger from "@/utils/logger";
 import { getActivePlanLimits } from "@/utils/planLimits";
 import { isDefinitelyOffline } from "@/utils/connectivity";
 import { headerValue, parseServerTiming } from "@/utils/perfSpan";
+import { quotaRemaining } from "@/utils/quota";
 import {
   fetchWithRetry,
   getWorkerUrl,
@@ -91,10 +92,7 @@ const resolveGenderSetting = (): VoiceGender | undefined => {
 };
 
 async function getAccessToken(): Promise<string | undefined> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  return session?.access_token;
+  return (await ensureAccessToken()) ?? undefined;
 }
 
 async function writeAudioFile(
@@ -265,6 +263,10 @@ export async function synthesizeSpeech(
   if (!trimmed) return err(EkweError.SPEECH_FAIL);
   if (trimmed.length > getActivePlanLimits().maxTextChars) {
     return err(EkweError.TEXT_TOO_LONG);
+  }
+  const speechLeft = quotaRemaining("speech");
+  if (speechLeft !== null && speechLeft < trimmed.length) {
+    return err(EkweError.QUOTA_EXCEEDED);
   }
   if (isDefinitelyOffline()) {
     return err(EkweError.NETWORK_LOST);

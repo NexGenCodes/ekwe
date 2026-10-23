@@ -4,6 +4,7 @@ import { observable } from "@legendapp/state";
 
 import { EkweError, ErrorMessages } from "@/constants/errors";
 import { AudioCapture } from "@/services/audioCapture";
+import { ensureAccessToken } from "@/services/backend";
 import { StreamTranscriber } from "@/services/streamTranscriber";
 import { batchTranscriber } from "@/services/batchTranscriber";
 import { audioActions, RecordingState } from "@/store";
@@ -12,6 +13,8 @@ import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 import { logger } from "@/utils";
 import { getWorkerUrl } from "@/utils/http";
+import { isQuotaExhausted } from "@/utils/quota";
+import { getActivePlanLimits } from "@/utils/planLimits";
 
 export const TIMER_TICK_MS = 250;
 export const KEEP_AWAKE_TAG = "ekwe-dictation-recording";
@@ -196,7 +199,7 @@ export const dictationActions = {
       }
 
       if (isLive) {
-        const token = getToken();
+        const token = await ensureAccessToken();
         const serverUrl = getWorkerUrl();
         if (!token || !serverUrl) {
           logger.error(
@@ -209,6 +212,15 @@ export const dictationActions = {
           await AudioCapture.cancelRecording();
           return;
         }
+
+        const planLimits = getActivePlanLimits();
+        if (planLimits.maxStreamDurationMs > 0 && isQuotaExhausted("stream")) {
+          dictation$.status.set("error");
+          dictation$.error.set(ErrorMessages[EkweError.QUOTA_EXCEEDED]);
+          await AudioCapture.cancelRecording();
+          return;
+        }
+
         StreamTranscriber.connect({
           token,
           lang: sourceLang,

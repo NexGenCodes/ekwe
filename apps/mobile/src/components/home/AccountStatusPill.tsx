@@ -20,7 +20,7 @@ export function AccountStatusPill(): React.ReactElement {
       <Box
         accessible
         accessibilityRole="text"
-        accessibilityLabel="Pro account"
+        accessibilityLabel="Paid account"
         style={{
           paddingHorizontal: spacing.md,
           paddingVertical: spacing.sm,
@@ -40,7 +40,7 @@ export function AccountStatusPill(): React.ReactElement {
             textTransform: "uppercase",
           }}
         >
-          PRO
+          PAID
         </Text>
       </Box>
     );
@@ -54,7 +54,7 @@ export function AccountStatusPill(): React.ReactElement {
       }}
       accessible
       accessibilityRole="button"
-      accessibilityLabel="Upgrade to Pro. Opens billing."
+      accessibilityLabel="Upgrade your plan. Opens billing."
       style={({ pressed }) => [
         {
           paddingHorizontal: spacing.md,
@@ -79,7 +79,7 @@ export function AccountStatusPill(): React.ReactElement {
           color: color.onBrand,
         }}
       >
-        Go Pro
+        Upgrade
       </Text>
     </Pressable>
   );

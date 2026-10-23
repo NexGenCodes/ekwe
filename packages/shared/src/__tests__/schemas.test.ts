@@ -260,31 +260,69 @@ describe("usageSnapshotSchema", () => {
   test("validates the usage snapshot shape", () => {
     const parsed = usageSnapshotSchema.safeParse({
       day: "2026-08-13",
-      resetsAt: 1784160000000,
+      resetsAt: 1788134400000,
+      month: "2026-08",
+      monthResetsAt: 1788134400000,
       meters: [
         {
           id: "translate",
-          label: "Translations",
+          label: "Translation",
           unit: "requests",
           used: 2,
-          total: 25,
-          remaining: 23,
+          total: 600,
+          remaining: 598,
         },
         {
           id: "transcribe",
-          label: "Transcriptions",
-          unit: "requests",
-          used: 0,
-          total: 10,
-          remaining: 10,
+          label: "Transcription",
+          unit: "min",
+          used: 1,
+          total: 60,
+          remaining: 59,
         },
         {
           id: "speech",
           label: "Speech",
-          unit: "characters",
+          unit: "chars",
           used: 40,
-          total: 5000,
-          remaining: 4960,
+          total: 60000,
+          remaining: 59960,
+        },
+        {
+          id: "budget",
+          label: "Shared AI budget",
+          unit: "credits",
+          used: 12,
+          total: 1300,
+          remaining: 1288,
+        },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  test("accepts unlimited and unavailable meters", () => {
+    const parsed = usageSnapshotSchema.safeParse({
+      day: "2026-08-13",
+      resetsAt: 1788134400000,
+      month: "2026-08",
+      monthResetsAt: 1788134400000,
+      meters: [
+        {
+          id: "translate",
+          label: "Translation",
+          unit: "requests",
+          used: 100,
+          total: null,
+          remaining: null,
+        },
+        {
+          id: "stream",
+          label: "Live dictation",
+          unit: "min",
+          used: 0,
+          total: 0,
+          remaining: 0,
         },
       ],
     });
@@ -299,10 +337,12 @@ describe("usageSnapshotSchema", () => {
   test("rejects a meter with an unknown id", () => {
     const parsed = usageSnapshotSchema.safeParse({
       day: "2026-08-13",
-      resetsAt: 1784160000000,
+      resetsAt: 1788134400000,
+      month: "2026-08",
+      monthResetsAt: 1788134400000,
       meters: [
         {
-          id: "stream",
+          id: "streaming",
           label: "Stream",
           unit: "seconds",
           used: 1,

@@ -27,9 +27,9 @@ export async function readTranscribeCache(
   env: Env,
   cacheKey: string,
 ): Promise<TranscribeResult | null> {
-  if (!env.EKWE_D1) return null;
+  if (!env.DB) return null;
   try {
-    const cached = await d1Get(env.EKWE_D1, "cache_transcription", cacheKey);
+    const cached = await d1Get(env.DB, "cache_transcription", cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached) as TranscribeResult;
       const shapeCheck = transcribeResponseSchema.safeParse(parsed);
@@ -52,10 +52,10 @@ export async function writeTranscribeCache(
   tier: string,
   result: TranscribeResult,
 ): Promise<void> {
-  if (!env.EKWE_D1) return;
+  if (!env.DB) return;
   try {
     await d1Put(
-      env.EKWE_D1,
+      env.DB,
       "cache_transcription",
       cacheKey,
       userId,

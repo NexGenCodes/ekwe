@@ -6,7 +6,8 @@ import {
 import type { TranslateRequest, TranslateResponse } from "@ekwe/shared";
 
 import { EkweError } from "@/constants/errors";
-import { supabase } from "@/services/supabase";
+import { ensureAccessToken } from "@/services/backend";
+import { isQuotaExhausted } from "@/utils/quota";
 import { Result, ok, err } from "@/types/Result";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 import logger, { addSentryBreadcrumb } from "@/utils/logger";
@@ -39,10 +40,11 @@ export async function translateText(
     return err(EkweError.NETWORK_LOST);
   }
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const token = session?.access_token;
+  if (isQuotaExhausted("translate")) {
+    return err(EkweError.QUOTA_EXCEEDED);
+  }
+
+  const token = await ensureAccessToken();
 
   const payload: TranslateRequest = { text, targetLang, sourceLang };
   const shapeCheck = translateRequestSchema.safeParse(payload);

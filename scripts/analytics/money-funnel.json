@@ -67,7 +67,7 @@
       "fired_at": "apps/mobile/src/hooks/billing/useBilling.ts"
     },
     "purchase_success": {
-      "description": "Pro entitlement granted after verified payment/status poll.",
+      "description": "Paid entitlement granted after verified payment/status poll.",
       "properties": ["plan", "amount", "currency"],
       "fired_at": "apps/mobile/src/hooks/billing/useBilling.ts"
     }
@@ -75,10 +75,10 @@
   "dashboards": [
     {
       "name": "Ekwe — Money Funnel",
-      "description": "Conversion from first transcription to paid Pro, plus daily volume.",
+      "description": "Conversion from first transcription to a paid plan, plus daily volume.",
       "insights": [
         {
-          "name": "Conversion funnel: first transcript → Pro (14d window)",
+          "name": "Conversion funnel: first transcript → Paid (14d window)",
           "query": {
             "kind": "FunnelsQuery",
             "dateRange": { "date_from": "-90d" },
@@ -112,7 +112,7 @@
               {
                 "kind": "EventsNode",
                 "event": "purchase_success",
-                "name": "Paid → Pro"
+                "name": "Free → Paid"
               }
             ],
             "funnelsFilter": {
@@ -143,7 +143,7 @@
               {
                 "kind": "EventsNode",
                 "event": "purchase_success",
-                "name": "Paid → Pro"
+                "name": "Free → Paid"
               }
             ],
             "funnelsFilter": {
@@ -346,7 +346,7 @@
   "cohorts": [
     {
       "name": "Paid — Flutterwave subscribers",
-      "description": "Users who ever completed a Pro purchase.",
+      "description": "Users who ever completed a paid purchase.",
       "is_static": false,
       "filters": {
         "properties": {
@@ -401,7 +401,7 @@
       }
     },
     {
-      "name": "Lapsed Pro (14d)",
+      "name": "Lapsed Paid (14d)",
       "description": "Paid before, but no transcription in the last 14 days. Win-back target.",
       "is_static": false,
       "filters": {

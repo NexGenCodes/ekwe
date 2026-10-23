@@ -19,8 +19,8 @@
     "secrets:sync-remote": "node ../../scripts/deploy-keys.mjs sync-remote",
     "secrets:verify": "node ../../scripts/deploy-keys.mjs verify",
     "secrets:rotate": "node ../../scripts/deploy-keys.mjs rotate",
-    "db:migrate": "for f in migrations/*.sql; do wrangler d1 execute ekwe-cache --remote --file \"$f\"; done",
-    "db:migrate:local": "for f in migrations/*.sql; do wrangler d1 execute ekwe-cache --local --file \"$f\"; done",
+    "db:migrate": "wrangler d1 migrations apply ekwe --remote",
+    "db:migrate:local": "wrangler d1 migrations apply ekwe --local",
     "dev": "wrangler dev --persist-to .wrangler/state",
     "deploy:worker": "wrangler deploy",
     "gen:types": "wrangler types",
@@ -42,8 +42,7 @@
     "drizzle-orm": "0.45.3",
     "franc": "^6.2.0",
     "hono": "^4.13.12",
-    "jose": "^6.2.3",
-    "postgres": "^3.4.9"
+    "jose": "^6.2.3"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.20.0",

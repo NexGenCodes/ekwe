@@ -7,18 +7,10 @@ import { Env } from "@/core/types";
 import type { z } from "zod";
 import { withCache } from "@/core/cache";
 import { logger } from "@/core/logger";
-import { describeError, retryOnConnectionLoss } from "@/db/retry";
-import { pushTokens } from "@ekwe/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { describeError, retryTransient } from "@/db/retry";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const MANIFEST_KEY = "update:manifest";
-
-interface ActiveTokenRow {
-  push_token: string;
-  platform: string;
-  user_id: string | null;
-}
 
 interface ExpoPushMessage {
   to: string;
@@ -73,20 +65,14 @@ export async function handleUpdateNotify(
   const versionCode = body.versionCode;
   const checksumSha256 = body.checksumSha256;
 
-  let rows: ActiveTokenRow[];
+  let androidTokens: string[];
   try {
-    rows = await retryOnConnectionLoss(
-      (client) =>
-        client
-          .select({
-            push_token: pushTokens.pushToken,
-            platform: pushTokens.platform,
-            user_id: pushTokens.userId,
-          })
-          .from(pushTokens)
-          .where(eq(pushTokens.isActive, true)),
-      env,
+    const rows = await retryTransient(() =>
+      env.DB.prepare(
+        "SELECT push_token FROM push_tokens WHERE is_active = 1 AND platform = 'android'",
+      ).all<{ push_token: string }>(),
     );
+    androidTokens = rows.results.map((row) => row.push_token);
   } catch (err) {
     logger.error("[admin:update/notify] Failed to fetch active push tokens", {
       error: describeError(err),
@@ -96,9 +82,6 @@ export async function handleUpdateNotify(
       { status: 502 },
     );
   }
-  const androidTokens = rows
-    .filter((r) => r.platform === "android")
-    .map((r) => r.push_token);
 
   if (androidTokens.length === 0) {
     return Response.json({ ok: true, sent: 0 });
@@ -159,14 +142,18 @@ export async function handleUpdateNotify(
   // report a partial deactivation.
   if (staleTokens.length > 0) {
     try {
-      await retryOnConnectionLoss(
-        (client) =>
-          client
-            .update(pushTokens)
-            .set({ isActive: false })
-            .where(inArray(pushTokens.pushToken, staleTokens)),
-        env,
-      );
+      const chunkSize = 90;
+      for (let i = 0; i < staleTokens.length; i += chunkSize) {
+        const chunk = staleTokens.slice(i, i + chunkSize);
+        const placeholders = chunk.map(() => "?").join(", ");
+        await retryTransient(() =>
+          env.DB.prepare(
+            `UPDATE push_tokens SET is_active = 0 WHERE push_token IN (${placeholders})`,
+          )
+            .bind(...chunk)
+            .run(),
+        );
+      }
       deactivated = staleTokens.length;
     } catch (err) {
       logger.error("[admin:update/notify] Bulk deactivate failed", {

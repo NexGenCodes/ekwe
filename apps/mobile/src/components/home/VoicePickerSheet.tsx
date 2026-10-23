@@ -11,7 +11,7 @@ import { VOICE_SLOTS, type VoiceGender, type VoiceSlot } from "@ekwe/shared";
 
 import { Sheet } from "@/components/ui/Sheet";
 import { Spinner } from "@/components/ui/Spinner";
-import { ProBadge } from "@/components/ProBadge";
+import { PaidBadge } from "@/components/PaidBadge";
 import { LockedPressable } from "@/components/LockedPressable";
 import { Box, Pressable, Text } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
@@ -69,7 +69,7 @@ function VoiceCard({
       navigateToBilling
       onPress={onPress}
       accessibilityLabel={`${slot.name}, ${slot.tagline}`}
-      accessibilityHint={locked ? "Requires Ekwe Pro subscription" : undefined}
+      accessibilityHint={locked ? "Requires the Ekwe Paid plan" : undefined}
       accessibilityState={{ selected }}
       accessible={false}
       style={({ pressed }) => [
@@ -158,7 +158,7 @@ function VoiceCard({
           >
             {slot.name}
           </Text>
-          {slot.tier === "pro" && <ProBadge />}
+          {slot.tier === "pro" && <PaidBadge />}
         </Box>
         <Text
           variant="caption"

@@ -6,13 +6,14 @@ import { EkweError } from "@/constants/errors";
 import { ProcessedAudio } from "@/services/audioProcessor";
 import { AudioTranscoder } from "@/services/audioTranscoder";
 import { getMimeType, uploadMultipart } from "@/services/uploadMultipart";
-import { supabase } from "@/services/supabase";
+import { ensureAccessToken } from "@/services/backend";
 import { Result, ok, err } from "@/types/Result";
 import { resolveDetectedLanguage } from "@/utils/languageUtils";
 import logger from "@/utils/logger";
 import { getActivePlanLimits } from "@/utils/planLimits";
 import { isDefinitelyOffline } from "@/utils/connectivity";
 import { getWorkerUrl, mapWorkerError, isTimeoutError } from "@/utils/http";
+import { isQuotaExhausted } from "@/utils/quota";
 import EkweNative from "../../modules/ekwe-native";
 
 export interface TranscriptionResult {
@@ -30,6 +31,10 @@ export async function transcribeAudio(
   signal?: AbortSignal,
   onProgress?: (fraction: number) => void,
 ): Promise<Result<TranscriptionResult, EkweError>> {
+  if (isQuotaExhausted("transcribe")) {
+    return err(EkweError.QUOTA_EXCEEDED);
+  }
+
   let convertedPath: string | null = null;
   let playbackPath: string | null = null;
 
@@ -83,10 +88,7 @@ export async function transcribeAudio(
       return err(EkweError.FILE_TOO_LARGE);
     }
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const token = session?.access_token;
+    const token = await ensureAccessToken();
 
     const uploadResult = await uploadMultipart(
       uploadFile,

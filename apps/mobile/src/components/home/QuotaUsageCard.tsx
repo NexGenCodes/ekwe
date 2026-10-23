@@ -17,8 +17,8 @@ interface PoolRowProps {
   label: string;
   unit: string;
   used: number;
-  total: number;
-  remaining: number;
+  total: number | null;
+  remaining: number | null;
 }
 
 interface MeterState {
@@ -26,8 +26,11 @@ interface MeterState {
   tone: "brand" | "warning" | "error";
 }
 
-function computeMeterState(used: number, total: number): MeterState | null {
-  if (total <= 0) return null;
+function computeMeterState(
+  used: number,
+  total: number | null,
+): MeterState | null {
+  if (total === null || total <= 0) return null;
   const fraction = Math.min(used / total, 1);
   const tone: MeterState["tone"] =
     fraction >= 1 ? "error" : fraction >= 0.75 ? "warning" : "brand";
@@ -35,7 +38,8 @@ function computeMeterState(used: number, total: number): MeterState | null {
 }
 
 function formatUsageNumber(value: number): string {
-  return value.toLocaleString("en-US");
+  if (Number.isInteger(value)) return value.toLocaleString("en-US");
+  return value.toLocaleString("en-US", { maximumFractionDigits: 1 });
 }
 
 function PoolRow({
@@ -63,9 +67,9 @@ function PoolRow({
           numberOfLines={1}
           style={[styles.poolValue, { color: color.muted }]}
         >
-          {meter === null
+          {total === null
             ? "Unlimited"
-            : `${formatUsageNumber(used)} / ${formatUsageNumber(total)} ${unit} · ${formatUsageNumber(remaining)} left`}
+            : `${formatUsageNumber(used)} / ${formatUsageNumber(total)} ${unit}`}
         </Text>
       </Box>
 
@@ -76,8 +80,10 @@ function PoolRow({
             { backgroundColor: withAlpha(color.muted, 0.18) },
           ]}
           accessibilityRole="progressbar"
-          accessibilityValue={{ min: 0, max: total, now: used }}
-          accessibilityLabel={`${label}: ${used} of ${total} used today`}
+          accessibilityValue={{ min: 0, max: total ?? 0, now: used }}
+          accessibilityLabel={`${label}: ${used} of ${total} used this month, ${formatUsageNumber(
+            remaining ?? 0,
+          )} ${unit} left`}
         >
           <Box
             style={[
@@ -103,9 +109,11 @@ function PoolRow({
 
 function resetsLabel(resetsAt: number): string {
   const diff = resetsAt - Date.now();
-  if (diff <= 0) return "Resets at midnight";
-  const hours = Math.ceil(diff / 3_600_000);
-  return `Resets in ${hours}h`;
+  if (diff <= 0) return "Resets next month";
+  return `Resets ${new Date(resetsAt).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  })}`;
 }
 
 export function QuotaUsageCard(): React.ReactElement {
@@ -117,19 +125,26 @@ export function QuotaUsageCard(): React.ReactElement {
     if (isError || !data) return { headline: null, showUpgrade: false };
 
     const meters = data.meters;
-    const anyExhausted = meters.some((p) => p.total > 0 && p.remaining === 0);
+    const anyExhausted = meters.some(
+      (p) => p.total !== null && p.total > 0 && p.remaining === 0,
+    );
     const anyNear = meters.some(
-      (p) => p.total > 0 && p.remaining / p.total < 0.25 && p.remaining > 0,
+      (p) =>
+        p.total !== null &&
+        p.total > 0 &&
+        p.remaining !== null &&
+        p.remaining / p.total < 0.25 &&
+        p.remaining > 0,
     );
 
     if (anyExhausted)
       return {
-        headline: { text: "Daily limit reached", tone: "error" as const },
+        headline: { text: "Monthly limit reached", tone: "error" as const },
         showUpgrade: true,
       };
     if (anyNear)
       return {
-        headline: { text: "Almost out for today", tone: "warning" as const },
+        headline: { text: "Almost out this month", tone: "warning" as const },
         showUpgrade: true,
       };
     return { headline: null, showUpgrade: false };
@@ -150,7 +165,7 @@ export function QuotaUsageCard(): React.ReactElement {
             variant="body"
             style={{ color: color.foreground, fontWeight: "600" }}
           >
-            Today's usage
+            This month's usage
           </Text>
         </Box>
 
@@ -186,6 +201,8 @@ export function QuotaUsageCard(): React.ReactElement {
       ) : data ? (
         <Box style={styles.pools}>
           {data.meters.map((meter) => {
+            if (meter.total === 0) return null;
+
             const displayMeta = USAGE_METER_META.find(
               (meta) => meta.id === meter.id,
             );
@@ -212,7 +229,7 @@ export function QuotaUsageCard(): React.ReactElement {
           }}
           accessible
           accessibilityRole="button"
-          accessibilityLabel="Upgrade to Pro. Unlimited translations and transcriptions."
+          accessibilityLabel="Upgrade for higher limits and no ads."
           style={({ pressed }) => [
             styles.upgradeRow,
             { backgroundColor: withAlpha(color.brand, 0.08) },
@@ -223,14 +240,14 @@ export function QuotaUsageCard(): React.ReactElement {
             variant="bodySmall"
             style={{ color: color.brand, fontWeight: "600" }}
           >
-            Need more today?
+            Need more this month?
           </Text>
           <Box style={[styles.upgradePill, { backgroundColor: color.brand }]}>
             <Text
               variant="caption"
               style={{ color: color.onBrand, fontWeight: "600" }}
             >
-              Go unlimited
+              See plans
             </Text>
           </Box>
         </Pressable>
@@ -265,10 +282,11 @@ const styles = {
     justifyContent: "space-between",
   } as const,
   poolLabel: {
-    flexShrink: 0,
+    flex: 1,
+    marginRight: spacing.sm,
   } as const,
   poolValue: {
-    flexShrink: 1,
+    flexShrink: 0,
     textAlign: "right",
   } as const,
   track: {

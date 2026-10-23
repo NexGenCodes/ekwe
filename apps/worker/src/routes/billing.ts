@@ -8,12 +8,14 @@ import {
 import { toLowestUnit } from "@ekwe/shared/money";
 import { Env } from "@/core/types";
 import { logger } from "@/core/logger";
-import { guardFlutterwaveKeys, setProStatus } from "@/services/flutterwave";
+import {
+  ensureProCoverage,
+  guardFlutterwaveKeys,
+  setProStatus,
+} from "@/services/flutterwave";
 import { claimFlutterwaveTransaction } from "@/services/flutterwave-claim";
 import { AuthResult } from "@/core/auth";
-import { describeError, retryOnConnectionLoss } from "@/db/retry";
-import { appConfig } from "@ekwe/db/schema";
-import { eq } from "drizzle-orm";
+import { describeError, retryTransient } from "@/db/retry";
 import {
   getAuthoritativePlanPrices,
   resolveRequestCurrency,
@@ -32,7 +34,7 @@ export async function handleCheckout(
 
   const prices = await getAuthoritativePlanPrices(env, currency);
   if (!prices) {
-    logger.warn("[billing/checkout] Cannot confirm price from Supabase", {
+    logger.warn("[billing/checkout] Cannot confirm price from app_config", {
       currency,
     });
     return Response.json(
@@ -76,8 +78,8 @@ export async function handleCheckout(
           email: auth.userEmail,
         },
         customizations: {
-          title: "Ekwe Pro",
-          description: `Upgrade to Ekwe Pro (${body.plan.replace("ekwe_pro_", "")})`,
+          title: "Ekwe Paid",
+          description: `Upgrade to Ekwe Paid (${body.plan.replace("ekwe_pro_", "")})`,
         },
       }),
     });
@@ -237,7 +239,7 @@ export async function handleVerifyTransaction(
 
   const prices = await getAuthoritativePlanPrices(env, fwData.data.currency);
   if (!prices) {
-    logger.warn("[billing/verify] Cannot confirm price from Supabase", {
+    logger.warn("[billing/verify] Cannot confirm price from app_config", {
       currency: fwData.data.currency,
     });
     return Response.json(
@@ -280,7 +282,10 @@ export async function handleVerifyTransaction(
   });
 
   if (!claim) {
-    return Response.json({ error: "Failed to activate Pro" }, { status: 500 });
+    return Response.json(
+      { error: "Failed to activate the paid plan" },
+      { status: 500 },
+    );
   }
 
   if (!claim.shouldActivate) {
@@ -288,37 +293,26 @@ export async function handleVerifyTransaction(
       userId: auth.userId,
       flw_ref: fwData.data.flw_ref,
     });
+  }
+
+  const applied = claim.shouldActivate
+    ? await setProStatus(env, { userId: auth.userId }, true, claim.expiresAt)
+    : await ensureProCoverage(env, auth.userId, claim.expiresAt);
+
+  if (!applied.ok) {
+    logger.error("[billing/verify] Failed to activate the paid plan");
     return Response.json(
-      verifyTransactionResponseSchema.parse({
-        ok: true,
-        permanent: false,
-        transaction_id: fwData.data.id,
-        tx_ref: fwData.data.tx_ref,
-      }),
+      { error: "Failed to activate the paid plan" },
+      { status: 500 },
     );
   }
 
-  const expiresAt = claim.expiresAt;
-  const rpcResult = await setProStatus(
-    env,
-    { email: auth.userEmail, userId: auth.userId },
-    true,
-    expiresAt,
-    "flutterwave",
-    fwData.data.flw_ref,
-  );
+  const permanentlyActivated = applied.permanent;
 
-  if (!rpcResult.ok) {
-    logger.error("[billing/verify] set_pro_status RPC failed");
-    return Response.json({ error: "Failed to activate Pro" }, { status: 500 });
-  }
-
-  const permanentlyActivated = rpcResult.permanent === true;
-
-  logger.info("[billing/verify] Pro activated via verify endpoint", {
+  logger.info("[billing/verify] paid plan activated via verify endpoint", {
     userId: auth.userId,
     tx_ref: fwData.data.tx_ref,
-    expires_at: expiresAt,
+    expires_at: claim.expiresAt,
     permanent: permanentlyActivated,
   });
 
@@ -337,16 +331,10 @@ export async function handleBillingFlags(
   env: Env,
 ): Promise<Response> {
   try {
-    const [config] = await retryOnConnectionLoss(
-      (client) =>
-        client
-          .select({
-            flutterwaveEnabled: appConfig.flutterwaveEnabled,
-            defaultProvider: appConfig.defaultProvider,
-          })
-          .from(appConfig)
-          .where(eq(appConfig.id, 1)),
-      env,
+    const config = await retryTransient(() =>
+      env.DB.prepare(
+        "SELECT flutterwave_enabled, default_provider FROM app_config WHERE id = 1",
+      ).first<{ flutterwave_enabled: number; default_provider: string }>(),
     );
 
     if (!config) {
@@ -357,8 +345,8 @@ export async function handleBillingFlags(
     }
 
     return Response.json({
-      flutterwave_enabled: config.flutterwaveEnabled,
-      default_provider: config.defaultProvider,
+      flutterwave_enabled: config.flutterwave_enabled === 1,
+      default_provider: config.default_provider,
     });
   } catch (err) {
     logger.error("[billing] Failed to read app_config", {

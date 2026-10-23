@@ -4,19 +4,30 @@
 
 APP_ENV=development
 
-# ─── Supabase ─────────────────────────────────────────────────────────
-SUPABASE_URL=your-supabase-project-url
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-# Optional: secret API key (sb_secret_...) from Authentication → API Keys. When
-# set, the OTP route forwards the end-user IP (Sb-Forwarded-For) to Supabase Auth
-# so its per-IP rate-limit buckets key on each client instead of the worker egress IP.
-SUPABASE_SECRET_KEY=your-secret-key
+# ─── Auth signing ─────────────────────────────────────────────────────
+# Ed25519 keypair for the access tokens. Generate a pair with
+# `node scripts/gen-jwt-keys.mjs` — it prints the private JWK, the public JWK
+# and the OTP pepper. The private JWK and the pepper are secrets; the public
+# JWK is a plain var in wrangler.jsonc (JWT_PUBLIC_JWK).
+# Deploy with: wrangler secret put JWT_PRIVATE_JWK
+JWT_PRIVATE_JWK=
+# Random secret mixed into the OTP code hash. Changing it invalidates every
+# code that is in flight. Deploy with: wrangler secret put OTP_PEPPER
+OTP_PEPPER=
+
+# ─── Email (Brevo) ────────────────────────────────────────────────────
+# Brevo REST API key (SMTP & API → API Keys). The SMTP password cannot be
+# used here — the REST API only accepts an `xkeysib-` key.
+# Deploy with: wrangler secret put BREVO_API_KEY
+BREVO_API_KEY=
+# The sender must be verified in Brevo. Until a domain is verified this is the
+# Brevo account's own address, and Brevo only delivers to that inbox.
+# Plain var in wrangler.jsonc (BREVO_SENDER / BREVO_SENDER_NAME).
 
 # ─── Speech cache URLs ─────────────────────────────────────────────────
 # Signs the `/speech/:key` capability URL so a cache key cannot be recomputed
 # from the text and language alone. Any random 32+ byte value; the worker only
-# ever HMACs with it. Falls back to SUPABASE_SERVICE_ROLE_KEY when unset, so
-# setting this is recommended but not required.
+# ever HMACs with it. Required for `/speech/:key` links.
 # Deploy with: wrangler secret put SPEECH_URL_SECRET
 SPEECH_URL_SECRET=
 

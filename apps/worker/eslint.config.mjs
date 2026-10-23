@@ -78,13 +78,18 @@ export default tseslint.config(
     },
   },
   {
-    files: ['tests/**/*.mjs', 'src/__tests__/**/*.mjs'],
+    files: [
+      'tests/**/*.mjs',
+      'src/__tests__/**/*.mjs',
+      'scripts/**/*.mjs',
+    ],
     languageOptions: {
       globals: {
         fetch: 'readonly',
         AbortSignal: 'readonly',
         process: 'readonly',
         console: 'readonly',
+        crypto: 'readonly',
       },
     },
     rules: {

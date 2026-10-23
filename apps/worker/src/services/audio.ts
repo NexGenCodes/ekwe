@@ -60,6 +60,25 @@ export interface IngestedAudio {
 export type IngestResult =
   { ok: true; value: IngestedAudio } | { ok: false; response: Response };
 
+/**
+ * Provider-reported duration is the billing source of truth. Only providers
+ * that do not return one fall back to the client's declaration, which the
+ * request guard has already bounded against the tier's clip limit.
+ */
+export function resolveBilledDurationMs(
+  clientDurationMs: number | undefined,
+  providerDurationSeconds: number | undefined,
+): number {
+  if (
+    typeof providerDurationSeconds === "number" &&
+    Number.isFinite(providerDurationSeconds) &&
+    providerDurationSeconds > 0
+  ) {
+    return Math.round(providerDurationSeconds * 1000);
+  }
+  return Math.max(0, Math.round(clientDurationMs ?? 0));
+}
+
 /** Parse and validate a multipart audio upload, shared by both audio routes. */
 export async function ingestAudioUpload(
   request: Request,

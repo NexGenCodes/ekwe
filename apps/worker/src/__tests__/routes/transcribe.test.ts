@@ -535,7 +535,7 @@ function makeSizedRequest(totalBytes: number, lang?: string): Request {
 describe("throttled entitlement split", () => {
   const signal = () => new AbortController().signal;
 
-  test("a throttled Pro keeps Pro size limits while running the FREE pipeline", async () => {
+  test("a throttled Paid keeps Paid size limits while running the FREE pipeline", async () => {
     server.use(
       http.post(PROVIDER_URLS.witaiDictation, () =>
         jsonResponse({ text: "wit result" }),
@@ -554,7 +554,7 @@ describe("throttled entitlement split", () => {
     expect((await jsonBody(throttled)).text).toBe("wit result");
   });
 
-  test("a throttled Pro keeps auto-detect while running the FREE pipeline", async () => {
+  test("a throttled Paid keeps auto-detect while running the FREE pipeline", async () => {
     server.use(
       http.post(PROVIDER_URLS.groqTranscriptions, () =>
         jsonResponse({ text: "groq result" }),

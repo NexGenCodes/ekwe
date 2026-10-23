@@ -124,6 +124,63 @@ class InMemoryD1 {
         }),
       };
     }
+
+    // Cooldown gate: every test that does not override env.DB is inside the
+    // window, so the claim always succeeds.
+    if (/user_cooldowns/i.test(sql)) {
+      return {
+        bind: () => ({
+          first: async <T>() => ({ last_request_at: Date.now() }) as T,
+          all: async <T>() =>
+            ({ results: [{ last_request_at: Date.now() }] }) as unknown as {
+              results: T[];
+            },
+          run: async () => ({ meta: { changes: 1 } }),
+        }),
+      };
+    }
+    // Daily quota read. Tests that need a specific count override env.DB.
+    if (/FROM\s+user_daily_usage/i.test(sql)) {
+      return {
+        bind: () => ({
+          first: async <T>() => ({ used: 0 }) as T,
+          all: async <T>() => ({ results: [] }) as unknown as { results: T[] },
+          run: async () => ({ meta: { changes: 0 } }),
+        }),
+      };
+    }
+
+    // Monthly quota and shared credit-budget read.
+    if (/FROM\s+user_monthly_usage/i.test(sql)) {
+      return {
+        bind: () => ({
+          first: async <T>() =>
+            ({
+              translate_count: 0,
+              transcribe_count: 0,
+              transcribe_ms: 0,
+              speech_chars: 0,
+              stream_count: 0,
+              stream_ms: 0,
+              ai_credits: 0,
+            }) as T,
+          all: async <T>() => ({ results: [] }) as unknown as { results: T[] },
+          run: async () => ({ meta: { changes: 0 } }),
+        }),
+      };
+    }
+
+    // Usage increments are fire-and-forget under waitUntil.
+    if (/INSERT INTO\s+user_(daily|monthly)_usage/i.test(sql)) {
+      return {
+        bind: () => ({
+          first: async () => null,
+          all: async () => ({ results: [] }),
+          run: async () => ({ meta: { changes: 1 } }),
+        }),
+      };
+    }
+
     const tableMatch = sql.match(/FROM\s+(\w+)|INTO\s+(\w+)|UPDATE\s+(\w+)/i);
     const table = tableMatch?.[1] ?? tableMatch?.[2] ?? tableMatch?.[3];
     if (!table) throw new Error(`Mock D1: cannot infer table from: ${sql}`);
@@ -343,7 +400,7 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
     writeDataPoint: vi.fn(),
   } as unknown as Env["EKWE_ANALYTICS"];
 
-  const d1 = new InMemoryD1() as unknown as Env["EKWE_D1"];
+  const d1 = new InMemoryD1() as unknown as Env["DB"];
 
   const throttleStore = new Map<string, { count: number; resetAt: number }>();
   const throttleDo = {
@@ -377,18 +434,14 @@ export function mockEnv(overrides: Partial<Env> = {}): Env {
   } as unknown as Env["THROTTLE_DO"];
 
   return {
-    SUPABASE_URL: "https://mock.supabase.co",
-    SUPABASE_SERVICE_ROLE_KEY: "mock-service-role-key",
-    HYPERDRIVE: {
-      connectionString: "postgresql://mock:mock@mock.supabase.co:6543/postgres",
-    } as unknown as Env["HYPERDRIVE"],
     EKWE_KV: kv,
-    EKWE_D1: d1,
+    DB: d1,
     AI: ai,
     RATE_LIMITER: rateLimiter,
     SPEECH_CACHE: r2,
     EKWE_ANALYTICS: analyticsDataset,
     THROTTLE_DO: throttleDo,
+    SPEECH_URL_SECRET: "mock-speech-url-secret",
     GROQ_KEY_1: "mock-groq-key-1-abcde",
     GROQ_KEY_2: "mock-groq-key-2-abcde",
     DEEPGRAM_KEY_1: "mock-deepgram-1-abcde",

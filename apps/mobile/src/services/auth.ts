@@ -1,27 +1,33 @@
-import { GoogleSignin } from "@react-native-google-signin/google-signin";
-import { AuthApiError } from "@supabase/supabase-js";
 import * as AppleAuthentication from "expo-apple-authentication";
+import * as Crypto from "expo-crypto";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 
-import { getPosthogClient } from "@/services/posthog";
-import { SyncService } from "@/services/syncService";
-import { Db } from "@/services/db";
-import { mmkv } from "@/services/mmkv";
-import { mirrorSessionToSharedContainer } from "@/services/sharedContainer";
-import { supabase, setupAppStateListener } from "@/services/supabase";
-import { resetUserScopedState } from "@/store/resetUserScoped";
-import {
-  auth$,
-  authActions,
-  buildSettingsSharedPrefs,
-  isDefinitelyOffline,
-} from "@/store";
-import { isIOS } from "@/utils";
-import { track, identify, AnalyticsEvents } from "@/utils/analytics";
-import logger, { addSentryBreadcrumb } from "@/utils/logger";
-import { getWorkerUrl } from "@/utils/http";
 import { getAppCheckToken } from "@/services/appCheck";
+import {
+  ApiError,
+  apiFetch,
+  apiJson,
+  isApiError,
+  loadStoredSession,
+  parseSessionResponse,
+  parseUserPayload,
+  persistSession,
+  refreshSession,
+  type AuthSession,
+  type AuthUser,
+} from "@/services/backend";
+import { Db } from "@/services/db";
+import { mirrorSessionToSharedContainer } from "@/services/sharedContainer";
+import { SyncService } from "@/services/syncService";
+import { getPosthogClient } from "@/services/posthog";
+import { auth$, authActions, buildSettingsSharedPrefs } from "@/store";
+import { resetUserScopedState } from "@/store/resetUserScoped";
+import { isIOS } from "@/utils";
+import { AnalyticsEvents, identify, track } from "@/utils/analytics";
+import logger, { addSentryBreadcrumb } from "@/utils/logger";
 
-const SESSION_CACHE_KEY = "hasSession";
+export type { AuthSession, AuthUser };
+
 const OTP_REQUEST_TIMEOUT_MS = 15_000;
 const OFFLINE_MESSAGE = "No internet connection. Please connect and try again.";
 
@@ -29,67 +35,12 @@ export interface AuthResult {
   ok: boolean;
   error?: string;
   needsOtp?: boolean;
-  needsLink?: {
-    provider: "apple" | "google";
-    email: string;
-  };
 }
 
-type LinkProvider = "apple" | "google";
-
-interface PendingLink {
-  provider: LinkProvider;
-  idToken: string;
-}
-
-let pendingLink: PendingLink | null = null;
-
-export const getPendingLinkProvider = (): LinkProvider | null =>
-  pendingLink?.provider ?? null;
-
-function isIdentityLinkError(error: unknown): boolean {
-  if (!(error instanceof AuthApiError)) return false;
-  if (error.code === "user_already_exists") return true;
-  return /already exists|already registered|another (provider|account)|not been linked/i.test(
-    error.message,
-  );
-}
-
-function safeAuthErrorMessage(error: unknown): string {
-  if (error instanceof AuthApiError) {
-    switch (error.code) {
-      case "over_email_send_rate_limit":
-      case "rate_limit":
-        return "Too many attempts. Please wait a moment and try again.";
-      case "email_not_confirmed":
-        return "Please confirm your email address before signing in.";
-      case "otp_expired":
-        return "That code expired. Request a new one and try again.";
-      case "invalid_token":
-      case "verification_expired":
-        return "That code is no longer valid. Please request a new one.";
-      case "weak_password":
-        return "Please choose a stronger password.";
-      case "validation_failed":
-      case "invalid_credentials":
-        return "The details you entered don't match. Please try again.";
-      case "user_already_exists":
-        return "An account already exists with this email.";
-      case "email_exists":
-        return "An account already exists — try signing in instead.";
-      case "user_not_found":
-        return "We couldn't find an account for this email.";
-    }
-  }
-  return "That didn't work. Please try again.";
-}
-
-let _authSubscription: { unsubscribe: () => void } | null = null;
+type SessionEvent = "boot" | "sign_in" | "sign_out";
 
 export const initAuth = async (): Promise<void> => {
   if (auth$.isInitialized.peek()) return;
-
-  setupAppStateListener();
 
   try {
     GoogleSignin.configure({
@@ -100,256 +51,188 @@ export const initAuth = async (): Promise<void> => {
     logger.error("[Auth] GoogleSignin configure error:", err);
   }
 
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange((event, session) => {
-    logger.info(`Auth state changed: ${event}`, session?.user?.id);
-    authActions.setSession(session);
-    if (event === "SIGNED_IN") {
-      // A sign-in is a normal outcome; captureMessage filed it as a Sentry
-      // issue on every sign-in.
-      addSentryBreadcrumb("auth", "sign_in");
-    } else if (event === "SIGNED_OUT") {
-      addSentryBreadcrumb("auth", "sign_out");
-    }
-    mmkv.set(SESSION_CACHE_KEY, session !== null);
-
-    mirrorSessionToSharedContainer(session, buildSettingsSharedPrefs());
-
-    if (
-      (event === "SIGNED_IN" || event === "INITIAL_SESSION") &&
-      session?.user
-    ) {
-      identify(session.user.id, {
-        email: session.user.email ?? "",
-        is_pro: session.user.app_metadata?.is_pro === true,
-      });
-
-      if (event === "SIGNED_IN") {
-        import("./notifications").then(({ registerForPushNotifications }) => {
-          registerForPushNotifications().catch((err) =>
-            logger.error("Failed to sync push token post-login:", err),
-          );
-        });
-      }
-      SyncService.onUserSignedIn(session.user.id);
-      import("@/services/historyService")
-        .then(({ HistoryService }) =>
-          HistoryService.importSharedEchoHistory(session),
-        )
-        .catch((err: unknown) =>
-          logger.error("[Auth] importSharedEchoHistory on sign-in failed", err),
-        );
-    }
-
-    if (event === "SIGNED_OUT") {
-      SyncService.onUserSignedOut();
-      SyncService.loadInitialHistory();
-    }
-  });
-  _authSubscription = subscription;
+  const stored = loadStoredSession();
+  establishSession(stored, "boot");
 
   authActions.setInitialized(true);
-
-  const cachedSession = mmkv.getBoolean(SESSION_CACHE_KEY);
-
-  if (cachedSession) {
-    supabase.auth
-      .getSession()
-      .then(({ data: { session } }) => {
-        if (session) {
-          authActions.setSession(session);
-          mirrorSessionToSharedContainer(session, buildSettingsSharedPrefs());
-        } else {
-          mmkv.set(SESSION_CACHE_KEY, false);
-          mirrorSessionToSharedContainer(null, buildSettingsSharedPrefs());
-        }
-      })
-      .catch((err) => {
-        logger.error("[Auth] Background getSession error:", err);
-      });
-  }
-
   authActions.setSessionLoaded(true);
-
-  const globalObj = globalThis as Record<string, unknown>;
-  if (typeof globalObj.appStartTime === "number") {
-    const timeToAuthInit = Date.now() - globalObj.appStartTime;
-    logger.info(
-      `[Performance] Startup -> Auth Init complete: ${timeToAuthInit}ms`,
-    );
-  }
 };
 
 export const cleanupAuth = (): void => {
-  if (_authSubscription) {
-    _authSubscription.unsubscribe();
-    _authSubscription = null;
-  }
   authActions.setInitialized(false);
 };
 
-export const sendOtp = async (email: string): Promise<AuthResult> => {
-  const workerUrl = getWorkerUrl();
+/** Applies a session to the store, persistence, the share container and sync. */
+function establishSession(
+  session: AuthSession | null,
+  event: SessionEvent,
+): void {
+  authActions.setSession(session);
+  persistSession(session);
+  mirrorSessionToSharedContainer(session, buildSettingsSharedPrefs());
 
-  if (workerUrl) {
-    try {
-      if (isDefinitelyOffline()) {
-        track(AnalyticsEvents.AUTH_OTP_FAILED, {
-          method: "otp",
-          error: "network_lost",
-        });
-        return { ok: false, error: OFFLINE_MESSAGE };
-      }
-
-      const appCheckToken = await getAppCheckToken();
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(
-        () => controller.abort(),
-        OTP_REQUEST_TIMEOUT_MS,
-      );
-      let res: Response;
-      try {
-        res = await fetch(`${workerUrl}/auth/otp`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: email.trim(),
-            ...(appCheckToken ? { appCheckToken } : {}),
-          }),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      if (!res.ok) {
-        track(AnalyticsEvents.AUTH_OTP_FAILED, {
-          method: "otp",
-          error: `worker_${res.status}`,
-        });
-        if (res.status === 403) {
-          return {
-            ok: false,
-            error: "We couldn't verify you're human. Please try again.",
-          };
-        }
-        if (res.status === 429) {
-          return {
-            ok: false,
-            error: "Too many requests. Please wait a moment and try again.",
-          };
-        }
-        return {
-          ok: false,
-          error: "We couldn't send the code. Please try again in a moment.",
-        };
-      }
-
-      track(AnalyticsEvents.AUTH_OTP_SENT, { method: "otp" });
-      return { ok: true, needsOtp: true };
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") {
-        track(AnalyticsEvents.AUTH_OTP_FAILED, {
-          method: "otp",
-          error: "timeout",
-        });
-        return {
-          ok: false,
-          error: "The request timed out. Please try again.",
-        };
-      }
-      logger.warn("[Auth] sendOtp (worker) error:", err);
-      track(AnalyticsEvents.AUTH_OTP_FAILED, {
-        method: "otp",
-        error: "unexpected_error",
-      });
-      return {
-        ok: false,
-        error: "We couldn't send the code. Please try again in a moment.",
-      };
-    }
+  if (!session) {
+    SyncService.onUserSignedOut();
+    SyncService.loadInitialHistory();
+    return;
   }
 
-  return sendOtpDirect(email);
+  identify(session.user.id, {
+    email: session.user.email,
+    is_pro: session.user.tier === "PREMIUM",
+  });
+  SyncService.onUserSignedIn(session.user.id);
+
+  // On boot the root layout imports the share sheet's pending captures once
+  // `sessionLoaded` flips; a sign-in has to do it here.
+  if (event === "sign_in") {
+    addSentryBreadcrumb("auth", "sign_in");
+    void import("@/services/historyService")
+      .then(({ HistoryService }) =>
+        HistoryService.importSharedEchoHistory(session),
+      )
+      .catch((err: unknown) =>
+        logger.error("[Auth] importSharedEchoHistory failed", err),
+      );
+    void import("@/services/notifications")
+      .then(({ registerForPushNotifications }) =>
+        registerForPushNotifications(),
+      )
+      .catch((err: unknown) =>
+        logger.error("[Auth] push registration failed", err),
+      );
+  }
+}
+
+/** Keeps the stored session in step with the store after a user change. */
+function persistCurrentSession(): void {
+  const session = auth$.session.peek();
+  persistSession(session);
+  if (session) {
+    mirrorSessionToSharedContainer(session, buildSettingsSharedPrefs());
+  }
+}
+
+/** Re-reads the authoritative user (and tier) from the worker. */
+export const fetchSessionUser = async (): Promise<AuthUser | null> => {
+  if (!auth$.session.peek()) return null;
+
+  try {
+    const body = await apiJson<{ user: unknown }>("/auth/session");
+    const user = parseUserPayload(body.user);
+    authActions.setUser(user);
+    persistCurrentSession();
+    return user;
+  } catch (err) {
+    if (isApiError(err) && err.status === 401) {
+      establishSession(null, "sign_out");
+    }
+    logger.warn("[Auth] fetchSessionUser failed", err);
+    return null;
+  }
 };
 
-const sendOtpDirect = async (email: string): Promise<AuthResult> => {
-  try {
-    if (isDefinitelyOffline()) {
-      return { ok: false, error: OFFLINE_MESSAGE };
+export const updateProfile = async (patch: {
+  displayName?: string | null;
+  avatarIcon?: string | null;
+}): Promise<AuthUser | null> => {
+  const body = await apiJson<{ user: unknown }>("/auth/profile", {
+    method: "PATCH",
+    body: patch,
+  });
+  const user = parseUserPayload(body.user);
+  authActions.setUser(user);
+  persistCurrentSession();
+  return user;
+};
+
+function messageForError(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    if (err.status === 429) {
+      return (
+        err.message || "Too many requests. Please wait a moment and try again."
+      );
     }
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
+    if (err.status === 403) {
+      return "We couldn't verify you're human. Please try again.";
+    }
+    if (err.status >= 500) {
+      return "The server is having trouble. Please try again in a moment.";
+    }
+    return err.message || fallback;
+  }
+  if (err instanceof Error && err.name === "OfflineNetworkError") {
+    return OFFLINE_MESSAGE;
+  }
+  if (err instanceof Error && err.name === "TimeoutError") {
+    return "The request timed out. Please try again.";
+  }
+  return fallback;
+}
+
+export const sendOtp = async (email: string): Promise<AuthResult> => {
+  if (!getWorkerConfigured()) {
+    track(AnalyticsEvents.AUTH_OTP_FAILED, {
+      method: "otp",
+      error: "no_worker",
     });
-    if (error) {
-      track(AnalyticsEvents.AUTH_OTP_FAILED, {
-        method: "otp",
-        error: error.message,
-      });
-      return { ok: false, error: safeAuthErrorMessage(error) };
-    }
+    return { ok: false, error: "Sign-in is unavailable right now." };
+  }
+
+  try {
+    const appCheckToken = await getAppCheckToken();
+    await apiJson("/auth/otp", {
+      method: "POST",
+      auth: false,
+      timeoutMs: OTP_REQUEST_TIMEOUT_MS,
+      retries: 1,
+      body: {
+        email: email.trim(),
+        ...(appCheckToken ? { appCheckToken } : {}),
+      },
+    });
     track(AnalyticsEvents.AUTH_OTP_SENT, { method: "otp" });
     return { ok: true, needsOtp: true };
   } catch (err) {
-    logger.warn("[Auth] sendOtp error:", err);
     track(AnalyticsEvents.AUTH_OTP_FAILED, {
       method: "otp",
-      error: "unexpected_error",
+      error: err instanceof ApiError ? err.code : "unexpected_error",
     });
     return {
       ok: false,
-      error: "We couldn't send the code. Please try again in a moment.",
+      error: messageForError(
+        err,
+        "We couldn't send the code. Please try again in a moment.",
+      ),
     };
   }
 };
 
 export const verifyOtp = async (
   email: string,
-  token: string,
-  type: "signup" | "email" = "email",
+  code: string,
 ): Promise<AuthResult> => {
   try {
-    if (isDefinitelyOffline()) {
-      return { ok: false, error: OFFLINE_MESSAGE };
-    }
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: email.trim(),
-      token: token.trim(),
-      type,
+    const raw = await apiJson("/auth/verify", {
+      method: "POST",
+      auth: false,
+      body: { email: email.trim(), code: code.trim() },
     });
-    if (error) {
-      track(AnalyticsEvents.AUTH_VERIFY_FAILED, {
-        method: "otp",
-        type,
-        error: error.message,
-      });
-      return { ok: false, error: safeAuthErrorMessage(error) };
-    }
-    if (!data.session) {
-      track(AnalyticsEvents.AUTH_VERIFY_FAILED, {
-        method: "otp",
-        type,
-        error: "no_session",
-      });
-      return { ok: false, error: "Verification didn't complete. Try again." };
-    }
-
-    track(
-      type === "signup" ? AnalyticsEvents.SIGN_UP : AnalyticsEvents.SIGN_IN,
-      { method: "otp" },
-    );
-
+    establishSession(parseSessionResponse(raw), "sign_in");
+    track(AnalyticsEvents.SIGN_IN, { method: "otp" });
     return { ok: true };
   } catch (err) {
-    logger.error("[Auth] verifyOtp error:", err);
     track(AnalyticsEvents.AUTH_VERIFY_FAILED, {
       method: "otp",
-      type,
-      error: "unexpected_error",
+      error: err instanceof ApiError ? err.code : "unexpected_error",
     });
-    return { ok: false, error: "That code didn't match. Check and try again." };
+    return {
+      ok: false,
+      error: messageForError(
+        err,
+        "That code didn't match. Check and try again.",
+      ),
+    };
   }
 };
 
@@ -359,56 +242,46 @@ export const signInWithApple = async (): Promise<AuthResult> => {
   }
 
   try {
+    // The worker compares sha256(nonce) against the token's claim, so the same
+    // raw nonce has to reach both Apple and the backend.
+    const nonce = Crypto.randomUUID();
     const credential = await AppleAuthentication.signInAsync({
       requestedScopes: [
         AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
         AppleAuthentication.AppleAuthenticationScope.EMAIL,
       ],
+      nonce,
     });
 
-    const idToken = credential.identityToken;
-    if (!idToken) {
+    const identityToken = credential.identityToken;
+    if (!identityToken) {
       return { ok: false, error: "Apple Sign In couldn't be completed." };
     }
 
-    const { error } = await supabase.auth.signInWithIdToken({
-      provider: "apple",
-      token: idToken,
+    const fullName = credential.fullName
+      ? [credential.fullName.givenName, credential.fullName.familyName]
+          .filter(Boolean)
+          .join(" ")
+      : "";
+
+    const raw = await apiJson("/auth/apple", {
+      method: "POST",
+      auth: false,
+      body: {
+        identityToken,
+        nonce,
+        ...(fullName ? { fullName } : {}),
+      },
     });
-
-    if (error) {
-      const email = credential.email ?? undefined;
-      if (isIdentityLinkError(error) && email) {
-        pendingLink = { provider: "apple", idToken };
-        track(AnalyticsEvents.AUTH_NEEDS_LINK, { method: "apple" });
-        return { ok: false, needsLink: { provider: "apple", email } };
-      }
-      return { ok: false, error: safeAuthErrorMessage(error) };
-    }
-
-    if (credential.fullName) {
-      const name = [
-        credential.fullName.givenName,
-        credential.fullName.familyName,
-      ]
-        .filter(Boolean)
-        .join(" ");
-      if (name) {
-        await supabase.auth.updateUser({
-          data: { full_name: name },
-        });
-      }
-    }
-
+    establishSession(parseSessionResponse(raw), "sign_in");
     track(AnalyticsEvents.SIGN_IN, { method: "apple" });
-
     return { ok: true };
-  } catch (err: unknown) {
-    if (err instanceof Error && "code" in err) {
-      const appleErr = err as { code: string };
-      if (appleErr.code === "ERR_REQUEST_CANCELED") {
-        return { ok: false };
-      }
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      (err as { code?: string }).code === "ERR_REQUEST_CANCELED"
+    ) {
+      return { ok: false };
     }
     logger.error("[Auth] Apple sign-in error:", err);
     return { ok: false, error: "Apple Sign In failed. Please try again." };
@@ -417,81 +290,31 @@ export const signInWithApple = async (): Promise<AuthResult> => {
 
 export const signInWithGoogle = async (): Promise<AuthResult> => {
   try {
-    const signInResult = await GoogleSignin.signIn();
+    const result = await GoogleSignin.signIn();
+    if (result.type === "cancelled") return { ok: false };
 
-    if (signInResult.type === "cancelled") {
-      return { ok: false };
-    }
-
-    const idToken =
-      signInResult.type === "success" ? signInResult.data.idToken : null;
-
+    const idToken = result.type === "success" ? result.data.idToken : null;
     if (!idToken) {
       return { ok: false, error: "Google Sign In couldn't be completed." };
     }
 
-    const { error } = await supabase.auth.signInWithIdToken({
-      provider: "google",
-      token: idToken,
+    const raw = await apiJson("/auth/google", {
+      method: "POST",
+      auth: false,
+      body: { idToken },
     });
-
-    if (error) {
-      const email =
-        signInResult.type === "success"
-          ? signInResult.data.user.email
-          : undefined;
-      if (isIdentityLinkError(error) && email) {
-        pendingLink = { provider: "google", idToken };
-        track(AnalyticsEvents.AUTH_NEEDS_LINK, { method: "google" });
-        return { ok: false, needsLink: { provider: "google", email } };
-      }
-      return { ok: false, error: safeAuthErrorMessage(error) };
-    }
-
+    establishSession(parseSessionResponse(raw), "sign_in");
     track(AnalyticsEvents.SIGN_IN, { method: "google" });
-
-    return { ok: true };
-  } catch (err: unknown) {
-    logger.warn("[Auth] Google sign-in error:", err);
-    return { ok: false, error: "Google Sign In failed. Please try again." };
-  }
-};
-
-export const linkSocialIdentity = async (): Promise<AuthResult> => {
-  const link = pendingLink;
-  pendingLink = null;
-
-  if (!link) {
-    return {
-      ok: false,
-      error: "That link expired. Please sign in again.",
-    };
-  }
-
-  try {
-    const { error } = await supabase.auth.linkIdentity({
-      provider: link.provider,
-      token: link.idToken,
-    });
-    if (error) {
-      track(AnalyticsEvents.AUTH_LINK_FAILED, {
-        provider: link.provider,
-        error: error.message,
-      });
-      return { ok: false, error: safeAuthErrorMessage(error) };
-    }
-
-    track(AnalyticsEvents.AUTH_LINKED, { provider: link.provider });
     return { ok: true };
   } catch (err) {
-    logger.error("[Auth] linkSocialIdentity error:", err);
-    track(AnalyticsEvents.AUTH_LINK_FAILED, {
-      provider: link.provider,
-      error: "unexpected_error",
+    track(AnalyticsEvents.AUTH_VERIFY_FAILED, {
+      method: "google",
+      error: err instanceof ApiError ? err.code : "unexpected_error",
     });
+    logger.warn("[Auth] Google sign-in error:", err);
     return {
       ok: false,
-      error: "We couldn't link your account. Please try again.",
+      error: messageForError(err, "Google Sign In failed. Please try again."),
     };
   }
 };
@@ -517,20 +340,21 @@ export const signOut = async (): Promise<AuthResult> => {
 
     resetUserScopedState();
 
-    const { error } = await supabase.auth.signOut();
+    try {
+      await apiFetch("/auth/logout", { method: "POST" });
+    } catch (err) {
+      logger.warn("[Auth] logout request failed", err);
+    }
     try {
       await GoogleSignin.signOut();
     } catch {
-      /* ignore */
+      // Google may not have a session to clear.
     }
 
-    authActions.setSession(null);
-    mmkv.set(SESSION_CACHE_KEY, false);
-    mirrorSessionToSharedContainer(null, buildSettingsSharedPrefs());
+    establishSession(null, "sign_out");
     getPosthogClient()?.reset();
     track(AnalyticsEvents.SIGN_OUT);
 
-    if (error) return { ok: false, error: safeAuthErrorMessage(error) };
     return { ok: true };
   } catch (err) {
     logger.error("[Auth] signOut error:", err);
@@ -544,41 +368,37 @@ export const signOut = async (): Promise<AuthResult> => {
 export const deleteAccount = async (): Promise<AuthResult> => {
   try {
     const userId = auth$.user.get()?.id;
-    const { error } = await supabase.rpc("delete_user");
-    if (error) {
-      logger.error("[Auth] delete_user RPC error:", error);
-      return {
-        ok: false,
-        error: "Please contact support to complete account deletion.",
-      };
-    }
+    await apiFetch("/auth/account", { method: "DELETE" });
 
-    try {
-      await supabase.auth.signOut();
-    } catch {
-      /* ignore */
-    }
     try {
       await GoogleSignin.signOut();
     } catch {
-      /* ignore */
+      // Google may not have a session to clear.
     }
-    authActions.setSession(null);
-    mmkv.set(SESSION_CACHE_KEY, false);
-    mirrorSessionToSharedContainer(null, buildSettingsSharedPrefs());
+
+    establishSession(null, "sign_out");
     getPosthogClient()?.reset();
     track(AnalyticsEvents.DELETE_ACCOUNT);
 
-    if (userId) {
-      SyncService.purgeLocalHistory(userId);
-    }
+    if (userId) SyncService.purgeLocalHistory(userId);
 
     return { ok: true };
   } catch (err) {
     logger.error("[Auth] deleteAccount error:", err);
     return {
       ok: false,
-      error: "Something went wrong. Please contact support for help.",
+      error: isApiError(err)
+        ? messageForError(
+            err,
+            "Please contact support to complete account deletion.",
+          )
+        : "Something went wrong. Please contact support for help.",
     };
   }
 };
+
+export { refreshSession };
+
+function getWorkerConfigured(): boolean {
+  return !!process.env.EXPO_PUBLIC_WORKER_URL;
+}

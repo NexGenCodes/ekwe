@@ -14,21 +14,22 @@ import Foundation
 @available(iOS 16.4, *)
 struct EchoSession {
     let accessToken: String
-    let refreshToken: String
-    let expiresAt: TimeInterval?
-    let userID: String?
+    /// Epoch milliseconds, matching the session the app persists.
+    let expiresAt: TimeInterval
 
     var isExpired: Bool {
-        guard let expiresAt else { return true }
-        return Date().timeIntervalSince1970 >= expiresAt - 30
+        Date().timeIntervalSince1970 >= expiresAt / 1000 - 30
     }
 }
 
 // MARK: - Session store
 
-/// Restores the authenticated Supabase session that the app mirrored into the
-/// shared App Group container (`shared-session.json`), refreshing the access
-/// token via the Supabase token endpoint when it has expired.
+/// Reads the session the app mirrored into the shared App Group container
+/// (`shared-session.json`).
+///
+/// The extension deliberately never refreshes: rotating a refresh token here
+/// would desync the app's copy, and the app refreshes on every foreground.
+/// An expired token means "open Ekwe", which is what a nil token surfaces.
 @available(iOS 16.4, *)
 final class EchoSessionStore {
 
@@ -38,13 +39,13 @@ final class EchoSessionStore {
             .appendingPathComponent("shared-session.json")
     }
 
-    /// Returns the current access token (refreshed if needed) or nil when the
-    /// user isn't signed in.
+    /// Returns the current access token, or nil when it is missing or expired.
     func accessToken() async -> String? {
-        await restore()?.accessToken
+        guard let session = restore() else { return nil }
+        return session.isExpired ? nil : session.accessToken
     }
 
-    func restore(refreshIfExpired: Bool = true) async -> EchoSession? {
+    func restore() -> EchoSession? {
         guard let fileURL = sessionFileURL,
               let data = try? Data(contentsOf: fileURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -52,78 +53,13 @@ final class EchoSessionStore {
             return nil
         }
 
-        let access = json["access_token"] as? String
-        let refresh = json["refresh_token"] as? String
-        let expiresAt = (json["expires_at"] as? NSNumber)?.doubleValue
-        var userID: String? = nil
-        if let user = json["user"] as? [String: Any] {
-            userID = user["id"] as? String
-        } else if let id = json["user_id"] as? String {
-            userID = id
-        }
-
-        guard let access, let refresh else { return nil }
-        var session = EchoSession(accessToken: access, refreshToken: refresh, expiresAt: expiresAt, userID: userID)
-
-        if refreshIfExpired, session.isExpired {
-            if let fresh = await refresh(session) {
-                session = fresh
-            }
-        }
-        return session
-    }
-
-    private func refresh(_ session: EchoSession) async -> EchoSession? {
-        guard let url = URL(string: "\(EchoEnvironment.supabaseURL.absoluteString)/auth/v1/token?grant_type=refresh_token")
-        else { return nil }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(EchoEnvironment.supabaseAnonKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(EchoEnvironment.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 20
-        request.httpBody = try? JSONSerialization.data(
-            withJSONObject: ["refresh_token": session.refreshToken],
-            options: []
-        )
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-            guard let access = json["access_token"] as? String,
-                  let refresh = json["refresh_token"] as? String
-            else { return nil }
-
-            let expiresAt = (json["expires_at"] as? NSNumber)?.doubleValue
-            var userID: String? = nil
-            if let user = json["user"] as? [String: Any] { userID = user["id"] as? String }
-            let fresh = EchoSession(accessToken: access, refreshToken: refresh, expiresAt: expiresAt, userID: userID)
-
-            persist(fresh)
-            return fresh
-        } catch {
+        guard let access = json["accessToken"] as? String,
+              let expiresAt = (json["expiresAt"] as? NSNumber)?.doubleValue
+        else {
             return nil
         }
-    }
 
-    /// Rewrites the mirrored file with the refreshed tokens so the app and
-    /// extension never diverge.
-    private func persist(_ session: EchoSession) {
-        guard let fileURL = sessionFileURL else { return }
-        var payload: [String: Any] = [
-            "access_token": session.accessToken,
-            "refresh_token": session.refreshToken,
-        ]
-        if let expiresAt = session.expiresAt { payload["expires_at"] = expiresAt }
-        if let userID = session.userID { payload["user_id"] = userID }
-        if let data = try? JSONSerialization.data(withJSONObject: payload) {
-            try? data.write(to: fileURL, options: [.atomic, .completeUntilFirstUserAuthentication])
-            var values = URLResourceValues()
-            values.isExcludedFromBackup = true
-            try? fileURL.setResourceValues(values)
-        }
+        return EchoSession(accessToken: access, expiresAt: expiresAt)
     }
 }
 
@@ -174,8 +110,8 @@ final class EchoUserPreferences {
     }()
 
     /// Whether the signed-in user may pick "Auto-Detect" (gated by the app's
-    /// is_pro tier and mirrored from the shared settings). Falls back to false
-    /// so a stale/missing flag never unlocks a Pro-gated feature.
+    /// paid tier and mirrored from the shared settings). Falls back to false
+    /// so a stale/missing flag never unlocks a paid-gated feature.
     lazy var autoDetectAllowed: Bool = {
         decode()?.autoDetectAllowed ?? false
     }()
@@ -220,7 +156,7 @@ final class EchoWorkerClient {
     }
 
     /// Product-aware upload cap (matches the app's MAX_AUDIO_BYTES, generated
-    /// from packages/shared/src/plans.ts) so Pro users aren't capped lower here.
+    /// from packages/shared/src/plans.ts) so paid users aren't capped lower here.
     private let maxAudioBytes: Int = { EchoEnvironment.maxAudioBytes }()
 
     /// In-flight upload so cancellation aborts the task instead of just hiding

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
 import { writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -14,14 +16,36 @@ const ROOT = resolve(__dirname, "../../");
 const ENV_PATH = resolve(ROOT, "apps/mobile/.env");
 const OUT_DIR = resolve(ROOT, "apps/mobile/targets/share");
 const OUT_FILE = resolve(OUT_DIR, "EchoEnvironment.swift");
-const PLANS_URL = pathToFileURL(resolve(ROOT, "packages/shared/src/plans.ts")).href;
+const PLANS_PATH = resolve(ROOT, "packages/shared/src/plans.ts");
+
+/**
+ * Loads plans.ts through the esbuild binary. The shared package is TypeScript
+ * with extensionless relative imports, which Node's ESM loader cannot resolve,
+ * so it is bundled to a temporary module first.
+ */
+const loadPlans = async () => {
+  const dir = mkdtempSync(resolve(tmpdir(), "ekwe-gen-env-"));
+  const outfile = resolve(dir, "plans.mjs");
+  try {
+    execFileSync(
+      resolve(ROOT, "apps/mobile/node_modules/.bin/esbuild"),
+      [
+        PLANS_PATH,
+        "--bundle",
+        "--format=esm",
+        "--platform=node",
+        `--outfile=${outfile}`,
+      ],
+      { stdio: "pipe" },
+    );
+    return await import(pathToFileURL(outfile).href);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+};
 
 
-const REQUIRED = [
-  "EXPO_PUBLIC_WORKER_URL",
-  "EXPO_PUBLIC_SUPABASE_URL",
-  "EXPO_PUBLIC_SUPABASE_ANON_KEY",
-];
+const REQUIRED = ["EXPO_PUBLIC_WORKER_URL"];
 
 const parseEnv = (text) => {
   const out = Object.create(null);
@@ -64,13 +88,13 @@ const main = async () => {
     MAX_AUDIO_BYTES,
     MAX_AUDIO_INPUT_BYTES,
     PREMIUM_LIMITS,
-    WIT_VORBIS_MAX_DURATION_MS,
-  } = await import(PLANS_URL);
+    WITAI_SAFE_DURATION_MS,
+  } = await loadPlans();
 
   const swift = generateEchoEnvironment(env, MAX_AUDIO_BYTES, {
     maxAudioDurationMs: PREMIUM_LIMITS.dictationDurationMs,
     maxAudioInputBytes: MAX_AUDIO_INPUT_BYTES,
-    witVorbisMaxDurationMs: WIT_VORBIS_MAX_DURATION_MS,
+    witVorbisMaxDurationMs: WITAI_SAFE_DURATION_MS,
   });
   await writeFile(OUT_FILE, swift, "utf8");
 
@@ -80,7 +104,7 @@ const main = async () => {
   console.log(`  maxAudioBytes=${MAX_AUDIO_BYTES}`);
   console.log(`  maxAudioDurationMs=${PREMIUM_LIMITS.dictationDurationMs}`);
   console.log(`  maxAudioInputBytes=${MAX_AUDIO_INPUT_BYTES}`);
-  console.log(`  witVorbisMaxDurationMs=${WIT_VORBIS_MAX_DURATION_MS}`);
+  console.log(`  witVorbisMaxDurationMs=${WITAI_SAFE_DURATION_MS}`);
 };
 
 main().catch((e) => {

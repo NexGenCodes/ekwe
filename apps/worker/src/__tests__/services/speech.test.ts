@@ -459,8 +459,7 @@ describe("speech engine (services/speech.ts)", () => {
     });
 
     test("is a no-op without an R2 binding", async () => {
-      const env = mockEnv();
-      env.SPEECH_CACHE = undefined;
+      const env = { ...mockEnv(), SPEECH_CACHE: undefined } as unknown as Env;
       expect(await purgeExpiredSpeechCache(env)).toBe(0);
     });
   });
@@ -670,18 +669,18 @@ describe("speech engine (services/speech.ts)", () => {
   });
 
   describe("resolveExecutionTier", () => {
-    test("a Pro account on Standard still runs on the free pool", () => {
+    test("a Paid account on Standard still runs on the free pool", () => {
       const slotTier = pipelineTierForSlot(getVoiceSlot("standard"));
       expect(slotTier).toBe("FREE");
       expect(resolveExecutionTier(slotTier, "PREMIUM")).toBe("FREE");
     });
 
-    test("a Pro account on Studio runs on the premium pool", () => {
+    test("a Paid account on Studio runs on the premium pool", () => {
       const slotTier = pipelineTierForSlot(getVoiceSlot("studio"));
       expect(resolveExecutionTier(slotTier, "PREMIUM")).toBe("PREMIUM");
     });
 
-    test("a throttled Pro account on Studio degrades to free, never errors", () => {
+    test("a throttled Paid account on Studio degrades to free, never errors", () => {
       const slotTier = pipelineTierForSlot(getVoiceSlot("studio"));
       expect(resolveExecutionTier(slotTier, "FREE")).toBe("FREE");
     });

@@ -72,7 +72,7 @@ describe("guardTextLength", () => {
 });
 
 describe("guardAutoDetect", () => {
-  test("FREE: auto-detect blocked (PRO-only feature)", () => {
+  test("FREE: auto-detect blocked (PAID-only feature)", () => {
     expect(guardAutoDetect("auto", "FREE").allowed).toBe(false);
     expect(guardAutoDetect(undefined, "FREE").allowed).toBe(false);
   });

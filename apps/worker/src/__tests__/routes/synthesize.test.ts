@@ -6,12 +6,9 @@ vi.mock("@/providers/edge", () => ({
 }));
 import { synthesizeFromAudio, synthesizeFromText } from "@/routes/synthesize";
 import {
-  executeQueryChunks,
-  executeQueryToSql,
   jsonBody,
   jsonResponse,
   makeAudioBlob,
-  mockDb,
   mockEnv,
   mockExecutionContext,
 } from "@/__tests__/setup";
@@ -54,45 +51,24 @@ function aiMp3Env(): Env {
   return mockEnv();
 }
 
-function gateOk(tier: Tier, quotaTotal: number, quotaRemaining: number): void {
-  mockDb.execute.mockImplementation(async (query) => {
-    const queryStr = executeQueryToSql(query);
-    if (queryStr.includes("check_preflight")) {
-      return [
-        {
-          preflight: {
-            allowed: true,
-            tier_active: tier,
-            quota_total: quotaTotal,
-            quota_remaining: quotaRemaining,
-          },
-        },
-      ];
-    }
-    const { defaultMockDbExecute } = await import("@/__tests__/setup");
-    return defaultMockDbExecute(query);
-  });
-}
-
-function gateExhausted(): void {
-  mockDb.execute.mockImplementation(async (query) => {
-    const queryStr = executeQueryToSql(query);
-    if (queryStr.includes("check_preflight")) {
-      return [
-        {
-          preflight: {
-            allowed: false,
-            reason: "QUOTA_EXCEEDED",
-            tier_active: "PREMIUM",
-            quota_total: 5000,
-            quota_remaining: 0,
-          },
-        },
-      ];
-    }
-    const { defaultMockDbExecute } = await import("@/__tests__/setup");
-    return defaultMockDbExecute(query);
-  });
+/**
+ * An env whose cooldown claim always misses: the row exists and is inside the
+ * window, so the gate answers 429 without touching any provider.
+ */
+function cooldownEnv(): Env {
+  const env = envWithFailures();
+  return {
+    ...env,
+    DB: {
+      prepare: () => ({
+        bind: () => ({
+          all: async () => ({ results: [] }),
+          first: async () => ({ last_request_at: Date.now() }),
+          run: async () => ({ meta: { changes: 0 } }),
+        }),
+      }),
+    },
+  } as unknown as Env;
 }
 
 function textRequest(body: Record<string, unknown>): Request {
@@ -143,7 +119,6 @@ function handle(
       tier,
       signal,
       authContext.userId,
-      authContext.sessionId,
       ctx,
       remainingMs,
       timings,
@@ -162,7 +137,6 @@ function handle(
       tier,
       signal,
       authContext.userId,
-      authContext.sessionId,
       ctx,
       remainingMs,
       timings,
@@ -188,28 +162,26 @@ describe("handleSynthesize — gate/cache overlap", () => {
       releaseGate = resolve;
     });
 
-    mockDb.execute.mockImplementation(async (query) => {
-      const queryStr = executeQueryToSql(query);
-      if (queryStr.includes("check_preflight")) {
-        order.push("gate:start");
-        await gateBlocked;
-        order.push("gate:end");
-        return [
-          {
-            preflight: {
-              allowed: true,
-              tier_active: "PREMIUM",
-              quota_total: 5000,
-              quota_remaining: 5000,
-            },
-          },
-        ];
-      }
-      const { defaultMockDbExecute } = await import("@/__tests__/setup");
-      return defaultMockDbExecute(query);
-    });
-
     const env = aiMp3Env();
+    const baseDb = env.DB;
+    env.DB = {
+      prepare: (sql: string) => {
+        if (!/user_cooldowns/i.test(sql)) return baseDb.prepare(sql);
+        return {
+          bind: () => ({
+            all: async () => {
+              order.push("gate:start");
+              await gateBlocked;
+              order.push("gate:end");
+              return { results: [{ last_request_at: Date.now() }] };
+            },
+            first: async () => ({ last_request_at: Date.now() }),
+            run: async () => ({ meta: { changes: 1 } }),
+          }),
+        };
+      },
+    } as unknown as Env["DB"];
+
     const getSpy = vi.spyOn(env.EKWE_KV, "get");
     const ctx = mockExecutionContext();
 
@@ -222,8 +194,8 @@ describe("handleSynthesize — gate/cache overlap", () => {
       ctx,
     );
 
-    // Scope to the speech cache read: preflight also does a KV.get, before its
-    // own RPC, so an unfiltered assertion would pass against sequential code.
+    // Scope to the speech cache read so an unfiltered assertion cannot pass
+    // against sequential code.
     const speechGets = () =>
       getSpy.mock.calls.filter((c) => String(c[0]).startsWith("speech:"));
 
@@ -236,60 +208,10 @@ describe("handleSynthesize — gate/cache overlap", () => {
     const res = await pending;
     expect(res.status).toBe(200);
   });
-
-  test("re-reads the cache when the gate downgrades a Pro slot to FREE", async () => {
-    // The speculative read used the slot tier in the key. For a Pro slot the
-    // gate can still downgrade to FREE, so trusting that read would serve audio
-    // cached under the wrong tier — and a cache "hit" would skip the gate
-    // entirely on the next request.
-    mockDb.execute.mockImplementation(async (query) => {
-      const queryStr = executeQueryToSql(query);
-      if (queryStr.includes("check_preflight")) {
-        return [
-          {
-            preflight: {
-              allowed: true,
-              tier_active: "FREE",
-              throttled: true,
-              quota_total: 5000,
-              quota_remaining: 5000,
-            },
-          },
-        ];
-      }
-      const { defaultMockDbExecute } = await import("@/__tests__/setup");
-      return defaultMockDbExecute(query);
-    });
-
-    const env = aiMp3Env();
-    const getSpy = vi.spyOn(env.EKWE_KV, "get");
-    const ctx = mockExecutionContext();
-
-    const res = await handle(
-      textRequest({
-        text: "Downgrade me",
-        sourceLang: "en",
-        targetLang: "en",
-        voiceId: "studio",
-      }),
-      env,
-      "PREMIUM",
-      new AbortController().signal,
-      { userId: "uid-dg", sessionId: null },
-      ctx,
-    );
-
-    expect(res.status).toBe(200);
-    const keys = getSpy.mock.calls.map((c) => String(c[0]));
-    // Premium slot: speculative key, then the correct FREE key.
-    expect(keys.some((k) => k.includes("premium"))).toBe(true);
-    expect(keys.some((k) => k.includes(":free:"))).toBe(true);
-  });
 });
 
 describe("handleSynthesize — text branch", () => {
   test("missing sourceLang short-circuits translation and lazily reserves the gate", async () => {
-    gateOk("PREMIUM", 5000, 5000);
     const env = aiMp3Env();
 
     const res = await handle(
@@ -312,8 +234,6 @@ describe("handleSynthesize — text branch", () => {
   });
 
   test("collapses concurrent identical requests into one provider call", async () => {
-    gateOk("PREMIUM", 5000, 5000);
-
     const env = aiMp3Env();
 
     // Counted at the network edge rather than by mocking the provider, so this
@@ -349,33 +269,28 @@ describe("handleSynthesize — text branch", () => {
     expect(providerCalls).toBe(1);
   });
 
-  test("charges the flat speech conversion pool on live synthesis", async () => {
-    gateOk("PREMIUM", 5000, 5000);
+  test("records the spoken characters as speech usage", async () => {
     const env = aiMp3Env();
+    const baseDb = env.DB;
+    let speechChars = -1;
 
-    let sentChars = -1;
-    mockDb.execute.mockImplementation(async (query) => {
-      const queryStr = executeQueryToSql(query);
-      if (queryStr.includes("check_preflight")) {
-        // SELECT check_preflight(<userId>, <type>, ..., <chargeChars>) — the
-        // gate now reserves the speech charge, so the character count rides on
-        // the `speech` gate instead of a separate consume_usage call.
-        const chunks = executeQueryChunks(query);
-        if (chunks[3] === "speech") sentChars = chunks[19] as number;
-        return [
-          {
-            preflight: {
-              allowed: true,
-              tier_active: "PREMIUM",
-              quota_total: 5000,
-              quota_remaining: 5000,
-            },
+    env.DB = {
+      prepare: (sql: string) => {
+        const statement = baseDb.prepare(sql) as unknown as {
+          bind: (...args: unknown[]) => unknown;
+        };
+        if (!/user_daily_usage/i.test(sql)) return statement;
+        return {
+          bind: (...args: unknown[]) => {
+            // (user_id, day, translate, transcribe, transcribe_ms,
+            //  speech_chars, stream, stream_ms, credits, now)
+            speechChars = args[5] as number;
+            return statement.bind(...args);
           },
-        ];
-      }
-      const { defaultMockDbExecute } = await import("@/__tests__/setup");
-      return defaultMockDbExecute(query);
-    });
+        };
+      },
+      batch: baseDb.batch.bind(baseDb),
+    } as unknown as Env["DB"];
 
     const ctx = mockExecutionContext();
     const res = await handle(
@@ -389,13 +304,12 @@ describe("handleSynthesize — text branch", () => {
     await awaitWaitUntil(ctx);
     expect(res.status).toBe(200);
 
-    // B7: char-based metering — "Hello world" is 11 characters
-    expect(sentChars).toBe(11);
+    // Char-based metering — "Hello world" is 11 characters.
+    expect(speechChars).toBe(11);
   });
 
-  test("rejects when the flat conversion pool is exhausted", async () => {
-    gateExhausted();
-    const env = envWithFailures();
+  test("rejects inside the cooldown window before speaking", async () => {
+    const env = cooldownEnv();
     let speakCalls = 0;
     server.use(
       http.post(PROVIDER_URLS.deepgramSpeak, () => {
@@ -412,15 +326,13 @@ describe("handleSynthesize — text branch", () => {
     expect(res.status).toBe(429);
     expect(res.headers.get("Retry-After")).toBeTruthy();
     const body = await jsonBody(res);
-    expect(body.error).toBe("EKWE_QUOTA_EXCEEDED");
-    expect(body.quota_total).toBe(5000);
+    expect(body.error).toBe("EKWE_RATE_LIMIT");
 
     expect(env.AI.run).not.toHaveBeenCalled();
     expect(speakCalls).toBe(0);
   });
 
   test("explicit sourceLang translates before speech", async () => {
-    gateOk("PREMIUM", 5000, 5000);
     const env = aiMp3Env();
     let geminiTranslateCalls = 0;
     server.use(
@@ -447,7 +359,6 @@ describe("handleSynthesize — text branch", () => {
   });
 
   test("sourceLang equal to targetLang skips translation and speaks verbatim", async () => {
-    gateOk("PREMIUM", 5000, 5000);
     const env = aiMp3Env();
     let geminiTranslateCalls = 0;
     server.use(
@@ -474,8 +385,7 @@ describe("handleSynthesize — text branch", () => {
   });
 
   test("reserve gate failure blocks translation before any provider work", async () => {
-    gateExhausted();
-    const env = envWithFailures();
+    const env = cooldownEnv();
     let geminiTranslateCalls = 0;
     server.use(
       http.post(PROVIDER_URLS.geminiGenerate, () => {
@@ -573,13 +483,15 @@ describe("handleSynthesize — text branch", () => {
   });
 
   test("preview text is no longer special-cased: it runs the gated path", async () => {
-    let preflightCalls = 0;
-    mockDb.execute.mockImplementation(async (query) => {
-      const queryStr = executeQueryToSql(query);
-      if (queryStr.includes("check_preflight")) preflightCalls++;
-      const { defaultMockDbExecute } = await import("@/__tests__/setup");
-      return defaultMockDbExecute(query);
-    });
+    const env = aiMp3Env();
+    const baseDb = env.DB;
+    let claims = 0;
+    env.DB = {
+      prepare: (sql: string) => {
+        if (/user_cooldowns/i.test(sql)) claims++;
+        return baseDb.prepare(sql);
+      },
+    } as unknown as Env["DB"];
 
     const res = await handle(
       textRequest({
@@ -587,16 +499,15 @@ describe("handleSynthesize — text branch", () => {
         sourceLang: "fr",
         targetLang: "fr",
       }),
-      aiMp3Env(),
+      env,
       "FREE",
     );
     expect(res.status).toBe(200);
     expect((await jsonBody(res)).translated).toBe(false);
-    expect(preflightCalls).toBeGreaterThan(0);
+    expect(claims).toBeGreaterThan(0);
   });
 
   test("returns 503 when every speech provider fails", async () => {
-    gateOk("PREMIUM", 5000, 5000);
     const env = envWithFailures();
     const res = await handle(
       textRequest({ text: "Hello world", targetLang: "es" }),
@@ -611,7 +522,6 @@ describe("handleSynthesize — text branch", () => {
 
 describe("handleSynthesize — audio branch", () => {
   test("transcribes, translates, then speaks", async () => {
-    gateOk("PREMIUM", 5000, 5000);
     const env = aiMp3Env();
     let witCalls = 0;
     let geminiTranslateCalls = 0;
@@ -643,7 +553,6 @@ describe("handleSynthesize — audio branch", () => {
   });
 
   test("same source and target langs skip translation and speak verbatim", async () => {
-    gateOk("PREMIUM", 5000, 5000);
     const env = aiMp3Env();
     let witCalls = 0;
     let geminiTranslateCalls = 0;
@@ -676,7 +585,6 @@ describe("handleSynthesize — audio branch", () => {
   });
 
   test("second identical request is served from every cache layer", async () => {
-    gateOk("PREMIUM", 5000, 5000);
     const env = aiMp3Env();
     let witCalls = 0;
     let geminiTranslateCalls = 0;
@@ -704,17 +612,58 @@ describe("handleSynthesize — audio branch", () => {
     );
     const fields = { lang: "en", targetLang: "es" };
 
-    const first = await handle(audioRequest(fields), env, "PREMIUM");
-    expect(first.status).toBe(200);
+    // Cache hits are free: only provider-backed work moves the usage counters.
+    const baseDb = env.DB;
+    const usage = { translate: 0, transcribe: 0, speech: 0 };
+    env.DB = {
+      prepare: (sql: string) => {
+        const statement = baseDb.prepare(sql) as unknown as {
+          bind: (...args: unknown[]) => unknown;
+        };
+        if (!/user_daily_usage/i.test(sql)) return statement;
+        return {
+          bind: (...args: unknown[]) => {
+            usage.translate += (args[2] as number) ?? 0;
+            usage.transcribe += (args[3] as number) ?? 0;
+            usage.speech += (args[5] as number) ?? 0;
+            return statement.bind(...args);
+          },
+        };
+      },
+      batch: baseDb.batch.bind(baseDb),
+    } as unknown as Env["DB"];
 
-    const second = await handle(audioRequest(fields), env, "PREMIUM");
+    const ctx = mockExecutionContext();
+    const auth = { userId: "uid-syn", sessionId: null };
+    const first = await handle(
+      audioRequest(fields),
+      env,
+      "PREMIUM",
+      new AbortController().signal,
+      auth,
+      ctx,
+    );
+    await awaitWaitUntil(ctx);
+    expect(first.status).toBe(200);
+    expect(usage).toEqual({ translate: 1, transcribe: 1, speech: 10 });
+
+    const second = await handle(
+      audioRequest(fields),
+      env,
+      "PREMIUM",
+      new AbortController().signal,
+      auth,
+      ctx,
+    );
+    await awaitWaitUntil(ctx);
     expect(second.status).toBe(200);
     const body = await jsonBody(second);
     expect(body.translated).toBe(true);
 
+    expect(usage).toEqual({ translate: 1, transcribe: 1, speech: 10 });
     expect(witCalls).toBe(1);
     expect(geminiTranslateCalls).toBe(1);
-    // No voiceId means Standard, which is the free pool even for a Pro
+    // No voiceId means Standard, which is the free pool even for a Paid
     // account, so synthesis must not reach a premium provider.
     expect(freeSpeakCalls).toBe(1);
     expect(speakCalls).toBe(0);
@@ -757,8 +706,7 @@ describe("handleSynthesize — audio branch", () => {
   });
 
   test("reserve gate failure blocks transcription", async () => {
-    gateExhausted();
-    const env = envWithFailures();
+    const env = cooldownEnv();
     let witCalls = 0;
     server.use(
       http.post(PROVIDER_URLS.witaiDictation, () => {
@@ -790,7 +738,6 @@ describe("handleSynthesize — audio branch", () => {
 
 describe("transcript and translation stay consistent", () => {
   test("reports the same span it translated when the source is over the limit", async () => {
-    gateOk("PREMIUM", 5000, 5000);
     server.use(
       http.post(PROVIDER_URLS.geminiTtsGenerate, () =>
         jsonResponse({ error: { code: 429, message: "throttled" } }, 429),
@@ -833,26 +780,16 @@ describe("transcript and translation stay consistent", () => {
 });
 
 describe("premium voice entitlement", () => {
-  test("a FREE user asking for a Studio voice never reaches the preflight gate", async () => {
-    let preflightCalls = 0;
-    mockDb.execute.mockImplementation(async (query) => {
-      const queryStr = executeQueryToSql(query);
-      if (queryStr.includes("check_preflight")) {
-        preflightCalls++;
-        return [
-          {
-            preflight: {
-              allowed: true,
-              tier_active: "FREE",
-              quota_total: 5000,
-              quota_remaining: 5000,
-            },
-          },
-        ];
-      }
-      const { defaultMockDbExecute } = await import("@/__tests__/setup");
-      return defaultMockDbExecute(query);
-    });
+  test("a FREE user asking for a Studio voice never reaches the cooldown gate", async () => {
+    const env = aiMp3Env();
+    const baseDb = env.DB;
+    let claims = 0;
+    env.DB = {
+      prepare: (sql: string) => {
+        if (/user_cooldowns/i.test(sql)) claims++;
+        return baseDb.prepare(sql);
+      },
+    } as unknown as Env["DB"];
 
     const res = await handle(
       textRequest({
@@ -861,68 +798,10 @@ describe("premium voice entitlement", () => {
         targetLang: "es",
         voiceId: STUDIO_VOICE_ID,
       }),
-      aiMp3Env(),
+      env,
       "FREE",
     );
     expect(res.status).toBe(403);
-    expect(preflightCalls).toBe(0);
-  });
-});
-
-describe("throttled pipeline downgrade", () => {
-  test("a throttled Pro runs the STT and translate stages on the FREE pipeline", async () => {
-    mockDb.execute.mockImplementation(async (query) => {
-      const queryStr = executeQueryToSql(query);
-      if (queryStr.includes("check_preflight")) {
-        return [
-          {
-            preflight: {
-              allowed: true,
-              tier_active: "PREMIUM",
-              throttled: true,
-              quota_total: 0,
-              quota_remaining: 0,
-            },
-          },
-        ];
-      }
-      const { defaultMockDbExecute } = await import("@/__tests__/setup");
-      return defaultMockDbExecute(query);
-    });
-
-    const stt: string[] = [];
-    const mt: string[] = [];
-    server.use(
-      http.post(PROVIDER_URLS.groqTranscriptions, () => {
-        stt.push("groq");
-        return jsonResponse({ text: "groq result" });
-      }),
-      http.post(PROVIDER_URLS.assemblyaiUpload, () => {
-        stt.push("assemblyai");
-        return jsonResponse({ error: "premium-only" }, 500);
-      }),
-      http.post(PROVIDER_URLS.groqChat, () => {
-        mt.push("groq");
-        return jsonResponse({
-          choices: [{ message: { content: "Hola mundo" } }],
-        });
-      }),
-      http.post(PROVIDER_URLS.mistralChat, () => {
-        mt.push("mistral");
-        return jsonResponse({ error: "premium-only" }, 500);
-      }),
-    );
-
-    const res = await handle(
-      audioRequest({ lang: "en", targetLang: "es" }),
-      aiMp3Env(),
-      "PREMIUM",
-    );
-
-    expect(res.status).toBe(200);
-    expect(stt).toContain("groq");
-    expect(stt).not.toContain("assemblyai");
-    expect(mt).toContain("groq");
-    expect(mt).not.toContain("mistral");
+    expect(claims).toBe(0);
   });
 });

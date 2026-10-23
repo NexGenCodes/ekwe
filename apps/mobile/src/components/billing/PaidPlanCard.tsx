@@ -18,27 +18,27 @@ import { formatAmount } from "@ekwe/shared/money";
 import type { ThemeTokens } from "@/hooks/ui/useTheme";
 import { withAlpha } from "@/utils/color";
 
-export interface ProPlanCardProps {
+export interface PaidPlanCardProps {
   isPro: boolean;
   isAnnual: boolean;
   loading: boolean;
   color: ThemeTokens["color"];
   isDark: boolean;
-  proPlan: (typeof BILLING_PLANS)["pro"];
+  paidPlan: (typeof BILLING_PLANS)["pro"];
   handleUpgrade: () => Promise<void>;
   handleRestore: () => Promise<void>;
 }
 
-export function ProPlanCard({
+export function PaidPlanCard({
   isPro,
   isAnnual,
   loading,
   color,
   isDark,
-  proPlan,
+  paidPlan,
   handleUpgrade,
   handleRestore,
-}: ProPlanCardProps): React.JSX.Element {
+}: PaidPlanCardProps): React.JSX.Element {
   const glassBg = isDark ? color.card : color.background;
   const dividerBg = color.border;
   const { pricing, isPending } = useActivePricing();
@@ -52,7 +52,7 @@ export function ProPlanCard({
     <Box
       style={[
         styles.planCard,
-        styles.proCard,
+        styles.paidCard,
         {
           backgroundColor: glassBg,
           borderColor: color.brand,
@@ -118,10 +118,10 @@ export function ProPlanCard({
         </Box>
         <Box style={styles.proTitleBlock}>
           <Text variant="heading2" style={{ color: color.foreground }}>
-            {proPlan.name}
+            {paidPlan.name}
           </Text>
           <Text variant="bodySmall" style={{ color: color.muted }}>
-            {proPlan.tagline}
+            {paidPlan.tagline}
           </Text>
         </Box>
       </Box>
@@ -228,7 +228,7 @@ export function ProPlanCard({
       </Box>
 
       <Box style={[styles.divider, { backgroundColor: dividerBg }]} />
-      {proPlan.features.map((f: PlanFeature) => (
+      {paidPlan.features.map((f: PlanFeature) => (
         <FeatureRow
           key={f.title}
           feature={{ ...f, included: true }}
@@ -241,7 +241,7 @@ export function ProPlanCard({
       ))}
       <Box style={styles.ctaContainer}>
         <Button
-          label={isPro ? "Check Pro Status" : "Go Pro"}
+          label={isPro ? "Check Plan Status" : "Upgrade"}
           variant={isPro ? "outline" : "primary"}
           onPress={isPro ? handleRestore : handleUpgrade}
           size="large"
@@ -267,7 +267,7 @@ const styles = {
     right: 0,
     bottom: 0,
   } as const,
-  proCard: {
+  paidCard: {
     paddingVertical: spacing.xl,
   } as const,
   topBadge: {

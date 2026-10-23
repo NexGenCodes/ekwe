@@ -22,7 +22,7 @@ struct EchoShareSheet: View {
     /// Chips offered as translation targets (top languages ≠ source).
     @State private var targetCandidates: [EchoPickLanguage] = []
 
-    /// Whether the "Auto-Detect · Pro" locked card was tapped by a free user.
+    /// Whether the "Auto-Detect · Paid" locked card was tapped by a free user.
     @State private var showAutoDetectLocked = false
 
     var body: some View {
@@ -56,12 +56,12 @@ struct EchoShareSheet: View {
         .animation(.easeInOut(duration: 0.25), value: model.step)
         .onAppear { bootstrapTargetCandidates() }
         .alert(
-            "Auto-Detect is a Pro feature",
+            "Auto-Detect is a paid feature",
             isPresented: $showAutoDetectLocked
         ) {
             Button("OK", role: .cancel) { showAutoDetectLocked = false }
         } message: {
-            Text("Upgrade to Ekwe Pro in the app to auto-detect this voice note's language.")
+            Text("Upgrade to Ekwe Paid in the app to auto-detect this voice note's language.")
         }
     }
 
@@ -246,7 +246,7 @@ struct EchoShareSheet: View {
                 Image(systemName: model.autoDetectAllowed ? "sparkles" : "lock")
                     .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(model.autoDetectAllowed ? pulseFill : mutedFill)
-                Text(model.autoDetectAllowed ? "Auto-Detect" : "Auto-Detect · Pro")
+                Text(model.autoDetectAllowed ? "Auto-Detect" : "Auto-Detect · Paid")
                     .font(EchoFonts.custom("Outfit-Medium", size: 12))
                     .foregroundStyle(model.autoDetectAllowed ? pulseFill : mutedFill)
                     .multilineTextAlignment(.center)
@@ -267,7 +267,7 @@ struct EchoShareSheet: View {
         .accessibilityLabel(
             model.autoDetectAllowed
                 ? "Auto-detect language"
-                : "Auto-detect language, Pro feature"
+                : "Auto-detect language, paid feature"
         )
     }
 

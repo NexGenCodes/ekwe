@@ -20,7 +20,7 @@ interface SettingsState {
 }
 
 interface SessionState {
-  access_token: string;
+  accessToken: string;
   user: { id: string };
 }
 
@@ -82,7 +82,7 @@ vi.mock("@/store", async () => {
     targetLanguage: "en",
   }) as unknown as typeof store.settings$;
   store.auth$ = observable({
-    session: { access_token: "test-token", user: { id: "u1" } },
+    session: { accessToken: "test-token", user: { id: "u1" } },
     isPro: true,
   }) as unknown as typeof store.auth$;
   store.network$ = observable({
@@ -149,7 +149,7 @@ const SUCCESS_TRANSLATION = {
 beforeEach(() => {
   vi.clearAllMocks();
   store.auth$.set({
-    session: { access_token: "test-token", user: { id: "u1" } },
+    session: { accessToken: "test-token", user: { id: "u1" } },
   });
   permissions.autoCopy = true;
   permissions.autoLanguageDetect = false;
@@ -222,7 +222,7 @@ describe("handleTranscribe", () => {
 
     expect(result.current.step).toBe("Error");
     expect(result.current.error).toBe(
-      "Audio exceeds your plan limit (60s). Please upgrade to Pro for longer files.",
+      "Audio exceeds your plan limit (60s). Please upgrade to Paid for longer files.",
     );
     expect(impl.transcribe).not.toHaveBeenCalled();
   });

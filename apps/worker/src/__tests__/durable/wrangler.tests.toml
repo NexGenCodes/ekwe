@@ -18,6 +18,14 @@ rules = [
 binding = "EKWE_KV"
 id = "00000000000000000000000000000000"
 
+# The stream preflight gate reads daily/monthly usage from D1. The tables are
+# created in `durable/setup.ts`; the binding is only present to exercise that
+# path, not to persist anything between test runs.
+[[d1_databases]]
+binding = "DB"
+database_name = "ekwe-tests"
+database_id = "00000000-0000-0000-0000-000000000000"
+
 # `getDb` reaches Supabase over the Postgres wire protocol, which no HTTP mock
 # can intercept (and there is no local Postgres). `durable/setup.ts` replaces
 # the `@/db` module with an in-memory Drizzle-shaped stand-in via `vi.mock`, so

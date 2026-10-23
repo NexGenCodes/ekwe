@@ -1,14 +1,41 @@
-import { Env, Tier, UsageType } from "@/core/types";
+import type { Env, Tier, UsageType } from "@/core/types";
 import { getLimits } from "@/core/limits";
 import { logger } from "@/core/logger";
 import { recordUserEvent } from "@/utils/analytics";
-import { nextUtcMidnightMs } from "@/services/preflight";
-import { getDb } from "@/db";
-import { describeError, retryOnConnectionLoss } from "@/db/retry";
-import { userDailyUsage } from "@ekwe/db/schema";
-import { eq, and, sql } from "drizzle-orm";
-import { USAGE_METER_META, usageSnapshotSchema } from "@ekwe/shared";
-import type { UsageMeterId, UsageSnapshot, PlanLimits } from "@ekwe/shared";
+import { describeError, retryTransient } from "@/db/retry";
+import {
+  aiCreditsForUsage,
+  nextUtcMonthStartMs,
+  USAGE_METER_META,
+  usageSnapshotSchema,
+  utcDay,
+  utcMonth,
+} from "@ekwe/shared";
+import type { UsageMeterId, UsageSnapshot } from "@ekwe/shared";
+
+function deltas(
+  type: UsageType,
+  charCount: number,
+  durationMs: number,
+): {
+  translate: number;
+  transcribe: number;
+  transcribeMs: number;
+  speech: number;
+  stream: number;
+  streamMs: number;
+} {
+  return {
+    translate: type === "translate" ? 1 : 0,
+    transcribe: type === "transcribe" ? 1 : 0,
+    transcribeMs: type === "transcribe" ? Math.max(0, durationMs) : 0,
+    speech: type === "speech" ? Math.max(0, Math.floor(charCount)) : 0,
+    // A stream session is counted once at admission; later calls carry the
+    // elapsed duration and only add time/credits.
+    stream: type === "stream" && durationMs <= 0 ? 1 : 0,
+    streamMs: type === "stream" ? Math.max(0, durationMs) : 0,
+  };
+}
 
 export function trackBillableSuccess(
   env: Env,
@@ -16,147 +43,185 @@ export function trackBillableSuccess(
   type: UsageType,
   ctx: ExecutionContext | undefined,
   charCount = 0,
+  durationMs = 0,
 ): void {
   if (!ctx) return;
   ctx.waitUntil(
-    consumeUsage(env, userId, type, charCount)
-      // A rejection here reaches waitUntil and kills the isolate.
-      .catch(() => {}),
+    increment(env, userId, type, charCount, durationMs).catch(() => {}),
   );
 }
 
-export function releaseUsage(
+async function increment(
   env: Env,
   userId: string,
   type: UsageType,
-  ctx: ExecutionContext | undefined,
-  charCount = 0,
-): void {
-  if (!ctx) return;
-  ctx.waitUntil(
-    refundUsage(env, userId, type, charCount)
-      // A rejection here reaches waitUntil and kills the isolate.
-      .catch(() => {}),
-  );
-}
-
-async function refundUsage(
-  env: Env,
-  userId: string,
-  type: UsageType,
-  charCount = 0,
+  charCount: number,
+  durationMs: number,
 ): Promise<void> {
+  const amount = deltas(type, charCount, durationMs);
+  const credits = aiCreditsForUsage(type, { chars: charCount, durationMs });
+  const now = Date.now();
+  const day = utcDay(now);
+  const month = utcMonth(now);
+
   try {
-    const db = getDb(env);
-    await db.execute(
-      sql`SELECT refund_usage(${userId}, ${type}, ${charCount})`,
+    await retryTransient(() =>
+      env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO user_daily_usage
+             (user_id, day, translate_count, transcribe_count, transcribe_ms,
+              speech_chars, stream_count, stream_ms, ai_credits, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (user_id, day) DO UPDATE SET
+             translate_count  = user_daily_usage.translate_count  + excluded.translate_count,
+             transcribe_count = user_daily_usage.transcribe_count + excluded.transcribe_count,
+             transcribe_ms    = user_daily_usage.transcribe_ms    + excluded.transcribe_ms,
+             speech_chars     = user_daily_usage.speech_chars     + excluded.speech_chars,
+             stream_count     = user_daily_usage.stream_count     + excluded.stream_count,
+             stream_ms        = user_daily_usage.stream_ms        + excluded.stream_ms,
+             ai_credits       = user_daily_usage.ai_credits       + excluded.ai_credits,
+             updated_at       = excluded.updated_at`,
+        ).bind(
+          userId,
+          day,
+          amount.translate,
+          amount.transcribe,
+          amount.transcribeMs,
+          amount.speech,
+          amount.stream,
+          amount.streamMs,
+          credits,
+          now,
+        ),
+        env.DB.prepare(
+          `INSERT INTO user_monthly_usage
+             (user_id, month, translate_count, transcribe_count, transcribe_ms,
+              speech_chars, stream_count, stream_ms, ai_credits, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (user_id, month) DO UPDATE SET
+             translate_count  = user_monthly_usage.translate_count  + excluded.translate_count,
+             transcribe_count = user_monthly_usage.transcribe_count + excluded.transcribe_count,
+             transcribe_ms    = user_monthly_usage.transcribe_ms    + excluded.transcribe_ms,
+             speech_chars     = user_monthly_usage.speech_chars     + excluded.speech_chars,
+             stream_count     = user_monthly_usage.stream_count     + excluded.stream_count,
+             stream_ms        = user_monthly_usage.stream_ms        + excluded.stream_ms,
+             ai_credits       = user_monthly_usage.ai_credits       + excluded.ai_credits,
+             updated_at       = excluded.updated_at`,
+        ).bind(
+          userId,
+          month,
+          amount.translate,
+          amount.transcribe,
+          amount.transcribeMs,
+          amount.speech,
+          amount.stream,
+          amount.streamMs,
+          credits,
+          now,
+        ),
+      ]),
     );
     await recordUserEvent(env, "usage", userId, "ok", type);
-  } catch (err) {
-    logger.error("[usage] refund_usage error", {
-      error: describeError(err),
+  } catch (error) {
+    logger.error("[usage] increment failed", {
+      error: describeError(error),
       type,
+      recorded: false,
     });
     await recordUserEvent(env, "usage", userId, "fail", type);
   }
+}
+
+function roundMinutes(ms: number | undefined): number {
+  return Math.round(((ms ?? 0) / 60_000) * 10) / 10;
+}
+
+function roundCredits(credits: number | undefined): number {
+  return Math.round((credits ?? 0) * 10) / 10;
 }
 
 /**
- * Charge a billable request.
- *
- * `consume_usage` is a blind increment, not an idempotent set, so only 429 is
- * retried — a rate-limited request was never applied. Retrying a timeout or 5xx
- * would risk double-charging. Other failures are logged with `charged: false`
- * and dropped; those logs are the only signal the charge was missed.
+ * Monthly feature usage plus the tier's caps and the shared AI credit pool.
+ * `total === 0` means the feature is unavailable and the client hides the
+ * meter. Every meter has a finite total now; `null` is kept in the wire schema
+ * so older clients can still read a snapshot.
  */
-async function consumeUsage(
-  env: Env,
-  userId: string,
-  type: UsageType,
-  charCount = 0,
-): Promise<void> {
-  try {
-    const db = getDb(env);
-    // Not wrapped in retryOnConnectionLoss: this is a +1 counter, so a replay
-    // after a lost response would charge twice. Under-charging is cheaper.
-    await db.execute(
-      sql`SELECT consume_usage(${userId}, ${type}, ${charCount})`,
-    );
-
-    await recordUserEvent(env, "usage", userId, "ok", type);
-  } catch (err) {
-    logger.error("[usage] consume_usage error", {
-      error: describeError(err),
-      type,
-      charged: false,
-    });
-    await recordUserEvent(env, "usage", userId, "fail", type);
-  }
-}
-
 export async function fetchUsageSnapshot(
   env: Env,
   userId: string,
   tier: Tier,
 ): Promise<UsageSnapshot | null> {
+  const now = Date.now();
+  const day = utcDay(now);
+  const month = utcMonth(now);
+  const monthResetsAt = nextUtcMonthStartMs(now);
+
   try {
-    const day = new Date().toISOString().slice(0, 10);
-    const [row] = await retryOnConnectionLoss(
-      (client) =>
-        client
-          .select()
-          .from(userDailyUsage)
-          .where(
-            and(eq(userDailyUsage.userId, userId), eq(userDailyUsage.day, day)),
-          ),
-      env,
+    const row = await retryTransient(() =>
+      env.DB.prepare(
+        `SELECT translate_count, transcribe_count, transcribe_ms, speech_chars,
+                stream_count, stream_ms, ai_credits
+           FROM user_monthly_usage
+          WHERE user_id = ? AND month = ?`,
+      )
+        .bind(userId, month)
+        .first<{
+          translate_count: number;
+          transcribe_count: number;
+          transcribe_ms: number;
+          speech_chars: number;
+          stream_count: number;
+          stream_ms: number;
+          ai_credits: number;
+        }>(),
     );
 
-    const data = {
-      day,
-      translate: row?.translateCount ?? 0,
-      transcribe: row?.transcribeCount ?? 0,
-      speech: row?.speechChars ?? 0,
+    const used: Record<UsageMeterId, number> = {
+      translate: row?.translate_count ?? 0,
+      transcribe: roundMinutes(row?.transcribe_ms),
+      speech: row?.speech_chars ?? 0,
+      stream: roundMinutes(row?.stream_ms),
+      budget: roundCredits(row?.ai_credits),
     };
 
     const limits = getLimits(tier);
-
-    const meterLimitField: Record<UsageMeterId, keyof PlanLimits> = {
-      translate: "dailyTranslateLimit",
-      transcribe: "dailyTranscribeLimit",
-      speech: "dailySpeechCharsLimit",
+    const totals: Record<UsageMeterId, number | null> = {
+      translate: limits.monthlyTranslateLimit,
+      transcribe: limits.monthlyTranscribeMinutesLimit,
+      speech: limits.monthlySpeechCharsLimit,
+      stream: limits.monthlyStreamMinutesLimit,
+      budget: limits.monthlyAiCreditsLimit,
     };
 
-    const meters = USAGE_METER_META.map(({ id, label, unit }) => {
-      const total = limits[meterLimitField[id]] as number;
-      const used = data[id] ?? 0;
-      return {
-        id,
-        label,
-        unit,
-        used,
-        total,
-        remaining: Math.max(total - used, 0),
-      };
+    const parsed = usageSnapshotSchema.safeParse({
+      day,
+      resetsAt: monthResetsAt,
+      month,
+      monthResetsAt,
+      meters: USAGE_METER_META.map(({ id, label, unit }) => {
+        const total = totals[id];
+        return {
+          id,
+          label,
+          unit,
+          used: used[id],
+          total,
+          remaining: total === null ? null : Math.max(total - used[id], 0),
+        };
+      }),
     });
 
-    const snapshot = {
-      day: data.day,
-      resetsAt: nextUtcMidnightMs(),
-      meters,
-    };
-
-    const parsed = usageSnapshotSchema.safeParse(snapshot);
     if (!parsed.success) {
       logger.error("[usage] snapshot failed shared schema validation", {
         issues: parsed.error.issues,
       });
       return null;
     }
+
     return parsed.data;
-  } catch (err) {
-    logger.error("[usage] get_daily_usage error", {
-      error: describeError(err),
+  } catch (error) {
+    logger.error("[usage] snapshot read failed", {
+      error: describeError(error),
     });
     return null;
   }

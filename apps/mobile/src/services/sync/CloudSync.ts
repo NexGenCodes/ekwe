@@ -1,193 +1,123 @@
 /**
- * CloudSync — handles pulling data from the cloud and paginating older history.
+ * CloudSync — mirrors the server's history into the local database.
+ *
+ * Pull pages ascend on `(updated_at, id)` and include tombstones, so a deletion
+ * on another device reaches this one. The cursor is opaque and stored per user
+ * and tier; a tier change uses a different cursor, which forces a fresh pull so
+ * rows the narrower window had pruned come back.
  */
 
 import { batch, observable } from "@legendapp/state";
-import { mmkv as storage } from "@/services/mmkv";
-import { supabase } from "@/services/supabase";
-import { history$ } from "@/store";
-import { Db } from "@/services/db";
-import { cloudRowToEntry } from "@/services/historyMapper";
-import { logger } from "@/utils";
-import { HISTORY_LOCAL_TTL_DAYS } from "@/constants/retention";
-import { parseSyncCursor } from "@/services/outboxPayload";
 
+import { historyLocalTtlDays } from "@/constants/retention";
+import { apiJson } from "@/services/backend";
+import { Db } from "@/services/db";
+import { history$ } from "@/store";
+import { mmkv as storage } from "@/services/mmkv";
+import logger from "@/utils/logger";
+
+import { MAX_HISTORY_CACHE } from "./shared";
 import {
-  type CloudRow,
-  CLOUD_COLUMNS,
-  toError,
-  readOutboxActionId,
-  MAX_HISTORY_CACHE,
-} from "./shared";
-import type { HistoryEntry } from "@/store";
+  syncPullResponseSchema,
+  wireRowToEntry,
+  wireRowToLocal,
+} from "./wireRows";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const PULL_TIMEOUT_MS = 20_000;
 
 export class CloudSync {
   pullError = observable<string | null>(null);
+  private inflight: { userId: string; promise: Promise<void> } | null = null;
 
-  async pullFromCloud(userId: string): Promise<void> {
-    try {
-      this.pullError.set(null);
-      const lastSyncKey = `last-sync-${userId}`;
-      const stored = storage.getString(lastSyncKey);
-
-      let cursor = parseSyncCursor(stored);
-      let totalPulled = 0;
-
-      for (;;) {
-        let query = supabase
-          .from("history")
-          .select(CLOUD_COLUMNS)
-          .eq("user_id", userId)
-          // Exclude tombstones to prevent resurrecting deleted rows locally.
-          .is("deleted_at", null)
-          .order("created_at", { ascending: true })
-          .limit(200);
-
-        if (cursor) {
-          query = query.or(
-            `created_at.gt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.gt.${cursor.id})`,
-          );
-        }
-
-        const { data, error } = await query;
-        if (error) throw toError(error);
-        if (!data || data.length === 0) break;
-
-        const ttlCutoff =
-          Date.now() - HISTORY_LOCAL_TTL_DAYS * 24 * 60 * 60 * 1000;
-
-        // Track unacknowledged history IDs to prevent overwriting pending local edits.
-        const pendingIds = new Set<string>();
-        for (const r of Db.getUnacknowledgedOutbox(userId)) {
-          pendingIds.add(r.id);
-          const target = readOutboxActionId(r.payload);
-          if (target.action === "delete" && target.id)
-            pendingIds.add(target.id);
-        }
-
-        batch(() => {
-          for (const row of data as CloudRow[]) {
-            if (new Date(row.created_at).getTime() < ttlCutoff) {
-              continue;
-            }
-
-            const entry = cloudRowToEntry(row);
-            const pending = pendingIds.has(row.id);
-
-            if (pending) continue;
-
-            Db.insertHistory({
-              id: entry.id,
-              userId: row.user_id,
-              captureId: entry.captureId,
-              origin: entry.origin,
-              input: entry.input,
-              sourceLang: entry.sourceLang,
-              targetLang: entry.targetLang,
-              transcript: entry.transcript,
-              translationText: entry.translation,
-              transliterationText: entry.transliteration,
-              duration: entry.duration,
-              sourceApp: entry.sourceApp ?? "",
-              voiceId: entry.voiceId,
-              sttProvider: entry.sttProvider,
-              mtProvider: entry.mtProvider,
-              createdAt: row.created_at,
-              entryType: entry.type ?? "transcription",
-              revision: row.revision ?? 0,
-            });
-
-            if (!history$[row.id].get()) {
-              history$[row.id].set(entry);
-            } else {
-              history$[row.id].set({
-                ...history$[row.id].get(),
-                transcript: entry.transcript,
-                translation: entry.translation,
-                transliteration: entry.transliteration,
-                mtProvider: entry.mtProvider,
-              });
-              Db.updateCaptureRow(row.id, {
-                transcript: entry.transcript,
-                translation_text: entry.translation,
-                transliteration_text: entry.transliteration ?? null,
-                duration: entry.duration,
-                source_app: entry.sourceApp,
-                voice_id: entry.voiceId,
-                stt_provider: entry.sttProvider,
-                mt_provider: entry.mtProvider,
-                origin: entry.origin,
-                input: entry.input,
-              });
-            }
-          }
-        });
-
-        const newest = data[data.length - 1];
-        cursor = { created_at: newest.created_at, id: newest.id };
-        storage.set(lastSyncKey, JSON.stringify(cursor));
-
-        totalPulled += data.length;
-        if (data.length < 200) break;
-      }
-
-      if (totalPulled > 0) {
-        this.trimHistoryWindow();
-        logger.info("[Sync] Pulled", totalPulled, "entries from cloud");
-      }
-    } catch (rawErr) {
-      const err = toError(rawErr);
-      this.pullError.set(err.message);
-      logger.error("[Sync] Pull from cloud failed", err);
-    }
+  private cursorKey(userId: string, isPro: boolean): string {
+    return `sync.cursor.${userId}.${isPro ? "pro" : "free"}`;
   }
 
-  async fetchOlderHistory(
-    userId: string,
-    before: { created_at: string; id: string } | null,
-    limit: number,
-  ): Promise<HistoryEntry[]> {
-    try {
-      let query = supabase
-        .from("history")
-        .select(CLOUD_COLUMNS)
-        .eq("user_id", userId)
-        .is("deleted_at", null);
+  pullFromCloud(userId: string, isPro: boolean): Promise<void> {
+    if (this.inflight?.userId === userId) return this.inflight.promise;
+    const promise = this.runPull(userId, isPro).finally(() => {
+      if (this.inflight?.promise === promise) this.inflight = null;
+    });
+    this.inflight = { userId, promise };
+    return promise;
+  }
 
-      if (before) {
-        query = query.or(
-          `created_at.lt.${before.created_at},and(created_at.eq.${before.created_at},id.lt.${before.id})`,
-        );
+  private async runPull(userId: string, isPro: boolean): Promise<void> {
+    try {
+      this.pullError.set(null);
+
+      const key = this.cursorKey(userId, isPro);
+      let cursor = storage.getString(key) ?? null;
+      const cutoffMs = Date.now() - historyLocalTtlDays(isPro) * DAY_MS;
+      let applied = 0;
+
+      for (;;) {
+        const raw = await apiJson("/sync/pull", {
+          method: "POST",
+          body: cursor ? { cursor } : {},
+          timeoutMs: PULL_TIMEOUT_MS,
+        });
+        const page = syncPullResponseSchema.parse(raw);
+
+        this.applyPage(userId, page.rows, cutoffMs);
+        applied += page.rows.length;
+
+        if (page.nextCursor) {
+          cursor = page.nextCursor;
+          storage.set(key, cursor);
+        }
+        if (!page.hasMore) break;
       }
 
-      const { data, error } = await query
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(limit);
-
-      if (error) throw toError(error);
-
-      return (data ?? []).map((row: CloudRow) => cloudRowToEntry(row));
+      if (applied > 0) {
+        this.trimHistoryWindow();
+        logger.info("[Sync] Pulled", applied, "row(s)");
+      }
     } catch (err) {
-      logger.error("[Sync] fetchOlderHistory failed", err);
-      return [];
+      this.pullError.set(err instanceof Error ? err.message : String(err));
+      logger.error("[Sync] pullFromCloud failed", err);
     }
   }
 
   clearSyncCursor(userId: string): void {
-    storage.remove(`last-sync-${userId}`);
+    storage.remove(this.cursorKey(userId, false));
+    storage.remove(this.cursorKey(userId, true));
+  }
+
+  private applyPage(
+    userId: string,
+    rows: ReturnType<typeof syncPullResponseSchema.parse>["rows"],
+    cutoffMs: number,
+  ): void {
+    batch(() => {
+      for (const row of rows) {
+        // A local write that has not been acknowledged yet is the newer truth.
+        if (Db.hasPendingOutboxRow(userId, row.id)) continue;
+
+        if (row.deletedAt != null) {
+          Db.insertHistory(wireRowToLocal(row, userId));
+          history$[row.id].delete();
+          continue;
+        }
+
+        if (row.createdAt < cutoffMs) continue;
+
+        Db.insertHistory(wireRowToLocal(row, userId));
+        history$[row.id].set(wireRowToEntry(row));
+      }
+    });
   }
 
   private trimHistoryWindow(): void {
     const allKeys = Object.keys(history$.get() || {});
-    if (allKeys.length > MAX_HISTORY_CACHE) {
-      const sorted = allKeys
-        .map((k) => ({ key: k, ts: history$[k].timestamp.get() || 0 }))
-        .sort((a, b) => b.ts - a.ts);
-      const toRemove = sorted.slice(MAX_HISTORY_CACHE);
-      for (const { key } of toRemove) {
-        history$[key].delete();
-      }
+    if (allKeys.length <= MAX_HISTORY_CACHE) return;
+
+    const sorted = allKeys
+      .map((key) => ({ key, ts: history$[key].timestamp.get() || 0 }))
+      .sort((a, b) => b.ts - a.ts);
+    for (const { key } of sorted.slice(MAX_HISTORY_CACHE)) {
+      history$[key].delete();
     }
   }
 }

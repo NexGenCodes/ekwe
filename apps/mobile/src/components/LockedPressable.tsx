@@ -14,7 +14,7 @@ import {
 } from "react-native-reanimated";
 
 import { Box } from "@/components/ui";
-import { ProBadge } from "@/components/ProBadge";
+import { PaidBadge } from "@/components/PaidBadge";
 import { useLockedFeature } from "@/hooks/useLockedFeature";
 import { spacing } from "@/constants/spacing";
 import { opacity } from "@/constants/sizes";
@@ -116,7 +116,7 @@ export const LockedPressable = forwardRef<
         accessibilityRole={accessibilityRole ?? "button"}
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={
-          locked ? "Requires Ekwe Pro subscription" : accessibilityHint
+          locked ? "Requires the Ekwe Paid plan" : accessibilityHint
         }
         accessibilityState={{
           disabled: locked,
@@ -139,7 +139,7 @@ export const LockedPressable = forwardRef<
           ]}
         >
           {children}
-          {locked && label && <ProBadge size="sm" />}
+          {locked && label && <PaidBadge size="sm" />}
         </Box>
       </AnimatedPressable>
     );

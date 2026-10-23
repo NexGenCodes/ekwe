@@ -22,6 +22,8 @@
     "db:migrations:lock": "node scripts/lock-migrations.mjs",
     "db:pull": "pnpm --filter @ekwe/db pull",
     "db:check": "node scripts/check-migrations.mjs",
+    "db:seed:config": "node scripts/seed-app-config.mjs",
+    "smoke:api": "node scripts/smoke-api.mjs",
     "seed": "supabase db seed --linked",
     "email:deploy": "bash supabase/deploy-email-templates.sh",
     "db:link": "bash -c 'set -a; source supabase/.env; set +a; supabase link --project-ref $SUPABASE_PROJECT_REF'",

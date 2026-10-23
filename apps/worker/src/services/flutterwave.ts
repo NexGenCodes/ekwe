@@ -3,9 +3,8 @@ import { logger } from "@/core/logger";
 import type { Env } from "@/core/types";
 import { registerProvider, ProviderResult } from "@/services/billing";
 import { claimFlutterwaveTransaction } from "@/services/flutterwave-claim";
-import { describeError, retryOnConnectionLoss } from "@/db/retry";
-import { sql, inArray, eq } from "drizzle-orm";
-import { usersInAuth, flutterwaveTransactionClaims } from "@ekwe/db/schema";
+import { describeError, retryTransient } from "@/db/retry";
+import { normalizeEmail } from "@ekwe/shared";
 import { toLowestUnit, resolvePaymentCurrency } from "@ekwe/shared/money";
 import { getAuthoritativePlanPrices } from "@/routes/pricing";
 
@@ -132,30 +131,10 @@ export function guardFlutterwaveKeys(env: {
   };
 }
 
-const PLAN_GRACE_MS: Record<BillingPlanPeriod, number> = {
-  monthly: 30 * 86_400_000,
-  annual: 365 * 86_400_000,
-};
-
-export function computeProExpiry(
-  plan: BillingPlanPeriod,
-  now: number = Date.now(),
-): string {
-  const graceMs = PLAN_GRACE_MS[plan] ?? PLAN_GRACE_MS.monthly;
-  return new Date(now + graceMs).toISOString();
-}
-
-function parseEndDate(endDate: string | null | undefined): string | null {
+function parseEndDate(endDate: string | null | undefined): number | null {
   if (!endDate) return null;
-  const parsed = new Date(endDate);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-}
-
-function resolveProExpiry(
-  endDate: string | null | undefined,
-  plan: BillingPlanPeriod,
-): string {
-  return parseEndDate(endDate) ?? computeProExpiry(plan);
+  const parsed = Date.parse(endDate);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function ackResult(
@@ -165,49 +144,99 @@ function ackResult(
   return { response, fullyApplied: applied.ok || applied.permanent };
 }
 
-export async function setProStatus(
+export async function ensureProCoverage(
   env: Env,
-  identifier: { email?: string; userId?: string },
-  isPro: boolean,
-  expiresAt?: string | null,
-  provider: string = "flutterwave",
-  paymentRef?: string | null,
+  userId: string,
+  expiresAt: number,
 ): Promise<ProStatusResult> {
   try {
-    // Absolute set, so a retry lands on the same state.
-    const result = await retryOnConnectionLoss(
-      (client) =>
-        client.execute(sql`SELECT * FROM set_pro_status(
-      ${identifier.email || null},
-      ${identifier.userId || null},
-      ${isPro},
-      ${expiresAt ?? null},
-      ${provider},
-      ${paymentRef ?? null}
-    )`),
-      env,
+    const row = await retryTransient(() =>
+      env.DB.prepare("SELECT tier, pro_expires_at FROM users WHERE id = ?")
+        .bind(userId)
+        .first<{ tier: string; pro_expires_at: number | null }>(),
     );
 
-    const row = result[0] as { permanent?: boolean } | undefined;
-    return { ok: true, permanent: row?.permanent === true };
+    if (!row) return { ok: false, permanent: false };
+
+    if (
+      row.tier === "PREMIUM" &&
+      (row.pro_expires_at === null || row.pro_expires_at >= expiresAt)
+    ) {
+      return { ok: true, permanent: row.pro_expires_at === null };
+    }
+
+    return setProStatus(env, { userId }, true, expiresAt);
   } catch (err) {
-    logger.error("[flutterwave] set_pro_status error", {
+    logger.error("[flutterwave] ensureProCoverage failed", {
       error: describeError(err),
     });
     return { ok: false, permanent: false };
   }
 }
 
-function resolveUser(
-  email: string | null,
-  txRef: string | null,
-): { email?: string; userId?: string } | null {
-  if (email) return { email };
-  if (txRef) {
-    const match = txRef.match(/ekwe_([a-f0-9-]+)_/);
-    if (match) return { userId: match[1] };
+export async function setProStatus(
+  env: Env,
+  identifier: { email?: string; userId?: string },
+  isPro: boolean,
+  expiresAt?: number | null,
+): Promise<ProStatusResult> {
+  try {
+    const now = Date.now();
+    let userId = identifier.userId ?? null;
+
+    if (!userId && identifier.email) {
+      const row = await retryTransient(() =>
+        env.DB.prepare("SELECT id FROM users WHERE email_norm = ? LIMIT 1")
+          .bind(normalizeEmail(identifier.email!))
+          .first<{ id: string }>(),
+      );
+      userId = row?.id ?? null;
+    }
+
+    if (!userId) {
+      logger.warn("[flutterwave] setProStatus could not resolve a user", {
+        email: identifier.email ?? null,
+      });
+      return { ok: false, permanent: false };
+    }
+
+    // Absolute set, so a retry lands on the same state.
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE users SET tier = ?, pro_expires_at = ?, updated_at = ? WHERE id = ?",
+      ).bind(
+        isPro ? "PREMIUM" : "FREE",
+        isPro ? (expiresAt ?? null) : null,
+        now,
+        userId,
+      ),
+      env.DB.prepare(
+        `INSERT INTO user_subscriptions
+           (user_id, status, product_id, platform, expires_at, created_at, updated_at)
+         SELECT ?, ?, NULL, 'web', ?, ?, ?
+          WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
+         ON CONFLICT (user_id) DO UPDATE SET
+           status = excluded.status,
+           platform = excluded.platform,
+           expires_at = excluded.expires_at,
+           updated_at = excluded.updated_at`,
+      ).bind(
+        userId,
+        isPro ? "active" : "inactive",
+        isPro ? (expiresAt ?? null) : null,
+        now,
+        now,
+        userId,
+      ),
+    ]);
+
+    return { ok: true, permanent: isPro && expiresAt == null };
+  } catch (err) {
+    logger.error("[flutterwave] setProStatus failed", {
+      error: describeError(err),
+    });
+    return { ok: false, permanent: false };
   }
-  return null;
 }
 
 function parsePlanFromTxRef(txRef: string | null): BillingPlanPeriod | null {
@@ -222,32 +251,40 @@ function userIdFromTxRef(txRef: string | null): string | null {
   return match ? match[1] : null;
 }
 
+type UserResolution =
+  { kind: "found"; userId: string } | { kind: "missing" } | { kind: "error" };
+
 async function resolveUserIdForClaim(
   env: Env,
   txRef: string | null,
   email: string | null,
-): Promise<string | null> {
-  const fromTxRef = userIdFromTxRef(txRef);
-  if (fromTxRef) return fromTxRef;
-  if (!email) return null;
-
+): Promise<UserResolution> {
   try {
-    const rows = await retryOnConnectionLoss(
-      (client) =>
-        client
-          .select({ id: usersInAuth.id })
-          .from(usersInAuth)
-          .where(eq(usersInAuth.email, email.toLowerCase()))
-          .limit(1),
-      env,
+    const fromTxRef = userIdFromTxRef(txRef);
+    if (fromTxRef) {
+      const row = await retryTransient(() =>
+        env.DB.prepare("SELECT id FROM users WHERE id = ?")
+          .bind(fromTxRef)
+          .first<{ id: string }>(),
+      );
+      if (row) return { kind: "found", userId: row.id };
+    }
+
+    if (!email) return { kind: "missing" };
+
+    const row = await retryTransient(() =>
+      env.DB.prepare("SELECT id FROM users WHERE email_norm = ?")
+        .bind(normalizeEmail(email))
+        .first<{ id: string }>(),
     );
-    return rows[0]?.id ?? null;
+    return row ? { kind: "found", userId: row.id } : { kind: "missing" };
   } catch (err) {
-    logger.error("[reconciliation] Failed to resolve user id by email", {
+    logger.error("[flutterwave] Failed to resolve user id", {
       email,
+      tx_ref: txRef,
       error: describeError(err),
     });
-    return null;
+    return { kind: "error" };
   }
 }
 
@@ -295,7 +332,7 @@ async function verifyChargeAmount(
 
   const prices = await getAuthoritativePlanPrices(env, chargedCurrency);
   if (!prices) {
-    logger.warn("[flutterwave] Cannot confirm price from Supabase", {
+    logger.warn("[flutterwave] Cannot confirm price from app_config", {
       currency: chargedCurrency,
     });
     return { outcome: "retry" };
@@ -340,9 +377,16 @@ async function processFlutterwaveEvent(
 
   const email = data.customer?.email ?? null;
   const txRef = data.tx_ref ?? null;
-  const identifier = resolveUser(email, txRef);
+  const resolution = await resolveUserIdForClaim(env, txRef, email);
 
-  if (!identifier) {
+  if (resolution.kind === "error") {
+    return {
+      response: Response.json({ received: true, action: "unverified" }),
+      fullyApplied: false,
+    };
+  }
+
+  if (resolution.kind === "missing") {
     logger.warn("[flutterwave] Could not resolve user from event", {
       email,
       tx_ref: txRef,
@@ -352,6 +396,8 @@ async function processFlutterwaveEvent(
       fullyApplied: true,
     };
   }
+
+  const userId = resolution.userId;
 
   if (eventType === "charge.success" && data.status === "successful") {
     const verification = await verifyChargeAmount(env, data);
@@ -369,23 +415,41 @@ async function processFlutterwaveEvent(
       };
     }
 
-    const plan = parsePlanFromTxRef(txRef);
-    const expiresAt = resolveProExpiry(
-      data.subscription?.end_date,
-      plan ?? "monthly",
-    );
+    const plan = parsePlanFromTxRef(txRef) ?? "monthly";
+    const claim = await claimFlutterwaveTransaction(env, {
+      flwRef: data.flw_ref,
+      userId,
+      txRef: txRef ?? "",
+      amount: data.amount,
+      currency: data.currency,
+      period: plan,
+    });
 
-    const applied = await setProStatus(
-      env,
-      identifier,
-      true,
-      expiresAt,
-      "flutterwave",
-      data.flw_ref,
-    );
+    if (!claim) {
+      return {
+        response: Response.json({ received: true, action: "unverified" }),
+        fullyApplied: false,
+      };
+    }
+
+    if (!claim.shouldActivate) {
+      logger.info("[flutterwave] Transaction already redeemed", {
+        email,
+        tx_ref: txRef,
+        flw_ref: data.flw_ref,
+      });
+      const repaired = await ensureProCoverage(env, userId, claim.expiresAt);
+      return ackResult(
+        Response.json({ received: true, action: "activated" }),
+        repaired,
+      );
+    }
+
+    const applied = await setProStatus(env, { userId }, true, claim.expiresAt);
     logger.info("[flutterwave] Subscription activated", {
       email,
       tx_ref: txRef,
+      expires_at: claim.expiresAt,
     });
     return ackResult(
       Response.json({ received: true, action: "activated" }),
@@ -395,8 +459,8 @@ async function processFlutterwaveEvent(
 
   if (eventType === "charge.refund" || eventType === "charge.refunded") {
     if (data.status === "successful" || data.status === "completed") {
-      const applied = await setProStatus(env, identifier, false, null);
-      logger.info("[flutterwave] Charge refunded — Pro revoked", {
+      const applied = await setProStatus(env, { userId }, false, null);
+      logger.info("[flutterwave] Charge refunded — paid plan revoked", {
         email,
         tx_ref: txRef,
       });
@@ -414,7 +478,7 @@ async function processFlutterwaveEvent(
   if (eventType === "invoice.updated") {
     const renewedUntil = parseEndDate(data.subscription?.end_date);
     if (renewedUntil) {
-      const applied = await setProStatus(env, identifier, true, renewedUntil);
+      const applied = await setProStatus(env, { userId }, true, renewedUntil);
       logger.info("[flutterwave] Subscription renewed via invoice", {
         email,
         tx_ref: txRef,
@@ -436,7 +500,7 @@ async function processFlutterwaveEvent(
   }
 
   if (eventType === "subscription.paused") {
-    const applied = await setProStatus(env, identifier, false, null);
+    const applied = await setProStatus(env, { userId }, false, null);
     logger.info("[flutterwave] Subscription paused", {
       email,
       tx_ref: txRef,
@@ -447,16 +511,32 @@ async function processFlutterwaveEvent(
     );
   }
 
-  if (eventType === "subscription.completed") {
-    const applied = await setProStatus(
-      env,
-      identifier,
-      true,
-      parseEndDate(data.subscription?.end_date),
-    );
-    logger.info("[flutterwave] Subscription completed", {
+  if (
+    eventType === "subscription.completed" ||
+    eventType === "subscription.cancelled"
+  ) {
+    const retainedUntil = parseEndDate(data.subscription?.end_date);
+    if (!retainedUntil) {
+      logger.warn("[flutterwave] Retention event without a usable end_date", {
+        event: eventType,
+        email,
+        tx_ref: txRef,
+      });
+      return {
+        response: Response.json({ received: true, action: "skipped" }),
+        fullyApplied: true,
+      };
+    }
+
+    const stillRunning = retainedUntil > Date.now();
+    const applied = stillRunning
+      ? await setProStatus(env, { userId }, true, retainedUntil)
+      : await setProStatus(env, { userId }, false, null);
+    logger.info("[flutterwave] Subscription ended (retained until expiry)", {
+      event: eventType,
       email,
       tx_ref: txRef,
+      expires_at: retainedUntil,
     });
     return ackResult(
       Response.json({ received: true, action: "retained" }),
@@ -464,25 +544,8 @@ async function processFlutterwaveEvent(
     );
   }
 
-  if (eventType === "subscription.cancelled") {
-    const retainedUntil = parseEndDate(data.subscription?.end_date);
-    const applied = await setProStatus(env, identifier, true, retainedUntil);
-    logger.info(
-      "[flutterwave] Subscription cancelled (retained until expiry)",
-      {
-        email,
-        tx_ref: txRef,
-        expires_at: retainedUntil,
-      },
-    );
-    return ackResult(
-      Response.json({ received: true, action: "retained" }),
-      applied,
-    );
-  }
-
   if (eventType === "subscription.expired") {
-    const applied = await setProStatus(env, identifier, false, null);
+    const applied = await setProStatus(env, { userId }, false, null);
     logger.info("[flutterwave] Subscription expired", {
       email,
       tx_ref: txRef,
@@ -573,16 +636,22 @@ export async function getMissingTransactions(
   if (flwRefs.length === 0) return [];
 
   try {
-    const existing = await retryOnConnectionLoss(
-      (client) =>
-        client
-          .select({ ref: flutterwaveTransactionClaims.flwRef })
-          .from(flutterwaveTransactionClaims)
-          .where(inArray(flutterwaveTransactionClaims.flwRef, flwRefs)),
-      env,
-    );
+    const existingRefs = new Set<string>();
+    const chunkSize = 90;
 
-    const existingRefs = new Set(existing.map((e) => e.ref));
+    for (let i = 0; i < flwRefs.length; i += chunkSize) {
+      const chunk = flwRefs.slice(i, i + chunkSize);
+      const placeholders = chunk.map(() => "?").join(", ");
+      const rows = await retryTransient(() =>
+        env.DB.prepare(
+          `SELECT flw_ref FROM flutterwave_claims WHERE flw_ref IN (${placeholders})`,
+        )
+          .bind(...chunk)
+          .all<{ flw_ref: string }>(),
+      );
+      for (const row of rows.results) existingRefs.add(row.flw_ref);
+    }
+
     return flwRefs.filter((ref) => !existingRefs.has(ref));
   } catch (err) {
     throw new Error(
@@ -598,15 +667,6 @@ export async function processMissingTransaction(
 ): Promise<boolean> {
   const email = data.customer?.email ?? null;
   const txRef = data.tx_ref ?? null;
-  const identifier = resolveUser(email, txRef);
-
-  if (!identifier) {
-    logger.warn("[reconciliation] Could not resolve user from transaction", {
-      email,
-      tx_ref: txRef,
-    });
-    return false;
-  }
 
   if (data.status !== "successful") return false;
 
@@ -622,27 +682,30 @@ export async function processMissingTransaction(
   const plan = parsePlanFromTxRef(txRef);
   const period = plan ?? "monthly";
 
-  const userId = await resolveUserIdForClaim(env, txRef, email);
-  if (!userId) {
+  const resolution = await resolveUserIdForClaim(env, txRef, email);
+  if (resolution.kind !== "found") {
     logger.warn("[reconciliation] No user id to attribute transaction to", {
       email,
       tx_ref: txRef,
       flw_ref: data.flw_ref,
+      outcome: resolution.kind,
     });
     return false;
   }
+
+  const { userId } = resolution;
 
   const claim = await claimFlutterwaveTransaction(env, {
     flwRef: data.flw_ref ?? "",
     userId,
     txRef: txRef ?? "",
-    amount: data.amount ?? null,
-    currency: data.currency ?? null,
+    amount: data.amount ?? 0,
+    currency: data.currency ?? "",
     period,
   });
 
   if (!claim) {
-    logger.error("[reconciliation] Claim RPC failed; will retry", {
+    logger.error("[reconciliation] Claim failed; will retry", {
       tx_ref: txRef,
       flw_ref: data.flw_ref,
     });
@@ -650,22 +713,17 @@ export async function processMissingTransaction(
   }
 
   if (!claim.shouldActivate) {
+    const repaired = await ensureProCoverage(env, userId, claim.expiresAt);
     logger.info("[reconciliation] Transaction already redeemed", {
       email,
       tx_ref: txRef,
       flw_ref: data.flw_ref,
+      repaired: repaired.ok,
     });
-    return true;
+    return repaired.ok;
   }
 
-  const applied = await setProStatus(
-    env,
-    identifier,
-    true,
-    claim.expiresAt,
-    "flutterwave",
-    data.flw_ref,
-  );
+  const applied = await setProStatus(env, { userId }, true, claim.expiresAt);
   if (applied.ok) {
     logger.info("[reconciliation] Successfully processed missing transaction", {
       email,
@@ -682,6 +740,11 @@ export async function reconcileFlutterwaveTransactions(
     tx: FlutterwaveEvent["data"],
   ) => Promise<boolean> = processMissingTransaction,
 ): Promise<void> {
+  if (!env.FLUTTERWAVE_SECRET) {
+    logger.info("[reconciliation] Skipped: FLUTTERWAVE_SECRET not configured");
+    return;
+  }
+
   try {
     logger.info(
       "[reconciliation] Starting Flutterwave billing reconciliation...",

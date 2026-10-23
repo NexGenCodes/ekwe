@@ -1,21 +1,23 @@
 interface Env {
-  TURNSTILE_SECRET: string;
-  SUPABASE_SERVICE_ROLE_KEY: string;
+  EMAIL?: { send(message: unknown): Promise<unknown> };
+
+  JWT_PRIVATE_JWK: string;
+  OTP_PEPPER: string;
+  GOOGLE_CLIENT_IDS?: string;
+
+  TURNSTILE_SECRET?: string;
+  BREVO_API_KEY?: string;
   FIREBASE_PROJECT_NUMBER?: string;
-  REQUIRE_APP_CHECK?: string;
-  SUPABASE_SECRET_KEY?: string;
-  HYPERDRIVE?: Hyperdrive;
-  SPEECH_URL_SECRET?: string;
+
   SENTRY_DSN?: string;
   UPDATE_NOTIFY_SECRET?: string;
   FLUTTERWAVE_SECRET?: string;
   FLUTTERWAVE_PUBLIC?: string;
   FLUTTERWAVE_WEBHOOK_SECRET?: string;
-  APP_ENV?: string;
-  TTS_GEMINI_VOICE?: string;
   EDGE_CLIENT_TOKEN?: string;
-  SPEECH_CACHE?: R2Bucket;
-  EKWE_ANALYTICS?: AnalyticsEngineDataset;
+  SPEECH_URL_SECRET?: string;
+  TTS_GEMINI_VOICE?: string;
+
   [key: `COHERE_KEY_${number}`]: string | undefined;
   [key: `DEEPGRAM_KEY_${number}`]: string | undefined;
   [key: `ELEVENLABS_KEY_${number}`]: string | undefined;

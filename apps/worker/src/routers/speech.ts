@@ -97,7 +97,6 @@ speechRouter.post("/synthesize", authMiddleware(), async (c) => {
       c.get("tier"),
       c.req.raw.signal,
       c.get("auth")!.userId,
-      c.get("auth")!.sessionId,
       c.executionCtx as unknown as ExecutionContext,
       remainingMs,
       c.get("timings"),
@@ -123,7 +122,6 @@ speechRouter.post("/synthesize", authMiddleware(), async (c) => {
     c.get("tier"),
     c.req.raw.signal,
     c.get("auth")!.userId,
-    c.get("auth")!.sessionId,
     c.executionCtx as unknown as ExecutionContext,
     remainingMs,
     c.get("timings"),
@@ -179,7 +177,6 @@ speechRouter.get("/transcribe/stream", authMiddleware(true), (c) => {
 
   const doUrl = new URL(request.url);
   doUrl.searchParams.set("tier", tier);
-  if (auth.sessionId) doUrl.searchParams.set("sid", auth.sessionId);
   const stub = env.STREAM_DO.getByName(
     auth.userId,
   ) as unknown as DurableObjectStub;

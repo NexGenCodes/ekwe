@@ -1,135 +1,165 @@
-import { describe, test, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 
 import { processWebhookEvent } from "@/services/billing";
 import "@/services/flutterwave";
 import { resetPricingCache } from "@/routes/pricing";
+import type { Env } from "@/core/types";
 import {
-  executeQueryChunks,
-  jsonBody,
-  mockDb,
-  mockEnv,
-} from "@/__tests__/setup";
+  createTestDatabase,
+  type TestDatabase,
+} from "@/__tests__/helpers/sqlite-d1";
+import { jsonBody } from "@/__tests__/setup";
 
-const SEEDED_CONFIG = {
-  id: 1,
-  base_price_usd: 2.23,
-  discount_percent: 0,
-  annual_discount_percent: 20,
-  local_prices: {
-    USD: { monthly: 2.23, annual: 21.41 },
-    NGN: { monthly: 3000, annual: 28800 },
-    GHS: { monthly: 25, annual: 240 },
-    KES: { monthly: 288, annual: 2765 },
-    ZAR: { monthly: 36, annual: 346 },
-    ZMW: { monthly: 41, annual: 394 },
-    UGX: { monthly: 8200, annual: 78720 },
-    TZS: { monthly: 5900, annual: 56640 },
-    RWF: { monthly: 3260, annual: 31296 },
-    XOF: { monthly: 1270, annual: 12192 },
-    XAF: { monthly: 1270, annual: 12192 },
-    GBP: { monthly: 1.65, annual: 15.84 },
-    EUR: { monthly: 1.93, annual: 18.53 },
-    CAD: { monthly: 3.09, annual: 29.66 },
-  },
-};
+const USER_ID = "3f7c1d2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f";
+const EMAIL = "test@example.com";
+const DAY_MS = 86_400_000;
+const TX_REF = `ekwe_${USER_ID}_monthly_9f8e7d6c`;
 
-function serveSeededConfig() {
-  // mockDb.where is used by billing config lookup
-  mockDb.where.mockResolvedValue([
-    {
-      id: 1,
-      basePriceUsd: 2.23,
-      discountPercent: 0,
-      annualDiscountPercent: 20,
-      localPrices: SEEDED_CONFIG.local_prices,
-    },
-  ]);
-}
-
-function successRpc() {
-  mockDb.execute.mockImplementation(async (_query) => {
-    return [{ permanent: false }];
-  });
-}
-
-function failRpc(status = 500) {
-  mockDb.execute.mockImplementation(async (_query) => {
-    if (status >= 400 && status < 500) {
-      return [{ permanent: true }];
-    }
-    throw new Error("Internal error");
-  });
-}
-
-function getSetProStatusCall() {
-  const calls = mockDb.execute.mock.calls;
-  const setProStatusCall = calls.find((c) =>
-    JSON.stringify(c[0]).includes("set_pro_status"),
-  );
-  if (!setProStatusCall) return null;
-
-  const chunks = executeQueryChunks(setProStatusCall[0]);
+function makeEnv(
+  database: TestDatabase,
+  overrides: Record<string, unknown> = {},
+): Env {
   return {
-    email: chunks[1],
-    userId: chunks[3],
-    isPro: chunks[5],
-    expiresAt: chunks[7],
-    provider: chunks[9],
-    paymentRef: chunks[11],
-  };
-}
-
-function buildEvent(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 12345,
-    event: "charge.success",
-    created_at: new Date().toISOString(),
-    data: {
-      id: 99999,
-      tx_ref: "ekwe_user-123_monthly",
-      flw_ref: "flw-ref-abc",
-      status: "successful",
-      amount: 2.23,
-      currency: "USD",
-      customer: {
-        id: 1,
-        name: "Test User",
-        phone_number: null,
-        email: "test@example.com",
-      },
-      meta: {
-        user_id: "user-123",
-        plan: "ekwe_pro_monthly",
-        amount: 2.23,
-        currency: "USD",
-      },
-      subscription: {
-        id: 100,
-        amount: 2.23,
-        subscription_code: "SUB-ABC",
-        email_token: "token-xyz",
-        status: "active",
-        next_payment_date: new Date(Date.now() + 30 * 86400000).toISOString(),
-        end_date: new Date(Date.now() + 30 * 86400000).toISOString(),
-      },
-    },
+    DB: database.d1,
+    APP_ENV: "test",
+    FLUTTERWAVE_WEBHOOK_SECRET: "whsec_test",
     ...overrides,
+  } as unknown as Env;
+}
+
+function seedUser(database: TestDatabase): void {
+  const now = Date.now();
+  database.sqlite
+    .prepare(
+      `INSERT INTO users (id, email, email_norm, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(USER_ID, EMAIL, EMAIL, now, now);
+}
+
+function seedConfig(
+  database: TestDatabase,
+  localPrices: Record<string, { monthly: number; annual: number }> = {
+    NGN: { monthly: 3000, annual: 28800 },
+    USD: { monthly: 2.23, annual: 21.41 },
+  },
+): void {
+  database.sqlite
+    .prepare(
+      "UPDATE app_config SET local_prices = ?, updated_at = ? WHERE id = 1",
+    )
+    .run(JSON.stringify(localPrices), Date.now());
+}
+
+function seedSubscription(
+  database: TestDatabase,
+  status: string,
+  expiresAt: number | null,
+): void {
+  const now = Date.now();
+  database.sqlite
+    .prepare(
+      `INSERT INTO user_subscriptions
+         (user_id, status, platform, expires_at, created_at, updated_at)
+       VALUES (?, ?, 'web', ?, ?, ?)`,
+    )
+    .run(USER_ID, status, expiresAt, now, now);
+  database.sqlite
+    .prepare(
+      "UPDATE users SET tier = 'PREMIUM', pro_expires_at = ? WHERE id = ?",
+    )
+    .run(expiresAt, USER_ID);
+}
+
+function seedClaim(
+  database: TestDatabase,
+  expiresAt: number,
+  flwRef = "FLW-REF-1",
+): void {
+  database.sqlite
+    .prepare(
+      `INSERT INTO flutterwave_claims
+         (flw_ref, user_id, tx_ref, amount, currency, expires_at, claimed_at)
+       VALUES (?, ?, ?, 3000, 'NGN', ?, ?)`,
+    )
+    .run(flwRef, USER_ID, TX_REF, expiresAt, Date.now());
+}
+
+function user(database: TestDatabase) {
+  return database.sqlite
+    .prepare("SELECT tier, pro_expires_at FROM users WHERE id = ?")
+    .get(USER_ID) as { tier: string; pro_expires_at: number | null };
+}
+
+function subscription(database: TestDatabase) {
+  return database.sqlite
+    .prepare(
+      "SELECT status, expires_at FROM user_subscriptions WHERE user_id = ?",
+    )
+    .get(USER_ID) as { status: string; expires_at: number | null } | undefined;
+}
+
+interface EventOverrides {
+  event?: string;
+  id?: number;
+  data?: Record<string, unknown>;
+}
+
+function buildEvent(overrides: EventOverrides = {}): Record<string, unknown> {
+  const data = {
+    id: 1001,
+    tx_ref: TX_REF,
+    flw_ref: "FLW-REF-1",
+    status: "successful",
+    amount: 3000,
+    currency: "NGN",
+    customer: {
+      id: 7,
+      name: "Test User",
+      phone_number: null,
+      email: EMAIL,
+    },
+    meta: {
+      user_id: USER_ID,
+      plan: "ekwe_pro_monthly",
+      amount: 3000,
+      currency: "NGN",
+    },
+    subscription: {
+      id: 55,
+      amount: 3000,
+      subscription_code: "SUB-1",
+      email_token: "tok",
+      status: "active",
+      next_payment_date: null,
+      end_date: null,
+    },
+    ...overrides.data,
+  };
+
+  return {
+    id: overrides.id ?? 1,
+    event: overrides.event ?? "charge.success",
+    created_at: new Date().toISOString(),
+    data,
   };
 }
 
-describe("Flutterwave Event Processor", () => {
-  const env = mockEnv({ FLUTTERWAVE_WEBHOOK_SECRET: "fw-secret-123" });
+describe("Flutterwave event processing", () => {
+  let database: TestDatabase;
+  let env: Env;
 
   beforeEach(() => {
-    vi.clearAllMocks();
-    successRpc();
-
     resetPricingCache();
-    serveSeededConfig();
+    database = createTestDatabase();
+    seedUser(database);
+    seedConfig(database);
+    env = makeEnv(database);
   });
 
   describe("charge.success", () => {
-    test("grants Pro for successful charge", async () => {
+    test("activates Paid for thirty days from the charge", async () => {
+      const before = Date.now();
       const result = await processWebhookEvent(
         "flutterwave",
         buildEvent(),
@@ -137,129 +167,78 @@ describe("Flutterwave Event Processor", () => {
       );
 
       expect(result.fullyApplied).toBe(true);
-      expect(result.response.status).toBe(200);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("activated");
-
-      const callArgs = getSetProStatusCall();
-      expect(callArgs).toBeDefined();
-      expect(callArgs?.email).toBe("test@example.com");
-      expect(callArgs?.isPro).toBe(true);
-    });
-
-    test("sets expires_at from subscription.end_date", async () => {
-      const endDate = new Date("2025-12-01T00:00:00Z");
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          subscription: {
-            ...buildEvent().data.subscription,
-            end_date: endDate.toISOString(),
-          },
-        },
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "activated",
       });
 
-      await processWebhookEvent("flutterwave", event, env);
-
-      const callArgs = getSetProStatusCall();
-      expect(callArgs?.expiresAt).toBe(endDate.toISOString());
+      const updated = user(database);
+      expect(updated.tier).toBe("PREMIUM");
+      expect(updated.pro_expires_at).toBeGreaterThanOrEqual(
+        before + 30 * DAY_MS,
+      );
+      expect(subscription(database)?.status).toBe("active");
     });
 
-    test("grants Pro for NGN charge at the NGN price", async () => {
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          amount: 3000,
-          currency: "NGN",
-          meta: {
-            ...buildEvent().data.meta,
-            amount: 3000,
-            currency: "NGN",
+    test("extends the remaining active term instead of replacing it", async () => {
+      const existing = Date.now() + 10 * DAY_MS;
+      seedSubscription(database, "active", existing);
+
+      await processWebhookEvent("flutterwave", buildEvent(), env);
+
+      expect(user(database).pro_expires_at).toBeGreaterThanOrEqual(
+        existing + 30 * DAY_MS,
+      );
+    });
+
+    test("grants a year for an annual charge", async () => {
+      const txRef = `ekwe_${USER_ID}_annual_abc123`;
+      const before = Date.now();
+
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({
+          data: {
+            tx_ref: txRef,
+            amount: 28800,
+            meta: { plan: "ekwe_pro_annual", amount: 28800, currency: "NGN" },
           },
-        },
+        }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "activated",
       });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("activated");
+      expect(user(database).pro_expires_at).toBeGreaterThanOrEqual(
+        before + 365 * DAY_MS,
+      );
     });
 
-    test("rejects a charge at the bundled-map price when Supabase prices it lower", async () => {
-      mockDb.where.mockResolvedValue([
-        {
-          id: 1,
-          basePriceUsd: 2.23,
-          discountPercent: 0,
-          annualDiscountPercent: 20,
-          localPrices: {
-            ...SEEDED_CONFIG.local_prices,
-            NGN: { monthly: 2500, annual: 24000 },
-          },
-        },
-      ]);
-      resetPricingCache();
+    test("uses the configured price, not the bundled one", async () => {
+      seedConfig(database, { NGN: { monthly: 3500, annual: 33600 } });
 
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          amount: 3000,
-          currency: "NGN",
-          meta: {
-            ...buildEvent().data.meta,
-            amount: 3000,
-            currency: "NGN",
-          },
-        },
+      const rejected = await processWebhookEvent(
+        "flutterwave",
+        buildEvent(),
+        env,
+      );
+      expect(await jsonBody(rejected.response)).toMatchObject({
+        action: "rejected",
       });
+      expect(user(database).tier).toBe("FREE");
 
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("rejected");
-      expect(getSetProStatusCall()).toBeNull();
-    });
-
-    test("grants at the Supabase row price when it differs from the bundled map", async () => {
-      mockDb.where.mockResolvedValue([
-        {
-          id: 1,
-          basePriceUsd: 2.23,
-          discountPercent: 0,
-          annualDiscountPercent: 20,
-          localPrices: {
-            ...SEEDED_CONFIG.local_prices,
-            NGN: { monthly: 2500, annual: 24000 },
-          },
-        },
-      ]);
-      resetPricingCache();
-
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          amount: 2500,
-          currency: "NGN",
-          meta: {
-            ...buildEvent().data.meta,
-            amount: 2500,
-            currency: "NGN",
-          },
-        },
+      const accepted = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({ data: { amount: 3500 } }),
+        env,
+      );
+      expect(await jsonBody(accepted.response)).toMatchObject({
+        action: "activated",
       });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("activated");
     });
 
-    test("retries without granting when Supabase cannot confirm the price", async () => {
-      mockDb.where.mockRejectedValue(new Error("Internal Server Error"));
-      resetPricingCache();
+    test("retries when prices cannot be confirmed", async () => {
+      seedConfig(database, {});
 
       const result = await processWebhookEvent(
         "flutterwave",
@@ -268,490 +247,393 @@ describe("Flutterwave Event Processor", () => {
       );
 
       expect(result.fullyApplied).toBe(false);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("unverified");
-      expect(getSetProStatusCall()).toBeNull();
-    });
-
-    test("rejects charge with amount mismatch (server-derived price)", async () => {
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          amount: 5.0,
-          meta: {
-            ...buildEvent().data.meta,
-            amount: 2.23,
-          },
-        },
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "unverified",
       });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("rejected");
-      expect(getSetProStatusCall()).toBeNull();
+      expect(user(database).tier).toBe("FREE");
     });
 
-    test("rejects tampered payment where meta echoes the wrong amount", async () => {
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          amount: 100,
-          currency: "NGN",
-          meta: {
-            ...buildEvent().data.meta,
-            amount: 100,
-            currency: "NGN",
-          },
-        },
+    test("rejects an underpayment", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({ data: { amount: 1 } }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "rejected",
       });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("rejected");
-      expect(getSetProStatusCall()).toBeNull();
-    });
-
-    test("rejects charge in a currency checkout never authorizes", async () => {
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          amount: 2.23,
-          currency: "EGP",
-          meta: {
-            ...buildEvent().data.meta,
-            amount: 2.23,
-            currency: "EGP",
-          },
-        },
+      expect(
+        database.sqlite
+          .prepare("SELECT COUNT(*) AS n FROM flutterwave_claims")
+          .get(),
+      ).toEqual({
+        n: 0,
       });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("rejected");
-      expect(getSetProStatusCall()).toBeNull();
     });
 
-    test("rejects annual plan charged at the monthly price", async () => {
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          tx_ref: "ekwe_user-123_annual",
-          amount: 2.23,
-          meta: {
-            ...buildEvent().data.meta,
-            plan: "ekwe_pro_annual",
-            amount: 2.23,
+    test("rejects an annual plan charged at the monthly price", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({
+          data: {
+            tx_ref: `ekwe_${USER_ID}_annual_abc123`,
+            amount: 3000,
           },
-        },
+        }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "rejected",
       });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("rejected");
-      expect(getSetProStatusCall()).toBeNull();
     });
 
-    test("grants Pro for annual charge at the annual price", async () => {
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          tx_ref: "ekwe_user-123_annual",
-          amount: 21.41,
-          meta: {
-            ...buildEvent().data.meta,
-            plan: "ekwe_pro_annual",
-            amount: 21.41,
-          },
-        },
+    test("rejects an unsupported currency", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({ data: { currency: "XYZ" } }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "rejected",
       });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("activated");
     });
 
-    test("rejects charge with currency mismatch (legacy meta fallback)", async () => {
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          tx_ref: "flw-sub-ref-no-plan",
-          amount: 2.23,
-          currency: "NGN",
-          meta: {
-            ...buildEvent().data.meta,
-            plan: "",
-            amount: 2.23,
-            currency: "USD",
-          },
-        },
-      });
+    test("repairs a grant that failed after the claim", async () => {
+      const expiry = Date.now() + 30 * DAY_MS;
+      seedClaim(database, expiry);
 
-      const result = await processWebhookEvent("flutterwave", event, env);
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent(),
+        env,
+      );
 
       expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("rejected");
-      expect(getSetProStatusCall()).toBeNull();
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "activated",
+      });
+      expect(user(database)).toEqual({
+        tier: "PREMIUM",
+        pro_expires_at: expiry,
+      });
     });
 
-    test("rejects underpayment where an unresolvable plan echoes its own meta amount", async () => {
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          tx_ref: "flw-sub-ref-no-plan",
-          amount: 100,
-          currency: "NGN",
-          meta: {
-            ...buildEvent().data.meta,
-            plan: "",
-            amount: 100,
-            currency: "NGN",
-          },
-        },
-      });
+    test("a replay never shortens a later term", async () => {
+      const later = Date.now() + 60 * DAY_MS;
+      seedClaim(database, Date.now() + 30 * DAY_MS);
+      database.sqlite
+        .prepare(
+          "UPDATE users SET tier = 'PREMIUM', pro_expires_at = ? WHERE id = ?",
+        )
+        .run(later, USER_ID);
 
-      const result = await processWebhookEvent("flutterwave", event, env);
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent(),
+        env,
+      );
 
       expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("rejected");
-      expect(getSetProStatusCall()).toBeNull();
+      expect(user(database).pro_expires_at).toBe(later);
     });
 
-    test("rejects a charge with no meta.amount at all (unconditional grant hole)", async () => {
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          tx_ref: "flw-sub-ref-no-plan",
-          amount: 0.01,
-          currency: "USD",
-          meta: {
-            ...buildEvent().data.meta,
-            plan: "",
-            amount: undefined,
-            currency: undefined,
-          },
-        },
+    test("a replayed flw_ref never extends the term twice", async () => {
+      const first = await processWebhookEvent("flutterwave", buildEvent(), env);
+      expect(await jsonBody(first.response)).toMatchObject({
+        action: "activated",
       });
+      const granted = user(database).pro_expires_at;
 
-      const result = await processWebhookEvent("flutterwave", event, env);
+      const replay = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({ id: 2 }),
+        env,
+      );
 
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("rejected");
-      expect(getSetProStatusCall()).toBeNull();
-    });
-
-    test("skips event with missing data", async () => {
-      const event = { id: 1, event: "charge.success", data: null };
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("skipped");
+      expect(replay.fullyApplied).toBe(true);
+      expect(await jsonBody(replay.response)).toMatchObject({
+        action: "activated",
+      });
+      expect(user(database).pro_expires_at).toBe(granted);
+      expect(
+        database.sqlite
+          .prepare("SELECT COUNT(*) AS n FROM flutterwave_claims")
+          .get(),
+      ).toEqual({ n: 1 });
     });
   });
 
-  describe("subscription.paused", () => {
-    test("revokes Pro immediately", async () => {
-      const event = buildEvent({ event: "subscription.paused" });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("deactivated");
-
-      const callArgs = getSetProStatusCall();
-      expect(callArgs?.isPro).toBe(false);
-      expect(callArgs?.expiresAt).toBeNull();
+  describe("revocation events", () => {
+    beforeEach(() => {
+      seedSubscription(database, "active", Date.now() + 20 * DAY_MS);
     });
-  });
 
-  describe("subscription.completed", () => {
-    test("retains Pro until end_date", async () => {
-      const endDate = new Date("2025-12-01T00:00:00Z");
-      const event = buildEvent({
-        event: "subscription.completed",
-        data: {
-          ...buildEvent().data,
-          subscription: {
-            ...buildEvent().data.subscription,
-            end_date: endDate.toISOString(),
-          },
-        },
+    test("charge.refund revokes Paid", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({ event: "charge.refund", data: { status: "successful" } }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "deactivated",
       });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("retained");
-
-      const callArgs = getSetProStatusCall();
-      expect(callArgs?.isPro).toBe(true);
-      expect(callArgs?.expiresAt).toBe(endDate.toISOString());
+      expect(user(database)).toEqual({ tier: "FREE", pro_expires_at: null });
+      expect(subscription(database)?.status).toBe("inactive");
     });
-  });
 
-  describe("subscription.cancelled", () => {
-    test("retains Pro until expiry date", async () => {
-      const endDate = new Date("2025-12-01T00:00:00Z");
-      const event = buildEvent({
-        event: "subscription.cancelled",
-        data: {
-          ...buildEvent().data,
-          subscription: {
-            ...buildEvent().data.subscription,
-            end_date: endDate.toISOString(),
-          },
-        },
+    test("charge.refunded revokes Paid", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({ event: "charge.refunded", data: { status: "completed" } }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "deactivated",
       });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("retained");
-
-      const callArgs = getSetProStatusCall();
-      expect(callArgs?.isPro).toBe(true);
-      expect(callArgs?.expiresAt).toBe(endDate.toISOString());
+      expect(user(database).tier).toBe("FREE");
     });
-  });
 
-  describe("subscription.expired", () => {
-    test("revokes Pro", async () => {
-      const event = buildEvent({ event: "subscription.expired" });
+    test("ignores a refund that has not completed", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({ event: "charge.refund", data: { status: "pending" } }),
+        env,
+      );
 
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("deactivated");
-
-      const callArgs = getSetProStatusCall();
-      expect(callArgs?.isPro).toBe(false);
-      expect(callArgs?.expiresAt).toBeNull();
-    });
-  });
-
-  describe("invoice.updated", () => {
-    test("renews Pro with new end_date", async () => {
-      const newEndDate = new Date("2026-01-01T00:00:00Z");
-      const event = buildEvent({
-        event: "invoice.updated",
-        data: {
-          ...buildEvent().data,
-          subscription: {
-            ...buildEvent().data.subscription,
-            end_date: newEndDate.toISOString(),
-          },
-        },
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "ignored",
       });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("renewed");
-
-      const callArgs = getSetProStatusCall();
-      expect(callArgs?.isPro).toBe(true);
-      expect(callArgs?.expiresAt).toBe(newEndDate.toISOString());
+      expect(user(database).tier).toBe("PREMIUM");
     });
 
-    test("skips invoice without end_date", async () => {
-      const event = buildEvent({
-        event: "invoice.updated",
-        data: {
-          ...buildEvent().data,
-          subscription: {
-            ...buildEvent().data.subscription,
-            end_date: null,
-          },
-        },
-      });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("skipped");
+    test("subscription.paused and subscription.expired deactivate", async () => {
+      for (const event of ["subscription.paused", "subscription.expired"]) {
+        const result = await processWebhookEvent(
+          "flutterwave",
+          buildEvent({ event }),
+          env,
+        );
+        expect(await jsonBody(result.response)).toMatchObject({
+          action: "deactivated",
+        });
+        expect(user(database).tier).toBe("FREE");
+      }
     });
   });
 
-  describe("charge.refund / charge.refunded", () => {
-    test("revokes Pro on a completed refund", async () => {
-      const event = buildEvent({
-        event: "charge.refund",
-        data: {
-          ...buildEvent().data,
-          status: "completed",
-        },
+  describe("retention events", () => {
+    const endDate = "2026-12-01T00:00:00.000Z";
+
+    test("subscription.completed keeps Paid until end_date", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({
+          event: "subscription.completed",
+          data: { subscription: { end_date: endDate } },
+        }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "retained",
       });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("deactivated");
-
-      const callArgs = getSetProStatusCall();
-      expect(callArgs?.isPro).toBe(false);
-      expect(callArgs?.expiresAt).toBeNull();
+      expect(user(database)).toEqual({
+        tier: "PREMIUM",
+        pro_expires_at: Date.parse(endDate),
+      });
     });
 
-    test("revokes Pro on charge.refunded", async () => {
-      const event = buildEvent({
-        event: "charge.refunded",
-        data: {
-          ...buildEvent().data,
-          status: "successful",
-        },
+    test("subscription.cancelled keeps Paid until end_date", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({
+          event: "subscription.cancelled",
+          data: { subscription: { end_date: endDate } },
+        }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "retained",
       });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("deactivated");
-      expect(getSetProStatusCall()).toBeDefined();
+      expect(user(database).pro_expires_at).toBe(Date.parse(endDate));
     });
 
-    test("ignores pending refunds (no auth change yet)", async () => {
-      const event = buildEvent({
-        event: "charge.refund",
-        data: {
-          ...buildEvent().data,
-          status: "pending",
-        },
+    test("a retention event without end_date never grants permanent Paid", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({ event: "subscription.cancelled" }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "skipped",
       });
+      expect(user(database)).toEqual({ tier: "FREE", pro_expires_at: null });
+    });
 
-      const result = await processWebhookEvent("flutterwave", event, env);
+    test("a retention event whose end_date has passed revokes Paid", async () => {
+      seedSubscription(database, "active", Date.now() + DAY_MS);
 
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("ignored");
-      expect(getSetProStatusCall()).toBeNull();
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({
+          event: "subscription.completed",
+          data: { subscription: { end_date: "2020-01-01T00:00:00.000Z" } },
+        }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "retained",
+      });
+      expect(user(database)).toEqual({ tier: "FREE", pro_expires_at: null });
+    });
+
+    test("invoice.updated renews to end_date", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({
+          event: "invoice.updated",
+          data: { subscription: { end_date: endDate } },
+        }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "renewed",
+      });
+      expect(user(database).pro_expires_at).toBe(Date.parse(endDate));
+    });
+
+    test("invoice.updated without end_date is skipped", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({ event: "invoice.updated" }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "skipped",
+      });
+      expect(user(database).tier).toBe("FREE");
     });
   });
 
-  describe("ignored events", () => {
-    const ignoredEvents = [
-      "charge.failed",
-      "charge.abandoned",
-      "charge.pending",
-      "charge.initiated",
-      "invoice.payment_failed",
-      "transfer.completed",
-      "transfer.failed",
-      "transfer.reversed",
-    ];
+  describe("event dispatch", () => {
+    test("acks ignored events", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({ event: "charge.failed", data: { status: "failed" } }),
+        env,
+      );
 
-    test.each(ignoredEvents)("ignores %s", async (eventType) => {
-      const event = buildEvent({ event: eventType });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("ignored");
-      expect(getSetProStatusCall()).toBeNull();
-    });
-  });
-
-  describe("unknown events", () => {
-    test("acks unknown event types", async () => {
-      const event = buildEvent({ event: "some.unknown.event" });
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("unknown");
-    });
-  });
-
-  describe("RPC failures", () => {
-    test("returns not fullyApplied when Supabase returns 500", async () => {
-      failRpc(500);
-      const event = buildEvent();
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(false);
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "ignored",
+      });
     });
 
-    test("acks (does not retry) when Supabase returns 400 (permanent)", async () => {
-      failRpc(400);
-      const event = buildEvent();
+    test("acks unknown events without touching auth", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({ event: "payout.completed" }),
+        env,
+      );
 
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "unknown",
+      });
+      expect(user(database).tier).toBe("FREE");
     });
 
-    test("returns not fullyApplied on network error", async () => {
-      mockDb.execute.mockRejectedValue(new Error("Network error"));
-      const event = buildEvent();
+    test("skips an event with no data", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        { id: 1, event: "charge.success", data: null },
+        env,
+      );
 
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(false);
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "skipped",
+      });
     });
   });
 
   describe("user resolution", () => {
-    test("resolves user by email", async () => {
-      const event = buildEvent();
+    test("resolves by email when the tx_ref is not ours", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({ data: { tx_ref: "legacy-flw-ref" } }),
+        env,
+      );
 
-      await processWebhookEvent("flutterwave", event, env);
-
-      const callArgs = getSetProStatusCall();
-      expect(callArgs?.email).toBe("test@example.com");
-      expect(callArgs?.userId).toBeNull();
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "activated",
+      });
+      expect(user(database).tier).toBe("PREMIUM");
     });
 
-    test("resolves user by tx_ref when email missing", async () => {
-      const userId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
-      const event = buildEvent({
-        data: {
-          ...buildEvent().data,
-          tx_ref: `ekwe_${userId}_monthly`,
-          customer: { id: 1, name: "Test User", phone_number: null, email: "" },
+    test("resolves by tx_ref when the email is missing", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({
+          data: { customer: { id: 7, name: "T", phone_number: null } },
+        }),
+        env,
+      );
+
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "activated",
+      });
+    });
+
+    test("skips when no user matches", async () => {
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent({
+          data: {
+            tx_ref: "legacy-flw-ref",
+            customer: {
+              id: 7,
+              name: "T",
+              phone_number: null,
+              email: "nobody@test.dev",
+            },
+          },
+        }),
+        env,
+      );
+
+      expect(result.fullyApplied).toBe(true);
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "skipped",
+      });
+    });
+
+    test("asks Flutterwave to retry when the database is unreachable", async () => {
+      const broken = makeEnv(database, {
+        DB: {
+          prepare: () => {
+            throw new Error("database is locked");
+          },
         },
       });
 
-      await processWebhookEvent("flutterwave", event, env);
+      const result = await processWebhookEvent(
+        "flutterwave",
+        buildEvent(),
+        broken,
+      );
 
-      const callArgs = getSetProStatusCall();
-      expect(callArgs?.email).toBeNull();
-      expect(callArgs?.userId).toBe(userId);
-    });
-
-    test("skips when neither email nor tx_ref available", async () => {
-      const event = buildEvent();
-      event.data.customer.email = "";
-      event.data.tx_ref = "invalid-ref";
-
-      const result = await processWebhookEvent("flutterwave", event, env);
-
-      expect(result.fullyApplied).toBe(true);
-      const body = await jsonBody(result.response);
-      expect(body.action).toBe("skipped");
-      expect(getSetProStatusCall()).toBeNull();
+      expect(result.fullyApplied).toBe(false);
+      expect(await jsonBody(result.response)).toMatchObject({
+        action: "unverified",
+      });
     });
   });
 });

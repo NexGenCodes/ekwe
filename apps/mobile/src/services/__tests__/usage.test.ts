@@ -1,131 +1,125 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/services/backend", () => {
+  class ApiError extends Error {
+    readonly status: number;
+    readonly code: string;
+
+    constructor(status: number, code: string, message?: string) {
+      super(message ?? code);
+      this.name = "ApiError";
+      this.status = status;
+      this.code = code;
+    }
+  }
+
+  return {
+    ApiError,
+    apiJson: vi.fn(),
+    isApiError: vi.fn((err: unknown) => err instanceof ApiError),
+  };
+});
+
+import { apiJson, ApiError } from "@/services/backend";
 import { fetchUsage } from "@/services/usage";
-
-const getSessionMock = vi.hoisted(() => vi.fn());
-
-vi.mock("@/services/supabase", () => ({
-  supabase: { auth: { getSession: getSessionMock } },
-}));
-
-vi.mock("@/utils/http", () => ({
-  getWorkerUrl: vi.fn(() => "https://worker.test"),
-  fetchWithRetry: vi.fn(),
-  isTimeoutError: vi.fn(() => false),
-}));
-
-import { fetchWithRetry, getWorkerUrl, isTimeoutError } from "@/utils/http";
 
 const validSnapshot = {
   day: "2026-09-17",
   resetsAt: 1729200000000,
+  month: "2026-09",
+  monthResetsAt: 1729200000000,
   meters: [
     {
       id: "translate",
-      label: "Translations",
+      label: "Translation",
       unit: "requests",
       used: 1,
-      total: 10,
-      remaining: 9,
+      total: 600,
+      remaining: 599,
     },
     {
       id: "transcribe",
-      label: "Transcriptions",
-      unit: "requests",
+      label: "Transcription",
+      unit: "min",
       used: 0,
-      total: 3,
-      remaining: 3,
+      total: 60,
+      remaining: 60,
     },
     {
       id: "speech",
       label: "Speech",
-      unit: "characters",
+      unit: "chars",
       used: 2,
-      total: 5,
-      remaining: 3,
+      total: 60_000,
+      remaining: 59_998,
+    },
+    {
+      id: "budget",
+      label: "Shared AI budget",
+      unit: "credits",
+      used: 1,
+      total: 1_300,
+      remaining: 1_299,
     },
   ],
 };
 
-const jsonResponse = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-
 beforeEach(() => {
-  vi.mocked(getWorkerUrl).mockReturnValue("https://worker.test");
-  vi.mocked(getSessionMock).mockReset();
-  getSessionMock.mockResolvedValue({ data: { session: null }, error: null });
-  vi.mocked(fetchWithRetry).mockReset();
-  vi.mocked(isTimeoutError).mockReturnValue(false);
+  vi.clearAllMocks();
 });
 
 describe("fetchUsage", () => {
-  it("returns an error when no worker URL is configured", async () => {
-    vi.mocked(getWorkerUrl).mockReturnValue("");
-    const result = await fetchUsage();
-    expect(result).toEqual({ ok: false, error: "Worker URL not configured" });
-    expect(fetchWithRetry).not.toHaveBeenCalled();
-  });
+  it("fetches and validates the snapshot", async () => {
+    vi.mocked(apiJson).mockResolvedValue(validSnapshot as never);
 
-  it("fetches without an Authorization header when signed out", async () => {
-    vi.mocked(fetchWithRetry).mockResolvedValue(jsonResponse(validSnapshot));
     const result = await fetchUsage();
+
     expect(result).toEqual({ ok: true, value: validSnapshot });
-    expect(fetchWithRetry).toHaveBeenCalledWith("https://worker.test/usage", {
-      method: "GET",
-      headers: {},
-      retries: 1,
-      timeout: 15000,
-    });
-  });
-
-  it("sends the session token when signed in", async () => {
-    getSessionMock.mockResolvedValue({
-      data: { session: { access_token: "token-123" } },
-      error: null,
-    });
-    vi.mocked(fetchWithRetry).mockResolvedValue(jsonResponse(validSnapshot));
-    await fetchUsage();
-    expect(fetchWithRetry).toHaveBeenCalledWith(
-      "https://worker.test/usage",
-      expect.objectContaining({
-        headers: { Authorization: "Bearer token-123" },
-      }),
+    expect(apiJson).toHaveBeenCalledWith(
+      "/usage",
+      expect.objectContaining({ retries: 1 }),
     );
   });
 
   it("surfaces a non-ok server response", async () => {
-    vi.mocked(fetchWithRetry).mockResolvedValue(
-      new Response("boom", { status: 500 }),
-    );
+    vi.mocked(apiJson).mockRejectedValue(new ApiError(500, "internal", "boom"));
+
     const result = await fetchUsage();
+
     expect(result).toEqual({ ok: false, error: "Server returned 500" });
   });
 
   it("rejects a payload that fails the shared schema", async () => {
-    vi.mocked(fetchWithRetry).mockResolvedValue(jsonResponse({ day: "nope" }));
+    vi.mocked(apiJson).mockResolvedValue({ day: "nope" } as never);
+
     const result = await fetchUsage();
+
     expect(result).toEqual({ ok: false, error: "Invalid usage payload" });
   });
 
   it("reports a timeout", async () => {
-    vi.mocked(fetchWithRetry).mockRejectedValue(new Error("timed out"));
-    vi.mocked(isTimeoutError).mockReturnValue(true);
+    const error = new Error("timed out");
+    error.name = "TimeoutError";
+    vi.mocked(apiJson).mockRejectedValue(error);
+
     const result = await fetchUsage();
+
     expect(result).toEqual({ ok: false, error: "Timed out" });
   });
 
   it("reports a generic network error", async () => {
-    vi.mocked(fetchWithRetry).mockRejectedValue(new Error("socket hang up"));
+    vi.mocked(apiJson).mockRejectedValue(new Error("socket hang up"));
+
     const result = await fetchUsage();
+
     expect(result).toEqual({ ok: false, error: "Network error" });
   });
 
   it("coerces a non-Error rejection", async () => {
-    vi.mocked(fetchWithRetry).mockRejectedValue("down");
+    vi.mocked(apiJson).mockRejectedValue("down");
+
     const result = await fetchUsage();
+
     expect(result).toEqual({ ok: false, error: "Network error" });
   });
 });

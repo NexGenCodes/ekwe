@@ -11,12 +11,12 @@ export type PaymentProvider =
 export const SUBSCRIPTION_PLANS = {
   MONTHLY: {
     id: "ekwe_pro_monthly",
-    name: "Ekwe Pro Monthly",
+    name: "Ekwe Paid Monthly",
     duration: "monthly" as const,
   },
   ANNUAL: {
     id: "ekwe_pro_annual",
-    name: "Ekwe Pro Annual",
+    name: "Ekwe Paid Annual",
     duration: "annual" as const,
   },
 } as const;

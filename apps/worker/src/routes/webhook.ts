@@ -113,14 +113,14 @@ async function claimIdempotency(
     return "ok";
   }
   try {
-    const now = Math.floor(Date.now() / 1000);
+    const now = Date.now();
     const { meta } = await db
       .prepare(
         `INSERT INTO webhook_idempotency (idempotency_key, created_at, expires_at)
          VALUES (?, ?, ?)
          ON CONFLICT(idempotency_key) DO NOTHING`,
       )
-      .bind(key, now, now + expirationTtlSeconds)
+      .bind(key, now, now + expirationTtlSeconds * 1000)
       .run();
     return (meta.changes ?? 0) > 0 ? "ok" : "duplicate";
   } catch (e) {
@@ -246,7 +246,7 @@ export async function handleWebhook(
     extractIdempotencyKey(event) ?? `webhook:hash:${await hashKey(rawBody)}`;
 
   const claimed = await claimIdempotency(
-    env.EKWE_D1,
+    env.DB,
     idempotencyKey,
     IDEMPOTENCY_TTL,
   );
@@ -276,7 +276,7 @@ export async function handleWebhook(
   );
 
   if (!fullyApplied) {
-    await releaseIdempotency(env.EKWE_D1, idempotencyKey);
+    await releaseIdempotency(env.DB, idempotencyKey);
     logger.warn(
       "[webhook] Event not fully applied; returning 500 so the provider retries",
     );

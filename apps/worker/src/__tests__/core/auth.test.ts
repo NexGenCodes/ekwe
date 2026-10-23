@@ -1,95 +1,117 @@
-import { describe, test, expect, vi, beforeEach } from "vitest";
-import { authenticate } from "@/core/auth";
-import { mockEnv } from "@/__tests__/setup";
+import { describe, expect, test, vi } from "vitest";
+import { exportJWK, generateKeyPair } from "jose";
+import type { Env } from "@/core/types";
+import { authenticate, isAdminAuthorized } from "@/core/auth";
+import { mintAccessToken } from "@/auth/jwt";
 
-vi.mock("jose", () => ({
-  jwtVerify: vi.fn(),
-  createRemoteJWKSet: vi.fn(() => vi.fn()),
-}));
-
-function mockJwt(payload: Record<string, unknown>): void {
-  vi.mocked(jwtVerify).mockResolvedValue({
-    payload,
-    protectedHeader: { alg: "HS256" },
+async function makeEnv(): Promise<Env> {
+  const { privateKey, publicKey } = await generateKeyPair("EdDSA", {
+    crv: "Ed25519",
+    extractable: true,
   });
+
+  return {
+    JWT_ISSUER: "https://ekwe.test",
+    JWT_PRIVATE_JWK: JSON.stringify(await exportJWK(privateKey)),
+    JWT_PUBLIC_JWK: JSON.stringify(await exportJWK(publicKey)),
+  } as unknown as Env;
 }
 
-import { jwtVerify } from "jose";
+const CLAIMS = {
+  userId: "user-123",
+  email: "user@example.com",
+  sessionId: "session-abc",
+  isPro: false,
+};
 
 describe("authenticate()", () => {
-  const env = mockEnv();
+  test("round-trips a FREE token", async () => {
+    const env = await makeEnv();
+    const { token } = await mintAccessToken(env, CLAIMS);
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  test("returns AuthResult with FREE tier for non-pro user", async () => {
-    mockJwt({
-      sub: "user-123",
-      email: "user@example.com",
-      app_metadata: { is_pro: false },
+    const result = await authenticate(token, env);
+    expect(result).toEqual({
+      userId: "user-123",
+      userEmail: "user@example.com",
+      tier: "FREE",
+      sessionId: "session-abc",
     });
-
-    const result = await authenticate("valid-token", env);
-    expect(result).not.toBeNull();
-    expect(result!.userId).toBe("user-123");
-    expect(result!.userEmail).toBe("user@example.com");
-    expect(result!.tier).toBe("FREE");
   });
 
-  test("returns AuthResult with PREMIUM tier for pro user", async () => {
-    mockJwt({
-      sub: "user-456",
-      email: "pro@example.com",
-      app_metadata: { is_pro: true },
-    });
+  test("maps is_pro to the PREMIUM tier", async () => {
+    const env = await makeEnv();
+    const { token } = await mintAccessToken(env, { ...CLAIMS, isPro: true });
 
-    const result = await authenticate("pro-token", env);
-    expect(result).not.toBeNull();
-    expect(result!.tier).toBe("PREMIUM");
+    const result = await authenticate(token, env);
+    expect(result?.tier).toBe("PREMIUM");
   });
 
-  test("returns null when payload has no sub claim", async () => {
-    mockJwt({ email: "no-sub@example.com" });
+  test("rejects a token signed by a different key", async () => {
+    const env = await makeEnv();
+    const other = await makeEnv();
+    const { token } = await mintAccessToken(other, CLAIMS);
 
-    const result = await authenticate("no-sub-token", env);
-    expect(result).toBeNull();
+    expect(await authenticate(token, env)).toBeNull();
   });
 
-  test("returns null when jwtVerify throws (invalid/expired token)", async () => {
-    vi.mocked(jwtVerify).mockRejectedValue(new Error("jwt malformed"));
-
-    const result = await authenticate("bad-token", env);
-    expect(result).toBeNull();
-  });
-
-  test("handles missing email gracefully as empty string", async () => {
-    mockJwt({
-      sub: "user-no-email",
-      app_metadata: { is_pro: false },
-    });
-
-    const result = await authenticate("no-email-token", env);
-    expect(result).not.toBeNull();
-    expect(result!.userEmail).toBe("");
-  });
-
-  test("jwtVerify called with correct issuer and audience", async () => {
-    mockJwt({
-      sub: "user-999",
-      email: "check@example.com",
-      app_metadata: { is_pro: false },
-    });
-
-    await authenticate("check-token", env);
-
-    expect(jwtVerify).toHaveBeenCalledWith(
-      "check-token",
-      expect.any(Function),
-      {
-        issuer: "https://mock.supabase.co/auth/v1",
-        audience: "authenticated",
-      },
+  test("rejects a token from another issuer", async () => {
+    const env = await makeEnv();
+    const { token } = await mintAccessToken(
+      { ...env, JWT_ISSUER: "https://attacker.test" } as unknown as Env,
+      CLAIMS,
     );
+
+    expect(await authenticate(token, env)).toBeNull();
+  });
+
+  test("rejects an expired token", async () => {
+    const env = await makeEnv();
+    const { token } = await mintAccessToken(env, CLAIMS);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(Date.now() + 31 * 60 * 1000));
+      expect(await authenticate(token, env)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("rejects malformed input", async () => {
+    const env = await makeEnv();
+    expect(await authenticate("not-a-jwt", env)).toBeNull();
+  });
+});
+
+describe("isAdminAuthorized()", () => {
+  const env = { UPDATE_NOTIFY_SECRET: "s3cret" } as unknown as Env;
+
+  test("accepts the configured bearer token", async () => {
+    const request = new Request("https://ekwe.test/admin", {
+      headers: { Authorization: "Bearer s3cret" },
+    });
+    expect(await isAdminAuthorized(env, request)).toBe(true);
+  });
+
+  test("rejects a wrong or missing token", async () => {
+    expect(
+      await isAdminAuthorized(
+        env,
+        new Request("https://ekwe.test/admin", {
+          headers: { Authorization: "Bearer nope" },
+        }),
+      ),
+    ).toBe(false);
+
+    expect(
+      await isAdminAuthorized(env, new Request("https://ekwe.test/admin")),
+    ).toBe(false);
+  });
+
+  test("rejects everything when no secret is configured", async () => {
+    const request = new Request("https://ekwe.test/admin", {
+      headers: { Authorization: "Bearer s3cret" },
+    });
+    expect(await isAdminAuthorized({} as Env, request)).toBe(false);
   });
 });

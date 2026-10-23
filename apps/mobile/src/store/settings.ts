@@ -155,7 +155,7 @@ export const settingsActions = {
     settings$.onboardingCompleted.set(val);
   },
   setAutoCopy: (val: boolean): void => {
-    // Pro-only: keep the observable itself from holding an unauthorized `true`,
+    // Paid-only: keep the observable itself from holding an unauthorized `true`,
     // which the Echo flow, result screen and share extension all trust.
     const next = val && isAutoCopyAllowed();
     settings$.autoCopy.set(next);

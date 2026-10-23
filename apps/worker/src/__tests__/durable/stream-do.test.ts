@@ -162,7 +162,7 @@ describe("StreamDurableObject", () => {
   });
 
   it("rejects audio that exceeds the tier byte limit", async () => {
-    // PREMIUM: streaming is Pro-only, so FREE can never hold a session to
+    // PREMIUM: streaming is Paid-only, so FREE can never hold a session to
     // push bytes through.
     const { ws, messages, closes } = await openSession(
       "too-big",

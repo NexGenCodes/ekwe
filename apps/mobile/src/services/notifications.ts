@@ -4,10 +4,10 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
 import logger from "@/utils/logger";
-import { fetchWithRetry, getWorkerUrl } from "@/utils/http";
+import { apiJson, isApiError } from "@/services/backend";
 import type { RegisterPushTokenRequest } from "@ekwe/shared";
 
-import { getToken } from "@/store/auth";
+import { auth$ } from "@/store/auth";
 
 const UPDATE_CHANNEL_ID = "updates";
 const UPDATE_CHANNEL_NAME = "App Updates";
@@ -23,13 +23,12 @@ Notifications.setNotificationHandler({
 });
 
 async function storePushToken(pushToken: string): Promise<void> {
-  try {
-    const workerUrl = getWorkerUrl();
-    if (!workerUrl) {
-      logger.warn("[Notifications] No worker URL — push token not stored");
-      return;
-    }
+  if (!auth$.session.peek()) {
+    logger.info("[Notifications] No session — push token not stored");
+    return;
+  }
 
+  try {
     const version = Constants.expoConfig?.version ?? "unknown";
 
     const body: RegisterPushTokenRequest = {
@@ -38,31 +37,17 @@ async function storePushToken(pushToken: string): Promise<void> {
       app_version: version,
     };
 
-    const token = getToken();
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
-    const response = await fetchWithRetry(`${workerUrl}/devices/token`, {
+    await apiJson("/devices/token", {
       method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      retryOnHttpResponse: false,
-      timeout: 10_000,
+      body,
+      timeoutMs: 10_000,
+      retries: 1,
     });
-
-    if (!response.ok) {
-      const text = await response.text();
-      logger.warn(
-        "[Notifications] Failed to store push token:",
-        response.status,
-        text,
-      );
-    }
   } catch (error) {
+    if (isApiError(error) && error.status === 401) {
+      logger.info("[Notifications] Push token not stored: signed out");
+      return;
+    }
     logger.warn(
       "[Notifications] Failed to store push token (non-blocking):",
       error,

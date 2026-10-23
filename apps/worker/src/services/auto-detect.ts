@@ -291,24 +291,24 @@ export async function detectTextLanguage(
   const local = detectLocal(input);
   if (local?.confident) {
     const key = `auto:${await hashKey(input)}`;
-    await d1PutLang(env.EKWE_D1, key, local.lang, CACHE_TTL);
+    await d1PutLang(env.DB, key, local.lang, CACHE_TTL);
     return local.lang;
   }
 
   const key = `auto:${await hashKey(input)}`;
-  const fromCache = await d1GetLang(env.EKWE_D1, key);
+  const fromCache = await d1GetLang(env.DB, key);
   if (fromCache) return fromCache;
 
   if (signal.aborted) return "";
 
   const remote = await detectWithWit(input, env, signal);
   if (remote) {
-    await d1PutLang(env.EKWE_D1, key, remote, CACHE_TTL);
+    await d1PutLang(env.DB, key, remote, CACHE_TTL);
     return remote;
   }
 
   if (local) {
-    await d1PutLang(env.EKWE_D1, key, local.lang, LOW_CONFIDENCE_CACHE_TTL);
+    await d1PutLang(env.DB, key, local.lang, LOW_CONFIDENCE_CACHE_TTL);
     return local.lang;
   }
 

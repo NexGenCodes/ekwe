@@ -1,6 +1,6 @@
 import { File, Paths, type Directory } from "expo-file-system";
 
-import type { Session } from "@supabase/supabase-js";
+import type { AuthSession } from "@/store/auth";
 
 import { isIOS } from "@/utils/platform";
 import logger from "@/utils/logger";
@@ -23,7 +23,7 @@ function containerGroup(): Directory | null {
 }
 
 export function mirrorSessionToSharedContainer(
-  session: Session | null,
+  session: AuthSession | null,
   prefs?: SharedPreferences,
 ): void {
   const dir = containerGroup();

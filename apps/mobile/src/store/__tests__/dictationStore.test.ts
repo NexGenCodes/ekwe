@@ -41,8 +41,13 @@ const auth = vi.hoisted(() => ({
   getToken: vi.fn(() => "test-token"),
 }));
 
+const backend = vi.hoisted(() => ({
+  ensureAccessToken: vi.fn(async () => "test-token" as string | null),
+}));
+
 const usage = vi.hoisted(() => ({
   invalidate: vi.fn(),
+  snapshot: undefined as unknown,
 }));
 
 const analytics = vi.hoisted(() => ({
@@ -66,9 +71,16 @@ vi.mock("@/store", () => ({
     Error: "error",
   },
 }));
-vi.mock("@/store/auth", () => ({ getToken: auth.getToken }));
+vi.mock("@/store/auth", () => ({
+  getToken: auth.getToken,
+  auth$: { isPro: { peek: () => true } },
+}));
+vi.mock("@/services/backend", () => ({
+  ensureAccessToken: backend.ensureAccessToken,
+}));
 vi.mock("@/hooks/queries/useUsageQuery", () => ({
   invalidateUsage: usage.invalidate,
+  usage$: { get: () => usage.snapshot },
 }));
 vi.mock("@/utils/analytics", () => ({
   AnalyticsEvents: {
@@ -95,12 +107,14 @@ vi.mock("expo-file-system", () => ({
 
 beforeEach(() => {
   dictation$.set({ ...INITIAL_STATE });
+  usage.snapshot = undefined;
   vi.clearAllMocks();
   capture.requestPermission.mockResolvedValue({ ok: true });
   capture.startRecording.mockResolvedValue({ ok: true });
   capture.stopRecording.mockResolvedValue({ ok: true, value: null });
   capture.cancelRecording.mockResolvedValue(undefined);
   capture.isRecording.mockReturnValue(true);
+  backend.ensureAccessToken.mockResolvedValue("test-token");
   batch.transcribe.mockResolvedValue({
     ok: true,
     value: { transcript: "hola mundo", detectedLang: "es", provider: "mock" },
@@ -180,6 +194,34 @@ describe("startDictation", () => {
       getToken: auth.getToken,
     });
     expect(capture.addPcmChunkListener).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks live mode when the monthly stream quota is exhausted", async () => {
+    usage.snapshot = {
+      day: "2026-10-22",
+      resetsAt: Date.now() + 60_000,
+      month: "2026-10",
+      monthResetsAt: Date.now() + 9 * 24 * 60 * 60_000,
+      meters: [
+        {
+          id: "stream",
+          label: "Live dictation",
+          unit: "min",
+          used: 60,
+          total: 60,
+          remaining: 0,
+        },
+      ],
+    };
+
+    await dictationActions.startDictation("fr", 60_000, true);
+
+    expect(stream.connect).not.toHaveBeenCalled();
+    expect(dictation$.status.peek()).toBe("error");
+    expect(dictation$.error.peek()).toBe(
+      ErrorMessages[EkweError.QUOTA_EXCEEDED],
+    );
+    expect(capture.cancelRecording).toHaveBeenCalled();
   });
 });
 

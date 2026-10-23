@@ -1,47 +1,334 @@
-import { WORKER_ERROR_CODES } from "@ekwe/shared";
-import { Env, Tier, UsageType } from "@/core/types";
+import {
+  WORKER_ERROR_CODES,
+  aiCreditsForUsage,
+  nextUtcMonthStartMs,
+  utcDay,
+  utcMonth,
+} from "@ekwe/shared";
+import type { Env, Tier, UsageType } from "@/core/types";
 import { getLimits } from "@/core/limits";
 import { logger } from "@/core/logger";
 import { recordUserEvent } from "@/utils/analytics";
-import { retryOnConnectionLoss } from "@/db/retry";
-import { sql } from "drizzle-orm";
+import { describeError, retryTransient } from "@/db/retry";
 
-type PreflightReason =
-  | "RATE_LIMIT"
-  | "QUOTA_EXCEEDED"
-  | "SESSION_INACTIVE"
-  | "PREFLIGHT_CONFIG_ERROR"
-  | "PREFLIGHT_UNAVAILABLE";
-
-interface PreflightResponse {
-  allowed: boolean;
-  tier_active: Tier;
-  reason?: PreflightReason;
-  cooldown_remaining?: number;
-  quota_total?: number;
-  quota_remaining?: number;
-  throttled?: boolean;
-}
-
-interface PreflightGateSuccess {
+export interface PreflightAllow {
   ok: true;
-  preflight: PreflightResponse;
+  tier: Tier;
 }
 
-interface PreflightGateFailure {
+export interface PreflightDeny {
   ok: false;
   response: Response;
 }
 
-type PreflightGateResult = PreflightGateSuccess | PreflightGateFailure;
+export type PreflightGateResult = PreflightAllow | PreflightDeny;
+
+export function nextUtcMidnightMs(): number {
+  const msPerDay = 86_400_000;
+  return Math.ceil(Date.now() / msPerDay) * msPerDay;
+}
+
+type CooldownOutcome =
+  { allowed: true } | { allowed: false; retryAfter: number };
 
 /**
- * Quota + cooldown gate for every billable request.
+ * Claim the user's cooldown slot.
  *
- * Deliberately uncached. The old KV cache could never work: `expirationTtl: 2`
- * is under Cloudflare's 60s minimum so every write 400'd, and the key omitted
- * `chargeChars`, so raising the TTL to 60 would make it a live quota bypass.
- * `check_preflight` locks the row and enforces the cooldown in SQL.
+ * One statement, so two concurrent requests cannot both win: the UPDATE half
+ * only runs when the stored timestamp is already older than the cutoff, and
+ * D1 serialises writers. An empty RETURNING means the row exists and is still
+ * inside the window; the timestamp is then read to say how long is left.
+ */
+async function consumeCooldown(
+  env: Env,
+  userId: string,
+  cooldownMs: number,
+): Promise<CooldownOutcome> {
+  const now = Date.now();
+  const cutoff = now - cooldownMs;
+
+  const claim = await retryTransient(() =>
+    env.DB.prepare(
+      `INSERT INTO user_cooldowns (user_id, last_request_at, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT (user_id) DO UPDATE SET
+         last_request_at = excluded.last_request_at,
+         updated_at = excluded.updated_at
+       WHERE user_cooldowns.last_request_at <= ?
+       RETURNING last_request_at`,
+    )
+      .bind(userId, now, now, cutoff)
+      .all<{ last_request_at: number }>(),
+  );
+
+  if (claim.results.length > 0) return { allowed: true };
+
+  const row = await env.DB.prepare(
+    `SELECT last_request_at FROM user_cooldowns WHERE user_id = ?`,
+  )
+    .bind(userId)
+    .first<{ last_request_at: number }>();
+
+  const last = row?.last_request_at ?? cutoff;
+  return {
+    allowed: false,
+    retryAfter: Math.max(1, Math.ceil((last + cooldownMs - now) / 1000)),
+  };
+}
+
+/**
+ * Claim a sync-push slot. A separate table from `user_cooldowns` keeps a
+ * write-heavy push from delaying the next billable request.
+ */
+export async function claimSyncPush(
+  env: Env,
+  userId: string,
+  cooldownMs: number,
+): Promise<number | null> {
+  const now = Date.now();
+  const cutoff = now - cooldownMs;
+
+  const claim = await retryTransient(() =>
+    env.DB.prepare(
+      `INSERT INTO sync_cooldowns (user_id, last_push_at)
+       VALUES (?, ?)
+       ON CONFLICT (user_id) DO UPDATE SET
+         last_push_at = excluded.last_push_at
+       WHERE sync_cooldowns.last_push_at <= ?
+       RETURNING last_push_at`,
+    )
+      .bind(userId, now, cutoff)
+      .all<{ last_push_at: number }>(),
+  );
+
+  if (claim.results.length > 0) return null;
+
+  const row = await env.DB.prepare(
+    "SELECT last_push_at FROM sync_cooldowns WHERE user_id = ?",
+  )
+    .bind(userId)
+    .first<{ last_push_at: number }>();
+
+  const last = row?.last_push_at ?? cutoff;
+  return Math.max(1, Math.ceil((last + cooldownMs - now) / 1000));
+}
+
+const DAILY_COLUMN = {
+  translate: "translate_count",
+  transcribe: "transcribe_ms",
+  speech: "speech_chars",
+  stream: "stream_count",
+} as const;
+
+function dailyLimitFor(tier: Tier, type: UsageType): number {
+  const limits = getLimits(tier);
+  switch (type) {
+    case "translate":
+      return limits.dailyTranslateLimit;
+    case "transcribe":
+      return limits.dailyTranscribeMinutesLimit;
+    case "speech":
+      return limits.dailySpeechCharsLimit;
+    case "stream":
+      return limits.dailyStreamLimit;
+    default: {
+      const unhandled: never = type;
+      return unhandled;
+    }
+  }
+}
+
+function monthlyLimitFor(tier: Tier, type: UsageType): number {
+  const limits = getLimits(tier);
+  switch (type) {
+    case "translate":
+      return limits.monthlyTranslateLimit;
+    case "transcribe":
+      return limits.monthlyTranscribeMinutesLimit;
+    case "speech":
+      return limits.monthlySpeechCharsLimit;
+    case "stream":
+      return limits.monthlyStreamMinutesLimit;
+    default: {
+      const unhandled: never = type;
+      return unhandled;
+    }
+  }
+}
+
+interface MonthlyUsageRow {
+  translate_count: number;
+  transcribe_ms: number;
+  speech_chars: number;
+  stream_ms: number;
+  ai_credits: number;
+}
+
+async function readDailyUsed(
+  env: Env,
+  userId: string,
+  type: UsageType,
+): Promise<number> {
+  const row = await retryTransient(() =>
+    env.DB.prepare(
+      `SELECT ${DAILY_COLUMN[type]} AS used
+         FROM user_daily_usage
+        WHERE user_id = ? AND day = ?`,
+    )
+      .bind(userId, utcDay(Date.now()))
+      .first<{ used: number }>(),
+  );
+  const used = row?.used ?? 0;
+  return type === "transcribe" ? used / 60_000 : used;
+}
+
+async function readMonthlyUsage(
+  env: Env,
+  userId: string,
+): Promise<MonthlyUsageRow> {
+  return (
+    (await retryTransient(() =>
+      env.DB.prepare(
+        `SELECT translate_count, transcribe_ms, speech_chars, stream_ms, ai_credits
+           FROM user_monthly_usage
+          WHERE user_id = ? AND month = ?`,
+      )
+        .bind(userId, utcMonth(Date.now()))
+        .first<MonthlyUsageRow>(),
+    )) ?? {
+      translate_count: 0,
+      transcribe_ms: 0,
+      speech_chars: 0,
+      stream_ms: 0,
+      ai_credits: 0,
+    }
+  );
+}
+
+function monthlyUsedFor(row: MonthlyUsageRow, type: UsageType): number {
+  switch (type) {
+    case "translate":
+      return row.translate_count;
+    case "transcribe":
+      return row.transcribe_ms / 60_000;
+    case "speech":
+      return row.speech_chars;
+    case "stream":
+      return row.stream_ms / 60_000;
+    default: {
+      const unhandled: never = type;
+      return unhandled;
+    }
+  }
+}
+
+/**
+ * How much the current request will add to the meter. A missing duration is
+ * treated as "unknown" (0), so the middleware lets the request reach the route,
+ * where the real duration is known and the gate runs again.
+ */
+function dailyNeedFor(
+  type: UsageType,
+  chargeChars: number,
+  durationMs: number,
+): number {
+  switch (type) {
+    case "translate":
+    case "stream":
+      return 1;
+    case "transcribe":
+      return Math.max(0, durationMs) / 60_000;
+    case "speech":
+      return Math.max(0, chargeChars);
+    default: {
+      const unhandled: never = type;
+      return unhandled;
+    }
+  }
+}
+
+function monthlyNeedFor(
+  type: UsageType,
+  chargeChars: number,
+  durationMs: number,
+): number {
+  switch (type) {
+    case "translate":
+      return 1;
+    case "transcribe":
+    case "stream":
+      return Math.max(0, durationMs) / 60_000;
+    case "speech":
+      return Math.max(0, chargeChars);
+    default: {
+      const unhandled: never = type;
+      return unhandled;
+    }
+  }
+}
+
+function quotaExceeded(
+  usageType: UsageType,
+  scope: "daily" | "monthly" | "budget",
+  total: number,
+  remaining: number,
+  unit: string,
+): Response {
+  const resetAt =
+    scope === "daily" ? nextUtcMidnightMs() : nextUtcMonthStartMs(Date.now());
+  const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
+  const message =
+    scope === "daily"
+      ? "You've reached your daily limit. Try again tomorrow."
+      : scope === "monthly"
+        ? "You've reached your monthly limit. It resets next month."
+        : "Your shared AI budget is used up for this month.";
+
+  return Response.json(
+    {
+      error: WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED,
+      message,
+      usage_type: usageType,
+      quota_scope: scope,
+      quota_unit: unit,
+      quota_total: Math.round(total * 10) / 10,
+      quota_remaining: Math.round(Math.max(remaining, 0) * 10) / 10,
+    },
+    { status: 429, headers: { "Retry-After": String(retryAfter) } },
+  );
+}
+
+function rateLimited(retryAfter: number): Response {
+  return Response.json(
+    {
+      error: WORKER_ERROR_CODES.EKWE_RATE_LIMIT,
+      message: `Please wait ${retryAfter} second${retryAfter === 1 ? "" : "s"}.`,
+    },
+    { status: 429, headers: { "Retry-After": String(retryAfter) } },
+  );
+}
+
+function unavailable(): Response {
+  return Response.json(
+    {
+      error: WORKER_ERROR_CODES.SERVICE_UNAVAILABLE,
+      message: "Service temporarily unavailable. Please try again.",
+    },
+    { status: 503 },
+  );
+}
+
+/**
+ * Cooldown + daily cap + monthly cap + shared AI budget gate.
+ *
+ * `skipCooldown` is set for the second and later stages of one HTTP request
+ * (a transcript that is then translated), so one request costs one cooldown.
+ *
+ * The quota check is a point read: usage is charged after the work succeeds,
+ * so there is nothing to reserve or refund. A `null` cap means unlimited and
+ * skips the read; a `0` cap denies everything (the feature is unavailable).
+ * Translation, transcription, speech, and live dictation all spend the same
+ * monthly credit budget, which is what makes them exhaust together.
  */
 export async function runPreflightGate(
   env: Env,
@@ -49,95 +336,67 @@ export async function runPreflightGate(
   userId: string,
   tier: Tier,
   usageType: UsageType,
-  sessionId: string | null,
-  chargeChars = 0,
   skipCooldown = false,
+  chargeChars = 0,
+  durationMs = 0,
 ): Promise<PreflightGateResult> {
-  const preflight = await checkPreflight(
-    env,
-    userId,
-    tier,
-    usageType,
-    sessionId,
-    chargeChars,
-    skipCooldown,
-  );
+  const cooldownSeconds = skipCooldown ? 0 : getLimits(tier).cooldownSeconds;
 
-  if (!preflight.allowed) {
-    let result: PreflightGateResult;
-    if (preflight.reason === "SESSION_INACTIVE") {
-      result = {
-        ok: false,
-        response: Response.json(
-          {
-            error: WORKER_ERROR_CODES.UNAUTHORIZED,
-            message: "Session expired. Please sign in again.",
-          },
-          { status: 401 },
-        ),
-      };
-    } else if (preflight.reason === "QUOTA_EXCEEDED") {
-      result = {
-        ok: false,
-        response: Response.json(
-          {
-            error: WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED,
-            message: "You've reached your daily limit. Try again tomorrow.",
-            usage_type: usageType,
-            quota_total: preflight.quota_total,
-            quota_remaining: 0,
-          },
-          {
-            status: 429,
-            headers: { "Retry-After": String(secondsUntilUtcMidnight()) },
-          },
-        ),
-      };
-    } else if (
-      preflight.reason === "PREFLIGHT_CONFIG_ERROR" ||
-      preflight.reason === "PREFLIGHT_UNAVAILABLE"
-    ) {
-      result = {
-        ok: false,
-        response: Response.json(
-          {
-            error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL,
-            message: "Service temporarily unavailable. Please try again later.",
-          },
-          { status: 500 },
-        ),
-      };
-    } else if (preflight.reason === "RATE_LIMIT") {
-      const retryAfter = Math.ceil(preflight.cooldown_remaining || 0);
-      result = {
-        ok: false,
-        response: Response.json(
-          {
-            error: WORKER_ERROR_CODES.EKWE_RATE_LIMIT,
-            message: `Please wait ${retryAfter} seconds.`,
-          },
-          { status: 429, headers: { "Retry-After": String(retryAfter) } },
-        ),
-      };
-    } else {
-      // An unrecognised reason is a bug, not a rate limit. Reporting it as
-      // EKWE_RATE_LIMIT hid a broken preflight row behind a plausible 429 for
-      // two days, so fail loudly instead of guessing.
-      logger.error("[preflight] unknown deny reason, failing closed", {
-        reason: preflight.reason ?? "undefined",
+  if (cooldownSeconds > 0) {
+    let outcome: CooldownOutcome;
+    try {
+      outcome = await consumeCooldown(env, userId, cooldownSeconds * 1000);
+    } catch (error) {
+      logger.error("[preflight] cooldown write failed, failing closed", {
+        error: describeError(error),
+        type: usageType,
       });
-      result = {
-        ok: false,
-        response: Response.json(
-          {
-            error: WORKER_ERROR_CODES.EKWE_ALL_PROVIDERS_FAIL,
-            message: "Service temporarily unavailable. Please try again later.",
-          },
-          { status: 500 },
-        ),
-      };
+      return { ok: false, response: unavailable() };
     }
-    // A denied request is already the slow path; analytics must not add to it.
+
+    if (!outcome.allowed) {
+      ctx.waitUntil(
+        recordUserEvent(
+          env,
+          "preflight",
+          userId,
+          "deny",
+          usageType,
+          "RATE_LIMIT",
+        ).catch(() => {}),
+      );
+      return { ok: false, response: rateLimited(outcome.retryAfter) };
+    }
+  }
+
+  const dailyLimit = dailyLimitFor(tier, usageType);
+  const dailyNeed = dailyNeedFor(usageType, chargeChars, durationMs);
+  const monthlyLimit = monthlyLimitFor(tier, usageType);
+  const monthlyNeed = monthlyNeedFor(usageType, chargeChars, durationMs);
+  const budgetLimit = getLimits(tier).monthlyAiCreditsLimit;
+  const budgetNeed = aiCreditsForUsage(usageType, {
+    chars: chargeChars,
+    durationMs,
+  });
+
+  let dailyUsed: number;
+  let monthly: MonthlyUsageRow;
+  try {
+    [dailyUsed, monthly] = await Promise.all([
+      readDailyUsed(env, userId, usageType),
+      readMonthlyUsage(env, userId),
+    ]);
+  } catch (error) {
+    logger.error("[preflight] quota read failed, failing closed", {
+      error: describeError(error),
+      type: usageType,
+    });
+    return { ok: false, response: unavailable() };
+  }
+
+  if (
+    dailyNeed > 0 ? dailyUsed + dailyNeed > dailyLimit : dailyUsed >= dailyLimit
+  ) {
     ctx.waitUntil(
       recordUserEvent(
         env,
@@ -145,226 +404,97 @@ export async function runPreflightGate(
         userId,
         "deny",
         usageType,
-        preflight.reason ?? "unknown",
+        "QUOTA_EXCEEDED",
       ).catch(() => {}),
     );
-    return result;
+    return {
+      ok: false,
+      response: quotaExceeded(
+        usageType,
+        "daily",
+        dailyLimit,
+        dailyLimit - dailyUsed,
+        dailyUnitFor(usageType),
+      ),
+    };
   }
 
-  // This awaited a SHA-256 purely to format a blob, putting a hash on the
-  // critical path of every allowed request.
+  const monthlyUsed = monthlyUsedFor(monthly, usageType);
+  if (
+    monthlyNeed > 0
+      ? monthlyUsed + monthlyNeed > monthlyLimit
+      : monthlyUsed >= monthlyLimit
+  ) {
+    ctx.waitUntil(
+      recordUserEvent(
+        env,
+        "preflight",
+        userId,
+        "deny",
+        usageType,
+        "QUOTA_EXCEEDED",
+      ).catch(() => {}),
+    );
+    return {
+      ok: false,
+      response: quotaExceeded(
+        usageType,
+        "monthly",
+        monthlyLimit,
+        monthlyLimit - monthlyUsed,
+        monthlyUnitFor(usageType),
+      ),
+    };
+  }
+
+  if (
+    budgetNeed > 0
+      ? monthly.ai_credits + budgetNeed > budgetLimit
+      : monthly.ai_credits >= budgetLimit
+  ) {
+    ctx.waitUntil(
+      recordUserEvent(
+        env,
+        "preflight",
+        userId,
+        "deny",
+        usageType,
+        "QUOTA_EXCEEDED",
+      ).catch(() => {}),
+    );
+    return {
+      ok: false,
+      response: quotaExceeded(
+        usageType,
+        "budget",
+        budgetLimit,
+        budgetLimit - monthly.ai_credits,
+        "credits",
+      ),
+    };
+  }
+
   ctx.waitUntil(
     recordUserEvent(env, "preflight", userId, "allow", usageType, "ok").catch(
       () => {},
     ),
   );
 
-  return { ok: true, preflight };
+  return { ok: true, tier };
 }
 
-export function nextUtcMidnightMs(): number {
-  const now = Date.now();
-  const msPerDay = 86_400_000;
-  return Math.ceil(now / msPerDay) * msPerDay;
+function dailyUnitFor(type: UsageType): string {
+  return type === "transcribe"
+    ? "min"
+    : type === "speech"
+      ? "chars"
+      : "requests";
 }
 
-function secondsUntilUtcMidnight(): number {
-  return Math.max(1, Math.ceil((nextUtcMidnightMs() - Date.now()) / 1000));
-}
-
-const sessionMemo = new Map<
-  string,
-  { result: boolean | null; until: number }
->();
-const SESSION_MEMO_TTL_MS = 5_000;
-
-async function isSessionActive(
-  env: Env,
-  sessionId: string | null,
-): Promise<boolean | null> {
-  if (!sessionId) return null;
-
-  const now = Date.now();
-  const memo = sessionMemo.get(sessionId);
-  if (memo && memo.until > now) return memo.result;
-
-  try {
-    const result = await retryOnConnectionLoss(
-      (client) =>
-        client.execute(
-          sql`SELECT check_session_active(${sessionId}) as active`,
-        ),
-      env,
-    );
-    if (result.length > 0) {
-      const active = Boolean(result[0].active);
-      if (sessionMemo.size > 500) sessionMemo.clear();
-      sessionMemo.set(sessionId, {
-        result: active,
-        until: now + SESSION_MEMO_TTL_MS,
-      });
-      return active;
-    }
-  } catch (err) {
-    logger.warn("[preflight] session-active check failed, allowing", {
-      error: err,
-    });
-  }
-  return null;
-}
-
-export async function checkPreflight(
-  env: Env,
-  userId: string,
-  requestedTier: Tier,
-  type: UsageType,
-  sessionId: string | null,
-  chargeChars = 0,
-  skipCooldown = false,
-): Promise<PreflightResponse> {
-  const isTranscribe = type === "transcribe";
-  const isSpeech = type === "speech";
-  const isStream = type === "stream";
-  const freeLimits = getLimits("FREE");
-  const premiumLimits = getLimits("PREMIUM");
-  const freeCooldownSeconds = skipCooldown ? 0 : freeLimits.cooldownSeconds;
-  const throttleCooldownSeconds = freeLimits.cooldownSeconds;
-  const freeDailyLimit = isSpeech
-    ? freeLimits.dailySpeechCharsLimit
-    : isStream
-      ? freeLimits.dailyStreamLimit
-      : isTranscribe
-        ? freeLimits.dailyTranscribeLimit
-        : freeLimits.dailyTranslateLimit;
-  const premiumCooldownSeconds = skipCooldown
-    ? 0
-    : premiumLimits.cooldownSeconds;
-  const premiumDailyLimit = isSpeech
-    ? premiumLimits.dailySpeechCharsLimit
-    : isStream
-      ? premiumLimits.dailyStreamLimit
-      : isTranscribe
-        ? premiumLimits.dailyTranscribeLimit
-        : premiumLimits.dailyTranslateLimit;
-  const premiumThrottleThreshold =
-    isSpeech || isStream
-      ? 0
-      : isTranscribe
-        ? premiumLimits.throttleTranscribeThreshold
-        : premiumLimits.throttleTranslateThreshold;
-
-  // Config guard first: it is synchronous, and there is no point issuing two
-  // RPCs when the service keys are missing.
-  if (!env.HYPERDRIVE) {
-    return {
-      allowed: false,
-      tier_active: requestedTier,
-      reason: "PREFLIGHT_CONFIG_ERROR",
-    };
-  }
-
-  // The session check and the quota check are independent reads, and this runs
-  // in front of every billable request. Issued in parallel, they cost one
-  // round trip instead of two. The session result only short-circuits; it
-  // never changes what the quota check returns.
-  const [sessionActive, quota] = await Promise.all([
-    isSessionActive(env, sessionId),
-    checkQuotaPreflight(env, {
-      userId,
-      requestedTier,
-      type,
-      freeCooldownSeconds,
-      freeDailyLimit,
-      premiumCooldownSeconds,
-      premiumDailyLimit,
-      premiumThrottleThreshold,
-      chargeChars,
-      premiumSpeechCharsLimit: premiumLimits.dailySpeechCharsLimit,
-      throttleCooldownSeconds,
-    }),
-  ]);
-
-  if (sessionActive === false) {
-    return {
-      allowed: false,
-      tier_active: requestedTier,
-      reason: "SESSION_INACTIVE",
-    };
-  }
-
-  return quota;
-}
-
-interface QuotaPreflightArgs {
-  userId: string;
-  requestedTier: Tier;
-  type: UsageType;
-  freeCooldownSeconds: number;
-  freeDailyLimit: number;
-  premiumCooldownSeconds: number;
-  premiumDailyLimit: number;
-  premiumThrottleThreshold: number;
-  chargeChars: number;
-  premiumSpeechCharsLimit: number;
-  throttleCooldownSeconds: number;
-}
-
-/** The quota half of `checkPreflight`, split out so it can run concurrently. */
-async function checkQuotaPreflight(
-  env: Env,
-  args: QuotaPreflightArgs,
-): Promise<PreflightResponse> {
-  const {
-    userId,
-    requestedTier,
-    type,
-    freeCooldownSeconds,
-    freeDailyLimit,
-    premiumCooldownSeconds,
-    premiumDailyLimit,
-    premiumThrottleThreshold,
-    chargeChars,
-    premiumSpeechCharsLimit,
-    throttleCooldownSeconds,
-  } = args;
-
-  try {
-    // Increments no counter, so replaying it is safe.
-    // The alias is load-bearing: `SELECT * FROM check_preflight(...)` returns
-    // ONE column named after the function, so `result[0]` is
-    // `{ check_preflight: {...} }` and reading `.allowed` off it yields
-    // undefined — which fell through to the rate-limit branch and answered
-    // every request with 429 "Please wait 0 seconds." Alias it explicitly.
-    const result = await retryOnConnectionLoss(
-      (client) =>
-        client.execute(sql`SELECT check_preflight(
-      ${userId},
-      ${type},
-      ${freeCooldownSeconds},
-      ${freeDailyLimit},
-      ${premiumCooldownSeconds},
-      ${premiumDailyLimit},
-      ${premiumThrottleThreshold},
-      ${throttleCooldownSeconds},
-      ${premiumSpeechCharsLimit},
-      ${chargeChars}
-    ) AS preflight`),
-      env,
-    );
-
-    const row = result[0] as { preflight?: PreflightResponse } | undefined;
-    if (row?.preflight) {
-      return row.preflight;
-    }
-    logger.error(
-      "[preflight] unexpected check_preflight row shape, failing closed",
-    );
-  } catch (err) {
-    logger.error("[preflight] check failed, failing closed", { error: err });
-  }
-  return {
-    allowed: false,
-    tier_active: requestedTier,
-    reason: "PREFLIGHT_UNAVAILABLE",
-  };
+function monthlyUnitFor(type: UsageType): string {
+  return type === "transcribe" || type === "stream"
+    ? "min"
+    : type === "speech"
+      ? "chars"
+      : "requests";
 }

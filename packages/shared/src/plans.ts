@@ -1,6 +1,62 @@
 import type { FlutterwaveCurrency } from "./money";
+import type { UsageType } from "./errors";
 import { WITAI_SAFE_DURATION_MS } from "./providerLimits";
 import { HISTORY_TTL_FREE_DAYS, HISTORY_TTL_PAID_DAYS } from "./retention";
+
+/**
+ * One credit is roughly one US cent's worth of a cheap text translation at
+ * current provider pricing. Every feature spends the same monthly credit pool,
+ * so translation, transcription, and speech exhaust together instead of one
+ * meter running dry while the others still work.
+ */
+export const AI_CREDIT_COSTS = {
+  /** Credits per 1,000 characters. */
+  translatePer1kChars: 1,
+  /** Credits per minute of transcription. */
+  transcribePerMinute: 9,
+  /** Credits per 1,000 characters of speech. */
+  speechPer1kChars: 2,
+  /** Credits per minute of live dictation. */
+  streamPerMinute: 96,
+} as const;
+
+export interface UsageCharge {
+  chars?: number;
+  durationMs?: number;
+}
+
+export function aiCreditsForUsage(
+  type: UsageType,
+  charge: UsageCharge = {},
+): number {
+  const chars = Math.max(0, charge.chars ?? 0);
+  const durationMs = Math.max(0, charge.durationMs ?? 0);
+
+  switch (type) {
+    case "translate":
+      return roundCredits(
+        Math.max(1, (chars / 1000) * AI_CREDIT_COSTS.translatePer1kChars),
+      );
+    case "transcribe":
+      return roundCredits(
+        (durationMs / 60_000) * AI_CREDIT_COSTS.transcribePerMinute,
+      );
+    case "speech":
+      return roundCredits((chars / 1000) * AI_CREDIT_COSTS.speechPer1kChars);
+    case "stream":
+      return roundCredits(
+        (durationMs / 60_000) * AI_CREDIT_COSTS.streamPerMinute,
+      );
+    default: {
+      const unhandled: never = type;
+      return unhandled;
+    }
+  }
+}
+
+function roundCredits(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
+}
 
 export interface PlanLimits {
   maxAudioBytes: number;
@@ -18,21 +74,38 @@ export interface PlanLimits {
   speechQuality: "standard" | "premium";
   cooldownSeconds: number;
 
+  /** Translation requests per UTC day. */
   dailyTranslateLimit: number;
 
-  dailyTranscribeLimit: number;
+  /** Transcription minutes per UTC day. */
+  dailyTranscribeMinutesLimit: number;
 
+  /** Speech characters per UTC day. */
   dailySpeechCharsLimit: number;
 
+  /** Live dictation sessions per UTC day. `0` = unavailable. */
   dailyStreamLimit: number;
 
-  throttleTranslateThreshold: number;
+  /** Translation requests per UTC month. */
+  monthlyTranslateLimit: number;
 
-  throttleTranscribeThreshold: number;
+  /** Transcription minutes per UTC month. */
+  monthlyTranscribeMinutesLimit: number;
+
+  /** Speech characters per UTC month. */
+  monthlySpeechCharsLimit: number;
+
+  /** Live dictation minutes per UTC month. */
+  monthlyStreamMinutesLimit: number;
+
+  /** Shared monthly credit pool for every AI feature. */
+  monthlyAiCreditsLimit: number;
 }
 
 export interface PlanFeatures {
   autoCopy: boolean;
+  /** FREE is ad-supported; PAID is ad-free. */
+  adsEnabled: boolean;
 }
 
 export interface PriceDetail {
@@ -72,13 +145,15 @@ export const FREE_LIMITS: PlanLimits = {
 
   speechQuality: "standard",
   cooldownSeconds: 3,
-  dailyTranslateLimit: 25,
-  dailyTranscribeLimit: 25,
-
-  dailySpeechCharsLimit: 5000,
+  dailyTranslateLimit: 20,
+  dailyTranscribeMinutesLimit: 10,
+  dailySpeechCharsLimit: 2000,
   dailyStreamLimit: 0,
-  throttleTranslateThreshold: 0,
-  throttleTranscribeThreshold: 0,
+  monthlyTranslateLimit: 600,
+  monthlyTranscribeMinutesLimit: 60,
+  monthlySpeechCharsLimit: 60_000,
+  monthlyStreamMinutesLimit: 0,
+  monthlyAiCreditsLimit: 1300,
 };
 
 export const PREMIUM_LIMITS: PlanLimits = {
@@ -96,21 +171,25 @@ export const PREMIUM_LIMITS: PlanLimits = {
   maxLanguages: 5,
   speechQuality: "premium",
   cooldownSeconds: 1,
-  dailyTranslateLimit: 0,
-  dailyTranscribeLimit: 0,
-
-  dailySpeechCharsLimit: 15000,
+  dailyTranslateLimit: 500,
+  dailyTranscribeMinutesLimit: 30,
+  dailySpeechCharsLimit: 5000,
   dailyStreamLimit: 120,
-  throttleTranslateThreshold: 500,
-  throttleTranscribeThreshold: 500,
+  monthlyTranslateLimit: 15_000,
+  monthlyTranscribeMinutesLimit: 600,
+  monthlySpeechCharsLimit: 150_000,
+  monthlyStreamMinutesLimit: 60,
+  monthlyAiCreditsLimit: 27_000,
 };
 
 export const FREE_FEATURES: PlanFeatures = {
   autoCopy: false,
+  adsEnabled: true,
 };
 
 export const PREMIUM_FEATURES: PlanFeatures = {
   autoCopy: true,
+  adsEnabled: false,
 };
 
 export const PLAN_CONFIG: PlanConfigPlans = {

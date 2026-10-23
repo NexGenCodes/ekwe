@@ -15,8 +15,20 @@ import {
 
 const KNOWN = LANGUAGES.slice(0, 6).map((l) => l.code);
 
+function setPro(isPro: boolean): void {
+  authActions.setUser({
+    id: "test-user",
+    email: "person@ekwe.app",
+    tier: isPro ? "PREMIUM" : "FREE",
+    displayName: null,
+    avatarUrl: null,
+    avatarIcon: null,
+    proExpiresAt: null,
+  });
+}
+
 afterEach(() => {
-  authActions.setIsPro(false);
+  setPro(false);
 });
 
 describe("DEFAULT_LANGUAGES", () => {
@@ -80,10 +92,10 @@ describe("getDefaultSourceLang", () => {
 
 describe("isAutoDetectPermitted", () => {
   it("follows the signed-in tier's plan limit", () => {
-    authActions.setIsPro(false);
+    setPro(false);
     expect(isAutoDetectPermitted()).toBe(PLAN_LIMITS.free.autoDetectAllowed);
 
-    authActions.setIsPro(true);
+    setPro(true);
     expect(isAutoDetectPermitted()).toBe(PLAN_LIMITS.pro.autoDetectAllowed);
   });
 });

@@ -56,6 +56,13 @@ export const history = sqliteTable(
      * from `translation_text` being non-null.
      */
     entryType: text("entry_type").notNull().default("transcription"),
+    /**
+     * Mirrors the server's tombstone. A deleted row stays in the table (with
+     * this set) so the revision the server assigned to the tombstone survives;
+     * an Undo needs that revision to restore the row through the
+     * revision-guarded upsert. Every read filters `deleted_at IS NULL`.
+     */
+    deletedAt: integer("deleted_at"),
   },
   (table) => ({
     createdIdx: index("idx_history_created").on(table.createdAt),

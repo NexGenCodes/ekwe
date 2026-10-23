@@ -6,7 +6,7 @@ import {
   pushNotifyRequestSchema,
   updateManifestSchema,
 } from "@ekwe/shared";
-import { adminAuthMiddleware, optionalAuthMiddleware } from "@/middleware";
+import { adminAuthMiddleware, authMiddleware } from "@/middleware";
 import { handleRegisterDeviceToken } from "@/routes/device-token";
 import { handlePostUpdateManifest, handleUpdateNotify } from "@/routes/admin";
 
@@ -15,9 +15,9 @@ export const deviceRouter = new Hono<AppEnv>();
 
 deviceRouter.post(
   "/token",
-  optionalAuthMiddleware(),
+  authMiddleware(),
   zValidator("json", registerPushTokenRequestSchema),
-  (c) => handleRegisterDeviceToken(c.req.valid("json"), c.env, c.get("auth")),
+  (c) => handleRegisterDeviceToken(c.req.valid("json"), c.env, c.get("auth")!),
 );
 
 adminRouter.post(

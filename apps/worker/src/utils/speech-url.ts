@@ -37,9 +37,8 @@ function fromHex(hex: string): Uint8Array | null {
 }
 
 function signingSecret(env: Env): string {
-  const secret = env.SPEECH_URL_SECRET || env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!secret) throw new Error("no signing secret configured");
-  return secret;
+  if (!env.SPEECH_URL_SECRET) throw new Error("no signing secret configured");
+  return env.SPEECH_URL_SECRET;
 }
 
 /** `<cacheKey>.<sig>`, where sig is a truncated HMAC over the cache key. */

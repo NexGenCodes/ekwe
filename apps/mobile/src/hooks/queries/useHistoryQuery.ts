@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
-import { SyncService } from "@/services/syncService";
 import { Db, HistoryRow } from "@/services/db";
 import { historyRowToEntry } from "@/services/historyMapper";
 import { history$, HistoryEntry, sortedHistory$ } from "@/store";
@@ -54,35 +53,10 @@ export function useHistoryQuery(userId: string | undefined): {
   const fetchPage = useCallback(
     async (cursor: HistoryCursor | null): Promise<HistoryEntry[]> => {
       if (!userId) return [];
-      const rows = Db.getHistoryPage(userId, PAGE_SIZE, cursor);
-
-      if (rows.length === 0) {
-        const page = await SyncService.fetchOlderHistory(
-          userId,
-          cursor,
-          PAGE_SIZE,
-        );
-        hydrate(page);
-        return page;
-      }
-
-      const entries = rows.map(rowToEntry);
+      const entries = Db.getHistoryPage(userId, PAGE_SIZE, cursor).map(
+        rowToEntry,
+      );
       hydrate(entries);
-
-      if (rows.length < PAGE_SIZE) {
-        const oldest = entries[entries.length - 1];
-        const topUp = await SyncService.fetchOlderHistory(
-          userId,
-          {
-            created_at: new Date(oldest.timestamp).toISOString(),
-            id: oldest.id,
-          },
-          PAGE_SIZE - rows.length,
-        );
-        hydrate(topUp);
-        entries.push(...topUp);
-      }
-
       return entries;
     },
     [userId],
@@ -122,7 +96,10 @@ export function useHistoryQuery(userId: string | undefined): {
     setHasMore(true);
     setIsInitialLoading(true);
     try {
-      await fetchPage(null);
+      const page = await fetchPage(null);
+      const nextCursor = pageCursor(page);
+      currentCursor.current = nextCursor;
+      setHasMore(nextCursor !== null);
     } finally {
       setIsInitialLoading(false);
     }

@@ -6,10 +6,11 @@ import {
   type CheckoutResponse,
 } from "@ekwe/shared";
 import { z } from "zod";
-import { supabase } from "@/services/supabase";
+
+import { apiJson } from "@/services/backend";
+import { fetchSessionUser } from "@/services/auth";
 import { auth$ } from "@/store";
 import { settings$ } from "@/store";
-import { getWorkerUrl } from "@/utils/http";
 import logger from "@/utils/logger";
 
 const CHECKOUT_PATH = "/billing/checkout";
@@ -28,16 +29,6 @@ export type VerifyTransactionResponse = z.infer<
   typeof verifyTransactionResponseSchema
 >;
 
-function getWorkerBaseUrl(): string {
-  const url = getWorkerUrl();
-  if (!url) {
-    throw new Error(
-      "Billing service is temporarily unavailable. Please check your connection and try again.",
-    );
-  }
-  return url;
-}
-
 export function getFlutterwavePlanId(
   isAnnual: boolean,
 ): (typeof PRO_PRODUCT_IDS)["monthly"] | (typeof PRO_PRODUCT_IDS)["annual"] {
@@ -45,34 +36,12 @@ export function getFlutterwavePlanId(
 }
 
 async function initializeCheckout(isAnnual: boolean): Promise<CheckoutSession> {
-  const session = auth$.session.get();
-  if (!session) throw new Error("Authentication required");
-
-  const currency = settings$.currency.peek();
   const body: CheckoutRequest = {
     plan: getFlutterwavePlanId(isAnnual),
-    currency,
+    currency: settings$.currency.peek(),
   };
 
-  const res = await fetch(`${getWorkerBaseUrl()}${CHECKOUT_PATH}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    logger.error(
-      "[Flutterwave] Checkout init failed",
-      JSON.stringify({ status: res.status, body: body.slice(0, 200) }),
-    );
-    throw new Error("Failed to initialize payment. Please try again.");
-  }
-
-  const raw = await res.json();
+  const raw = await apiJson(CHECKOUT_PATH, { method: "POST", body });
   const parsed = checkoutResponseSchema.safeParse(raw);
   if (!parsed.success) {
     logger.error(
@@ -81,6 +50,7 @@ async function initializeCheckout(isAnnual: boolean): Promise<CheckoutSession> {
     );
     throw new Error("Failed to initialize payment. Please try again.");
   }
+
   const data = parsed.data;
   logger.info("[Flutterwave] Checkout session authorized", {
     tx_ref: data.tx_ref,
@@ -91,28 +61,10 @@ async function initializeCheckout(isAnnual: boolean): Promise<CheckoutSession> {
 export async function verifyTransaction(
   transactionId: number,
 ): Promise<VerifyTransactionResponse> {
-  const session = auth$.session.get();
-  if (!session) throw new Error("Authentication required");
-
-  const res = await fetch(`${getWorkerBaseUrl()}${VERIFY_TRANSACTION_PATH}`, {
+  const raw = await apiJson(VERIFY_TRANSACTION_PATH, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({ transaction_id: transactionId }),
+    body: { transaction_id: transactionId },
   });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    logger.error("[Flutterwave] Verify transaction failed", {
-      status: res.status,
-      body: body.slice(0, 200),
-    });
-    throw new Error("Failed to verify payment");
-  }
-
-  const raw = await res.json();
   const parsed = verifyTransactionResponseSchema.safeParse(raw);
   if (!parsed.success) {
     logger.error("[Flutterwave] Verify response shape mismatch", {
@@ -124,23 +76,15 @@ export async function verifyTransaction(
   return parsed.data;
 }
 
+/**
+ * The worker writes the new tier to D1 before the verify response lands, so the
+ * session endpoint already reports PREMIUM. Polling covers a payment confirmed
+ * by webhook slightly after checkout closed.
+ */
 async function pollForProStatus(): Promise<boolean> {
   for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
-    // `getUser()` asks the auth server who we are with the token we already
-    // hold, so it sees a freshly written `is_pro` claim without minting a new
-    // access token. `refreshSession()` also worked, but it fired a
-    // TOKEN_REFRESHED auth event on every tick — 20 of them per checkout — and
-    // each one rewrote the session store and re-mirrored the session to the
-    // shared container.
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-    if (error) throw error;
-
-    if (user?.app_metadata?.is_pro === true) {
-      return true;
-    }
+    const user = await fetchSessionUser();
+    if (user?.tier === "PREMIUM") return true;
 
     if (attempt < POLL_ATTEMPTS - 1) {
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
@@ -176,5 +120,5 @@ export async function reconcileFlutterwaveStatus(): Promise<boolean> {
 }
 
 export function isFlutterwaveAvailable(): boolean {
-  return !!auth$.session.get();
+  return !!auth$.session.peek();
 }

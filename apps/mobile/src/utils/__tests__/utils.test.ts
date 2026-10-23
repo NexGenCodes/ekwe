@@ -70,7 +70,7 @@ describe("resolveDetectedLanguage", () => {
     expect(resolveDetectedLanguage("es", "auto", "en")).toBe("es");
   });
 
-  it("never returns null for auto-detect so the Detected pill always shows for Pro users", () => {
+  it("never returns null for auto-detect so the Detected pill always shows for paid users", () => {
     expect(resolveDetectedLanguage(null, "auto", "en")).toBe("en");
     expect(resolveDetectedLanguage(undefined, "auto", "en")).toBe("en");
     expect(resolveDetectedLanguage("und", "auto", "en")).toBe("en");

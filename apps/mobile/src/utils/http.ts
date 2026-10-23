@@ -142,7 +142,7 @@ export function mapWorkerError(
       return EkweError.QUOTA_EXCEEDED;
     case "EKWE_TRANSLATION_FAIL":
       return EkweError.TRANSLATION_FAIL;
-    // Without this a free account asking for a Pro voice gets a generic failure
+    // Without this a free account asking for a paid voice gets a generic failure
     // and no idea the voice is the problem.
     case WORKER_ERROR_CODES.PREMIUM_FEATURE_REQUIRED:
       return EkweError.PREMIUM_REQUIRED;

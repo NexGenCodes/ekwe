@@ -143,7 +143,7 @@ function InnerLayout(): React.ReactElement {
                     name="billing"
                     options={{
                       headerShown: true,
-                      title: "Ekwe Pro",
+                      title: "Ekwe Paid",
                       headerBackTitle: "Back",
                       animation: "slide_from_right",
                     }}

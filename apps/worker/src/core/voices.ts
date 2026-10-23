@@ -18,7 +18,7 @@ export function pipelineTierForSlot(slot: VoiceSlot | undefined): Tier {
 
 /**
  * The budget gate can only *downgrade* the pipeline a slot asked for, never
- * upgrade it. A throttled Pro user asking for Studio still gets audio, served
+ * upgrade it. A throttled paid user asking for Studio still gets audio, served
  * by the free pool, instead of an error.
  */
 export function resolveExecutionTier(slotTier: Tier, gateTier: Tier): Tier {

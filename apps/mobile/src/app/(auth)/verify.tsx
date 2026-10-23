@@ -19,7 +19,6 @@ import { duration } from "@/constants/motion";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
 import { useTheme, useOtpVerify } from "@/hooks";
-import { getPendingLinkProvider, linkSocialIdentity } from "@/services/auth";
 import { triggerHaptic } from "@/utils/haptics";
 
 const OTP_EXPIRY_HINT = "Codes expire in 10 minutes.";
@@ -33,14 +32,11 @@ const formatCooldown = (seconds: number): string => {
 export default function VerifyScreen(): React.JSX.Element {
   const router = useRouter();
 
-  const params = useLocalSearchParams<{ email: string; source?: string }>();
+  const params = useLocalSearchParams<{ email: string }>();
   const email = params.email || "";
-  const isLinkMode = params.source === "link";
-  const linkProvider = getPendingLinkProvider();
 
   const { color } = useTheme();
   const { isLoading, error, cooldown, verify, resend } = useOtpVerify();
-  const [linkError, setLinkError] = useState("");
   const [shakeSignal, setShakeSignal] = useState(0);
   const [resent, setResent] = useState(false);
   const [clipboardCode, setClipboardCode] = useState("");
@@ -70,22 +66,12 @@ export default function VerifyScreen(): React.JSX.Element {
   }, [resent]);
 
   const onSubmit = async (data: OtpForm): Promise<void> => {
-    const type: "signup" | "email" =
-      params.source === "signup" ? "signup" : "email";
-    const result = await verify(email, data.token, type);
+    const result = await verify(email, data.token);
     if (!result.ok) {
       triggerHaptic(Haptics.NotificationFeedbackType.Error);
       setShakeSignal((s) => s + 1);
       reset({ token: "" });
       return;
-    }
-
-    if (isLinkMode) {
-      const linkResult = await linkSocialIdentity();
-      if (!linkResult.ok) {
-        setLinkError(linkResult.error || "We couldn't link your account.");
-        return;
-      }
     }
 
     triggerHaptic(Haptics.NotificationFeedbackType.Success);
@@ -111,19 +97,13 @@ export default function VerifyScreen(): React.JSX.Element {
     <AuthShell showBackButton>
       <Animated.View entering={FadeInDown.duration(duration.slow).springify()}>
         <AuthHeader
-          title={isLinkMode ? "Link your account" : "Check your inbox"}
-          subtitle={
-            isLinkMode
-              ? `This email is already registered with another sign-in method. Enter the code to link your ${
-                  linkProvider === "google" ? "Google" : "Apple"
-                } account.`
-              : `We sent a 6-digit code to ${email}`
-          }
-          caption={isLinkMode ? undefined : OTP_EXPIRY_HINT}
+          title="Check your inbox"
+          subtitle={`We sent a 6-digit code to ${email}`}
+          caption={OTP_EXPIRY_HINT}
         />
 
         <Box style={{ gap: spacing.md }}>
-          <ErrorBanner message={linkError || error} />
+          <ErrorBanner message={error} />
 
           <Box style={{ alignItems: "center" }}>
             <Controller
@@ -161,7 +141,7 @@ export default function VerifyScreen(): React.JSX.Element {
           </Box>
 
           <Button
-            label={isLinkMode ? "Verify & Link" : "Verify Code"}
+            label="Verify Code"
             size="large"
             onPress={handleSubmit(onSubmit)}
             loading={isLoading}

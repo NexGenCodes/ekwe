@@ -1,38 +1,28 @@
 import { describe, test, expect, vi } from "vitest";
-import {
-  describeError,
-  isConnectionLost,
-  retryOnConnectionLoss,
-} from "@/db/retry";
-import { logger } from "@/core/logger";
-import { mockEnv } from "@/__tests__/setup";
+import { describeError, isTransient, retryTransient } from "@/db/retry";
 
-vi.mock("@/core/logger", () => ({
-  logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+const logger = vi.hoisted(() => ({
+  warn: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
 }));
 
-const hoisted = vi.hoisted(() => ({
-  getDb: vi.fn(() => ({ id: "default-client" })),
-}));
+vi.mock("@/core/logger", () => ({ logger }));
 
-vi.mock("@/db", () => hoisted);
+function sqliteError(code: string): Error {
+  return Object.assign(new Error("D1_ERROR"), { code });
+}
 
-const mockedGetDb = hoisted.getDb;
-
-describe("describeError()", () => {
+describe("describeError", () => {
   test("returns the message of a plain error", () => {
     expect(describeError(new Error("boom"))).toBe("boom");
   });
 
-  test("unwraps the cause chain that postgres.js and Cloudflare hang off cause", () => {
-    // Shape observed in Sentry: the query error carries the SQL text and the
-    // real failure — a dropped TCP socket — sits one link down.
-    const queryError = Object.assign(new Error("select 1 failed"), {
-      cause: new TypeError("Network connection lost."),
+  test("unwraps the cause chain", () => {
+    const error = Object.assign(new Error("insert failed"), {
+      cause: new TypeError("database is locked"),
     });
-    expect(describeError(queryError)).toBe(
-      "select 1 failed | Network connection lost.",
-    );
+    expect(describeError(error)).toBe("insert failed | database is locked");
   });
 
   test("does not repeat an identical message along the chain", () => {
@@ -55,121 +45,76 @@ describe("describeError()", () => {
   });
 });
 
-describe("isConnectionLost()", () => {
-  test.each([
-    "Network connection lost.",
-    "connection terminated unexpectedly",
-    "socket hang up",
-    "Connection closed",
-    "Timed out while waiting for an open slot in the pool.",
-  ])("matches %j", (message) => {
-    expect(isConnectionLost(new Error(message))).toBe(true);
+describe("isTransient", () => {
+  test.each(["SQLITE_BUSY", "SQLITE_LOCKED"])("matches code %j", (code) => {
+    expect(isTransient(sqliteError(code))).toBe(true);
   });
 
   test.each([
-    "ECONNRESET",
-    "EPIPE",
-    "ETIMEDOUT",
-    "CONNECTION_CLOSED_ERROR",
-    "57P01",
-    "08006",
-  ])("matches code %j", (code) => {
-    expect(
-      isConnectionLost(Object.assign(new Error("query failed"), { code })),
-    ).toBe(true);
+    "D1_ERROR: database is locked",
+    "network connection lost",
+    "SQLITE_BUSY: database is locked",
+  ])("matches message %j", (message) => {
+    expect(isTransient(new Error(message))).toBe(true);
   });
 
   test("matches when only the cause carries the signal", () => {
-    const error = Object.assign(new Error("insert failed"), {
-      cause: new Error("Network connection lost."),
+    const error = Object.assign(new Error("batch failed"), {
+      cause: new Error("database is locked"),
     });
-    expect(isConnectionLost(error)).toBe(true);
+    expect(isTransient(error)).toBe(true);
   });
 
   test.each([
-    "duplicate key value violates unique constraint",
-    'syntax error at or near "SELCT"',
-    "permission denied for table app_config",
-  ])("does not match a query-level failure: %j", (message) => {
-    expect(isConnectionLost(new Error(message))).toBe(false);
+    "UNIQUE constraint failed: users.email_norm",
+    "NOT NULL constraint failed: history.id",
+    "no such table: history",
+    "D1_ERROR: too many SQL variables",
+  ])("does not match a statement error: %j", (message) => {
+    expect(isTransient(new Error(message))).toBe(false);
   });
 
   test("does not match non-error values", () => {
-    expect(isConnectionLost(null)).toBe(false);
-    expect(isConnectionLost(undefined)).toBe(false);
+    expect(isTransient(null)).toBe(false);
+    expect(isTransient(undefined)).toBe(false);
   });
 });
 
-describe("retryOnConnectionLoss()", () => {
-  const env = mockEnv();
-
+describe("retryTransient", () => {
   test("returns the first result without retrying", async () => {
     const query = vi.fn().mockResolvedValue("ok");
-    await expect(retryOnConnectionLoss(query, env)).resolves.toBe("ok");
+    await expect(retryTransient(query)).resolves.toBe("ok");
     expect(query).toHaveBeenCalledTimes(1);
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  test("retries once on a dropped connection", async () => {
+  test("replays a locked write until it succeeds", async () => {
     const query = vi
       .fn()
-      .mockRejectedValueOnce(new Error("Network connection lost."))
+      .mockRejectedValueOnce(sqliteError("SQLITE_BUSY"))
       .mockResolvedValueOnce("recovered");
 
-    await expect(retryOnConnectionLoss(query, env)).resolves.toBe("recovered");
-    expect(query).toHaveBeenCalledTimes(2);
-    expect(logger.warn).toHaveBeenCalledTimes(1);
-  });
-
-  test("hands the retry a fresh client, never the failed one", async () => {
-    const clients = [{ id: "first" }, { id: "second" }];
-    mockedGetDb.mockReset();
-    mockedGetDb.mockReturnValueOnce(clients[0]).mockReturnValueOnce(clients[1]);
-
-    const seen: unknown[] = [];
-    const query = vi.fn(async (db: unknown) => {
-      seen.push(db);
-      if (seen.length === 1) throw new Error("Network connection lost.");
-      return "ok";
-    });
-
-    await expect(retryOnConnectionLoss(query, env)).resolves.toBe("ok");
-    expect(seen).toEqual(clients);
-  });
-
-  test("propagates the failure when the new client also fails", async () => {
-    const query = vi
-      .fn()
-      .mockRejectedValue(new Error("Network connection lost."));
-
-    await expect(retryOnConnectionLoss(query, env)).rejects.toThrow(
-      "Network connection lost.",
-    );
+    await expect(retryTransient(query)).resolves.toBe("recovered");
     expect(query).toHaveBeenCalledTimes(2);
   });
 
-  test("never retries a query-level error, so counters cannot double-apply", async () => {
+  test("never replays a statement error", async () => {
     const query = vi
       .fn()
       .mockRejectedValue(
-        new Error("duplicate key value violates unique constraint"),
+        new Error("UNIQUE constraint failed: users.email_norm"),
       );
 
-    await expect(retryOnConnectionLoss(query, env)).rejects.toThrow(
-      /duplicate key/,
-    );
+    await expect(retryTransient(query)).rejects.toThrow(/UNIQUE constraint/);
     expect(query).toHaveBeenCalledTimes(1);
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  test("retries at most once", async () => {
-    const query = vi
-      .fn()
-      .mockRejectedValue(new Error("Network connection lost."));
+  test("gives up after the attempt budget", async () => {
+    const query = vi.fn().mockRejectedValue(sqliteError("SQLITE_BUSY"));
 
-    await expect(retryOnConnectionLoss(query, env)).rejects.toThrow(
-      "Network connection lost.",
-    );
-    expect(query).toHaveBeenCalledTimes(2);
+    await expect(retryTransient(query)).rejects.toThrow("D1_ERROR");
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(logger.warn).toHaveBeenCalledTimes(2);
   });
 });

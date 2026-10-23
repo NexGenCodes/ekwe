@@ -4,6 +4,8 @@ import { PRO_PRODUCT_IDS, SPEECH_MAX_TEXT_CHARS } from "./plans";
 import { LANGUAGES } from "./languages";
 import { FLUTTERWAVE_CURRENCIES } from "./money";
 import { VOICE_SLOT_IDS } from "./voices";
+import { HISTORY_ORIGINS } from "./origins";
+import { SYNC_PULL_ROWS } from "./sync";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -37,6 +39,35 @@ export const otpSchema = z.object({
 
 export type LoginForm = Pick<OtpRequest, "email">;
 export type OtpForm = z.infer<typeof otpSchema>;
+
+export const otpVerifyRequestSchema = z.object({
+  email: authEmailField("INVALID_EMAIL"),
+  code: z.string().regex(/^\d{6}$/, "INVALID_CODE"),
+});
+export type OtpVerifyRequest = z.infer<typeof otpVerifyRequestSchema>;
+
+export const refreshRequestSchema = z.object({
+  refreshToken: z.string().min(20).max(512),
+});
+export type RefreshRequest = z.infer<typeof refreshRequestSchema>;
+
+export const appleAuthRequestSchema = z.object({
+  identityToken: z.string().min(20).max(4096),
+  nonce: z.string().min(8).max(256),
+  fullName: z.string().trim().max(120).nullish(),
+});
+export type AppleAuthRequest = z.infer<typeof appleAuthRequestSchema>;
+
+export const googleAuthRequestSchema = z.object({
+  idToken: z.string().min(20).max(4096),
+});
+export type GoogleAuthRequest = z.infer<typeof googleAuthRequestSchema>;
+
+export const profileUpdateSchema = z.object({
+  displayName: z.string().trim().max(120).nullish(),
+  avatarIcon: z.string().trim().max(64).nullish(),
+});
+export type ProfileUpdate = z.infer<typeof profileUpdateSchema>;
 
 export const translateRequestSchema = z.object({
   text: z.string().max(10_000),
@@ -110,17 +141,57 @@ export const usageMeterSchema = z.object({
   label: z.string(),
   unit: z.string(),
   used: z.number(),
-  total: z.number(),
-  remaining: z.number(),
+  /** `null` means unlimited. `0` means the feature is not available. */
+  total: z.number().nullable(),
+  remaining: z.number().nullable(),
 });
 export type UsageMeter = z.infer<typeof usageMeterSchema>;
 
 export const usageSnapshotSchema = z.object({
   day: z.string(),
+  /** Kept for older clients; equals `monthResetsAt` in the monthly model. */
   resetsAt: z.number(),
+  month: z.string(),
+  monthResetsAt: z.number(),
   meters: z.array(usageMeterSchema),
 });
 export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>;
+
+const HISTORY_TEXT_MAX = 60_000;
+
+export const historyRowSchema = z.object({
+  id: z.string().min(8).max(64),
+  type: z.string().trim().min(1).max(32).default("transcription"),
+  captureId: z.string().max(64).nullish(),
+  origin: z.enum(HISTORY_ORIGINS).default("echo"),
+  input: z.enum(["audio", "text"]).default("audio"),
+  sourceLang: z.string().min(1).max(16),
+  targetLang: z.string().min(1).max(16),
+  transcript: z.string().max(HISTORY_TEXT_MAX),
+  translationText: z.string().max(HISTORY_TEXT_MAX).nullish(),
+  transliterationText: z.string().max(HISTORY_TEXT_MAX).nullish(),
+  duration: z.number().finite().min(0).max(86_400).default(0),
+  sourceApp: z.string().max(128).default(""),
+  voiceId: z.string().max(64).nullish(),
+  sttProvider: z.string().max(64).default(""),
+  mtProvider: z.string().max(64).nullish(),
+  createdAt: z.number().int().positive(),
+  revision: z.number().int().min(0).default(0),
+  deletedAt: z.number().int().positive().nullish(),
+  restore: z.boolean().default(false),
+});
+export type HistoryRow = z.infer<typeof historyRowSchema>;
+
+export const syncPullRequestSchema = z.object({
+  cursor: z.string().max(128).nullish(),
+  limit: z.number().int().min(1).max(SYNC_PULL_ROWS).optional(),
+});
+export type SyncPullRequest = z.infer<typeof syncPullRequestSchema>;
+
+export const syncPushRequestSchema = z.object({
+  rows: z.array(historyRowSchema).min(1),
+});
+export type SyncPushRequest = z.infer<typeof syncPushRequestSchema>;
 
 export const synthesizeRequestSchema = z.object({
   text: z.string().min(1).max(SPEECH_MAX_TEXT_CHARS).optional(),

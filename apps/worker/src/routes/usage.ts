@@ -1,5 +1,5 @@
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
-import { Env, Tier } from "@/core/types";
+import type { Env, Tier } from "@/core/types";
 import { fetchUsageSnapshot } from "@/services/usage";
 
 export async function handleUsage(

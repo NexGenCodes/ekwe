@@ -68,7 +68,7 @@ function LanguageRowComponent({
           >
             <Lock size={10} color={color.brand} strokeWidth={2.5} />
             <Text variant="caption" style={{ color: color.brand }}>
-              Pro
+              Paid
             </Text>
           </Box>
         )}

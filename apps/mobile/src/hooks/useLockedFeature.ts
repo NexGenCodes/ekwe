@@ -20,7 +20,7 @@ export function useLockedFeature(
 
   const handleLockedPress = useCallback((): void => {
     triggerHaptic(Haptics.NotificationFeedbackType.Warning);
-    AppToast.info(message ?? "Pro feature — upgrade to unlock", {
+    AppToast.info(message ?? "Paid feature — upgrade to unlock", {
       duration: 2500,
       haptics: false,
       action: navigateToBilling

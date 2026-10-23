@@ -2,10 +2,14 @@ import { DEFAULT_PAYMENT_CURRENCY } from "@ekwe/shared/money";
 import { PRO_PRODUCT_IDS } from "@ekwe/shared/plans";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { authActions } from "@/store";
-import { settingsActions } from "@/store";
-import { supabase } from "@/services/supabase";
+import type { AuthSession } from "@/store/auth";
 
+vi.mock("@/services/backend", () => ({ apiJson: vi.fn() }));
+
+vi.mock("@/services/auth", () => ({ fetchSessionUser: vi.fn() }));
+
+import { apiJson } from "@/services/backend";
+import { fetchSessionUser } from "@/services/auth";
 import {
   getFlutterwavePlanId,
   isFlutterwaveAvailable,
@@ -13,31 +17,8 @@ import {
   reconcileFlutterwaveStatus,
   verifyTransaction,
 } from "@/services/flutterwave";
-
-const getUserMock = vi.hoisted(() => vi.fn());
-
-vi.mock("@/services/supabase", () => ({
-  supabase: { auth: { getUser: getUserMock } },
-}));
-
-vi.mock("@/utils/http", () => ({
-  getWorkerUrl: vi.fn(() => "https://worker.test"),
-}));
-
-import { getWorkerUrl } from "@/utils/http";
-
-function makeSession(): Record<string, unknown> {
-  return {
-    access_token: "access-token-123",
-    user: { id: "user-1", email: "a@b.com", app_metadata: {} },
-  };
-}
-
-const jsonResponse = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
+import { authActions } from "@/store";
+import { settingsActions } from "@/store";
 
 const validCheckout = {
   tx_ref: "flw_tx_1",
@@ -53,17 +34,31 @@ const validVerify = {
   tx_ref: "flw_tx_1",
 };
 
+function makeSession(tier: "FREE" | "PREMIUM" = "FREE"): AuthSession {
+  return {
+    user: {
+      id: "user-1",
+      email: "a@b.com",
+      tier,
+      displayName: null,
+      avatarUrl: null,
+      avatarIcon: null,
+      proExpiresAt: null,
+    },
+    accessToken: "access-token-123",
+    expiresAt: Date.now() + 60_000,
+    refreshToken: "refresh",
+    refreshExpiresAt: Date.now() + 86_400_000,
+  };
+}
+
 beforeEach(() => {
+  vi.clearAllMocks();
   authActions.setSession(null);
-  authActions.setIsPro(false);
-  authActions.setEntitlementSynced(false);
   settingsActions.setCurrency(DEFAULT_PAYMENT_CURRENCY);
-  vi.mocked(getWorkerUrl).mockReturnValue("https://worker.test");
-  getUserMock.mockReset();
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -80,192 +75,139 @@ describe("isFlutterwaveAvailable", () => {
   });
 
   it("is true with a session", () => {
-    authActions.setSession(makeSession() as never);
+    authActions.setSession(makeSession());
     expect(isFlutterwaveAvailable()).toBe(true);
   });
 });
 
 describe("openFlutterwaveCheckout", () => {
-  it("fails with a user-safe message when signed out", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    await expect(openFlutterwaveCheckout(false)).rejects.toThrow(
-      "Payment could not be started. Please check your connection.",
-    );
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("fails when the worker URL is not configured", async () => {
-    authActions.setSession(makeSession() as never);
-    vi.mocked(getWorkerUrl).mockReturnValue("");
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    await expect(openFlutterwaveCheckout(false)).rejects.toThrow(
-      "Payment could not be started. Please check your connection.",
-    );
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("authorizes a monthly checkout with the NGN default", async () => {
-    authActions.setSession(makeSession() as never);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(validCheckout));
+  it("authorizes a monthly checkout in the selected currency", async () => {
+    authActions.setSession(makeSession());
+    vi.mocked(apiJson).mockResolvedValue(validCheckout as never);
 
     const result = await openFlutterwaveCheckout(false);
-    expect(result).toEqual({ canceled: false, session: validCheckout });
 
-    expect(fetchSpy).toHaveBeenCalledWith(
-      "https://worker.test/billing/checkout",
-      {
+    expect(result).toEqual({ canceled: false, session: validCheckout });
+    expect(apiJson).toHaveBeenCalledWith(
+      "/billing/checkout",
+      expect.objectContaining({
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer access-token-123",
-        },
-        body: JSON.stringify({
+        body: {
           plan: PRO_PRODUCT_IDS.monthly,
           currency: DEFAULT_PAYMENT_CURRENCY,
-        }),
-      },
+        },
+      }),
     );
   });
 
   it("sends the manual currency selection", async () => {
-    authActions.setSession(makeSession() as never);
+    authActions.setSession(makeSession());
     settingsActions.setCurrency("NGN");
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(validCheckout));
+    vi.mocked(apiJson).mockResolvedValue(validCheckout as never);
 
     await openFlutterwaveCheckout(false);
-    const init = vi.mocked(fetch).mock.calls.at(-1)![1] as RequestInit;
-    expect(JSON.parse(init.body as string)).toEqual({
-      plan: PRO_PRODUCT_IDS.monthly,
-      currency: "NGN",
-    });
-    fetchSpy.mockRestore();
+
+    expect(apiJson).toHaveBeenCalledWith(
+      "/billing/checkout",
+      expect.objectContaining({
+        body: { plan: PRO_PRODUCT_IDS.monthly, currency: "NGN" },
+      }),
+    );
   });
 
   it("requests the annual plan when toggled", async () => {
-    authActions.setSession(makeSession() as never);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(validCheckout));
+    authActions.setSession(makeSession());
+    vi.mocked(apiJson).mockResolvedValue(validCheckout as never);
 
     await openFlutterwaveCheckout(true);
-    const init = vi.mocked(fetch).mock.calls.at(-1)![1] as RequestInit;
-    expect(JSON.parse(init.body as string).plan).toBe(PRO_PRODUCT_IDS.annual);
-    fetchSpy.mockRestore();
+
+    expect(apiJson).toHaveBeenCalledWith(
+      "/billing/checkout",
+      expect.objectContaining({
+        body: expect.objectContaining({ plan: PRO_PRODUCT_IDS.annual }),
+      }),
+    );
   });
 
-  it("wraps a non-ok checkout response", async () => {
-    authActions.setSession(makeSession() as never);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response("rate limited", { status: 429 }));
+  it("wraps a failed request", async () => {
+    authActions.setSession(makeSession());
+    vi.mocked(apiJson).mockRejectedValue(new Error("429"));
 
     await expect(openFlutterwaveCheckout(false)).rejects.toThrow(
       "Payment could not be started. Please check your connection.",
     );
-    fetchSpy.mockRestore();
   });
 
   it("wraps a checkout response that fails the shared schema", async () => {
-    authActions.setSession(makeSession() as never);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse({ tx_ref: "missing-fields" }));
+    authActions.setSession(makeSession());
+    vi.mocked(apiJson).mockResolvedValue({ tx_ref: "missing-fields" } as never);
 
     await expect(openFlutterwaveCheckout(false)).rejects.toThrow(
       "Payment could not be started. Please check your connection.",
     );
-    fetchSpy.mockRestore();
   });
 });
 
 describe("verifyTransaction", () => {
-  it("rejects when signed out", async () => {
-    await expect(verifyTransaction(123)).rejects.toThrow(
-      "Authentication required",
-    );
-  });
-
   it("verifies a transaction with the worker", async () => {
-    authActions.setSession(makeSession() as never);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(validVerify));
+    authActions.setSession(makeSession());
+    vi.mocked(apiJson).mockResolvedValue(validVerify as never);
 
     await expect(verifyTransaction(123456)).resolves.toEqual(validVerify);
-    expect(fetchSpy).toHaveBeenCalledWith(
-      "https://worker.test/billing/verify-transaction",
-      {
+    expect(apiJson).toHaveBeenCalledWith(
+      "/billing/verify-transaction",
+      expect.objectContaining({
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer access-token-123",
-        },
-        body: JSON.stringify({ transaction_id: 123456 }),
-      },
+        body: { transaction_id: 123456 },
+      }),
     );
   });
 
-  it("fails on a non-ok verify response", async () => {
-    authActions.setSession(makeSession() as never);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response("nope", { status: 500 }));
+  it("fails on a request error", async () => {
+    authActions.setSession(makeSession());
+    vi.mocked(apiJson).mockRejectedValue(new Error("nope"));
 
-    await expect(verifyTransaction(123456)).rejects.toThrow(
-      "Failed to verify payment",
-    );
-    fetchSpy.mockRestore();
+    await expect(verifyTransaction(123456)).rejects.toThrow("nope");
   });
 
   it("fails on a malformed verify response", async () => {
-    authActions.setSession(makeSession() as never);
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse({ ok: false }));
+    authActions.setSession(makeSession());
+    vi.mocked(apiJson).mockResolvedValue({ ok: false } as never);
 
     await expect(verifyTransaction(123456)).rejects.toThrow(
       "Failed to verify payment",
     );
-    fetchSpy.mockRestore();
   });
 });
 
 describe("reconcileFlutterwaveStatus", () => {
-  it("returns true when a refreshed session reports is_pro", async () => {
-    getUserMock.mockResolvedValueOnce({
-      data: { user: { app_metadata: { is_pro: true } } },
-      error: null,
+  it("returns true as soon as the session reports Paid", async () => {
+    vi.mocked(fetchSessionUser).mockResolvedValue({
+      ...makeSession("PREMIUM").user,
     });
+
     await expect(reconcileFlutterwaveStatus()).resolves.toBe(true);
-    expect(supabase.auth.getUser).toHaveBeenCalledTimes(1);
+    expect(fetchSessionUser).toHaveBeenCalledTimes(1);
   });
 
-  it("polls POLL_ATTEMPTS times and gives up when still free", async () => {
+  it("polls and gives up when the account stays free", async () => {
     vi.useFakeTimers();
-    getUserMock.mockResolvedValue({
-      data: { user: { app_metadata: { is_pro: false } } },
-      error: null,
-    });
+    vi.mocked(fetchSessionUser).mockResolvedValue(makeSession("FREE").user);
 
     const promise = reconcileFlutterwaveStatus();
     await vi.advanceTimersByTimeAsync(2_500 * 20);
+
     await expect(promise).resolves.toBe(false);
-    expect(supabase.auth.getUser).toHaveBeenCalledTimes(20);
+    expect(fetchSessionUser).toHaveBeenCalledTimes(20);
   });
 
-  it("throws when the refresh reports an error", async () => {
-    getUserMock.mockResolvedValue({
-      data: { user: null },
-      error: new Error("refresh failed"),
-    });
+  it("returns false when the user cannot be read", async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchSessionUser).mockResolvedValue(null);
 
-    await expect(reconcileFlutterwaveStatus()).rejects.toThrow(
-      "refresh failed",
-    );
-    expect(supabase.auth.getUser).toHaveBeenCalledTimes(1);
+    const promise = reconcileFlutterwaveStatus();
+    await vi.advanceTimersByTimeAsync(2_500 * 20);
+
+    await expect(promise).resolves.toBe(false);
   });
 });

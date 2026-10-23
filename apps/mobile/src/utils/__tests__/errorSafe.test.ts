@@ -6,15 +6,13 @@ describe("sanitizeErrorMessage", () => {
   });
 
   it("returns null for strings with URLs", () => {
-    expect(
-      sanitizeErrorMessage("Error: check https://supabase.com"),
-    ).toBeNull();
+    expect(sanitizeErrorMessage("Error: check https://example.com")).toBeNull();
     expect(sanitizeErrorMessage("http://localhost:3000 failed")).toBeNull();
   });
 
-  it("returns null for strings with Supabase project refs", () => {
-    expect(sanitizeErrorMessage("xyz.supabase.co failed")).toBeNull();
-    expect(sanitizeErrorMessage("abc.supabase.in is down")).toBeNull();
+  it("returns null for strings with infrastructure hostnames", () => {
+    expect(sanitizeErrorMessage("ekwe-api.workers.dev failed")).toBeNull();
+    expect(sanitizeErrorMessage("preview.pages.dev is down")).toBeNull();
   });
 
   it("returns null for strings over 140 chars", () => {
@@ -25,6 +23,12 @@ describe("sanitizeErrorMessage", () => {
   it("extracts .message from Error objects", () => {
     const err = new Error("Something broke");
     expect(sanitizeErrorMessage(err)).toBe("Something broke");
+  });
+
+  it("sanitizes the message of an Error that names an internal host", () => {
+    expect(
+      sanitizeErrorMessage(new Error("ekwe-api.workers.dev failed")),
+    ).toBeNull();
   });
 
   it("recursively extracts .message from plain objects", () => {
