@@ -334,7 +334,7 @@ describe("Worker router", () => {
           `INSERT INTO users (id, email, email_norm, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?)`,
         )
-        .run(USER_ID, "pro@test.dev", "pro@test.dev", now, now);
+        .run(USER_ID, "paid@test.dev", "paid@test.dev", now, now);
 
       database.sqlite
         .prepare(
@@ -350,7 +350,7 @@ describe("Worker router", () => {
          VALUES (?, ?, 'en', 'fr', ?, ?, ?)`,
       );
       insertHistory.run("free-old", "free-user", now - 20 * DAY_MS, now, null);
-      insertHistory.run("pro-old", USER_ID, now - 20 * DAY_MS, now, null);
+      insertHistory.run("paid-old", USER_ID, now - 20 * DAY_MS, now, null);
       insertHistory.run(
         "tombstone-old",
         "free-user",
@@ -378,7 +378,7 @@ describe("Worker router", () => {
         }[]
       ).map((row) => row.id);
 
-      expect(ids).toEqual(["pro-old", "tombstone-recent"]);
+      expect(ids).toEqual(["paid-old", "tombstone-recent"]);
     });
 
     test("keeps an active Paid row for the full Paid window", async () => {
@@ -389,7 +389,7 @@ describe("Worker router", () => {
           `INSERT INTO users (id, email, email_norm, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?)`,
         )
-        .run(USER_ID, "pro@test.dev", "pro@test.dev", now, now);
+        .run(USER_ID, "paid@test.dev", "paid@test.dev", now, now);
       database.sqlite
         .prepare(
           `INSERT INTO user_subscriptions
@@ -402,7 +402,7 @@ describe("Worker router", () => {
         .prepare(
           `INSERT INTO history
              (id, user_id, source_lang, target_lang, created_at, updated_at)
-           VALUES ('pro-25d', ?, 'en', 'fr', ?, ?)`,
+           VALUES ('paid-25d', ?, 'en', 'fr', ?, ?)`,
         )
         .run(USER_ID, now - 25 * DAY_MS, now);
 
@@ -414,7 +414,7 @@ describe("Worker router", () => {
 
       expect(
         database.sqlite
-          .prepare("SELECT COUNT(*) AS n FROM history WHERE id = 'pro-25d'")
+          .prepare("SELECT COUNT(*) AS n FROM history WHERE id = 'paid-25d'")
           .get(),
       ).toEqual({ n: 1 });
     });

@@ -516,7 +516,7 @@ describe("webhookEventSchema", () => {
         data: {
           id: 4711,
           status: "successful",
-          tx_ref: "ekwe-pro-123",
+          tx_ref: "ekwe-paid-123",
           customer: { email: "a@b.com" },
         },
         id: 4711,

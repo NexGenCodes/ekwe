@@ -16,7 +16,7 @@ describe("BILLING_PLANS history copy", () => {
     );
   });
 
-  it("matches the pro cloud retention window", () => {
+  it("matches the Paid cloud retention window", () => {
     expect(titles(BILLING_PLANS.pro)).toContain(
       `${HISTORY_TTL_PAID_DAYS}-day cloud history`,
     );

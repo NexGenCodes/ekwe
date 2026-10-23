@@ -116,7 +116,7 @@ describe("useBilling", () => {
       expect(mockOpenCheckout).not.toHaveBeenCalled();
     });
 
-    it("opens checkout and celebrates when pro reconciles", async () => {
+    it("opens checkout and celebrates when the paid plan reconciles", async () => {
       mockOpenCheckout.mockResolvedValue({
         canceled: false,
         session: {

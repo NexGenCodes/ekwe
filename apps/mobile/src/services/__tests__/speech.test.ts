@@ -210,7 +210,7 @@ describe("synthesizeSpeech", () => {
     expect(result).toEqual(err(EkweError.TEXT_TOO_LONG));
   });
 
-  it("allows pro-length text for a pro account", async () => {
+  it("allows paid-length text for a Paid account", async () => {
     auth$.isPro.set(true);
     const fetchSpy = mockSynthFetch("audio/wav");
     const result = await synthesizeSpeech("x".repeat(2400), "en");

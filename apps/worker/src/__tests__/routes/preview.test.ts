@@ -79,7 +79,7 @@ function preview(
 }
 
 describe("synthesizeVoicePreview", () => {
-  test("serves a pro-voice preview to a free user without a gate or charge", async () => {
+  test("serves a paid-voice preview to a free user without a gate or charge", async () => {
     trackGates();
     const deepgramCalls = { count: 0 };
     const env = previewEnv(deepgramCalls);

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { EkweError, ErrorMessages } from "@/constants/errors";
 
 describe("billing limit error copy", () => {
-  it("states both the free and pro audio upload caps", () => {
+  it("states both the free and paid audio upload caps", () => {
     const message = ErrorMessages[EkweError.FILE_TOO_LARGE];
     const freeMb = Math.round(FREE_LIMITS.maxAudioBytes / 1_048_576);
     const proMb = Math.round(PREMIUM_LIMITS.maxAudioBytes / 1_048_576);

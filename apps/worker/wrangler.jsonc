@@ -11,7 +11,7 @@
   // (TRANSCRIBE_MAX_BUDGET_MS) stays reachable for long clips.
 
   // Daily maintenance: cache cleanup, history retention (free: 14d,
-  // pro: 30d), tombstone purge, R2 speech-cache purge, and Flutterwave
+  // paid: 30d), tombstone purge, R2 speech-cache purge, and Flutterwave
   // reconciliation. Runs directly in the `scheduled` handler.
   "triggers": {
     "crons": ["0 3 * * *"]
