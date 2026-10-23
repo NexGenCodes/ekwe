@@ -11,7 +11,6 @@ regexes = [
   '''FLWPUBK-abc123''',
   '''FLWSECK-abc123''',
   '''sk_test_abc123def456''',
-  '''your-service-role-key''',
   # Flutterwave TEST-mode key pair in apps/mobile/.env.example (matched exactly;
   # treating the full string as a constant unit rather than per-part regexes).
   '''FLWPUBK_TEST-431faadc1b0f600baf9b2004f4974573-X''',
@@ -19,9 +18,6 @@ regexes = [
   # Google/Firebase project API key in google-services.json — public by design
   # (shipped in every Android build; access is governed server-side / App Check).
   '''AIzaSyDl4YPne5Kz6QLv5KKaebfpb4BRtpnCX6k''',
-  # Supabase anon (publishable) key for the share extension — public by design,
-  # used in client code; RLS enforces row-level security.
-  '''sb_publishable_CJoH2-aFPqmP1sGB4iZv1Q_wSl_fiyg''',
   # Empty provider-key placeholders in apps/worker/.dev.vars.example
   # (ASSEMBLYAI_KEY_1=, MISTRAL_KEY_2=, etc.) — no value, so nothing to leak.
   '''^[A-Z0-9_]+_KEY_[0-9]+=$''',
@@ -29,10 +25,4 @@ regexes = [
   # fixed constant every Edge client sends, not a credential: it authorises
   # nothing on our side and grants no access to any account or resource.
   '''6A5AA1D4EAFF4E9FB37E23D68491D6F4''',
-]
-paths = [
-  # SHA-256 digests of applied migrations, emitted by scripts/lock-migrations.mjs.
-  # `generic-api-key` matches them because the keys are migration filenames that
-  # contain "access_token"/"push_token" and the digests clear the entropy floor.
-  '''^supabase/migrations/checksums\.json$''',
 ]

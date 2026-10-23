@@ -50,7 +50,7 @@ export default defineConfig({
     include: ["src/**/__tests__/**/*.test.{ts,tsx}"],
     server: {
       deps: {
-        inline: ["@ekwe/shared", "@ekwe/db", /^expo-/, "lucide-react-native"],
+        inline: ["@ekwe/shared", /^expo-/, "lucide-react-native"],
       },
     },
     coverage: {

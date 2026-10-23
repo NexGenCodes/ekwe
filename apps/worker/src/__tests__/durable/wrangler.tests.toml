@@ -26,16 +26,10 @@ binding = "DB"
 database_name = "ekwe-tests"
 database_id = "00000000-0000-0000-0000-000000000000"
 
-# `getDb` reaches Supabase over the Postgres wire protocol, which no HTTP mock
-# can intercept (and there is no local Postgres). `durable/setup.ts` replaces
-# the `@/db` module with an in-memory Drizzle-shaped stand-in via `vi.mock`, so
-# no database is contacted. The binding must still exist because the DO code
-# guards on `env.HYPERDRIVE` presence; its connection string is never dialed.
-[[hyperdrive]]
-binding = "HYPERDRIVE"
-id = "local"
-localConnectionString = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
-
+# `getDb` is D1-backed, but the DO tests replace it with an in-memory,
+# Drizzle-shaped stand-in via `vi.mock` so each suite gets deterministic query
+# results. The DB binding above is still used by the stream preflight gate,
+# whose daily/monthly tables are created in `durable/setup.ts`.
 [[durable_objects.bindings]]
 name = "STREAM_DO"
 class_name = "StreamDurableObject"

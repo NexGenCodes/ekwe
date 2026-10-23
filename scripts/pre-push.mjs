@@ -39,33 +39,17 @@ if (diff) {
   console.log("  (no changes)\n");
 }
 
-console.log("Checking migration directory (naming + applied checksums)...\n");
+console.log("Checking D1 migration directory (naming + ordering)...\n");
 try {
   run("node scripts/check-migrations.mjs", {});
   console.log();
 } catch {
-  // Do not warn-and-continue here. Editing or deleting a migration that has
-  // already been applied is the failure this catches, and it is invisible to
-  // the Supabase CLI, so letting the push proceed would ship the change as if
-  // it had been applied. The fix is a new forward migration.
+  // Do not warn-and-continue here. A duplicate numeric prefix or a malformed
+  // filename makes Wrangler's apply order unpredictable. The fix is a new
+  // forward migration with a unique prefix.
   process.exit(1);
 }
 
 console.log(
-  "Previewing Supabase migrations (dry-run, nothing is applied)...\n",
+  "D1 migrations are applied by the deploy workflow before the Worker ships.\n",
 );
-try {
-  run("supabase db push --linked --dry-run --include-all", {
-    env: {
-      ...process.env,
-      SUPABASE_DB_PASSWORD: process.env.SUPABASE_DB_PASSWORD ?? "",
-    },
-  });
-  console.log(
-    "\n✔ Migrations in sync (or nothing pending). They are applied in CI.\n",
-  );
-} catch {
-  console.log(
-    "\nℹ Pending migrations or link issue — CI's 'Apply DB migrations' job will handle them.\n",
-  );
-}

@@ -75,6 +75,7 @@ vi.mock("expo-apple-authentication", () => ({
 import * as AppleAuthentication from "expo-apple-authentication";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 
+import { getAppCheckToken } from "@/services/appCheck";
 import { apiFetch, apiJson, ApiError } from "@/services/backend";
 import { Db } from "@/services/db";
 import {
@@ -195,6 +196,74 @@ describe("sendOtp", () => {
     expect(result).toEqual({ ok: false, error: "Too many requests" });
   });
 
+  it("maps a server error to a retry message", async () => {
+    mockRoutes({
+      "/auth/otp": new ApiError(500, "server_error", "down"),
+    });
+
+    const result = await sendOtp("person@ekwe.app");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "The server is having trouble. Please try again in a moment.",
+    });
+  });
+
+  it("falls back when the API error has no message", async () => {
+    mockRoutes({
+      "/auth/otp": new ApiError(400, "bad_request", ""),
+    });
+
+    const result = await sendOtp("person@ekwe.app");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "We couldn't send the code. Please try again in a moment.",
+    });
+  });
+
+  it("maps an offline network error", async () => {
+    const offline = Object.assign(new Error("offline"), {
+      name: "OfflineNetworkError",
+    });
+    mockRoutes({ "/auth/otp": offline });
+
+    const result = await sendOtp("person@ekwe.app");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "No internet connection. Please connect and try again.",
+    });
+  });
+
+  it("maps a timeout and tracks it as unexpected", async () => {
+    const timeout = Object.assign(new Error("timeout"), {
+      name: "TimeoutError",
+    });
+    mockRoutes({ "/auth/otp": timeout });
+
+    const result = await sendOtp("person@ekwe.app");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "The request timed out. Please try again.",
+    });
+  });
+
+  it("forwards an App Check token when available", async () => {
+    vi.mocked(getAppCheckToken).mockResolvedValueOnce("app-check-token");
+    mockRoutes({ "/auth/otp": { ok: true } });
+
+    await sendOtp("person@ekwe.app");
+
+    expect(apiJson).toHaveBeenCalledWith(
+      "/auth/otp",
+      expect.objectContaining({
+        body: expect.objectContaining({ appCheckToken: "app-check-token" }),
+      }),
+    );
+  });
+
   it("fails fast without a worker URL", async () => {
     vi.stubEnv("EXPO_PUBLIC_WORKER_URL", "");
 
@@ -302,6 +371,36 @@ describe("signInWithApple", () => {
     expect(result.ok).toBe(false);
     expect(apiJson).not.toHaveBeenCalled();
   });
+
+  it("omits an empty full name", async () => {
+    vi.mocked(AppleAuthentication.signInAsync).mockResolvedValue({
+      identityToken: "apple-token",
+      fullName: null,
+    } as never);
+    mockRoutes({ "/auth/apple": sessionResponse });
+
+    await signInWithApple();
+
+    expect(apiJson).toHaveBeenCalledWith(
+      "/auth/apple",
+      expect.objectContaining({
+        body: { identityToken: "apple-token", nonce: expect.any(String) },
+      }),
+    );
+  });
+
+  it("reports a native failure", async () => {
+    vi.mocked(AppleAuthentication.signInAsync).mockRejectedValue(
+      new Error("native failure"),
+    );
+
+    const result = await signInWithApple();
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Apple Sign In failed. Please try again.",
+    });
+  });
 });
 
 describe("signInWithGoogle", () => {
@@ -331,6 +430,34 @@ describe("signInWithGoogle", () => {
     expect(result).toEqual({ ok: false });
     expect(apiJson).not.toHaveBeenCalled();
   });
+
+  it("reports a missing id token", async () => {
+    vi.mocked(GoogleSignin.signIn).mockResolvedValue({
+      type: "success",
+      data: { idToken: null },
+    } as never);
+
+    const result = await signInWithGoogle();
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Google Sign In couldn't be completed.",
+    });
+    expect(apiJson).not.toHaveBeenCalled();
+  });
+
+  it("reports a provider error", async () => {
+    vi.mocked(GoogleSignin.signIn).mockRejectedValue(
+      new Error("play services unavailable"),
+    );
+
+    const result = await signInWithGoogle();
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Google Sign In failed. Please try again.",
+    });
+  });
 });
 
 describe("fetchSessionUser", () => {
@@ -355,6 +482,18 @@ describe("fetchSessionUser", () => {
     expect(result).toBeNull();
     expect(auth$.session.peek()).toBeNull();
     expect(SyncService.onUserSignedOut).toHaveBeenCalled();
+  });
+
+  it("keeps the session on a transient error", async () => {
+    signedIn();
+    mockRoutes({
+      "/auth/session": new ApiError(500, "server_error", "down"),
+    });
+
+    const result = await fetchSessionUser();
+
+    expect(result).toBeNull();
+    expect(auth$.session.peek()).not.toBeNull();
   });
 
   it("returns null when signed out", async () => {
@@ -404,6 +543,17 @@ describe("signOut", () => {
       expect.objectContaining({ method: "POST" }),
     );
     expect(auth$.session.peek()).toBeNull();
+  });
+
+  it("signs out when there is no locally cached user", async () => {
+    const result = await signOut();
+
+    expect(result).toEqual({ ok: true });
+    expect(SyncService.drain).not.toHaveBeenCalled();
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/auth/logout",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("keeps local history while rows are still queued", async () => {

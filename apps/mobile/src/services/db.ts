@@ -11,7 +11,7 @@ import {
   inArray,
   placeholder,
 } from "drizzle-orm";
-import { history, outbox } from "@ekwe/db/local-schema";
+import { history, outbox } from "@/db/schema";
 
 import migrations from "../../drizzle/migrations";
 

@@ -1,5 +1,5 @@
--- Drizzle schema snapshot for the shared local SQLite schema
--- (packages/db/src/local-schema.ts), plus the FTS5 full-text search table.
+-- Drizzle schema snapshot for the local SQLite schema
+-- (apps/mobile/src/db/schema.ts), plus the FTS5 full-text search table.
 -- Statements are idempotent (IF NOT EXISTS) so a pre-existing ekwe.db written
 -- by the legacy op-sqlite layer migrates in place without data loss.
 CREATE TABLE IF NOT EXISTS `history` (

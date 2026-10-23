@@ -13,6 +13,9 @@ const devState = vi.hoisted(() => ({ isDevice: true }));
 const sessionState = vi.hoisted(() => ({
   current: { user: { id: "u1" } } as { user: { id: string } } | null,
 }));
+const pushTokenListenerState = vi.hoisted(() => ({
+  listener: null as ((token: unknown) => Promise<void>) | null,
+}));
 
 const loggerMock = vi.hoisted(() => ({
   info: vi.fn(),
@@ -27,7 +30,10 @@ vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
   requestPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
   getExpoPushTokenAsync: vi.fn(async () => ({ data: "ExpoPushToken[test]" })),
-  addPushTokenListener: vi.fn(() => ({ remove: vi.fn() })),
+  addPushTokenListener: vi.fn((cb: (token: unknown) => Promise<void>) => {
+    pushTokenListenerState.listener = cb;
+    return { remove: vi.fn() };
+  }),
   addNotificationResponseReceivedListener: vi.fn(() => ({ remove: vi.fn() })),
   AndroidImportance: { HIGH: "high" },
 }));
@@ -85,6 +91,7 @@ vi.mock("expo-router", () => ({
 }));
 
 import * as Notifications from "expo-notifications";
+import { router } from "expo-router";
 
 import { apiJson, ApiError } from "@/services/backend";
 import logger from "@/utils/logger";
@@ -224,6 +231,36 @@ describe("registerForPushNotifications", () => {
   });
 });
 
+describe("push token refresh listener", () => {
+  it("re-registers the rotated device token", async () => {
+    await pushTokenListenerState.listener?.({ data: "device-token" });
+
+    expect(Notifications.getExpoPushTokenAsync).toHaveBeenCalledWith({
+      projectId: "eas-proj-123",
+      devicePushToken: { data: "device-token" },
+    });
+    expect(apiJson).toHaveBeenCalledWith(
+      "/devices/token",
+      expect.objectContaining({
+        body: expect.objectContaining({ push_token: "ExpoPushToken[test]" }),
+      }),
+    );
+  });
+
+  it("logs a refresh failure without throwing", async () => {
+    vi.mocked(Notifications.getExpoPushTokenAsync).mockRejectedValueOnce(
+      new Error("firebase unavailable"),
+    );
+
+    await pushTokenListenerState.listener?.({ data: "device-token" });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[Notifications] Token refresh re-register failed:",
+      expect.any(Error),
+    );
+  });
+});
+
 describe("setupNotificationTapListener", () => {
   it("logs the tapped notification and returns a cleanup that unsubscribes", () => {
     let listener: ((response: never) => void) | null = null;
@@ -250,5 +287,53 @@ describe("setupNotificationTapListener", () => {
 
     cleanup();
     expect(remove).toHaveBeenCalled();
+  });
+
+  it("navigates to a URL carried by the notification", () => {
+    let listener: ((response: never) => void) | null = null;
+    vi.mocked(
+      Notifications.addNotificationResponseReceivedListener,
+    ).mockImplementation(((cb: (response: never) => void) => {
+      listener = cb;
+      return { remove: vi.fn() } as never;
+    }) as never);
+
+    const cleanup = setupNotificationTapListener();
+
+    (listener as ((response: never) => void) | null)?.({
+      notification: {
+        request: { content: { data: { url: "/history/42" } } },
+      },
+    } as never);
+
+    expect(router.push).toHaveBeenCalledWith("/history/42");
+    cleanup();
+  });
+
+  it("logs a failed route push without throwing", () => {
+    let listener: ((response: never) => void) | null = null;
+    vi.mocked(
+      Notifications.addNotificationResponseReceivedListener,
+    ).mockImplementation(((cb: (response: never) => void) => {
+      listener = cb;
+      return { remove: vi.fn() } as never;
+    }) as never);
+    vi.mocked(router.push).mockImplementationOnce(() => {
+      throw new Error("bad route");
+    });
+
+    const cleanup = setupNotificationTapListener();
+
+    (listener as ((response: never) => void) | null)?.({
+      notification: {
+        request: { content: { data: { url: "/missing" } } },
+      },
+    } as never);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[Notifications] Failed to push notification route:",
+      expect.any(Error),
+    );
+    cleanup();
   });
 });

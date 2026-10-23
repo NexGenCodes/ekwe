@@ -60,19 +60,14 @@ skills-lock.json
 # MCP
 mcp_config.json
 
-# Supabase
-.branches
-.temp
+# Secrets
 .env.keys
 .env.local
 .env.*.local
 **/.env.*
 !**/.env.example
-supabase/.env
 **/keystore.properties
 apps/mobile/secrets/
-
-# Secrets
 **/firebase-adminsdk-*.json
 
 # Embedded git repos (thirdparty)
@@ -91,8 +86,6 @@ expo-env.d.ts
 .env.production
 .env*.local
 *.hprof
-# Drizzle introspection output (read-only dump from `db:pull`), not committed.
-packages/db/dumps/
 # Generated at expo prebuild (app.plugin.js), not committed.
 apps/mobile/targets/share/EchoEnvironment.swift
 apps/mobile/targets/share/DesignTokens.swift

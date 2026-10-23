@@ -6,7 +6,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "build": "wrangler deploy --dry-run --outdir dist",
-    "test": "vitest run",
+    "test": "vitest run --project unit && vitest run --project workers",
     "test:ci": "vitest run --project unit --coverage",
     "test:watch": "vitest",
     "test:unit": "vitest run --project unit",
@@ -35,7 +35,6 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@ekwe/db": "workspace:*",
     "@ekwe/shared": "workspace:*",
     "@hono/zod-validator": "^0.9.1",
     "@sentry/cloudflare": "^10.70.0",

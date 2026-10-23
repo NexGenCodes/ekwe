@@ -1,4 +1,0 @@
--- Drizzle baseline (no-op).
--- The schema captured in `meta/0000_snapshot.json` matches the current
--- src/schema tables; the DDL that created them lives in the hand-written
--- Supabase migrations (2026*.sql). Drizzle tracks state from here onward.

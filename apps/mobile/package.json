@@ -23,12 +23,12 @@
     "test:e2e:ios": "maestro test .maestro/",
     "test:e2e:android": "maestro test .maestro/",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "knip:check": "knip",
     "prepare": ""
   },
   "dependencies": {
     "@bacons/apple-targets": "^5.0.0",
-    "@ekwe/db": "workspace:*",
     "@ekwe/shared": "workspace:*",
     "@expo/metro-runtime": "~57.0.15",
     "@hookform/resolvers": "^5.2.2",
@@ -93,6 +93,7 @@
     "@vitest/coverage-v8": "^4.1.6",
     "babel-plugin-inline-import": "^3.0.0",
     "babel-preset-expo": "~57.0.5",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",

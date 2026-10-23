@@ -7,13 +7,9 @@ import {
   type MockExecuteQuery,
 } from "@/__tests__/helpers/mock-db";
 
-// The Durable Objects reach Supabase through Hyperdrive over the Postgres wire
-// protocol. That cannot be intercepted by MSW (there is no HTTP request to
-// mock) and there is no local Postgres in the workerd test pool, so the real
-// `getDb` would open a TCP socket to 127.0.0.1:54322 and fail with "Network
-// connection lost", making the stream preflight gate fail closed. Replace
-// `getDb` with an in-memory, Drizzle-shaped stand-in so DO tests exercise the
-// same code path with deterministic RPC responses.
+// The Durable Objects use the D1-backed `getDb`. Replace it with an in-memory,
+// Drizzle-shaped stand-in so the DO tests do not depend on D1 state and get
+// deterministic query results while still exercising the same call sites.
 const mockDb = {
   execute: (query: MockExecuteQuery) => defaultMockDbExecute(query),
   select(this: unknown) {

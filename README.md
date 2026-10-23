@@ -45,7 +45,7 @@ The Worker exposes the primary routes used by the mobile app:
 > **API compatibility:** Use `/synthesize` instead of `/tts`. The response is
 > JSON carrying an `audioUrl` rather than inline audio — the worker stores the
 > clip in its speech cache and serves it from `GET /speech/:key`, so the
-> response stays small however long the clip is. Apply the Supabase migrations
+> response stays small however long the clip is. Apply the D1 migrations
 > before deploying the new Worker, and ship the Worker and mobile client
 > together because endpoint names and response formats changed.
 
@@ -64,8 +64,8 @@ The Worker exposes the primary routes used by the mobile app:
 - **Animations:** `react-native-reanimated`
 - **Audio:** `expo-audio`
 - **Local Database:** `expo-sqlite` + `drizzle-orm`
-- **Backend:** Cloudflare Workers (provider failover, streaming, queues, Durable Objects, KV, D1, and R2) + Supabase
-- **Database:** Supabase (PostgreSQL, RLS, edge functions)
+- **Backend:** Cloudflare Workers (provider failover, streaming, queues, Durable Objects, KV, D1, and R2)
+- **Database:** Cloudflare D1 (SQLite at the edge) for server data; on-device SQLite for the mobile cache
 - **Payments:** Flutterwave (checkout + webhooks + reconciliation)
 - **AI Providers:** Deepgram, AssemblyAI, Gladia, Wit.ai, Groq, Mistral, Gemini, Cohere, Cloudflare AI, OpenRouter, ElevenLabs, Edge
 - **Error Tracking:** Sentry
@@ -81,10 +81,8 @@ ekwe/
 │   ├── web/             # Landing site (Cloudflare Pages)
 │   └── worker/          # Cloudflare Worker backend (API + cron + queues)
 ├── packages/
-│   ├── shared/          # Shared types, plans, schemas, design tokens
-│   └── db/              # Drizzle schema for the local SQLite layer
+│   └── shared/          # Shared types, plans, schemas, design tokens
 ├── scripts/             # Build, token & versioning scripts
-├── supabase/            # Database migrations, RLS & edge functions
 └── turbo.json           # Turborepo config
 ```
 
@@ -139,8 +137,13 @@ on GitHub Releases:
 5. **Database migrations:**
 
    ```bash
-   pnpm --filter @ekwe/db migrate
+   pnpm db:migrate          # apply pending D1 migrations
+   pnpm db:generate:local   # regenerate the mobile SQLite schema after edits
    ```
+
+   D1 migrations live in `apps/worker/migrations/`. The Worker schema is in
+   `apps/worker/src/db/schema.ts`, and the on-device schema is in
+   `apps/mobile/src/db/schema.ts`.
 
 ## Tests
 

@@ -67,7 +67,6 @@ updateJson('./package.json', rk => { rk.version = NEXT; });
 updateJson('./apps/web/config.json', w => { if (w.app) w.app.version = NEXT; });
 updateJson('./apps/web/package.json', w => { w.version = NEXT; });
 updateJson('./apps/worker/package.json', w => { w.version = NEXT; });
-updateJson('./packages/db/package.json', w => { w.version = NEXT; });
 updateJson('./packages/shared/package.json', w => { w.version = NEXT; });
 
 

@@ -14,7 +14,7 @@ import {
   historyRowToEntry,
   normalizeEntryType,
 } from "@/services/historyMapper";
-import { history } from "@ekwe/db/local-schema";
+import { history } from "@/db/schema";
 import { historyRowSchema } from "@ekwe/shared";
 import type { HistoryRow as WireHistoryRow } from "@ekwe/shared";
 

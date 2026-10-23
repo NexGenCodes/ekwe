@@ -10,9 +10,8 @@ import type { SQL } from "drizzle-orm";
 export type MockExecuteQuery = string | (SQL & { sql?: unknown });
 
 /**
- * `getDb().execute()` resolves to the row list itself under the postgres-js
- * driver — every call site reads `result.length` / `result[0]`, never a
- * `rows` envelope.
+ * `getDb().execute()` resolves to the row list itself — every call site reads
+ * `result.length` / `result[0]`, never a `rows` envelope.
  */
 export type MockRows = unknown[];
 

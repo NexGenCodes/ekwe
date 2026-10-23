@@ -11,8 +11,6 @@ apps/mobile/assets/android/
 
 # Generated sources
 apps/worker/worker-configuration.d.ts
-packages/db/dumps/
-packages/db/src/schema.ts
 
 # Third-party native code vendored into the repo
 apps/mobile/modules/ekwe-native/cpp/thirdparty/
