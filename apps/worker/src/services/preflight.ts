@@ -193,7 +193,7 @@ async function readDailyUsed(
   return type === "transcribe" ? used / 60_000 : used;
 }
 
-async function readMonthlyUsage(
+export async function readMonthlyUsage(
   env: Env,
   userId: string,
 ): Promise<MonthlyUsageRow> {
@@ -493,6 +493,153 @@ export async function runPreflightGate(
 
   return { ok: true, tier };
 }
+
+/**
+ * Same gate as runPreflightGate but accepts pre-fetched usage rows.
+ * Use in multi-stage pipelines (synthesize audio) to avoid re-reading D1
+ * on every stage — read once, pass through.
+ */
+export async function runPreflightGateWithUsage(
+  env: Env,
+  ctx: { waitUntil: (promise: Promise<unknown>) => void },
+  userId: string,
+  tier: Tier,
+  usageType: UsageType,
+  prefetched: { daily: number; monthly: MonthlyUsageRow },
+  skipCooldown = false,
+  chargeChars = 0,
+  durationMs = 0,
+): Promise<PreflightGateResult> {
+  const cooldownSeconds = skipCooldown ? 0 : getLimits(tier).cooldownSeconds;
+
+  if (cooldownSeconds > 0) {
+    let outcome: CooldownOutcome;
+    try {
+      outcome = await consumeCooldown(env, userId, cooldownSeconds * 1000);
+    } catch (error) {
+      logger.error("[preflight] cooldown write failed, failing closed", {
+        error: describeError(error),
+        type: usageType,
+      });
+      return { ok: false, response: unavailable() };
+    }
+    if (!outcome.allowed) {
+      ctx.waitUntil(
+        recordUserEvent(
+          env,
+          "preflight",
+          userId,
+          "deny",
+          usageType,
+          "RATE_LIMIT",
+        ).catch(() => {}),
+      );
+      return { ok: false, response: rateLimited(outcome.retryAfter) };
+    }
+  }
+
+  const dailyLimit = dailyLimitFor(tier, usageType);
+  const dailyNeed = dailyNeedFor(usageType, chargeChars, durationMs);
+  const monthlyLimit = monthlyLimitFor(tier, usageType);
+  const monthlyNeed = monthlyNeedFor(usageType, chargeChars, durationMs);
+  const budgetLimit = getLimits(tier).monthlyAiCreditsLimit;
+  const budgetNeed = aiCreditsForUsage(usageType, {
+    chars: chargeChars,
+    durationMs,
+  });
+
+  const dailyUsed = prefetched.daily;
+  const monthly = prefetched.monthly;
+
+  if (
+    dailyNeed > 0 ? dailyUsed + dailyNeed > dailyLimit : dailyUsed >= dailyLimit
+  ) {
+    ctx.waitUntil(
+      recordUserEvent(
+        env,
+        "preflight",
+        userId,
+        "deny",
+        usageType,
+        "QUOTA_EXCEEDED",
+      ).catch(() => {}),
+    );
+    return {
+      ok: false,
+      response: quotaExceeded(
+        usageType,
+        "daily",
+        dailyLimit,
+        dailyLimit - dailyUsed,
+        dailyUnitFor(usageType),
+      ),
+    };
+  }
+
+  const monthlyUsed = monthlyUsedFor(monthly, usageType);
+  if (
+    monthlyNeed > 0
+      ? monthlyUsed + monthlyNeed > monthlyLimit
+      : monthlyUsed >= monthlyLimit
+  ) {
+    ctx.waitUntil(
+      recordUserEvent(
+        env,
+        "preflight",
+        userId,
+        "deny",
+        usageType,
+        "QUOTA_EXCEEDED",
+      ).catch(() => {}),
+    );
+    return {
+      ok: false,
+      response: quotaExceeded(
+        usageType,
+        "monthly",
+        monthlyLimit,
+        monthlyLimit - monthlyUsed,
+        monthlyUnitFor(usageType),
+      ),
+    };
+  }
+
+  if (
+    budgetNeed > 0
+      ? monthly.ai_credits + budgetNeed > budgetLimit
+      : monthly.ai_credits >= budgetLimit
+  ) {
+    ctx.waitUntil(
+      recordUserEvent(
+        env,
+        "preflight",
+        userId,
+        "deny",
+        usageType,
+        "QUOTA_EXCEEDED",
+      ).catch(() => {}),
+    );
+    return {
+      ok: false,
+      response: quotaExceeded(
+        usageType,
+        "budget",
+        budgetLimit,
+        budgetLimit - monthly.ai_credits,
+        "credits",
+      ),
+    };
+  }
+
+  ctx.waitUntil(
+    recordUserEvent(env, "preflight", userId, "allow", usageType, "ok").catch(
+      () => {},
+    ),
+  );
+  return { ok: true, tier };
+}
+
+export type { MonthlyUsageRow };
 
 function dailyUnitFor(type: UsageType): string {
   return type === "transcribe"

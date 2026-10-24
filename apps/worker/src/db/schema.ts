@@ -141,17 +141,6 @@ export const userDailyUsage = sqliteTable(
   (t) => [primaryKey({ columns: [t.userId, t.day] })],
 );
 
-export const userCooldowns = sqliteTable("user_cooldowns", {
-  userId: text("user_id").primaryKey(),
-  lastRequestAt: integer("last_request_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-});
-
-export const syncCooldowns = sqliteTable("sync_cooldowns", {
-  userId: text("user_id").primaryKey(),
-  lastPushAt: integer("last_push_at").notNull(),
-});
-
 export const flutterwaveClaims = sqliteTable(
   "flutterwave_claims",
   {

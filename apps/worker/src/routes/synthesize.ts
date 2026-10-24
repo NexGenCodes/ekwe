@@ -6,6 +6,7 @@ import {
   VOICE_SLOT_IDS,
   getStandardSlot,
   getVoiceSlot,
+  utcDay,
 } from "@ekwe/shared";
 import { logger } from "@/core/logger";
 import { RequestTimings } from "@/core/timing";
@@ -27,7 +28,12 @@ import { hashKey } from "@/utils/keys";
 import { signSpeechUrl } from "@/utils/speech-url";
 import { ingestAudioUpload, resolveBilledDurationMs } from "@/services/audio";
 import { detectTextLanguage } from "@/services/auto-detect";
-import { runPreflightGate } from "@/services/preflight";
+import {
+  runPreflightGate,
+  runPreflightGateWithUsage,
+  readMonthlyUsage,
+  type MonthlyUsageRow,
+} from "@/services/preflight";
 import {
   buildTranslateCacheKey,
   readTranslateCache,
@@ -84,29 +90,32 @@ async function reserveSpeechGate(
   jwtTier: Tier,
   gateCharge: { skipCooldown: () => boolean; markCharged: () => void },
   chargeChars: number,
+  prefetchedUsage?: { daily: number; monthly: MonthlyUsageRow },
 ): Promise<SpeechGate> {
   const skipCooldown = gateCharge.skipCooldown();
   gateCharge.markCharged();
-  const gate = await runPreflightGate(
-    env,
-    ctx,
-    userId,
-    jwtTier,
-    "speech",
-    skipCooldown,
-    chargeChars,
-  );
-  if (!gate.ok) {
-    return {
-      ok: false,
-      response: gate.response,
-      tier: jwtTier,
-    };
-  }
-  return {
-    ok: true,
-    tier: gate.tier,
-  };
+  const gate = prefetchedUsage
+    ? await runPreflightGateWithUsage(
+        env,
+        ctx,
+        userId,
+        jwtTier,
+        "speech",
+        prefetchedUsage,
+        skipCooldown,
+        chargeChars,
+      )
+    : await runPreflightGate(
+        env,
+        ctx,
+        userId,
+        jwtTier,
+        "speech",
+        skipCooldown,
+        chargeChars,
+      );
+  if (!gate.ok) return { ok: false, response: gate.response, tier: jwtTier };
+  return { ok: true, tier: gate.tier };
 }
 
 function guardVoiceEntitlement(
@@ -138,6 +147,7 @@ interface TranslateStageOptions {
   budgetMs: number;
   ctx: ExecutionContext;
   gateCharge: { skipCooldown: () => boolean; markCharged: () => void };
+  prefetchedUsage?: { daily: number; monthly: MonthlyUsageRow };
 }
 
 type TranslateStageOutcome =
@@ -157,19 +167,31 @@ async function translateStage(
     budgetMs,
     ctx,
     gateCharge,
+    prefetchedUsage,
   } = options;
 
   const skipCooldown = gateCharge.skipCooldown();
   gateCharge.markCharged();
-  const gate = await runPreflightGate(
-    env,
-    ctx,
-    userId,
-    tier,
-    "translate",
-    skipCooldown,
-    text.length,
-  );
+  const gate = prefetchedUsage
+    ? await runPreflightGateWithUsage(
+        env,
+        ctx,
+        userId,
+        tier,
+        "translate",
+        prefetchedUsage,
+        skipCooldown,
+        text.length,
+      )
+    : await runPreflightGate(
+        env,
+        ctx,
+        userId,
+        tier,
+        "translate",
+        skipCooldown,
+        text.length,
+      );
   if (!gate.ok) return { ok: false, response: gate.response };
   if (signal.aborted) throw new Error(CLIENT_ABORTED);
   const pipelineTier = gate.tier;
@@ -267,7 +289,6 @@ export async function buildSpeechResponse(
 interface FinishSpeechOptions {
   spokenText: string;
   spokenLang: string;
-  /** Undefined when the client has not chosen a gender. */
   gender: "male" | "female" | undefined;
   voiceId: string | undefined;
   jwtTier: Tier;
@@ -275,12 +296,15 @@ interface FinishSpeechOptions {
   signal: AbortSignal;
   ctx: ExecutionContext;
   userId: string;
-  /** Distinguishes successive renders of identical text. */
   reroll?: number;
   remainingMs: () => number;
   timings: RequestTimings;
   meta: ResponseMeta;
   gateCharge: { skipCooldown: () => boolean; markCharged: () => void };
+  /** Pre-hashed userId for speech cache key — avoids re-hashing on each call. */
+  userIdHash?: string;
+  /** Pre-fetched usage rows to skip D1 re-read in the speech gate. */
+  prefetchedUsage?: { daily: number; monthly: MonthlyUsageRow };
 }
 
 async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
@@ -299,6 +323,8 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     timings,
     meta,
     gateCharge,
+    userIdHash,
+    prefetchedUsage,
   } = options;
 
   let cleanSpoken = sanitizeTranslationText(spokenText);
@@ -346,6 +372,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
     jwtTier,
     gateCharge,
     cleanSpoken.length,
+    prefetchedUsage,
   );
 
   const speculative = timings
@@ -355,7 +382,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
         spokenLang,
         gender,
         voiceId,
-        userId,
+        userIdHash ?? userId,
         slotTier,
         "user",
         reroll,
@@ -401,7 +428,7 @@ async function finishSpeech(options: FinishSpeechOptions): Promise<Response> {
       spokenLang,
       gender,
       voiceId,
-      userId,
+      userIdHash ?? userId,
       executionTier,
       "user",
       reroll,
@@ -677,17 +704,50 @@ export async function synthesizeFromAudio(
   gateCharge.markCharged();
   const maxClipMs = getLimits(tier).dictationDurationMs;
   const gateDurationMs = Math.min(durationMs ?? 0, maxClipMs);
+
+  // Pre-fetch monthly + daily usage for ALL three gate stages in parallel
+  // with audio form parsing. Re-using these rows saves 2 D1 round-trips
+  // (one per subsequent gate) — ~10-30ms each.
+  let prefetchedUsage: { daily: number; monthly: MonthlyUsageRow } | undefined;
+  try {
+    const [dailyTranscribe, monthly] = await Promise.all([
+      env.DB.prepare(
+        `SELECT transcribe_ms AS used FROM user_daily_usage WHERE user_id = ? AND day = ?`,
+      )
+        .bind(userId, utcDay(Date.now()))
+        .first<{ used: number }>()
+        .then((r) => (r?.used ?? 0) / 60_000),
+      readMonthlyUsage(env, userId),
+    ]);
+    prefetchedUsage = { daily: dailyTranscribe, monthly };
+  } catch {
+    // Fail open — the individual gates will re-read and handle errors.
+    logger.warn("[synthesize] usage pre-fetch failed, gates will re-read");
+  }
+
   const transcribeGate = await timings.measure("stt.gate", () =>
-    runPreflightGate(
-      env,
-      ctx,
-      userId,
-      tier,
-      "transcribe",
-      transcribeSkip,
-      0,
-      gateDurationMs,
-    ),
+    prefetchedUsage
+      ? runPreflightGateWithUsage(
+          env,
+          ctx,
+          userId,
+          tier,
+          "transcribe",
+          prefetchedUsage,
+          transcribeSkip,
+          0,
+          gateDurationMs,
+        )
+      : runPreflightGate(
+          env,
+          ctx,
+          userId,
+          tier,
+          "transcribe",
+          transcribeSkip,
+          0,
+          gateDurationMs,
+        ),
   );
   if (!transcribeGate.ok) return transcribeGate.response;
   if (signal.aborted) throw new Error(CLIENT_ABORTED);
@@ -791,6 +851,7 @@ export async function synthesizeFromAudio(
           budgetMs: Math.min(TRANSLATE_TOTAL_MS, remainingMs()),
           ctx,
           gateCharge,
+          prefetchedUsage,
         }),
       );
       if (!translation.ok) return translation.response;
@@ -800,6 +861,15 @@ export async function synthesizeFromAudio(
     } else {
       effectiveSource = detectedLang ?? targetLang;
     }
+  }
+
+  // Memoize the userId hash — buildSpeechCacheKey hashes it on every call;
+  // the audio path may call finishSpeech after tier-downgrade and recheck.
+  let userIdHash: string | undefined;
+  try {
+    userIdHash = await hashKey(userId);
+  } catch {
+    // Falls back to hashing inside buildSpeechCacheKey.
   }
 
   const speechResponse = await finishSpeech({
@@ -815,6 +885,8 @@ export async function synthesizeFromAudio(
     remainingMs,
     timings,
     gateCharge,
+    userIdHash,
+    prefetchedUsage,
     meta: {
       sourceLang: effectiveSource,
       targetLang,
