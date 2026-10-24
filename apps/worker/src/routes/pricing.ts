@@ -151,25 +151,6 @@ async function getSubscriptionConfig(env: Env): Promise<SubscriptionConfig> {
   return load.kind === "loaded" ? load.config : DEFAULT_CONFIG;
 }
 
-async function getLocalPlanPrices(
-  env: Env,
-  currency: string,
-): Promise<LocalPlanPrices> {
-  const code = resolvePaymentCurrency(currency);
-  const config = await getSubscriptionConfig(env);
-
-  const local = config.localPrices[code] ?? LOCAL_PRICES[code];
-  const usd = config.localPrices.USD ?? LOCAL_PRICES.USD;
-
-  return {
-    currency: code,
-    monthly: local.monthly,
-    annual: local.annual,
-    monthlyUsd: usd.monthly,
-    annualUsd: usd.annual,
-  };
-}
-
 export async function getAuthoritativePlanPrices(
   env: Env,
   currency: string,
@@ -208,21 +189,23 @@ export async function handleStorePricing(
         new URL(request.url).searchParams.get("currency") ?? undefined,
       );
 
-      const prices = await getLocalPlanPrices(env, currency);
       const config = await getSubscriptionConfig(env);
+      const code = resolvePaymentCurrency(currency);
+      const local = config.localPrices[code] ?? LOCAL_PRICES[code];
+      const usd = config.localPrices.USD ?? LOCAL_PRICES.USD;
 
       const body = {
-        currency: prices.currency,
-        price: prices.monthly,
-        usd: prices.monthlyUsd,
+        currency: code,
+        price: local.monthly,
+        usd: usd.monthly,
         originalPriceUsd: config.basePriceUsd,
         discountPercent: config.discountPercent,
-        annualPrice: prices.annual,
-        annualUsd: prices.annualUsd,
+        annualPrice: local.annual,
+        annualUsd: usd.annual,
         originalAnnualUsd: roundToCurrency(config.basePriceUsd * 12, "USD"),
         annualDiscountPercent: computeSavingPercent(
-          prices.monthly,
-          prices.annual,
+          local.monthly,
+          local.annual,
         ),
       };
 

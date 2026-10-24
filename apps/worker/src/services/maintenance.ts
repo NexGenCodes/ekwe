@@ -14,7 +14,8 @@ import { reconcileFlutterwaveTransactions } from "@/services/flutterwave";
 const DAY_MS = 86_400_000;
 const USAGE_RETENTION_DAYS = 7;
 const CLAIM_RETENTION_DAYS = 90;
-const COOLDOWN_RETENTION_DAYS = 30;
+// Push-token retention: remove inactive tokens after 30 days.
+const PUSH_TOKEN_RETENTION_DAYS = 30;
 const CACHE_TABLES = [
   "cache_translation",
   "cache_transcription",
@@ -127,17 +128,18 @@ export async function cleanupBillingClaims(env: Env): Promise<number> {
   return result.meta.changes ?? 0;
 }
 
+/**
+ * Purge inactive push tokens. Cooldown state is now held in KV
+ * with TTL-based expiry and no longer needs a D1 sweep.
+ */
 export async function cleanupSyncState(env: Env): Promise<number> {
-  const cutoff = Date.now() - COOLDOWN_RETENTION_DAYS * DAY_MS;
-  const [cooldowns, tokens] = await env.DB.batch([
-    env.DB.prepare("DELETE FROM sync_cooldowns WHERE last_push_at < ?").bind(
-      cutoff,
-    ),
-    env.DB.prepare(
-      "DELETE FROM push_tokens WHERE is_active = 0 AND last_used_at < ?",
-    ).bind(cutoff),
-  ]);
-  return (cooldowns.meta.changes ?? 0) + (tokens.meta.changes ?? 0);
+  const cutoff = Date.now() - PUSH_TOKEN_RETENTION_DAYS * DAY_MS;
+  const result = await env.DB.prepare(
+    "DELETE FROM push_tokens WHERE is_active = 0 AND last_used_at < ?",
+  )
+    .bind(cutoff)
+    .run();
+  return result.meta.changes ?? 0;
 }
 
 async function runStep(

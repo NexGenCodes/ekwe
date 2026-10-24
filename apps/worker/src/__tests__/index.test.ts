@@ -68,17 +68,14 @@ function translateRequest(): Request {
   });
 }
 
-function seedCooldown(
-  database: TestDatabase,
+async function seedCooldown(
+  env: Env,
   userId: string,
   lastRequestAt: number,
-): void {
-  database.sqlite
-    .prepare(
-      `INSERT INTO user_cooldowns (user_id, last_request_at, updated_at)
-       VALUES (?, ?, ?)`,
-    )
-    .run(userId, lastRequestAt, lastRequestAt);
+): Promise<void> {
+  await env.EKWE_KV.put(`cdwn:${userId}`, String(lastRequestAt), {
+    expirationTtl: 60,
+  });
 }
 
 describe("Worker router", () => {
@@ -151,7 +148,7 @@ describe("Worker router", () => {
   describe("cooldown gate", () => {
     test("returns 429 while the FREE window is open", async () => {
       mockAuth(USER_ID, "FREE");
-      seedCooldown(database, USER_ID, Date.now());
+      await seedCooldown(env, USER_ID, Date.now());
 
       const res = await app.fetch(
         translateRequest(),
@@ -166,7 +163,7 @@ describe("Worker router", () => {
 
     test("lets a request through after the window closes", async () => {
       mockAuth(USER_ID, "FREE");
-      seedCooldown(database, USER_ID, Date.now() - 4_000);
+      await seedCooldown(env, USER_ID, Date.now() - 4_000);
       server.use(
         http.post(PROVIDER_URLS.groqChat, () =>
           jsonResponse({ choices: [{ message: { content: "Hola" } }] }),
@@ -184,7 +181,7 @@ describe("Worker router", () => {
 
     test("uses the PREMIUM window from the token", async () => {
       mockAuth(USER_ID, "FREE");
-      seedCooldown(database, USER_ID, Date.now() - 1_500);
+      await seedCooldown(env, USER_ID, Date.now() - 1_500);
 
       const free = await app.fetch(
         translateRequest(),
@@ -195,7 +192,7 @@ describe("Worker router", () => {
 
       const premiumUser = "4a8d2e3f-6c7b-4d9e-8f01-2b3c4d5e6f70";
       mockAuth(premiumUser, "PREMIUM");
-      seedCooldown(database, premiumUser, Date.now() - 1_500);
+      await seedCooldown(env, premiumUser, Date.now() - 1_500);
       server.use(
         http.post(PROVIDER_URLS.groqChat, () =>
           jsonResponse({ choices: [{ message: { content: "Hola" } }] }),
@@ -232,7 +229,7 @@ describe("Worker router", () => {
 
     test("serves /usage without running the cooldown gate", async () => {
       mockAuth(USER_ID, "FREE");
-      seedCooldown(database, USER_ID, Date.now());
+      await seedCooldown(env, USER_ID, Date.now());
 
       const res = await app.fetch(
         new Request("http://localhost/usage", {

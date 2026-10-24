@@ -131,19 +131,9 @@ describe("maintenance retention", () => {
     expect(rows.map((row) => row.flw_ref)).toEqual(["recent"]);
   });
 
-  test("prunes stale sync cooldowns and inactive push tokens", async () => {
+  test("prunes stale inactive push tokens", async () => {
     const now = Date.now();
     const stale = now - 31 * DAY_MS;
-    database.sqlite
-      .prepare(
-        "INSERT INTO sync_cooldowns (user_id, last_push_at) VALUES (?, ?)",
-      )
-      .run("stale-user", stale);
-    database.sqlite
-      .prepare(
-        "INSERT INTO sync_cooldowns (user_id, last_push_at) VALUES (?, ?)",
-      )
-      .run("fresh-user", now);
 
     const insertToken = database.sqlite.prepare(
       `INSERT INTO push_tokens
@@ -155,11 +145,6 @@ describe("maintenance retention", () => {
     insertToken.run("stale-active", USER_ID, "tok-3", 1, stale, stale);
 
     await cleanupSyncState(env);
-
-    const cooldowns = database.sqlite
-      .prepare("SELECT user_id FROM sync_cooldowns")
-      .all() as Array<{ user_id: string }>;
-    expect(cooldowns.map((row) => row.user_id)).toEqual(["fresh-user"]);
 
     const tokens = database.sqlite
       .prepare("SELECT id FROM push_tokens ORDER BY id")

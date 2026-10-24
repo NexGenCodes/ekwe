@@ -13,7 +13,7 @@ import type { HistoryEntry } from "@/store";
 import { withAlpha } from "@/utils/color";
 
 export interface HistoryListSectionProps {
-  listRef: React.RefObject<FlashListRef<ListItem>>;
+  listRef: React.RefObject<FlashListRef<ListItem> | null>;
   listData: ListItem[];
   isRefreshing: boolean;
   onRefresh: () => Promise<void>;

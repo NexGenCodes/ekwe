@@ -149,16 +149,19 @@ export default function ProfileScreen(): React.JSX.Element {
     ? (AVATAR_ICONS.find((i) => i.name === user.avatarIcon) ?? null)
     : null;
 
-  const handleUpdateIcon = async (iconName: string): Promise<void> => {
-    setIsIconModalVisible(false);
-    await triggerHaptic();
-    try {
-      await updateProfile({ avatarIcon: iconName || null });
-    } catch (e) {
-      logger.error("Failed to update avatar icon:", e);
-      AppAlert.error("Error", "Could not update your avatar.");
-    }
-  };
+  const handleUpdateIcon = useCallback(
+    async (iconName: string): Promise<void> => {
+      setIsIconModalVisible(false);
+      await triggerHaptic();
+      try {
+        await updateProfile({ avatarIcon: iconName || null });
+      } catch (e) {
+        logger.error("Failed to update avatar icon:", e);
+        AppAlert.error("Error", "Could not update your avatar.");
+      }
+    },
+    [],
+  );
 
   const handleDeleteAccount = async (): Promise<void> => {
     await triggerHaptic();
@@ -212,6 +215,11 @@ export default function ProfileScreen(): React.JSX.Element {
     [preview, setVoiceGender],
   );
 
+  if (!user)
+    return (
+      <Box style={[styles.flex1, { backgroundColor: color.background }]} />
+    );
+
   return (
     <Box style={[styles.flex1, { backgroundColor: color.background }]}>
       <ScrollArea
@@ -223,16 +231,15 @@ export default function ProfileScreen(): React.JSX.Element {
           paddingBottom: tabBarHeight + spacing.xl,
         }}
       >
-        {}
         <Animated.View entering={sectionEnter(0)}>
           <ProfileIdentity
-            user={user!}
+            user={user}
             isPro={isPro}
             currentIconData={currentIconData}
             userName={userName}
             userEmail={userEmail}
             rawName={rawName}
-            avatarLocked={!permissions.customAvatarIcons}
+            avatarLocked={isPro ? false : true}
             onEditAvatar={async () => {
               await triggerHaptic();
               setIsIconModalVisible(true);
@@ -240,7 +247,6 @@ export default function ProfileScreen(): React.JSX.Element {
           />
         </Animated.View>
 
-        {}
         <Animated.View entering={sectionEnter(80)}>
           <ProfileSection
             title="Account & Subscription"
@@ -291,7 +297,6 @@ export default function ProfileScreen(): React.JSX.Element {
           </ProfileSection>
         </Animated.View>
 
-        {}
         {!isPro && (
           <Animated.View
             entering={
@@ -305,7 +310,6 @@ export default function ProfileScreen(): React.JSX.Element {
           </Animated.View>
         )}
 
-        {}
         <Animated.View entering={sectionEnter(120)}>
           <ProfileSection title="App Preferences">
             <ProfileRow
@@ -408,7 +412,6 @@ export default function ProfileScreen(): React.JSX.Element {
           </ProfileSection>
         </Animated.View>
 
-        {}
         <Animated.View entering={sectionEnter(160)}>
           <ProfileSection
             title="Smart Features"
@@ -507,7 +510,6 @@ export default function ProfileScreen(): React.JSX.Element {
           </ProfileSection>
         </Animated.View>
 
-        {}
         <Animated.View entering={sectionEnter(200)}>
           <ProfileSection title="Help & Legal">
             <ProfileRow
@@ -648,7 +650,6 @@ export default function ProfileScreen(): React.JSX.Element {
           </ProfileSection>
         </Animated.View>
 
-        {}
         <Animated.View entering={sectionEnter(240)}>
           <ProfileSection title="Account" titleColor={color.error}>
             <ProfileRow
@@ -676,7 +677,6 @@ export default function ProfileScreen(): React.JSX.Element {
           </ProfileSection>
         </Animated.View>
 
-        {}
         <Animated.View entering={sectionEnter(280)}>
           <ProfileSection title="Data">
             <ProfileRow
@@ -710,7 +710,6 @@ export default function ProfileScreen(): React.JSX.Element {
           </ProfileSection>
         </Animated.View>
 
-        {}
         <Animated.View entering={sectionEnter(320)}>
           <Box style={styles.footer}>
             <Text variant="caption" style={{ color: color.muted }}>
@@ -771,7 +770,6 @@ export default function ProfileScreen(): React.JSX.Element {
         currentCurrency={currency}
       />
 
-      {}
       <Modal
         visible={showDeleteModal}
         transparent

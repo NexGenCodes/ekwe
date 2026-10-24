@@ -55,20 +55,13 @@ function aiMp3Env(): Env {
  * An env whose cooldown claim always misses: the row exists and is inside the
  * window, so the gate answers 429 without touching any provider.
  */
-function cooldownEnv(): Env {
+async function cooldownEnv(): Promise<Env> {
   const env = envWithFailures();
-  return {
-    ...env,
-    DB: {
-      prepare: () => ({
-        bind: () => ({
-          all: async () => ({ results: [] }),
-          first: async () => ({ last_request_at: Date.now() }),
-          run: async () => ({ meta: { changes: 0 } }),
-        }),
-      }),
-    },
-  } as unknown as Env;
+  // Seed a fresh cooldown timestamp so the gate denies the next request.
+  await env.EKWE_KV.put("cdwn:uid-syn", String(Date.now()), {
+    expirationTtl: 60,
+  });
+  return env;
 }
 
 function textRequest(body: Record<string, unknown>): Request {
@@ -155,7 +148,6 @@ async function awaitWaitUntil(
 
 describe("handleSynthesize — gate/cache overlap", () => {
   test("reads the cache while the speech gate is still in flight", async () => {
-    // Sequentially this was two round trips before any work could start.
     const order: string[] = [];
     let releaseGate: (() => void) | null = null;
     const gateBlocked = new Promise<void>((resolve) => {
@@ -163,26 +155,23 @@ describe("handleSynthesize — gate/cache overlap", () => {
     });
 
     const env = aiMp3Env();
-    const baseDb = env.DB;
-    env.DB = {
-      prepare: (sql: string) => {
-        if (!/user_cooldowns/i.test(sql)) return baseDb.prepare(sql);
-        return {
-          bind: () => ({
-            all: async () => {
-              order.push("gate:start");
-              await gateBlocked;
-              order.push("gate:end");
-              return { results: [{ last_request_at: Date.now() }] };
-            },
-            first: async () => ({ last_request_at: Date.now() }),
-            run: async () => ({ meta: { changes: 1 } }),
-          }),
-        };
-      },
-    } as unknown as Env["DB"];
 
-    const getSpy = vi.spyOn(env.EKWE_KV, "get");
+    // Capture the underlying vi.fn mock BEFORE replacing, so the wrapper
+    // delegates to the real in-memory store without looping back through itself.
+    const realGet = env.EKWE_KV.get;
+    const getSpy = vi.fn(
+      async (key: unknown, opts?: unknown): Promise<unknown> => {
+        if (typeof key === "string" && key.startsWith("cdwn:")) {
+          order.push("gate:start");
+          await gateBlocked;
+          order.push("gate:end");
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (realGet as any).call(env.EKWE_KV, key, opts);
+      },
+    );
+    env.EKWE_KV.get = getSpy as unknown as typeof env.EKWE_KV.get;
+
     const ctx = mockExecutionContext();
 
     const pending = handle(
@@ -194,13 +183,13 @@ describe("handleSynthesize — gate/cache overlap", () => {
       ctx,
     );
 
-    // Scope to the speech cache read so an unfiltered assertion cannot pass
-    // against sequential code.
     const speechGets = () =>
-      getSpy.mock.calls.filter((c) => String(c[0]).startsWith("speech:"));
+      getSpy.mock.calls.filter(
+        (c) =>
+          typeof c[0] === "string" && (c[0] as string).startsWith("speech:"),
+      );
 
     await vi.waitFor(() => expect(speechGets().length).toBeGreaterThan(0));
-    // The speech cache read was issued before the gate came back.
     expect(order).toContain("gate:start");
     expect(order).not.toContain("gate:end");
 
@@ -309,7 +298,7 @@ describe("handleSynthesize — text branch", () => {
   });
 
   test("rejects inside the cooldown window before speaking", async () => {
-    const env = cooldownEnv();
+    const env = await cooldownEnv();
     let speakCalls = 0;
     server.use(
       http.post(PROVIDER_URLS.deepgramSpeak, () => {
@@ -385,7 +374,7 @@ describe("handleSynthesize — text branch", () => {
   });
 
   test("reserve gate failure blocks translation before any provider work", async () => {
-    const env = cooldownEnv();
+    const env = await cooldownEnv();
     let geminiTranslateCalls = 0;
     server.use(
       http.post(PROVIDER_URLS.geminiGenerate, () => {
@@ -484,14 +473,18 @@ describe("handleSynthesize — text branch", () => {
 
   test("preview text is no longer special-cased: it runs the gated path", async () => {
     const env = aiMp3Env();
-    const baseDb = env.DB;
-    let claims = 0;
-    env.DB = {
-      prepare: (sql: string) => {
-        if (/user_cooldowns/i.test(sql)) claims++;
-        return baseDb.prepare(sql);
+    let kvPuts = 0;
+    const basePut = env.EKWE_KV.put.bind(env.EKWE_KV);
+    vi.spyOn(env.EKWE_KV, "put").mockImplementation(
+      async (key: string, value: unknown, opts?: unknown) => {
+        if (String(key).startsWith("cdwn:")) kvPuts++;
+        return basePut(
+          key,
+          value as string,
+          opts as { expirationTtl?: number },
+        );
       },
-    } as unknown as Env["DB"];
+    );
 
     const res = await handle(
       textRequest({
@@ -504,7 +497,7 @@ describe("handleSynthesize — text branch", () => {
     );
     expect(res.status).toBe(200);
     expect((await jsonBody(res)).translated).toBe(false);
-    expect(claims).toBeGreaterThan(0);
+    expect(kvPuts).toBeGreaterThan(0);
   });
 
   test("returns 503 when every speech provider fails", async () => {
@@ -612,7 +605,6 @@ describe("handleSynthesize — audio branch", () => {
     );
     const fields = { lang: "en", targetLang: "es" };
 
-    // Cache hits are free: only provider-backed work moves the usage counters.
     const baseDb = env.DB;
     const usage = { translate: 0, transcribe: 0, speech: 0 };
     env.DB = {
@@ -633,8 +625,8 @@ describe("handleSynthesize — audio branch", () => {
       batch: baseDb.batch.bind(baseDb),
     } as unknown as Env["DB"];
 
+    const auth = { userId: "uid-cache", sessionId: null };
     const ctx = mockExecutionContext();
-    const auth = { userId: "uid-syn", sessionId: null };
     const first = await handle(
       audioRequest(fields),
       env,
@@ -646,6 +638,9 @@ describe("handleSynthesize — audio branch", () => {
     await awaitWaitUntil(ctx);
     expect(first.status).toBe(200);
     expect(usage).toEqual({ translate: 1, transcribe: 1, speech: 10 });
+
+    // Reset KV cooldown so the second request isn't rate-limited.
+    await env.EKWE_KV.delete("cdwn:uid-cache");
 
     const second = await handle(
       audioRequest(fields),
@@ -663,8 +658,7 @@ describe("handleSynthesize — audio branch", () => {
     expect(usage).toEqual({ translate: 1, transcribe: 1, speech: 10 });
     expect(witCalls).toBe(1);
     expect(geminiTranslateCalls).toBe(1);
-    // No voiceId means Standard, which is the free pool even for a Paid
-    // account, so synthesis must not reach a premium provider.
+    // Standard slot → free pool even for PREMIUM, must not hit Deepgram.
     expect(freeSpeakCalls).toBe(1);
     expect(speakCalls).toBe(0);
   });
@@ -706,7 +700,7 @@ describe("handleSynthesize — audio branch", () => {
   });
 
   test("reserve gate failure blocks transcription", async () => {
-    const env = cooldownEnv();
+    const env = await cooldownEnv();
     let witCalls = 0;
     server.use(
       http.post(PROVIDER_URLS.witaiDictation, () => {

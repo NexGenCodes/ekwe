@@ -26,7 +26,7 @@
   //   the SDK always charges against the key matching the configured secret.
   // - FLUTTERWAVE_WEBHOOK_SECRET: webhook secret hash from the Flutterwave
   //   dashboard (Settings → Webhooks); used to verify inbound webhooks
-  //   (`verif-hash` plain equality and/or `flutterwave-signature` HMAC-SHA256).
+  //   (`flutterwave-signature` HMAC-SHA256).
   // - UPDATE_NOTIFY_SECRET: shared secret (Authorization: Bearer) for the release
   //   workflow's POST /admin/update/notify and POST /admin/update/manifest endpoints.
   // Must be identical to the GitHub Actions secret `UPDATE_NOTIFY_SECRET`.
@@ -164,5 +164,28 @@
       "tag": "v2",
       "new_sqlite_classes": ["ThrottleBucket"]
     }
-  ]
+  ],
+
+  // Queue for durable billing-webhook retry beyond Flutterwave's built-in
+  // 3–5 attempt window. Failed webhook events (fullyApplied=false) are
+  // enqueued here so a transient D1 outage cannot permanently lose a payment.
+  // Create before deploying: wrangler queues create ekwe-webhook-retry
+  // Consumer: same worker (see worker.ts queue() handler).
+  "queues": {
+    "producers": [
+      {
+        "binding": "WEBHOOK_RETRY_QUEUE",
+        "queue": "ekwe-webhook-retry"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "ekwe-webhook-retry",
+        // Re-deliver after 60 s; back-off is handled by the queue itself.
+        // max_retries keeps a bad payload from looping forever.
+        "max_retries": 12,
+        "dead_letter_queue": "ekwe-webhook-dlq"
+      }
+    ]
+  }
 }

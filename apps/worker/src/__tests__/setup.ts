@@ -125,20 +125,6 @@ class InMemoryD1 {
       };
     }
 
-    // Cooldown gate: every test that does not override env.DB is inside the
-    // window, so the claim always succeeds.
-    if (/user_cooldowns/i.test(sql)) {
-      return {
-        bind: () => ({
-          first: async <T>() => ({ last_request_at: Date.now() }) as T,
-          all: async <T>() =>
-            ({ results: [{ last_request_at: Date.now() }] }) as unknown as {
-              results: T[];
-            },
-          run: async () => ({ meta: { changes: 1 } }),
-        }),
-      };
-    }
     // Daily quota read. Tests that need a specific count override env.DB.
     if (/FROM\s+user_daily_usage/i.test(sql)) {
       return {

@@ -133,10 +133,12 @@ export async function checkBot(
   const requireAppCheck = env.REQUIRE_APP_CHECK as string | undefined;
   const appEnv = env.APP_ENV as string | undefined;
 
+  let appCheckInvalid = false;
   if (appCheckToken) {
-    return (await verifyAppCheck(env, appCheckToken))
-      ? { ok: true }
-      : { ok: false, code: "APP_CHECK_INVALID", status: 403 };
+    if (await verifyAppCheck(env, appCheckToken)) return { ok: true };
+    // A bad App Check token should not block a client that can still pass
+    // Turnstile. Fall through and let Turnstile decide.
+    appCheckInvalid = true;
   }
 
   if (tokens.turnstileToken) {
@@ -146,7 +148,11 @@ export async function checkBot(
   }
 
   if (requireAppCheck === "true" && appEnv !== "development") {
-    return { ok: false, code: "APP_CHECK_REQUIRED", status: 403 };
+    return {
+      ok: false,
+      code: appCheckInvalid ? "APP_CHECK_INVALID" : "APP_CHECK_REQUIRED",
+      status: 403,
+    };
   }
 
   return { ok: true };

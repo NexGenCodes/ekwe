@@ -74,7 +74,7 @@ export default function HistoryScreen(): React.JSX.Element {
 
   const { color } = useTheme();
 
-  const listRef = useRef<FlashListRef<ListItem>>(null!);
+  const listRef = useRef<FlashListRef<ListItem>>(null);
   const insets = useSafeAreaInsets();
 
   const hasPullError = useValue(() => SyncService.pullError.get() !== null);

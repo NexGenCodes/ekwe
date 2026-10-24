@@ -46,7 +46,9 @@ export async function retryTransient<T>(
         attempt: attempt + 1,
         error: describeError(error),
       });
-      await new Promise((resolve) => setTimeout(resolve, 25 * 2 ** attempt));
+      const base = 25 * 2 ** attempt;
+      const jitter = (Math.random() - 0.5) * base; // ±50% jitter to spread retries
+      await new Promise((resolve) => setTimeout(resolve, base + jitter));
     }
   }
 

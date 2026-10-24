@@ -37,39 +37,46 @@ async function codeHash(
 export async function sendOtp(env: Env, email: string): Promise<OtpSendResult> {
   const emailNorm = normalizeEmail(email);
   const now = Date.now();
-
-  const existing = await env.DB.prepare(
-    `SELECT last_sent_at FROM otp_codes WHERE email_norm = ?`,
-  )
-    .bind(emailNorm)
-    .first<{ last_sent_at: number }>();
-
-  if (existing) {
-    const elapsed = now - existing.last_sent_at;
-    const cooldown = OTP_RESEND_COOLDOWN_SECONDS * 1000;
-    if (elapsed < cooldown) {
-      return {
-        ok: false,
-        reason: "cooldown",
-        retryAfter: Math.ceil((cooldown - elapsed) / 1000),
-      };
-    }
-  }
+  const cooldownMs = OTP_RESEND_COOLDOWN_SECONDS * 1000;
+  const cutoff = now - cooldownMs;
 
   const code = randomDigits(6);
   const hash = await codeHash(env, emailNorm, code);
 
-  await env.DB.prepare(
+  // Atomic cooldown check + write in a single statement.
+  // ON CONFLICT ... WHERE last_sent_at <= cutoff ensures the update only fires
+  // when the cooldown window has already expired. Two concurrent requests for
+  // the same email cannot both win: D1 serialises writers, and whichever lands
+  // second sees last_sent_at from the first winner, fails the WHERE, and gets
+  // an empty RETURNING — correctly rejected as still-in-cooldown.
+  const claimed = await env.DB.prepare(
     `INSERT INTO otp_codes (email_norm, code_hash, expires_at, attempts, last_sent_at)
      VALUES (?, ?, ?, 0, ?)
      ON CONFLICT (email_norm) DO UPDATE SET
-       code_hash = excluded.code_hash,
-       expires_at = excluded.expires_at,
-       attempts = 0,
-       last_sent_at = excluded.last_sent_at`,
+       code_hash      = excluded.code_hash,
+       expires_at     = excluded.expires_at,
+       attempts       = 0,
+       last_sent_at   = excluded.last_sent_at
+     WHERE otp_codes.last_sent_at <= ?
+     RETURNING last_sent_at`,
   )
-    .bind(emailNorm, hash, now + OTP_EXPIRY_SECONDS * 1000, now)
-    .run();
+    .bind(emailNorm, hash, now + OTP_EXPIRY_SECONDS * 1000, now, cutoff)
+    .all<{ last_sent_at: number }>();
+
+  if (claimed.results.length === 0) {
+    // Row exists but last_sent_at is still inside the cooldown window.
+    const row = await env.DB.prepare(
+      `SELECT last_sent_at FROM otp_codes WHERE email_norm = ?`,
+    )
+      .bind(emailNorm)
+      .first<{ last_sent_at: number }>();
+    const last = row?.last_sent_at ?? cutoff;
+    return {
+      ok: false,
+      reason: "cooldown",
+      retryAfter: Math.max(1, Math.ceil((last + cooldownMs - now) / 1000)),
+    };
+  }
 
   const sent = await sendOtpEmail(
     env,

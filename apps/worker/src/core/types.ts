@@ -1,6 +1,17 @@
 import type { JWTPayload } from "jose";
 
-type _EnvForExport = Env;
+// The global `Env` interface is declared in src/core/env.d.ts and merged with
+// the Wrangler-generated __BaseEnv_Env via worker-configuration.d.ts.
+// We intersect with an explicit optional-extras type here so that fields like
+// EMAIL, SYNC_PUSH_COOLDOWN_MS, EDGE_CLIENT_TOKEN and TTS_GEMINI_VOICE are
+// always visible on the exported Env, regardless of ambient-merge ordering.
+type _EnvExtras = {
+  EMAIL?: SendEmail;
+  SYNC_PUSH_COOLDOWN_MS?: string;
+  EDGE_CLIENT_TOKEN?: string;
+  TTS_GEMINI_VOICE?: string;
+};
+type _EnvForExport = Env & _EnvExtras;
 export type { _EnvForExport as Env };
 
 export type { Tier, UsageType } from "@ekwe/shared";

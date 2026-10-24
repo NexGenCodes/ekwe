@@ -1,4 +1,4 @@
-import { francAll } from "franc";
+import { detectAll as tinyldDetectAll } from "tinyld/light";
 import { logger } from "@/core/logger";
 import type { Env } from "@/core/types";
 import { d1GetLang, d1PutLang } from "@/services/d1-cache";
@@ -23,116 +23,6 @@ const WIT_MIN_CHARS = 3;
 const WIT_LANG_PROVIDER = "witai-language";
 // Skip text with no letters; Wit cannot classify it either.
 const HAS_LETTERS = /\p{L}/u;
-
-// franc's "could not decide" answer; never a real language.
-const UNDETERMINED = "und";
-
-const ISO639_3_TO_1: Record<string, string> = {
-  eng: "en",
-  spa: "es",
-  fra: "fr",
-  deu: "de",
-  ita: "it",
-  por: "pt",
-  nld: "nl",
-  rus: "ru",
-  cmn: "zh",
-  jpn: "ja",
-  kor: "ko",
-  arb: "ar",
-  ara: "ar",
-  hin: "hi",
-  ell: "el",
-  vie: "vi",
-  tha: "th",
-  heb: "he",
-  tur: "tr",
-  pol: "pl",
-  swe: "sv",
-  dan: "da",
-  fin: "fi",
-  nob: "nb",
-  ces: "cs",
-  slk: "sk",
-  ron: "ro",
-  hun: "hu",
-  ukr: "uk",
-  ind: "id",
-  msa: "ms",
-  bul: "bg",
-  hrv: "hr",
-  srp: "sr",
-  cat: "ca",
-  lit: "lt",
-  lav: "lv",
-  est: "et",
-  slv: "sl",
-  sqi: "sq",
-  mkd: "mk",
-  afr: "af",
-  ben: "bn",
-  fas: "fa",
-  urd: "ur",
-  swa: "sw",
-  tgl: "tl",
-  tam: "ta",
-  tel: "te",
-  mal: "ml",
-  mar: "mr",
-  guj: "gu",
-  pan: "pa",
-  nep: "ne",
-  sin: "si",
-  khm: "km",
-  lao: "lo",
-  mya: "my",
-  kat: "ka",
-  kan: "kn",
-  yor: "yo",
-  ibo: "ig",
-  hau: "ha",
-  zul: "zu",
-  som: "so",
-  amh: "am",
-  aze: "az",
-  uzb: "uz",
-  kaz: "kk",
-  mon: "mn",
-  hye: "hy",
-  jav: "jv",
-  sun: "su",
-  bos: "bs",
-  isl: "is",
-  gle: "ga",
-  cym: "cy",
-  gla: "gd",
-  glg: "gl",
-  eus: "eu",
-  mlt: "mt",
-  xho: "xh",
-  sna: "sn",
-  sot: "st",
-  nya: "ny",
-  kin: "rw",
-  mlg: "mg",
-  tuk: "tk",
-  kir: "ky",
-  tgk: "tg",
-  pus: "ps",
-  snd: "sd",
-  asm: "as",
-  ori: "or",
-  nds: "de",
-  gmh: "de",
-  gsw: "de",
-  yue: "zh",
-  nan: "zh",
-  wuu: "zh",
-};
-
-function iso6393to1(code: string): string | undefined {
-  return ISO639_3_TO_1[code];
-}
 
 function normalizeLangCode(code: string): string {
   return code.trim().toLowerCase().split(/[-_]/)[0] || "";
@@ -221,27 +111,23 @@ function detectLocal(text: string): LocalDetection | null {
   }
 
   try {
-    // franc returns [["und", 1]] rather than an empty list when unsure.
-    const ranked = francAll(text);
-    const [topCode, topScore] = ranked[0];
-    const secondScore = ranked.length > 1 ? ranked[1][1] : 0;
-    const gap = topScore - secondScore;
+    // tinyld returns ISO 639-1 directly; empty array when undecided.
+    const ranked = tinyldDetectAll(text);
+    const top = ranked[0];
+    const topLang = top?.lang ?? null;
+    const gap = top ? top.accuracy - (ranked[1]?.accuracy ?? 0) : 0;
 
-    // "und" is franc declining to answer, not a language.
-    const francLang =
-      topCode === UNDETERMINED ? undefined : iso6393to1(topCode);
-
-    if (francLang && gap >= CONFIDENCE_GAP) {
-      return { lang: francLang, confident: true };
+    if (topLang && gap >= CONFIDENCE_GAP) {
+      return { lang: topLang, confident: true };
     }
-    if (francLang && unicodeLang && francLang === unicodeLang) {
-      return { lang: francLang, confident: true };
+    if (topLang && unicodeLang && topLang === unicodeLang) {
+      return { lang: topLang, confident: true };
     }
     if (unicodeLang) {
       return { lang: unicodeLang, confident: true };
     }
-    if (francLang) {
-      return { lang: francLang, confident: false };
+    if (topLang) {
+      return { lang: topLang, confident: false };
     }
     return null;
   } catch {
@@ -291,7 +177,7 @@ export async function detectTextLanguage(
   const local = detectLocal(input);
   if (local?.confident) {
     const key = `auto:${await hashKey(input)}`;
-    await d1PutLang(env.DB, key, local.lang, CACHE_TTL);
+    d1PutLang(env.DB, key, local.lang, CACHE_TTL).catch(() => {});
     return local.lang;
   }
 
@@ -322,23 +208,20 @@ export function validateTranscriptLanguage(
   if (!text || !detectedLang || text.length < SHORT_TEXT_THRESHOLD) return true;
 
   try {
-    const ranked = francAll(text.slice(0, FRANC_MAX_CHARS));
-    const [topCode, topScore] = ranked[0];
-    const secondScore = ranked.length > 1 ? ranked[1][1] : 0;
-    const gap = topScore - secondScore;
+    const ranked = tinyldDetectAll(text.slice(0, FRANC_MAX_CHARS));
+    const top = ranked[0];
+    if (!top) return true;
 
+    const gap = top.accuracy - (ranked[1]?.accuracy ?? 0);
     if (gap < CONFIDENCE_GAP) return true;
 
-    // "und" (and any code we do not map) leaves nothing to compare against, so
-    // there is no mismatch to report.
-    const francLang = iso6393to1(topCode);
-    if (!francLang) return true;
-
-    const match = francLang === normalizeLangCode(detectedLang);
+    // No top result leaves nothing to compare against.
+    const topLang = top.lang;
+    const match = topLang === normalizeLangCode(detectedLang);
     if (!match) {
       logger.warn("[autoDetect] Transcript language mismatch", {
         provider: detectedLang,
-        franc: francLang,
+        tinyld: topLang,
         gap,
         textSnippet: text.substring(0, 80),
       });

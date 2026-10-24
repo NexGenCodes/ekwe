@@ -187,7 +187,10 @@ function RootLayout(): React.ReactElement {
 
     initNetworkMonitoring();
 
-    setTimeout(runDeferredCacheSweep, 4000);
+    // Defer cache sweep so it doesn't compete with the critical boot path.
+    // Store the timer so it can be cancelled if the component unmounts
+    // (e.g. during Fast Refresh or in test environments).
+    const sweepTimer = setTimeout(runDeferredCacheSweep, 4000);
 
     silentUpdateCheck().catch((error: unknown): void => {
       logger.warn("[OTA] Non-blocking silent update check failed:", error);
@@ -219,8 +222,10 @@ function RootLayout(): React.ReactElement {
 
     const removeNotificationListener = setupNotificationTapListener();
 
-    registerForPushNotifications();
-
+    // Push notification registration happens AFTER auth resolves so we always
+    // have a user ID to associate the token with. Removed the pre-auth call
+    // that was here before — it sent tokens to the server without an auth
+    // context, creating orphaned rows in push_tokens.
     initializeMMKV()
       .then(() => initAuth())
       .then(() => {
@@ -235,6 +240,7 @@ function RootLayout(): React.ReactElement {
       .finally(() => SyncService.start());
 
     return (): void => {
+      clearTimeout(sweepTimer);
       SyncService.stop();
       stopNetworkMonitoring();
       cleanupAuth();

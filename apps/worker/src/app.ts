@@ -16,6 +16,7 @@ import { HttpError, error } from "@/core/http";
 import { HTTPException } from "hono/http-exception";
 import { CLIENT_ABORTED } from "@/core/types";
 import { logger, setDebugEnabled } from "@/core/logger";
+import { isWorkersPaid } from "@/core/env";
 import { isProviderDegraded } from "@/services/health";
 import { PROVIDER_MODULES } from "@/providers";
 import { handleStorePricing } from "@/routes/pricing";
@@ -47,7 +48,7 @@ export const app = new Hono<AppEnv>();
 // assignable to it.
 app.use("*", async (c: Context<AppEnv, string>, next) => {
   setDebugEnabled(c.env.APP_ENV !== "production");
-  const origin = c.req.header("Origin") || c.req.header("origin");
+  const origin = c.req.header("Origin");
   const allowedOrigins =
     c.env.ALLOWED_ORIGINS?.split(",")
       .map((o: string) => o.trim())
@@ -59,7 +60,7 @@ app.use("*", async (c: Context<AppEnv, string>, next) => {
   const isAllowed = isExactMatch || isDev;
 
   return cors({
-    origin: isAllowed ? origin || "" : "",
+    origin: isAllowed ? origin! : "",
     credentials: true,
     allowMethods: ["GET", "POST", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization", "X-Firebase-AppCheck"],
@@ -169,9 +170,7 @@ app.get("/config", (c) =>
   c.json(
     {
       syncPullRows: SYNC_PULL_ROWS,
-      syncPushRows: syncPushRows(
-        (c.env.WORKERS_PAID as string | undefined) === "true",
-      ),
+      syncPushRows: syncPushRows(isWorkersPaid(c.env)),
       maxHistoryBatchBytes: MAX_HISTORY_BATCH_BYTES,
     },
     200,

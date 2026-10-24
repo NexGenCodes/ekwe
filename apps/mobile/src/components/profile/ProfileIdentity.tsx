@@ -27,6 +27,8 @@ interface ProfileIdentityProps {
   userName: string;
   userEmail: string;
   rawName: string;
+  // Controls whether the avatar edit button is interactive
+  // false = locked (Free users), true = unlocked (Pro users)
   avatarLocked?: boolean;
   onEditAvatar: () => void;
 }

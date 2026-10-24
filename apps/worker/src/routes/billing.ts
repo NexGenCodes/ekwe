@@ -1,5 +1,6 @@
 import {
   WORKER_ERROR_CODES,
+  PRO_PRODUCT_IDS,
   checkoutRequestSchema,
   checkoutResponseSchema,
   verifyTransactionRequestSchema,
@@ -21,6 +22,32 @@ import {
   resolveRequestCurrency,
 } from "@/routes/pricing";
 import type { z } from "zod";
+
+// ── Flutterwave verify response shape ─────────────────────────────────────────
+interface FlutterwaveVerifyResponse {
+  status: string;
+  message: string;
+  data: {
+    id: number;
+    tx_ref: string;
+    flw_ref: string;
+    status: string;
+    amount: number;
+    currency: string;
+    customer: {
+      id: number;
+      name: string;
+      email: string;
+      phone_number: string | null;
+    };
+  };
+}
+
+// ── Billing endpoint constants ────────────────────────────────────────────────
+const FLUTTERWAVE_PAYMENTS_PATH = "https://api.flutterwave.com/v3/payments";
+const CHECKOUT_REDIRECT_URL = "https://www.ekwe.app";
+const VERIFY_TRANSACTION_PATH =
+  "https://api.flutterwave.com/v3/transactions/{id}/verify";
 
 export async function handleCheckout(
   body: z.infer<typeof checkoutRequestSchema>,
@@ -46,20 +73,12 @@ export async function handleCheckout(
     );
   }
   const amount =
-    body.plan === "ekwe_pro_annual" ? prices.annual : prices.monthly;
+    body.plan === PRO_PRODUCT_IDS.annual ? prices.annual : prices.monthly;
 
   const txRef = `ekwe_${auth.userId}_${body.plan.replace(
     "ekwe_pro_",
     "",
   )}_${crypto.randomUUID()}`;
-
-  if (!env.FLUTTERWAVE_SECRET) {
-    logger.error("[billing/checkout] FLUTTERWAVE_SECRET not configured");
-    return Response.json(
-      { error: WORKER_ERROR_CODES.PAYMENT_PROVIDER_UNAVAILABLE },
-      { status: 503 },
-    );
-  }
 
   let paymentLink: string | null = null;
   try {
@@ -134,25 +153,6 @@ export async function handleCheckout(
   return Response.json(checkoutResponseSchema.parse(responseBody));
 }
 
-const FLUTTERWAVE_PAYMENTS_PATH = "https://api.flutterwave.com/v3/payments";
-const CHECKOUT_REDIRECT_URL = "https://www.ekwe.app";
-const VERIFY_TRANSACTION_PATH =
-  "https://api.flutterwave.com/v3/transactions/{id}/verify";
-
-interface FlutterwaveVerifyResponse {
-  status: string;
-  message: string;
-  data: {
-    id: number;
-    tx_ref: string;
-    flw_ref: string;
-    amount: number;
-    currency: string;
-    status: string;
-    created_at: string;
-  };
-}
-
 export async function handleVerifyTransaction(
   body: z.infer<typeof verifyTransactionRequestSchema>,
   env: Env,
@@ -162,14 +162,6 @@ export async function handleVerifyTransaction(
 
   const keyGuard = guardFlutterwaveKeys(env);
   if (!keyGuard.allowed) return keyGuard.response;
-
-  if (!env.FLUTTERWAVE_SECRET) {
-    logger.error("[billing/verify] FLUTTERWAVE_SECRET not configured");
-    return Response.json(
-      { error: "Payment provider not configured" },
-      { status: 500 },
-    );
-  }
 
   const verifyUrl = VERIFY_TRANSACTION_PATH.replace(
     "{id}",
@@ -235,7 +227,8 @@ export async function handleVerifyTransaction(
     );
   }
 
-  const plan = planPart === "annual" ? "ekwe_pro_annual" : "ekwe_pro_monthly";
+  const plan =
+    planPart === "annual" ? PRO_PRODUCT_IDS.annual : PRO_PRODUCT_IDS.monthly;
 
   const prices = await getAuthoritativePlanPrices(env, fwData.data.currency);
   if (!prices) {
@@ -249,7 +242,7 @@ export async function handleVerifyTransaction(
   }
 
   const expectedAmount =
-    plan === "ekwe_pro_annual" ? prices.annual : prices.monthly;
+    plan === PRO_PRODUCT_IDS.annual ? prices.annual : prices.monthly;
   const actualCents = toLowestUnit(
     Number(fwData.data.amount),
     fwData.data.currency,

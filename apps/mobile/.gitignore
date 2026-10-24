@@ -1,3 +1,6 @@
 /android
 /ios
 /assets/android
+# Never commit Firebase Admin SDK service account keys
+firebase-adminsdk-*.json
+*-service-account.json

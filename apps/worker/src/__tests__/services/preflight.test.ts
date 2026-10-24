@@ -15,8 +15,18 @@ import {
 const USER_ID = "22222222-2222-4222-8222-222222222222";
 const FREE_TRANSLATE_CAP = FREE_LIMITS.dailyTranslateLimit ?? 0;
 
-function makeEnv(database: TestDatabase): Env {
-  return { DB: database.d1 } as unknown as Env;
+// In-memory KV for cooldown state (cdwn:<userId>).
+function makeKvStore(): Map<string, string> {
+  return new Map();
+}
+
+function makeEnv(database: TestDatabase, kvStore: Map<string, string>): Env {
+  const kv = {
+    get: async (key: string) => kvStore.get(key) ?? null,
+    put: async (key: string, value: string) => void kvStore.set(key, value),
+    delete: async (key: string) => void kvStore.delete(key),
+  } as unknown as Env["EKWE_KV"];
+  return { DB: database.d1, EKWE_KV: kv } as unknown as Env;
 }
 
 function makeCtx(): {
@@ -32,17 +42,18 @@ function makeCtx(): {
   };
 }
 
-function seedCooldown(database: TestDatabase, lastRequestAt: number): void {
-  const now = Date.now();
-  database.sqlite
-    .prepare(
-      `INSERT INTO user_cooldowns (user_id, last_request_at, updated_at)
-       VALUES (?, ?, ?)
-       ON CONFLICT (user_id) DO UPDATE SET
-         last_request_at = excluded.last_request_at,
-         updated_at = excluded.updated_at`,
-    )
-    .run(USER_ID, lastRequestAt, now);
+// Seeds the KV cooldown key with a past timestamp.
+function seedCooldown(
+  kvStore: Map<string, string>,
+  lastRequestAt: number,
+): void {
+  kvStore.set(`cdwn:${USER_ID}`, String(lastRequestAt));
+}
+
+// Reads the recorded cooldown timestamp from KV.
+function lastCooldownAt(kvStore: Map<string, string>): number | undefined {
+  const val = kvStore.get(`cdwn:${USER_ID}`);
+  return val !== undefined ? Number(val) : undefined;
 }
 
 function seedUsage(
@@ -100,20 +111,15 @@ function seedMonthlyUsage(
     );
 }
 
-function lastRequestAt(database: TestDatabase): number | undefined {
-  const row = database.sqlite
-    .prepare(`SELECT last_request_at FROM user_cooldowns WHERE user_id = ?`)
-    .get(USER_ID) as { last_request_at: number } | undefined;
-  return row?.last_request_at;
-}
-
 describe("runPreflightGate", () => {
   let database: TestDatabase;
   let env: Env;
+  let kvStore: Map<string, string>;
 
   beforeEach(() => {
     database = createTestDatabase();
-    env = makeEnv(database);
+    kvStore = makeKvStore();
+    env = makeEnv(database, kvStore);
   });
 
   test("allows the first request and records the cooldown", async () => {
@@ -131,7 +137,7 @@ describe("runPreflightGate", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.tier).toBe("FREE");
-    expect(lastRequestAt(database)).toBeGreaterThanOrEqual(before);
+    expect(lastCooldownAt(kvStore)).toBeGreaterThanOrEqual(before);
   });
 
   test("denies a second request inside the FREE cooldown", async () => {
@@ -160,7 +166,7 @@ describe("runPreflightGate", () => {
   });
 
   test("allows again once the cooldown has elapsed", async () => {
-    seedCooldown(database, Date.now() - 5_000);
+    seedCooldown(kvStore, Date.now() - 5_000);
 
     const { ctx, settled } = makeCtx();
     const result = await runPreflightGate(env, ctx, USER_ID, "FREE", "speech");
@@ -170,7 +176,7 @@ describe("runPreflightGate", () => {
   });
 
   test("premium has a shorter window than free", async () => {
-    seedCooldown(database, Date.now() - 1_500);
+    seedCooldown(kvStore, Date.now() - 1_500);
 
     const { ctx, settled } = makeCtx();
     const free = await runPreflightGate(env, ctx, USER_ID, "FREE", "translate");
@@ -190,7 +196,7 @@ describe("runPreflightGate", () => {
   test("skips the cooldown when the request already charged one", async () => {
     const { ctx, settled } = makeCtx();
     await runPreflightGate(env, ctx, USER_ID, "FREE", "transcribe");
-    const stamped = lastRequestAt(database);
+    const stamped = lastCooldownAt(kvStore);
 
     const skipped = await runPreflightGate(
       env,
@@ -203,11 +209,11 @@ describe("runPreflightGate", () => {
     await settled();
 
     expect(skipped.ok).toBe(true);
-    expect(lastRequestAt(database)).toBe(stamped);
+    expect(lastCooldownAt(kvStore)).toBe(stamped);
   });
 
   test("denies a FREE translation once the daily cap is reached", async () => {
-    seedCooldown(database, Date.now() - 5_000);
+    seedCooldown(kvStore, Date.now() - 5_000);
     seedUsage(database, { translate: FREE_TRANSLATE_CAP });
 
     const { ctx, settled } = makeCtx();
@@ -238,7 +244,7 @@ describe("runPreflightGate", () => {
   });
 
   test("allows the last FREE translation below the cap", async () => {
-    seedCooldown(database, Date.now() - 5_000);
+    seedCooldown(kvStore, Date.now() - 5_000);
     seedUsage(database, { translate: FREE_TRANSLATE_CAP - 1 });
 
     const { ctx, settled } = makeCtx();
@@ -255,7 +261,7 @@ describe("runPreflightGate", () => {
   });
 
   test("speech charges the characters it is about to speak", async () => {
-    seedCooldown(database, Date.now() - 5_000);
+    seedCooldown(kvStore, Date.now() - 5_000);
     seedUsage(database, { speech: FREE_LIMITS.dailySpeechCharsLimit - 10 });
 
     const { ctx, settled } = makeCtx();
@@ -276,7 +282,7 @@ describe("runPreflightGate", () => {
       expect(body.error).toBe(WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED);
     }
 
-    seedCooldown(database, Date.now() - 5_000);
+    seedCooldown(kvStore, Date.now() - 5_000);
     const fits = await runPreflightGate(
       env,
       ctx,
@@ -292,7 +298,7 @@ describe("runPreflightGate", () => {
   });
 
   test("denies every AI feature once the shared monthly budget is spent", async () => {
-    seedCooldown(database, Date.now() - 5_000);
+    seedCooldown(kvStore, Date.now() - 5_000);
     seedMonthlyUsage(database, {
       aiCredits: FREE_LIMITS.monthlyAiCreditsLimit,
     });
@@ -324,7 +330,7 @@ describe("runPreflightGate", () => {
   });
 
   test("denies FREE transcription once the daily minute cap is reached", async () => {
-    seedCooldown(database, Date.now() - 5_000);
+    seedCooldown(kvStore, Date.now() - 5_000);
     seedUsage(database, {
       transcribeMinutes: FREE_LIMITS.dailyTranscribeMinutesLimit,
     });
@@ -353,12 +359,17 @@ describe("runPreflightGate", () => {
     expect(body.quota_total).toBe(FREE_LIMITS.dailyTranscribeMinutesLimit);
   });
 
-  test("fails closed when the cooldown write fails", async () => {
+  test("fails closed when the quota read fails", async () => {
     const broken = {
       DB: {
         prepare() {
           throw new Error("D1 unavailable");
         },
+      },
+      EKWE_KV: {
+        get: async () => null,
+        put: async () => {},
+        delete: async () => {},
       },
     } as unknown as Env;
 

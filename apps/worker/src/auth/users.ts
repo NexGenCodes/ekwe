@@ -224,7 +224,9 @@ export async function deleteAccount(env: Env, userId: string): Promise<void> {
     env.DB.prepare(`DELETE FROM user_daily_usage WHERE user_id = ?`).bind(
       userId,
     ),
-    env.DB.prepare(`DELETE FROM user_cooldowns WHERE user_id = ?`).bind(userId),
+    env.DB.prepare(`DELETE FROM user_monthly_usage WHERE user_id = ?`).bind(
+      userId,
+    ),
     env.DB.prepare(`DELETE FROM flutterwave_claims WHERE user_id = ?`).bind(
       userId,
     ),

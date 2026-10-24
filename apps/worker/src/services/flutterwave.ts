@@ -100,7 +100,7 @@ export function guardFlutterwaveKeys(env: {
   const isProduction = env.APP_ENV === "production";
 
   const reject = (why: string): FlutterwaveKeyGuard => {
-    logger.error(`[flutterwave] Rejected payment keys in production: ${why}`);
+    logger.error(`[flutterwave] Rejected payment keys: ${why}`);
     return {
       allowed: false,
       response: Response.json(
@@ -110,14 +110,15 @@ export function guardFlutterwaveKeys(env: {
     };
   };
 
+  if (!env.FLUTTERWAVE_SECRET) return reject("secret key missing");
+  if (!env.FLUTTERWAVE_PUBLIC) return reject("public key missing");
+
   if (isProduction) {
-    if (!env.FLUTTERWAVE_SECRET) return reject("secret key missing");
     if (env.FLUTTERWAVE_SECRET.startsWith(TEST_SECRET_PREFIX)) {
       return reject(
         "secret key is TEST-prefixed (FLWSECK_TEST-) — set a live key",
       );
     }
-    if (!env.FLUTTERWAVE_PUBLIC) return reject("public key missing");
     if (env.FLUTTERWAVE_PUBLIC.startsWith(TEST_PUBLIC_PREFIX)) {
       return reject(
         "public key is TEST-prefixed (FLWPUBK_TEST-) — set a live key",
@@ -241,9 +242,9 @@ export async function setProStatus(
 
 function parsePlanFromTxRef(txRef: string | null): BillingPlanPeriod | null {
   if (!txRef) return null;
-  const plan = txRef.split("_")[2];
-  if (plan === "monthly" || plan === "annual") return plan;
-  return null;
+  const match = txRef.match(/^ekwe_[a-f0-9-]+_(monthly|annual)_/);
+  if (!match) return null;
+  return match[1] as BillingPlanPeriod;
 }
 
 function userIdFromTxRef(txRef: string | null): string | null {
@@ -769,11 +770,13 @@ export async function reconcileFlutterwaveTransactions(
       `[reconciliation] Found ${missingRefs.length} missing transactions. Processing...`,
     );
 
+    const txByRef = new Map(transactions.map((t) => [t.flw_ref, t]));
+
     let successCount = 0;
     let terminalFailures = 0;
     let retryableFailures = 0;
     for (const missingRef of missingRefs) {
-      const tx = transactions.find((t) => t.flw_ref === missingRef);
+      const tx = txByRef.get(missingRef);
       if (!tx) continue;
 
       try {

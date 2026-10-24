@@ -93,7 +93,7 @@ export interface RotateKeysDetailedResult {
 export function providerKeys(env: Env, prefix: string): string[] {
   const keys = Object.keys(env)
     .filter((k) => k.startsWith(prefix))
-    .map((k) => sanitizeKey(env[k]))
+    .map((k) => sanitizeKey(env[k as keyof Env]))
     .filter((k) => k.length > 10);
 
   const order = new Uint32Array(keys.length);
@@ -113,7 +113,7 @@ export async function rotateKeysDetailed(
   const namespace = prefix.replace(/_$/, "").toLowerCase();
   const keys = Object.keys(env)
     .filter((k) => k.startsWith(prefix))
-    .map((k) => sanitizeKey(env[k]))
+    .map((k) => sanitizeKey(env[k as keyof Env]))
     .filter((k) => k.length > 10);
 
   const candidates = keys;

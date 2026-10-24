@@ -15,6 +15,7 @@ import { error } from "@/core/http";
 import { readJson } from "@/core/validate";
 import { logger } from "@/core/logger";
 import { describeError, retryTransient } from "@/db/retry";
+import { isWorkersPaid } from "@/core/env";
 
 const SELECT_COLUMNS = `id, type, capture_id, origin, input, source_lang,
   target_lang, transcript, translation_text, transliteration_text, duration,
@@ -216,9 +217,7 @@ export async function handlePush(c: Context<AppEnv>): Promise<Response> {
   const body = await readJson(c, syncPushRequestSchema);
   if (body instanceof Response) return body;
 
-  const maxRows = syncPushRows(
-    (c.env.WORKERS_PAID as string | undefined) === "true",
-  );
+  const maxRows = syncPushRows(isWorkersPaid(c.env));
   if (body.rows.length > maxRows) {
     return error(
       WORKER_ERROR_CODES.PAYLOAD_TOO_LARGE,

@@ -133,9 +133,9 @@ describe("handleTranslate pipeline", () => {
 
   test("FREE tier never exposes transliteration", async () => {
     server.use(
-      http.post(PROVIDER_URLS.geminiGenerate, () =>
+      http.post(PROVIDER_URLS.groqChat, () =>
         jsonResponse({
-          candidates: [{ content: { parts: [{ text: "नमस्ते" }] } }],
+          choices: [{ message: { content: "नमस्ते" } }],
         }),
       ),
     );

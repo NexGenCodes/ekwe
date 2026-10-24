@@ -6,6 +6,7 @@ import { readLimitedBody } from "@/core/guards";
 import { hashKey, hexEncode, timingSafeEqual } from "@/utils/keys";
 import { bytesToBase64 } from "@/utils/base64";
 import { processWebhookEvent } from "@/services/billing";
+import type { WebhookRetryMessage } from "@/services/webhook-queue";
 
 const WEBHOOK_MAX_BYTES = 256 * 1024;
 const IDEMPOTENCY_TTL = 86400;
@@ -46,12 +47,36 @@ export async function verifyWebhook(
     [key: string]: unknown;
   },
 ): Promise<WebhookVerificationResult> {
-  const headers = request.headers;
+  const verifHash = request.headers.get("verif-hash");
+  const flutterwaveSig = request.headers.get("flutterwave-signature");
 
-  const verifHash = headers.get("verif-hash");
-  const flutterwaveSig = headers.get("flutterwave-signature");
+  if (verifHash) {
+    if (!env.FLUTTERWAVE_WEBHOOK_SECRET) {
+      logger.error("Missing FLUTTERWAVE_WEBHOOK_SECRET in environment");
+      return {
+        isValid: false,
+        provider: "flutterwave",
+        error: "Server misconfiguration",
+        code: WORKER_ERROR_CODES.SERVER_ERROR,
+      };
+    }
+    const isValid = await timingSafeEqual(
+      env.FLUTTERWAVE_WEBHOOK_SECRET,
+      verifHash,
+    );
+    if (!isValid) {
+      logger.warn("[webhook] Flutterwave verif-hash mismatch");
+      return {
+        isValid: false,
+        provider: "flutterwave",
+        error: "Signature mismatch",
+        code: WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
+      };
+    }
+    return { isValid: true, provider: "flutterwave" };
+  }
 
-  if (verifHash || flutterwaveSig) {
+  if (flutterwaveSig) {
     if (!env.FLUTTERWAVE_WEBHOOK_SECRET) {
       logger.error("Missing FLUTTERWAVE_WEBHOOK_SECRET in environment");
       return {
@@ -62,27 +87,16 @@ export async function verifyWebhook(
       };
     }
 
-    let isValid = false;
-
-    if (verifHash) {
-      isValid = await timingSafeEqual(
-        verifHash,
-        env.FLUTTERWAVE_WEBHOOK_SECRET,
-      );
-    }
-
-    if (!isValid && flutterwaveSig) {
-      const computed = await computeHMAC(
-        env.FLUTTERWAVE_WEBHOOK_SECRET,
-        rawBody,
-        "SHA-256",
-        "base64",
-      );
-      isValid = await timingSafeEqual(computed, flutterwaveSig);
-    }
+    const computed = await computeHMAC(
+      env.FLUTTERWAVE_WEBHOOK_SECRET,
+      rawBody,
+      "SHA-256",
+      "base64",
+    );
+    const isValid = await timingSafeEqual(computed, flutterwaveSig);
 
     if (!isValid) {
-      logger.warn("[webhook] Flutterwave signature mismatch");
+      logger.warn("[webhook] Flutterwave HMAC signature mismatch");
       return {
         isValid: false,
         provider: "flutterwave",
@@ -90,10 +104,10 @@ export async function verifyWebhook(
         code: WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
       };
     }
-    return { isValid, provider: "flutterwave" };
+    return { isValid: true, provider: "flutterwave" };
   }
 
-  logger.warn("[webhook] Request missing valid webhook signature headers");
+  logger.warn("[webhook] Request missing flutterwave-signature header");
   return {
     isValid: false,
     provider: "unknown",
@@ -199,7 +213,14 @@ export async function handleWebhook(
     );
   }
 
-  const verification = await verifyWebhook(request, rawBody, env);
+  const verification = await verifyWebhook(
+    request,
+    rawBody,
+    env as unknown as {
+      FLUTTERWAVE_WEBHOOK_SECRET?: string;
+      [key: string]: unknown;
+    },
+  );
 
   if (!verification.isValid) {
     logger.warn(
@@ -277,6 +298,28 @@ export async function handleWebhook(
 
   if (!fullyApplied) {
     await releaseIdempotency(env.DB, idempotencyKey);
+
+    // Enqueue for durable retry so a transient D1 hiccup cannot
+    // permanently lose a payment event beyond Flutterwave's retry window.
+    if (env.WEBHOOK_RETRY_QUEUE) {
+      try {
+        const msg: WebhookRetryMessage = {
+          provider: verification.provider,
+          event,
+          originalAt: new Date().toISOString(),
+          attempt: 1,
+        };
+        await env.WEBHOOK_RETRY_QUEUE.send(msg);
+        logger.info("[webhook] Failed event enqueued for retry", {
+          provider: verification.provider,
+        });
+      } catch (qErr) {
+        logger.error("[webhook] Failed to enqueue retry message", {
+          error: qErr instanceof Error ? qErr.message : String(qErr),
+        });
+      }
+    }
+
     logger.warn(
       "[webhook] Event not fully applied; returning 500 so the provider retries",
     );

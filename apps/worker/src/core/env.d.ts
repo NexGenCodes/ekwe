@@ -1,5 +1,12 @@
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference
+/// <reference path="../../worker-configuration.d.ts" />
+
 interface Env {
-  EMAIL?: { send(message: unknown): Promise<unknown> };
+  // Cloudflare Email Routing binding
+  EMAIL?: SendEmail;
+
+  // Runtime-tunable sync cooldown (overrides compile-time default when set)
+  SYNC_PUSH_COOLDOWN_MS?: string;
 
   JWT_PRIVATE_JWK: string;
   OTP_PEPPER: string;
