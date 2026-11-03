@@ -79,14 +79,6 @@ export default function HistoryScreen(): React.JSX.Element {
 
   const hasPullError = useValue(() => SyncService.pullError.get() !== null);
 
-  const deadCount = useValue(() => SyncService.deadCount.get());
-
-  const retryDead = useCallback(() => {
-    SyncService.retryDeadOutbox().catch((err) =>
-      logger.error("[history] Retry dead outbox failed:", err),
-    );
-  }, []);
-
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
     await triggerHaptic();
@@ -96,7 +88,7 @@ export default function HistoryScreen(): React.JSX.Element {
       try {
         await Promise.all([
           SyncService.pullFromCloud(userId),
-          SyncService.drain(),
+          SyncService.pushPending(),
         ]);
 
         await refetchHistory();
@@ -216,40 +208,6 @@ export default function HistoryScreen(): React.JSX.Element {
           </Box>
         ) : null}
 
-        {}
-        {deadCount > 0 ? (
-          <Box
-            style={[
-              styles.syncErrorBanner,
-              {
-                backgroundColor: withAlpha(color.warning, 0.08),
-                borderColor: withAlpha(color.warning, 0.25),
-              },
-            ]}
-          >
-            <Text
-              variant="caption"
-              numberOfLines={2}
-              style={[styles.syncErrorText, { color: color.warning }]}
-            >
-              {deadCount} change{deadCount === 1 ? "" : "s"} haven't synced yet.
-            </Text>
-            <Pressable
-              onPress={retryDead}
-              hitSlop={spacing.sm}
-              style={({ pressed }) => pressed && { opacity: 0.6 }}
-            >
-              <Text
-                variant="caption"
-                style={{ color: color.brand, fontWeight: "600" }}
-              >
-                Retry
-              </Text>
-            </Pressable>
-          </Box>
-        ) : null}
-
-        {}
         <Box style={styles.searchRow}>
           <Box
             style={[

@@ -20,7 +20,7 @@ vi.mock("@/services/syncService", () => ({
     onUserSignedIn: vi.fn(),
     onUserSignedOut: vi.fn(),
     loadInitialHistory: vi.fn(),
-    drain: vi.fn(async () => undefined),
+    pushPending: vi.fn(async () => undefined),
     purgeLocalHistory: vi.fn(),
     clearSyncCursor: vi.fn(),
   },
@@ -138,7 +138,7 @@ beforeEach(() => {
   authActions.setSessionLoaded(false);
   vi.stubEnv("EXPO_PUBLIC_WORKER_URL", "https://worker.test");
   vi.mocked(apiFetch).mockResolvedValue(new Response(null, { status: 204 }));
-  vi.spyOn(Db, "countUnsyncedOutbox").mockReturnValue(0);
+  vi.spyOn(Db, "countDirtyHistory").mockReturnValue(0);
 });
 
 describe("initAuth", () => {
@@ -536,7 +536,7 @@ describe("signOut", () => {
     const result = await signOut();
 
     expect(result).toEqual({ ok: true });
-    expect(SyncService.drain).toHaveBeenCalled();
+    expect(SyncService.pushPending).toHaveBeenCalled();
     expect(SyncService.purgeLocalHistory).toHaveBeenCalledWith("u1");
     expect(apiFetch).toHaveBeenCalledWith(
       "/auth/logout",
@@ -549,7 +549,7 @@ describe("signOut", () => {
     const result = await signOut();
 
     expect(result).toEqual({ ok: true });
-    expect(SyncService.drain).not.toHaveBeenCalled();
+    expect(SyncService.pushPending).not.toHaveBeenCalled();
     expect(apiFetch).toHaveBeenCalledWith(
       "/auth/logout",
       expect.objectContaining({ method: "POST" }),
@@ -558,7 +558,7 @@ describe("signOut", () => {
 
   it("keeps local history while rows are still queued", async () => {
     signedIn();
-    vi.mocked(Db.countUnsyncedOutbox).mockReturnValueOnce(2);
+    vi.mocked(Db.countDirtyHistory).mockReturnValueOnce(2);
 
     await signOut();
 

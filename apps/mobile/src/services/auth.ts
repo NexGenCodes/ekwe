@@ -324,8 +324,8 @@ export const signOut = async (): Promise<AuthResult> => {
     const userId = auth$.user.get()?.id;
 
     if (userId) {
-      await SyncService.drain();
-      const remaining = Db.countUnsyncedOutbox(userId);
+      await SyncService.pushPending();
+      const remaining = Db.countDirtyHistory(userId);
       if (remaining === 0) {
         SyncService.purgeLocalHistory(userId);
         SyncService.clearSyncCursor(userId);

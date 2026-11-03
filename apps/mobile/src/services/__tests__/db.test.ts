@@ -54,23 +54,16 @@ describe("Db service", () => {
     expect(res).toEqual([]);
   });
 
-  it("should count dead outbox", () => {
-    const res = Db.countDeadOutbox("user_123");
-    expect(res).toBe(0);
+  it("should count dirty history", () => {
+    expect(Db.countDirtyHistory("user_123")).toBe(0);
   });
 
-  it("should revive in-flight outbox", () => {
-    const res = Db.reviveInFlight();
-    expect(typeof res).toBe("number");
+  it("should report whether a row is dirty", () => {
+    expect(Db.isHistoryDirty("row-1")).toBe(false);
   });
 
-  it("should revive dead outbox", () => {
-    const res = Db.reviveDeadOutbox();
-    expect(typeof res).toBe("number");
-  });
-
-  it("should increment outbox retry", () => {
-    expect(() => Db.incrementOutboxRetry("outbox_123")).not.toThrow();
+  it("should return dirty history", () => {
+    expect(Db.getDirtyHistory("user_123")).toEqual([]);
   });
 
   it("should clean up expired history", () => {
@@ -78,19 +71,10 @@ describe("Db service", () => {
     expect(typeof res).toBe("number");
   });
 
-  // `execute()` on a sync prepared statement only materializes an
-  // `ExecuteResultSync` thunk, so a delete or update routed through it parses,
-  // throws nothing, and never reaches SQLite. That is what left the outbox
-  // re-pushing the same rows forever: every drain "succeeded" and deleted
-  // nothing.
   it("should run prepared mutations instead of deferring them", () => {
     Db.markHistoryDeleted("row-1", 1_700_000_000_000);
-    Db.deleteOutbox("row-1");
-    Db.markOutboxInFlight("row-1");
-    Db.reviveInFlight();
-    Db.reviveDeadOutbox();
+    Db.clearHistoryDeleted("row-1");
     Db.purgeUserHistory("user_123");
-    Db.purgeUserOutbox("user_123");
 
     const deferred = preparedStatements.filter(
       (stmt) => stmt.execute.mock.calls.length > 0,
@@ -100,11 +84,6 @@ describe("Db service", () => {
     const ran = preparedStatements.filter(
       (stmt) => stmt.run.mock.calls.length > 0,
     );
-    expect(ran).toHaveLength(7);
-  });
-
-  it("should report how many outbox rows a revive touched", () => {
-    expect(Db.reviveInFlight()).toBe(0);
-    expect(Db.reviveDeadOutbox()).toBe(0);
+    expect(ran).toHaveLength(3);
   });
 });
