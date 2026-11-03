@@ -93,7 +93,7 @@ export class CloudSync {
     batch(() => {
       for (const row of rows) {
         // A local write that has not been acknowledged yet is the newer truth.
-        if (Db.hasPendingOutboxRow(userId, row.id)) continue;
+        if (Db.isHistoryDirty(row.id)) continue;
 
         if (row.deletedAt != null) {
           Db.insertHistory(wireRowToLocal(row, userId));

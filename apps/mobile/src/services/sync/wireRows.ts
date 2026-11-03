@@ -77,7 +77,12 @@ export function entryToWireRow(
 
 /** A local row, ready to push with its last server-confirmed revision. */
 export function localRowToWireRow(row: LocalHistoryRow): WireHistoryRow {
-  return entryToWireRow(historyRowToEntry(row), row.revision, row.deletedAt);
+  return entryToWireRow(
+    historyRowToEntry(row),
+    row.revision,
+    row.deletedAt,
+    row.restore === 1,
+  );
 }
 
 export function wireRowToEntry(row: SyncedRow): HistoryEntry {
@@ -126,5 +131,7 @@ export function wireRowToLocal(
     revision: row.revision,
     entryType: normalizeEntryType(row.type),
     deletedAt: row.deletedAt ?? null,
+    dirty: 0,
+    restore: 0,
   };
 }

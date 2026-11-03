@@ -27,9 +27,8 @@ export function toError(err: unknown): Error {
 export const INITIAL_HISTORY_SIZE = 20;
 export const MAX_HISTORY_CACHE = 1000;
 export const LOCAL_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
-export const DRAIN_TIMEOUT_MS = 15_000;
-export const DRAIN_BASE_DELAY_MS = 500;
-export const DRAIN_MAX_BACKOFF_MS = 60_000;
+export const PUSH_TIMEOUT_MS = 15_000;
+export const PUSH_DEBOUNCE_MS = 500;
 /** Gap between push chunks, comfortably past the server's 250 ms window. */
 export const PUSH_CHUNK_GAP_MS = 350;
 /** Whole-second Retry-After the worker returns when a push lands too early. */

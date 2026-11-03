@@ -1,23 +1,12 @@
 import type { SQLiteBindParams } from "expo-sqlite";
 import { drizzle } from "drizzle-orm/expo-sqlite";
 import { openDatabaseSync } from "expo-sqlite";
-import {
-  eq,
-  and,
-  desc,
-  sql,
-  or,
-  isNull,
-  inArray,
-  placeholder,
-} from "drizzle-orm";
-import { history, outbox } from "@/db/schema";
+import { eq, and, desc, sql, or, isNull, placeholder } from "drizzle-orm";
+import { history } from "@/db/schema";
 
 import migrations from "../../drizzle/migrations";
 
 import logger from "@/utils/logger";
-
-const OUTBOX_RETRY_BACKOFF_MS = 60_000;
 
 const expoDb = openDatabaseSync("ekwe.db");
 const db = drizzle(expoDb);
@@ -184,13 +173,17 @@ const _captureStmt = db
 
 const _markDeletedStmt = db
   .update(history)
-  .set({ deletedAt: sql`${placeholder("deletedAt")}` })
+  .set({
+    deletedAt: sql`${placeholder("deletedAt")}`,
+    dirty: 1,
+    restore: 0,
+  })
   .where(eq(history.id, placeholder("id")))
   .prepare();
 
 const _clearDeletedStmt = db
   .update(history)
-  .set({ deletedAt: null })
+  .set({ deletedAt: null, dirty: 1, restore: 1 })
   .where(eq(history.id, placeholder("id")))
   .prepare();
 
@@ -208,41 +201,24 @@ const _allHistoryStmt = db
   .where(eq(history.userId, placeholder("userId")))
   .prepare();
 
-const _deleteOutboxStmt = db
-  .delete(outbox)
-  .where(eq(outbox.id, placeholder("id")))
+const _dirtyHistoryStmt = db
+  .select()
+  .from(history)
+  .where(and(eq(history.userId, placeholder("userId")), eq(history.dirty, 1)))
+  .orderBy(history.createdAt)
   .prepare();
 
-const _countDeadStmt = db
+const _countDirtyStmt = db
   .select({ count: sql<number>`COUNT(*)` })
-  .from(outbox)
-  .where(
-    and(eq(outbox.userId, placeholder("userId")), eq(outbox.status, "dead")),
-  )
+  .from(history)
+  .where(and(eq(history.userId, placeholder("userId")), eq(history.dirty, 1)))
   .prepare();
 
-const _countUnsyncedStmt = db
-  .select({ count: sql<number>`COUNT(*)` })
-  .from(outbox)
-  .where(eq(outbox.userId, placeholder("userId")))
-  .prepare();
-
-const _markInFlightStmt = db
-  .update(outbox)
-  .set({ status: "in_flight" })
-  .where(eq(outbox.id, placeholder("id")))
-  .prepare();
-
-const _reviveInFlightStmt = db
-  .update(outbox)
-  .set({ status: "pending" })
-  .where(eq(outbox.status, "in_flight"))
-  .prepare();
-
-const _reviveDeadStmt = db
-  .update(outbox)
-  .set({ status: "pending", retries: 0 })
-  .where(eq(outbox.status, "dead"))
+const _isDirtyStmt = db
+  .select({ id: history.id })
+  .from(history)
+  .where(and(eq(history.id, placeholder("id")), eq(history.dirty, 1)))
+  .limit(1)
   .prepare();
 
 const _purgeHistoryStmt = db
@@ -250,15 +226,9 @@ const _purgeHistoryStmt = db
   .where(eq(history.userId, placeholder("userId")))
   .prepare();
 
-const _purgeOutboxStmt = db
-  .delete(outbox)
-  .where(eq(outbox.userId, placeholder("userId")))
-  .prepare();
-
 // ---------------------------------------------------------------------------
 
 export type HistoryRow = typeof history.$inferSelect;
-export type OutboxRow = typeof outbox.$inferSelect;
 
 export const Db = {
   transaction: (fn: () => void): void => {
@@ -273,11 +243,16 @@ export const Db = {
   },
 
   /**
-   * Writes the full row state, including `deletedAt`. Pass null to clear a
-   * tombstone (restore) and a timestamp to write one.
+   * Writes the full row state, including `deletedAt`. Local writes default to
+   * dirty; server-mirrored rows pass `dirty: 0` explicitly.
    */
   insertHistory: (row: typeof history.$inferInsert): void => {
-    const values = { ...row, deletedAt: row.deletedAt ?? null };
+    const values = {
+      ...row,
+      deletedAt: row.deletedAt ?? null,
+      dirty: row.dirty ?? 1,
+      restore: row.restore ?? 0,
+    };
     db.insert(history)
       .values(values)
       .onConflictDoUpdate({
@@ -287,24 +262,24 @@ export const Db = {
       .run();
   },
 
-  /** Soft-deletes: keeps the row (and its revision) as a local tombstone. */
+  /** Soft-deletes and queues the tombstone for push. */
   markHistoryDeleted: (id: string, deletedAt: number = Date.now()): void => {
     _markDeletedStmt.run({ id, deletedAt });
   },
 
-  /** Clears a tombstone so an Undo can push a restore against its revision. */
+  /** Clears a tombstone and queues a restore against its revision. */
   clearHistoryDeleted: (id: string): void => {
     _clearDeletedStmt.run({ id });
   },
 
-  /** Marks a row the server reports as deleted, keeping its revision. */
+  /** Applies the server's tombstone; it is already acknowledged. */
   applyRemoteDeletion: (
     id: string,
     revision: number,
     deletedAt: number = Date.now(),
   ): void => {
     db.update(history)
-      .set({ deletedAt, revision })
+      .set({ deletedAt, revision, dirty: 0, restore: 0 })
       .where(eq(history.id, id))
       .run();
   },
@@ -312,6 +287,28 @@ export const Db = {
   /** Records the server-confirmed revision for conflict resolution. */
   setHistoryRevision: (id: string, revision: number): void => {
     db.update(history).set({ revision }).where(eq(history.id, id)).run();
+  },
+
+  /** Clears the dirty flag after the server accepts a push. */
+  markHistoryClean: (id: string, revision: number): void => {
+    db.update(history)
+      .set({ revision, dirty: 0, restore: 0 })
+      .where(eq(history.id, id))
+      .run();
+  },
+
+  getDirtyHistory: (userId: string): HistoryRow[] => {
+    if (!userId) return [];
+    return _dirtyHistoryStmt.all({ userId });
+  },
+
+  countDirtyHistory: (userId: string): number => {
+    if (!userId) return 0;
+    return _countDirtyStmt.all({ userId })[0]?.count ?? 0;
+  },
+
+  isHistoryDirty: (id: string): boolean => {
+    return _isDirtyStmt.all({ id }).length > 0;
   },
 
   /** Returns the last server-confirmed revision, or null if unknown. */
@@ -377,6 +374,8 @@ export const Db = {
         input: row.input,
         // Keep entryType in sync with translation state for backward compatibility.
         entryType: row.translation_text ? "translation" : "transcription",
+        dirty: 1,
+        restore: 0,
       })
       .where(eq(history.id, id))
       .run();
@@ -488,9 +487,8 @@ export const Db = {
     ).toISOString();
     const conditions = [
       liveRow,
+      eq(history.dirty, 0),
       sql`${history.createdAt} < ${cutoff}`,
-      // Never drop a row that still has an unacknowledged write queued.
-      sql`NOT EXISTS (SELECT 1 FROM ${outbox} WHERE json_extract(${outbox.payload}, '$.id') = ${history.id})`,
     ];
     if (userId) conditions.push(eq(history.userId, userId));
     const deleted = db
@@ -500,7 +498,7 @@ export const Db = {
     return deleted.changes ?? 0;
   },
 
-  /** Hard-deletes tombstones past the retention window. */
+  /** Hard-deletes acknowledged tombstones past the retention window. */
   purgeExpiredTombstones: (ttlDays: number): number => {
     const cutoff = Date.now() - ttlDays * 24 * 60 * 60 * 1000;
     const purged = db
@@ -508,6 +506,7 @@ export const Db = {
       .where(
         and(
           sql`${history.deletedAt} IS NOT NULL`,
+          eq(history.dirty, 0),
           sql`${history.deletedAt} < ${cutoff}`,
         ),
       )
@@ -515,144 +514,8 @@ export const Db = {
     return purged.changes ?? 0;
   },
 
-  insertOutbox: (row: typeof outbox.$inferInsert): void => {
-    db.insert(outbox)
-      .values({
-        id: row.id,
-        payload: row.payload,
-        userId: row.userId,
-        retries: 0,
-        lastAttempt: null,
-        createdAt: row.createdAt,
-        status: "pending",
-      })
-      .onConflictDoUpdate({
-        target: outbox.id,
-        set: {
-          payload: row.payload,
-          userId: row.userId,
-          createdAt: row.createdAt,
-          status: "pending",
-          retries: 0,
-          lastAttempt: null,
-        },
-      })
-      .run();
-  },
-
-  deleteOutbox: (id: string): void => {
-    _deleteOutboxStmt.run({ id });
-  },
-
-  deleteOutboxForHistory: (id: string): void => {
-    db.delete(outbox)
-      .where(
-        or(
-          eq(outbox.id, id),
-          sql`json_extract(${outbox.payload}, '$.id') = ${id}`,
-        ),
-      )
-      .run();
-  },
-
-  /** Returns all unacknowledged outbox rows regardless of status (pending, in_flight, or dead). */
-  getUnacknowledgedOutbox: (userId: string): OutboxRow[] => {
-    if (!userId) return [];
-    return db
-      .select()
-      .from(outbox)
-      .where(
-        and(
-          eq(outbox.userId, userId),
-          inArray(outbox.status, ["pending", "in_flight", "dead"]),
-        ),
-      )
-      .all();
-  },
-
-  getPendingOutbox: (userId: string): OutboxRow[] => {
-    if (!userId) return [];
-    return db
-      .select()
-      .from(outbox)
-      .where(
-        and(
-          eq(outbox.userId, userId),
-          eq(outbox.status, "pending"),
-          sql`${outbox.retries} < 5`,
-          or(
-            sql`${outbox.lastAttempt} IS NULL`,
-            sql`${outbox.lastAttempt} <= ${Date.now() - OUTBOX_RETRY_BACKOFF_MS}`,
-          ),
-        ),
-      )
-      .orderBy(outbox.createdAt)
-      .all();
-  },
-
-  /** Fast point lookup for the realtime echo guard. Checks both outbox ID and payload target ID. */
-  hasPendingOutboxRow: (userId: string, id: string): boolean => {
-    if (!userId) return false;
-    const row = db
-      .select({ id: outbox.id })
-      .from(outbox)
-      .where(
-        and(
-          eq(outbox.userId, userId),
-          eq(outbox.status, "pending"),
-          or(
-            eq(outbox.id, id),
-            sql`json_extract(${outbox.payload}, '$.id') = ${id}`,
-          ),
-        ),
-      )
-      .limit(1)
-      .all();
-    return row.length > 0;
-  },
-
-  countDeadOutbox: (userId: string): number => {
-    if (!userId) return 0;
-    const result = _countDeadStmt.all({ userId });
-    return result[0]?.count ?? 0;
-  },
-
-  countUnsyncedOutbox: (userId: string): number => {
-    if (!userId) return 0;
-    const result = _countUnsyncedStmt.all({ userId });
-    return result[0]?.count ?? 0;
-  },
-
-  incrementOutboxRetry: (id: string): void => {
-    const MAX_RETRIES = 5;
-    db.update(outbox)
-      .set({
-        retries: sql`${outbox.retries} + 1`,
-        lastAttempt: Date.now(),
-        status: sql`CASE WHEN ${outbox.retries} + 1 >= ${MAX_RETRIES} THEN 'dead' ELSE 'pending' END`,
-      })
-      .where(eq(outbox.id, id))
-      .run();
-  },
-
-  markOutboxInFlight: (id: string): void => {
-    _markInFlightStmt.run({ id });
-  },
-
-  reviveInFlight: (): number => {
-    return _reviveInFlightStmt.run().changes;
-  },
-
-  reviveDeadOutbox: (): number => {
-    return _reviveDeadStmt.run().changes;
-  },
-
   purgeUserHistory: (userId: string): void => {
     _purgeHistoryStmt.run({ userId });
-  },
-
-  purgeUserOutbox: (userId: string): void => {
-    _purgeOutboxStmt.run({ userId });
   },
 
   vacuum: (): void => {

@@ -1,15 +1,13 @@
 /**
- * HistoryRepository — local CRUD plus outbox enqueueing.
+ * HistoryRepository — local CRUD plus dirty-marking.
  *
- * Every mutation writes the local row and queues the full wire row, so the
- * drain can push it without re-deriving state. Deletes are soft: the row stays
- * as a local tombstone so its revision survives for an Undo.
+ * Every mutation writes the local row and marks it dirty; the push service
+ * sends dirty rows. Deletes are soft so the row's revision survives for Undo.
  */
 
 import * as Crypto from "expo-crypto";
 
 import { Db } from "@/services/db";
-import { serializeOutboxRow } from "@/services/outboxPayload";
 import { history$ } from "@/store";
 import type { EntryType, HistoryEntry } from "@/store";
 import type { HistoryInput, HistoryOrigin } from "@ekwe/shared";
@@ -19,7 +17,6 @@ import {
 } from "@/services/historyMapper";
 import logger from "@/utils/logger";
 
-import { entryToWireRow, localRowToWireRow } from "./wireRows";
 import { INITIAL_HISTORY_SIZE, MAX_HISTORY_CACHE } from "./shared";
 
 export interface HistoryWritePayload {
@@ -45,6 +42,7 @@ function entryToLocalInsert(
   createdAt: string,
   revision: number,
   deletedAt: number | null = null,
+  restore = 0,
 ): Parameters<typeof Db.insertHistory>[0] {
   return {
     id: entry.id,
@@ -66,14 +64,16 @@ function entryToLocalInsert(
     revision,
     entryType: entry.type ?? "transcription",
     deletedAt,
+    dirty: 1,
+    restore,
   };
 }
 
 export class HistoryRepository {
-  private scheduleDrain: () => void;
+  private schedulePush: () => void;
 
-  constructor(scheduleDrain: () => void) {
-    this.scheduleDrain = scheduleDrain;
+  constructor(schedulePush: () => void) {
+    this.schedulePush = schedulePush;
   }
 
   async writeHistory(
@@ -108,31 +108,21 @@ export class HistoryRepository {
         type,
       };
 
-      Db.transaction(() => {
-        Db.updateCaptureRow(existing.id, {
-          transcript: payload.transcript,
-          translation_text: translation,
-          transliteration_text: transliteration,
-          duration: payload.duration,
-          source_app: payload.sourceApp,
-          voice_id: payload.voiceId,
-          stt_provider: payload.sttProvider,
-          mt_provider: payload.mtProvider,
-          origin: payload.origin,
-          input: payload.input,
-        });
-        Db.insertOutbox({
-          id: existing.id,
-          payload: serializeOutboxRow(
-            entryToWireRow(entry, existing.revision, null),
-          ),
-          userId,
-          createdAt: existing.createdAt,
-        });
+      Db.updateCaptureRow(existing.id, {
+        transcript: payload.transcript,
+        translation_text: translation,
+        transliteration_text: transliteration,
+        duration: payload.duration,
+        source_app: payload.sourceApp,
+        voice_id: payload.voiceId,
+        stt_provider: payload.sttProvider,
+        mt_provider: payload.mtProvider,
+        origin: payload.origin,
+        input: payload.input,
       });
 
       history$[existing.id].set(entry);
-      this.scheduleDrain();
+      this.schedulePush();
       return existing.id;
     }
 
@@ -158,125 +148,70 @@ export class HistoryRepository {
       type: payload.type,
     };
 
-    Db.transaction(() => {
-      Db.insertHistory(entryToLocalInsert(entry, userId, createdAt, 0));
-      Db.insertOutbox({
-        id,
-        payload: serializeOutboxRow(entryToWireRow(entry, 0, null)),
-        userId,
-        createdAt,
-      });
-    });
+    Db.insertHistory(entryToLocalInsert(entry, userId, createdAt, 0));
 
     history$[id].set(entry);
     this.trimHistoryWindow();
-    this.scheduleDrain();
+    this.schedulePush();
 
     return id;
   }
 
-  async deleteHistory(id: string, userId: string): Promise<void> {
+  async deleteHistory(id: string, _userId: string): Promise<void> {
     const row = Db.getHistoryById(id);
     if (!row) {
       history$[id].delete();
       return;
     }
 
-    const deletedAt = Date.now();
-    const wire = {
-      ...localRowToWireRow(row),
-      deletedAt,
-      restore: false,
-    };
-
-    Db.transaction(() => {
-      // A queued edit for this row would otherwise land before the delete and
-      // leave the server's revision ahead of the tombstone's base revision.
-      Db.deleteOutboxForHistory(id);
-      Db.markHistoryDeleted(id, deletedAt);
-      Db.insertOutbox({
-        id: Crypto.randomUUID(),
-        payload: serializeOutboxRow(wire),
-        userId,
-        createdAt: new Date(deletedAt).toISOString(),
-      });
-    });
-
+    Db.markHistoryDeleted(id, Date.now());
     history$[id].delete();
-    this.scheduleDrain();
+    this.schedulePush();
   }
 
   async restoreHistory(rawEntry: HistoryEntry, userId: string): Promise<void> {
     const entry = legacyEntryDefaults(rawEntry);
-    const type: EntryType = entry.translation ? "translation" : "transcription";
     const existing = Db.getHistoryById(entry.id);
     const revision = existing?.revision ?? 0;
     const createdAt =
       existing?.createdAt ?? new Date(entry.timestamp).toISOString();
 
-    Db.transaction(() => {
-      Db.deleteOutboxForHistory(entry.id);
-      Db.insertHistory(entryToLocalInsert(entry, userId, createdAt, revision));
-      Db.insertOutbox({
-        id: entry.id,
-        payload: serializeOutboxRow(
-          entryToWireRow({ ...entry, type }, revision, null, true),
-        ),
-        userId,
-        createdAt,
-      });
-    });
+    Db.insertHistory(
+      entryToLocalInsert(entry, userId, createdAt, revision, null, 1),
+    );
 
     history$[entry.id].set(entry);
-    this.scheduleDrain();
+    this.schedulePush();
   }
 
   purgeLocalHistory(userId: string): void {
     try {
-      Db.transaction(() => {
-        Db.purgeUserHistory(userId);
-        Db.purgeUserOutbox(userId);
-      });
+      Db.purgeUserHistory(userId);
       history$.set({});
-      logger.info("[Sync] Purged local history + outbox for user", userId);
+      logger.info("[Sync] Purged local history for user", userId);
     } catch (err) {
       logger.error("[Sync] purgeLocalHistory failed", err);
     }
   }
 
-  /**
-   * Deletes every live row by tombstoning it. The worker has no bulk delete,
-   * so this queues one delete per row and lets the drain chunk them.
-   */
+  /** Tombstones every live row; the push service sends one delete per row. */
   async clearAllHistory(userId: string): Promise<void> {
     try {
       const live = Db.getAllHistory(userId).filter(
         (row) => row.deletedAt == null,
       );
       const now = Date.now();
-      const createdAt = new Date(now).toISOString();
 
       if (live.length > 0) {
         Db.transaction(() => {
           for (const row of live) {
-            Db.deleteOutboxForHistory(row.id);
             Db.markHistoryDeleted(row.id, now);
-            Db.insertOutbox({
-              id: Crypto.randomUUID(),
-              payload: serializeOutboxRow({
-                ...localRowToWireRow(row),
-                deletedAt: now,
-                restore: false,
-              }),
-              userId,
-              createdAt,
-            });
           }
         });
       }
 
       history$.set({});
-      this.scheduleDrain();
+      this.schedulePush();
     } catch (err) {
       logger.error("[Sync] clearAllHistory failed", err);
       throw err;

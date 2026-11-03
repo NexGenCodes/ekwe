@@ -2,8 +2,8 @@
  * SyncOrchestrator — wires the local repository, pull and push together.
  *
  * There is no realtime channel: the app pulls on launch, on sign-in, on
- * reconnect and whenever it returns to the foreground, and pushes through the
- * outbox drain.
+ * reconnect and whenever it returns to the foreground, and pushes dirty rows
+ * through the push service.
  */
 
 import { AppState } from "react-native";
@@ -17,15 +17,15 @@ import { resetUserScopedState } from "@/store/resetUserScoped";
 import logger from "@/utils/logger";
 import { subscribeToNetwork } from "@/utils/connectivity";
 
-import { OutboxDrain } from "./OutboxDrain";
+import { HistoryPush } from "./HistoryPush";
 import { CloudSync } from "./CloudSync";
 import { HistoryRepository } from "./HistoryRepository";
 import { LOCAL_CLEANUP_INTERVAL_MS } from "./shared";
 
 class SyncOrchestrator {
-  public outbox = new OutboxDrain();
+  public push = new HistoryPush();
   public cloud = new CloudSync();
-  public history = new HistoryRepository(() => this.outbox.scheduleDrain());
+  public history = new HistoryRepository(() => this.push.schedulePush());
 
   private unsubscribeNetInfo: (() => void) | null = null;
   private appStateSubscription: { remove: () => void } | null = null;
@@ -36,18 +36,13 @@ class SyncOrchestrator {
     return this.cloud.pullError;
   }
 
-  get deadCount(): Observable<number> {
-    return this.outbox.deadCount;
-  }
-
   writeHistory = this.history.writeHistory.bind(this.history);
   deleteHistory = this.history.deleteHistory.bind(this.history);
   restoreHistory = this.history.restoreHistory.bind(this.history);
   purgeLocalHistory = this.history.purgeLocalHistory.bind(this.history);
   clearAllHistory = this.history.clearAllHistory.bind(this.history);
   clearSyncCursor = this.cloud.clearSyncCursor.bind(this.cloud);
-  drain = this.outbox.drain.bind(this.outbox);
-  retryDeadOutbox = this.outbox.retryDeadOutbox.bind(this.outbox);
+  pushPending = this.push.push.bind(this.push);
   loadInitialHistory = this.history.loadInitialHistory.bind(this.history);
 
   pullFromCloud = (userId: string): Promise<void> =>
@@ -66,26 +61,18 @@ class SyncOrchestrator {
     const currentUserId = auth$.user.get()?.id;
     this.loadedUserId = currentUserId ?? null;
     this.loadInitialHistory(currentUserId);
-
-    const revived = Db.reviveInFlight();
-    this.outbox.refreshDeadCount();
-    if (revived > 0) {
-      logger.info(
-        "[Sync] Revived",
-        revived,
-        "in-flight outbox rows (crash recovery)",
-      );
-      this.outbox.scheduleDrain();
-    }
+    this.push.schedulePush();
 
     this.unsubscribeNetInfo = subscribeToNetwork((isOnline) => {
       if (!isOnline) return;
-      this.outbox.scheduleDrain();
+      this.push.schedulePush();
       this.pullOnResume();
     });
 
     this.appStateSubscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") this.pullOnResume();
+      if (state !== "active") return;
+      this.push.schedulePush();
+      this.pullOnResume();
     });
 
     this.cleanupTimer = setInterval(() => {
@@ -111,14 +98,13 @@ class SyncOrchestrator {
     this.pullFromCloud(userId).catch((err) =>
       logger.error("[Sync] onUserSignedIn pull failed", err),
     );
-    this.outbox
-      .drain()
-      .catch((err) => logger.error("[Sync] onUserSignedIn drain failed", err));
+    this.push
+      .push()
+      .catch((err) => logger.error("[Sync] onUserSignedIn push failed", err));
   }
 
   onUserSignedOut(): void {
     this.loadedUserId = null;
-    this.outbox.deadCount.set(0);
   }
 
   private pullOnResume(): void {

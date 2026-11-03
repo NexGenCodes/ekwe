@@ -63,6 +63,10 @@ export const history = sqliteTable(
      * revision-guarded upsert. Every read filters `deleted_at IS NULL`.
      */
     deletedAt: integer("deleted_at"),
+    /** Set on local mutation, cleared once the server acknowledges the row. */
+    dirty: integer("dirty").notNull().default(0),
+    /** True while an Undo is pending; the server needs `restore` to clear a tombstone. */
+    restore: integer("restore").notNull().default(0),
   },
   (table) => ({
     createdIdx: index("idx_history_created").on(table.createdAt),
@@ -79,28 +83,11 @@ export const history = sqliteTable(
       table.userId,
       table.captureId,
     ),
-  }),
-);
-
-export const outbox = sqliteTable(
-  "outbox",
-  {
-    id: text("id").primaryKey(),
-    payload: text("payload").notNull(),
-    userId: text("user_id").notNull(),
-    retries: integer("retries").notNull().default(0),
-    lastAttempt: integer("last_attempt"),
-    createdAt: text("created_at").notNull(),
-    status: text("status", { enum: ["pending", "in_flight", "dead"] })
-      .notNull()
-      .default("pending"),
-  },
-  (table) => ({
-    statusIdx: index("idx_outbox_status").on(table.status),
-    pendingOutboxIdx: index("idx_outbox_pending").on(
+    /** Serves the per-user dirty scan that drives the push. */
+    userDirtyIdx: index("idx_history_user_dirty").on(
       table.userId,
-      table.status,
-      table.retries,
+      table.dirty,
+      table.createdAt,
     ),
   }),
 );
