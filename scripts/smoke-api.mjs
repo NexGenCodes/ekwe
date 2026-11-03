@@ -22,7 +22,7 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 
-const DEFAULT_URL = "https://ekwe-proxy.workers.dev";
+const DEFAULT_URL = "https://ekwe-proxy.ekwe.workers.dev";
 const COOLDOWN_MS = 3_200;
 
 const parseArgs = (argv) => {
