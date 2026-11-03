@@ -1,6 +1,7 @@
 import { File as ExpoFile, UploadType } from "expo-file-system";
 
 import { TimeoutError } from "@/utils/http";
+import { createAbortError, isAbortError } from "@/utils/abort";
 import { VOICE_NOTE_EXTENSION_TO_MIME } from "@/utils/fileValidation";
 
 export interface UploadMultipartOptions {
@@ -51,6 +52,9 @@ export async function uploadMultipart(
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
+    // Never start an attempt the caller already cancelled.
+    if (opts.signal?.aborted) throw createAbortError();
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     const onAbort = (): void => controller.abort();
@@ -88,8 +92,8 @@ export async function uploadMultipart(
       const error = err instanceof Error ? err : new Error(String(err));
       lastError = error;
 
-      if (error.name === "AbortError" && opts.signal?.aborted) {
-        throw error;
+      if (isAbortError(error) && opts.signal?.aborted) {
+        throw createAbortError();
       }
 
       if (!opts.signal?.aborted && controller.signal.aborted) {

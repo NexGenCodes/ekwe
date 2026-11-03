@@ -9,6 +9,7 @@ import {
   isTimeoutError,
 } from "@/utils/http";
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { createAbortError, isAbortError } from "@/utils/abort";
 import {
   getNetworkStatus,
   isDefinitelyOffline,
@@ -96,6 +97,71 @@ describe("tri-state network store", () => {
     networkActions.set({ isConnected: true, isInternetReachable: true });
     expect(isDefinitelyOffline()).toBe(false);
     expect(getNetworkStatus()).toBe("online");
+  });
+});
+
+describe("isAbortError", () => {
+  it("recognizes every cancellation shape the runtimes produce", () => {
+    const dom = new Error("Aborted");
+    dom.name = "AbortError";
+
+    const coded = Object.assign(new Error("Fetch request has been canceled"), {
+      code: "ERR_REQUEST_CANCELED",
+    });
+
+    const messaged = new Error("Fetch request has been canceled");
+
+    expect(isAbortError(dom)).toBe(true);
+    expect(isAbortError(coded)).toBe(true);
+    expect(isAbortError(messaged)).toBe(true);
+    expect(isAbortError(createAbortError())).toBe(true);
+  });
+
+  it("does not treat ordinary failures or non-errors as cancellations", () => {
+    expect(isAbortError(new Error("connection refused"))).toBe(false);
+    expect(isAbortError("boom")).toBe(false);
+    expect(isAbortError(null)).toBe(false);
+  });
+});
+
+describe("fetchWithRetry abort", () => {
+  it("throws without fetching when the caller already aborted", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      fetchWithRetry("https://example.com", { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it("does not retry after the caller aborts mid-flight", async () => {
+    const controller = new AbortController();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      (_url, opts) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = opts?.signal as AbortSignal;
+          signal.addEventListener("abort", () => {
+            const e = new Error("Fetch request has been canceled");
+            (e as { code?: string }).code = "ERR_REQUEST_CANCELED";
+            reject(e);
+          });
+        }),
+    );
+
+    const promise = fetchWithRetry("https://example.com", {
+      signal: controller.signal,
+      retries: 3,
+      backoff: 1,
+    });
+
+    controller.abort();
+
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    fetchSpy.mockRestore();
   });
 });
 

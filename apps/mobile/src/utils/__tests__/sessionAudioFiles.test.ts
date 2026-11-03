@@ -45,6 +45,15 @@ beforeEach(() => {
 });
 
 describe("useSessionAudioFiles", () => {
+  it("keeps a stable identity across renders", () => {
+    const { result, rerender } = renderHook(() => useSessionAudioFiles());
+    const first = result.current;
+
+    rerender();
+
+    expect(result.current).toBe(first);
+  });
+
   it("deletes a file only after the delay, so the player can release it", async () => {
     const { result } = renderHook(() => useSessionAudioFiles());
 

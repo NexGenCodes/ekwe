@@ -3,6 +3,7 @@ import { translateText, TranslationResult } from "@/services/translateText";
 import { Result } from "@/types/Result";
 import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 import { useMutation } from "@/hooks/core/useMutation";
+import { isAbortError } from "@/utils/abort";
 
 interface TranslateVariables {
   text: string;
@@ -29,9 +30,7 @@ export function useTranslateMutation(): {
         result = await translateText(text, sourceLang, targetLang, signal);
         break;
       } catch (e: unknown) {
-        if (e instanceof Error && (e.message === "AbortError" || attempt >= 2))
-          throw e;
-        if (attempt >= 2) throw e;
+        if (isAbortError(e) || attempt >= 2) throw e;
         attempt++;
       }
     }

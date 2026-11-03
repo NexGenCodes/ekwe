@@ -230,9 +230,11 @@ export const VoiceStudioInterface = forwardRef<
 
   const playerRef = useRef(player);
   const sourcePlayerRef = useRef(sourcePlayer);
+  const previewRef = useRef(preview);
   useEffect(() => {
     playerRef.current = player;
     sourcePlayerRef.current = sourcePlayer;
+    previewRef.current = preview;
   });
   useEffect(() => {
     return (): void => {
@@ -267,18 +269,12 @@ export const VoiceStudioInterface = forwardRef<
       convertSeqRef.current += 1;
       cancelScheduledConvert();
       convertAbortRef.current?.abort();
-      player.pause();
-      sourcePlayer.pause();
-      preview.cancel();
+      playerRef.current.pause();
+      sourcePlayerRef.current.pause();
+      previewRef.current.cancel();
       purgeSessionFiles();
     };
-  }, [
-    cancelScheduledConvert,
-    player,
-    sourcePlayer,
-    preview,
-    purgeSessionFiles,
-  ]);
+  }, [cancelScheduledConvert, purgeSessionFiles]);
 
   useEffect(() => {
     if (dictationError) {

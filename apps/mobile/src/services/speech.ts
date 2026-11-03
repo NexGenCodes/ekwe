@@ -13,6 +13,7 @@ import { ensureAccessToken } from "@/services/backend";
 import { getMimeType, uploadMultipart } from "@/services/uploadMultipart";
 import { settings$ } from "@/store/settings";
 import { Result, ok, err } from "@/types/Result";
+import { isAbortError } from "@/utils/abort";
 import logger from "@/utils/logger";
 import { getActivePlanLimits } from "@/utils/planLimits";
 import { isDefinitelyOffline } from "@/utils/connectivity";
@@ -63,14 +64,17 @@ export interface SynthesizedAudio {
 }
 
 /** Fetches synthesized audio bytes from the URL returned by the worker. */
-async function fetchSynthAudio(audioUrl: string): Promise<Uint8Array | null> {
+async function fetchSynthAudio(
+  audioUrl: string,
+  signal?: AbortSignal,
+): Promise<Uint8Array | null> {
   // Resolve relative paths against the worker base URL.
   const base = getWorkerUrl();
   const url = audioUrl.startsWith("http")
     ? audioUrl
     : `${base.replace(/\/$/, "")}${audioUrl}`;
 
-  const res = await fetchWithRetry(url, { method: "GET" });
+  const res = await fetchWithRetry(url, { method: "GET", signal });
   if (!res.ok) {
     logger.warn("[speech] audio fetch failed", res.status, url);
     return null;
@@ -181,14 +185,20 @@ async function requestSynthClip(opts: {
     logger.error(`${opts.logTag} workerUrl is EMPTY!`);
     return err(EkweError.NETWORK_LOST);
   }
+  if (opts.signal?.aborted) {
+    logger.info(`${opts.logTag} Request was aborted`);
+    return err(EkweError.INTERRUPTED);
+  }
+
+  let timedOut = false;
 
   try {
     const token = await getAccessToken();
     const controller = new AbortController();
-    const timeoutId = setTimeout(
-      () => controller.abort(),
-      SPEECH_TEXT_TIMEOUT_MS,
-    );
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, SPEECH_TEXT_TIMEOUT_MS);
     const onAbort = (): void => controller.abort();
     opts.signal?.addEventListener("abort", onAbort);
 
@@ -229,7 +239,7 @@ async function requestSynthClip(opts: {
       return err(EkweError.SPEECH_FAIL);
     }
 
-    const audioBytes = await fetchSynthAudio(parsed.data.audioUrl);
+    const audioBytes = await fetchSynthAudio(parsed.data.audioUrl, opts.signal);
     if (!audioBytes) return err(EkweError.SPEECH_FAIL);
 
     const rawUri = await writeAudioFile(audioBytes, parsed.data.mime);
@@ -237,7 +247,15 @@ async function requestSynthClip(opts: {
 
     return ok({ data: parsed.data, rawUri });
   } catch (e: unknown) {
-    if (e instanceof Error && e.name === "AbortError") {
+    if (isTimeoutError(e)) {
+      logger.info(`${opts.logTag} Request timed out`);
+      return err(EkweError.TRANSCRIBE_TIMEOUT);
+    }
+    if (isAbortError(e)) {
+      if (timedOut) {
+        logger.info(`${opts.logTag} Request timed out`);
+        return err(EkweError.TRANSCRIBE_TIMEOUT);
+      }
       logger.info(`${opts.logTag} Request was aborted`);
       return err(EkweError.INTERRUPTED);
     }
@@ -479,7 +497,7 @@ export async function synthesizeAudio(
     }
 
     const data = parsed.data;
-    const audioBytes = await fetchSynthAudio(data.audioUrl);
+    const audioBytes = await fetchSynthAudio(data.audioUrl, options?.signal);
     if (!audioBytes) return err(EkweError.SPEECH_FAIL);
 
     const rawUri = await writeAudioFile(audioBytes, data.mime);
@@ -512,7 +530,7 @@ export async function synthesizeAudio(
       return err(EkweError.TRANSCRIBE_TIMEOUT);
     }
     if (e instanceof Error) {
-      if (e.name === "AbortError" || e.message === "CLIENT_ABORTED") {
+      if (isAbortError(e)) {
         logger.info("[speech] Request was aborted");
         return err(EkweError.INTERRUPTED);
       }

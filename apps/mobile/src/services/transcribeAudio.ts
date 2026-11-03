@@ -8,6 +8,7 @@ import { AudioTranscoder } from "@/services/audioTranscoder";
 import { getMimeType, uploadMultipart } from "@/services/uploadMultipart";
 import { ensureAccessToken } from "@/services/backend";
 import { Result, ok, err } from "@/types/Result";
+import { isAbortError } from "@/utils/abort";
 import { resolveDetectedLanguage } from "@/utils/languageUtils";
 import logger from "@/utils/logger";
 import { getActivePlanLimits } from "@/utils/planLimits";
@@ -166,11 +167,8 @@ export async function transcribeAudio(
       return err(EkweError.TRANSCRIBE_TIMEOUT);
     }
     if (e instanceof Error) {
-      if (e.name === "AbortError") {
+      if (isAbortError(e)) {
         logger.info("[transcribeAudio] Request was aborted");
-        return err(EkweError.INTERRUPTED);
-      }
-      if (e.message === "CLIENT_ABORTED") {
         return err(EkweError.INTERRUPTED);
       }
       logger.error("[transcribeAudio] FAIL: exception", e.message);

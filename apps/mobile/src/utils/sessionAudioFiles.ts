@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 import { cleanAudioArtifacts } from "@/utils/audioCache";
 
@@ -41,5 +41,9 @@ export function useSessionAudioFiles(): SessionAudioFiles {
     }, 400);
   }, []);
 
-  return { remember, deleteAfterDelay, purge };
+  // Stable identity: consumers key cleanup effects on this object.
+  return useMemo(
+    () => ({ remember, deleteAfterDelay, purge }),
+    [remember, deleteAfterDelay, purge],
+  );
 }

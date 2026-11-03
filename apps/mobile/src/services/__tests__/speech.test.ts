@@ -406,6 +406,31 @@ describe("synthesizeSpeech", () => {
     fetchSpy.mockRestore();
   });
 
+  it("reports INTERRUPTED when expo/fetch cancels the request", async () => {
+    const canceled = Object.assign(
+      new Error("Fetch request has been canceled"),
+      { code: "ERR_REQUEST_CANCELED" },
+    );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(canceled);
+    const result = await synthesizeSpeech("hello", "en");
+    expect(result).toEqual(err(EkweError.INTERRUPTED));
+    fetchSpy.mockRestore();
+  });
+
+  it("reports INTERRUPTED without fetching when already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const result = await synthesizeSpeech("hello", "en", {
+      signal: controller.signal,
+    });
+
+    expect(result).toEqual(err(EkweError.INTERRUPTED));
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
   it("defaults the error code when the error body is not JSON", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -415,7 +440,7 @@ describe("synthesizeSpeech", () => {
     fetchSpy.mockRestore();
   });
 
-  it("reports INTERRUPTED when the request times out", async () => {
+  it("reports TRANSCRIBE_TIMEOUT when the request times out", async () => {
     vi.useFakeTimers();
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
       (_url, opts) =>
@@ -436,7 +461,7 @@ describe("synthesizeSpeech", () => {
     vi.runAllTimers();
 
     const result = await promise;
-    expect(result).toEqual(err(EkweError.INTERRUPTED));
+    expect(result).toEqual(err(EkweError.TRANSCRIBE_TIMEOUT));
     fetchSpy.mockRestore();
   });
 

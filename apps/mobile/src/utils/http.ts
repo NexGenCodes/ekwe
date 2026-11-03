@@ -2,6 +2,7 @@ import { WORKER_ERROR_CODES } from "@ekwe/shared";
 
 import { EkweError } from "@/constants/errors";
 import { isDefinitelyOffline } from "@/store/network";
+import { createAbortError, isAbortError } from "@/utils/abort";
 
 export interface RetryOptions {
   retries?: number;
@@ -62,6 +63,9 @@ export async function fetchWithRetry(
   let lastError: Error | null = null;
 
   for (let i = 0; i < retries; i++) {
+    // Never issue an attempt for a request the caller already abandoned.
+    if (signal?.aborted) throw createAbortError();
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
@@ -93,8 +97,8 @@ export async function fetchWithRetry(
       const error = err instanceof Error ? err : new Error(String(err));
       lastError = error;
 
-      if (error.name === "AbortError" && signal?.aborted) {
-        throw error;
+      if (isAbortError(error) && signal?.aborted) {
+        throw createAbortError();
       }
 
       if (!signal?.aborted && controller.signal.aborted) {

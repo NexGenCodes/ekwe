@@ -9,6 +9,7 @@ import { EkweError } from "@/constants/errors";
 import { ensureAccessToken } from "@/services/backend";
 import { isQuotaExhausted } from "@/utils/quota";
 import { Result, ok, err } from "@/types/Result";
+import { isAbortError } from "@/utils/abort";
 import { AnalyticsEvents, track } from "@/utils/analytics";
 import logger, { addSentryBreadcrumb } from "@/utils/logger";
 import {
@@ -142,7 +143,7 @@ export async function translateText(
       return err(EkweError.TRANSLATION_FAIL);
     }
     if (e instanceof Error) {
-      if (e.name === "AbortError") {
+      if (isAbortError(e)) {
         throw e;
       }
       logger.warn("[translateText] FAIL:", e.message);

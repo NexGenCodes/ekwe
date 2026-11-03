@@ -10,6 +10,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { TranslationResult } from "@/services/translateText";
 import { audioActions, settings$ } from "@/store";
 import { Result, ok, err } from "@/types/Result";
+import { isAbortError } from "@/utils/abort";
 import { AppToast } from "@/utils/toast";
 import { triggerHaptic } from "@/utils/haptics";
 import { getDefaultSourceLang } from "@/utils/languageUtils";
@@ -98,7 +99,7 @@ export const useTranslation = (): UseTranslationReturn => {
 
         return ok(result.value);
       } catch (e: unknown) {
-        if (e instanceof Error && e.name === "AbortError") {
+        if (isAbortError(e)) {
           return err(EkweError.NETWORK_LOST);
         }
         setError(EkweError.TRANSLATION_FAIL);
@@ -204,7 +205,7 @@ export const useTranslation = (): UseTranslationReturn => {
 
         await triggerHaptic(Haptics.NotificationFeedbackType.Success);
       } catch (e: unknown) {
-        if (e instanceof Error && e.name === "AbortError") return;
+        if (isAbortError(e)) return;
         const code = e instanceof Error ? (e.message as EkweError) : undefined;
         AppToast.error("Translation Failed", {
           description:
