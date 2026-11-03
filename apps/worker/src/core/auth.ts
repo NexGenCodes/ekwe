@@ -16,6 +16,17 @@ export async function authenticate(
   const claims = await verifyAccessToken(env, token);
   if (!claims) return null;
 
+  if (claims.sessionId && env.EKWE_KV) {
+    try {
+      const revoked = await env.EKWE_KV.get(
+        `revoked:session:${claims.sessionId}`,
+      );
+      if (revoked !== null) return null;
+    } catch {
+      // Best-effort KV tombstone check; fails open on KV transient error.
+    }
+  }
+
   return {
     userId: claims.userId,
     userEmail: claims.email,

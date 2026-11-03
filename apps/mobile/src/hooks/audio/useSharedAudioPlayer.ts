@@ -15,6 +15,7 @@ import {
 import { AudioTranscoder } from "@/services/audioTranscoder";
 import logger from "@/utils/logger";
 import { createAudioFocus } from "@/hooks/audio/audioFocus";
+import { toFileUri } from "@/utils/fileUri";
 
 export interface SharedAudioPlayer {
   play: () => Promise<void>;
@@ -196,7 +197,11 @@ export const useSharedAudioPlayer = (
    */
   const startTokenRef = useRef(0);
 
-  const player = useAudioPlayer(playableSource, { downloadFirst: true });
+  const playerSource = useMemo(
+    () => (playableSource ? (toFileUri(playableSource) ?? null) : null),
+    [playableSource],
+  );
+  const player = useAudioPlayer(playerSource, { downloadFirst: true });
 
   const [playbackRate, setPlaybackRateState] = useState<PlaybackRate>(1);
   const rateSV = useSharedValue(1);

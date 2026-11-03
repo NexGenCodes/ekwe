@@ -77,6 +77,18 @@ describe("authenticate()", () => {
     }
   });
 
+  test("rejects a revoked session via KV tombstone", async () => {
+    const env = await makeEnv();
+    const kvStore = new Map<string, string>();
+    kvStore.set("revoked:session:session-abc", "1");
+    (env as unknown as { EKWE_KV: unknown }).EKWE_KV = {
+      get: vi.fn(async (key: string) => kvStore.get(key) ?? null),
+    };
+
+    const { token } = await mintAccessToken(env, CLAIMS);
+    expect(await authenticate(token, env)).toBeNull();
+  });
+
   test("rejects malformed input", async () => {
     const env = await makeEnv();
     expect(await authenticate("not-a-jwt", env)).toBeNull();

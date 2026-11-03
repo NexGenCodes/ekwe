@@ -123,6 +123,16 @@ export async function revokeSession(
   )
     .bind(Date.now(), sessionId)
     .run();
+
+  if (env.EKWE_KV) {
+    try {
+      await env.EKWE_KV.put(`revoked:session:${sessionId}`, "1", {
+        expirationTtl: 1800,
+      });
+    } catch {
+      // Best-effort KV tombstone; D1 remains authoritative.
+    }
+  }
 }
 
 export async function sessionIsLive(

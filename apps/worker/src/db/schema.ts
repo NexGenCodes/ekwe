@@ -134,11 +134,34 @@ export const userDailyUsage = sqliteTable(
     day: text("day").notNull(),
     translateCount: integer("translate_count").notNull().default(0),
     transcribeCount: integer("transcribe_count").notNull().default(0),
+    transcribeMs: integer("transcribe_ms").notNull().default(0),
     speechChars: integer("speech_chars").notNull().default(0),
     streamCount: integer("stream_count").notNull().default(0),
+    streamMs: integer("stream_ms").notNull().default(0),
+    aiCredits: real("ai_credits").notNull().default(0),
     updatedAt: integer("updated_at").notNull(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
+export const userMonthlyUsage = sqliteTable(
+  "user_monthly_usage",
+  {
+    userId: text("user_id").notNull(),
+    month: text("month").notNull(),
+    translateCount: integer("translate_count").notNull().default(0),
+    transcribeCount: integer("transcribe_count").notNull().default(0),
+    transcribeMs: integer("transcribe_ms").notNull().default(0),
+    speechChars: integer("speech_chars").notNull().default(0),
+    streamCount: integer("stream_count").notNull().default(0),
+    streamMs: integer("stream_ms").notNull().default(0),
+    aiCredits: real("ai_credits").notNull().default(0),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.month] }),
+    index("idx_monthly_usage_month").on(t.month),
+  ],
 );
 
 export const flutterwaveClaims = sqliteTable(

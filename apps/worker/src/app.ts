@@ -60,7 +60,7 @@ app.use("*", async (c: Context<AppEnv, string>, next) => {
   const isAllowed = isExactMatch || isDev;
 
   return cors({
-    origin: isAllowed ? origin! : "",
+    origin: isAllowed ? origin : "",
     credentials: true,
     allowMethods: ["GET", "POST", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization", "X-Firebase-AppCheck"],

@@ -20,6 +20,7 @@ import EkweNative, { ekweAudio } from "../../modules/ekwe-native";
 export type CaptureMode = "file" | "live";
 
 const METERING_STORE_INTERVAL_MS = 50;
+const MAX_METERING_SAMPLES = 2000;
 
 export interface RecordingResult {
   uri: string;
@@ -208,6 +209,19 @@ class AudioCaptureClass {
         this.notifyListeners(val);
         if (now - lastStoredAt >= METERING_STORE_INTERVAL_MS) {
           lastStoredAt = now;
+          if (this.currentMeteringData.length >= MAX_METERING_SAMPLES) {
+            // Compress in place: preserve peak amplitudes while halving buffer size
+            const downsampled: number[] = [];
+            for (let i = 0; i < this.currentMeteringData.length; i += 2) {
+              downsampled.push(
+                Math.max(
+                  this.currentMeteringData[i],
+                  this.currentMeteringData[i + 1] ?? 0,
+                ),
+              );
+            }
+            this.currentMeteringData = downsampled;
+          }
           this.currentMeteringData.push(val);
         }
         this.amplitudeRafId = requestAnimationFrame(pollAmplitude);
