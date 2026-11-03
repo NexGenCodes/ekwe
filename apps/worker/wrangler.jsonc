@@ -52,7 +52,7 @@
     // Default to production so deploys never ship with debug logging / dev CORS.
     // Override to "development" locally via .dev.vars (precedence over vars).
     "APP_ENV": "production",
-    "JWT_ISSUER": "https://ekwe-proxy.workers.dev",
+    "JWT_ISSUER": "https://ekwe-proxy.ekwe.workers.dev",
     "JWT_PUBLIC_JWK": "{\"crv\":\"Ed25519\",\"x\":\"mvDDmzCiZLRU-8zu_b_OBM5FA5xVX7JaJwrvdrfr7UI\",\"kty\":\"OKP\"}",
     "APPLE_BUNDLE_ID": "com.ekwe.app",
     // Google OAuth client ids (iOS + web) the worker accepts as the

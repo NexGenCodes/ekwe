@@ -13,7 +13,7 @@ interface __BaseEnv_Env {
 	FIREBASE_PROJECT_NUMBER: "239869950724";
 	REQUIRE_APP_CHECK: "false";
 	SENTRY_DSN: "https://47d4580978ca72b625ee6460335410bd@o4510603967332352.ingest.us.sentry.io/4511942034259968";
-	JWT_ISSUER: "https://ekwe-proxy.workers.dev";
+	JWT_ISSUER: "https://ekwe-proxy.ekwe.workers.dev";
 	JWT_PUBLIC_JWK: "{\"crv\":\"Ed25519\",\"x\":\"mvDDmzCiZLRU-8zu_b_OBM5FA5xVX7JaJwrvdrfr7UI\",\"kty\":\"OKP\"}";
 	APPLE_BUNDLE_ID: "com.ekwe.app";
 	WORKERS_PAID: "false";

@@ -26,7 +26,7 @@ function makeEnv(overrides: Record<string, unknown> = {}): Env {
 }
 
 function makeRequest(): Request {
-  return new Request("https://ekwe-proxy.workers.dev/auth/otp", {
+  return new Request("https://ekwe-proxy.ekwe.workers.dev/auth/otp", {
     method: "POST",
     headers: { "CF-Connecting-IP": "203.0.113.1" },
   });
