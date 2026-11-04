@@ -160,7 +160,6 @@ export default function HistoryScreen(): React.JSX.Element {
           paddingHorizontal: spacing.md,
         }}
       >
-        {}
         <Box style={styles.headerRow}>
           <Box style={styles.headerTitle}>
             <IconContainer
@@ -176,7 +175,6 @@ export default function HistoryScreen(): React.JSX.Element {
           </Box>
         </Box>
 
-        {}
         {hasPullError ? (
           <Animated.View
             entering={FadeIn.duration(200)}
@@ -263,7 +261,6 @@ export default function HistoryScreen(): React.JSX.Element {
           </Box>
         </Box>
 
-        {}
         <Box style={styles.chipsContainer}>
           <ScrollView
             horizontal
@@ -326,7 +323,7 @@ export default function HistoryScreen(): React.JSX.Element {
         onDeleteEntry={deleteEntry}
         onEmptyAction={
           filter === "all" && !isSearching && query.length === 0
-            ? () => router.navigate("/(tabs)/")
+            ? (): void => router.navigate("/(tabs)/")
             : undefined
         }
       />

@@ -60,7 +60,17 @@ export const HistoryService = {
       const file = new File(dir, SHARED_HISTORY_FILE);
       if (!file.exists) return;
 
-      const raw: unknown = JSON.parse(file.textSync());
+      let raw: unknown;
+      try {
+        raw = JSON.parse(file.textSync());
+      } catch (parseErr) {
+        logger.warn(
+          "[HistoryService] Corrupted shared history file, discarding",
+          parseErr,
+        );
+        file.delete();
+        return;
+      }
       if (!Array.isArray(raw) || raw.length === 0) {
         file.delete();
         return;

@@ -224,16 +224,15 @@ describe("ShareOutService.shareTo", () => {
     analyticsMock.track.mockReset();
   });
 
-  it("targets WhatsApp and includes the transcript as a caption", async () => {
+  it("targets WhatsApp as a PTT voice note with .opus extension and no caption", async () => {
     expect(await ShareOutService.shareTo("whatsapp", ARTIFACT, "hola")).toBe(
       true,
     );
 
-    const [, mime, text, , targetPackage] = shareAudioMock.mock.calls[0];
+    const [path, mime, text, , targetPackage] = shareAudioMock.mock.calls[0];
+    expect(path).toMatch(/PTT-\d{8}-WA[a-z0-9]{4}\.opus$/);
     expect(mime).toBe("audio/ogg; codecs=opus");
-    expect(text).toBe(
-      "hola\n\n— Shared with Ekwe · Speak, we'll handle the rest",
-    );
+    expect(text).toBeNull();
     expect(targetPackage).toBe("com.whatsapp");
   });
 
@@ -261,6 +260,23 @@ describe("ShareOutService.shareTo", () => {
     expect(shareAudioMock.mock.calls.map((call) => call[4])).toEqual([
       "com.whatsapp",
       "com.whatsapp.w4b",
+    ]);
+  });
+
+  it("falls back to Telegram X when standard Telegram is missing", async () => {
+    shareAudioMock
+      .mockResolvedValueOnce({
+        success: false,
+        error: "TARGET_NOT_INSTALLED",
+      })
+      .mockResolvedValueOnce({ success: true, error: "" });
+
+    expect(await ShareOutService.shareTo("telegram", ARTIFACT, "hola")).toBe(
+      true,
+    );
+    expect(shareAudioMock.mock.calls.map((call) => call[4])).toEqual([
+      "org.telegram.messenger",
+      "org.thunderdog.challegram",
     ]);
   });
 

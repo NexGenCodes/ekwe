@@ -67,7 +67,6 @@ export const BackgroundFlair = (): React.ReactElement => {
 
   return (
     <Animated.View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {}
       <Animated.View
         style={[
           styles.blob,

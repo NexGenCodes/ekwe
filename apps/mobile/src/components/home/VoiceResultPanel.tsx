@@ -8,7 +8,7 @@ import RefreshCw from "lucide-react-native/icons/refresh-cw";
 import Share from "lucide-react-native/icons/share";
 import X from "lucide-react-native/icons/x";
 import React, { useCallback, useRef, useState } from "react";
-import { ActivityIndicator, StyleProp, ViewStyle } from "react-native";
+import { StyleProp, ViewStyle } from "react-native";
 import Animated, {
   FadeIn,
   runOnJS,
@@ -232,7 +232,6 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         style,
       ]}
     >
-      {}
       <Box
         style={{
           flexDirection: "row",
@@ -295,7 +294,6 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         />
       </Box>
 
-      {}
       <Pressable
         onPress={onChangeVoice}
         disabled={isConverting}
@@ -333,7 +331,6 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         </Box>
       </Pressable>
 
-      {}
       <Pressable
         onPress={() => setIsExpanded((prev) => !prev)}
         accessibilityRole="button"
@@ -404,7 +401,6 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         </>
       )}
 
-      {}
       <Box
         style={{
           flexDirection: "row",
@@ -517,7 +513,6 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         </Text>
       </Box>
 
-      {}
       <Box
         style={{
           flexDirection: "row",
@@ -537,7 +532,7 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
           <ActionChip
             icon={
               isConverting ? (
-                <ActivityIndicator size="small" color={color.brand} />
+                <Spinner size="sm" color={color.brand} />
               ) : (
                 <RefreshCw size={iconSize.sm} color={color.brand} />
               )
@@ -552,7 +547,6 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         )}
       </Box>
 
-      {}
       <Pressable
         onPress={isShareDisabled ? undefined : onShare}
         disabled={isShareDisabled}

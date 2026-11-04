@@ -19,17 +19,18 @@ export const SHARE_TARGETS: readonly ShareTargetConfig[] = [
     label: "WhatsApp",
     packageName: "com.whatsapp",
     fallbackPackageName: "com.whatsapp.w4b",
-    includeCaption: true,
-    badge: "Audio",
-    description: "Audio file + transcript. No waveform.",
+    includeCaption: false,
+    badge: "Voice note",
+    description: "Voice note with profile picture",
   },
   {
     id: "telegram",
     label: "Telegram",
     packageName: "org.telegram.messenger",
+    fallbackPackageName: "org.thunderdog.challegram",
     includeCaption: false,
     badge: "Voice note",
-    description: "Waveform + duration.",
+    description: "Voice note with waveform",
   },
 ] as const;
 

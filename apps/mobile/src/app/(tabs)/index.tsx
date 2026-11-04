@@ -41,7 +41,6 @@ export default function HomeScreen(): React.ReactElement {
           automaticallyAdjustKeyboardInsets
           nestedScrollEnabled
         >
-          {}
           <Box style={{ gap: spacing.md }}>
             <HomeHeader />
             <VoiceStudioInterface />

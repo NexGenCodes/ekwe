@@ -147,7 +147,6 @@ export const OtpInput = memo(function OtpInput({
   return (
     <Box style={{ alignSelf: "stretch" }}>
       <Animated.View style={shakeStyle}>
-        {}
         <Box
           pointerEvents="none"
           style={{
@@ -179,7 +178,6 @@ export const OtpInput = memo(function OtpInput({
         </Box>
       </Animated.View>
 
-      {}
       <TextInput
         ref={inputRef}
         value={value}

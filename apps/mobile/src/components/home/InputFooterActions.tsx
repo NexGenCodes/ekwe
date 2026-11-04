@@ -213,7 +213,6 @@ export const InputFooterActions = React.memo(
             width: "100%",
           }}
         >
-          {}
           <Box style={{ flexDirection: "row", gap: spacing.md }}>
             {hasRecording ? (
               <Box style={{ alignItems: "center", gap: spacing.xs }}>
@@ -268,7 +267,6 @@ export const InputFooterActions = React.memo(
             )}
           </Box>
 
-          {}
           <Box
             style={{
               minWidth: 60,

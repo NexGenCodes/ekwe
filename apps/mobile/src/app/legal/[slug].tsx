@@ -214,7 +214,6 @@ export default function LegalScreen(): React.JSX.Element {
         onScroll={handleScroll}
         scrollEventThrottle={16}
       >
-        {}
         <Box style={styles.progressTrack}>
           <Animated.View
             style={[
@@ -247,7 +246,6 @@ export default function LegalScreen(): React.JSX.Element {
           </Box>
         </Animated.View>
 
-        {}
         <Animated.View
           entering={FadeInDown.delay(130).duration(400).springify()}
         >
@@ -289,7 +287,6 @@ export default function LegalScreen(): React.JSX.Element {
           </Box>
         </Animated.View>
 
-        {}
         {doc.sections.map((section, index) => (
           <LegalSectionCard
             key={section.title}
@@ -304,7 +301,6 @@ export default function LegalScreen(): React.JSX.Element {
           />
         ))}
 
-        {}
         <Animated.View
           entering={FadeInDown.delay(520).duration(400).springify()}
         >
@@ -349,7 +345,6 @@ export default function LegalScreen(): React.JSX.Element {
           </Box>
         </Animated.View>
 
-        {}
         <Animated.View entering={FadeInDown.delay(580).duration(400)}>
           <Box style={styles.footer}>
             <Text

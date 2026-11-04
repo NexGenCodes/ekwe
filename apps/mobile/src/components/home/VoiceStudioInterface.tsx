@@ -976,12 +976,15 @@ export const VoiceStudioInterface = forwardRef<
     [artifactUri, resultText],
   );
 
-  /** Falls back to the platform system share sheet (text only since audio is not persisted). */
+  /** Shares via the platform system share sheet (audio artifact with text fallback). */
   const handleShareSystem = useCallback(async () => {
     setIsShareSheetVisible(false);
-    if (!resultText.trim()) return;
-    await ShareOutService.shareText(resultText, "speech-studio");
-  }, [resultText]);
+    await ShareOutService.shareArtifact(
+      artifactUri,
+      resultText,
+      "speech-studio",
+    );
+  }, [artifactUri, resultText]);
 
   const handlePreviewVoice = useCallback(
     async (previewed: VoiceSelection): Promise<void> => {

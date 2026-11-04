@@ -65,7 +65,6 @@ export function PaidPlanCard({
         },
       ]}
     >
-      {}
       <Box
         pointerEvents="none"
         style={[

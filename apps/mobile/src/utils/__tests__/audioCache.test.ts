@@ -199,6 +199,7 @@ describe("sweepStaleAudioCache", () => {
       entry("file:///mock/cache/ekwe_opus_old.ogg", 60 * 60 * 1000),
       entry("file:///mock/cache/ekwe_vorbis_old.ogg", 60 * 60 * 1000),
       entry("file:///mock/cache/ekwe_playback_old.m4a", 60 * 60 * 1000),
+      entry("file:///mock/cache/PTT-20261105-WAtest.opus", 60 * 60 * 1000),
       new Directory("file:///mock/cache/sub"),
     );
 
@@ -211,6 +212,7 @@ describe("sweepStaleAudioCache", () => {
         "file:///mock/cache/ekwe_opus_old.ogg",
         "file:///mock/cache/ekwe_vorbis_old.ogg",
         "file:///mock/cache/ekwe_playback_old.m4a",
+        "file:///mock/cache/PTT-20261105-WAtest.opus",
       ]),
     );
   });

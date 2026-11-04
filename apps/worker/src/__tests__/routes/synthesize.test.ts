@@ -166,8 +166,7 @@ describe("handleSynthesize — gate/cache overlap", () => {
           await gateBlocked;
           order.push("gate:end");
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return (realGet as any).call(env.EKWE_KV, key, opts);
+        return Reflect.apply(realGet, env.EKWE_KV, [key, opts]);
       },
     );
     env.EKWE_KV.get = getSpy as unknown as typeof env.EKWE_KV.get;

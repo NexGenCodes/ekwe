@@ -116,7 +116,6 @@ export function AvatarPickerModal({
           );
         })}
 
-        {}
         <Pressable
           style={({ pressed }) => [
             {

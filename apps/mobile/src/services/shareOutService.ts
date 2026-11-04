@@ -36,7 +36,10 @@ const trackShare = (
   });
 };
 
-/** MIME type per file extension. Ogg/Opus carries `codecs=opus`, which Telegram requires for voice-note rendering; WhatsApp's share path still creates an ordinary audio attachment. */
+/**
+ * MIME type per file extension.
+ * Ogg/Opus carries `codecs=opus`, which Telegram and WhatsApp expect for voice notes.
+ */
 const AUDIO_MIME_BY_EXT: Record<string, string> = {
   mp3: "audio/mpeg",
   wav: "audio/wav",
@@ -53,24 +56,41 @@ export function mimeFor(uri: string): string {
 
 const pad = (value: number): string => String(value).padStart(2, "0");
 
-/** Generates a date-stamped filename for the shared artifact. */
-const sharedFileName = (extension: string): string => {
+/**
+ * Generates a target-aware filename for the shared artifact.
+ * WhatsApp requires .opus and PTT- naming convention to display as a native
+ * Push-To-Talk voice note displaying the sender's profile picture.
+ */
+export const sharedFileName = (
+  extension: string,
+  target?: ShareTarget,
+): string => {
   const now = new Date();
-  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  // Add random suffix to prevent staging collisions for same-day shares.
   const salt = Math.random().toString(36).slice(2, 6);
-  return `ekwe-voice-${stamp}-${salt}.${extension}`;
+
+  if (target === "whatsapp") {
+    // WhatsApp native PTT voice note format: PTT-YYYYMMDD-WAxxxx.opus
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+    return `PTT-${stamp}-WA${salt}.opus`;
+  }
+
+  const dateHyphen = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return `ekwe-voice-${dateHyphen}-${salt}.${extension}`;
 };
 
-/** Copies the artifact to a human-readable cache path. Uses a copy to preserve the original playback source. */
-const prepareShareFile = async (uri: string): Promise<string> => {
+/** Copies the artifact to a target-appropriate cache path. Uses a copy to preserve the original playback source. */
+export const prepareShareFile = async (
+  uri: string,
+  target?: ShareTarget,
+): Promise<string> => {
   try {
     const source = new File(uri);
     if (!source.exists) return uri;
 
     // File.extension includes the leading dot.
-    const ext = source.extension.replace(/^\./, "") || "ogg";
-    const copy = new File(`${Paths.cache.uri}${sharedFileName(ext)}`);
+    const sourceExt = source.extension.replace(/^\./, "") || "ogg";
+    const ext = target === "whatsapp" ? "opus" : sourceExt;
+    const copy = new File(`${Paths.cache.uri}${sharedFileName(ext, target)}`);
     try {
       source.copySync(copy, { overwrite: true });
     } catch {
@@ -145,9 +165,10 @@ export const ShareOutService = {
   /**
    * Shares audio directly to WhatsApp or Telegram.
    *
-   * WhatsApp receives the transcript as a caption but still renders the audio
-   * as a normal attachment; Telegram receives the same Ogg/Opus file without a
-   * caption so its voice-note classification is not disturbed.
+   * WhatsApp receives a PTT-formatted .opus file without caption so it renders
+   * as a native Push-To-Talk voice note displaying the sender's profile picture;
+   * Telegram receives an Ogg/Opus file without caption so it renders as a native
+   * voice message bubble.
    */
   shareTo: async (
     target: ShareTarget,
@@ -169,7 +190,7 @@ export const ShareOutService = {
         config.includeCaption && trimmedMessage
           ? `${trimmedMessage}${EKWE_SHARE_SIGNATURE}`
           : null;
-      const sharedUri = await prepareShareFile(uri);
+      const sharedUri = await prepareShareFile(uri, target);
       const mimeType = mimeFor(sharedUri);
 
       let result = await EkweNative.shareAudio(

@@ -82,6 +82,7 @@ const TRANSIENT_CACHE_PREFIXES = [
   "ekwe_playback_",
   // Outgoing share copies made by ShareOutService.prepareShareFile.
   "ekwe-voice-",
+  "PTT-",
 ];
 
 const SWEEP_MIN_AGE_MS = 10 * 60 * 1000;

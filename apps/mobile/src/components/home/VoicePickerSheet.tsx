@@ -94,7 +94,6 @@ function VoiceCard({
         gap: spacing.md,
       }}
     >
-      {}
       <Box
         style={{
           width: 44,
@@ -138,7 +137,6 @@ function VoiceCard({
         )}
       </Box>
 
-      {}
       <Box style={{ flex: 1 }}>
         <Box
           style={{
@@ -246,7 +244,6 @@ export function VoicePickerSheet({
   return (
     <Sheet visible={visible} onClose={onClose} title={title}>
       <Box style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.lg }}>
-        {}
         <Box
           style={{
             flexDirection: "row",

@@ -386,7 +386,6 @@ export const Echo = (props: EchoProps): React.ReactElement => {
       >
         {!isProcessing && (
           <>
-            {}
             <Box
               style={{
                 flexDirection: "row",
@@ -447,7 +446,6 @@ export const Echo = (props: EchoProps): React.ReactElement => {
           </>
         )}
 
-        {}
         {renderStepContent(step)}
       </Box>
     </Sheet>

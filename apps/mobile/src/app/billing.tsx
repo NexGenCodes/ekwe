@@ -150,7 +150,6 @@ export default function BillingScreen(): React.ReactElement {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.scrollContent}
       >
-        {}
         <Box accessible accessibilityRole="header" style={styles.heroBanner}>
           <Animated.View entering={ZoomIn.duration(duration.slow)}>
             <IconContainer
@@ -192,7 +191,6 @@ export default function BillingScreen(): React.ReactElement {
           </Animated.View>
         </Box>
 
-        {}
         {!isPro && (
           <Animated.View
             entering={FadeIn.duration(duration.normal)}
@@ -238,7 +236,6 @@ export default function BillingScreen(): React.ReactElement {
           </Animated.View>
         )}
 
-        {}
         <Box style={styles.plansContainer}>
           <Animated.View
             entering={FadeInDown.duration(duration.slow).delay(150)}
@@ -267,7 +264,6 @@ export default function BillingScreen(): React.ReactElement {
           </Animated.View>
         </Box>
 
-        {}
         <Box style={styles.footer}>
           <Box style={styles.trustRow}>
             <ShieldCheck size={14} color={color.muted} strokeWidth={2} />

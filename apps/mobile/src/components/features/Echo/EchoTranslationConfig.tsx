@@ -70,7 +70,6 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
 
       return (
         <Box>
-          {}
           <Box style={{ marginBottom: spacing.md, gap: spacing.sm }}>
             {isMismatch && (
               <Box
@@ -95,7 +94,6 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
             )}
 
             <Box style={{ flexDirection: "row", alignItems: "center" }}>
-              {}
               <Box
                 style={{
                   flex: 1,
@@ -141,7 +139,6 @@ export const EchoTranslationConfig: React.FC<EchoTranslationConfigProps> =
                     style={{ marginHorizontal: spacing.xs }}
                   />
 
-                  {}
                   <Box
                     style={{
                       flex: 1,
