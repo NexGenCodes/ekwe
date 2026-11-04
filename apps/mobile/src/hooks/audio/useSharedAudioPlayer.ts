@@ -128,20 +128,28 @@ export const useSharedAudioPlayer = (
     // No platform is guaranteed to play Ogg Opus; decode to M4A with disk caching.
     const fallbackToWav = (reason: string): void => {
       logger.error("[SharedAudioPlayer] Ogg decode-to-M4A failed:", reason);
-      AudioTranscoder.decodeToWav(uri).then((wavResult) => {
-        if (cancelled) return;
-        if (wavResult.ok) {
-          commitDerived(wavResult.value.uri);
-        } else {
-          logger.error(
-            "[SharedAudioPlayer] Ogg decode fallback failed:",
-            wavResult.error,
-          );
+      AudioTranscoder.decodeToWav(uri)
+        .then((wavResult) => {
+          if (cancelled) return;
+          if (wavResult.ok) {
+            commitDerived(wavResult.value.uri);
+          } else {
+            logger.error(
+              "[SharedAudioPlayer] Ogg decode fallback failed:",
+              wavResult.error,
+            );
+            setPlayableSource(uri);
+            boundUriRef.current = uri;
+            setLoadError("This audio could not be decoded for playback.");
+          }
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          logger.error("[SharedAudioPlayer] Ogg decodeToWav exception:", err);
           setPlayableSource(uri);
           boundUriRef.current = uri;
           setLoadError("This audio could not be decoded for playback.");
-        }
-      });
+        });
     };
 
     AudioTranscoder.createPlaybackCopyForPlayback(uri)

@@ -1,15 +1,20 @@
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
+import { Image as ExpoImage } from "expo-image";
+import AudioLines from "lucide-react-native/icons/audio-lines";
 import React, { useCallback } from "react";
 import { StyleSheet } from "react-native";
+import Animated, { FadeIn } from "react-native-reanimated";
 
 import { useTabBarTotalHeight } from "@/components/CustomTabBar";
-import { HistoryEntryRow } from "@/components";
-import { Box, Text, Spinner } from "@/components/ui";
-import { borderRadius } from "@/constants/sizes";
+import { EmptyState, IconContainer, HistoryEntryRow } from "@/components";
+import { Box, Text, Spinner, Pressable } from "@/components/ui";
+import { duration } from "@/constants/motion";
+import { borderRadius, iconSize, touchTarget } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks/ui";
 import type { ListItem } from "@/hooks/useHistoryListData";
 import type { HistoryEntry } from "@/store";
+import { isIOS } from "@/utils";
 import { withAlpha } from "@/utils/color";
 
 export interface HistoryListSectionProps {
@@ -21,6 +26,11 @@ export interface HistoryListSectionProps {
   hasMore: boolean;
   isFetchingNextPage: boolean;
   isInitialLoading?: boolean;
+  isSearchPending?: boolean;
+  emptyTitle?: string;
+  emptySubtitle?: string;
+  /** Called when the user taps the empty-state CTA. Pass to navigate to Studio. */
+  onEmptyAction?: () => void;
   onLoadMore?: () => void;
   handleEntryPress: (entry: HistoryEntry) => void;
   onDeleteEntry: (entryId: string) => void;
@@ -35,6 +45,10 @@ export const HistoryListSection = React.memo(function HistoryListSection({
   hasMore,
   isFetchingNextPage,
   isInitialLoading = false,
+  isSearchPending = false,
+  emptyTitle,
+  emptySubtitle,
+  onEmptyAction,
   onLoadMore,
   handleEntryPress,
   onDeleteEntry,
@@ -132,8 +146,76 @@ export const HistoryListSection = React.memo(function HistoryListSection({
         }
         getItemType={(item) => item.type}
         ListFooterComponent={listFooter}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
-          isInitialLoading ? <HistorySkeleton color={color} /> : null
+          isInitialLoading || isSearchPending ? (
+            <HistorySkeleton
+              color={color}
+              label={
+                isSearchPending ? "Searching transcripts…" : "Loading history"
+              }
+            />
+          ) : (
+            <Animated.View
+              entering={FadeIn.duration(duration.normal)}
+              style={styles.emptyStateContainer}
+            >
+              <Box
+                style={[
+                  styles.emptyStateCard,
+                  { backgroundColor: color.card, borderColor: color.border },
+                ]}
+              >
+                <EmptyState
+                  icon={
+                    <IconContainer
+                      size="lg"
+                      backgroundColor={withAlpha(color.foreground, 0.082)}
+                    >
+                      {isIOS ? (
+                        <ExpoImage
+                          source="sf:clock.fill"
+                          style={{ width: iconSize.lg, height: iconSize.lg }}
+                          tintColor={color.foreground}
+                        />
+                      ) : (
+                        <AudioLines
+                          size={iconSize.lg}
+                          color={color.foreground}
+                        />
+                      )}
+                    </IconContainer>
+                  }
+                  title={emptyTitle ?? "Silent Library"}
+                  subtitle={
+                    emptySubtitle ??
+                    "Everything you record, share, or capture with Ekwe shows up here."
+                  }
+                />
+                {!!onEmptyAction && (
+                  <Pressable
+                    onPress={onEmptyAction}
+                    accessibilityRole="button"
+                    accessibilityLabel="Go to Voice Studio"
+                    hitSlop={8}
+                    style={({ pressed }) => [
+                      styles.emptyStateCta,
+                      { backgroundColor: color.brand },
+                      pressed && {
+                        opacity: 0.85,
+                        transform: [{ scale: 0.97 }],
+                      },
+                    ]}
+                  >
+                    <Text variant="label" style={{ color: color.onBrand }}>
+                      Open Voice Studio
+                    </Text>
+                  </Pressable>
+                )}
+              </Box>
+            </Animated.View>
+          )
         }
         onEndReached={!isSearching && hasMore ? onLoadMore : undefined}
         onEndReachedThreshold={0.5}
@@ -142,7 +224,7 @@ export const HistoryListSection = React.memo(function HistoryListSection({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.listContent,
-          { paddingBottom: tabBarHeight + spacing.xl },
+          { flexGrow: 1, paddingBottom: tabBarHeight + spacing.xl },
         ]}
         contentInsetAdjustmentBehavior="automatic"
       />
@@ -154,8 +236,10 @@ const SKELETON_ROWS = 6;
 
 function HistorySkeleton({
   color,
+  label = "Loading history",
 }: {
   color: ReturnType<typeof useTheme>["color"];
+  label?: string;
 }): React.ReactElement {
   const surface = withAlpha(color.foreground, 0.06);
   const muted = withAlpha(color.foreground, 0.04);
@@ -163,7 +247,7 @@ function HistorySkeleton({
   return (
     <Box
       accessibilityRole="progressbar"
-      accessibilityLabel="Loading history"
+      accessibilityLabel={label}
       style={styles.skeletonContainer}
     >
       {Array.from({ length: SKELETON_ROWS }, (_, index) => (
@@ -254,6 +338,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
     flexDirection: "row",
+    justifyContent: "center",
+  },
+  emptyStateContainer: {
+    flex: 1,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing["3xl"],
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyStateCard: {
+    width: "100%",
+    padding: spacing["2xl"],
+    borderRadius: borderRadius["2xl"],
+    alignItems: "center",
+    borderWidth: 1,
+    borderStyle: "dashed",
+  },
+  emptyStateCta: {
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    minHeight: touchTarget.minimum,
+    alignItems: "center",
     justifyContent: "center",
   },
 });

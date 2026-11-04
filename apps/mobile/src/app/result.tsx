@@ -6,7 +6,7 @@ import { StyleSheet } from "react-native";
 
 import { HistoryEntryDetail } from "@/components/history/HistoryEntryDetail";
 import { ResultProcessingIndicator } from "@/components/result";
-import { Box, Pressable } from "@/components/ui";
+import { Box, Pressable, Spinner } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { usePermissions, useResultPipeline, useTheme } from "@/hooks";
@@ -97,10 +97,16 @@ export default function ResultScreen(): React.JSX.Element {
       !isProcessing &&
       !isHistoryReplay
     ) {
-      handleTranslate();
+      void handleTranslate();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transcript, isHistoryReplay]);
+  }, [
+    transcript,
+    translation,
+    isTranslating,
+    isProcessing,
+    isHistoryReplay,
+    handleTranslate,
+  ]);
 
   // The store is the source of truth; this only covers the brief window before
   // a row that has not been paged in yet has hydrated.
@@ -131,6 +137,8 @@ export default function ResultScreen(): React.JSX.Element {
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={() => router.back()}
+        accessibilityLabel="Close result"
+        accessibilityRole="button"
       />
       <Box
         style={[styles.sheetContainer, { backgroundColor: color.background }]}
@@ -157,7 +165,9 @@ export default function ResultScreen(): React.JSX.Element {
             onDelete={handleDeleteEntry}
           />
         ) : (
-          <Box style={styles.emptyBody} />
+          <Box style={styles.loadingBody}>
+            <Spinner size="lg" color={color.brand} />
+          </Box>
         )}
       </Box>
     </Box>
@@ -172,7 +182,8 @@ const styles = StyleSheet.create({
   sheetContainer: {
     borderTopLeftRadius: borderRadius["2xl"],
     borderTopRightRadius: borderRadius["2xl"],
-    height: "60%",
+    minHeight: "50%",
+    height: "75%",
   },
   header: {
     position: "relative",
@@ -193,7 +204,9 @@ const styles = StyleSheet.create({
     top: spacing.sm,
     padding: spacing.xs,
   },
-  emptyBody: {
+  loadingBody: {
     flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

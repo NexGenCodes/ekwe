@@ -4,3 +4,4 @@ export * from "@/components/profile/ProfileIdentity";
 export * from "@/components/profile/AvatarPickerModal";
 export * from "@/components/profile/ThemePickerModal";
 export * from "@/components/profile/CurrencyPickerModal";
+export * from "@/components/profile/ProfileSkeleton";

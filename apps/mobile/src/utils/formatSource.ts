@@ -77,6 +77,8 @@ export const formatSourceApp = (source: string | null | undefined): string => {
     JSON.stringify(source),
   );
 
+  if (!nameToFormat) return "Audio";
+
   return (
     nameToFormat.charAt(0).toUpperCase() + nameToFormat.slice(1).toLowerCase()
   );

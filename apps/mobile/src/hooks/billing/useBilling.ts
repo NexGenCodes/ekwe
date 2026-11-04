@@ -174,6 +174,7 @@ export function useBilling(): UseBillingReturn {
   }, []);
 
   const handleRestore = async (): Promise<void> => {
+    setLoading(true);
     try {
       const user = await fetchSessionUser();
       const upgraded = user?.tier === "PREMIUM";
@@ -192,6 +193,8 @@ export function useBilling(): UseBillingReturn {
         "Status Check Failed",
         "Could not check your paid plan status. Please check your connection and try again.",
       );
+    } finally {
+      setLoading(false);
     }
   };
 

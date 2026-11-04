@@ -271,12 +271,12 @@ export const ExpressiveInput = React.memo(
         ]}
       >
         <Box
-          pointerEvents={isConverting ? "none" : "auto"}
+          pointerEvents={isConverting || isActive ? "none" : "auto"}
           style={{
             paddingHorizontal: spacing.md,
             paddingBottom: spacing.sm,
             width: "100%",
-            opacity: isConverting ? opacity.disabled : 1,
+            opacity: isConverting || isActive ? opacity.disabled : 1,
           }}
         >
           <LanguageSwitcher

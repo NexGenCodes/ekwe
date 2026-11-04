@@ -13,6 +13,7 @@ import React, {
 } from "react";
 import { BackHandler, Keyboard } from "react-native";
 import Animated, { LinearTransition } from "react-native-reanimated";
+import { useLocalSearchParams } from "expo-router";
 
 import { ExpressiveInput } from "@/components/home/ExpressiveInput";
 import { ShareVoiceSheet } from "@/components/home/ShareVoiceSheet";
@@ -108,6 +109,30 @@ export const VoiceStudioInterface = forwardRef<
   const [targetLang, setTargetLang] = useState(initialTargetLang);
   const [sourceText, setSourceText] = useState("");
 
+  const routeParams = useLocalSearchParams<{
+    draftText?: string;
+    draftSourceLang?: string;
+    draftTargetLang?: string;
+  }>();
+
+  useEffect(() => {
+    if (routeParams.draftText) {
+      setSourceText(routeParams.draftText);
+      if (routeParams.draftSourceLang) {
+        setSourceLang(routeParams.draftSourceLang);
+      }
+      if (routeParams.draftTargetLang) {
+        setTargetLang(routeParams.draftTargetLang);
+      }
+      setSourceAudio(null);
+      setStage("composer");
+    }
+  }, [
+    routeParams.draftText,
+    routeParams.draftSourceLang,
+    routeParams.draftTargetLang,
+  ]);
+
   const [stage, setStage] = useState<Stage>("composer");
   const [sourceAudio, setSourceAudio] = useState<CommittedRecording | null>(
     null,
@@ -130,6 +155,9 @@ export const VoiceStudioInterface = forwardRef<
 
   const [isPickerVisible, setIsPickerVisible] = useState(false);
   const [isShareSheetVisible, setIsShareSheetVisible] = useState(false);
+  const [busyShareTarget, setBusyShareTarget] = useState<ShareTarget | null>(
+    null,
+  );
 
   const voice = useMemo(
     () => resolveVoiceSelection(voiceId, voiceGender),
@@ -707,6 +735,16 @@ export const VoiceStudioInterface = forwardRef<
     sourcePlayerRef.current.pause();
     preview.cancel();
     archiveIfUnsaved();
+    // Pre-fill the input with the last transcript so the user can edit the
+    // words without losing them. Audio recordings are not stored, so if the
+    // result came from a recording we surface the transcript as editable text.
+    // This clears any existing recording so the text input is shown instead.
+    const editableText =
+      draftTranslationRef.current.trim() || draftTranscriptRef.current.trim();
+    if (editableText) {
+      setSourceText(editableText);
+      setSourceAudio(null);
+    }
     setStage("composer");
   }, [isReturnAudioLoading, archiveIfUnsaved, cancelScheduledConvert, preview]);
 
@@ -722,7 +760,13 @@ export const VoiceStudioInterface = forwardRef<
   }, [stage, handleBack]);
 
   const handleClearSession = useCallback(() => {
-    void handleClear();
+    AppAlert.confirm(
+      "Clear Voice Studio?",
+      "Your translation and audio will be cleared.",
+      () => {
+        void handleClear();
+      },
+    );
   }, [handleClear]);
 
   const handleTogglePlay = useCallback(() => {
@@ -900,31 +944,44 @@ export const VoiceStudioInterface = forwardRef<
 
   const handleShareTarget = useCallback(
     async (target: ShareTarget) => {
-      setIsShareSheetVisible(false);
       const config = SHARE_TARGET_BY_ID[target];
 
       if (!artifactUri) {
+        setIsShareSheetVisible(false);
         AppToast.error("Voice not ready", {
           description: "Wait for the voice to finish converting.",
         });
         return;
       }
 
-      const shared = await ShareOutService.shareTo(
-        target,
-        artifactUri,
-        resultText,
-        "speech-studio",
-      );
+      setBusyShareTarget(target);
+      try {
+        const shared = await ShareOutService.shareTo(
+          target,
+          artifactUri,
+          resultText,
+          "speech-studio",
+        );
 
-      if (!shared) {
-        AppToast.error(`${config.label} unavailable`, {
-          description: `Install ${config.label} or use the system share sheet.`,
-        });
+        if (!shared) {
+          AppToast.error(`${config.label} unavailable`, {
+            description: `Install ${config.label} or use the system share sheet.`,
+          });
+        }
+      } finally {
+        setBusyShareTarget(null);
+        setIsShareSheetVisible(false);
       }
     },
     [artifactUri, resultText],
   );
+
+  /** Falls back to the platform system share sheet (text only since audio is not persisted). */
+  const handleShareSystem = useCallback(async () => {
+    setIsShareSheetVisible(false);
+    if (!resultText.trim()) return;
+    await ShareOutService.shareText(resultText, "speech-studio");
+  }, [resultText]);
 
   const handlePreviewVoice = useCallback(
     async (previewed: VoiceSelection): Promise<void> => {
@@ -944,10 +1001,13 @@ export const VoiceStudioInterface = forwardRef<
   }, [clearVoicePreview]);
 
   const handleGenderChange = useCallback(
-    (next: VoiceGender) => {
+    (_next: VoiceGender) => {
       // Cancel active previews before changing gender.
+      // The gender tab change is local to the picker only — it is NOT written
+      // to global settings here. The persisted gender is only updated when the
+      // user explicitly confirms a voice via handleSelectVoice. This prevents
+      // a dismissed picker from silently mutating the app-wide preference.
       preview.cancel();
-      settingsActions.setVoiceGender(next);
     },
     [preview],
   );
@@ -989,6 +1049,22 @@ export const VoiceStudioInterface = forwardRef<
 
   const handleDictate = useCallback(async () => {
     if (dictatingRef.current) return;
+    if (sourceText.trim().length > 0) {
+      AppAlert.confirm(
+        "Start voice dictation?",
+        "This will clear the text you've typed.",
+        async () => {
+          dictatingRef.current = true;
+          try {
+            await handleClear();
+            await startDictation(sourceLang, false);
+          } finally {
+            dictatingRef.current = false;
+          }
+        },
+      );
+      return;
+    }
     dictatingRef.current = true;
     try {
       await handleClear();
@@ -996,7 +1072,7 @@ export const VoiceStudioInterface = forwardRef<
     } finally {
       dictatingRef.current = false;
     }
-  }, [handleClear, startDictation, sourceLang]);
+  }, [handleClear, startDictation, sourceLang, sourceText]);
 
   const handleConfirmDictation = useCallback(() => {
     const committed = commitRecording();
@@ -1132,6 +1208,8 @@ export const VoiceStudioInterface = forwardRef<
         visible={isShareSheetVisible}
         onClose={handleCloseShareSheet}
         onSelect={handleShareTarget}
+        onSelectSystem={handleShareSystem}
+        busyTarget={busyShareTarget}
       />
 
       <VoicePickerSheet

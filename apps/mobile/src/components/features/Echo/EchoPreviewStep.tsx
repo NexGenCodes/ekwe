@@ -279,6 +279,14 @@ export const EchoPreviewStep: React.FC<EchoPreviewStepProps> = React.memo(
           feedback="opacity"
           onPress={handleTranscribe}
           disabled={!canTranscribe}
+          accessibilityRole="button"
+          accessibilityLabel={
+            !canTranscribe ? "Loading audio" : "Transcribe audio"
+          }
+          accessibilityState={{
+            disabled: !canTranscribe,
+            busy: !canTranscribe,
+          }}
           style={{
             flexDirection: "row",
             justifyContent: "center",

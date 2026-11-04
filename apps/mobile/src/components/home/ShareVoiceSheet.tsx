@@ -1,6 +1,7 @@
 import ChevronRight from "lucide-react-native/icons/chevron-right";
 import MessageCircle from "lucide-react-native/icons/message-circle";
 import SendHorizontal from "lucide-react-native/icons/send-horizontal";
+import Share2 from "lucide-react-native/icons/share-2";
 import React from "react";
 
 import { IconContainer } from "@/components/IconContainer";
@@ -21,6 +22,7 @@ export interface ShareVoiceSheetProps {
   visible: boolean;
   onClose: () => void;
   onSelect: (target: ShareTarget) => void;
+  onSelectSystem?: () => void;
   busyTarget?: ShareTarget | null;
 }
 
@@ -107,6 +109,7 @@ export function ShareVoiceSheet({
   visible,
   onClose,
   onSelect,
+  onSelectSystem,
   busyTarget = null,
 }: ShareVoiceSheetProps): React.ReactElement {
   const { color } = useTheme();
@@ -116,7 +119,7 @@ export function ShareVoiceSheet({
       visible={visible}
       onClose={onClose}
       title="Send voice"
-      maxHeight="56%"
+      maxHeight="65%"
     >
       <Box style={{ padding: spacing.lg, gap: spacing.sm }}>
         {SHARE_TARGETS.map((target) => (
@@ -127,9 +130,50 @@ export function ShareVoiceSheet({
             onPress={onSelect}
           />
         ))}
+
+        {onSelectSystem && (
+          <Pressable
+            onPress={onSelectSystem}
+            accessibilityLabel="More share options. Opens system share sheet"
+            accessibilityHint="Opens system share sheet to send voice via AirDrop, Messages, Files, or other apps"
+            style={({ pressed }) => [
+              {
+                flexDirection: "row",
+                alignItems: "center",
+                gap: spacing.md,
+                padding: spacing.md,
+                borderWidth: 1,
+                borderColor: color.border,
+                borderRadius: borderRadius.xl,
+                backgroundColor: color.surface,
+                minHeight: 72,
+              },
+              pressed ? { opacity: 0.82 } : {},
+            ]}
+          >
+            <IconContainer
+              size="lg"
+              variant="custom"
+              backgroundColor={withAlpha(color.brand, 0.14)}
+            >
+              <Share2 size={iconSize.md} color={color.brand} />
+            </IconContainer>
+
+            <Box style={{ flex: 1, gap: 2 }}>
+              <Text variant="heading3" style={{ color: color.foreground }}>
+                More options…
+              </Text>
+              <Text variant="bodySmall" style={{ color: color.muted }}>
+                AirDrop, Messages, Files, and other apps
+              </Text>
+            </Box>
+
+            <ChevronRight size={iconSize.md} color={color.muted} />
+          </Pressable>
+        )}
       </Box>
 
-      <Box style={{ paddingHorizontal: spacing.lg }}>
+      <Box style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.sm }}>
         <Text
           variant="bodySmall"
           style={{ color: color.muted, textAlign: "center" }}

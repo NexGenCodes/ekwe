@@ -172,7 +172,11 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
   const canConvert = voiceChanged && resultText.trim().length > 0;
 
   const isPlaying = player.isPlaying;
+  const isPlayLoading = isConverting || !player.isReady || player.isDecoding;
+  const isEditDisabled = isAudioLoading || isConverting;
+  const isShareDisabled = isConverting || isAudioLoading;
   const hasWaveform = !!amplitudes && amplitudes.length > 0;
+  const hasLoadError = !!player.loadError;
 
   // The panel's own `durationSeconds` is the worker's estimate, so it is only
   // the fallback. The player's duration is measured from the decoded clip, and
@@ -198,6 +202,7 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
 
   const [displaySeconds, setDisplaySeconds] = useState(0);
   const [showOriginal, setShowOriginal] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   useAnimatedReaction(
     () => Math.floor(player.progressSV.value),
     (seconds) => {
@@ -238,12 +243,19 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
       >
         <Pressable
           onPress={onEdit}
-          disabled={isAudioLoading}
+          disabled={isEditDisabled}
           accessibilityRole="button"
           accessibilityLabel={
-            isAudioLoading ? "Preparing audio, please wait" : "Edit"
+            isConverting
+              ? "Re-rendering audio, please wait"
+              : isAudioLoading
+                ? "Preparing audio, please wait"
+                : "Edit"
           }
-          accessibilityState={{ disabled: isAudioLoading }}
+          accessibilityState={{
+            disabled: isEditDisabled,
+            busy: isEditDisabled,
+          }}
           hitSlop={10}
           style={({ pressed }) => [
             {
@@ -252,38 +264,52 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
               gap: spacing.sm,
               minHeight: touchTarget.minimum,
               paddingRight: spacing.sm,
-              opacity: isAudioLoading ? opacity.disabled : 1,
+              opacity: isEditDisabled ? opacity.disabled : 1,
             },
-            pressed && !isAudioLoading && { opacity: 0.7 },
+            pressed && !isEditDisabled && { opacity: 0.7 },
           ]}
         >
-          {isAudioLoading ? (
+          {isEditDisabled ? (
             <Spinner size="sm" color={color.onBrand} />
           ) : (
             <Pencil size={iconSize.sm} color={color.onBrand} />
           )}
           <Text variant="label" style={{ color: color.onBrand }}>
-            {isAudioLoading ? "Preparing…" : "Edit"}
+            {isConverting
+              ? "Re-rendering…"
+              : isAudioLoading
+                ? "Preparing…"
+                : "Edit"}
           </Text>
         </Pressable>
 
         <IconButton
           accessibilityLabel="Clear session"
           onPress={onClear}
-          backgroundColor={color.onBrand}
+          disabled={isConverting || isAudioLoading}
+          backgroundColor={withAlpha(color.onBrand, 0.16)}
           size={touchTarget.minimum}
-          icon={<X size={iconSize.sm} color={color.error} strokeWidth={2.4} />}
+          icon={
+            <X size={iconSize.sm} color={color.onBrand} strokeWidth={2.4} />
+          }
         />
       </Box>
 
       {}
-      <Box
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: spacing.sm,
-          marginBottom: spacing.md,
-        }}
+      <Pressable
+        onPress={onChangeVoice}
+        disabled={isConverting}
+        accessibilityRole="button"
+        accessibilityLabel={`Selected voice: ${voice.name}. Tap to change voice.`}
+        style={({ pressed }) => [
+          {
+            flexDirection: "row",
+            alignItems: "center",
+            gap: spacing.sm,
+            marginBottom: spacing.md,
+          },
+          pressed && !isConverting && { opacity: 0.8 },
+        ]}
       >
         <AudioLines size={iconSize.sm} color={color.onBrand} />
         <Box style={{ flexShrink: 1 }}>
@@ -305,18 +331,37 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
             {langName}
           </Text>
         </Box>
-      </Box>
+      </Pressable>
 
       {}
-      <Box style={{ paddingVertical: spacing.xs }}>
+      <Pressable
+        onPress={() => setIsExpanded((prev) => !prev)}
+        accessibilityRole="button"
+        accessibilityLabel={
+          isExpanded ? "Collapse full text" : "Expand full text"
+        }
+        style={{ paddingVertical: spacing.xs }}
+      >
         <Text
           variant="heading2"
-          numberOfLines={4}
+          numberOfLines={isExpanded ? undefined : 4}
           style={{ color: color.onBrand }}
         >
           {resultText}
         </Text>
-      </Box>
+        {resultText.length > 120 && (
+          <Text
+            variant="caption"
+            style={{
+              color: withAlpha(color.onBrand, 0.7),
+              marginTop: spacing.xs,
+              textDecorationLine: "underline",
+            }}
+          >
+            {isExpanded ? "Show less" : "Show more"}
+          </Text>
+        )}
+      </Pressable>
 
       {hasTranslation && transcriptText.trim().length > 0 && (
         <>
@@ -370,17 +415,30 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
         }}
       >
         <Pressable
-          onPress={isConverting ? undefined : onTogglePlay}
-          disabled={isConverting}
+          onPress={
+            hasLoadError
+              ? player.retryLoad
+              : isPlayLoading
+                ? undefined
+                : onTogglePlay
+          }
+          disabled={isPlayLoading && !hasLoadError}
           accessibilityRole="button"
           accessibilityLabel={
-            isConverting
-              ? "Rendering audio"
-              : isPlaying
-                ? "Pause voice note"
-                : "Play voice note"
+            hasLoadError
+              ? "Retry loading audio"
+              : isConverting
+                ? "Rendering audio"
+                : isPlayLoading
+                  ? "Preparing playback"
+                  : isPlaying
+                    ? "Pause voice note"
+                    : "Play voice note"
           }
-          accessibilityState={{ disabled: isConverting, busy: isConverting }}
+          accessibilityState={{
+            disabled: isPlayLoading && !hasLoadError,
+            busy: isPlayLoading,
+          }}
           hitSlop={8}
           style={({ pressed }) => [
             {
@@ -390,12 +448,14 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
               alignItems: "center",
               justifyContent: "center",
               backgroundColor: withAlpha(color.onBrand, 0.18),
-              opacity: isConverting ? 0.5 : 1,
+              opacity: isPlayLoading && !hasLoadError ? 0.6 : 1,
             },
-            pressed && !isConverting && { transform: [{ scale: 0.92 }] },
+            pressed && !isPlayLoading && { transform: [{ scale: 0.92 }] },
           ]}
         >
-          {isConverting ? (
+          {hasLoadError ? (
+            <RefreshCw size={iconSize.md} color={color.onBrand} />
+          ) : isPlayLoading ? (
             <Spinner size="sm" color={color.onBrand} />
           ) : isPlaying ? (
             <Pause size={iconSize.md} color={color.onBrand} />
@@ -423,9 +483,9 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
             barWidth={3}
             barGap={2}
             height={34}
-            interactive={!isConverting}
+            interactive={!isConverting && player.isReady && !player.isDecoding}
             activeColor={color.onBrand}
-            inactiveColor={withAlpha(color.onBrand, 0.35)}
+            inactiveColor={withAlpha(color.onBrand, 0.6)}
             onSeek={handleSeek}
             onScrubStateChange={handleScrubStateChange}
           />
@@ -466,7 +526,14 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
           marginBottom: spacing.md,
         }}
       >
-        {canConvert ? (
+        <ActionChip
+          icon={<AudioLines size={iconSize.sm} color={color.onBrand} />}
+          label="Voices"
+          onPress={onChangeVoice}
+          tint={color.onBrand}
+          disabled={isConverting}
+        />
+        {canConvert && (
           <ActionChip
             icon={
               isConverting ? (
@@ -475,28 +542,23 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
                 <RefreshCw size={iconSize.sm} color={color.brand} />
               )
             }
-            label={isConverting ? "Re-rendering…" : "Re-render with this voice"}
+            label={isConverting ? "Re-rendering…" : "Re-render"}
             onPress={onConvert}
             tint={color.onBrand}
             variant="primary"
             disabled={isConverting}
             busy={isConverting}
           />
-        ) : (
-          <ActionChip
-            icon={<AudioLines size={iconSize.sm} color={color.onBrand} />}
-            label="Voices"
-            onPress={onChangeVoice}
-            tint={color.onBrand}
-          />
         )}
       </Box>
 
       {}
       <Pressable
-        onPress={onShare}
+        onPress={isShareDisabled ? undefined : onShare}
+        disabled={isShareDisabled}
         accessibilityRole="button"
         accessibilityLabel="Share voice"
+        accessibilityState={{ disabled: isShareDisabled }}
         hitSlop={8}
         style={({ pressed }) => [
           {
@@ -506,13 +568,31 @@ export const VoiceResultPanel = React.memo(function VoiceResultPanel({
             gap: spacing.sm,
             minHeight: touchTarget.comfortable,
             borderRadius: borderRadius.xl,
-            backgroundColor: color.onBrand,
+            borderWidth: canConvert ? 1.5 : 0,
+            borderColor: canConvert
+              ? withAlpha(color.onBrand, 0.4)
+              : "transparent",
+            backgroundColor: canConvert
+              ? withAlpha(color.onBrand, 0.08)
+              : color.onBrand,
+            opacity: isShareDisabled ? opacity.disabled : 1,
           },
-          pressed && { transform: [{ scale: 0.98 }], opacity: 0.92 },
+          pressed &&
+            !isShareDisabled && {
+              transform: [{ scale: 0.98 }],
+              opacity: 0.92,
+            },
         ]}
       >
-        <Share size={iconSize.sm} color={color.brand} strokeWidth={2.2} />
-        <Text variant="heading3" style={{ color: color.brand }}>
+        <Share
+          size={iconSize.sm}
+          color={canConvert ? color.onBrand : color.brand}
+          strokeWidth={2.2}
+        />
+        <Text
+          variant="heading3"
+          style={{ color: canConvert ? color.onBrand : color.brand }}
+        >
           Share voice
         </Text>
       </Pressable>

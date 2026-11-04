@@ -5,6 +5,7 @@ import { USAGE_METER_META } from "@ekwe/shared";
 
 import { Box, Text, Spinner, Pressable } from "@/components/ui";
 import { Card } from "@/components/Card";
+import { SkeletonBox } from "@/components/SkeletonBox";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useUsageQuery } from "@/hooks/queries/useUsageQuery";
@@ -191,7 +192,48 @@ export function QuotaUsageCard(): React.ReactElement {
         ) : null}
       </Box>
 
-      {isError ? (
+      {isLoading ? (
+        <Box style={styles.pools}>
+          <Box style={styles.poolRow}>
+            <Box style={styles.poolHeader}>
+              <SkeletonBox
+                width={120}
+                height={14}
+                borderRadius={borderRadius.sm}
+              />
+              <SkeletonBox
+                width={72}
+                height={12}
+                borderRadius={borderRadius.sm}
+              />
+            </Box>
+            <SkeletonBox
+              width="100%"
+              height={6}
+              borderRadius={borderRadius.full}
+            />
+          </Box>
+          <Box style={styles.poolRow}>
+            <Box style={styles.poolHeader}>
+              <SkeletonBox
+                width={140}
+                height={14}
+                borderRadius={borderRadius.sm}
+              />
+              <SkeletonBox
+                width={84}
+                height={12}
+                borderRadius={borderRadius.sm}
+              />
+            </Box>
+            <SkeletonBox
+              width="100%"
+              height={6}
+              borderRadius={borderRadius.full}
+            />
+          </Box>
+        </Box>
+      ) : isError ? (
         <Text
           variant="bodySmall"
           style={{ color: color.muted, marginTop: spacing.md }}

@@ -111,7 +111,7 @@ export async function handleTranslate(
   // so a long request cannot slip past the monthly credit budget.
   const preciseGate = await runPreflightGate(
     env,
-    ctx ?? { waitUntil: () => {} },
+    ctx,
     userId,
     tier,
     "translate",

@@ -67,7 +67,7 @@ export class CloudSync {
           cursor = page.nextCursor;
           storage.set(key, cursor);
         }
-        if (!page.hasMore) break;
+        if (!page.hasMore || page.rows.length === 0) break;
       }
 
       if (applied > 0) {

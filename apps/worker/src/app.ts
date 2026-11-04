@@ -43,30 +43,29 @@ export type AppEnv = {
 export const app = new Hono<AppEnv>();
 
 // ── Global middleware ─────────────────────────────────────────────────
-// The handler is annotated with a string path so its context matches the
-// context Hono's cors middleware expects; the default "*" path type is not
-// assignable to it.
-app.use("*", async (c: Context<AppEnv, string>, next) => {
-  setDebugEnabled(c.env.APP_ENV !== "production");
-  const origin = c.req.header("Origin");
-  const allowedOrigins =
-    c.env.ALLOWED_ORIGINS?.split(",")
-      .map((o: string) => o.trim())
-      .filter(Boolean) || [];
+app.use(
+  "*",
+  cors({
+    origin: (origin, c: Context<AppEnv>) => {
+      setDebugEnabled(c.env.APP_ENV !== "production");
+      if (!origin) return "";
 
-  const isDev =
-    c.env.APP_ENV !== "production" && !!origin && isDevOrigin(origin);
-  const isExactMatch = !!origin && allowedOrigins.includes(origin);
-  const isAllowed = isExactMatch || isDev;
+      const allowedOrigins =
+        c.env.ALLOWED_ORIGINS?.split(",")
+          .map((o: string) => o.trim())
+          .filter(Boolean) || [];
 
-  return cors({
-    origin: isAllowed ? origin : "",
+      const isDev = c.env.APP_ENV !== "production" && isDevOrigin(origin);
+      const isExactMatch = allowedOrigins.includes(origin);
+
+      return isExactMatch || isDev ? origin : "";
+    },
     credentials: true,
     allowMethods: ["GET", "POST", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization", "X-Firebase-AppCheck"],
     exposeHeaders: ["Server-Timing", "Retry-After"],
-  })(c, next);
-});
+  }),
+);
 
 app.use("*", async (c, next) => {
   const startTime = Date.now();

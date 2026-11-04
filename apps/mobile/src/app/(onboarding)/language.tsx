@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,6 +12,7 @@ import { settings$, settingsActions, auth$ } from "@/store";
 import { getLanguageName } from "@/constants/languages";
 import { unsupportedStoredLanguages } from "@/utils/languageUtils";
 import { track, AnalyticsEvents } from "@/utils/analytics";
+import { triggerHaptic } from "@/utils/haptics";
 import { spacing as spacingToken } from "@/constants/spacing";
 
 const HEADING = "Pick your languages";
@@ -32,20 +33,28 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
     settings$.selectedLanguages.peek(),
   );
 
+  const [isSaving, setIsSaving] = useState(false);
+
   const handleContinue = useCallback(async (): Promise<void> => {
-    if (!isComplete) return;
+    if (!isComplete || isSaving) return;
+    setIsSaving(true);
+    await triggerHaptic();
 
-    settingsActions.setSelectedLanguages(selected);
-    settingsActions.setTargetLanguage(selected[0]);
-    settingsActions.setOnboardingCompleted(true);
-    track(AnalyticsEvents.ONBOARDING_COMPLETED, {
-      languageCount: selected.length,
-      targetLanguage: selected[0],
-    });
+    try {
+      settingsActions.setSelectedLanguages(selected);
+      settingsActions.setTargetLanguage(selected[0]);
+      settingsActions.setOnboardingCompleted(true);
+      track(AnalyticsEvents.ONBOARDING_COMPLETED, {
+        languageCount: selected.length,
+        targetLanguage: selected[0],
+      });
 
-    const session = auth$.session.get();
-    router.replace(session ? "/(tabs)" : "/(auth)/login");
-  }, [isComplete, selected, router]);
+      const session = auth$.session.get();
+      router.replace(session ? "/(tabs)" : "/(auth)/login");
+    } finally {
+      setIsSaving(false);
+    }
+  }, [isComplete, isSaving, selected, router]);
 
   const countColor = isComplete ? color.success : color.muted;
   const inset = spacing.xl;
@@ -144,7 +153,8 @@ export default function OnboardingLanguagesScreen(): React.ReactElement {
           variant="primary"
           size="large"
           label="Continue"
-          disabled={!isComplete}
+          disabled={!isComplete || isSaving}
+          loading={isSaving}
           onPress={handleContinue}
           style={{ width: "100%" }}
         />

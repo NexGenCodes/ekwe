@@ -1,7 +1,7 @@
 import React from "react";
 import Svg, { Path, G, ClipPath, Defs } from "react-native-svg";
 
-import { Pressable, Text, Box } from "@/components/ui";
+import { Pressable, Text, Box, Spinner } from "@/components/ui";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
@@ -12,6 +12,7 @@ interface SocialButtonProps {
   action?: "sign-in" | "sign-up";
   onPress: () => void;
   disabled?: boolean;
+  loading?: boolean;
 }
 
 const GoogleLogo = (): React.ReactElement => (
@@ -44,6 +45,7 @@ export const SocialButton = ({
   action = "sign-in",
   onPress,
   disabled = false,
+  loading = false,
 }: SocialButtonProps): React.ReactElement | null => {
   const { color } = useTheme();
 
@@ -51,7 +53,7 @@ export const SocialButton = ({
 
   const isApple = provider === "apple";
   const unavailable = isApple && !isIOS;
-  const isDisabled = disabled || unavailable;
+  const isDisabled = disabled || unavailable || loading;
 
   const bgColor = isApple ? color.foreground : color.card;
   const textColor = isApple ? color.background : color.foreground;
@@ -74,22 +76,28 @@ export const SocialButton = ({
         paddingHorizontal: spacing.lg,
         borderWidth: 1,
         borderColor,
-        opacity: isDisabled ? 0.45 : 1,
+        opacity: isDisabled && !loading ? 0.45 : 1,
       }}
       accessibilityLabel={`${action === "sign-in" ? "Sign in" : "Sign up"} with ${label}`}
-      accessibilityState={{ disabled: isDisabled }}
+      accessibilityState={{ disabled: isDisabled, busy: loading }}
       accessibilityHint={
         unavailable
           ? "Sign in with Apple is only available on iPhone"
           : undefined
       }
     >
-      {provider === "google" ? <GoogleLogo /> : <AppleLogo color={textColor} />}
+      {loading ? (
+        <Spinner size="sm" color={textColor} />
+      ) : provider === "google" ? (
+        <GoogleLogo />
+      ) : (
+        <AppleLogo color={textColor} />
+      )}
       <Box
         style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}
       >
         <Text variant="body" style={{ color: textColor }}>
-          {label}
+          {loading ? "Connecting…" : label}
         </Text>
       </Box>
     </Pressable>

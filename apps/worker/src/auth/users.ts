@@ -133,30 +133,37 @@ export async function findOrCreateUser(
     .bind(input.provider, input.providerUserId)
     .first<{ user_id: string }>();
 
+  let user: UserRow | null = null;
+
   if (linked) {
-    await attachIdentity(env, linked.user_id, input, now);
-    const existing = await findUserById(env, linked.user_id);
-    if (existing) return existing;
+    user = await findUserById(env, linked.user_id);
   }
 
-  await env.DB.prepare(
-    `INSERT INTO users (id, email, email_norm, tier, display_name, avatar_url, created_at, updated_at)
-     VALUES (?, ?, ?, 'FREE', ?, ?, ?, ?)
-     ON CONFLICT (email_norm) DO NOTHING`,
-  )
-    .bind(
-      crypto.randomUUID(),
-      input.email,
-      emailNorm,
-      input.displayName ?? null,
-      input.avatarUrl ?? null,
-      now,
-      now,
-    )
-    .run();
+  if (!user) {
+    user = await findUserByEmail(env, emailNorm);
+  }
 
-  const user = await findUserByEmail(env, emailNorm);
-  if (!user) throw new Error("user upsert returned no row");
+  if (!user) {
+    const newUserId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO users (id, email, email_norm, tier, display_name, avatar_url, created_at, updated_at)
+       VALUES (?, ?, ?, 'FREE', ?, ?, ?, ?)
+       ON CONFLICT (email_norm) DO NOTHING`,
+    )
+      .bind(
+        newUserId,
+        input.email,
+        emailNorm,
+        input.displayName ?? null,
+        input.avatarUrl ?? null,
+        now,
+        now,
+      )
+      .run();
+
+    user = await findUserByEmail(env, emailNorm);
+    if (!user) throw new Error("user upsert returned no row");
+  }
 
   if (
     (input.displayName && !user.display_name) ||

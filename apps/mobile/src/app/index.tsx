@@ -1,11 +1,13 @@
 import { useValue } from "@legendapp/state/react";
 import { Redirect } from "expo-router";
-import { ActivityIndicator, View } from "react-native";
 
+import { Box, Spinner } from "@/components/ui";
+import { useTheme } from "@/hooks/ui/useTheme";
 import { settings$ } from "@/store/settings";
 import { auth$ } from "@/store/auth";
 
 export default function Index(): React.ReactElement | null {
+  const { color } = useTheme();
   const isInitialized = useValue(() => auth$.isInitialized.get());
   const sessionLoaded = useValue(() => auth$.sessionLoaded.get());
   const session = useValue(() => auth$.session.get());
@@ -13,13 +15,18 @@ export default function Index(): React.ReactElement | null {
     settings$.onboardingCompleted.get(),
   );
 
-  if (!isInitialized) return null;
-
-  if (!sessionLoaded) {
+  if (!isInitialized || !sessionLoaded) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" />
-      </View>
+      <Box
+        style={{
+          flex: 1,
+          backgroundColor: color.background,
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
+        <Spinner size="lg" color={color.brand} />
+      </Box>
     );
   }
 

@@ -88,9 +88,10 @@ export function originProvenanceLabel(entry: HistoryEntry): string {
 
 /** `ES → FR` for a translated capture, `ES` for one that was never translated. */
 export function entryLanguageLabel(entry: HistoryEntry): string {
-  const source = entry.sourceLang.toUpperCase();
+  const source = (entry.sourceLang || "en").toUpperCase();
   if (!hasDistinctTranslation(entry)) return source;
-  return `${source} → ${entry.targetLang.toUpperCase()}`;
+  const target = (entry.targetLang || "").toUpperCase();
+  return target ? `${source} → ${target}` : source;
 }
 
 export function formatEntryDuration(seconds: number): string | null {
@@ -116,9 +117,14 @@ export function entryAccessibilityLabel(entry: HistoryEntry): string {
   const who = app
     ? `${ORIGIN_META[origin].label}, from ${app}`
     : ORIGIN_META[origin].label;
-  const languages = hasDistinctTranslation(entry)
-    ? `${getLanguageName(entry.sourceLang)} translated to ${getLanguageName(entry.targetLang)}`
-    : getLanguageName(entry.sourceLang);
+  const sourceName = getLanguageName(entry.sourceLang || "en");
+  const targetName = entry.targetLang
+    ? getLanguageName(entry.targetLang)
+    : null;
+  const languages =
+    hasDistinctTranslation(entry) && targetName
+      ? `${sourceName} translated to ${targetName}`
+      : sourceName;
   const firstLine = entry.transcript?.split("\n")[0]?.trim() || "Voice note";
   return `${firstLine}. ${who}. ${languages}.`;
 }

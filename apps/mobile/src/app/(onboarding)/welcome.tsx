@@ -17,7 +17,7 @@ import { Button, EkweLogo, FeatureCard } from "@/components";
 import { Box, ScreenContainer, Text } from "@/components/ui";
 import { duration, spacing, iconSize, spinnerSize } from "@/constants";
 import { useReduceMotion, useTokens } from "@/hooks/ui";
-import { withAlpha } from "@/utils";
+import { triggerHaptic, withAlpha } from "@/utils";
 
 const FEATURES = [
   {
@@ -46,6 +46,7 @@ export default function WelcomeScreen(): React.ReactElement {
   const progress = useSharedValue(0);
 
   const handleGetStarted = useCallback(async (): Promise<void> => {
+    await triggerHaptic();
     router.replace("/language");
   }, [router]);
 

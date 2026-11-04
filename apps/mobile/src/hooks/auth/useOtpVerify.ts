@@ -5,6 +5,8 @@ import { track, AnalyticsEvents } from "@/utils/analytics";
 
 interface OtpVerifyHook {
   isLoading: boolean;
+  isVerifying: boolean;
+  isResending: boolean;
   error: string;
   cooldown: number;
   verify: (email: string, token: string) => Promise<AuthResult>;
@@ -12,9 +14,12 @@ interface OtpVerifyHook {
 }
 
 export function useOtpVerify(): OtpVerifyHook {
-  const [isLoading, setIsLoading] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
   const [error, setError] = useState("");
   const [cooldown, setCooldown] = useState(0);
+
+  const isLoading = isVerifying || isResending;
 
   useEffect(() => {
     if (cooldown > 0) {
@@ -25,14 +30,14 @@ export function useOtpVerify(): OtpVerifyHook {
 
   const verify = useCallback(
     async (email: string, token: string): Promise<AuthResult> => {
-      setIsLoading(true);
+      setIsVerifying(true);
       setError("");
       try {
         const result = await verifyOtp(email, token);
         if (!result.ok) setError(result.error || "Verification failed");
         return result;
       } finally {
-        setIsLoading(false);
+        setIsVerifying(false);
       }
     },
     [],
@@ -41,7 +46,7 @@ export function useOtpVerify(): OtpVerifyHook {
   const resend = useCallback(
     async (email: string): Promise<boolean> => {
       if (cooldown > 0) return false;
-      setIsLoading(true);
+      setIsResending(true);
       setError("");
       try {
         const result = await sendOtp(email);
@@ -53,11 +58,19 @@ export function useOtpVerify(): OtpVerifyHook {
         setError(result.error || "Failed to resend code");
         return false;
       } finally {
-        setIsLoading(false);
+        setIsResending(false);
       }
     },
     [cooldown],
   );
 
-  return { isLoading, error, cooldown, verify, resend };
+  return {
+    isLoading,
+    isVerifying,
+    isResending,
+    error,
+    cooldown,
+    verify,
+    resend,
+  };
 }

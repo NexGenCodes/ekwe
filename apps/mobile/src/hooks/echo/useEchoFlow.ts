@@ -650,10 +650,9 @@ export const useEchoFlow = (
         if (await CopyService.copyText(translationResultText)) {
           setAutoCopied(true);
           if (autoCopyTimerRef.current) clearTimeout(autoCopyTimerRef.current);
-          autoCopyTimerRef.current = setTimeout(
-            () => setAutoCopied(false),
-            2000,
-          );
+          autoCopyTimerRef.current = setTimeout(() => {
+            if (!goneRef.current) setAutoCopied(false);
+          }, 2000);
         }
       }
     } catch (e: unknown) {

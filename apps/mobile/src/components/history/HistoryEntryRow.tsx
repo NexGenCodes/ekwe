@@ -19,7 +19,7 @@ import { HistoryEntry } from "@/store";
 import { withAlpha } from "@/utils/color";
 import { originProvenanceLabel } from "@/utils/historyOrigin";
 import { triggerHaptic } from "@/utils/haptics";
-import { AppToast } from "@/utils";
+import { AppAlert, AppToast } from "@/utils";
 
 export interface HistoryEntryRowProps {
   entry: HistoryEntry;
@@ -86,8 +86,14 @@ export const HistoryEntryRow = React.memo(
     const [sheetVisible, setSheetVisible] = useState(false);
 
     const handleDelete = useCallback((): void => {
-      triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
-      onDelete(entry.id);
+      AppAlert.confirm(
+        "Delete Entry",
+        "Are you sure you want to delete this transcript from your history?",
+        () => {
+          triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+          onDelete(entry.id);
+        },
+      );
     }, [entry.id, onDelete]);
 
     const handleLongPress = useCallback((): void => {
@@ -153,9 +159,15 @@ export const HistoryEntryRow = React.memo(
     // Lead with provenance. The language pair alone doesn't tell you which
     // surface produced the note, which is usually the thing you want to know
     // when you are about to act on it.
-    const sheetTitle = `${originProvenanceLabel(entry)} · ${getLanguageName(
-      entry.sourceLang,
-    )} → ${getLanguageName(entry.targetLang)}`;
+    const sourceName = getLanguageName(entry.sourceLang || "en");
+    const targetName = entry.targetLang
+      ? getLanguageName(entry.targetLang)
+      : null;
+    const langDisplay =
+      hasTranslation && targetName
+        ? `${sourceName} → ${targetName}`
+        : sourceName;
+    const sheetTitle = `${originProvenanceLabel(entry)} · ${langDisplay}`;
 
     return (
       <>

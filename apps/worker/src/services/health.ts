@@ -109,12 +109,13 @@ export async function reportProviderOutcome(
   const memoFresh = !!memo && memo.untilEpochMs > now;
 
   if (ok) {
-    // Deliberately unconditional. Gating this on a fresh memo meant a recovery
-    // seen more than HEALTH_MEMO_TTL_MS after the last failure cleared the
-    // circuit only in that one isolate; every other isolate kept reading an
-    // open circuit from KV until its TTL expired.
-    const hadStress =
+    const localStress =
       isStateOpen(memo?.state ?? null, now) || (memo?.state?.failures ?? 0) > 0;
+    let hadStress = localStress;
+    if (!hadStress && !memoFresh) {
+      const kvState = await readState(env, provider);
+      hadStress = isStateOpen(kvState, now) || (kvState?.failures ?? 0) > 0;
+    }
     if (hadStress) {
       try {
         await env.EKWE_KV.delete(healthKey(provider));

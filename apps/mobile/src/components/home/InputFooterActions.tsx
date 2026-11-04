@@ -146,7 +146,7 @@ export const InputFooterActions = React.memo(
           >
             <Spinner size="sm" color={color.onBrand} />
             <Text variant="body" style={{ color: color.onBrand }}>
-              Convert
+              {isConverting ? "Converting…" : "Preparing…"}
             </Text>
           </Box>
         );
@@ -193,15 +193,15 @@ export const InputFooterActions = React.memo(
     ]);
 
     const actionLabel = useMemo(() => {
+      if (isConverting) return "Converting to voice";
       if (isAudioLoading) return "Preparing audio";
       if (isPreview) return "Convert recording to voice";
       if (isRecording) return "Stop recording";
       if (hasSource) return "Convert to voice";
       return "Start voice dictation";
-    }, [isAudioLoading, isPreview, isRecording, hasSource]);
+    }, [isConverting, isAudioLoading, isPreview, isRecording, hasSource]);
 
-    const actionDisabled =
-      isProcessing || isInitializing || isConverting || isAudioLoading;
+    const isClearDisabled = isConverting || isAudioLoading || isProcessing;
 
     return (
       <Box style={{ paddingHorizontal: spacing.lg }}>
@@ -220,7 +220,7 @@ export const InputFooterActions = React.memo(
                 <IconButton
                   accessibilityLabel="Clear audio"
                   onPress={handleDeleteAudio}
-                  disabled={isConverting}
+                  disabled={isClearDisabled}
                   backgroundColor={color.surface}
                   size={52}
                   icon={<X size={22} color={color.error} strokeWidth={2.5} />}
@@ -236,7 +236,7 @@ export const InputFooterActions = React.memo(
                 <IconButton
                   accessibilityLabel="Clear recording"
                   onPress={handleCancelPress}
-                  disabled={isConverting}
+                  disabled={isClearDisabled}
                   backgroundColor={color.surface}
                   size={52}
                   icon={<X size={22} color={color.error} strokeWidth={2.5} />}
@@ -252,14 +252,16 @@ export const InputFooterActions = React.memo(
                 <IconButton
                   accessibilityLabel="Clear text"
                   onPress={handleClear}
-                  disabled={isConverting}
+                  disabled={isClearDisabled}
                   backgroundColor={color.surface}
                   size={52}
                   icon={<X size={22} color={color.muted} strokeWidth={2.5} />}
                 />
-                <Text variant="caption" style={{ color: color.muted }}>
-                  Clear
-                </Text>
+                {!isKeyboardVisible && (
+                  <Text variant="caption" style={{ color: color.muted }}>
+                    Clear
+                  </Text>
+                )}
               </Box>
             ) : (
               <Box style={{ width: 52, height: 52 }} />
@@ -302,10 +304,19 @@ export const InputFooterActions = React.memo(
               </Box>
             )}
             <Pressable
+              accessibilityRole="button"
               accessibilityLabel={actionLabel}
+              accessibilityState={{
+                disabled: isDisabled,
+                busy:
+                  isConverting ||
+                  isProcessing ||
+                  isInitializing ||
+                  isAudioLoading,
+              }}
               style={btnStyle}
               onPress={handleRightButtonPress}
-              disabled={actionDisabled}
+              disabled={isDisabled}
               hitSlop={15}
             >
               {actionContent}

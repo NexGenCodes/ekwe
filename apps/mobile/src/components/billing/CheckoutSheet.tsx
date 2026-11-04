@@ -1,22 +1,23 @@
-import React, { useEffect, useCallback } from "react";
-import { Modal, Linking, View, ActivityIndicator } from "react-native";
+import React, { useEffect, useCallback, useState } from "react";
+import { Modal, Linking, View } from "react-native";
 import type { CheckoutSession } from "@/services/flutterwave";
 import { AppAlert } from "@/utils/alert";
-import { Box, Text, Pressable } from "@/components/ui";
+import { Box, Text, Spinner, Pressable } from "@/components/ui";
+import { Button } from "@/components/Button";
+import { borderRadius } from "@/constants/sizes";
+import { spacing } from "@/constants/spacing";
+import { useTheme } from "@/hooks";
 
 interface CheckoutSheetProps {
   visible: boolean;
-
   session: CheckoutSession | null;
-
   plan: string | null;
-
   onDismiss: () => void;
   onComplete: (data: {
     status: string | null;
     tx_ref: string | null;
     transaction_id: string | null;
-  }) => void;
+  }) => void | Promise<void>;
 }
 
 const PLAN_LABELS: Record<string, string> = {
@@ -31,6 +32,9 @@ export function CheckoutSheet({
   onDismiss,
   onComplete,
 }: CheckoutSheetProps): React.ReactElement | null {
+  const { color } = useTheme();
+  const [isVerifying, setIsVerifying] = useState(false);
+
   useEffect(() => {
     if (!visible || !session) return;
     if (!session.link) {
@@ -47,15 +51,20 @@ export function CheckoutSheet({
     });
   }, [visible, session, onDismiss]);
 
-  const handleVerify = useCallback(() => {
-    if (session) {
-      onComplete({
-        status: null, // let backend polling verify
-        tx_ref: session.tx_ref,
-        transaction_id: null,
-      });
+  const handleVerify = useCallback(async () => {
+    if (session && !isVerifying) {
+      setIsVerifying(true);
+      try {
+        await onComplete({
+          status: null, // let backend polling verify
+          tx_ref: session.tx_ref,
+          transaction_id: null,
+        });
+      } finally {
+        setIsVerifying(false);
+      }
     }
-  }, [onComplete, session]);
+  }, [onComplete, session, isVerifying]);
 
   if (!visible || !session) return null;
 
@@ -67,62 +76,76 @@ export function CheckoutSheet({
       <View
         style={{
           flex: 1,
-          backgroundColor: "rgba(0,0,0,0.6)",
+          backgroundColor: color.overlay,
           justifyContent: "center",
-          padding: 20,
+          padding: spacing.xl,
         }}
       >
         <Box
           style={{
-            backgroundColor: "#1C1C1E",
-            padding: 24,
-            borderRadius: 16,
+            backgroundColor: color.card,
+            padding: spacing.xl,
+            borderRadius: borderRadius["2xl"],
+            borderWidth: 1,
+            borderColor: color.border,
             alignItems: "center",
+            maxWidth: 420,
+            alignSelf: "center",
+            width: "100%",
           }}
         >
-          <ActivityIndicator
-            size="large"
-            color="#FFFFFF"
-            style={{ marginBottom: 20 }}
-          />
+          <Box style={{ marginBottom: spacing.lg }}>
+            <Spinner size="lg" color={color.brand} />
+          </Box>
           <Text
             variant="heading2"
-            style={{ color: "#FFFFFF", marginBottom: 12, textAlign: "center" }}
+            style={{
+              color: color.foreground,
+              marginBottom: spacing.sm,
+              textAlign: "center",
+            }}
           >
             Awaiting Payment
           </Text>
           <Text
             variant="body"
-            style={{ color: "#A1A1AA", textAlign: "center", marginBottom: 24 }}
-          >
-            Your secure {planLabel} checkout opened in a browser window. Once
-            you complete the payment, tap the button below.
-          </Text>
-
-          <Pressable
-            onPress={handleVerify}
             style={{
-              backgroundColor: "#007AFF",
-              padding: 16,
-              borderRadius: 12,
-              width: "100%",
-              alignItems: "center",
-              marginBottom: 12,
+              color: color.muted,
+              textAlign: "center",
+              marginBottom: spacing.xl,
+              lineHeight: 22,
             }}
           >
-            <Text
-              variant="body"
-              style={{ color: "#FFFFFF", fontWeight: "bold" }}
-            >
-              I've Completed Payment
-            </Text>
-          </Pressable>
+            Your secure {planLabel} checkout opened in your browser. Once you
+            complete the payment, tap the button below to confirm.
+          </Text>
+
+          <Button
+            label="I've Completed Payment"
+            onPress={handleVerify}
+            loading={isVerifying}
+            disabled={isVerifying}
+            size="large"
+            style={{ width: "100%", marginBottom: spacing.sm }}
+          />
 
           <Pressable
             onPress={onDismiss}
-            style={{ padding: 16, width: "100%", alignItems: "center" }}
+            disabled={isVerifying}
+            hitSlop={8}
+            style={{
+              paddingVertical: spacing.md,
+              width: "100%",
+              alignItems: "center",
+              opacity: isVerifying ? 0.4 : 1,
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel checkout"
           >
-            <Text variant="body" style={{ color: "#FF3B30" }}>
+            <Text
+              variant="bodySmall"
+              style={{ color: color.error, fontWeight: "600" }}
+            >
               Cancel Checkout
             </Text>
           </Pressable>

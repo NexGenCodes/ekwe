@@ -160,10 +160,10 @@ export const HistoryEntryDetail = React.memo(
       [entry.translation, entry.transcript],
     );
 
-    const sourceName = getLanguageName(entry.sourceLang);
-    const targetName = getLanguageName(entry.targetLang);
-    const sourceFlag = getLanguageFlag(entry.sourceLang);
-    const targetFlag = getLanguageFlag(entry.targetLang);
+    const sourceName = getLanguageName(entry.sourceLang || "en");
+    const targetName = getLanguageName(entry.targetLang || "en");
+    const sourceFlag = getLanguageFlag(entry.sourceLang || "en");
+    const targetFlag = getLanguageFlag(entry.targetLang || "en");
     const durationLabel = formatDuration(entry.duration);
 
     const handlePrimaryCopy = useCallback((): void => {

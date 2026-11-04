@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { Stack, useRouter } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import { View } from "react-native";
 import Animated from "react-native-reanimated";
 
@@ -62,13 +62,19 @@ export default function EditLanguagesScreen(): React.ReactElement {
     },
   }));
 
+  const [isSaving, setIsSaving] = useState(false);
+
   const handleSave = (): void => {
-    if (!isComplete) return;
+    if (!isComplete || isSaving) return;
+    setIsSaving(true);
 
-    settingsActions.setSelectedLanguages(selected);
-
-    triggerHaptic(Haptics.NotificationFeedbackType.Success);
-    router.back();
+    try {
+      settingsActions.setSelectedLanguages(selected);
+      triggerHaptic(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const countColor = remaining === 0 ? color.success : color.muted;
@@ -159,7 +165,8 @@ export default function EditLanguagesScreen(): React.ReactElement {
           variant="primary"
           size="large"
           label={isComplete ? "Save Changes" : `Select ${remaining} more`}
-          disabled={!isComplete}
+          disabled={!isComplete || isSaving}
+          loading={isSaving}
           onPress={handleSave}
         />
       </Box>

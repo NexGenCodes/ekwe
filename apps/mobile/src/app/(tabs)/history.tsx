@@ -1,24 +1,26 @@
 import { triggerHaptic } from "@/utils/haptics";
 import { pushOnce } from "@/utils/navigation";
-import { Image as ExpoImage } from "expo-image";
 import { useRouter } from "expo-router";
 import { useValue } from "@legendapp/state/react";
-import AudioLines from "lucide-react-native/icons/audio-lines";
 import Search from "lucide-react-native/icons/search";
 import X from "lucide-react-native/icons/x";
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { TextInput, StyleSheet } from "react-native";
+import Animated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+} from "react-native-reanimated";
+import { TextInput, StyleSheet, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeIn } from "react-native-reanimated";
 
 import { ORIGIN_META } from "@ekwe/shared";
 
 import { type FlashListRef } from "@shopify/flash-list";
 import { EkweLogo } from "@/components/EkweLogo";
-import { EmptyState, IconContainer } from "@/components";
+import { IconContainer } from "@/components";
 import { HistoryListSection } from "@/components/history/HistoryListSection";
-import { Box, Text, Pressable } from "@/components/ui";
-import { duration, shadows } from "@/constants";
+import { Box, Text, Pressable, Spinner } from "@/components/ui";
+import { shadows } from "@/constants";
 import { borderRadius, iconSize, touchTarget } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { typography } from "@/constants/typography";
@@ -33,7 +35,7 @@ import { HistoryFilterOption } from "@/hooks/useHistorySearch";
 import { SyncService } from "@/services/syncService";
 import { HistoryEntry, auth$ } from "@/store";
 import { withAlpha } from "@/utils/color";
-import { isIOS, logger } from "@/utils";
+import { logger } from "@/utils";
 
 const FILTER_OPTIONS: HistoryFilterOption[] = [
   "all",
@@ -100,7 +102,7 @@ export default function HistoryScreen(): React.JSX.Element {
     setIsRefreshing(false);
   }, [refetchHistory]);
 
-  const isGrouped = !isSearching && filter === "all" && query.length === 0;
+  const isGrouped = !isSearching && query.length === 0;
 
   /**
    * An empty filter should explain itself. "No matches" is only true when a
@@ -176,36 +178,42 @@ export default function HistoryScreen(): React.JSX.Element {
 
         {}
         {hasPullError ? (
-          <Box
-            style={[
-              styles.syncErrorBanner,
-              {
-                backgroundColor: withAlpha(color.error, 0.08),
-                borderColor: withAlpha(color.error, 0.25),
-              },
-            ]}
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            layout={LinearTransition.springify().damping(18).stiffness(200)}
           >
-            <Text
-              variant="caption"
-              numberOfLines={2}
-              style={[styles.syncErrorText, { color: color.error }]}
-            >
-              Couldn't sync with cloud. Your history is still saved on this
-              device.
-            </Text>
-            <Pressable
-              onPress={onRefresh}
-              hitSlop={spacing.sm}
-              style={({ pressed }) => pressed && { opacity: 0.6 }}
+            <Box
+              style={[
+                styles.syncErrorBanner,
+                {
+                  backgroundColor: withAlpha(color.error, 0.08),
+                  borderColor: withAlpha(color.error, 0.25),
+                },
+              ]}
             >
               <Text
                 variant="caption"
-                style={{ color: color.brand, fontWeight: "600" }}
+                numberOfLines={2}
+                style={[styles.syncErrorText, { color: color.error }]}
               >
-                Retry
+                Couldn't sync with cloud. Your history is still saved on this
+                device.
               </Text>
-            </Pressable>
-          </Box>
+              <Pressable
+                onPress={onRefresh}
+                hitSlop={spacing.sm}
+                style={({ pressed }) => pressed && { opacity: 0.6 }}
+              >
+                <Text
+                  variant="caption"
+                  style={{ color: color.brand, fontWeight: "600" }}
+                >
+                  Retry
+                </Text>
+              </Pressable>
+            </Box>
+          </Animated.View>
         ) : null}
 
         <Box style={styles.searchRow}>
@@ -218,7 +226,11 @@ export default function HistoryScreen(): React.JSX.Element {
               },
             ]}
           >
-            <Search size={iconSize.md} color={color.brand} />
+            {isSearchPending ? (
+              <Spinner size="sm" color={color.brand} />
+            ) : (
+              <Search size={iconSize.md} color={color.brand} />
+            )}
             <TextInput
               style={[
                 styles.searchInput,
@@ -253,7 +265,11 @@ export default function HistoryScreen(): React.JSX.Element {
 
         {}
         <Box style={styles.chipsContainer}>
-          <Box style={styles.chipsContent}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsContent}
+          >
             {FILTER_OPTIONS.map((option) => (
               <Pressable
                 key={option}
@@ -289,61 +305,31 @@ export default function HistoryScreen(): React.JSX.Element {
                 </Text>
               </Pressable>
             ))}
-          </Box>
+          </ScrollView>
         </Box>
       </Box>
 
-      {filteredEntries.length === 0 &&
-      listData.length === 0 &&
-      !isInitialLoading &&
-      !isSearchPending ? (
-        <Animated.View
-          entering={FadeIn.duration(duration.normal)}
-          style={styles.emptyStateContainer}
-        >
-          <Box
-            style={[
-              styles.emptyStateCard,
-              { backgroundColor: color.card, borderColor: color.border },
-            ]}
-          >
-            <EmptyState
-              icon={
-                <IconContainer
-                  size="lg"
-                  backgroundColor={withAlpha(color.foreground, 0.082)}
-                >
-                  {isIOS ? (
-                    <ExpoImage
-                      source="sf:clock.fill"
-                      style={{ width: iconSize.lg, height: iconSize.lg }}
-                      tintColor={color.foreground}
-                    />
-                  ) : (
-                    <AudioLines size={iconSize.lg} color={color.foreground} />
-                  )}
-                </IconContainer>
-              }
-              title={emptyTitle}
-              subtitle={emptySubtitle}
-            />
-          </Box>
-        </Animated.View>
-      ) : (
-        <HistoryListSection
-          listRef={listRef}
-          listData={listData}
-          isRefreshing={isRefreshing}
-          onRefresh={onRefresh}
-          isInitialLoading={isInitialLoading}
-          isSearching={isSearching}
-          hasMore={hasMore}
-          isFetchingNextPage={isFetchingNextPage}
-          onLoadMore={loadMore}
-          handleEntryPress={handleEntryPress}
-          onDeleteEntry={deleteEntry}
-        />
-      )}
+      <HistoryListSection
+        listRef={listRef}
+        listData={listData}
+        isRefreshing={isRefreshing}
+        onRefresh={onRefresh}
+        isInitialLoading={isInitialLoading}
+        isSearchPending={isSearchPending}
+        isSearching={isSearching}
+        emptyTitle={emptyTitle}
+        emptySubtitle={emptySubtitle}
+        hasMore={hasMore}
+        isFetchingNextPage={isFetchingNextPage}
+        onLoadMore={loadMore}
+        handleEntryPress={handleEntryPress}
+        onDeleteEntry={deleteEntry}
+        onEmptyAction={
+          filter === "all" && !isSearching && query.length === 0
+            ? () => router.navigate("/(tabs)/")
+            : undefined
+        }
+      />
     </Box>
   );
 }
@@ -405,9 +391,9 @@ const styles = StyleSheet.create({
   },
   chipsContent: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: spacing.sm,
     paddingVertical: spacing.xs,
+    paddingRight: spacing.md,
   },
   chip: {
     minHeight: touchTarget.minimum,
@@ -416,19 +402,5 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.full,
     borderWidth: 1,
-  },
-  emptyStateContainer: {
-    flex: 1,
-    paddingHorizontal: spacing.xl,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emptyStateCard: {
-    width: "100%",
-    padding: spacing["2xl"],
-    borderRadius: borderRadius["2xl"],
-    alignItems: "center",
-    borderWidth: 1,
-    borderStyle: "dashed",
   },
 });

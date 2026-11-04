@@ -45,10 +45,12 @@ export function trackBillableSuccess(
   charCount = 0,
   durationMs = 0,
 ): void {
-  if (!ctx) return;
-  ctx.waitUntil(
-    increment(env, userId, type, charCount, durationMs).catch(() => {}),
-  );
+  const p = increment(env, userId, type, charCount, durationMs).catch(() => {});
+  if (ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(p);
+  } else {
+    void p;
+  }
 }
 
 async function increment(

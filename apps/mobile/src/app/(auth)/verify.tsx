@@ -36,7 +36,15 @@ export default function VerifyScreen(): React.JSX.Element {
   const email = params.email || "";
 
   const { color } = useTheme();
-  const { isLoading, error, cooldown, verify, resend } = useOtpVerify();
+  const {
+    isVerifying,
+    isResending,
+    isLoading,
+    error,
+    cooldown,
+    verify,
+    resend,
+  } = useOtpVerify();
   const [shakeSignal, setShakeSignal] = useState(0);
   const [resent, setResent] = useState(false);
   const [clipboardCode, setClipboardCode] = useState("");
@@ -144,7 +152,8 @@ export default function VerifyScreen(): React.JSX.Element {
             label="Verify Code"
             size="large"
             onPress={handleSubmit(onSubmit)}
-            loading={isLoading}
+            loading={isVerifying}
+            disabled={isVerifying || isResending}
           />
 
           <Box style={{ alignItems: "center", marginTop: spacing.xs }}>
@@ -164,15 +173,20 @@ export default function VerifyScreen(): React.JSX.Element {
 
             <Pressable
               onPress={handleResend}
-              disabled={cooldown > 0 || isLoading}
+              disabled={cooldown > 0 || isVerifying || isResending}
               style={{ alignItems: "center" }}
               accessibilityRole="button"
               accessibilityLabel={
-                cooldown > 0
-                  ? `Resend code in ${formatCooldown(cooldown)}`
-                  : "Resend code"
+                isResending
+                  ? "Sending code"
+                  : cooldown > 0
+                    ? `Resend code in ${formatCooldown(cooldown)}`
+                    : "Resend code"
               }
-              accessibilityState={{ disabled: cooldown > 0 || isLoading }}
+              accessibilityState={{
+                disabled: cooldown > 0 || isVerifying || isResending,
+                busy: isResending,
+              }}
             >
               <Text
                 variant="bodySmall"
@@ -186,15 +200,18 @@ export default function VerifyScreen(): React.JSX.Element {
               <Text
                 variant="bodySmall"
                 style={{
-                  color: cooldown > 0 ? color.muted : color.brand,
+                  color:
+                    cooldown > 0 || isResending ? color.muted : color.brand,
                   fontWeight: "600",
                   marginTop: spacing.xs,
                   fontVariant: ["tabular-nums"],
                 }}
               >
-                {cooldown > 0
-                  ? `Resend code in ${formatCooldown(cooldown)}`
-                  : "Resend code"}
+                {isResending
+                  ? "Sending new code…"
+                  : cooldown > 0
+                    ? `Resend code in ${formatCooldown(cooldown)}`
+                    : "Resend code"}
               </Text>
             </Pressable>
 

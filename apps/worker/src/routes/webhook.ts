@@ -50,32 +50,6 @@ export async function verifyWebhook(
   const verifHash = request.headers.get("verif-hash");
   const flutterwaveSig = request.headers.get("flutterwave-signature");
 
-  if (verifHash) {
-    if (!env.FLUTTERWAVE_WEBHOOK_SECRET) {
-      logger.error("Missing FLUTTERWAVE_WEBHOOK_SECRET in environment");
-      return {
-        isValid: false,
-        provider: "flutterwave",
-        error: "Server misconfiguration",
-        code: WORKER_ERROR_CODES.SERVER_ERROR,
-      };
-    }
-    const isValid = await timingSafeEqual(
-      env.FLUTTERWAVE_WEBHOOK_SECRET,
-      verifHash,
-    );
-    if (!isValid) {
-      logger.warn("[webhook] Flutterwave verif-hash mismatch");
-      return {
-        isValid: false,
-        provider: "flutterwave",
-        error: "Signature mismatch",
-        code: WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
-      };
-    }
-    return { isValid: true, provider: "flutterwave" };
-  }
-
   if (flutterwaveSig) {
     if (!env.FLUTTERWAVE_WEBHOOK_SECRET) {
       logger.error("Missing FLUTTERWAVE_WEBHOOK_SECRET in environment");
@@ -97,6 +71,32 @@ export async function verifyWebhook(
 
     if (!isValid) {
       logger.warn("[webhook] Flutterwave HMAC signature mismatch");
+      return {
+        isValid: false,
+        provider: "flutterwave",
+        error: "Signature mismatch",
+        code: WORKER_ERROR_CODES.WEBHOOK_SIGNATURE_INVALID,
+      };
+    }
+    return { isValid: true, provider: "flutterwave" };
+  }
+
+  if (verifHash) {
+    if (!env.FLUTTERWAVE_WEBHOOK_SECRET) {
+      logger.error("Missing FLUTTERWAVE_WEBHOOK_SECRET in environment");
+      return {
+        isValid: false,
+        provider: "flutterwave",
+        error: "Server misconfiguration",
+        code: WORKER_ERROR_CODES.SERVER_ERROR,
+      };
+    }
+    const isValid = await timingSafeEqual(
+      env.FLUTTERWAVE_WEBHOOK_SECRET,
+      verifHash,
+    );
+    if (!isValid) {
+      logger.warn("[webhook] Flutterwave verif-hash mismatch");
       return {
         isValid: false,
         provider: "flutterwave",

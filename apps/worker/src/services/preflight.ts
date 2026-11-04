@@ -343,7 +343,7 @@ function unavailable(): Response {
  */
 export async function runPreflightGate(
   env: Env,
-  ctx: { waitUntil: (promise: Promise<unknown>) => void },
+  ctx: { waitUntil?: (promise: Promise<unknown>) => void } | undefined,
   userId: string,
   tier: Tier,
   usageType: UsageType,
@@ -351,6 +351,14 @@ export async function runPreflightGate(
   chargeChars = 0,
   durationMs = 0,
 ): Promise<PreflightGateResult> {
+  const defer = (promise: Promise<unknown>) => {
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(promise);
+    } else {
+      void promise;
+    }
+  };
+
   const cooldownSeconds = skipCooldown ? 0 : getLimits(tier).cooldownSeconds;
 
   if (cooldownSeconds > 0) {
@@ -366,7 +374,7 @@ export async function runPreflightGate(
     }
 
     if (!outcome.allowed) {
-      ctx.waitUntil(
+      defer(
         recordUserEvent(
           env,
           "preflight",
@@ -408,7 +416,7 @@ export async function runPreflightGate(
   if (
     dailyNeed > 0 ? dailyUsed + dailyNeed > dailyLimit : dailyUsed >= dailyLimit
   ) {
-    ctx.waitUntil(
+    defer(
       recordUserEvent(
         env,
         "preflight",
@@ -436,7 +444,7 @@ export async function runPreflightGate(
       ? monthlyUsed + monthlyNeed > monthlyLimit
       : monthlyUsed >= monthlyLimit
   ) {
-    ctx.waitUntil(
+    defer(
       recordUserEvent(
         env,
         "preflight",
@@ -463,7 +471,7 @@ export async function runPreflightGate(
       ? monthly.ai_credits + budgetNeed > budgetLimit
       : monthly.ai_credits >= budgetLimit
   ) {
-    ctx.waitUntil(
+    defer(
       recordUserEvent(
         env,
         "preflight",
@@ -485,7 +493,7 @@ export async function runPreflightGate(
     };
   }
 
-  ctx.waitUntil(
+  defer(
     recordUserEvent(env, "preflight", userId, "allow", usageType, "ok").catch(
       () => {},
     ),
@@ -501,7 +509,7 @@ export async function runPreflightGate(
  */
 export async function runPreflightGateWithUsage(
   env: Env,
-  ctx: { waitUntil: (promise: Promise<unknown>) => void },
+  ctx: { waitUntil?: (promise: Promise<unknown>) => void } | undefined,
   userId: string,
   tier: Tier,
   usageType: UsageType,
@@ -510,6 +518,14 @@ export async function runPreflightGateWithUsage(
   chargeChars = 0,
   durationMs = 0,
 ): Promise<PreflightGateResult> {
+  const defer = (promise: Promise<unknown>) => {
+    if (ctx && typeof ctx.waitUntil === "function") {
+      ctx.waitUntil(promise);
+    } else {
+      void promise;
+    }
+  };
+
   const cooldownSeconds = skipCooldown ? 0 : getLimits(tier).cooldownSeconds;
 
   if (cooldownSeconds > 0) {
@@ -524,7 +540,7 @@ export async function runPreflightGateWithUsage(
       return { ok: false, response: unavailable() };
     }
     if (!outcome.allowed) {
-      ctx.waitUntil(
+      defer(
         recordUserEvent(
           env,
           "preflight",
@@ -554,7 +570,7 @@ export async function runPreflightGateWithUsage(
   if (
     dailyNeed > 0 ? dailyUsed + dailyNeed > dailyLimit : dailyUsed >= dailyLimit
   ) {
-    ctx.waitUntil(
+    defer(
       recordUserEvent(
         env,
         "preflight",
@@ -582,7 +598,7 @@ export async function runPreflightGateWithUsage(
       ? monthlyUsed + monthlyNeed > monthlyLimit
       : monthlyUsed >= monthlyLimit
   ) {
-    ctx.waitUntil(
+    defer(
       recordUserEvent(
         env,
         "preflight",
@@ -609,7 +625,7 @@ export async function runPreflightGateWithUsage(
       ? monthly.ai_credits + budgetNeed > budgetLimit
       : monthly.ai_credits >= budgetLimit
   ) {
-    ctx.waitUntil(
+    defer(
       recordUserEvent(
         env,
         "preflight",
@@ -631,7 +647,7 @@ export async function runPreflightGateWithUsage(
     };
   }
 
-  ctx.waitUntil(
+  defer(
     recordUserEvent(env, "preflight", userId, "allow", usageType, "ok").catch(
       () => {},
     ),

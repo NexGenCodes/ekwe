@@ -46,8 +46,9 @@ export interface HistoryEntry {
 export const history$ = observable<Record<string, HistoryEntry>>({});
 
 export const sortedHistory$ = computed(() => {
-  const keys = Object.keys(history$.get());
-  return keys
-    .map((key) => history$[key].peek())
+  const all = history$.get();
+  if (!all) return [];
+  return Object.values(all)
+    .filter((entry): entry is HistoryEntry => Boolean(entry))
     .sort((a, b) => b.timestamp - a.timestamp);
 });

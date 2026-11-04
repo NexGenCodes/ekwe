@@ -83,6 +83,30 @@ export function setTimerInterval(id: NodeJS.Timeout): void {
 
 export const dictationActions = {
   reset(): void {
+    stopInFlight = false;
+    clearTimers();
+    if (streamUnsub) {
+      try {
+        streamUnsub();
+      } catch {
+        // best-effort
+      }
+      streamUnsub = null;
+    }
+    StreamTranscriber.disconnect();
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
+    }
+    const uri = dictation$.capturedUri.peek();
+    if (uri) {
+      try {
+        const f = new File(uri);
+        if (f.exists) f.delete();
+      } catch {
+        // best-effort cleanup
+      }
+    }
     dictation$.set({ ...INITIAL_STATE });
   },
 

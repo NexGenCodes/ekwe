@@ -5,6 +5,7 @@ import React from "react";
 import { triggerHaptic } from "@/utils/haptics";
 import { pushOnce } from "@/utils/navigation";
 import { Box, Text, Pressable } from "@/components/ui";
+import { SkeletonBox } from "@/components/SkeletonBox";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
@@ -13,7 +14,14 @@ import { auth$ } from "@/store";
 export function AccountStatusPill(): React.ReactElement {
   const { color } = useTheme();
   const router = useRouter();
+  const sessionLoaded = useValue(() => auth$.sessionLoaded.get());
   const isPro = useValue(() => auth$.isPro.get());
+
+  if (!sessionLoaded) {
+    return (
+      <SkeletonBox width={80} height={32} borderRadius={borderRadius.full} />
+    );
+  }
 
   if (isPro) {
     return (

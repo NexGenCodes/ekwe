@@ -52,7 +52,7 @@ export async function handleTranscribe(
   const gateDurationMs = Math.min(durationMs ?? 0, maxClipMs);
   const preciseGate = await runPreflightGate(
     env,
-    ctx ?? { waitUntil: () => {} },
+    ctx,
     userId,
     tier,
     "transcribe",

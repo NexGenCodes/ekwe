@@ -12,6 +12,7 @@ interface SocialAuthGroupProps {
   onGoogle: () => void;
   action?: "sign-in" | "sign-up";
   disabled?: boolean;
+  loadingProvider?: "apple" | "google" | "email" | null;
 }
 
 export const SocialAuthGroup = ({
@@ -19,6 +20,7 @@ export const SocialAuthGroup = ({
   onGoogle,
   action = "sign-in",
   disabled = false,
+  loadingProvider,
 }: SocialAuthGroupProps): React.ReactElement => {
   const { color } = useTheme();
 
@@ -30,12 +32,14 @@ export const SocialAuthGroup = ({
           action={action}
           onPress={onApple}
           disabled={disabled}
+          loading={loadingProvider === "apple"}
         />
         <SocialButton
           provider="google"
           action={action}
           onPress={onGoogle}
           disabled={disabled}
+          loading={loadingProvider === "google"}
         />
       </Box>
       {!isIOS ? (

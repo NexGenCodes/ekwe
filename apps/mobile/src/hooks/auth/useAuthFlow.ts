@@ -5,10 +5,14 @@ import { signInWithApple, signInWithGoogle, AuthResult } from "@/services/auth";
 
 interface UseAuthFlowReturn {
   isLoading: boolean;
+  loadingProvider: "apple" | "google" | "email" | null;
   error: string;
   setError: (msg: string) => void;
   clearError: () => void;
-  run: (fn: () => Promise<AuthResult>) => Promise<AuthResult>;
+  run: (
+    fn: () => Promise<AuthResult>,
+    provider?: "apple" | "google" | "email",
+  ) => Promise<AuthResult>;
   handleApple: () => Promise<AuthResult>;
   handleGoogle: () => Promise<AuthResult>;
   onSuccess: () => void;
@@ -17,6 +21,9 @@ interface UseAuthFlowReturn {
 export const useAuthFlow = (): UseAuthFlowReturn => {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingProvider, setLoadingProvider] = useState<
+    "apple" | "google" | "email" | null
+  >(null);
   const [error, setError] = useState("");
 
   const clearError = useCallback((): void => setError(""), []);
@@ -26,8 +33,12 @@ export const useAuthFlow = (): UseAuthFlowReturn => {
   }, [router]);
 
   const run = useCallback(
-    async (fn: () => Promise<AuthResult>): Promise<AuthResult> => {
+    async (
+      fn: () => Promise<AuthResult>,
+      provider?: "apple" | "google" | "email",
+    ): Promise<AuthResult> => {
       setIsLoading(true);
+      if (provider) setLoadingProvider(provider);
       setError("");
       try {
         const result = await fn();
@@ -41,23 +52,25 @@ export const useAuthFlow = (): UseAuthFlowReturn => {
         return result;
       } finally {
         setIsLoading(false);
+        setLoadingProvider(null);
       }
     },
     [onSuccess],
   );
 
   const handleApple = useCallback(
-    (): Promise<AuthResult> => run(signInWithApple),
+    (): Promise<AuthResult> => run(signInWithApple, "apple"),
     [run],
   );
 
   const handleGoogle = useCallback(
-    (): Promise<AuthResult> => run(signInWithGoogle),
+    (): Promise<AuthResult> => run(signInWithGoogle, "google"),
     [run],
   );
 
   return {
     isLoading,
+    loadingProvider,
     error,
     setError,
     clearError,

@@ -82,6 +82,13 @@ export const useResultPipeline = ({
     setTargetLang(foundEntry.targetLang || "es");
   }, [foundEntry, entryId]);
 
+  const sourceLangRef = useRef(sourceLang);
+  sourceLangRef.current = sourceLang;
+  const targetLangRef = useRef(targetLang);
+  targetLangRef.current = targetLang;
+  const transcriptRef = useRef(transcript);
+  transcriptRef.current = transcript;
+
   // Retained for the route's contract; no capture ever happens here now.
   const isProcessing = false;
   const hasPolished = false;
@@ -89,27 +96,33 @@ export const useResultPipeline = ({
 
   const { translate } = useTranslation();
 
-  const handleTranslate = useCallback(async (): Promise<void> => {
-    if (!transcript) return;
-    setIsTranslating(true);
-    try {
-      const result = await translate(transcript, sourceLang, targetLang);
-      if (!result.ok) {
-        throw new Error(result.error);
+  const handleTranslate = useCallback(
+    async (overrideSource?: string, overrideTarget?: string): Promise<void> => {
+      const text = transcriptRef.current;
+      if (!text) return;
+      const src = overrideSource || sourceLangRef.current;
+      const tgt = overrideTarget || targetLangRef.current;
+      setIsTranslating(true);
+      try {
+        const result = await translate(text, src, tgt);
+        if (!result.ok) {
+          throw new Error(result.error);
+        }
+        setTranslation(result.value.translation);
+      } catch (e) {
+        const code = e instanceof Error ? (e.message as EkweError) : undefined;
+        AppToast.error("Translation Failed", {
+          description:
+            code && ErrorMessages[code]
+              ? ErrorMessages[code]
+              : "Try again in a moment.",
+        });
+      } finally {
+        setIsTranslating(false);
       }
-      setTranslation(result.value.translation);
-    } catch (e) {
-      const code = e instanceof Error ? (e.message as EkweError) : undefined;
-      AppToast.error("Translation Failed", {
-        description:
-          code && ErrorMessages[code]
-            ? ErrorMessages[code]
-            : "Try again in a moment.",
-      });
-    } finally {
-      setIsTranslating(false);
-    }
-  }, [transcript, sourceLang, targetLang, translate]);
+    },
+    [translate],
+  );
 
   return {
     transcript,

@@ -23,7 +23,8 @@ import { sendOtp } from "@/services/auth";
 export default function WelcomeScreen(): React.JSX.Element {
   const router = useRouter();
 
-  const { isLoading, error, run, handleApple, handleGoogle } = useAuthFlow();
+  const { isLoading, loadingProvider, error, run, handleApple, handleGoogle } =
+    useAuthFlow();
   const { isOffline } = useNetwork();
 
   const { control, handleSubmit } = useForm<LoginForm>({
@@ -34,7 +35,7 @@ export default function WelcomeScreen(): React.JSX.Element {
   const disabled = isLoading || isOffline;
 
   const onSubmit = async (data: LoginForm): Promise<void> => {
-    const result = await run(() => sendOtp(data.email));
+    const result = await run(() => sendOtp(data.email), "email");
     if (result.ok && result.needsOtp) {
       pushOnce(router, {
         pathname: "/(auth)/verify",
@@ -86,7 +87,7 @@ export default function WelcomeScreen(): React.JSX.Element {
           label="Continue with Email"
           size="large"
           onPress={handleSubmit(onSubmit)}
-          loading={isLoading}
+          loading={isLoading && loadingProvider === "email"}
           disabled={disabled}
         />
 
@@ -96,6 +97,7 @@ export default function WelcomeScreen(): React.JSX.Element {
           onApple={handleApple}
           onGoogle={handleGoogle}
           disabled={disabled}
+          loadingProvider={loadingProvider}
         />
 
         <Disclaimer />

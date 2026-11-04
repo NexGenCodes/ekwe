@@ -155,6 +155,8 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
               triggerHaptic("selection");
               setStep("TranscribeResult");
             }}
+            accessibilityRole="button"
+            accessibilityLabel="Re-translate audio"
             style={{
               flex: 1,
               minHeight: 54,
@@ -175,9 +177,15 @@ export const EchoFinalResult: React.FC<EchoFinalResultProps> = React.memo(
 
           <Pressable
             feedback="opacity"
-            onPress={handleClose}
+            onPress={() => {
+              triggerHaptic("selection");
+              handleClose();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Done"
             style={{
               flex: 1,
+              minHeight: 54,
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "center",

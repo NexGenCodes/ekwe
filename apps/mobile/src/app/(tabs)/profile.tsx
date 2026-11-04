@@ -29,6 +29,7 @@ import {
   ProfileRow,
   ProfileSection,
   ProfileIdentity,
+  ProfileSkeleton,
   ThemePickerModal,
   VoicePickerSheet,
   CurrencyPickerModal,
@@ -100,6 +101,7 @@ export default function ProfileScreen(): React.JSX.Element {
   const [isCurrencyModalVisible, setIsCurrencyModalVisible] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
 
   const availableUpdate = useValue(() =>
@@ -170,18 +172,28 @@ export default function ProfileScreen(): React.JSX.Element {
   };
 
   const confirmDeleteAccount = useCallback(async (): Promise<void> => {
+    if (isDeletingAccount) return;
     await triggerHaptic();
-    setShowDeleteModal(false);
-    const result = await deleteAccount();
-    if (!result.ok) {
-      AppAlert.error(
-        "Action Required",
-        result.error || "Failed to delete account.",
-      );
-    } else {
-      router.replace("/(auth)/login");
+    setIsDeletingAccount(true);
+    try {
+      const result = await deleteAccount();
+      if (!result.ok) {
+        setShowDeleteModal(false);
+        AppAlert.error(
+          "Action Required",
+          result.error || "Failed to delete account.",
+        );
+      } else {
+        setShowDeleteModal(false);
+        router.replace("/(auth)/login");
+      }
+    } catch {
+      setShowDeleteModal(false);
+      AppAlert.error("Action Required", "Failed to delete account.");
+    } finally {
+      setIsDeletingAccount(false);
     }
-  }, [router]);
+  }, [router, isDeletingAccount]);
 
   const previewLang = selectedLanguages[0] ?? "en";
 
@@ -215,10 +227,9 @@ export default function ProfileScreen(): React.JSX.Element {
     [preview, setVoiceGender],
   );
 
-  if (!user)
-    return (
-      <Box style={[styles.flex1, { backgroundColor: color.background }]} />
-    );
+  if (!user) {
+    return <ProfileSkeleton />;
+  }
 
   return (
     <Box style={[styles.flex1, { backgroundColor: color.background }]}>
@@ -834,7 +845,8 @@ export default function ProfileScreen(): React.JSX.Element {
             />
             <Box style={{ flexDirection: "row", gap: spacing.md }}>
               <Pressable
-                onPress={() => setShowDeleteModal(false)}
+                onPress={() => !isDeletingAccount && setShowDeleteModal(false)}
+                disabled={isDeletingAccount}
                 style={{
                   flex: 1,
                   minHeight: 48,
@@ -844,6 +856,7 @@ export default function ProfileScreen(): React.JSX.Element {
                   justifyContent: "center",
                   borderWidth: 1,
                   borderColor: color.border,
+                  opacity: isDeletingAccount ? 0.5 : 1,
                 }}
                 feedback="none"
                 accessibilityRole="button"
@@ -858,7 +871,7 @@ export default function ProfileScreen(): React.JSX.Element {
               </Pressable>
               <Pressable
                 onPress={confirmDeleteAccount}
-                disabled={deleteConfirmText !== "DELETE"}
+                disabled={deleteConfirmText !== "DELETE" || isDeletingAccount}
                 style={{
                   flex: 1,
                   minHeight: 48,
@@ -867,13 +880,17 @@ export default function ProfileScreen(): React.JSX.Element {
                   alignItems: "center",
                   justifyContent: "center",
                   backgroundColor: color.error,
-                  opacity: deleteConfirmText === "DELETE" ? 1 : 0.4,
+                  opacity:
+                    deleteConfirmText === "DELETE" && !isDeletingAccount
+                      ? 1
+                      : 0.4,
                 }}
                 feedback="none"
                 accessibilityRole="button"
                 accessibilityLabel="Delete account permanently"
                 accessibilityState={{
-                  disabled: deleteConfirmText !== "DELETE",
+                  disabled: deleteConfirmText !== "DELETE" || isDeletingAccount,
+                  busy: isDeletingAccount,
                 }}
                 accessibilityHint={
                   deleteConfirmText === "DELETE"
@@ -881,16 +898,20 @@ export default function ProfileScreen(): React.JSX.Element {
                     : "Type DELETE above to enable this button"
                 }
               >
-                <Text
-                  variant="body"
-                  style={{
-                    color: color.onBrand,
-                    fontWeight: "600",
-                    textAlign: "center",
-                  }}
-                >
-                  Delete Permanently
-                </Text>
+                {isDeletingAccount ? (
+                  <Spinner size="sm" color={color.onBrand} />
+                ) : (
+                  <Text
+                    variant="body"
+                    style={{
+                      color: color.onBrand,
+                      fontWeight: "600",
+                      textAlign: "center",
+                    }}
+                  >
+                    Delete Permanently
+                  </Text>
+                )}
               </Pressable>
             </Box>
           </Box>

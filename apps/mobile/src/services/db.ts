@@ -30,6 +30,12 @@ function isAlreadyAppliedError(err: unknown): boolean {
   return /already exists/i.test(message);
 }
 
+let dbMigrationError: Error | null = null;
+
+export function getDbMigrationError(): Error | null {
+  return dbMigrationError;
+}
+
 function ensureTables(): void {
   try {
     expoDb.execSync(`
@@ -92,6 +98,7 @@ function ensureTables(): void {
 
     repairFtsTriggers();
   } catch (err) {
+    dbMigrationError = err instanceof Error ? err : new Error(String(err));
     logger.error("Error migrating local database", err);
   }
 }
