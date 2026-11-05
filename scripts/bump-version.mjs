@@ -63,6 +63,12 @@ const updateJson = (filePath, updater) => {
 };
 
 updateJson('./apps/mobile/package.json', k => { k.version = NEXT; });
+updateJson('./apps/mobile/app.json', a => {
+  if (a.expo) {
+    a.expo.version = NEXT;
+    if (a.expo.android) a.expo.android.versionCode = VC;
+  }
+});
 updateJson('./package.json', rk => { rk.version = NEXT; });
 updateJson('./apps/web/config.json', w => { if (w.app) w.app.version = NEXT; });
 updateJson('./apps/web/package.json', w => { w.version = NEXT; });

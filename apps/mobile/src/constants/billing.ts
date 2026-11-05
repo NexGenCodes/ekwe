@@ -31,47 +31,8 @@ export interface PlanFeature {
 
 const fmtInt = (n: number): string => n.toLocaleString("en-US");
 const fmtMinutes = (ms: number): string => `${Math.round(ms / 60_000)} min`;
-const fmtMB = (bytes: number): string => `${Math.round(bytes / 1_048_576)} MB`;
 const fmtHistory = (days: number): string =>
   days % 365 === 0 ? `${days / 365}-year` : `${days}-day`;
-
-const dailyCaps = (limits: PlanLimits): string =>
-  `${fmtInt(limits.dailyTranslateLimit)} translations/day · ${fmtInt(
-    limits.dailyTranscribeMinutesLimit,
-  )} transcription min/day`;
-
-const monthlyCaps = (limits: PlanLimits): string =>
-  `${fmtInt(limits.monthlyTranslateLimit)} translations/month · ${fmtInt(
-    limits.monthlyTranscribeMinutesLimit,
-  )} transcription min/month`;
-
-const sharedBudget = (limits: PlanLimits): string =>
-  `${fmtInt(limits.monthlyAiCreditsLimit)} shared AI credits/month`;
-
-const speechFeature = (limits: PlanLimits): string => {
-  const voices =
-    limits.speechQuality === "premium"
-      ? "Standard + Studio voices"
-      : "Standard voice";
-  return limits.dailySpeechCharsLimit > 0
-    ? `${voices} · ${fmtInt(limits.dailySpeechCharsLimit)} speech chars/day`
-    : `${voices} · No speech on this plan`;
-};
-
-const contentLimits = (limits: PlanLimits): string =>
-  `${fmtInt(limits.maxTextChars)}-char texts · voice notes up to ${fmtMinutes(
-    limits.dictationDurationMs,
-  )} · audio uploads up to ${fmtMB(limits.maxAudioBytes)}`;
-
-const liveDictation = (limits: PlanLimits): string => {
-  if (limits.maxStreamDurationMs <= 0) return "Live dictation";
-  const sessionCap = `${fmtInt(limits.dailyStreamLimit)} sessions/day`;
-  return `Live dictation · up to ${fmtMinutes(
-    limits.maxStreamDurationMs,
-  )}/session, ${sessionCap}, ${fmtInt(
-    limits.monthlyStreamMinutesLimit,
-  )} min/month, ${fmtInt(limits.maxConcurrentStreams)} at once`;
-};
 
 export const BILLING_PLANS = {
   free: {
@@ -81,23 +42,19 @@ export const BILLING_PLANS = {
     price: 0,
     features: [
       {
-        title: dailyCaps(PLAN_LIMITS.free),
+        title: `${fmtInt(PLAN_LIMITS.free.dailyTranslateLimit)} translations per day`,
         included: true,
       },
       {
-        title: monthlyCaps(PLAN_LIMITS.free),
+        title: `${fmtInt(PLAN_LIMITS.free.dailyTranscribeMinutesLimit)} minutes transcription per day`,
         included: true,
       },
       {
-        title: sharedBudget(PLAN_LIMITS.free),
+        title: "Standard voices (2,000 chars/day)",
         included: true,
       },
       {
-        title: contentLimits(PLAN_LIMITS.free),
-        included: true,
-      },
-      {
-        title: speechFeature(PLAN_LIMITS.free),
+        title: `Voice notes up to ${fmtMinutes(PLAN_LIMITS.free.dictationDurationMs)}`,
         included: true,
       },
       {
@@ -107,7 +64,6 @@ export const BILLING_PLANS = {
       { title: "Ad-supported", included: true },
       { title: "Automatic language detection", included: false },
       { title: "Live dictation", included: false },
-      { title: "Romanized readings for non-Latin scripts", included: false },
       { title: "Custom avatar icons", included: false },
       { title: "Auto-copy translations", included: false },
     ] as PlanFeature[],
@@ -115,26 +71,30 @@ export const BILLING_PLANS = {
   pro: {
     id: "pro" as const,
     name: "Paid",
-    tagline: "More translation, transcription, and no ads.",
+    tagline: "Unlimited translation, transcription & speech, with no ads.",
     features: [
       {
-        title: dailyCaps(PLAN_LIMITS.pro),
+        title: "Unlimited translations",
         included: true,
       },
       {
-        title: monthlyCaps(PLAN_LIMITS.pro),
+        title: "Unlimited audio transcription",
         included: true,
       },
       {
-        title: sharedBudget(PLAN_LIMITS.pro),
+        title: "Unlimited speech with Standard & Studio voices",
         included: true,
       },
       {
-        title: contentLimits(PLAN_LIMITS.pro),
+        title: "No daily usage caps",
         included: true,
       },
       {
-        title: speechFeature(PLAN_LIMITS.pro),
+        title: `Live dictation (${fmtMinutes(PLAN_LIMITS.pro.maxStreamDurationMs)}/session, ${fmtInt(PLAN_LIMITS.pro.monthlyStreamMinutesLimit)} min/month)`,
+        included: true,
+      },
+      {
+        title: `Voice notes up to ${fmtMinutes(PLAN_LIMITS.pro.dictationDurationMs)}`,
         included: true,
       },
       {
@@ -143,11 +103,6 @@ export const BILLING_PLANS = {
       },
       { title: "No ads", included: true },
       { title: "Automatic language detection", included: true },
-      {
-        title: liveDictation(PLAN_LIMITS.pro),
-        included: true,
-      },
-      { title: "Romanized readings for non-Latin scripts", included: true },
       { title: "Custom avatar icons", included: true },
       { title: "Auto-copy translations", included: true },
     ] as PlanFeature[],

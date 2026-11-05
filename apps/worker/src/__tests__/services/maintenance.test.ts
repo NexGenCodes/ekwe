@@ -184,21 +184,19 @@ describe("fetchUsageSnapshot", () => {
     seedUser(database);
   });
 
-  test("reports monthly numeric caps and remaining for FREE", async () => {
+  test("reports daily numeric caps and remaining for FREE", async () => {
     const snapshot = await fetchUsageSnapshot(env, USER_ID, "FREE");
     expect(snapshot).not.toBeNull();
     const translate = snapshot!.meters.find((m) => m.id === "translate");
     const transcribe = snapshot!.meters.find((m) => m.id === "transcribe");
     const stream = snapshot!.meters.find((m) => m.id === "stream");
-    const budget = snapshot!.meters.find((m) => m.id === "budget");
 
-    expect(translate).toMatchObject({ total: 600, remaining: 600, used: 0 });
-    expect(transcribe).toMatchObject({ total: 60, remaining: 60, used: 0 });
+    expect(translate).toMatchObject({ total: 20, remaining: 20, used: 0 });
+    expect(transcribe).toMatchObject({ total: 10, remaining: 10, used: 0 });
     expect(stream).toMatchObject({ total: 0, remaining: 0, used: 0 });
-    expect(budget).toMatchObject({ total: 1300, remaining: 1300, used: 0 });
   });
 
-  test("reports monthly PREMIUM usage and the shared budget", async () => {
+  test("reports monthly PREMIUM usage", async () => {
     database.sqlite
       .prepare(
         `INSERT INTO user_monthly_usage
@@ -214,16 +212,14 @@ describe("fetchUsageSnapshot", () => {
     const transcribe = snapshot!.meters.find((m) => m.id === "transcribe");
     const speech = snapshot!.meters.find((m) => m.id === "speech");
     const stream = snapshot!.meters.find((m) => m.id === "stream");
-    const budget = snapshot!.meters.find((m) => m.id === "budget");
 
     expect(translate).toMatchObject({
-      total: 15_000,
-      remaining: 14_900,
+      total: 600,
+      remaining: 500,
       used: 100,
     });
-    expect(transcribe).toMatchObject({ total: 600, remaining: 597, used: 3 });
-    expect(speech).toMatchObject({ total: 150_000, remaining: 149_100 });
+    expect(transcribe).toMatchObject({ total: 300, remaining: 297, used: 3 });
+    expect(speech).toMatchObject({ total: 50_000, remaining: 49_100 });
     expect(stream).toMatchObject({ total: 60, remaining: 56, used: 4 });
-    expect(budget).toMatchObject({ total: 27_000, remaining: 26_650 });
   });
 });

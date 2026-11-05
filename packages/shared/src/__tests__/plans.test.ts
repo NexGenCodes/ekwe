@@ -55,44 +55,44 @@ describe("Plan Limits (FREE vs PREMIUM)", () => {
   });
 
   it("the shared credit pool covers every monthly feature cap", () => {
-    for (const limits of [FREE_LIMITS, PREMIUM_LIMITS]) {
-      const maxCredits =
-        aiCreditsForUsage("translate", {
-          chars: limits.monthlyTranslateLimit * 1_000,
-        }) +
-        aiCreditsForUsage("transcribe", {
-          durationMs: limits.monthlyTranscribeMinutesLimit * 60_000,
-        }) +
-        aiCreditsForUsage("speech", {
-          chars: limits.monthlySpeechCharsLimit,
-        }) +
-        aiCreditsForUsage("stream", {
-          durationMs: limits.monthlyStreamMinutesLimit * 60_000,
-        });
+    // Only check PREMIUM — Free tier is daily-governed, so its monthly values
+    // are Infinity and the credit pool test is meaningless for it.
+    const limits = PREMIUM_LIMITS;
+    const maxCredits =
+      aiCreditsForUsage("translate", {
+        chars: limits.monthlyTranslateLimit * 1_000,
+      }) +
+      aiCreditsForUsage("transcribe", {
+        durationMs: limits.monthlyTranscribeMinutesLimit * 60_000,
+      }) +
+      aiCreditsForUsage("speech", {
+        chars: limits.monthlySpeechCharsLimit,
+      }) +
+      aiCreditsForUsage("stream", {
+        durationMs: limits.monthlyStreamMinutesLimit * 60_000,
+      });
 
-      expect(maxCredits).toBeLessThanOrEqual(limits.monthlyAiCreditsLimit);
-    }
+    expect(maxCredits).toBeLessThanOrEqual(limits.monthlyAiCreditsLimit);
   });
 
-  it("Premium has higher daily and monthly AI caps than FREE", () => {
-    expect(PREMIUM_LIMITS.dailyTranslateLimit).toBeGreaterThan(
-      FREE_LIMITS.dailyTranslateLimit,
+  it("Free is daily-governed and Paid is monthly-governed", () => {
+    // Free tier: finite daily caps, no monthly caps (Infinity)
+    expect(Number.isFinite(FREE_LIMITS.dailyTranslateLimit)).toBe(true);
+    expect(Number.isFinite(FREE_LIMITS.dailyTranscribeMinutesLimit)).toBe(true);
+    expect(Number.isFinite(FREE_LIMITS.dailySpeechCharsLimit)).toBe(true);
+    expect(FREE_LIMITS.monthlyTranslateLimit).toBe(Infinity);
+    expect(FREE_LIMITS.monthlyTranscribeMinutesLimit).toBe(Infinity);
+    expect(FREE_LIMITS.monthlySpeechCharsLimit).toBe(Infinity);
+
+    // Paid tier: no daily caps (Infinity), finite monthly soft-caps
+    expect(PREMIUM_LIMITS.dailyTranslateLimit).toBe(Infinity);
+    expect(PREMIUM_LIMITS.dailyTranscribeMinutesLimit).toBe(Infinity);
+    expect(PREMIUM_LIMITS.dailySpeechCharsLimit).toBe(Infinity);
+    expect(Number.isFinite(PREMIUM_LIMITS.monthlyTranslateLimit)).toBe(true);
+    expect(Number.isFinite(PREMIUM_LIMITS.monthlyTranscribeMinutesLimit)).toBe(
+      true,
     );
-    expect(PREMIUM_LIMITS.dailyTranscribeMinutesLimit).toBeGreaterThan(
-      FREE_LIMITS.dailyTranscribeMinutesLimit,
-    );
-    expect(PREMIUM_LIMITS.monthlyTranslateLimit).toBeGreaterThan(
-      FREE_LIMITS.monthlyTranslateLimit,
-    );
-    expect(PREMIUM_LIMITS.monthlyTranscribeMinutesLimit).toBeGreaterThan(
-      FREE_LIMITS.monthlyTranscribeMinutesLimit,
-    );
-    expect(PREMIUM_LIMITS.monthlySpeechCharsLimit).toBeGreaterThan(
-      FREE_LIMITS.monthlySpeechCharsLimit,
-    );
-    expect(PREMIUM_LIMITS.monthlyAiCreditsLimit).toBeGreaterThan(
-      FREE_LIMITS.monthlyAiCreditsLimit,
-    );
+    expect(Number.isFinite(PREMIUM_LIMITS.monthlySpeechCharsLimit)).toBe(true);
   });
 });
 

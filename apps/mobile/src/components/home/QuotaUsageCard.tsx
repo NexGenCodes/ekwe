@@ -110,7 +110,9 @@ function PoolRow({
 
 function resetsLabel(resetsAt: number): string {
   const diff = resetsAt - Date.now();
-  if (diff <= 0) return "Resets next month";
+  if (diff <= 0) return "Resets at midnight";
+  // If resets within 24h, show "Resets at midnight"
+  if (diff < 86_400_000) return "Resets at midnight";
   return `Resets ${new Date(resetsAt).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -140,12 +142,12 @@ export function QuotaUsageCard(): React.ReactElement {
 
     if (anyExhausted)
       return {
-        headline: { text: "Monthly limit reached", tone: "error" as const },
+        headline: { text: "Daily limit reached", tone: "error" as const },
         showUpgrade: true,
       };
     if (anyNear)
       return {
-        headline: { text: "Almost out this month", tone: "warning" as const },
+        headline: { text: "Almost out for today", tone: "warning" as const },
         showUpgrade: true,
       };
     return { headline: null, showUpgrade: false };
@@ -166,7 +168,7 @@ export function QuotaUsageCard(): React.ReactElement {
             variant="body"
             style={{ color: color.foreground, fontWeight: "600" }}
           >
-            This month's usage
+            Today's usage
           </Text>
         </Box>
 
@@ -282,7 +284,7 @@ export function QuotaUsageCard(): React.ReactElement {
             variant="bodySmall"
             style={{ color: color.brand, fontWeight: "600" }}
           >
-            Need more this month?
+            Need more today?
           </Text>
           <Box style={[styles.upgradePill, { backgroundColor: color.brand }]}>
             <Text

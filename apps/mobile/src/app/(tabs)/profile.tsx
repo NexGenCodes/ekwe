@@ -20,12 +20,17 @@ import AudioLines from "lucide-react-native/icons/audio-lines";
 import Banknote from "lucide-react-native/icons/banknote";
 import RefreshCw from "lucide-react-native/icons/refresh-cw";
 import React, { useState, useCallback } from "react";
-import { Linking, Modal, Switch, TextInput } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
+  Switch,
+  TextInput,
+} from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import {
   AvatarPickerModal,
-  AVATAR_ICONS,
   ProfileRow,
   ProfileSection,
   ProfileIdentity,
@@ -147,10 +152,6 @@ export default function ProfileScreen(): React.JSX.Element {
 
   const [isIconModalVisible, setIsIconModalVisible] = useState(false);
 
-  const currentIconData = user?.avatarIcon
-    ? (AVATAR_ICONS.find((i) => i.name === user.avatarIcon) ?? null)
-    : null;
-
   const handleUpdateIcon = useCallback(
     async (iconName: string): Promise<void> => {
       setIsIconModalVisible(false);
@@ -246,11 +247,10 @@ export default function ProfileScreen(): React.JSX.Element {
           <ProfileIdentity
             user={user}
             isPro={isPro}
-            currentIconData={currentIconData}
             userName={userName}
             userEmail={userEmail}
             rawName={rawName}
-            avatarLocked={isPro ? false : true}
+            canEditAvatar={isPro}
             onEditAvatar={async () => {
               await triggerHaptic();
               setIsIconModalVisible(true);
@@ -259,10 +259,7 @@ export default function ProfileScreen(): React.JSX.Element {
         </Animated.View>
 
         <Animated.View entering={sectionEnter(80)}>
-          <ProfileSection
-            title="Account & Subscription"
-            tierBar={isPro ? "pro" : "free"}
-          >
+          <ProfileSection title="Subscription" tierBar={isPro ? "pro" : "free"}>
             <ProfileRow
               icon={CreditCard}
               sfIcon="creditcard.fill"
@@ -270,9 +267,7 @@ export default function ProfileScreen(): React.JSX.Element {
               title={isPro ? "Ekwe Paid" : "Plan & Billing"}
               subtitle={
                 isPro
-                  ? `${PLAN_LIMITS.pro.monthlyTranslateLimit.toLocaleString(
-                      "en-US",
-                    )} translations/month · ${PLAN_LIMITS.pro.monthlyTranscribeMinutesLimit} transcription min/month · No ads`
+                  ? "Unlimited translations · Unlimited transcription & speech · No ads"
                   : `Free Tier · ${PLAN_LIMITS.free.dailyTranslateLimit} translations/day · Ads supported`
               }
               onPress={async () => {
@@ -321,8 +316,8 @@ export default function ProfileScreen(): React.JSX.Element {
           </Animated.View>
         )}
 
-        <Animated.View entering={sectionEnter(120)}>
-          <ProfileSection title="App Preferences">
+        <Animated.View entering={sectionEnter(140)}>
+          <ProfileSection title="Preferences">
             <ProfileRow
               icon={Globe}
               sfIcon="globe"
@@ -336,11 +331,43 @@ export default function ProfileScreen(): React.JSX.Element {
               }}
             />
             <ProfileRow
+              icon={Palette}
+              sfIcon="paintpalette.fill"
+              iconColor={color.foreground}
+              title="Appearance"
+              subtitle="Light, Dark, or System"
+              hasDivider
+              onPress={async () => {
+                await triggerHaptic();
+                setIsThemeModalVisible(true);
+              }}
+              trailing={
+                <Box style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text
+                    variant="body"
+                    numberOfLines={1}
+                    style={{
+                      color: color.muted,
+                      marginRight: spacing.sm,
+                      flexShrink: 1,
+                    }}
+                  >
+                    {colorScheme === "light"
+                      ? "Light"
+                      : colorScheme === "dark"
+                        ? "Dark"
+                        : "System"}
+                  </Text>
+                  <ChevronRight size={16} color={color.muted} />
+                </Box>
+              }
+            />
+            <ProfileRow
               icon={Banknote}
               sfIcon="dollarsign.circle.fill"
               iconColor={color.foreground}
               title="Currency"
-              subtitle="Currency used for subscription prices and checkout"
+              subtitle="Subscription currency and pricing"
               hasDivider
               onPress={async () => {
                 await triggerHaptic();
@@ -370,95 +397,33 @@ export default function ProfileScreen(): React.JSX.Element {
               title="Haptic Feedback"
               subtitle="Vibrate on user actions"
               checked={hapticsEnabled}
-              hasDivider
               onPress={async () => {
-                await triggerHaptic();
+                if (!hapticsEnabled) {
+                  await triggerHaptic();
+                }
                 setHapticsEnabled(!hapticsEnabled);
               }}
               trailing={
-                <Switch
-                  value={hapticsEnabled}
-                  onValueChange={(val) => {
-                    setHapticsEnabled(val);
-                  }}
-                  trackColor={{
-                    true: color.brand,
-                    false: color.border,
-                  }}
-                  thumbColor={color.card}
-                />
-              }
-            />
-            <ProfileRow
-              icon={Palette}
-              sfIcon="paintpalette.fill"
-              iconColor={color.foreground}
-              title="Appearance"
-              subtitle="Light, Dark, or System"
-              onPress={async () => {
-                await triggerHaptic();
-                setIsThemeModalVisible(true);
-              }}
-              trailing={
-                <Box style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Text
-                    variant="body"
-                    numberOfLines={1}
-                    style={{
-                      color: color.muted,
-                      marginRight: spacing.sm,
-                      flexShrink: 1,
-                    }}
-                  >
-                    {colorScheme === "light"
-                      ? "Light"
-                      : colorScheme === "dark"
-                        ? "Dark"
-                        : "System"}
-                  </Text>
-                  <ChevronRight size={16} color={color.muted} />
-                </Box>
-              }
-            />
-          </ProfileSection>
-        </Animated.View>
-
-        <Animated.View entering={sectionEnter(160)}>
-          <ProfileSection
-            title="Smart Features"
-            tierBar={isPro ? "pro" : "free"}
-          >
-            <ProfileRow
-              icon={CircleDot}
-              sfIcon="circle.dotted"
-              iconColor={color.foreground}
-              title="Orb"
-              subtitle="Transcribe while playing in another app"
-              checked={isPro ? orbEnabled : undefined}
-              locked={!isPro}
-              navigateToBilling
-              onPress={async () => {
-                if (isPro) {
-                  await triggerHaptic();
-                  setOrbEnabled(!orbEnabled);
-                }
-              }}
-              trailing={
-                isPro ? (
+                <Box pointerEvents="none">
                   <Switch
-                    value={orbEnabled}
-                    onValueChange={(val) => {
-                      setOrbEnabled(val);
-                    }}
+                    value={hapticsEnabled}
                     trackColor={{
                       true: color.brand,
                       false: color.border,
                     }}
                     thumbColor={color.card}
                   />
-                ) : undefined
+                </Box>
               }
             />
+          </ProfileSection>
+        </Animated.View>
+
+        <Animated.View entering={sectionEnter(180)}>
+          <ProfileSection
+            title="Smart Features"
+            tierBar={isPro ? "pro" : "free"}
+          >
             <ProfileRow
               icon={AudioLines}
               sfIcon="speaker.wave.2.fill"
@@ -496,6 +461,7 @@ export default function ProfileScreen(): React.JSX.Element {
               checked={isPro ? autoCopy : undefined}
               locked={!isPro}
               navigateToBilling
+              hasDivider
               onPress={async () => {
                 if (!isPro) return;
                 await triggerHaptic();
@@ -503,8 +469,6 @@ export default function ProfileScreen(): React.JSX.Element {
               }}
               trailing={
                 isPro ? (
-                  // Indicator only — the row above is the toggle. A live Switch
-                  // here also fired the row press, toggling twice.
                   <Box pointerEvents="none">
                     <Switch
                       value={autoCopy}
@@ -518,11 +482,41 @@ export default function ProfileScreen(): React.JSX.Element {
                 ) : undefined
               }
             />
+            <ProfileRow
+              icon={CircleDot}
+              sfIcon="circle.dotted"
+              iconColor={color.foreground}
+              title="Orb"
+              subtitle="Transcribe while playing in another app"
+              checked={isPro ? orbEnabled : undefined}
+              locked={!isPro}
+              navigateToBilling
+              onPress={async () => {
+                if (isPro) {
+                  await triggerHaptic();
+                  setOrbEnabled(!orbEnabled);
+                }
+              }}
+              trailing={
+                isPro ? (
+                  <Box pointerEvents="none">
+                    <Switch
+                      value={orbEnabled}
+                      trackColor={{
+                        true: color.brand,
+                        false: color.border,
+                      }}
+                      thumbColor={color.card}
+                    />
+                  </Box>
+                ) : undefined
+              }
+            />
           </ProfileSection>
         </Animated.View>
 
-        <Animated.View entering={sectionEnter(200)}>
-          <ProfileSection title="Help & Legal">
+        <Animated.View entering={sectionEnter(220)}>
+          <ProfileSection title="Support & Legal">
             <ProfileRow
               icon={Mail}
               sfIcon="envelope.fill"
@@ -531,46 +525,8 @@ export default function ProfileScreen(): React.JSX.Element {
               hasDivider
               onPress={async () => {
                 await triggerHaptic();
-                Linking.openURL("mailto:emmanuelztrd@gmail.com");
+                Linking.openURL("mailto:support@ekwe.app");
               }}
-            />
-            <ProfileRow
-              icon={RefreshCw}
-              sfIcon="arrow.triangle.2.circlepath"
-              iconColor={color.foreground}
-              title="Check for Updates"
-              subtitle={
-                availableUpdate
-                  ? `Current version ${currentVersion} · ${availableUpdate.latest_version} available`
-                  : `Current version ${currentVersion}`
-              }
-              hasDivider
-              onPress={handleCheckForUpdate}
-              trailing={
-                isCheckingUpdate ? (
-                  <Spinner size="sm" color={color.muted} />
-                ) : availableUpdate ? (
-                  <Box
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: spacing.sm,
-                    }}
-                  >
-                    <Box
-                      style={[
-                        styles.updateBadge,
-                        { backgroundColor: color.brand },
-                      ]}
-                    >
-                      <Text variant="caption" style={{ color: color.onBrand }}>
-                        New
-                      </Text>
-                    </Box>
-                    <ChevronRight size={20} color={color.muted} />
-                  </Box>
-                ) : undefined
-              }
             />
             <ProfileRow
               icon={Star}
@@ -615,11 +571,8 @@ export default function ProfileScreen(): React.JSX.Element {
                   Constants.expoConfig?.android?.package ??
                   "com.anonymous.ekwe";
 
-                if (!ITUNES_ITEM_ID) {
-                  AppAlert.error(
-                    "Error",
-                    "iOS App Store ID not configured. Set EXPO_PUBLIC_ITUNES_ITEM_ID in .env",
-                  );
+                if (isIOS && !ITUNES_ITEM_ID) {
+                  AppToast.info("Thank you for using Ekwe!");
                   return;
                 }
 
@@ -653,47 +606,63 @@ export default function ProfileScreen(): React.JSX.Element {
               sfIcon="doc.text.fill"
               iconColor={color.foreground}
               title="Terms of Service"
+              hasDivider={!isIOS}
               onPress={async () => {
                 await triggerHaptic();
                 pushOnce(router, "/legal/terms");
               }}
             />
+            {!isIOS && (
+              <ProfileRow
+                icon={RefreshCw}
+                sfIcon="arrow.triangle.2.circlepath"
+                iconColor={color.foreground}
+                title="Check for Updates"
+                subtitle={
+                  availableUpdate
+                    ? `Current version ${currentVersion} · ${availableUpdate.latest_version} available`
+                    : `Current version ${currentVersion}`
+                }
+                onPress={handleCheckForUpdate}
+                trailing={
+                  isCheckingUpdate ? (
+                    <Spinner size="sm" color={color.muted} />
+                  ) : availableUpdate ? (
+                    <Box
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: spacing.sm,
+                      }}
+                    >
+                      <Box
+                        style={[
+                          styles.updateBadge,
+                          { backgroundColor: color.brand },
+                        ]}
+                      >
+                        <Text
+                          variant="caption"
+                          style={{ color: color.onBrand }}
+                        >
+                          New
+                        </Text>
+                      </Box>
+                      <ChevronRight size={20} color={color.muted} />
+                    </Box>
+                  ) : undefined
+                }
+              />
+            )}
           </ProfileSection>
         </Animated.View>
 
-        <Animated.View entering={sectionEnter(240)}>
-          <ProfileSection title="Account" titleColor={color.error}>
-            <ProfileRow
-              icon={LogOut}
-              sfIcon="rectangle.portrait.and.arrow.right"
-              iconColor={color.error}
-              title="Log Out"
-              subtitle="Sign out of your session"
-              hasDivider
-              onPress={async () => {
-                await triggerHaptic();
-                confirmLogout();
-              }}
-              trailing={null}
-            />
+        <Animated.View entering={sectionEnter(260)}>
+          <ProfileSection title="Account & Data" titleColor={color.error}>
             <ProfileRow
               icon={Trash2}
               sfIcon="trash.fill"
-              iconColor={color.error}
-              title="Delete Account"
-              subtitle="Permanently delete your data"
-              onPress={handleDeleteAccount}
-              trailing={null}
-            />
-          </ProfileSection>
-        </Animated.View>
-
-        <Animated.View entering={sectionEnter(280)}>
-          <ProfileSection title="Data">
-            <ProfileRow
-              icon={Trash2}
-              sfIcon="trash.fill"
-              iconColor={color.error}
+              iconColor={color.foreground}
               title="Clear History"
               subtitle="Delete all transcripts and translations"
               hasDivider
@@ -718,24 +687,48 @@ export default function ProfileScreen(): React.JSX.Element {
               }}
               trailing={null}
             />
+            <ProfileRow
+              icon={LogOut}
+              sfIcon="rectangle.portrait.and.arrow.right"
+              iconColor={color.error}
+              title="Log Out"
+              subtitle="Sign out of your session"
+              hasDivider
+              onPress={async () => {
+                await triggerHaptic();
+                confirmLogout();
+              }}
+              trailing={null}
+            />
+            <ProfileRow
+              icon={Trash2}
+              sfIcon="trash.fill"
+              iconColor={color.error}
+              title="Delete Account"
+              subtitle="Permanently delete your account and data"
+              onPress={handleDeleteAccount}
+              trailing={null}
+            />
           </ProfileSection>
         </Animated.View>
 
-        <Animated.View entering={sectionEnter(320)}>
+        <Animated.View entering={sectionEnter(300)}>
           <Box style={styles.footer}>
             <Text variant="caption" style={{ color: color.muted }}>
-              Made by the Ekwe team
+              Ekwe v{currentVersion} · Made with precision
             </Text>
           </Box>
         </Animated.View>
       </ScrollArea>
 
-      <AvatarPickerModal
-        visible={isIconModalVisible}
-        onClose={() => setIsIconModalVisible(false)}
-        onSelect={handleUpdateIcon}
-        currentIcon={user?.avatarIcon ?? undefined}
-      />
+      {isPro && (
+        <AvatarPickerModal
+          visible={isIconModalVisible}
+          onClose={() => setIsIconModalVisible(false)}
+          onSelect={handleUpdateIcon}
+          currentIcon={user?.avatarIcon ?? undefined}
+        />
+      )}
 
       <ThemePickerModal
         visible={isThemeModalVisible}
@@ -788,134 +781,142 @@ export default function ProfileScreen(): React.JSX.Element {
         statusBarTranslucent
         onRequestClose={() => setShowDeleteModal(false)}
       >
-        <Box
-          style={{
-            flex: 1,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: color.overlay,
-            paddingHorizontal: spacing.xl,
-          }}
+        <KeyboardAvoidingView
+          behavior={isIOS ? "padding" : "height"}
+          style={{ flex: 1 }}
         >
           <Box
             style={{
-              backgroundColor: color.surface,
-              borderRadius: borderRadius["2xl"],
-              padding: spacing.lg,
-              borderWidth: 1,
-              borderColor: color.border,
-              width: "100%",
-              maxWidth: 400,
-              gap: spacing.md,
+              flex: 1,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: color.overlay,
+              paddingHorizontal: spacing.xl,
             }}
           >
-            <Text variant="heading3" style={{ textAlign: "center" }}>
-              Delete Account
-            </Text>
-            <Text
-              variant="body"
-              style={{ textAlign: "center", color: color.muted }}
-            >
-              This will permanently delete your account and all associated data.
-              This action cannot be undone.
-            </Text>
-            <Text
-              variant="bodySmall"
-              style={{ textAlign: "center", color: color.error }}
-            >
-              Type DELETE below to confirm.
-            </Text>
-            <TextInput
-              value={deleteConfirmText}
-              onChangeText={setDeleteConfirmText}
-              placeholder='Type "DELETE"'
-              placeholderTextColor={color.muted}
-              autoCapitalize="characters"
+            <Box
               style={{
+                backgroundColor: color.surface,
+                borderRadius: borderRadius["2xl"],
+                padding: spacing.lg,
                 borderWidth: 1,
-                borderColor:
-                  deleteConfirmText === "DELETE" ? color.error : color.border,
-                borderRadius: borderRadius.xl,
-                padding: spacing.md,
-                color: color.foreground,
-                fontSize: 16,
-                textAlign: "center",
-                fontWeight: "600",
+                borderColor: color.border,
+                width: "100%",
+                maxWidth: 400,
+                gap: spacing.md,
               }}
-            />
-            <Box style={{ flexDirection: "row", gap: spacing.md }}>
-              <Pressable
-                onPress={() => !isDeletingAccount && setShowDeleteModal(false)}
-                disabled={isDeletingAccount}
+            >
+              <Text variant="heading3" style={{ textAlign: "center" }}>
+                Delete Account
+              </Text>
+              <Text
+                variant="body"
+                style={{ textAlign: "center", color: color.muted }}
+              >
+                This will permanently delete your account and all associated
+                data. This action cannot be undone.
+              </Text>
+              <Text
+                variant="bodySmall"
+                style={{ textAlign: "center", color: color.error }}
+              >
+                Type DELETE below to confirm.
+              </Text>
+              <TextInput
+                value={deleteConfirmText}
+                onChangeText={setDeleteConfirmText}
+                placeholder='Type "DELETE"'
+                placeholderTextColor={color.muted}
+                autoCapitalize="characters"
                 style={{
-                  flex: 1,
-                  minHeight: 48,
-                  paddingVertical: spacing.xs,
-                  borderRadius: borderRadius.xl,
-                  alignItems: "center",
-                  justifyContent: "center",
                   borderWidth: 1,
-                  borderColor: color.border,
-                  opacity: isDeletingAccount ? 0.5 : 1,
-                }}
-                feedback="none"
-                accessibilityRole="button"
-                accessibilityLabel="Cancel account deletion"
-              >
-                <Text
-                  variant="body"
-                  style={{ color: color.foreground, textAlign: "center" }}
-                >
-                  Cancel
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={confirmDeleteAccount}
-                disabled={deleteConfirmText !== "DELETE" || isDeletingAccount}
-                style={{
-                  flex: 1,
-                  minHeight: 48,
-                  paddingVertical: spacing.xs,
+                  borderColor:
+                    deleteConfirmText === "DELETE" ? color.error : color.border,
                   borderRadius: borderRadius.xl,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: color.error,
-                  opacity:
-                    deleteConfirmText === "DELETE" && !isDeletingAccount
-                      ? 1
-                      : 0.4,
+                  padding: spacing.md,
+                  color: color.foreground,
+                  fontSize: 16,
+                  textAlign: "center",
+                  fontWeight: "600",
                 }}
-                feedback="none"
-                accessibilityRole="button"
-                accessibilityLabel="Delete account permanently"
-                accessibilityState={{
-                  disabled: deleteConfirmText !== "DELETE" || isDeletingAccount,
-                  busy: isDeletingAccount,
-                }}
-                accessibilityHint={
-                  deleteConfirmText === "DELETE"
-                    ? "Permanently deletes your account"
-                    : "Type DELETE above to enable this button"
-                }
-              >
-                {isDeletingAccount ? (
-                  <Spinner size="sm" color={color.onBrand} />
-                ) : (
+              />
+              <Box style={{ flexDirection: "row", gap: spacing.md }}>
+                <Pressable
+                  onPress={() =>
+                    !isDeletingAccount && setShowDeleteModal(false)
+                  }
+                  disabled={isDeletingAccount}
+                  style={{
+                    flex: 1,
+                    minHeight: 48,
+                    paddingVertical: spacing.xs,
+                    borderRadius: borderRadius.xl,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderWidth: 1,
+                    borderColor: color.border,
+                    opacity: isDeletingAccount ? 0.5 : 1,
+                  }}
+                  feedback="none"
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel account deletion"
+                >
                   <Text
                     variant="body"
-                    style={{
-                      color: color.onBrand,
-                      fontWeight: "600",
-                      textAlign: "center",
-                    }}
+                    style={{ color: color.foreground, textAlign: "center" }}
                   >
-                    Delete Permanently
+                    Cancel
                   </Text>
-                )}
-              </Pressable>
+                </Pressable>
+                <Pressable
+                  onPress={confirmDeleteAccount}
+                  disabled={deleteConfirmText !== "DELETE" || isDeletingAccount}
+                  style={{
+                    flex: 1,
+                    minHeight: 48,
+                    paddingVertical: spacing.xs,
+                    borderRadius: borderRadius.xl,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: color.error,
+                    opacity:
+                      deleteConfirmText === "DELETE" && !isDeletingAccount
+                        ? 1
+                        : 0.4,
+                  }}
+                  feedback="none"
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete account permanently"
+                  accessibilityState={{
+                    disabled:
+                      deleteConfirmText !== "DELETE" || isDeletingAccount,
+                    busy: isDeletingAccount,
+                  }}
+                  accessibilityHint={
+                    deleteConfirmText === "DELETE"
+                      ? "Permanently deletes your account"
+                      : "Type DELETE above to enable this button"
+                  }
+                >
+                  {isDeletingAccount ? (
+                    <Spinner size="sm" color={color.onBrand} />
+                  ) : (
+                    <Text
+                      variant="body"
+                      style={{
+                        color: color.onBrand,
+                        fontWeight: "600",
+                        textAlign: "center",
+                      }}
+                    >
+                      Delete Permanently
+                    </Text>
+                  )}
+                </Pressable>
+              </Box>
             </Box>
           </Box>
-        </Box>
+        </KeyboardAvoidingView>
       </Modal>
     </Box>
   );

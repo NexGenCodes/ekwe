@@ -149,11 +149,11 @@ export const FREE_LIMITS: PlanLimits = {
   dailyTranscribeMinutesLimit: 10,
   dailySpeechCharsLimit: 2000,
   dailyStreamLimit: 0,
-  monthlyTranslateLimit: 600,
-  monthlyTranscribeMinutesLimit: 60,
-  monthlySpeechCharsLimit: 60_000,
+  monthlyTranslateLimit: Infinity,
+  monthlyTranscribeMinutesLimit: Infinity,
+  monthlySpeechCharsLimit: Infinity,
   monthlyStreamMinutesLimit: 0,
-  monthlyAiCreditsLimit: 1300,
+  monthlyAiCreditsLimit: Infinity,
 };
 
 export const PREMIUM_LIMITS: PlanLimits = {
@@ -171,15 +171,15 @@ export const PREMIUM_LIMITS: PlanLimits = {
   maxLanguages: 5,
   speechQuality: "premium",
   cooldownSeconds: 1,
-  dailyTranslateLimit: 500,
-  dailyTranscribeMinutesLimit: 30,
-  dailySpeechCharsLimit: 5000,
-  dailyStreamLimit: 120,
-  monthlyTranslateLimit: 15_000,
-  monthlyTranscribeMinutesLimit: 600,
-  monthlySpeechCharsLimit: 150_000,
+  dailyTranslateLimit: Infinity,
+  dailyTranscribeMinutesLimit: Infinity,
+  dailySpeechCharsLimit: Infinity,
+  dailyStreamLimit: Infinity,
+  monthlyTranslateLimit: 600,
+  monthlyTranscribeMinutesLimit: 300,
+  monthlySpeechCharsLimit: 50_000,
   monthlyStreamMinutesLimit: 60,
-  monthlyAiCreditsLimit: 27_000,
+  monthlyAiCreditsLimit: Infinity,
 };
 
 export const FREE_FEATURES: PlanFeatures = {

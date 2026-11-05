@@ -53,14 +53,6 @@ const validSnapshot = {
       total: 60_000,
       remaining: 59_998,
     },
-    {
-      id: "budget",
-      label: "Shared AI budget",
-      unit: "credits",
-      used: 1,
-      total: 1_300,
-      remaining: 1_299,
-    },
   ],
 };
 

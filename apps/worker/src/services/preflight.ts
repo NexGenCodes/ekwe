@@ -414,7 +414,10 @@ export async function runPreflightGate(
   }
 
   if (
-    dailyNeed > 0 ? dailyUsed + dailyNeed > dailyLimit : dailyUsed >= dailyLimit
+    Number.isFinite(dailyLimit) &&
+    (dailyNeed > 0
+      ? dailyUsed + dailyNeed > dailyLimit
+      : dailyUsed >= dailyLimit)
   ) {
     defer(
       recordUserEvent(
@@ -440,10 +443,27 @@ export async function runPreflightGate(
 
   const monthlyUsed = monthlyUsedFor(monthly, usageType);
   if (
-    monthlyNeed > 0
+    Number.isFinite(monthlyLimit) &&
+    (monthlyNeed > 0
       ? monthlyUsed + monthlyNeed > monthlyLimit
-      : monthlyUsed >= monthlyLimit
+      : monthlyUsed >= monthlyLimit)
   ) {
+    if (tier === "PREMIUM") {
+      // Soft cap reached: gracefully fall back to the FREE pipeline
+      // while keeping the user's paid cooldown, no ads, and features intact.
+      defer(
+        recordUserEvent(
+          env,
+          "preflight",
+          userId,
+          "allow",
+          usageType,
+          "soft_cap_fallback",
+        ).catch(() => {}),
+      );
+      return { ok: true, tier: "FREE" };
+    }
+
     defer(
       recordUserEvent(
         env,
@@ -467,9 +487,10 @@ export async function runPreflightGate(
   }
 
   if (
-    budgetNeed > 0
+    Number.isFinite(budgetLimit) &&
+    (budgetNeed > 0
       ? monthly.ai_credits + budgetNeed > budgetLimit
-      : monthly.ai_credits >= budgetLimit
+      : monthly.ai_credits >= budgetLimit)
   ) {
     defer(
       recordUserEvent(
@@ -568,7 +589,10 @@ export async function runPreflightGateWithUsage(
   const monthly = prefetched.monthly;
 
   if (
-    dailyNeed > 0 ? dailyUsed + dailyNeed > dailyLimit : dailyUsed >= dailyLimit
+    Number.isFinite(dailyLimit) &&
+    (dailyNeed > 0
+      ? dailyUsed + dailyNeed > dailyLimit
+      : dailyUsed >= dailyLimit)
   ) {
     defer(
       recordUserEvent(
@@ -594,10 +618,27 @@ export async function runPreflightGateWithUsage(
 
   const monthlyUsed = monthlyUsedFor(monthly, usageType);
   if (
-    monthlyNeed > 0
+    Number.isFinite(monthlyLimit) &&
+    (monthlyNeed > 0
       ? monthlyUsed + monthlyNeed > monthlyLimit
-      : monthlyUsed >= monthlyLimit
+      : monthlyUsed >= monthlyLimit)
   ) {
+    if (tier === "PREMIUM") {
+      // Soft cap reached: gracefully fall back to the FREE pipeline
+      // while keeping the user's paid cooldown, no ads, and features intact.
+      defer(
+        recordUserEvent(
+          env,
+          "preflight",
+          userId,
+          "allow",
+          usageType,
+          "soft_cap_fallback",
+        ).catch(() => {}),
+      );
+      return { ok: true, tier: "FREE" };
+    }
+
     defer(
       recordUserEvent(
         env,
@@ -621,9 +662,10 @@ export async function runPreflightGateWithUsage(
   }
 
   if (
-    budgetNeed > 0
+    Number.isFinite(budgetLimit) &&
+    (budgetNeed > 0
       ? monthly.ai_credits + budgetNeed > budgetLimit
-      : monthly.ai_credits >= budgetLimit
+      : monthly.ai_credits >= budgetLimit)
   ) {
     defer(
       recordUserEvent(

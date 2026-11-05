@@ -250,26 +250,20 @@ describe("Worker router", () => {
           expect.objectContaining({
             id: "translate",
             used: 0,
-            total: FREE_LIMITS.monthlyTranslateLimit,
-            remaining: FREE_LIMITS.monthlyTranslateLimit,
+            total: FREE_LIMITS.dailyTranslateLimit,
+            remaining: FREE_LIMITS.dailyTranslateLimit,
           }),
           expect.objectContaining({
             id: "transcribe",
             used: 0,
-            total: FREE_LIMITS.monthlyTranscribeMinutesLimit,
-            remaining: FREE_LIMITS.monthlyTranscribeMinutesLimit,
+            total: FREE_LIMITS.dailyTranscribeMinutesLimit,
+            remaining: FREE_LIMITS.dailyTranscribeMinutesLimit,
           }),
           expect.objectContaining({
             id: "speech",
             used: 0,
-            total: FREE_LIMITS.monthlySpeechCharsLimit,
-            remaining: FREE_LIMITS.monthlySpeechCharsLimit,
-          }),
-          expect.objectContaining({
-            id: "budget",
-            used: 0,
-            total: FREE_LIMITS.monthlyAiCreditsLimit,
-            remaining: FREE_LIMITS.monthlyAiCreditsLimit,
+            total: FREE_LIMITS.dailySpeechCharsLimit,
+            remaining: FREE_LIMITS.dailySpeechCharsLimit,
           }),
         ]),
       );

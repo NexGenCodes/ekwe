@@ -138,15 +138,10 @@ function roundMinutes(ms: number | undefined): number {
   return Math.round(((ms ?? 0) / 60_000) * 10) / 10;
 }
 
-function roundCredits(credits: number | undefined): number {
-  return Math.round((credits ?? 0) * 10) / 10;
-}
-
 /**
- * Monthly feature usage plus the tier's caps and the shared AI credit pool.
- * `total === 0` means the feature is unavailable and the client hides the
- * meter. Every meter has a finite total now; `null` is kept in the wire schema
- * so older clients can still read a snapshot.
+ * Feature usage plus the tier's caps.
+ * Free tier meters daily usage (resetting at midnight UTC).
+ * Paid tier meters monthly usage.
  */
 export async function fetchUsageSnapshot(
   env: Env,
@@ -156,48 +151,83 @@ export async function fetchUsageSnapshot(
   const now = Date.now();
   const day = utcDay(now);
   const month = utcMonth(now);
+  const nextMidnight = Math.ceil(now / 86_400_000) * 86_400_000;
   const monthResetsAt = nextUtcMonthStartMs(now);
+  const isFree = tier === "FREE";
 
   try {
-    const row = await retryTransient(() =>
-      env.DB.prepare(
-        `SELECT translate_count, transcribe_count, transcribe_ms, speech_chars,
-                stream_count, stream_ms, ai_credits
-           FROM user_monthly_usage
-          WHERE user_id = ? AND month = ?`,
-      )
-        .bind(userId, month)
-        .first<{
-          translate_count: number;
-          transcribe_count: number;
-          transcribe_ms: number;
-          speech_chars: number;
-          stream_count: number;
-          stream_ms: number;
-          ai_credits: number;
-        }>(),
-    );
+    let used: Record<UsageMeterId, number>;
 
-    const used: Record<UsageMeterId, number> = {
-      translate: row?.translate_count ?? 0,
-      transcribe: roundMinutes(row?.transcribe_ms),
-      speech: row?.speech_chars ?? 0,
-      stream: roundMinutes(row?.stream_ms),
-      budget: roundCredits(row?.ai_credits),
-    };
+    if (isFree) {
+      const dailyRow = await retryTransient(() =>
+        env.DB.prepare(
+          `SELECT translate_count, transcribe_count, transcribe_ms, speech_chars,
+                  stream_count, stream_ms
+             FROM user_daily_usage
+            WHERE user_id = ? AND day = ?`,
+        )
+          .bind(userId, day)
+          .first<{
+            translate_count: number;
+            transcribe_count: number;
+            transcribe_ms: number;
+            speech_chars: number;
+            stream_count: number;
+            stream_ms: number;
+          }>(),
+      );
+
+      used = {
+        translate: dailyRow?.translate_count ?? 0,
+        transcribe: roundMinutes(dailyRow?.transcribe_ms),
+        speech: dailyRow?.speech_chars ?? 0,
+        stream: roundMinutes(dailyRow?.stream_ms),
+      };
+    } else {
+      const monthlyRow = await retryTransient(() =>
+        env.DB.prepare(
+          `SELECT translate_count, transcribe_count, transcribe_ms, speech_chars,
+                  stream_count, stream_ms
+             FROM user_monthly_usage
+            WHERE user_id = ? AND month = ?`,
+        )
+          .bind(userId, month)
+          .first<{
+            translate_count: number;
+            transcribe_count: number;
+            transcribe_ms: number;
+            speech_chars: number;
+            stream_count: number;
+            stream_ms: number;
+          }>(),
+      );
+
+      used = {
+        translate: monthlyRow?.translate_count ?? 0,
+        transcribe: roundMinutes(monthlyRow?.transcribe_ms),
+        speech: monthlyRow?.speech_chars ?? 0,
+        stream: roundMinutes(monthlyRow?.stream_ms),
+      };
+    }
 
     const limits = getLimits(tier);
-    const totals: Record<UsageMeterId, number | null> = {
-      translate: limits.monthlyTranslateLimit,
-      transcribe: limits.monthlyTranscribeMinutesLimit,
-      speech: limits.monthlySpeechCharsLimit,
-      stream: limits.monthlyStreamMinutesLimit,
-      budget: limits.monthlyAiCreditsLimit,
-    };
+    const totals: Record<UsageMeterId, number | null> = isFree
+      ? {
+          translate: limits.dailyTranslateLimit,
+          transcribe: limits.dailyTranscribeMinutesLimit,
+          speech: limits.dailySpeechCharsLimit,
+          stream: limits.dailyStreamLimit,
+        }
+      : {
+          translate: limits.monthlyTranslateLimit,
+          transcribe: limits.monthlyTranscribeMinutesLimit,
+          speech: limits.monthlySpeechCharsLimit,
+          stream: limits.monthlyStreamMinutesLimit,
+        };
 
     const parsed = usageSnapshotSchema.safeParse({
       day,
-      resetsAt: monthResetsAt,
+      resetsAt: isFree ? nextMidnight : monthResetsAt,
       month,
       monthResetsAt,
       meters: USAGE_METER_META.map(({ id, label, unit }) => {

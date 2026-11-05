@@ -78,14 +78,6 @@ function snapshot(
         total: totals.speech,
         remaining: remaining.speech,
       },
-      {
-        id: "budget",
-        label: "Shared AI budget",
-        unit: "credits",
-        used: 0,
-        total: 1_300,
-        remaining: 1_300,
-      },
     ],
     ...overrides,
   };

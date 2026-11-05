@@ -1,12 +1,3 @@
-import Smile from "lucide-react-native/icons/face-slightly-smiling";
-import Ghost from "lucide-react-native/icons/ghost";
-import Sparkles from "lucide-react-native/icons/sparkles";
-import Heart from "lucide-react-native/icons/heart";
-import Star from "lucide-react-native/icons/star";
-import Zap from "lucide-react-native/icons/zap";
-import Coffee from "lucide-react-native/icons/coffee";
-import Music from "lucide-react-native/icons/music";
-import Rocket from "lucide-react-native/icons/rocket";
 import User from "lucide-react-native/icons/user";
 import React from "react";
 
@@ -15,31 +6,10 @@ import { Sheet } from "@/components/ui/Sheet";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
 import { useTheme } from "@/hooks";
+import { AVATAR_ICONS } from "@/utils/avatar";
 import { withAlpha } from "@/utils/color";
 
-const AVATAR_COLORS = {
-  smile: "#F5A524",
-  ghost: "#006FEE",
-  sparkles: "#17C964",
-  heart: "#F31260",
-  star: "#FBBF24",
-  zap: "#3B82F6",
-  coffee: "#A1A1AA",
-  music: "#F87171",
-  rocket: "#4ADE80",
-} as const;
-
-export const AVATAR_ICONS = [
-  { name: "Smile", icon: Smile, color: AVATAR_COLORS.smile },
-  { name: "Ghost", icon: Ghost, color: AVATAR_COLORS.ghost },
-  { name: "Sparkles", icon: Sparkles, color: AVATAR_COLORS.sparkles },
-  { name: "Heart", icon: Heart, color: AVATAR_COLORS.heart },
-  { name: "Star", icon: Star, color: AVATAR_COLORS.star },
-  { name: "Zap", icon: Zap, color: AVATAR_COLORS.zap },
-  { name: "Coffee", icon: Coffee, color: AVATAR_COLORS.coffee },
-  { name: "Music", icon: Music, color: AVATAR_COLORS.music },
-  { name: "Rocket", icon: Rocket, color: AVATAR_COLORS.rocket },
-];
+export { AVATAR_ICONS } from "@/utils/avatar";
 
 interface AvatarPickerModalProps {
   visible: boolean;

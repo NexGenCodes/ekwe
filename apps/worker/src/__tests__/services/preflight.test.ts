@@ -3,6 +3,7 @@ import type { Env } from "@/core/types";
 import { nextUtcMidnightMs, runPreflightGate } from "@/services/preflight";
 import {
   FREE_LIMITS,
+  PREMIUM_LIMITS,
   WORKER_ERROR_CODES,
   utcDay,
   utcMonth,
@@ -297,10 +298,10 @@ describe("runPreflightGate", () => {
     expect(fits.ok).toBe(true);
   });
 
-  test("denies every AI feature once the shared monthly budget is spent", async () => {
+  test("gracefully falls back to FREE pipeline once PREMIUM monthly limit is reached", async () => {
     seedCooldown(kvStore, Date.now() - 5_000);
     seedMonthlyUsage(database, {
-      aiCredits: FREE_LIMITS.monthlyAiCreditsLimit,
+      translate: PREMIUM_LIMITS.monthlyTranslateLimit,
     });
 
     const { ctx, settled } = makeCtx();
@@ -308,25 +309,15 @@ describe("runPreflightGate", () => {
       env,
       ctx,
       USER_ID,
-      "FREE",
+      "PREMIUM",
       "translate",
     );
     await settled();
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-
-    expect(result.response.status).toBe(429);
-    const body = (await result.response.json()) as {
-      error: string;
-      quota_scope: string;
-      quota_total: number;
-      quota_remaining: number;
-    };
-    expect(body.error).toBe(WORKER_ERROR_CODES.EKWE_QUOTA_EXCEEDED);
-    expect(body.quota_scope).toBe("budget");
-    expect(body.quota_total).toBe(FREE_LIMITS.monthlyAiCreditsLimit);
-    expect(body.quota_remaining).toBe(0);
+    // Not denied! Passes through with FREE pipeline tier for fallback
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.tier).toBe("FREE");
   });
 
   test("denies FREE transcription once the daily minute cap is reached", async () => {

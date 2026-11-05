@@ -3,7 +3,6 @@ export const USAGE_METER_IDS = [
   "transcribe",
   "speech",
   "stream",
-  "budget",
 ] as const;
 export type UsageMeterId = (typeof USAGE_METER_IDS)[number];
 
@@ -22,30 +21,24 @@ export const USAGE_METER_META: readonly UsageMeterMeta[] = [
     id: "translate",
     label: "Translation",
     unit: "requests",
-    helper: "Text translated this month",
+    helper: "Text translated today",
   },
   {
     id: "transcribe",
     label: "Transcription",
     unit: "min",
-    helper: "Audio transcribed this month",
+    helper: "Audio transcribed today",
   },
   {
     id: "speech",
     label: "Speech",
     unit: "chars",
-    helper: "Conversions this month",
+    helper: "Conversions today",
   },
   {
     id: "stream",
     label: "Live dictation",
     unit: "min",
     helper: "Live dictation this month",
-  },
-  {
-    id: "budget",
-    label: "Shared AI budget",
-    unit: "credits",
-    helper: "Shared by translation, transcription, and speech",
   },
 ];
