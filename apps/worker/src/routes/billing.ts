@@ -1,4 +1,5 @@
 import {
+  APP_VERSION,
   WORKER_ERROR_CODES,
   PRO_PRODUCT_IDS,
   checkoutRequestSchema,
@@ -48,6 +49,7 @@ const FLUTTERWAVE_PAYMENTS_PATH = "https://api.flutterwave.com/v3/payments";
 const CHECKOUT_REDIRECT_URL = "https://www.ekwe.app";
 const VERIFY_TRANSACTION_PATH =
   "https://api.flutterwave.com/v3/transactions/{id}/verify";
+const FLUTTERWAVE_USER_AGENT = `Ekwe-Worker/${APP_VERSION} (https://ekwe.app)`;
 
 export async function handleCheckout(
   body: z.infer<typeof checkoutRequestSchema>,
@@ -87,6 +89,8 @@ export async function handleCheckout(
       headers: {
         Authorization: `Bearer ${env.FLUTTERWAVE_SECRET}`,
         "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": FLUTTERWAVE_USER_AGENT,
       },
       body: JSON.stringify({
         tx_ref: txRef,
@@ -175,6 +179,8 @@ export async function handleVerifyTransaction(
       headers: {
         Authorization: `Bearer ${env.FLUTTERWAVE_SECRET}`,
         "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": FLUTTERWAVE_USER_AGENT,
       },
       signal: AbortSignal.timeout(10_000),
     });

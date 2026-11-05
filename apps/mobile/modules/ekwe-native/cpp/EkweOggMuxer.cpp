@@ -150,14 +150,12 @@ bool OggMuxer::finalize() {
 
     // Write an empty page with the EOS flag to terminate the stream.
     //
-    // Its granule position must be -1, not the previous page's value: this page
-    // completes no packet, and a real sample count here asserts that samples
-    // finished on a page that carries none. Lenient readers (libopusfile,
-    // ffmpeg) ignore that and stream the file fine, but a reader that walks
-    // pages to build an amplitude envelope — which is exactly what a messaging
-    // client does to draw a voice note waveform — can take the assertion as a
-    // corrupt stream and come back with nothing to plot.
-    OggPage page = make_page(nullptr, 0, -1, false, true);
+    // Its granule position reflects the stream's final sample count (last_granule_position_).
+    // Demuxers and platform media frameworks (Android MediaMetadataRetriever, ExoPlayer,
+    // WhatsApp, Telegram) seek to the final Ogg page to read bytes 6-13 for duration
+    // ((granule - pre_skip) / 48000). Setting -1 here breaks duration detection, causing
+    // players to report 0:00 or overflow to 32 days.
+    OggPage page = make_page(nullptr, 0, last_granule_position_, false, true);
     write_page(page);
 
     if (file_) {

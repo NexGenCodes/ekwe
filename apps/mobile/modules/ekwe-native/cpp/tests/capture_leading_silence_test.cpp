@@ -353,12 +353,11 @@ void test_caps_a_very_long_pause() {
 
 // Reads the granule position of the last (EOS) page in an Ogg file.
 //
-// RFC 7845: a page that completes no packet must carry granule position -1.
-// finalize() writes an empty EOS page, so this is what catches it regressing
-// back to reusing the previous page's sample count — a violation lenient
-// players ignore but a strict page-walking reader can reject, which is what a
-// messaging client does when it builds a voice note waveform.
-bool eos_page_granule_is_minus_one(const std::string& path, int64_t& out) {
+// The EOS page carries the stream's final sample count (last_granule_position_)
+// so that demuxers and messaging clients (WhatsApp, Telegram, Android
+// MediaMetadataRetriever) can derive the correct duration from the last page's
+// granule without decoding the entire stream.
+bool read_eos_page_granule(const std::string& path, int64_t& out) {
     std::FILE* f = std::fopen(path.c_str(), "rb");
     if (f == nullptr) return false;
 
@@ -391,7 +390,7 @@ bool eos_page_granule_is_minus_one(const std::string& path, int64_t& out) {
     return found;
 }
 
-void test_eos_page_carries_no_granule() {
+void test_eos_page_carries_last_granule() {
     const std::string out = temp_path("eos.ogg");
     std::remove(out.c_str());
     CaptureController c(SR, 1, out, CaptureMode::FILE, false);
@@ -399,11 +398,11 @@ void test_eos_page_carries_no_granule() {
     c.stop();
 
     int64_t gp = 0;
-    const bool found = eos_page_granule_is_minus_one(out, gp);
+    const bool found = read_eos_page_granule(out, gp);
     check("an EOS page is present", found);
     if (!found) return;
-    std::printf("    final EOS page granule=%lld (expected -1)\n", (long long)gp);
-    check("the packetless EOS page carries granule -1", gp == -1);
+    std::printf("    final EOS page granule=%lld (expected > 0)\n", (long long)gp);
+    check("the EOS page carries a positive granule (last sample count)", gp > 0);
 }
 
 void test_double_stop_is_idempotent() {
@@ -461,7 +460,7 @@ int main() {
     test_stop_padding_does_not_overflow_the_staging_buffer();
     test_stop_padding_after_an_exact_fill();
     test_live_mode_forwards_every_frame();
-    test_eos_page_carries_no_granule();
+    test_eos_page_carries_last_granule();
     test_drops_trailing_silence();
     test_keeps_a_pause_that_speech_resumes_from();
     test_caps_a_very_long_pause();

@@ -178,8 +178,8 @@ export function ShareVoiceSheet({
           variant="bodySmall"
           style={{ color: color.muted, textAlign: "center" }}
         >
-          WhatsApp sends shared audio as a file. Telegram sends it as a voice
-          note.
+          WhatsApp sends shared audio as a voice note with your profile picture.
+          Telegram sends it as a voice note with waveform.
         </Text>
       </Box>
     </Sheet>

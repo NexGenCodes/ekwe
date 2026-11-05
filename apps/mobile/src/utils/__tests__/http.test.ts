@@ -110,10 +110,16 @@ describe("isAbortError", () => {
     });
 
     const messaged = new Error("Fetch request has been canceled");
+    const wrapped = new Error("fetch failed: Fetch request has been canceled");
+    const withCause = new Error("Network request failed", {
+      cause: new Error("Fetch request has been canceled"),
+    });
 
     expect(isAbortError(dom)).toBe(true);
     expect(isAbortError(coded)).toBe(true);
     expect(isAbortError(messaged)).toBe(true);
+    expect(isAbortError(wrapped)).toBe(true);
+    expect(isAbortError(withCause)).toBe(true);
     expect(isAbortError(createAbortError())).toBe(true);
   });
 

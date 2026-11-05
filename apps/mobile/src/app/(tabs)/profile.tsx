@@ -1,7 +1,7 @@
 import { useValue } from "@legendapp/state/react";
 import Constants from "expo-constants";
 import { Image as ExpoImage } from "expo-image";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import * as StoreReview from "expo-store-review";
 import LogOut from "lucide-react-native/icons/log-out";
 import CreditCard from "lucide-react-native/icons/credit-card";
@@ -24,6 +24,7 @@ import {
   KeyboardAvoidingView,
   Linking,
   Modal,
+  RefreshControl,
   Switch,
   TextInput,
 } from "react-native";
@@ -45,10 +46,14 @@ import { Box, Text, Pressable, ScrollArea, Spinner } from "@/components/ui";
 import { APP_VERSION, type VoiceGender } from "@ekwe/shared";
 import { getCurrencySymbol } from "@ekwe/shared/money";
 import { duration, borderRadius, spacing } from "@/constants";
-import { PLAN_LIMITS } from "@/constants/billing";
 import { EkweError, ErrorMessages } from "@/constants/errors";
 import { useLogout, useTheme, usePermissions, useReduceMotion } from "@/hooks";
-import { deleteAccount, updateProfile } from "@/services/auth";
+import {
+  deleteAccount,
+  fetchSessionUser,
+  updateProfile,
+} from "@/services/auth";
+import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 import {
   checkForApkUpdate,
   resolveApkDownloadUrl,
@@ -108,6 +113,25 @@ export default function ProfileScreen(): React.JSX.Element {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async (): Promise<void> => {
+    setIsRefreshing(true);
+    await triggerHaptic();
+    try {
+      await Promise.allSettled([fetchSessionUser(), invalidateUsage()]);
+    } catch (err) {
+      logger.error("[Profile] Refresh failed", err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      invalidateUsage();
+    }, []),
+  );
 
   const availableUpdate = useValue(() =>
     update$.channel.get() === "apk-sideload" ? update$.manifest.get() : null,
@@ -242,6 +266,14 @@ export default function ProfileScreen(): React.JSX.Element {
           paddingHorizontal: spacing.lg,
           paddingBottom: tabBarHeight + spacing.xl,
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={color.brand}
+            colors={[color.brand]}
+          />
+        }
       >
         <Animated.View entering={sectionEnter(0)}>
           <ProfileIdentity
@@ -268,7 +300,7 @@ export default function ProfileScreen(): React.JSX.Element {
               subtitle={
                 isPro
                   ? "Unlimited translations · Unlimited transcription & speech · No ads"
-                  : `Free Tier · ${PLAN_LIMITS.free.dailyTranslateLimit} translations/day · Ads supported`
+                  : "Free Tier · Ads supported"
               }
               onPress={async () => {
                 await triggerHaptic();

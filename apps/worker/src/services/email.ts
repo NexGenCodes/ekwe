@@ -13,7 +13,10 @@ const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
 
 async function sendViaBrevo(env: Env, message: EmailMessage): Promise<boolean> {
   if (!env.BREVO_API_KEY || !env.BREVO_SENDER) {
-    logger.error("[email] Brevo is not configured");
+    logger.error("[email] Brevo is not configured", {
+      hasApiKey: Boolean(env.BREVO_API_KEY),
+      hasSender: Boolean(env.BREVO_SENDER),
+    });
     return false;
   }
 

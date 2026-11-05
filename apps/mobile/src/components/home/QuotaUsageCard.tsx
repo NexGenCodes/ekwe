@@ -1,6 +1,7 @@
 import Activity from "lucide-react-native/icons/activity";
+import RefreshCw from "lucide-react-native/icons/refresh-cw";
 import { useRouter } from "expo-router";
-import React, { useMemo } from "react";
+import React, { useMemo, useCallback } from "react";
 import { USAGE_METER_META } from "@ekwe/shared";
 
 import { Box, Text, Spinner, Pressable } from "@/components/ui";
@@ -8,7 +9,7 @@ import { Card } from "@/components/Card";
 import { SkeletonBox } from "@/components/SkeletonBox";
 import { borderRadius } from "@/constants/sizes";
 import { spacing } from "@/constants/spacing";
-import { useUsageQuery } from "@/hooks/queries/useUsageQuery";
+import { useUsageQuery, invalidateUsage } from "@/hooks/queries/useUsageQuery";
 import { useTheme } from "@/hooks";
 import { withAlpha } from "@/utils/color";
 import { triggerHaptic } from "@/utils/haptics";
@@ -124,6 +125,11 @@ export function QuotaUsageCard(): React.ReactElement {
   const router = useRouter();
   const { data, isLoading, isError } = useUsageQuery();
 
+  const handleRefresh = useCallback(async (): Promise<void> => {
+    await triggerHaptic();
+    invalidateUsage();
+  }, []);
+
   const { headline, showUpgrade } = useMemo(() => {
     if (isError || !data) return { headline: null, showUpgrade: false };
 
@@ -172,26 +178,44 @@ export function QuotaUsageCard(): React.ReactElement {
           </Text>
         </Box>
 
-        {isLoading ? (
-          <Spinner size="sm" />
-        ) : headline ? (
-          <Text
-            variant="caption"
-            style={[
-              styles.headline,
-              {
-                color: color[headline.tone],
-                backgroundColor: withAlpha(color[headline.tone], 0.12),
-              },
-            ]}
+        <Box
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: spacing.sm,
+          }}
+        >
+          {isLoading ? (
+            <Spinner size="sm" />
+          ) : headline ? (
+            <Text
+              variant="caption"
+              style={[
+                styles.headline,
+                {
+                  color: color[headline.tone],
+                  backgroundColor: withAlpha(color[headline.tone], 0.12),
+                },
+              ]}
+            >
+              {headline.text}
+            </Text>
+          ) : data ? (
+            <Text variant="caption" style={{ color: color.muted }}>
+              {resetsLabel(data.resetsAt)}
+            </Text>
+          ) : null}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Refresh usage"
+            onPress={handleRefresh}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            disabled={isLoading}
           >
-            {headline.text}
-          </Text>
-        ) : data ? (
-          <Text variant="caption" style={{ color: color.muted }}>
-            {resetsLabel(data.resetsAt)}
-          </Text>
-        ) : null}
+            <RefreshCw size={13} color={color.muted} />
+          </Pressable>
+        </Box>
       </Box>
 
       {isLoading ? (
@@ -236,12 +260,30 @@ export function QuotaUsageCard(): React.ReactElement {
           </Box>
         </Box>
       ) : isError ? (
-        <Text
-          variant="bodySmall"
-          style={{ color: color.muted, marginTop: spacing.md }}
+        <Box
+          style={{
+            marginTop: spacing.md,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
         >
-          Usage could not be loaded right now.
-        </Text>
+          <Text variant="bodySmall" style={{ color: color.muted }}>
+            Usage could not be loaded right now.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading usage"
+            onPress={handleRefresh}
+          >
+            <Text
+              variant="bodySmall"
+              style={{ color: color.brand, fontWeight: "600" }}
+            >
+              Retry
+            </Text>
+          </Pressable>
+        </Box>
       ) : data ? (
         <Box style={styles.pools}>
           {data.meters.map((meter) => {

@@ -1,4 +1,4 @@
-import { WORKER_ERROR_CODES } from "@ekwe/shared";
+import { APP_VERSION, WORKER_ERROR_CODES } from "@ekwe/shared";
 import { logger } from "@/core/logger";
 import type { Env } from "@/core/types";
 import { registerProvider, ProviderResult } from "@/services/billing";
@@ -588,6 +588,8 @@ registerProvider("flutterwave", {
   process: processFlutterwaveEvent,
 });
 
+const FLUTTERWAVE_USER_AGENT = `Ekwe-Worker/${APP_VERSION} (https://ekwe.app)`;
+
 export async function fetchRecentSuccessfulTransactions(
   env: Env,
   daysAgo: number = 2,
@@ -610,6 +612,8 @@ export async function fetchRecentSuccessfulTransactions(
       headers: {
         Authorization: `Bearer ${env.FLUTTERWAVE_SECRET}`,
         "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": FLUTTERWAVE_USER_AGENT,
       },
     });
 

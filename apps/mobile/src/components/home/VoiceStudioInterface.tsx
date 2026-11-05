@@ -735,18 +735,26 @@ export const VoiceStudioInterface = forwardRef<
     sourcePlayerRef.current.pause();
     preview.cancel();
     archiveIfUnsaved();
-    // Pre-fill the input with the last transcript so the user can edit the
-    // words without losing them. Audio recordings are not stored, so if the
-    // result came from a recording we surface the transcript as editable text.
-    // This clears any existing recording so the text input is shown instead.
-    const editableText =
-      draftTranslationRef.current.trim() || draftTranscriptRef.current.trim();
-    if (editableText) {
-      setSourceText(editableText);
+    // Pre-fill the input with the original text (transcript) so the user can
+    // edit the words without losing them. Audio recordings are not stored, so
+    // if the result came from a recording we surface the transcript as editable
+    // text. This clears any existing recording so the text input is shown instead.
+    const originalText =
+      draftTranscriptRef.current.trim() ||
+      sourceText.trim() ||
+      draftTranslationRef.current.trim();
+    if (originalText) {
+      setSourceText(originalText);
       setSourceAudio(null);
     }
     setStage("composer");
-  }, [isReturnAudioLoading, archiveIfUnsaved, cancelScheduledConvert, preview]);
+  }, [
+    isReturnAudioLoading,
+    archiveIfUnsaved,
+    cancelScheduledConvert,
+    preview,
+    sourceText,
+  ]);
 
   useEffect(() => {
     if (stage !== "ready") return;

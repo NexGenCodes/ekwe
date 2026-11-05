@@ -23,7 +23,7 @@ import type { SharedAudioPlayer } from "@/hooks/audio/useSharedAudioPlayer";
 import type { DictationStatus } from "@/hooks/useVoiceDictation";
 import { triggerHaptic } from "@/utils";
 
-interface ExpressiveInputProps {
+export interface ExpressiveInputProps {
   value: string;
   onChangeText: (text: string) => void;
   onClear: () => void;

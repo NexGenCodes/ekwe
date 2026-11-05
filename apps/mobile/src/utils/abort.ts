@@ -18,7 +18,20 @@ export function isAbortError(error: unknown): boolean {
   const code = (error as { code?: unknown }).code;
   if (typeof code === "string" && ABORT_CODES.has(code)) return true;
 
-  return ABORT_MESSAGES.has(error.message);
+  if (ABORT_MESSAGES.has(error.message)) return true;
+
+  if (
+    error.message.includes("Fetch request has been canceled") ||
+    error.message.includes("The operation was aborted") ||
+    error.message.includes("The user aborted a request")
+  ) {
+    return true;
+  }
+
+  const cause = (error as { cause?: unknown }).cause;
+  if (cause && isAbortError(cause)) return true;
+
+  return false;
 }
 
 /** Normalizes a cancellation into the shape every caller already checks. */
