@@ -1,9 +1,9 @@
 /** Single source of truth for the Ekwe app version. */
-export const APP_VERSION = "1.3.1" as const;
+export const APP_VERSION = "1.3.2" as const;
 
 /**
  * Numeric version code derived from the semver string.
  * Formula: MAJOR * 10000 + MINOR * 100 + PATCH
  * Must stay < 1_000_000 (each segment < 100).
  */
-export const APP_VERSION_CODE = 10301 as const;
+export const APP_VERSION_CODE = 10302 as const;
