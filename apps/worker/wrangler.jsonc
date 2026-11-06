@@ -176,6 +176,10 @@
       {
         "binding": "WEBHOOK_RETRY_QUEUE",
         "queue": "ekwe-webhook-retry"
+      },
+      {
+        "binding": "RECONCILIATION_QUEUE",
+        "queue": "ekwe-reconciliation-retry"
       }
     ],
     "consumers": [
@@ -185,6 +189,11 @@
         // max_retries keeps a bad payload from looping forever.
         "max_retries": 12,
         "dead_letter_queue": "ekwe-webhook-dlq"
+      },
+      {
+        "queue": "ekwe-reconciliation-retry",
+        "max_retries": 12,
+        "dead_letter_queue": "ekwe-reconciliation-dlq"
       }
     ]
   }

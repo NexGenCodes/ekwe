@@ -183,10 +183,8 @@ export async function stt(
     return null;
   }
   if (isHallucination(data.text)) {
-    throw new ProviderUnusableError(
-      "witai",
-      "transcript discarded as hallucination",
-    );
+    logger.warn("[witai] Transcript discarded as hallucination");
+    return null;
   }
 
   return { text: data.text, provider: "witai", language: lang };

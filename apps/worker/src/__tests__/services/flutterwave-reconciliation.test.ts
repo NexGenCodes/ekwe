@@ -286,7 +286,7 @@ describe("reconcileFlutterwaveTransactions", () => {
 
     await expect(
       reconcileFlutterwaveTransactions(env, processFn),
-    ).rejects.toThrow("Triggering queue retry");
+    ).rejects.toThrow("left for the next sweep");
   });
 
   test("does not throw when failures are terminal", async () => {

@@ -50,8 +50,8 @@ export class ProviderTransportError extends Error {
 }
 
 /**
- * A request the provider will deterministically reject: a missing credential,
- * an unsupported codec, a discarded hallucination.
+ * A request the provider will deterministically reject: a missing credential
+ * or an unsupported codec.
  *
  * Classified `client`, not `server`, because the same request produces the same
  * rejection — retrying spends an attempt and a backoff to learn nothing. It

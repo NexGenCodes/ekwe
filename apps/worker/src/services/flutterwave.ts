@@ -4,6 +4,8 @@ import type { Env } from "@/core/types";
 import { registerProvider, ProviderResult } from "@/services/billing";
 import { claimFlutterwaveTransaction } from "@/services/flutterwave-claim";
 import { describeError, retryTransient } from "@/db/retry";
+import { fetchWithTimeout, TIMEOUT_FAST } from "@/utils/fetch";
+import { jitteredBackoffMs } from "@/utils/retry";
 import { normalizeEmail } from "@ekwe/shared";
 import { toLowestUnit, resolvePaymentCurrency } from "@ekwe/shared/money";
 import { getAuthoritativePlanPrices } from "@/routes/pricing";
@@ -606,20 +608,64 @@ export async function fetchRecentSuccessfulTransactions(
   let currentPage = 1;
   let totalPages: number;
 
+  const FLW_MAX_ATTEMPTS = 3;
+  async function fetchPageWithRetry(url: string): Promise<Response> {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= FLW_MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetchWithTimeout(
+          url,
+          {
+            headers: {
+              Authorization: `Bearer ${env.FLUTTERWAVE_SECRET}`,
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              "User-Agent": FLUTTERWAVE_USER_AGENT,
+            },
+          },
+          TIMEOUT_FAST,
+        );
+        if (res.ok) return res;
+        const retryable = res.status === 429 || res.status >= 500;
+        if (!retryable) {
+          throw new Error(`Flutterwave API error: ${res.status}`);
+        }
+        lastErr = new Error(`Flutterwave API error: ${res.status}`);
+        if (attempt === FLW_MAX_ATTEMPTS) throw lastErr;
+        const retryAfter = res.headers.get("retry-after");
+        const backoffMs = retryAfter
+          ? Math.min(parseInt(retryAfter, 10) * 1000 || 0, 10_000)
+          : jitteredBackoffMs(attempt, 5_000);
+        logger.warn("[reconciliation] Flutterwave transient error, retrying", {
+          status: res.status,
+          attempt,
+          backoffMs,
+        });
+        if (backoffMs > 0) await new Promise((r) => setTimeout(r, backoffMs));
+      } catch (e) {
+        if (
+          e instanceof Error &&
+          e.message.startsWith("Flutterwave API error:") &&
+          !/error: (429|5\d\d)/.test(e.message)
+        ) {
+          throw e;
+        }
+        lastErr = e;
+        if (attempt === FLW_MAX_ATTEMPTS) throw e;
+        const backoffMs = jitteredBackoffMs(attempt, 5_000);
+        logger.warn("[reconciliation] Flutterwave fetch failed, retrying", {
+          attempt,
+          error: String(e),
+        });
+        if (backoffMs > 0) await new Promise((r) => setTimeout(r, backoffMs));
+      }
+    }
+    throw lastErr;
+  }
+
   do {
     const url = `https://api.flutterwave.com/v3/transactions?status=successful&from=${fromIso}&page=${currentPage}`;
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${env.FLUTTERWAVE_SECRET}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "User-Agent": FLUTTERWAVE_USER_AGENT,
-      },
-    });
-
-    if (!res.ok) {
-      throw new Error(`Flutterwave API error: ${res.status}`);
-    }
+    const res = await fetchPageWithRetry(url);
 
     const payload: FlwTransactionsResponse = await res.json();
     if (payload.status === "success" && Array.isArray(payload.data)) {
@@ -744,7 +790,10 @@ export async function reconcileFlutterwaveTransactions(
     env: Env,
     tx: FlutterwaveEvent["data"],
   ) => Promise<boolean> = processMissingTransaction,
+  options?: { enqueueOnFailure?: boolean; daysAgo?: number },
 ): Promise<void> {
+  const enqueueOnFailure = options?.enqueueOnFailure ?? true;
+  const daysAgo = options?.daysAgo ?? 2;
   if (!env.FLUTTERWAVE_SECRET) {
     logger.info("[reconciliation] Skipped: FLUTTERWAVE_SECRET not configured");
     return;
@@ -754,7 +803,7 @@ export async function reconcileFlutterwaveTransactions(
     logger.info(
       "[reconciliation] Starting Flutterwave billing reconciliation...",
     );
-    const transactions = await fetchRecentSuccessfulTransactions(env, 2);
+    const transactions = await fetchRecentSuccessfulTransactions(env, daysAgo);
     if (transactions.length === 0) {
       logger.info("[reconciliation] No recent transactions found.");
       return;
@@ -798,7 +847,7 @@ export async function reconcileFlutterwaveTransactions(
 
     if (successCount === 0 && retryableFailures > 0) {
       throw new Error(
-        `[reconciliation] No transactions applied (${terminalFailures} terminal, ${retryableFailures} retryable). Triggering queue retry.`,
+        `[reconciliation] No transactions applied (${terminalFailures} terminal, ${retryableFailures} retryable) — left for the next sweep.`,
       );
     }
     if (retryableFailures > 0) {
@@ -812,9 +861,21 @@ export async function reconcileFlutterwaveTransactions(
       `[reconciliation] Completed processing. Successfully reconciled ${successCount}/${missingRefs.length} missing transactions.`,
     );
   } catch (err) {
-    logger.error("[reconciliation] Flutterwave reconciliation job failed", {
-      error: String(err),
-    });
+    if (enqueueOnFailure && env.RECONCILIATION_QUEUE) {
+      try {
+        await env.RECONCILIATION_QUEUE.send({
+          type: "flutterwave-reconcile",
+          daysAgo,
+          originalAt: new Date().toISOString(),
+          attempt: 1,
+        });
+        logger.warn("[reconciliation] Enqueued for queue retry", { daysAgo });
+      } catch (qErr) {
+        logger.warn("[reconciliation] Failed to enqueue retry", {
+          error: qErr instanceof Error ? qErr.message : String(qErr),
+        });
+      }
+    }
     throw err;
   }
 }

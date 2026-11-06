@@ -7,6 +7,7 @@ interface __BaseEnv_Env {
 	DB: D1Database;
 	EKWE_ANALYTICS: AnalyticsEngineDataset;
 	WEBHOOK_RETRY_QUEUE: Queue;
+	RECONCILIATION_QUEUE: Queue;
 	RATE_LIMITER: RateLimit;
 	AI: Ai;
 	ALLOWED_ORIGINS: "https://ekwe.pages.dev";

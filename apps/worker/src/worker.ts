@@ -2,6 +2,10 @@ import type { Env } from "@/core/types";
 import { runMaintenance } from "@/services/maintenance";
 import { app } from "@/app";
 import { handleWebhookQueue } from "@/services/webhook-queue";
+import {
+  handleReconciliationQueue,
+  isReconciliationMessage,
+} from "@/services/reconciliation-queue";
 
 export function createWorker() {
   return {
@@ -27,6 +31,13 @@ export function createWorker() {
       env: Env,
       _ctx: ExecutionContext,
     ): Promise<void> {
+      const first = batch.messages[0];
+      if (first && isReconciliationMessage(first.body)) {
+        return handleReconciliationQueue(
+          batch as Parameters<typeof handleReconciliationQueue>[0],
+          env,
+        );
+      }
       return handleWebhookQueue(
         batch as Parameters<typeof handleWebhookQueue>[0],
         env,

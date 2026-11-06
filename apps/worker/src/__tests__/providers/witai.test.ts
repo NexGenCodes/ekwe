@@ -143,7 +143,7 @@ describe("Wit.ai provider", () => {
     );
   });
 
-  test("throws on hallucination transcripts so the circuit breaker sees it", async () => {
+  test("returns null on hallucination transcripts (neutral, not a breaker failure)", async () => {
     server.use(
       http.post(PROVIDER_URLS.witaiDictation, () =>
         jsonResponse({ text: "Thanks for watching", is_final: true }),
@@ -151,9 +151,8 @@ describe("Wit.ai provider", () => {
     );
 
     const env = mockEnv({ WIT_KEY_EN: "mock-wit-en-key-10" });
-    await expect(
-      witai.stt(makeAudioBlob(), "en", env, mockSignal()),
-    ).rejects.toThrow(ProviderUnusableError);
+    const result = await witai.stt(makeAudioBlob(), "en", env, mockSignal());
+    expect(result).toBeNull();
   });
 
   test("returns null on an empty transcript, which is a genuine no-result", async () => {
