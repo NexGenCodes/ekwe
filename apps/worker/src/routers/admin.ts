@@ -22,6 +22,7 @@ import {
   handleBilling,
   handleUsage,
   handleAdminHealth,
+  handleAuditWrite,
 } from "@/routes/adminOps";
 
 export const adminRouter = new Hono<AppEnv>();
@@ -54,3 +55,4 @@ adminRouter.get("/audit", adminUserMiddleware, handleListAudit);
 adminRouter.get("/billing", adminUserMiddleware, handleBilling);
 adminRouter.get("/usage", adminUserMiddleware, handleUsage);
 adminRouter.get("/health", adminUserMiddleware, handleAdminHealth);
+adminRouter.post("/audit", adminUserMiddleware, handleAuditWrite);

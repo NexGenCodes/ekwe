@@ -38,7 +38,7 @@ export const BILLING_PLANS = {
   free: {
     id: "free" as const,
     name: "Free",
-    tagline: "Core translation tools, supported by ads.",
+    tagline: "Core translation tools with daily limits.",
     price: 0,
     features: [
       {
@@ -61,7 +61,6 @@ export const BILLING_PLANS = {
         title: `${fmtHistory(PLAN_LIMITS.free.historyRemoteTtlDays)} cloud history`,
         included: true,
       },
-      { title: "Ad-supported", included: true },
       { title: "Automatic language detection", included: false },
       { title: "Live dictation", included: false },
       { title: "Custom avatar icons", included: false },
@@ -71,7 +70,8 @@ export const BILLING_PLANS = {
   pro: {
     id: "pro" as const,
     name: "Paid",
-    tagline: "Unlimited translation, transcription & speech, with no ads.",
+    tagline:
+      "Unlimited translation and transcription, plus higher speech and live limits.",
     features: [
       {
         title: "Unlimited translations",
@@ -82,7 +82,7 @@ export const BILLING_PLANS = {
         included: true,
       },
       {
-        title: "Unlimited speech with Standard & Studio voices",
+        title: `${fmtInt(PLAN_LIMITS.pro.monthlySpeechCharsLimit)} speech chars/month with Studio voices`,
         included: true,
       },
       {
@@ -101,7 +101,6 @@ export const BILLING_PLANS = {
         title: `${fmtHistory(PLAN_LIMITS.pro.historyRemoteTtlDays)} cloud history`,
         included: true,
       },
-      { title: "No ads", included: true },
       { title: "Automatic language detection", included: true },
       { title: "Custom avatar icons", included: true },
       { title: "Auto-copy translations", included: true },

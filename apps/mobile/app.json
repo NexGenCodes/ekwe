@@ -63,8 +63,7 @@
           "fonts": [
             "assets/fonts/Outfit-Regular.ttf",
             "assets/fonts/Outfit-Medium.ttf",
-            "assets/fonts/Outfit-Bold.ttf",
-            "assets/fonts/SpaceMono-Regular.ttf"
+            "assets/fonts/Outfit-Bold.ttf"
           ]
         }
       ],
@@ -75,10 +74,7 @@
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
             "minSdkVersion": 24,
-            "buildArchs": [
-              "arm64-v8a",
-              "armeabi-v7a"
-            ],
+            "buildArchs": ["arm64-v8a", "armeabi-v7a"],
             "ndkVersion": "27.1.12297006",
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
@@ -106,9 +102,7 @@
         }
       ]
     ],
-    "assetBundlePatterns": [
-      "assets/fonts/*"
-    ],
+    "assetBundlePatterns": ["assets/fonts/*"],
     "updates": {
       "url": "https://u.expo.dev/fb3d49de-0c12-4b1a-bf94-863befec071a",
       "requestHeaders": {

@@ -3,8 +3,9 @@
   "name": "ekwe",
   "compatibility_date": "2026-06-01",
 
-  // Landing site (Cloudflare Pages). `node build.mjs` renders src/ into ./dist;
-  // `wrangler pages deploy` reads this config for the project name and the build
-  // output directory to upload as the production (ekwe.pages.dev) deployment.
+  // Landing site (Cloudflare Pages). `pnpm build` runs scripts/generate.mjs and
+  // then `vite build` into ./dist; `wrangler pages deploy` reads this config for
+  // the project name and the build output directory to upload as the production
+  // (ekwe.pages.dev) deployment.
   "pages_build_output_dir": "./dist"
 }

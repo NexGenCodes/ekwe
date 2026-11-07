@@ -442,7 +442,7 @@ export default function Landing() {
               <div className="arch-card pricing-card">
                 <div className="pricing-title">Free</div>
                 <div className="pricing-tag">
-                  Core translation tools, supported by ads.
+                  Core translation tools with daily limits.
                 </div>
                 <h3 className="pricing-amount">
                   $0<span className="pricing-per">/forever</span>
@@ -465,7 +465,6 @@ export default function Landing() {
                     {Math.round(free.dictationDurationMs / 60000)} min
                   </li>
                   <li>✓ {free.historyRemoteTtlDays}-day cloud history</li>
-                  <li>✓ Ad-supported</li>
                   <li className="muted">× Automatic language detection</li>
                   <li className="muted">× Live dictation</li>
                   <li className="muted">× Custom avatar icons</li>
@@ -475,8 +474,8 @@ export default function Landing() {
               <div className="arch-card pricing-card paid">
                 <div className="pricing-title paid-title">Paid</div>
                 <div className="pricing-tag">
-                  Unlimited translation, transcription &amp; speech, with no
-                  ads.
+                  Unlimited translation and transcription, plus higher speech
+                  and live limits.
                 </div>
                 <h3 className="pricing-amount">
                   ${usd.monthly.amount}
@@ -485,7 +484,10 @@ export default function Landing() {
                 <ul className="pricing-list">
                   <li>✓ Unlimited translations</li>
                   <li>✓ Unlimited audio transcription</li>
-                  <li>✓ Unlimited speech with Standard &amp; Studio voices</li>
+                  <li>
+                    ✓ {formatLimit(premium.monthlySpeechCharsLimit)} speech
+                    chars/month with Studio voices
+                  </li>
                   <li>✓ No daily usage caps</li>
                   <li>
                     ✓ Live dictation (
@@ -498,7 +500,6 @@ export default function Landing() {
                     {Math.round(premium.dictationDurationMs / 60000)} min
                   </li>
                   <li>✓ {premium.historyRemoteTtlDays}-day cloud history</li>
-                  <li>✓ No ads</li>
                   <li>✓ Automatic language detection</li>
                   <li>✓ Custom avatar icons</li>
                   <li>✓ Auto-copy translations</li>

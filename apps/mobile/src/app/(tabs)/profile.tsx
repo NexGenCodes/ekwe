@@ -301,8 +301,8 @@ export default function ProfileScreen(): React.JSX.Element {
               title={isPro ? "Ekwe Paid" : "Plan & Billing"}
               subtitle={
                 isPro
-                  ? "Unlimited translations · Unlimited transcription & speech · No ads"
-                  : "Free Tier · Ads supported"
+                  ? "No daily caps · Studio voices · Live dictation"
+                  : "Free Tier · Limited usage"
               }
               onPress={async () => {
                 await triggerHaptic();

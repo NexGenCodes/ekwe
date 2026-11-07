@@ -80,7 +80,7 @@ const headers = `/*
   Cross-Origin-Referrer-Policy: same-origin
 
 /admin/*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://ekwe-proxy.ekwe.workers.dev; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 
 /*
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://us.i.posthog.com https://us-assets.i.posthog.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
@@ -91,3 +91,11 @@ writeFileSync(
   "/pages/privacy.html /privacy 301\n/pages/terms.html /terms 301\n/pages/changelog.html /changelog 301\n/* /index.html 200\n",
 );
 console.log("_headers + _redirects → public/");
+
+// 4. public/_routes.json — keep the site fully static except the admin API
+// Function, so Pages only bills/invokes a Function for /admin/api/*.
+writeFileSync(
+  join(root, "public/_routes.json"),
+  `${JSON.stringify({ version: 1, include: ["/admin/api/*"], exclude: [] }, null, 2)}\n`,
+);
+console.log("_routes.json → public/");

@@ -192,6 +192,18 @@ All notable changes to the Ekwe Android app are documented here.
 - Premium text input is capped at 2,400 characters per request, down from
   10,000.
 
+## [1.3.3] - 2026-11-07
+
+### Added
+
+- Orb service with overlay permission flow and iOS guard.
+- Quota raise: 25 translations/day Free and 2,000/month Pro, 500 transcription minutes/month Pro softcap, 100k speech hard cap, 60 stream minutes/month with 4 concurrent.
+
+### Fixed
+
+- Stop Sentry noise from Wit.ai hallucinations and harden Flutterwave reconciliation.
+- Raise translate, transcribe, speech, and stream quota caps per the new limits.
+
 ## [1.3.2] - 2026-11-05
 
 ### Fixed
@@ -327,7 +339,7 @@ All notable changes to the Ekwe Android app are documented here.
 ### Added
 
 - Voice recording, import, and AI-powered speech-to-text.
-- Instant translation in 130+ languages.
+- Instant translation across the supported language catalog.
 - Local history and playback.
 - Share extension, offline translation for core languages, and audio playback
   fixes across Android devices.

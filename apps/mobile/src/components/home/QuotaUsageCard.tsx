@@ -315,7 +315,7 @@ export function QuotaUsageCard(): React.ReactElement {
           }}
           accessible
           accessibilityRole="button"
-          accessibilityLabel="Upgrade for higher limits and no ads."
+          accessibilityLabel="Upgrade for higher limits."
           style={({ pressed }) => [
             styles.upgradeRow,
             { backgroundColor: withAlpha(color.brand, 0.08) },

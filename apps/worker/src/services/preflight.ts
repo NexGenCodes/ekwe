@@ -453,8 +453,6 @@ export async function runPreflightGate(
       usageType !== "speech" &&
       usageType !== "stream"
     ) {
-      // Soft cap reached: gracefully fall back to the FREE pipeline
-      // while keeping the user's paid cooldown, no ads, and features intact.
       defer(
         recordUserEvent(
           env,
@@ -632,8 +630,6 @@ export async function runPreflightGateWithUsage(
       usageType !== "speech" &&
       usageType !== "stream"
     ) {
-      // Soft cap reached: gracefully fall back to the FREE pipeline
-      // while keeping the user's paid cooldown, no ads, and features intact.
       defer(
         recordUserEvent(
           env,

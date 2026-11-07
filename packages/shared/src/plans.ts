@@ -104,8 +104,6 @@ export interface PlanLimits {
 
 export interface PlanFeatures {
   autoCopy: boolean;
-  /** FREE is ad-supported; PAID is ad-free. */
-  adsEnabled: boolean;
 }
 
 export interface PriceDetail {
@@ -184,12 +182,10 @@ export const PREMIUM_LIMITS: PlanLimits = {
 
 export const FREE_FEATURES: PlanFeatures = {
   autoCopy: false,
-  adsEnabled: true,
 };
 
 export const PREMIUM_FEATURES: PlanFeatures = {
   autoCopy: true,
-  adsEnabled: false,
 };
 
 export const PLAN_CONFIG: PlanConfigPlans = {

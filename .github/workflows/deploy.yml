@@ -576,7 +576,7 @@ jobs:
           fi
 
       - name: Rebuild landing site
-        run: node apps/web/build.mjs
+        run: pnpm --filter @ekwe/web build
       - name: Deploy landing site
         working-directory: apps/web
         env:
