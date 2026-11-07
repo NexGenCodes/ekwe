@@ -37,6 +37,7 @@ export type AppEnv = {
     timings: RequestTimings;
     tier: Tier;
     pipelineTier: Tier;
+    adminEmail: string;
   };
 };
 

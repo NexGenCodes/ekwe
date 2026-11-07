@@ -25,8 +25,8 @@ import {
   findOrCreateUser,
   findUserById,
   findUserByIdentity,
-  isPremium,
-  toPayload,
+  isPremiumWithAdmin,
+  resolveTierWithAdmin,
   updateProfile,
   type UserRow,
 } from "@/auth/users";
@@ -58,11 +58,19 @@ async function tokenResponse(
     userId: user.id,
     email: user.email,
     sessionId: session.sessionId,
-    isPro: isPremium(user),
+    isPro: isPremiumWithAdmin(env, user),
   });
 
   return Response.json({
-    user: toPayload(user),
+    user: {
+      id: user.id,
+      email: user.email,
+      tier: resolveTierWithAdmin(env, user),
+      displayName: user.display_name,
+      avatarUrl: user.avatar_url,
+      avatarIcon: user.avatar_icon,
+      proExpiresAt: user.pro_expires_at,
+    },
     accessToken: token,
     expiresAt,
     refreshToken: session.refreshToken,
@@ -227,7 +235,17 @@ authRouter.get("/session", authMiddleware(), async (c) => {
   const user = await findUserById(c.env, auth.userId);
   if (!user) return error(WORKER_ERROR_CODES.UNAUTHORIZED, 401);
 
-  return c.json({ user: toPayload(user) });
+  return c.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      tier: resolveTierWithAdmin(c.env, user),
+      displayName: user.display_name,
+      avatarUrl: user.avatar_url,
+      avatarIcon: user.avatar_icon,
+      proExpiresAt: user.pro_expires_at,
+    },
+  });
 });
 
 authRouter.patch("/profile", authMiddleware(), async (c) => {
@@ -238,7 +256,17 @@ authRouter.patch("/profile", authMiddleware(), async (c) => {
   const user = await updateProfile(c.env, auth.userId, body);
   if (!user) return error(WORKER_ERROR_CODES.UNAUTHORIZED, 401);
 
-  return c.json({ user: toPayload(user) });
+  return c.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      tier: resolveTierWithAdmin(c.env, user),
+      displayName: user.display_name,
+      avatarUrl: user.avatar_url,
+      avatarIcon: user.avatar_icon,
+      proExpiresAt: user.pro_expires_at,
+    },
+  });
 });
 
 authRouter.post("/logout", authMiddleware(), async (c) => {

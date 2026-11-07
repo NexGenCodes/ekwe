@@ -43,13 +43,47 @@ const COLUMNS = [
 const SELECT_COLUMNS = COLUMNS.join(", ");
 const SELECT_U_COLUMNS = COLUMNS.map((column) => `u.${column}`).join(", ");
 
+export function getAdminEmails(env: Env): string[] {
+  const raw = env.ADMIN_EMAILS as string | undefined;
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+export function isAdminEmail(
+  env: Env,
+  email: string | undefined | null,
+): boolean {
+  if (!email) return false;
+  return getAdminEmails(env).includes(email.toLowerCase());
+}
+
 export function isPremium(user: UserRow, now = Date.now()): boolean {
   if (user.tier !== "PREMIUM") return false;
   return user.pro_expires_at === null || user.pro_expires_at > now;
 }
 
+export function isPremiumWithAdmin(
+  env: Env,
+  user: UserRow,
+  now = Date.now(),
+): boolean {
+  if (isAdminEmail(env, user.email)) return true;
+  return isPremium(user, now);
+}
+
 export function resolveTier(user: UserRow, now = Date.now()): Tier {
   return isPremium(user, now) ? "PREMIUM" : "FREE";
+}
+
+export function resolveTierWithAdmin(
+  env: Env,
+  user: UserRow,
+  now = Date.now(),
+): Tier {
+  return isPremiumWithAdmin(env, user, now) ? "PREMIUM" : "FREE";
 }
 
 export function toPayload(user: UserRow, now = Date.now()): UserPayload {

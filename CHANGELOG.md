@@ -192,6 +192,27 @@ All notable changes to the Ekwe Android app are documented here.
 - Premium text input is capped at 2,400 characters per request, down from
   10,000.
 
+## [1.3.2] - 2026-11-05
+
+### Fixed
+
+- Correct Ogg duration metadata and harden usage refresh and abort handling.
+
+## [1.3.1] - 2026-11-05
+
+### Added
+
+- Profile UI/UX redesign with deterministic avatars and Pro customization, and quota metering refactor.
+
+### Fixed
+
+- History import hardening, lint violations, and stale placeholder purge; backend and frontend race conditions and performance issues resolved; Cloudflare Worker URL hostname corrected.
+- Sync D1 schema, JWT revocation, toFileUri, metering cap, ExecutionContext casts, and KV cooldown migration test failures.
+
+### Changed
+
+- Local-first sync: dirty-flag push protocol replaces the outbox state machine.
+
 ## [1.3.0] - 2026-10-23
 
 ### Changed

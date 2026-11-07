@@ -5,32 +5,12 @@
   "compatibility_date": "2026-09-24",
   "compatibility_flags": ["nodejs_compat"],
 
-  // CPU limit is intentionally unset: the account is on the Workers Free plan,
-  // which rejects `limits.cpu_ms`. On a paid plan, raise it to the documented
-  // maximum (300000) so a duration-scaled transcription budget
-  // (TRANSCRIBE_MAX_BUDGET_MS) stays reachable for long clips.
-
-  // Daily maintenance: cache cleanup, history retention (free: 14d,
-  // paid: 30d), tombstone purge, R2 speech-cache purge, and Flutterwave
-  // reconciliation. Runs directly in the `scheduled` handler.
+  // Daily cron: cache cleanup, history retention, tombstone + R2 purge,
+  // Flutterwave reconciliation. History retention per shared/retention.ts
+  // (free 7d, paid 30d). Fetched in scheduled handler.
   "triggers": {
     "crons": ["0 3 * * *"]
   },
-
-  // Billing provider secrets (set via `wrangler secret put <NAME>`):
-  // - FLUTTERWAVE_SECRET: Flutterwave API secret key (FLWSECK_... or
-  //   FLWSECK_TEST-...). In production this MUST be a live key: a test-mode
-  //   secret would let anyone bypass payment and grant the paid plan for free.
-  // - FLUTTERWAVE_PUBLIC: matching Flutterwave public key (FLWPUBK_... or
-  //   FLWPUBK_TEST-...). Returned to the client in the checkout response so
-  //   the SDK always charges against the key matching the configured secret.
-  // - FLUTTERWAVE_WEBHOOK_SECRET: webhook secret hash from the Flutterwave
-  //   dashboard (Settings → Webhooks); used to verify inbound webhooks
-  //   (`flutterwave-signature` HMAC-SHA256).
-  // - UPDATE_NOTIFY_SECRET: shared secret (Authorization: Bearer) for the release
-  //   workflow's POST /admin/update/notify and POST /admin/update/manifest endpoints.
-  // Must be identical to the GitHub Actions secret `UPDATE_NOTIFY_SECRET`.
-  // Never commit secrets to this file — use `.dev.vars` for local development.
 
   "dev": {
     "ip": "0.0.0.0",
@@ -41,41 +21,42 @@
     "ALLOWED_ORIGINS": "https://ekwe.pages.dev",
     "FIREBASE_PROJECT_NUMBER": "239869950724",
     "REQUIRE_APP_CHECK": "false",
-    // Frontend hostnames Turnstile siteverify must return for /auth/otp.
-    // The Turnstile widget must be registered for these domains (add localhost for
-    // local dev via .dev.vars — never in this production default).
     "TURNSTILE_HOSTNAMES": "ekwe.pages.dev",
-    // Sentry DSN for worker error tracking. Public key — safe in this file.
-    // When empty/absent, the Sentry SDK is not initialized and the worker
-    // behaves as before (no error reporting).
     "SENTRY_DSN": "https://47d4580978ca72b625ee6460335410bd@o4510603967332352.ingest.us.sentry.io/4511942034259968",
-    // Default to production so deploys never ship with debug logging / dev CORS.
-    // Override to "development" locally via .dev.vars (precedence over vars).
     "APP_ENV": "production",
     "JWT_ISSUER": "https://ekwe-proxy.ekwe.workers.dev",
     "JWT_PUBLIC_JWK": "{\"crv\":\"Ed25519\",\"x\":\"mvDDmzCiZLRU-8zu_b_OBM5FA5xVX7JaJwrvdrfr7UI\",\"kty\":\"OKP\"}",
     "APPLE_BUNDLE_ID": "com.ekwe.app",
-    // Google OAuth client ids (iOS + web) the worker accepts as the
-    // audience for a Google id token. Comma separated.
     "GOOGLE_CLIENT_IDS": "508960750849-jo3qc5r65ip3oc6e8e3pc8ju9vacjko1.apps.googleusercontent.com,508960750849-u120m2v71v74uk9dbmfd06neppsc732h.apps.googleusercontent.com",
-    // Flips the sync push cap and the subrequest budget. Set to "true" when the
-    // account moves to Workers Paid; native Free caps the batch at 25 rows.
+    // sync push cap: Free 25 rows, Paid 200 rows (shared/sync.ts). Default = Free.
     "WORKERS_PAID": "false",
-    // Sender for the OTP email. This is the Brevo account's own verified
-    // sender: no domain is owned yet, and Brevo's free tier only mails the
-    // account owner until a sending domain is verified. Swap to
-    // "noreply@ekwe.app" once ekwe.app is verified in Brevo.
     "BREVO_SENDER": "emmanuelforchinagorom@gmail.com",
-    "BREVO_SENDER_NAME": "Ekwe"
+    "BREVO_SENDER_NAME": "Ekwe",
+    "ADMIN_EMAILS": "emmanuelforchinagorom@gmail.com",
+    "CF_ACCESS_ISSUER": "https://old-scene-5c9b.cloudflareaccess.com",
+    "CF_ACCESS_AUDIENCE": "dd4230064d6b8b06d8cc1b5fbf73227e66105783124e1ea0c0b563d64cc91718"
+  },
+
+  // Paid override: deploy with `wrangler deploy --env paid` once account
+  // moves to Workers Paid. Default deploy (no --env) works on Free.
+  "env": {
+    "paid": {
+      "name": "ekwe-proxy",
+      "vars": {
+        "WORKERS_PAID": "true"
+      },
+      "limits": {
+        "cpu_ms": 300000
+      }
+    }
   },
 
   "observability": {
     "enabled": true,
-    "logs": { "head_sampling_rate": 1 },
+    "logs": { "head_sampling_rate": 0.1 },
     "traces": { "enabled": true, "head_sampling_rate": 0.01 }
   },
 
-  // KV: provider health, small TTS cache, FX rates, key memoisation.
   "kv_namespaces": [
     {
       "binding": "EKWE_KV",
@@ -83,7 +64,6 @@
     }
   ],
 
-  // Created via: wrangler d1 create ekwe
   "d1_databases": [
     {
       "binding": "DB",
@@ -92,10 +72,6 @@
     }
   ],
 
-  // R2 large speech-audio cache. Small clips stay in KV (hot, low latency);
-  // audio above SPEECH_KV_CACHE_MAX_BYTES is stored here so long-form TTS output
-  // is never re-generated. Create the bucket before deploying:
-  //   wrangler r2 bucket create ekwe-speech-cache
   "r2_buckets": [
     {
       "binding": "SPEECH_CACHE",
@@ -103,10 +79,6 @@
     }
   ],
 
-  // Analytics Engine dataset for provider-pipeline telemetry (per-attempt
-  // outcomes, latency, error class, preflight/usage events). The dataset is
-  // created automatically on the first write from a deployed Worker — no
-  // out-of-band setup needed. Query via `wrangler insights` or the SQL HTTP API.
   "analytics_engine_datasets": [
     {
       "binding": "EKWE_ANALYTICS",
@@ -114,12 +86,7 @@
     }
   ],
 
-  // Rate limit: 500 requests per minute per KEY per edge location — NOT a
-  // global cap. The pipeline keys by `auth.userId::clientIp` (see
-  // core/pipeline.ts), so each signed-in user gets their own 500/min budget
-  // at each Cloudflare location. Generous for a burst guard; abuse throttling
-  // (OTP) lives in the DO counters and per-route preflight gates.
-  // namespace_id derived from worker name ("ekwe-proxy"): proxy=28401.
+  // 500/min per key per edge (keyed by userId::clientIp in middleware).
   "ratelimits": [
     {
       "name": "RATE_LIMITER",
@@ -128,33 +95,25 @@
     }
   ],
 
-  // Cloudflare Workers AI binding
   "ai": {
     "binding": "AI"
   },
 
-  // Durable Objects
   "durable_objects": {
     "bindings": [
       {
-        // Live-transcription sessions. One DO instance per user (getByName(userId))
-        // so WebSockets survive worker-isolate churn and idle sessions can hibernate.
+        // Live-transcription sessions. One DO per user (getByName(userId)).
         "name": "STREAM_DO",
         "class_name": "StreamDurableObject"
       },
       {
-        // OTP send throttling. A single instance (getByName("otp")) holds per-IP /
-        // per-email counters. Replaces the KV counter, which had no atomic increment
-        // and capped writes to the same key at 1/sec (a spammer's burst silently
-        // stopped the count from rising). DO storage is strongly consistent.
+        // OTP throttle. 8 shards (getByName(otp-N)) by hash, not single instance.
         "name": "THROTTLE_DO",
         "class_name": "ThrottleBucket"
       }
     ]
   },
 
-
-  // DO migrations — new SQLite-backed classes
   "migrations": [
     {
       "tag": "v1",
@@ -166,11 +125,6 @@
     }
   ],
 
-  // Queue for durable billing-webhook retry beyond Flutterwave's built-in
-  // 3–5 attempt window. Failed webhook events (fullyApplied=false) are
-  // enqueued here so a transient D1 outage cannot permanently lose a payment.
-  // Create before deploying: wrangler queues create ekwe-webhook-retry
-  // Consumer: same worker (see worker.ts queue() handler).
   "queues": {
     "producers": [
       {
@@ -185,8 +139,6 @@
     "consumers": [
       {
         "queue": "ekwe-webhook-retry",
-        // Re-deliver after 60 s; back-off is handled by the queue itself.
-        // max_retries keeps a bad payload from looping forever.
         "max_retries": 12,
         "dead_letter_queue": "ekwe-webhook-dlq"
       },

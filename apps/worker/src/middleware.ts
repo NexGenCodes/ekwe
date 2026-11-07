@@ -5,6 +5,7 @@ import { WORKER_ERROR_CODES } from "@ekwe/shared";
 import { error } from "@/core/http";
 import { logger } from "@/core/logger";
 import { authenticate, isAdminAuthorized } from "@/core/auth";
+import { verifyAdmin } from "@/core/adminAuth";
 import { tooManyRequests } from "@/core/guards";
 import { runPreflightGate } from "@/services/preflight";
 
@@ -83,6 +84,16 @@ export const adminAuthMiddleware = async (c: Context<AppEnv>, next: Next) => {
     logger.warn("[auth] Admin secret rejected", { path: c.req.path });
     return error(WORKER_ERROR_CODES.UNAUTHORIZED, 401);
   }
+  await next();
+};
+
+export const adminUserMiddleware = async (c: Context<AppEnv>, next: Next) => {
+  const result = await verifyAdmin(c.env, c.req.raw);
+  if (!result.ok) {
+    logger.warn("[auth] Dashboard admin rejected", { path: c.req.path });
+    return error(WORKER_ERROR_CODES.UNAUTHORIZED, 401);
+  }
+  c.set("adminEmail", result.email ?? "unknown");
   await next();
 };
 

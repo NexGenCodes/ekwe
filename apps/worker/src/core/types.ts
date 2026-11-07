@@ -10,6 +10,9 @@ type _EnvExtras = {
   SYNC_PUSH_COOLDOWN_MS?: string;
   EDGE_CLIENT_TOKEN?: string;
   TTS_GEMINI_VOICE?: string;
+  ADMIN_EMAILS?: string;
+  CF_ACCESS_ISSUER?: string;
+  CF_ACCESS_AUDIENCE?: string;
 };
 type _EnvForExport = Env & _EnvExtras;
 export type { _EnvForExport as Env };

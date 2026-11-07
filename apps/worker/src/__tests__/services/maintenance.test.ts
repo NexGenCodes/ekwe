@@ -191,7 +191,7 @@ describe("fetchUsageSnapshot", () => {
     const transcribe = snapshot!.meters.find((m) => m.id === "transcribe");
     const stream = snapshot!.meters.find((m) => m.id === "stream");
 
-    expect(translate).toMatchObject({ total: 20, remaining: 20, used: 0 });
+    expect(translate).toMatchObject({ total: 25, remaining: 25, used: 0 });
     expect(transcribe).toMatchObject({ total: 10, remaining: 10, used: 0 });
     expect(stream).toMatchObject({ total: 0, remaining: 0, used: 0 });
   });
@@ -214,12 +214,12 @@ describe("fetchUsageSnapshot", () => {
     const stream = snapshot!.meters.find((m) => m.id === "stream");
 
     expect(translate).toMatchObject({
-      total: 600,
-      remaining: 500,
+      total: 2_000,
+      remaining: 1_900,
       used: 100,
     });
-    expect(transcribe).toMatchObject({ total: 300, remaining: 297, used: 3 });
-    expect(speech).toMatchObject({ total: 50_000, remaining: 49_100 });
+    expect(transcribe).toMatchObject({ total: 500, remaining: 497, used: 3 });
+    expect(speech).toMatchObject({ total: 100_000, remaining: 99_100 });
     expect(stream).toMatchObject({ total: 60, remaining: 56, used: 4 });
   });
 });

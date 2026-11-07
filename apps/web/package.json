@@ -4,11 +4,33 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build.mjs",
-    "dev": "node build.mjs --watch",
-    "deploy": "wrangler pages deploy --branch master"
+    "dev": "vite",
+    "build": "node scripts/generate.mjs && vite build",
+    "preview": "vite preview",
+    "deploy": "wrangler pages deploy --branch master",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ --max-warnings 0",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "test": "node -e \"process.exit(0)\""
+  },
+  "dependencies": {
+    "@ekwe/shared": "workspace:*",
+    "lucide-react": "^0.469.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router": "^7.1.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.39.5",
+    "globals": "15.15.0",
+    "prettier": "^3.4.2",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "8.61.1",
+    "vite": "^6.0.7",
     "wrangler": "^4.149.0"
   }
 }

@@ -158,7 +158,7 @@ export async function checkBot(
   return { ok: true };
 }
 
-const THROTTLE_SHARDS = 8;
+const THROTTLE_SHARDS = 32;
 
 async function shardFor(key: string): Promise<string> {
   const digest = await sha256(key);

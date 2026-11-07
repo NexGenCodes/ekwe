@@ -229,7 +229,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build landing site
-        run: node apps/web/build.mjs
+        run: pnpm --filter @ekwe/web build
       - name: Deploy to Cloudflare Pages
         working-directory: apps/web
         env:

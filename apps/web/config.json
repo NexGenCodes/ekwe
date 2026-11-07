@@ -2,7 +2,7 @@
   "app": {
     "name": "Ekwe",
     "tagline": "Voice notes, translated instantly.",
-    "description": "Record or import voice notes and get instant translations in 130+ languages. Powered by AI, built for everyone.",
+    "description": "Record or import voice notes and get instant translations in 31 languages. Powered by AI, built for everyone.",
     "version": "1.3.3"
   },
   "links": {
@@ -21,7 +21,7 @@
   "features": [
     {
       "title": "Voice Translation",
-      "description": "Record or import voice notes and get accurate translations in 130+ languages.",
+      "description": "Record or import voice notes and get accurate translations in 31 languages.",
       "icon": "mic"
     },
     {
