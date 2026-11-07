@@ -97,6 +97,29 @@ export const adminUserMiddleware = async (c: Context<AppEnv>, next: Next) => {
   await next();
 };
 
+/**
+ * Release endpoints accept either the CI release secret
+ * (`adminAuthMiddleware`) or the dashboard Access JWT
+ * (`adminUserMiddleware`), so `admin:release` and the dashboard
+ * Releases tab can both operate them.
+ */
+export const adminReleaseMiddleware = async (
+  c: Context<AppEnv>,
+  next: Next,
+) => {
+  if (await isAdminAuthorized(c.env, c.req.raw)) {
+    await next();
+    return;
+  }
+  const result = await verifyAdmin(c.env, c.req.raw);
+  if (!result.ok) {
+    logger.warn("[auth] Release admin rejected", { path: c.req.path });
+    return error(WORKER_ERROR_CODES.UNAUTHORIZED, 401);
+  }
+  c.set("adminEmail", result.email ?? "unknown");
+  await next();
+};
+
 export const preflightMiddleware =
   (usageType: UsageType) => async (c: Context<AppEnv>, next: Next) => {
     const timings = c.get("timings");

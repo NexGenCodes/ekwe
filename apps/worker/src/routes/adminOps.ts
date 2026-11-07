@@ -109,6 +109,19 @@ export async function handleAdminHealth(c: Context<AppEnv>) {
   });
 }
 
+export async function handleGetAdminManifest(c: Context<AppEnv>) {
+  const raw = await c.env.EKWE_KV.get("update:manifest").catch(() => null);
+  if (!raw) {
+    return c.json({ manifest: null }, 200);
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return c.json({ manifest: parsed });
+  } catch {
+    return c.json({ manifest: null });
+  }
+}
+
 export async function handleAuditWrite(c: Context<AppEnv>) {
   const adminEmail = c.get("adminEmail") ?? "unknown";
   const body: unknown = await c.req.json().catch(() => null);

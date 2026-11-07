@@ -21,6 +21,9 @@
  *   node src/__tests__/helpers/check-stt.mjs                 # core languages
  *   node src/__tests__/helpers/check-stt.mjs --langs yo,ig,fr
  *   node src/__tests__/helpers/check-stt.mjs --providers witai,groq
+ *   node src/__tests__/helpers/check-stt.mjs --runs 3        # 3 samples per
+ *                provider: per-(language,provider) p50/p95 latency instead of
+ *                a single clock reading. Scoring uses the best of the runs.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -221,14 +224,37 @@ export function score(reference, hypothesis) {
 
 const wav = (buf) => new Blob([buf], { type: "audio/wav" });
 
-async function time(label, fn) {
-  const started = Date.now();
-  try {
-    const text = await fn();
-    return { label, text, ms: Date.now() - started };
-  } catch (err) {
-    return { label, error: err instanceof Error ? err.message : String(err), ms: Date.now() - started };
+/** Nearest-rank percentile over a sorted numeric array; null when empty. */
+function percentile(sorted, p) {
+  if (sorted.length === 0) return null;
+  const rank = Math.min(sorted.length, Math.max(1, Math.ceil((p / 100) * sorted.length)));
+  return sorted[rank - 1];
+}
+
+/** Runs fn `runs` times; per-run accuracy is kept, failures become samples-less errors. */
+async function timeRuns(label, fn, runs) {
+  const samples = [];
+  let firstText = null;
+  let lastError = null;
+  for (let i = 0; i < runs; i += 1) {
+    const started = Date.now();
+    try {
+      const text = await fn();
+      samples.push(Date.now() - started);
+      if (firstText === null) firstText = text;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
   }
+  samples.sort((a, b) => a - b);
+  return {
+    label,
+    text: firstText,
+    error: lastError,
+    samples,
+    p50: percentile(samples, 50),
+    p95: percentile(samples, 95),
+  };
 }
 
 function groqStt(key, audio, lang) {
@@ -458,6 +484,7 @@ async function main() {
   const langs = (argOf("--langs")?.split(",") ?? DEFAULT_LANGS).filter(Boolean);
   const providerFilter = argOf("--providers")?.split(",");
   const refresh = args.includes("--refresh");
+  const runs = Math.min(7, Math.max(1, Number(argOf("--runs") ?? "1") || 1));
 
   // Threshold is a per-provider quality gate, not a correctness gate. On a
   // seven-word phrase a single differing word costs ~14 points, so 0.6 is
@@ -504,28 +531,40 @@ async function main() {
         report.push({ lang, provider: runner.name, error: "no key configured" });
         continue;
       }
-      const result = await time(runner.name, runner.run);
+      const result = await timeRuns(runner.name, runner.run, runs);
       record(result, runner.name, phrase, lang);
     }
     console.log("");
   }
 
   function record(result, label, phrase, lang) {
-    if (result.error) {
+    if (result.error && result.samples.length === 0) {
       fail += 1;
-      console.log(`   ${label.padEnd(12)} ${FAIL} ${result.error} (${result.ms}ms)`);
-      report.push({ lang, provider: label, error: result.error, ms: result.ms });
+      console.log(`   ${label.padEnd(12)} ${FAIL} ${result.error}`);
+      report.push({ lang, provider: label, error: result.error });
       return;
     }
     const s = score(phrase, result.text);
     const ok = s >= minScore;
     if (ok) pass += 1;
     else fail += 1;
+    const latency =
+      result.samples.length > 1
+        ? `p50 ${result.p50}ms · p95 ${result.p95}ms (n=${result.samples.length})`
+        : `${result.samples[0]}ms`;
     console.log(
       `   ${label.padEnd(12)} ${ok ? PASS : FAIL} ${(s * 100).toFixed(0)}% ` +
-        `${String(result.ms).padStart(6)}ms  "${(result.text || "").slice(0, 60)}"`,
+        `${latency}  "${(result.text || "").slice(0, 60)}"`,
     );
-    report.push({ lang, provider: label, score: s, ms: result.ms, text: result.text });
+    report.push({
+      lang,
+      provider: label,
+      score: s,
+      samples: result.samples,
+      p50: result.p50,
+      p95: result.p95,
+      text: result.text,
+    });
   }
 
   console.log("─".repeat(60));
@@ -541,6 +580,16 @@ async function main() {
       console.log(
         `  ${(f.lang + "/" + f.provider).padEnd(22)} ` +
           (f.error ? f.error : `${((f.score ?? 0) * 100).toFixed(0)}% "${f.text}"`),
+      );
+    }
+  }
+
+  const latencyRows = report.filter((r) => r.samples?.length > 1);
+  if (latencyRows.length > 0) {
+    console.log("\nLatency (p50 · p95, ms):");
+    for (const r of latencyRows) {
+      console.log(
+        `  ${(r.lang + "/" + r.provider).padEnd(22)} p50 ${String(r.p50).padStart(6)} · p95 ${String(r.p95).padStart(6)} · n=${r.samples.length}`,
       );
     }
   }

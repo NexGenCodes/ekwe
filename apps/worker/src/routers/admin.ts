@@ -7,7 +7,7 @@ import {
   updateManifestSchema,
 } from "@ekwe/shared";
 import {
-  adminAuthMiddleware,
+  adminReleaseMiddleware,
   authMiddleware,
   adminUserMiddleware,
 } from "@/middleware";
@@ -23,6 +23,7 @@ import {
   handleUsage,
   handleAdminHealth,
   handleAuditWrite,
+  handleGetAdminManifest,
 } from "@/routes/adminOps";
 
 export const adminRouter = new Hono<AppEnv>();
@@ -37,16 +38,21 @@ deviceRouter.post(
 
 adminRouter.post(
   "/update/notify",
-  adminAuthMiddleware,
+  adminReleaseMiddleware,
   zValidator("json", pushNotifyRequestSchema),
   (c) => handleUpdateNotify(c.req.valid("json"), c.env),
 );
 
 adminRouter.post(
   "/update/manifest",
-  adminAuthMiddleware,
+  adminReleaseMiddleware,
   zValidator("json", updateManifestSchema),
   (c) => handlePostUpdateManifest(c.req.valid("json"), c.env),
+);
+adminRouter.get(
+  "/update/manifest",
+  adminUserMiddleware,
+  handleGetAdminManifest,
 );
 
 adminRouter.get("/users", adminUserMiddleware, handleListUsers);
