@@ -94,15 +94,12 @@ export async function handleAdminHealth(c: Context<AppEnv>) {
   } catch {
     kv = "error";
   }
-  let pushActive = 0;
-  try {
-    const r = (await env.DB.prepare(
-      "SELECT COUNT(*) AS n FROM push_tokens WHERE is_active = 1",
-    ).first()) as unknown as { n: number } | null;
-    pushActive = r?.n ?? 0;
-  } catch {
-    pushActive = 0;
-  }
+  const pushActive = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM push_tokens WHERE is_active = 1",
+  )
+    .first()
+    .then((r) => (r as unknown as { n: number } | null)?.n ?? 0)
+    .catch(() => 0);
   return c.json({
     status: "ok",
     timestamp: Date.now(),
@@ -113,8 +110,8 @@ export async function handleAdminHealth(c: Context<AppEnv>) {
 }
 
 export async function handleAuditWrite(c: Context<AppEnv>) {
-  const adminEmail = (c.get("adminEmail") as string) ?? "unknown";
-  const body = await c.req.json().catch(() => null);
+  const adminEmail = c.get("adminEmail") ?? "unknown";
+  const body: unknown = await c.req.json().catch(() => null);
   await audit(
     c.env,
     adminEmail,

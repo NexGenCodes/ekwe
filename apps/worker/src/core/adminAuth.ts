@@ -9,7 +9,7 @@ import { timingSafeEqual } from "@/utils/keys";
  *   curl / local testing without a Cloudflare tenant.
  */
 export function getAdminEmails(env: Env): string[] {
-  const raw = env.ADMIN_EMAILS as string | undefined;
+  const raw = env.ADMIN_EMAILS;
   if (!raw) return [];
   return raw
     .split(",")
@@ -32,8 +32,8 @@ export async function verifyAdmin(
     if (ok) return { ok: true, email: "dev@local" };
   }
 
-  const issuer = env.CF_ACCESS_ISSUER as string | undefined;
-  const audience = env.CF_ACCESS_AUDIENCE as string | undefined;
+  const issuer = env.CF_ACCESS_ISSUER;
+  const audience = env.CF_ACCESS_AUDIENCE;
   const jwt = request.headers.get("Cf-Access-Jwt-Assertion");
   if (!issuer || !audience || !jwt) {
     // No Access configured: deny in production, deny in dev (require secret above).
