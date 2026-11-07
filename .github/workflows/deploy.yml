@@ -373,16 +373,39 @@ jobs:
             echo "value=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Write release notes to changelog
-        # Only manual dispatches carry curated notes; the release commit then
-        # includes CHANGELOG.md, and the landing-site rebuild below renders it.
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.release_notes != ''
+      - name: Prepare release body
+        # Curated notes win (workflow_dispatch); push-triggered releases fall
+        # back to the git log since the previous tag so the bump commit and the
+        # GitHub release carry a real description instead of a bare version line.
+        # Runs before the changelog step so the same body is written there.
         env:
           RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
         run: |
           mkdir -p dist
-          printf '%s' "$RELEASE_NOTES" > dist/release-notes.md
-          node scripts/append-changelog.mjs "${{ steps.bump.outputs.next_version }}" dist/release-notes.md
+          if [ -n "$RELEASE_NOTES" ]; then
+            printf '%s\n' "$RELEASE_NOTES" > dist/release-body.md
+          else
+            FROM="${{ steps.version.outputs.tag }}"
+            if ! git rev-parse --verify -q "refs/tags/$FROM" >/dev/null 2>&1; then
+              # Releasing a version that has no tag yet (first run / manual
+              # release before any tag exists): fall back to the latest commits
+              # instead of failing the range lookup.
+              FROM="$(git log --format=%H -n 20 | tail -1)"
+            fi
+            {
+              echo "**Changes since ${FROM}**"
+              echo ""
+              git log "${FROM}..HEAD" \
+                --pretty=format:'- %s' --no-merges \
+                | grep -vE '^[- ]*chore: release v' || true
+            } > dist/release-body.md
+          fi
+
+      - name: Write release notes to changelog
+        # Always backfill CHANGELOG.md from the release body so APP_VERSION never
+        # drifts from the latest entry (check-changelog.mjs guards this).
+        run: |
+          node scripts/append-changelog.mjs "${{ steps.bump.outputs.next_version }}" dist/release-body.md
 
       - name: Run prebuild
         working-directory: apps/mobile
@@ -453,33 +476,6 @@ jobs:
             "${{ steps.bump.outputs.next_version_code }}" \
             "${{ steps.assets.outputs.sha256 }}" \
             "${{ steps.assets.outputs.size }}"
-
-      - name: Prepare release body
-        # Curated notes win (workflow_dispatch); push-triggered releases fall
-        # back to the git log since the previous tag so the bump commit and the
-        # GitHub release carry a real description instead of a bare version line.
-        env:
-          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
-        run: |
-          mkdir -p dist
-          if [ -n "$RELEASE_NOTES" ]; then
-            printf '%s\n' "$RELEASE_NOTES" > dist/release-body.md
-          else
-            FROM="${{ steps.version.outputs.tag }}"
-            if ! git rev-parse --verify -q "refs/tags/$FROM" >/dev/null 2>&1; then
-              # Releasing a version that has no tag yet (first run / manual
-              # release before any tag exists): fall back to the latest commits
-              # instead of failing the range lookup.
-              FROM="$(git log --format=%H -n 20 | tail -1)"
-            fi
-            {
-              echo "**Changes since ${FROM}**"
-              echo ""
-              git log "${FROM}..HEAD" \
-                --pretty=format:'- %s' --no-merges \
-                | grep -vE '^[- ]*chore: release v' || true
-            } > dist/release-body.md
-          fi
 
       - name: Commit + push version bump
         id: commit

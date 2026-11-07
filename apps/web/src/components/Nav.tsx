@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { siteConfig } from "../data/siteConfig";
 import { Logo } from "./Logo";
 
@@ -12,6 +12,8 @@ export function Nav({
   const location = useLocation();
   const navigate = useNavigate();
   const [activeHash, setActiveHash] = useState("");
+  const linksRef = useRef<HTMLUListElement>(null);
+  const burgerRef = useRef<HTMLButtonElement>(null);
 
   const handleLogoClick = (e: React.MouseEvent) => {
     setOpen(false);
@@ -57,16 +59,36 @@ export function Nav({
     [links],
   );
 
-  // Mobile drawer: lock scroll + Escape to close
+  // Mobile drawer: lock scroll, trap focus, Escape to close, restore focus
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
+    if (!open) return;
+    const linksEl = linksRef.current;
+    // copy to local to avoid cleanup-stale-ref
+    const first = linksEl?.querySelector<HTMLElement>("a");
+    first?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Tab" || !linksEl) return;
+      const focusables = Array.from(
+        linksEl.querySelectorAll<HTMLElement>("a, button"),
+      );
+      if (focusables.length === 0) return;
+      const firstEl = focusables[0];
+      const lastEl = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === firstEl) {
+        e.preventDefault();
+        lastEl.focus();
+      } else if (!e.shiftKey && document.activeElement === lastEl) {
+        e.preventDefault();
+        firstEl.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = "";
       window.removeEventListener("keydown", onKey);
+      first?.focus();
     };
   }, [open]);
 
@@ -115,7 +137,11 @@ export function Nav({
           onClick={() => setOpen(false)}
           aria-hidden="true"
         />
-        <ul className="nav-links" data-open={open ? "true" : "false"}>
+        <ul
+          className="nav-links"
+          data-open={open ? "true" : "false"}
+          ref={linksRef}
+        >
           {items.map((l) => {
             const isRouter = !l.to.startsWith("#");
             const isActive = isRouter
@@ -165,6 +191,7 @@ export function Nav({
           aria-label="Toggle navigation"
           aria-expanded={open}
           aria-controls="nav-links"
+          ref={burgerRef}
           onClick={() => setOpen((v) => !v)}
         >
           <span></span>
