@@ -27,7 +27,7 @@ async function audit(
 
 export async function handleListUsers(c: Context<AppEnv>) {
   const env = c.env;
-  const adminEmail = (c.get("adminEmail") as string) ?? "unknown";
+  const adminEmail = c.get("adminEmail") ?? "unknown";
   const q = c.req.query("q")?.trim().toLowerCase() ?? "";
   const tier = c.req.query("tier")?.toUpperCase() ?? "";
   const limit = Math.min(
@@ -76,9 +76,12 @@ export async function handleListUsers(c: Context<AppEnv>) {
 
 export async function handleSetPro(c: Context<AppEnv>) {
   const env = c.env;
-  const adminEmail = (c.get("adminEmail") as string) ?? "unknown";
+  const adminEmail = c.get("adminEmail") ?? "unknown";
   const id = c.req.param("id");
-  const body = await c.req.json().catch(() => null);
+  const body = (await c.req.json().catch(() => null)) as {
+    isPro?: unknown;
+    expiresAt?: unknown;
+  } | null;
   const isPro = body?.isPro === true;
   const expiresAt = typeof body?.expiresAt === "number" ? body.expiresAt : null;
 

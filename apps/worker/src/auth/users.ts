@@ -44,7 +44,7 @@ const SELECT_COLUMNS = COLUMNS.join(", ");
 const SELECT_U_COLUMNS = COLUMNS.map((column) => `u.${column}`).join(", ");
 
 export function getAdminEmails(env: Env): string[] {
-  const raw = env.ADMIN_EMAILS as string | undefined;
+  const raw = env.ADMIN_EMAILS;
   if (!raw) return [];
   return raw
     .split(",")
