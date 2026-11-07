@@ -60,6 +60,7 @@ export type OrbStatus = {
   hasMediaProjection: boolean;
   foregroundApp: string | null;
   lastPeakAmplitude: number;
+  canDrawOverlays?: boolean;
 };
 
 export type OrbConfig = {
@@ -166,4 +167,8 @@ export type EkweNativeModuleType = {
   configureOrb?(config: OrbConfig): Promise<boolean>;
   /** Orb screen, Android only. */
   getOrbStatus?(): Promise<OrbStatus>;
+  /** Orb overlay permission check, Android only. */
+  checkOverlayPermission?(): Promise<boolean>;
+  /** Orb overlay permission request (opens system settings), Android only. */
+  requestOverlayPermission?(): Promise<boolean>;
 };

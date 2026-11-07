@@ -1,5 +1,6 @@
 import { observable } from "@legendapp/state";
 import { syncObservable } from "@legendapp/state/sync";
+import { Platform } from "react-native";
 
 import { VoiceGender } from "@ekwe/shared";
 import {
@@ -115,6 +116,10 @@ function migrateSettings(
   data.currency = isSupportedPaymentCurrency(normalizedCurrency)
     ? normalizedCurrency
     : DEFAULT_PAYMENT_CURRENCY;
+  if (Platform.OS !== "android") {
+    data.orbEnabled = false;
+    data.orbAutoArm = false;
+  }
   return data;
 }
 
@@ -168,9 +173,17 @@ export const settingsActions = {
     settings$.liveTranscriptionEnabled.set(val);
   },
   setOrbEnabled: (val: boolean): void => {
+    if (Platform.OS !== "android") {
+      settings$.orbEnabled.set(false);
+      return;
+    }
     settings$.orbEnabled.set(val);
   },
   setOrbAutoArm: (val: boolean): void => {
+    if (Platform.OS !== "android") {
+      settings$.orbAutoArm.set(false);
+      return;
+    }
     settings$.orbAutoArm.set(val);
   },
   setVoiceGender: (val: VoiceGenderSetting): void => {

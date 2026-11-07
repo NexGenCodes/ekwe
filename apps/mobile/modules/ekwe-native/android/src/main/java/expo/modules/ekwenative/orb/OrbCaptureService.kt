@@ -26,6 +26,27 @@ class OrbCaptureService : Service() {
   private var projection: MediaProjection? = null
   private var record: AudioRecord? = null
   private var loop: PcmCaptureLoop? = null
+  private var appWatcher: OrbAppWatcher? = null
+  private val vad = OrbVadGate(trailingMs = 800L)
+
+  private val vadCheckRunnable = object : Runnable {
+    override fun run() {
+      val currentLoop = loop ?: return
+      if (!isRunning) return
+      val amp = currentLoop.amplitude
+      val db = if (amp > 0f) (20 * Math.log10(amp.toDouble().coerceAtLeast(0.00001))).toFloat() else -100f
+      vad.onAmplitudeDb(db)
+      lastPeakAmplitude = currentLoop.peakAmplitude
+
+      if (vad.isSilencedForTooLong()) {
+        Log.i(TAG, "Orb: VAD trailing silence reached; auto-stopping capture.")
+        finish()
+        return
+      }
+
+      mainHandler.postDelayed(this, 100)
+    }
+  }
 
   private val projectionCallback = object : MediaProjection.Callback() {
     override fun onStop() {
@@ -35,6 +56,13 @@ class OrbCaptureService : Service() {
   }
 
   fun stop() {
+    mainHandler.removeCallbacks(vadCheckRunnable)
+    appWatcher?.stop()
+    appWatcher = null
+    isRunning = false
+    hasMediaProjection = false
+    OrbOverlayManager.getInstance(this).setRecording(false)
+
     val active = loop
     active?.stop()
     if (active != null && active.peakAmplitude > lastPeakAmplitude) {
@@ -79,6 +107,7 @@ class OrbCaptureService : Service() {
       return START_NOT_STICKY
     }
     projection = active
+    hasMediaProjection = true
     active.registerCallback(projectionCallback, mainHandler)
 
     val created = buildRecord(active)
@@ -97,6 +126,19 @@ class OrbCaptureService : Service() {
       return START_NOT_STICKY
     }
     loop = captureLoop
+    isRunning = true
+    OrbOverlayManager.getInstance(this).setRecording(true)
+
+    appWatcher = OrbAppWatcher(this) { pkg, label ->
+      currentForegroundApp = pkg
+      currentForegroundAppLabel = label
+      Log.d(TAG, "Foreground app: $pkg ($label)")
+    }
+    appWatcher?.start()
+
+    vad.reset()
+    mainHandler.post(vadCheckRunnable)
+
     return START_NOT_STICKY
   }
 
@@ -181,6 +223,22 @@ class OrbCaptureService : Service() {
     const val EXTRA_RESULT_DATA = "resultData"
     const val EXTRA_OUTPUT_PATH = "outputPath"
     const val EXTRA_IS_LIVE = "isLive"
+
+    @Volatile
+    var isRunning = false
+      private set
+
+    @Volatile
+    var hasMediaProjection = false
+      private set
+
+    @Volatile
+    var currentForegroundApp: String? = null
+      private set
+
+    @Volatile
+    var currentForegroundAppLabel: String? = null
+      private set
 
     @Volatile
     var lastPeakAmplitude = 0f

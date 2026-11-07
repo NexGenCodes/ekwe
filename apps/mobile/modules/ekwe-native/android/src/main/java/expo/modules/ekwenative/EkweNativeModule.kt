@@ -20,6 +20,7 @@ import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import expo.modules.ekwenative.orb.OrbConsent
 import expo.modules.ekwenative.orb.OrbCaptureService
+import expo.modules.ekwenative.orb.OrbOverlayManager
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlin.concurrent.thread
@@ -974,11 +975,68 @@ class EkweNativeModule : Module() {
     }
 
     AsyncFunction("configureOrb") { config: Map<String, Any?> ->
+      val context = appContext.reactContext ?: return@AsyncFunction false
+      val enabled = (config["orbEnabled"] as? Boolean) ?: false
+      val autoArm = (config["orbAutoArm"] as? Boolean) ?: false
+
+      OrbOverlayManager.getInstance(context).setEnabled(enabled)
       true
     }
 
     AsyncFunction("getOrbStatus") {
-      mapOf("running" to false, "hasMediaProjection" to false, "foregroundApp" to null, "lastPeakAmplitude" to 0f)
+      val context = appContext.reactContext
+      val canDraw = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && context != null) {
+        android.provider.Settings.canDrawOverlays(context)
+      } else {
+        true
+      }
+      mapOf(
+        "running" to OrbCaptureService.isRunning,
+        "hasMediaProjection" to OrbCaptureService.hasMediaProjection,
+        "foregroundApp" to OrbCaptureService.currentForegroundApp,
+        "lastPeakAmplitude" to OrbCaptureService.lastPeakAmplitude.toDouble(),
+        "canDrawOverlays" to canDraw
+      )
+    }
+
+    AsyncFunction("checkOverlayPermission") {
+      val context = appContext.reactContext ?: return@AsyncFunction false
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        android.provider.Settings.canDrawOverlays(context)
+      } else {
+        true
+      }
+    }
+
+    AsyncFunction("requestOverlayPermission") {
+      val activity = appContext.currentActivity ?: return@AsyncFunction false
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (!android.provider.Settings.canDrawOverlays(activity)) {
+          val intent = android.content.Intent(
+            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            android.net.Uri.parse("package:${activity.packageName}")
+          )
+          activity.startActivity(intent)
+          return@AsyncFunction true
+        }
+      }
+      true
+    }
+
+    AsyncFunction("updateOrbText") { text: String ->
+      val context = appContext.reactContext ?: return@AsyncFunction false
+      OrbOverlayManager.getInstance(context).updateText(text)
+      true
+    }
+
+    AsyncFunction("consumeOrbAction") { ->
+      val activity = appContext.currentActivity ?: return@AsyncFunction null
+      val intent = activity.intent ?: return@AsyncFunction null
+      val action = intent.getStringExtra("orb_action")
+      if (action != null) {
+        intent.removeExtra("orb_action")
+      }
+      action
     }
 
   }

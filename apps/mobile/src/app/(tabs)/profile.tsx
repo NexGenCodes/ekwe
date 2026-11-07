@@ -24,6 +24,7 @@ import {
   KeyboardAvoidingView,
   Linking,
   Modal,
+  Platform,
   RefreshControl,
   Switch,
   TextInput,
@@ -47,6 +48,7 @@ import { APP_VERSION, type VoiceGender } from "@ekwe/shared";
 import { getCurrencySymbol } from "@ekwe/shared/money";
 import { duration, borderRadius, spacing } from "@/constants";
 import { EkweError, ErrorMessages } from "@/constants/errors";
+import EkweNative from "../../../modules/ekwe-native/src/EkweNativeModule";
 import { useLogout, useTheme, usePermissions, useReduceMotion } from "@/hooks";
 import {
   deleteAccount,
@@ -514,36 +516,45 @@ export default function ProfileScreen(): React.JSX.Element {
                 ) : undefined
               }
             />
-            <ProfileRow
-              icon={CircleDot}
-              sfIcon="circle.dotted"
-              iconColor={color.foreground}
-              title="Orb"
-              subtitle="Transcribe while playing in another app"
-              checked={isPro ? orbEnabled : undefined}
-              locked={!isPro}
-              navigateToBilling
-              onPress={async () => {
-                if (isPro) {
-                  await triggerHaptic();
-                  setOrbEnabled(!orbEnabled);
+            {Platform.OS === "android" && (
+              <ProfileRow
+                icon={CircleDot}
+                sfIcon="circle.dotted"
+                iconColor={color.foreground}
+                title="Orb"
+                subtitle="Android only · Transcribe while playing in another app"
+                checked={isPro ? orbEnabled : undefined}
+                locked={!isPro}
+                navigateToBilling
+                onPress={async () => {
+                  if (isPro) {
+                    await triggerHaptic();
+                    if (!orbEnabled && Platform.OS === "android") {
+                      const hasPerm =
+                        await EkweNative.checkOverlayPermission?.();
+                      if (hasPerm === false) {
+                        await EkweNative.requestOverlayPermission?.();
+                      }
+                    }
+                    setOrbEnabled(!orbEnabled);
+                  }
+                }}
+                trailing={
+                  isPro ? (
+                    <Box pointerEvents="none">
+                      <Switch
+                        value={orbEnabled}
+                        trackColor={{
+                          true: color.brand,
+                          false: color.border,
+                        }}
+                        thumbColor={color.card}
+                      />
+                    </Box>
+                  ) : undefined
                 }
-              }}
-              trailing={
-                isPro ? (
-                  <Box pointerEvents="none">
-                    <Switch
-                      value={orbEnabled}
-                      trackColor={{
-                        true: color.brand,
-                        false: color.border,
-                      }}
-                      thumbColor={color.card}
-                    />
-                  </Box>
-                ) : undefined
-              }
-            />
+              />
+            )}
           </ProfileSection>
         </Animated.View>
 

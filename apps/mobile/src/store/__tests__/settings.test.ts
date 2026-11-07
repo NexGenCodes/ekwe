@@ -84,4 +84,11 @@ describe("settings currency migration", () => {
     const migrate = await loadMigration();
     expect(migrate({ voiceGender: "neutral" }).voiceGender).toBe("default");
   });
+
+  test("forces orbEnabled and orbAutoArm to false on non-android", async () => {
+    const migrate = await loadMigration();
+    const migrated = migrate({ orbEnabled: true, orbAutoArm: true });
+    expect(migrated.orbEnabled).toBe(false);
+    expect(migrated.orbAutoArm).toBe(false);
+  });
 });

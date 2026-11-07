@@ -25,13 +25,7 @@ class OrbService : Service() {
     fun getService(): OrbService = this@OrbService
   }
   private val binder = LocalBinder()
-  private var capturer: PcmCaptureLoop? = null
-  private var watcher: OrbAppWatcher? = null
-  private var vad: OrbVadGate? = null
-  private var stream: OrbStreamClient? = null
   private var overlay: OrbOverlayManager? = null
-  var lastPeakAmplitude: Double = 0.0
-    private set
 
   override fun onCreate() {
     super.onCreate()
@@ -43,6 +37,8 @@ class OrbService : Service() {
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     when (intent?.action) {
       ACTION_START -> {
+        overlay = OrbOverlayManager.getInstance(this)
+        overlay?.showBubble()
       }
       ACTION_STOP -> stopCapture()
     }
@@ -66,13 +62,7 @@ class OrbService : Service() {
   }
 
   private fun stopCapture() {
-    watcher?.stop()
     overlay?.hide()
-    capturer?.stop()
-    capturer = null
-    vad = null
-    stream?.close()
-    stream = null
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
   }
