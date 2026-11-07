@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router";
 import { siteConfig } from "../data/siteConfig";
 
 const API = "/admin/api";
@@ -33,6 +34,7 @@ interface Subscription {
   platform: string | null;
   expires_at: number | null;
 }
+
 interface Claim {
   flw_ref: string;
   user_id: string;
@@ -41,6 +43,7 @@ interface Claim {
   claimed_at: number;
   expires_at: number;
 }
+
 interface UsageRow {
   user_id: string;
   day?: string;
@@ -50,6 +53,7 @@ interface UsageRow {
   speech_chars: number;
   ai_credits: number;
 }
+
 interface HealthRes {
   status: string;
   timestamp: number;
@@ -57,6 +61,7 @@ interface HealthRes {
   bindings: { d1: string; kv: string };
   pushActive: number;
 }
+
 interface AuditRow {
   id: number;
   admin_email: string;
@@ -64,6 +69,7 @@ interface AuditRow {
   target_user_id: string | null;
   created_at: number;
 }
+
 interface Manifest {
   latest_version: string;
   latest_version_code: number;
@@ -72,38 +78,6 @@ interface Manifest {
   checksum_sha256?: string;
   file_size?: number;
   release_notes?: string;
-}
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "12px 16px",
-  borderRadius: 12,
-  border: "1px solid var(--border)",
-  background: "var(--bg-secondary)",
-  color: "var(--text-primary)",
-};
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label style={{ display: "block", marginBottom: 12, fontSize: "0.9rem" }}>
-      <span
-        style={{
-          display: "block",
-          marginBottom: 6,
-          color: "var(--text-muted)",
-        }}
-      >
-        {label}
-      </span>
-      {children}
-    </label>
-  );
 }
 
 function fmtDate(ms: number | null | undefined) {
@@ -118,7 +92,6 @@ function UsersTab({
   setTier,
   users,
   total,
-  hasError,
   onPro,
 }: {
   q: string;
@@ -127,7 +100,6 @@ function UsersTab({
   setTier: (v: string) => void;
   users: AdminUser[];
   total: number;
-  hasError: boolean;
   onPro: (id: string, isPro: boolean) => void;
 }) {
   return (
@@ -166,16 +138,8 @@ function UsersTab({
           <option value="PREMIUM">PREMIUM</option>
         </select>
       </div>
-      {hasError ? (
-        <p style={{ color: "var(--text-muted)" }}>
-          User list unavailable until the API responds.
-        </p>
-      ) : (
-        <>
-          <p className="legal-date">{total} users</p>
-          {users.length === 0 && <p>No users match.</p>}
-        </>
-      )}
+      <p className="legal-date">{total} users</p>
+      {users.length === 0 && <p>No users match.</p>}
       {users.length > 0 && (
         <div style={{ overflowX: "auto" }}>
           <table
@@ -241,23 +205,6 @@ export default function Admin() {
   const [tab, setTab] = useState<Tab>("users");
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState("");
-  const [manifest, setManifest] = useState<Manifest | null>(null);
-  const [manifestForm, setManifestForm] = useState({
-    latest_version: "",
-    latest_version_code: "",
-    min_supported_version_code: "",
-    download_url: "",
-    checksum_sha256: "",
-    file_size: "",
-    release_notes: "",
-  });
-  const [notifyForm, setNotifyForm] = useState({
-    version: "",
-    downloadUrl: "",
-    versionCode: "",
-    checksumSha256: "",
-  });
-  const [releaseResult, setReleaseResult] = useState<string | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
@@ -272,6 +219,34 @@ export default function Admin() {
   }>({ daily: [], monthly: [] });
   const [health, setHealth] = useState<HealthRes | null>(null);
   const [audit, setAudit] = useState<AuditRow[]>([]);
+  const [manifest, setManifest] = useState<Manifest | null>(null);
+  const [releaseResult, setReleaseResult] = useState<string | null>(null);
+  const [manifestForm, setManifestForm] = useState({
+    latest_version: manifest?.latest_version ?? "",
+    latest_version_code: manifest?.latest_version_code?.toString() ?? "",
+    min_supported_version_code:
+      manifest?.min_supported_version_code?.toString() ?? "",
+    download_url: manifest?.download_url ?? "",
+    checksum_sha256: manifest?.checksum_sha256 ?? "",
+    file_size: manifest?.file_size ?? "",
+    release_notes: manifest?.release_notes ?? "",
+  });
+  const [notifyForm, setNotifyForm] = useState({
+    version: manifest?.latest_version ?? "",
+    downloadUrl: manifest?.download_url ?? "",
+    versionCode: manifest?.latest_version_code?.toString() ?? "",
+    checksumSha256: manifest?.checksum_sha256 ?? "",
+  });
+  const navigate = useNavigate();
+
+  // Logout: clear Cloudflare Access session and redirect home
+  const handleLogout = async () => {
+    try {
+      navigate("/", { replace: true });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Sign out failed");
+    }
+  };
 
   const loadAll = useCallback(async () => {
     try {
@@ -327,7 +302,6 @@ export default function Admin() {
           });
         }
       }
-      if (u.status === "rejected") throw u.reason;
       setError(null);
       setLastSync(new Date().toLocaleTimeString());
     } catch (e) {
@@ -379,20 +353,22 @@ export default function Admin() {
     )
       return;
     try {
+      const latestVersion = manifestForm.latest_version;
+      const latestVersionCode = manifestForm.latest_version_code;
+      const minSupportedVersionCode = manifestForm.min_supported_version_code;
+      const downloadUrl = manifestForm.download_url;
       const body: Record<string, unknown> = {
-        latest_version: manifestForm.latest_version.trim(),
-        latest_version_code: Number(manifestForm.latest_version_code),
-        min_supported_version_code: Number(
-          manifestForm.min_supported_version_code,
-        ),
-        download_url: manifestForm.download_url.trim(),
+        latest_version: String(latestVersion).trim(),
+        latest_version_code: Number(String(latestVersionCode)),
+        min_supported_version_code: Number(String(minSupportedVersionCode)),
+        download_url: String(downloadUrl).trim(),
       };
       if (manifestForm.checksum_sha256.trim())
         body.checksum_sha256 = manifestForm.checksum_sha256.trim();
-      if (manifestForm.file_size.trim())
-        body.file_size = Number(manifestForm.file_size);
-      if (manifestForm.release_notes.trim())
-        body.release_notes = manifestForm.release_notes;
+      if (String(manifestForm.file_size).trim())
+        body.file_size = Number(String(manifestForm.file_size).trim());
+      if (String(manifestForm.release_notes).trim())
+        body.release_notes = manifestForm.release_notes.trim();
       await api("/update/manifest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -414,13 +390,13 @@ export default function Admin() {
       return;
     try {
       const body: Record<string, unknown> = {
-        version: notifyForm.version.trim(),
-        downloadUrl: notifyForm.downloadUrl.trim(),
+        version: String(notifyForm.version).trim(),
+        downloadUrl: String(notifyForm.downloadUrl).trim(),
       };
       if (notifyForm.versionCode.trim())
-        body.versionCode = Number(notifyForm.versionCode);
+        body.versionCode = Number(String(notifyForm.versionCode));
       if (notifyForm.checksumSha256.trim())
-        body.checksumSha256 = notifyForm.checksumSha256.trim();
+        body.checksumSha256 = String(notifyForm.checksumSha256).trim();
       const res = await api<{
         ok?: boolean;
         sent?: number;
@@ -441,51 +417,67 @@ export default function Admin() {
   }
 
   return (
-    <main className="legal">
-      <div className="container">
-        <h1>Admin — {siteConfig.app.name}</h1>
-        <p className="legal-date">
-          Protected by Cloudflare Access. Polls every 20s. Last sync:{" "}
-          {lastSync || "—"}
-        </p>
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            marginBottom: 20,
-            flexWrap: "wrap",
-          }}
-          role="tablist"
-          aria-label="Admin sections"
-        >
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => setTab(t.id)}
-              style={{
-                padding: "10px 18px",
-                borderRadius: 10,
-                border: "1px solid var(--border)",
-                background: tab === t.id ? "var(--accent)" : "var(--bg-card)",
-                color:
-                  tab === t.id ? "var(--bg-primary)" : "var(--text-primary)",
-                cursor: "pointer",
-                fontWeight: 600,
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
+    <main className="admin-dashboard">
+      <nav className="admin-nav">
+        <div className="admin-nav-brand">
+          <span>Ekwe Admin</span>
         </div>
+        <div className="admin-nav-actions">
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="admin-nav-btn"
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--bg-secondary)",
+              color: "var(--text-primary)",
+              cursor: "pointer",
+              fontSize: "0.875rem",
+            }}
+          >
+            Logout
+          </button>
+        </div>
+      </nav>
+
+      <div className="admin-container">
+        <h1>Admin — {siteConfig.app.name}</h1>
+        <p className="admin-subtitle">Protected by Cloudflare Access</p>
+
+        <div className="admin-header">
+          <div className="admin-header-info">
+            <p className="admin-last-sync">Last sync: {lastSync || "—"}</p>
+          </div>
+          <div className="admin-header-tabs">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  background: tab === t.id ? "var(--accent)" : "var(--bg-card)",
+                  color:
+                    tab === t.id ? "var(--bg-primary)" : "var(--text-primary)",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: "0.875rem",
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {error && (
-          <div className="admin-alert" role="alert">
-            <strong>Could not load the dashboard.</strong>
-            <span>{error}</span>
-            <button type="button" onClick={() => loadAll()}>
-              Retry
-            </button>
+          <div className="admin-error" role="alert">
+            <strong>Error:</strong> {error}
           </div>
         )}
 
@@ -497,7 +489,6 @@ export default function Admin() {
             setTier={setTier}
             users={users}
             total={total}
-            hasError={error !== null}
             onPro={setPro}
           />
         )}
@@ -740,7 +731,7 @@ export default function Admin() {
           <>
             <h2 style={{ marginBottom: 12 }}>Current manifest</h2>
             {!manifest ? (
-              <p>No manifest published yet. Fill the form below and publish.</p>
+              <p>No manifest published yet. Use the form below to publish.</p>
             ) : (
               <div
                 style={{
@@ -778,14 +769,33 @@ export default function Admin() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))",
+                gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))",
                 gap: 12,
-                marginBottom: 24,
+                marginBottom: 20,
               }}
             >
-              <Field label="Latest version">
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 6,
+                    fontSize: "0.875rem",
+                    color: "var(--text-muted",
+                  }}
+                >
+                  Latest version
+                </label>
                 <input
-                  style={inputStyle}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                    fontSize: "0.875rem",
+                    marginBottom: 8,
+                  }}
                   value={manifestForm.latest_version}
                   onChange={(e) =>
                     setManifestForm({
@@ -795,11 +805,29 @@ export default function Admin() {
                   }
                   placeholder="1.3.4"
                 />
-              </Field>
-              <Field label="Latest version code">
+              </div>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 6,
+                    fontSize: "0.875rem",
+                    color: "var(--text-muted",
+                  }}
+                >
+                  Version code
+                </label>
                 <input
-                  style={inputStyle}
-                  inputMode="numeric"
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                    fontSize: "0.875rem",
+                    marginBottom: 8,
+                  }}
                   value={manifestForm.latest_version_code}
                   onChange={(e) =>
                     setManifestForm({
@@ -809,23 +837,52 @@ export default function Admin() {
                   }
                   placeholder="10304"
                 />
-              </Field>
-              <Field label="Min supported version code">
+              </div>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 6,
+                    fontSize: "0.875rem",
+                    color: "var(--text-muted",
+                  }}
+                >
+                  Min supported version code
+                </label>
                 <input
-                  style={inputStyle}
-                  inputMode="numeric"
-                  value={manifestForm.min_supported_version_code}
-                  onChange={(e) =>
-                    setManifestForm({
-                      ...manifestForm,
-                      min_supported_version_code: e.target.value,
-                    })
-                  }
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                    fontSize: "0.875rem",
+                  }}
                 />
-              </Field>
-              <Field label="Download URL (https)">
+              </div>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 6,
+                    fontSize: "0.875rem",
+                    color: "var(--text-muted",
+                  }}
+                >
+                  Download URL (https)
+                </label>
                 <input
-                  style={inputStyle}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                    fontSize: "0.875rem",
+                    marginBottom: 8,
+                  }}
                   value={manifestForm.download_url}
                   onChange={(e) =>
                     setManifestForm({
@@ -835,35 +892,76 @@ export default function Admin() {
                   }
                   placeholder="https://…/ekwe.apk"
                 />
-              </Field>
-              <Field label="Checksum SHA-256 (optional)">
+              </div>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 6,
+                    fontSize: "0.875rem",
+                    color: "var(--text-muted",
+                  }}
+                >
+                  Checksum SHA-256 (optional)
+                </label>
                 <input
-                  style={inputStyle}
-                  value={manifestForm.checksum_sha256}
-                  onChange={(e) =>
-                    setManifestForm({
-                      ...manifestForm,
-                      checksum_sha256: e.target.value,
-                    })
-                  }
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                    fontSize: "0.875rem",
+                  }}
                 />
-              </Field>
-              <Field label="File size bytes (optional)">
+              </div>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 6,
+                    fontSize: "0.875rem",
+                    color: "var(--text-muted",
+                  }}
+                >
+                  File size bytes (optional)
+                </label>
                 <input
-                  style={inputStyle}
-                  inputMode="numeric"
-                  value={manifestForm.file_size}
-                  onChange={(e) =>
-                    setManifestForm({
-                      ...manifestForm,
-                      file_size: e.target.value,
-                    })
-                  }
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                    fontSize: "0.875rem",
+                  }}
                 />
-              </Field>
-              <Field label="Release notes (optional)">
+              </div>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: 6,
+                    fontSize: "0.875rem",
+                    color: "var(--text-muted",
+                  }}
+                >
+                  Release notes (optional)
+                </label>
                 <textarea
-                  style={{ ...inputStyle, minHeight: 90 }}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                    fontSize: "0.875rem",
+                    minHeight: 60,
+                    marginBottom: 8,
+                  }}
                   value={manifestForm.release_notes}
                   onChange={(e) =>
                     setManifestForm({
@@ -871,13 +969,14 @@ export default function Admin() {
                       release_notes: e.target.value,
                     })
                   }
-                />
-              </Field>
+                ></textarea>
+              </div>
             </div>
             <button
               type="button"
               onClick={publishManifest}
               style={{
+                width: "100%",
                 padding: "12px 20px",
                 borderRadius: 10,
                 border: "none",
@@ -885,74 +984,91 @@ export default function Admin() {
                 color: "var(--bg-primary)",
                 cursor: "pointer",
                 fontWeight: 700,
-                marginBottom: 32,
+                fontSize: "0.875rem",
+                marginTop: 12,
               }}
             >
               Publish manifest
             </button>
-            <h2 style={{ marginBottom: 12 }}>Send update notification</h2>
+            <h2 style={{ marginBottom: 12, marginTop: 24 }}>
+              Send update notification
+            </h2>
             <p style={{ color: "var(--text-muted)", marginBottom: 12 }}>
               Pushes an APK update notice to active Android devices via Expo.
             </p>
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))",
-                gap: 12,
+                gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
+                gap: 10,
                 marginBottom: 16,
               }}
             >
-              <Field label="Version">
+              <div>
                 <input
-                  style={inputStyle}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                    fontSize: "0.875rem",
+                    marginBottom: 8,
+                  }}
                   value={notifyForm.version}
-                  onChange={(e) =>
-                    setNotifyForm({ ...notifyForm, version: e.target.value })
-                  }
                 />
-              </Field>
-              <Field label="Download URL (https)">
+              </div>
+              <div>
                 <input
-                  style={inputStyle}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                    fontSize: "0.875rem",
+                    marginBottom: 8,
+                  }}
                   value={notifyForm.downloadUrl}
-                  onChange={(e) =>
-                    setNotifyForm({
-                      ...notifyForm,
-                      downloadUrl: e.target.value,
-                    })
-                  }
                 />
-              </Field>
-              <Field label="Version code (optional)">
+              </div>
+              <div>
                 <input
-                  style={inputStyle}
-                  inputMode="numeric"
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                    fontSize: "0.875rem",
+                    marginBottom: 8,
+                  }}
                   value={notifyForm.versionCode}
-                  onChange={(e) =>
-                    setNotifyForm({
-                      ...notifyForm,
-                      versionCode: e.target.value,
-                    })
-                  }
                 />
-              </Field>
-              <Field label="Checksum SHA-256 (optional)">
+              </div>
+              <div>
                 <input
-                  style={inputStyle}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-secondary)",
+                    color: "var(--text-primary)",
+                    fontSize: "0.875rem",
+                  }}
                   value={notifyForm.checksumSha256}
-                  onChange={(e) =>
-                    setNotifyForm({
-                      ...notifyForm,
-                      checksumSha256: e.target.value,
-                    })
-                  }
                 />
-              </Field>
+              </div>
             </div>
             <button
               type="button"
               onClick={sendNotify}
               style={{
+                width: "100%",
                 padding: "12px 20px",
                 borderRadius: 10,
                 border: "1px solid var(--border)",
@@ -960,12 +1076,21 @@ export default function Admin() {
                 color: "var(--text-primary)",
                 cursor: "pointer",
                 fontWeight: 700,
+                fontSize: "0.875rem",
+                marginTop: 12,
               }}
             >
               Send notification
             </button>
           </>
         )}
+
+        <footer className="admin-footer">
+          <p>
+            Ekwe Admin Dashboard · Protected by Cloudflare Access · Polls every
+            20s
+          </p>
+        </footer>
       </div>
     </main>
   );
