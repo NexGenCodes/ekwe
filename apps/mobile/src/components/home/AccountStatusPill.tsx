@@ -28,7 +28,7 @@ export function AccountStatusPill(): React.ReactElement {
       <Box
         accessible
         accessibilityRole="text"
-        accessibilityLabel="Paid account"
+        accessibilityLabel="Premium account"
         style={{
           paddingHorizontal: spacing.md,
           paddingVertical: spacing.sm,
@@ -48,7 +48,7 @@ export function AccountStatusPill(): React.ReactElement {
             textTransform: "uppercase",
           }}
         >
-          PAID
+          PREMIUM
         </Text>
       </Box>
     );

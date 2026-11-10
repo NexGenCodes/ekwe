@@ -69,7 +69,7 @@ export const BILLING_PLANS = {
   },
   pro: {
     id: "pro" as const,
-    name: "Paid",
+    name: "Premium",
     tagline:
       "Unlimited translation and transcription, plus higher speech and live limits.",
     features: [

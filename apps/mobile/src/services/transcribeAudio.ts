@@ -31,6 +31,7 @@ export async function transcribeAudio(
   sourceLang: string,
   signal?: AbortSignal,
   onProgress?: (fraction: number) => void,
+  options?: { origin?: "orb" },
 ): Promise<Result<TranscriptionResult, EkweError>> {
   if (isQuotaExhausted("transcribe")) {
     return err(EkweError.QUOTA_EXCEEDED);
@@ -100,6 +101,7 @@ export async function transcribeAudio(
           duration: audio.durationMs
             ? String(Math.round(audio.durationMs))
             : "0",
+          ...(options?.origin ? { origin: options.origin } : {}),
         },
         mimeType: getMimeType(artifact.extension),
         token: token ?? null,

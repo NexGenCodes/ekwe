@@ -63,6 +63,14 @@ export async function handleTranscribe(
   if (!preciseGate.ok) return preciseGate.response;
   const effectivePipelineTier = preciseGate.tier;
 
+  const origin = (form.get("origin") as string | null)?.toLowerCase() ?? null;
+  if (origin === "orb" && preciseGate.tier !== "PREMIUM") {
+    return Response.json(
+      { error: WORKER_ERROR_CODES.PREMIUM_FEATURE_REQUIRED },
+      { status: 403 },
+    );
+  }
+
   const lang = form.get("lang") as string | null;
   logger.info(
     `[transcribe] lang=${lang} duration=${durationMs} mime=${ingest.value.mimeType} codec=${codec} size=${audio.size}`,

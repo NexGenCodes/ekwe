@@ -527,7 +527,15 @@ export const updateManifestSchema = z
     file_size: z.number().int().positive().optional(),
     release_notes: z.string().optional(),
   })
-  .passthrough();
+  .passthrough()
+  .refine(
+    (data) => data.min_supported_version_code <= data.latest_version_code,
+    {
+      message:
+        "min_supported_version_code must be less than or equal to latest_version_code",
+      path: ["min_supported_version_code"],
+    },
+  );
 export type UpdateManifest = z.infer<typeof updateManifestSchema>;
 
 export const webhookEventSchema = z

@@ -349,6 +349,57 @@ describe("handleTranscribe pipeline", () => {
     expect(body.error).toBe("INVALID_CONTENT_TYPE");
   });
 
+  test("rejects orb origin for non-premium tier", async () => {
+    const blob = makeAudioBlob();
+    const form = new FormData();
+    form.append("file", blob, "test.wav");
+    form.append("duration", "1000");
+    form.append("lang", "en");
+    form.append("origin", "orb");
+    const req = new Request("http://test/transcribe", {
+      method: "POST",
+      body: form,
+    });
+    const res = await handleTranscribe(
+      req,
+      mockEnv(),
+      "FREE",
+      "FREE",
+      new AbortController().signal,
+      "test-user",
+    );
+    expect(res.status).toBe(403);
+    const body = await jsonBody(res);
+    expect(body.error).toBe("PREMIUM_FEATURE_REQUIRED");
+  });
+
+  test("allows orb origin for premium tier", async () => {
+    server.use(
+      http.post(PROVIDER_URLS.witaiDictation, () =>
+        jsonResponse({ text: "ok" }),
+      ),
+    );
+    const blob = makeAudioBlob();
+    const form = new FormData();
+    form.append("file", blob, "test.wav");
+    form.append("duration", "1000");
+    form.append("lang", "en");
+    form.append("origin", "orb");
+    const req = new Request("http://test/transcribe", {
+      method: "POST",
+      body: form,
+    });
+    const res = await handleTranscribe(
+      req,
+      mockEnv(),
+      "PREMIUM",
+      "PREMIUM",
+      new AbortController().signal,
+      "test-user",
+    );
+    expect(res.status).toBe(200);
+  });
+
   test("fails open to providers when KV cache lookup fails", async () => {
     const env = mockEnv({
       EKWE_KV: kvStub({

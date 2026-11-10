@@ -48,6 +48,8 @@ export interface SettingsState {
   liveTranscriptionEnabled: boolean;
   orbEnabled: boolean;
   orbAutoArm: boolean;
+  orbSourceLang: string;
+  orbTargetLang: string;
   voiceGender: VoiceGenderSetting;
   voiceId: string | null;
   currency: FlutterwaveCurrency;
@@ -70,6 +72,8 @@ const initialSettings: SettingsState = {
   liveTranscriptionEnabled: false,
   orbEnabled: false,
   orbAutoArm: false,
+  orbSourceLang: "auto",
+  orbTargetLang: "en",
   voiceGender: "default",
   voiceId: null,
   currency: DEFAULT_PAYMENT_CURRENCY,
@@ -186,6 +190,12 @@ export const settingsActions = {
     }
     settings$.orbAutoArm.set(val);
   },
+  setOrbSourceLang: (val: string): void => {
+    settings$.orbSourceLang.set(val);
+  },
+  setOrbTargetLang: (val: string): void => {
+    settings$.orbTargetLang.set(val);
+  },
   setVoiceGender: (val: VoiceGenderSetting): void => {
     settings$.voiceGender.set(val);
   },
@@ -214,45 +224,52 @@ export function resetPersonalSettings(): void {
   );
   settings$.orbEnabled.set(initialSettings.orbEnabled);
   settings$.orbAutoArm.set(initialSettings.orbAutoArm);
+  settings$.orbSourceLang.set(initialSettings.orbSourceLang);
+  settings$.orbTargetLang.set(initialSettings.orbTargetLang);
 
   mirrorSettingsToShared(buildSettingsSharedPrefs());
 }
 
 // Keep native orb config in sync
-let lastSyncOrb = { orbEnabled: false, orbAutoArm: false };
+let lastSyncOrb = {
+  orbEnabled: false,
+  myLanguages: "",
+  orbSourceLang: "",
+  orbTargetLang: "",
+};
+function syncOrbConfig(): void {
+  const state = settings$.get();
+  const langs =
+    state.selectedLanguages.length > 0 ? state.selectedLanguages : ["en"];
+  const effectiveEnabled = state.orbEnabled && isProProvider();
+  const next = {
+    orbEnabled: effectiveEnabled,
+    myLanguages: langs.join(","),
+    orbSourceLang: state.orbSourceLang,
+    orbTargetLang: state.orbTargetLang,
+  };
+  if (
+    next.orbEnabled === lastSyncOrb.orbEnabled &&
+    next.myLanguages === lastSyncOrb.myLanguages &&
+    next.orbSourceLang === lastSyncOrb.orbSourceLang &&
+    next.orbTargetLang === lastSyncOrb.orbTargetLang
+  ) {
+    return;
+  }
+  lastSyncOrb = next;
+  void EkweNative.configureOrb?.({
+    orbEnabled: next.orbEnabled,
+    myLanguages: langs,
+    sourceLang: next.orbSourceLang,
+    targetLang: next.orbTargetLang,
+  });
+}
 try {
-  settings$.orbEnabled.onChange(() => {
-    const state = settings$.get();
-    if (
-      state.orbEnabled !== lastSyncOrb.orbEnabled ||
-      state.orbAutoArm !== lastSyncOrb.orbAutoArm
-    ) {
-      lastSyncOrb = {
-        orbEnabled: state.orbEnabled,
-        orbAutoArm: state.orbAutoArm,
-      };
-      void EkweNative.configureOrb?.({
-        orbEnabled: state.orbEnabled,
-        orbAutoArm: state.orbAutoArm,
-      });
-    }
-  });
-  settings$.orbAutoArm.onChange(() => {
-    const state = settings$.get();
-    if (
-      state.orbEnabled !== lastSyncOrb.orbEnabled ||
-      state.orbAutoArm !== lastSyncOrb.orbAutoArm
-    ) {
-      lastSyncOrb = {
-        orbEnabled: state.orbEnabled,
-        orbAutoArm: state.orbAutoArm,
-      };
-      void EkweNative.configureOrb?.({
-        orbEnabled: state.orbEnabled,
-        orbAutoArm: state.orbAutoArm,
-      });
-    }
-  });
+  settings$.orbEnabled.onChange(() => syncOrbConfig());
+  settings$.selectedLanguages.onChange(() => syncOrbConfig());
+  settings$.orbSourceLang.onChange(() => syncOrbConfig());
+  settings$.orbTargetLang.onChange(() => syncOrbConfig());
+  syncOrbConfig();
 } catch {
   // ignore
 }

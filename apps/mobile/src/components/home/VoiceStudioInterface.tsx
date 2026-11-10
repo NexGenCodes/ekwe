@@ -108,6 +108,7 @@ export const VoiceStudioInterface = forwardRef<
   const [sourceLang, setSourceLang] = useState(initialSourceLang);
   const [targetLang, setTargetLang] = useState(initialTargetLang);
   const [sourceText, setSourceText] = useState("");
+  const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
 
   const routeParams = useLocalSearchParams<{
     draftText?: string;
@@ -242,7 +243,8 @@ export const VoiceStudioInterface = forwardRef<
   const isReturnAudioLoading =
     !!sourceAudio && (!sourcePlayer.isReady || sourcePlayer.isDecoding);
 
-  const sourceSpeechLang = sourceLang === "auto" ? "en" : sourceLang;
+  const sourceSpeechLang =
+    sourceLang === "auto" ? (knownLanguages[0] ?? "en") : sourceLang;
 
   const files = useSessionAudioFiles();
   const handlePreviewError = useCallback((error: EkweError): void => {
@@ -324,6 +326,7 @@ export const VoiceStudioInterface = forwardRef<
     setSourceText("");
     setTranscript("");
     setTranslation(null);
+    setDetectedLanguage(null);
     savedRef.current = false;
     draftTranscriptRef.current = "";
     draftTranslationRef.current = "";
@@ -350,6 +353,7 @@ export const VoiceStudioInterface = forwardRef<
     resetCaptureId();
     player.pause();
     sourcePlayer.pause();
+    setDetectedLanguage(null);
     if (activeArtifactRef.current === uri) activeArtifactRef.current = null;
     activePlaybackRef.current = null;
     setSourceAudio(null);
@@ -538,7 +542,7 @@ export const VoiceStudioInterface = forwardRef<
           const throttled = result.error === EkweError.RATE_LIMITED;
           AppToast.error(
             entitlement
-              ? "Paid voice required"
+              ? "Premium voice required"
               : throttled
                 ? "Please wait"
                 : "Convert failed",
@@ -575,6 +579,9 @@ export const VoiceStudioInterface = forwardRef<
 
         const resolvedSource = result.value.sourceLang || sourceLang || "en";
         const spokenLang = result.value.targetLang || targetSpeechLang;
+        if (sourceLang === "auto" && resolvedSource !== "auto") {
+          setDetectedLanguage(resolvedSource);
+        }
         const heardTranslation = wantsTranslation
           ? result.value.translation?.trim() || null
           : null;
@@ -655,6 +662,9 @@ export const VoiceStudioInterface = forwardRef<
 
       const resolvedSource = result.value.sourceLang || sourceLang || "en";
       const spokenLang = result.value.targetLang || targetSpeechLang;
+      if (sourceLang === "auto" && resolvedSource !== "auto") {
+        setDetectedLanguage(resolvedSource);
+      }
       const typedTranslation = wantsTranslation
         ? result.value.translation?.trim() || null
         : null;
@@ -735,10 +745,15 @@ export const VoiceStudioInterface = forwardRef<
     sourcePlayerRef.current.pause();
     preview.cancel();
     archiveIfUnsaved();
-    // Pre-fill the input with the original text (transcript) so the user can
-    // edit the words without losing them. Audio recordings are not stored, so
-    // if the result came from a recording we surface the transcript as editable
-    // text. This clears any existing recording so the text input is shown instead.
+    const resolvedSource = resolvedSourceLangRef.current;
+    if (resolvedSource && resolvedSource !== "auto") {
+      setSourceLang(resolvedSource);
+      setDetectedLanguage(null);
+    }
+    const resolvedTarget = resolvedTargetLangRef.current;
+    if (resolvedTarget && resolvedTarget !== "auto") {
+      setTargetLang(resolvedTarget);
+    }
     const originalText =
       draftTranscriptRef.current.trim() ||
       sourceText.trim() ||
@@ -1037,6 +1052,7 @@ export const VoiceStudioInterface = forwardRef<
 
   const handleSourceChange = useCallback((lang: string) => {
     setSourceLang(lang);
+    setDetectedLanguage(null);
     // Clear target language if it matches the new source.
     setTargetLang((prev) => (prev === lang ? "" : prev));
   }, []);
@@ -1046,17 +1062,21 @@ export const VoiceStudioInterface = forwardRef<
   }, []);
 
   const handleSwap = useCallback(async () => {
+    const effectiveSource =
+      sourceLang === "auto" ? detectedLanguage : sourceLang;
     if (
-      sourceLang === "auto" ||
+      !effectiveSource ||
       targetLang === "none" ||
       targetLang === "" ||
-      sourceLang === targetLang
+      targetLang === "auto" ||
+      effectiveSource === targetLang
     )
       return;
     await triggerHaptic();
     setSourceLang(targetLang);
-    setTargetLang(sourceLang);
-  }, [sourceLang, targetLang]);
+    setTargetLang(effectiveSource);
+    setDetectedLanguage(null);
+  }, [sourceLang, targetLang, detectedLanguage]);
 
   const handleDictate = useCallback(async () => {
     if (dictatingRef.current) return;
@@ -1094,14 +1114,20 @@ export const VoiceStudioInterface = forwardRef<
     void runConvert({ audio: committed });
   }, [commitRecording, rememberSessionFile, runConvert]);
 
-  const handleInputChange = useCallback((text: string) => {
-    setSourceText(text);
-    setSourceAudio((prev) => (prev ? null : prev));
-  }, []);
+  const handleInputChange = useCallback(
+    (text: string) => {
+      setSourceText(text);
+      setSourceAudio((prev) => (prev ? null : prev));
+      if (detectedLanguage) setDetectedLanguage(null);
+    },
+    [detectedLanguage],
+  );
 
   useImperativeHandle(ref, () => ({ clear: handleClear }));
 
-  const sourceLabel = getLanguageName(sourceLang);
+  const sourceLabel = getLanguageName(
+    sourceLang === "auto" ? (detectedLanguage ?? sourceLang) : sourceLang,
+  );
   const langLabel =
     sourceLang === targetLang
       ? sourceLabel
@@ -1178,6 +1204,7 @@ export const VoiceStudioInterface = forwardRef<
           dictationState={dictationState}
           sourceLang={sourceLang}
           targetLang={targetLang}
+          detectedLanguage={detectedLanguage}
           onSwap={handleSwap}
           onSourceChange={handleSourceChange}
           onTargetChange={handleTargetChange}

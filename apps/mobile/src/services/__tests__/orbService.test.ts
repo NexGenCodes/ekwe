@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { OrbService } from "@/services/orbService";
 import { EkweError } from "@/constants/errors";
 
-const { mockEkweNative } = vi.hoisted(() => ({
+const { mockEkweNative, mockAuthState, mockSettingsState } = vi.hoisted(() => ({
   mockEkweNative: {
     checkOverlayPermission: vi.fn(),
     requestOverlayPermission: vi.fn(),
@@ -10,6 +10,13 @@ const { mockEkweNative } = vi.hoisted(() => ({
     configureOrb: vi.fn(),
     startOrbCapture: vi.fn(),
     stopOrbCapture: vi.fn(),
+  },
+  mockAuthState: {
+    session: { user: { id: "user-1" } },
+    isPro: true,
+  },
+  mockSettingsState: {
+    orbSourceLang: "auto",
   },
 }));
 
@@ -20,6 +27,24 @@ vi.mock("@/utils/platform", () => ({
 
 vi.mock("../../../modules/ekwe-native", () => ({
   default: mockEkweNative,
+}));
+
+vi.mock("@/store", () => ({
+  auth$: {
+    session: { peek: () => mockAuthState.session },
+    isPro: { peek: () => mockAuthState.isPro },
+  },
+  settings$: {
+    orbSourceLang: { peek: () => mockSettingsState.orbSourceLang },
+  },
+}));
+
+vi.mock("@/services/backend", () => ({
+  ensureAccessToken: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("@/utils/http", () => ({
+  getWorkerUrl: vi.fn().mockReturnValue("https://example.test"),
 }));
 
 vi.mock("expo-file-system", () => {
@@ -59,6 +84,8 @@ vi.mock("@/services/historyService", () => ({
 describe("OrbService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAuthState.session = { user: { id: "user-1" } };
+    mockAuthState.isPro = true;
   });
 
   describe("permission & status checks", () => {
@@ -105,7 +132,7 @@ describe("OrbService", () => {
         success: true,
         error: "",
       });
-      const res = await OrbService.startCapture();
+      const res = await OrbService.startCapture({ isLive: false });
       expect(res.ok).toBe(true);
       if (res.ok) {
         expect(res.value.captureId).toMatch(/^orb_/);
@@ -113,6 +140,7 @@ describe("OrbService", () => {
         expect(mockEkweNative.startOrbCapture).toHaveBeenCalledWith(
           res.value.outputPath,
           false,
+          undefined,
         );
       }
     });
@@ -122,7 +150,7 @@ describe("OrbService", () => {
         success: false,
         error: "Consent rejected",
       });
-      const res = await OrbService.startCapture();
+      const res = await OrbService.startCapture({ isLive: false });
       expect(res.ok).toBe(false);
       if (!res.ok) {
         expect(res.error).toBe(EkweError.AUDIO_RECORD_FAIL);

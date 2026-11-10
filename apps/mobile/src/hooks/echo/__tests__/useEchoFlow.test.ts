@@ -222,7 +222,7 @@ describe("handleTranscribe", () => {
 
     expect(result.current.step).toBe("Error");
     expect(result.current.error).toBe(
-      "Audio exceeds your plan limit (60s). Please upgrade to Paid for longer files.",
+      "Audio exceeds your plan limit (60s). Please upgrade to Premium for longer files.",
     );
     expect(impl.transcribe).not.toHaveBeenCalled();
   });

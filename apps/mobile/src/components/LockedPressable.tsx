@@ -115,9 +115,7 @@ export const LockedPressable = forwardRef<
         accessible={accessible}
         accessibilityRole={accessibilityRole ?? "button"}
         accessibilityLabel={accessibilityLabel}
-        accessibilityHint={
-          locked ? "Requires the Ekwe Paid plan" : accessibilityHint
-        }
+        accessibilityHint={locked ? "Requires Ekwe Premium" : accessibilityHint}
         accessibilityState={{
           disabled: locked,
           ...(accessibilityState?.selected !== undefined

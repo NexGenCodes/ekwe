@@ -78,12 +78,12 @@ export const ErrorMessages: Record<EkweError, string> = {
   [EkweError.AUDIO_RECORD_FAIL]: "Could not start recording. Please try again.",
   [EkweError.AUDIO_EMPTY]:
     "No audio was captured. Make sure the voice note is audible.",
-  [EkweError.FILE_TOO_LARGE]: `This file is too large for your plan. Free: ${FREE_MAX_MB}MB · Paid: ${PRO_MAX_MB}MB.`,
-  [EkweError.AUDIO_TOO_LONG]: `This audio is too long for your plan. Free: ${FREE_MAX_MIN} min per file · Paid: ${PRO_MAX_MIN} min.`,
+  [EkweError.FILE_TOO_LARGE]: `This file is too large for your plan. Free: ${FREE_MAX_MB}MB · Premium: ${PRO_MAX_MB}MB.`,
+  [EkweError.AUDIO_TOO_LONG]: `This audio is too long for your plan. Free: ${FREE_MAX_MIN} min per file · Premium: ${PRO_MAX_MIN} min.`,
   [EkweError.TEXT_TOO_LONG]:
     "This text is too long for your plan. Try a shorter passage.",
   [EkweError.SPEECH_FAIL]: "Speech failed. Please try again.",
-  [EkweError.PREMIUM_REQUIRED]: "This voice requires Ekwe Paid.",
+  [EkweError.PREMIUM_REQUIRED]: "This voice requires Ekwe Premium.",
   [EkweError.SPEECH_UNAVAILABLE]:
     "Voice is temporarily unavailable. Please try again shortly.",
   [EkweError.SPEECH_TIMEOUT]:

@@ -25,8 +25,9 @@ import {
   findOrCreateUser,
   findUserById,
   findUserByIdentity,
+  isAccountDisabled,
   isPremiumWithAdmin,
-  resolveTierWithAdmin,
+  toPayload,
   updateProfile,
   type UserRow,
 } from "@/auth/users";
@@ -54,23 +55,16 @@ async function tokenResponse(
   user: UserRow,
   session: IssuedSession,
 ): Promise<Response> {
+  const isPro = await isPremiumWithAdmin(env, user);
   const { token, expiresAt } = await mintAccessToken(env, {
     userId: user.id,
     email: user.email,
     sessionId: session.sessionId,
-    isPro: isPremiumWithAdmin(env, user),
+    isPro,
   });
 
   return Response.json({
-    user: {
-      id: user.id,
-      email: user.email,
-      tier: resolveTierWithAdmin(env, user),
-      displayName: user.display_name,
-      avatarUrl: user.avatar_url,
-      avatarIcon: user.avatar_icon,
-      proExpiresAt: user.pro_expires_at,
-    },
+    user: await toPayload(env, user),
     accessToken: token,
     expiresAt,
     refreshToken: session.refreshToken,
@@ -78,11 +72,20 @@ async function tokenResponse(
   });
 }
 
+function disabledAccountResponse(): Response {
+  return error(
+    WORKER_ERROR_CODES.ACCOUNT_DISABLED,
+    403,
+    "This account has been disabled. Contact support if you think this is a mistake.",
+  );
+}
+
 async function startSession(
   env: Env,
   user: UserRow,
   userAgent: string | null,
 ): Promise<Response> {
+  if (isAccountDisabled(user)) return disabledAccountResponse();
   const session = await createSession(env, user.id, userAgent);
   return tokenResponse(env, user, session);
 }
@@ -144,6 +147,7 @@ authRouter.post("/verify", async (c) => {
     provider: "email",
     providerUserId: normalizeEmail(body.email),
   });
+  if (isAccountDisabled(user)) return disabledAccountResponse();
 
   return startSession(c.env, user, c.req.header("User-Agent") ?? null);
 });
@@ -157,6 +161,7 @@ authRouter.post("/refresh", async (c) => {
 
   const user = await findUserById(c.env, rotated.userId);
   if (!user) return error(WORKER_ERROR_CODES.UNAUTHORIZED, 401);
+  if (isAccountDisabled(user)) return disabledAccountResponse();
 
   return tokenResponse(c.env, user, rotated);
 });
@@ -191,6 +196,7 @@ async function providerSignIn(
       "No account is linked to this sign-in.",
     );
   }
+  if (isAccountDisabled(user)) return disabledAccountResponse();
 
   return startSession(c.env, user, c.req.header("User-Agent") ?? null);
 }
@@ -234,17 +240,10 @@ authRouter.get("/session", authMiddleware(), async (c) => {
   const auth = c.get("auth")!;
   const user = await findUserById(c.env, auth.userId);
   if (!user) return error(WORKER_ERROR_CODES.UNAUTHORIZED, 401);
+  if (isAccountDisabled(user)) return disabledAccountResponse();
 
   return c.json({
-    user: {
-      id: user.id,
-      email: user.email,
-      tier: resolveTierWithAdmin(c.env, user),
-      displayName: user.display_name,
-      avatarUrl: user.avatar_url,
-      avatarIcon: user.avatar_icon,
-      proExpiresAt: user.pro_expires_at,
-    },
+    user: await toPayload(c.env, user),
   });
 });
 
@@ -253,19 +252,14 @@ authRouter.patch("/profile", authMiddleware(), async (c) => {
   if (body instanceof Response) return body;
 
   const auth = c.get("auth")!;
+  const existing = await findUserById(c.env, auth.userId);
+  if (!existing) return error(WORKER_ERROR_CODES.UNAUTHORIZED, 401);
+  if (isAccountDisabled(existing)) return disabledAccountResponse();
   const user = await updateProfile(c.env, auth.userId, body);
   if (!user) return error(WORKER_ERROR_CODES.UNAUTHORIZED, 401);
 
   return c.json({
-    user: {
-      id: user.id,
-      email: user.email,
-      tier: resolveTierWithAdmin(c.env, user),
-      displayName: user.display_name,
-      avatarUrl: user.avatar_url,
-      avatarIcon: user.avatar_icon,
-      proExpiresAt: user.pro_expires_at,
-    },
+    user: await toPayload(c.env, user),
   });
 });
 

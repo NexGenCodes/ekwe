@@ -121,7 +121,7 @@ export function ProfileIdentity({
             <Box
               accessible
               accessibilityRole="text"
-              accessibilityLabel="Paid account"
+              accessibilityLabel="Premium account"
               style={[
                 styles.planChip,
                 {
@@ -139,7 +139,7 @@ export function ProfileIdentity({
                   textTransform: "uppercase",
                 }}
               >
-                Ekwe Paid
+                Ekwe Premium
               </Text>
             </Box>
           ) : (

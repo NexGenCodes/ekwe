@@ -107,8 +107,10 @@ export function loadStoredSession(): AuthSession | null {
 export function persistSession(session: AuthSession | null): void {
   if (session) {
     mmkv.set(SESSION_STORAGE_KEY, JSON.stringify(session));
+    mmkv.set("hasSession", true);
   } else {
     mmkv.remove(SESSION_STORAGE_KEY);
+    mmkv.remove("hasSession");
   }
 }
 

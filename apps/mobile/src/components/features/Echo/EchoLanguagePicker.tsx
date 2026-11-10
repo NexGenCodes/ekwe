@@ -48,8 +48,8 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
         onSelect("auto");
       } else {
         AppAlert.info(
-          "Ekwe Paid",
-          "Auto-detecting languages requires the paid plan. Upgrade to use it.",
+          "Ekwe Premium",
+          "Auto-detecting languages requires Premium. Upgrade to use it.",
         );
       }
     };
@@ -73,9 +73,7 @@ export const EchoLanguagePicker: React.FC<EchoLanguagePickerProps> = React.memo(
           }${option.locked ? ", premium feature" : ""}`}
           accessibilityRole="button"
           accessibilityHint={
-            option.locked
-              ? "Double tap to learn about the paid plan"
-              : undefined
+            option.locked ? "Double tap to learn about Premium" : undefined
           }
           accessibilityState={{ selected: isSelected }}
           style={{

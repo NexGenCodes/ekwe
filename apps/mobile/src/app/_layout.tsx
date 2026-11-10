@@ -23,6 +23,7 @@ import { Box } from "@/components/ui";
 import { useTheme } from "@/hooks/ui/useTheme";
 
 import { auth$ } from "@/store/auth";
+import { useOrbController } from "@/hooks/useOrb";
 import logger, { setSentryTag } from "@/utils/logger";
 import type { UpdateManifest, UpdateChannel } from "@/services/otaUpdates";
 import {
@@ -59,6 +60,7 @@ if (perfGlobal.__ekweModuleGraphLogged !== true) {
 
 function InnerLayout(): React.ReactElement {
   const { isDark, color } = useTheme();
+  useOrbController();
 
   const isInitialized = useValue(() => auth$.isInitialized.get());
   const sessionLoaded = useValue(() => auth$.sessionLoaded.get());
@@ -143,7 +145,7 @@ function InnerLayout(): React.ReactElement {
                     name="billing"
                     options={{
                       headerShown: true,
-                      title: "Ekwe Paid",
+                      title: "Ekwe Premium",
                       headerBackTitle: "Back",
                       animation: "slide_from_right",
                     }}

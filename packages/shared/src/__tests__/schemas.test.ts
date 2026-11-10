@@ -498,6 +498,17 @@ describe("updateManifestSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  test("rejects when min_supported_version_code exceeds latest_version_code", () => {
+    expect(
+      updateManifestSchema.safeParse({
+        latest_version: "1.2.9",
+        latest_version_code: 10209,
+        min_supported_version_code: 10210,
+        download_url: "https://cdn.example.com/app-release.apk",
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("webhookEventSchema", () => {

@@ -97,6 +97,20 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec vitest run --coverage
 
+  build-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @ekwe/web build
+
   db-check:
     name: D1 migration guard
     runs-on: ubuntu-latest

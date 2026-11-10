@@ -68,8 +68,8 @@ try {
 // EVERY launcher cold start to parse the whole share graph before the main
 // app's first frame. Everything share-related is required lazily below, so a
 // plain app cold start never evaluates it.
-const loadShareGate = () => require( "@/components/features/Echo").ShareGate;
-
+const loadShareGate = () => require("@/components/features/Echo").ShareGate;
+const loadOrbGate = () => require("@/components/orb/OrbGate").OrbGate;
 
 // The share-extension root is hosted by the native ShareActivity — a
 // translucent ReactActivity that renders the share gate OVER the source app (no
@@ -87,18 +87,17 @@ const ShareExtensionRoot = (props) => {
 
   const { GestureHandlerRootView } = require("react-native-gesture-handler");
   const { SafeAreaProvider } = require("react-native-safe-area-context");
-  const { ErrorBoundary } = require( "@/components/ErrorBoundary");
-  const { AppAlertModal } = require( "@/components/AppAlertModal");
+  const { ErrorBoundary } = require("@/components/ErrorBoundary");
+  const { AppAlertModal } = require("@/components/AppAlertModal");
   const ShareGate = loadShareGate();
-
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: "transparent" }}>
       <SafeAreaProvider>
-          <ErrorBoundary>
-            <ShareGate {...props} />
-            <AppAlertModal />
-          </ErrorBoundary>
+        <ErrorBoundary>
+          <ShareGate {...props} />
+          <AppAlertModal />
+        </ErrorBoundary>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -106,11 +105,38 @@ const ShareExtensionRoot = (props) => {
 
 AppRegistry.registerComponent("share-extension", () => ShareExtensionRoot);
 
+const OrbPanelRoot = (props) => {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    setReady(true);
+  }, []);
+  if (!ready) return null;
+
+  const { GestureHandlerRootView } = require("react-native-gesture-handler");
+  const { SafeAreaProvider } = require("react-native-safe-area-context");
+  const { ErrorBoundary } = require("@/components/ErrorBoundary");
+  const { AppAlertModal } = require("@/components/AppAlertModal");
+  const OrbGate = loadOrbGate();
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "transparent" }}>
+      <SafeAreaProvider>
+        <ErrorBoundary>
+          <OrbGate {...props} />
+          <AppAlertModal />
+        </ErrorBoundary>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
+  );
+};
+
+AppRegistry.registerComponent("orb-panel", () => OrbPanelRoot);
+
 // Main app entry. Android and iOS share paths are handled natively
 // (ShareActivity / ShareViewController) and render the extension root
 // directly — there is no /share route and no deep-link handoff.
 const MainAppWrapper = (props) => {
-  const App = require( "@/app/AppEntry").default;
+  const App = require("@/app/AppEntry").default;
   return <App {...props} />;
 };
 

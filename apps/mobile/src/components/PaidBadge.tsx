@@ -47,7 +47,7 @@ export const PaidBadge = ({
           fontSize: size === "sm" ? 11 : 12,
         }}
       >
-        Paid
+        Premium
       </Text>
     </Box>
   );

@@ -108,6 +108,7 @@ export const adminReleaseMiddleware = async (
   next: Next,
 ) => {
   if (await isAdminAuthorized(c.env, c.req.raw)) {
+    c.set("adminEmail", "ci:release-secret");
     await next();
     return;
   }

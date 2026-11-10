@@ -17,6 +17,8 @@ interface RotationRow {
   user_id: string;
   revoked_at: number | null;
   expires_at: number;
+  disabled_at: number | null;
+  delete_after: number | null;
 }
 
 function expiryFrom(now: number): number {
@@ -55,9 +57,10 @@ export async function rotateSession(
   const refreshHash = await sha256(refreshToken);
 
   const row = await env.DB.prepare(
-    `SELECT r.session_id, s.user_id, s.revoked_at, s.expires_at
+    `SELECT r.session_id, s.user_id, s.revoked_at, s.expires_at, u.disabled_at, u.delete_after
        FROM session_rotations r
        JOIN sessions s ON s.id = r.session_id
+       JOIN users u ON u.id = s.user_id
       WHERE r.refresh_hash = ?`,
   )
     .bind(refreshHash)
@@ -66,7 +69,12 @@ export async function rotateSession(
   if (!row) return { ok: false, reason: "unknown" };
 
   const now = Date.now();
-  if (row.revoked_at !== null || row.expires_at <= now) {
+  if (
+    row.revoked_at !== null ||
+    row.expires_at <= now ||
+    row.disabled_at !== null ||
+    row.delete_after !== null
+  ) {
     return { ok: false, reason: "expired" };
   }
 

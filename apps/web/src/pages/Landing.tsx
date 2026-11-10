@@ -472,7 +472,7 @@ export default function Landing() {
                 </ul>
               </div>
               <div className="arch-card pricing-card paid">
-                <div className="pricing-title paid-title">Paid</div>
+                <div className="pricing-title paid-title">Premium</div>
                 <div className="pricing-tag">
                   Unlimited translation and transcription, plus higher speech
                   and live limits.

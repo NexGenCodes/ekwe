@@ -9,6 +9,7 @@ import { jitteredBackoffMs } from "@/utils/retry";
 import { normalizeEmail } from "@ekwe/shared";
 import { toLowestUnit, resolvePaymentCurrency } from "@ekwe/shared/money";
 import { getAuthoritativePlanPrices } from "@/routes/pricing";
+import { syncBillingEntitlement, syncUserPremiumCache } from "@/auth/users";
 
 interface FlutterwaveEvent {
   id: number;
@@ -154,21 +155,63 @@ export async function ensureProCoverage(
 ): Promise<ProStatusResult> {
   try {
     const row = await retryTransient(() =>
-      env.DB.prepare("SELECT tier, pro_expires_at FROM users WHERE id = ?")
+      env.DB.prepare(
+        "SELECT id, role, tier, pro_expires_at FROM users WHERE id = ?",
+      )
         .bind(userId)
-        .first<{ tier: string; pro_expires_at: number | null }>(),
+        .first<{
+          id: string;
+          role: string;
+          tier: string;
+          pro_expires_at: number | null;
+        }>(),
     );
-
     if (!row) return { ok: false, permanent: false };
 
-    if (
-      row.tier === "PREMIUM" &&
-      (row.pro_expires_at === null || row.pro_expires_at >= expiresAt)
-    ) {
-      return { ok: true, permanent: row.pro_expires_at === null };
+    const billing = await retryTransient(() =>
+      env.DB.prepare(
+        `SELECT status, expires_at FROM user_subscriptions
+          WHERE user_id = ? AND platform = 'web' LIMIT 1`,
+      )
+        .bind(userId)
+        .first<{ status: string; expires_at: number | null }>(),
+    ).catch(() => null);
+
+    const activeBillingExpiry =
+      billing?.status === "active" ? billing.expires_at : undefined;
+    let target = expiresAt;
+    if (activeBillingExpiry === null)
+      target = expiresAt; // already lifetime
+    else if (typeof activeBillingExpiry === "number")
+      target = Math.max(target, activeBillingExpiry);
+
+    // Preserve any longer existing premium term represented in cache/legacy data.
+    if (row.tier === "PREMIUM") {
+      if (row.pro_expires_at == null) {
+        await syncBillingEntitlement(env, userId, true, null);
+        await syncUserPremiumCache(env, userId);
+        return { ok: true, permanent: true };
+      }
+      if (row.pro_expires_at >= target) target = row.pro_expires_at;
     }
 
-    return setProStatus(env, { userId }, true, expiresAt);
+    if (
+      billing?.status === "active" &&
+      (activeBillingExpiry === null ||
+        (typeof activeBillingExpiry === "number" &&
+          activeBillingExpiry >= target))
+    ) {
+      await syncBillingEntitlement(
+        env,
+        userId,
+        true,
+        activeBillingExpiry ?? null,
+      );
+      await syncUserPremiumCache(env, userId);
+      return { ok: true, permanent: (activeBillingExpiry ?? null) === null };
+    }
+
+    return setProStatus(env, { userId }, true, target);
   } catch (err) {
     logger.error("[flutterwave] ensureProCoverage failed", {
       error: describeError(err),
@@ -203,35 +246,34 @@ export async function setProStatus(
       return { ok: false, permanent: false };
     }
 
-    // Absolute set, so a retry lands on the same state.
-    await env.DB.batch([
-      env.DB.prepare(
-        "UPDATE users SET tier = ?, pro_expires_at = ?, updated_at = ? WHERE id = ?",
-      ).bind(
-        isPro ? "PREMIUM" : "FREE",
-        isPro ? (expiresAt ?? null) : null,
-        now,
-        userId,
-      ),
-      env.DB.prepare(
-        `INSERT INTO user_subscriptions
-           (user_id, status, product_id, platform, expires_at, created_at, updated_at)
-         SELECT ?, ?, NULL, 'web', ?, ?, ?
-          WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
-         ON CONFLICT (user_id) DO UPDATE SET
-           status = excluded.status,
-           platform = excluded.platform,
-           expires_at = excluded.expires_at,
-           updated_at = excluded.updated_at`,
-      ).bind(
+    await env.DB.prepare(
+      `INSERT INTO user_subscriptions
+         (user_id, status, product_id, platform, expires_at, created_at, updated_at)
+       SELECT ?, ?, NULL, 'web', ?, ?, ?
+        WHERE EXISTS (SELECT 1 FROM users WHERE id = ?)
+       ON CONFLICT (user_id) DO UPDATE SET
+         status = excluded.status,
+         platform = excluded.platform,
+         expires_at = excluded.expires_at,
+         updated_at = excluded.updated_at`,
+    )
+      .bind(
         userId,
         isPro ? "active" : "inactive",
         isPro ? (expiresAt ?? null) : null,
         now,
         now,
         userId,
-      ),
-    ]);
+      )
+      .run();
+
+    await syncBillingEntitlement(
+      env,
+      userId,
+      isPro,
+      isPro ? (expiresAt ?? null) : null,
+    );
+    await syncUserPremiumCache(env, userId);
 
     return { ok: true, permanent: isPro && expiresAt == null };
   } catch (err) {

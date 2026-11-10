@@ -63,7 +63,7 @@ export function LanguageSwitcher({
 
   const handleLockedPress = useLockedFeature({
     navigateToBilling: true,
-    message: "Auto-detect language is a paid feature",
+    message: "Auto-detect is a Premium feature",
   });
 
   const handlePressGated = React.useCallback(

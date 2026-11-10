@@ -69,7 +69,7 @@ function VoiceCard({
       navigateToBilling
       onPress={onPress}
       accessibilityLabel={`${slot.name}, ${slot.tagline}`}
-      accessibilityHint={locked ? "Requires the Ekwe Paid plan" : undefined}
+      accessibilityHint={locked ? "Requires Ekwe Premium" : undefined}
       accessibilityState={{ selected }}
       accessible={false}
       style={({ pressed }) => [
@@ -156,7 +156,7 @@ function VoiceCard({
           >
             {slot.name}
           </Text>
-          {slot.tier === "pro" && <PaidBadge />}
+          {locked && <PaidBadge />}
         </Box>
         <Text
           variant="caption"

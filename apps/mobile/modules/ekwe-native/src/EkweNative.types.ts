@@ -61,11 +61,29 @@ export type OrbStatus = {
   foregroundApp: string | null;
   lastPeakAmplitude: number;
   canDrawOverlays?: boolean;
+  myLanguages?: string[];
+  sourceLang?: string;
+  targetLang?: string;
+  outputPath?: string;
+  startedAt?: number;
+  resultText?: string;
+  hiddenByUser?: boolean;
+  streaming?: boolean;
+  streamState?: "idle" | "connecting" | "listening" | "error" | string;
+  streamError?: string | null;
+  silenceSuspected?: boolean;
+  liveText?: string;
+  liveFinal?: string;
+  liveInterim?: string;
+  detectedLang?: string | null;
 };
 
 export type OrbConfig = {
   orbEnabled?: boolean;
   orbAutoArm?: boolean;
+  myLanguages?: string[];
+  sourceLang?: string;
+  targetLang?: string;
 };
 
 export type SimpleResult = {
@@ -158,7 +176,16 @@ export type EkweNativeModuleType = {
   deleteFile(uriString: string): Promise<boolean>;
 
   /** Orb screen, Android only. */
-  startOrbCapture?(outputPath: string, isLive: boolean): Promise<SimpleResult>;
+  startOrbCapture?(
+    outputPath: string,
+    isLive: boolean,
+    stream?: {
+      enabled: boolean;
+      wsUrl?: string;
+      token?: string;
+      lang?: string;
+    },
+  ): Promise<SimpleResult>;
   /** Orb screen, Android only. */
   stopOrbCapture?(): Promise<SimpleResult>;
   /** Orb screen, Android only. */
@@ -171,4 +198,14 @@ export type EkweNativeModuleType = {
   checkOverlayPermission?(): Promise<boolean>;
   /** Orb overlay permission request (opens system settings), Android only. */
   requestOverlayPermission?(): Promise<boolean>;
+  /** Orb bubble tap intent, consumed once. Returns "start_capture" or null. */
+  consumeOrbAction?(): Promise<string | null>;
+  /** Orb bubble status text ("error", "✓", empty to reset). */
+  updateOrbText?(text: string): Promise<boolean>;
+  /** Orb expanded-card result text (translation). */
+  setOrbResult?(text: string): Promise<boolean>;
+  /** Dismiss the translucent Orb panel activity. */
+  dismissOrbPanel?(): Promise<boolean>;
+  /** Dismiss the Orb panel native loader. */
+  dismissOrbLoader?(): Promise<boolean>;
 };

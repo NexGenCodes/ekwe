@@ -16,14 +16,17 @@ export async function authenticate(
   const claims = await verifyAccessToken(env, token);
   if (!claims) return null;
 
-  if (claims.sessionId && env.EKWE_KV) {
+  if (env.EKWE_KV) {
     try {
-      const revoked = await env.EKWE_KV.get(
-        `revoked:session:${claims.sessionId}`,
-      );
-      if (revoked !== null) return null;
+      const [revoked, disabled] = await Promise.all([
+        claims.sessionId
+          ? env.EKWE_KV.get(`revoked:session:${claims.sessionId}`)
+          : Promise.resolve(null),
+        env.EKWE_KV.get(`disabled:user:${claims.userId}`),
+      ]);
+      if (revoked !== null || disabled !== null) return null;
     } catch {
-      // Best-effort KV tombstone check; fails open on KV transient error.
+      // Best-effort KV checks; fail open on KV transient error.
     }
   }
 

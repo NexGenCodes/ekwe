@@ -754,10 +754,19 @@ class EkweNativeModule : Module() {
       }
     }
 
-    AsyncFunction("startOrbCapture") { outputPath: String, isLive: Boolean ->
+    AsyncFunction("startOrbCapture") { outputPath: String, isLive: Boolean, stream: Map<String, Any?>? ->
+      val context = appContext.reactContext
+        ?: return@AsyncFunction mapOf("success" to false, "error" to "No react context")
+      if (!OrbOverlayManager.getInstance(context).hasEntitlement()) {
+        return@AsyncFunction mapOf("success" to false, "error" to "PREMIUM_REQUIRED")
+      }
       val activity = appContext.currentActivity
         ?: return@AsyncFunction mapOf("success" to false, "error" to "No foreground activity")
-      if (!OrbConsent.request(activity, outputPath, isLive)) {
+      val streamEnabled = (stream?.get("enabled") as? Boolean) ?: false
+      val wsUrl = stream?.get("wsUrl") as? String
+      val token = stream?.get("token") as? String
+      val lang = (stream?.get("lang") as? String) ?: "en"
+      if (!OrbConsent.request(activity, outputPath, isLive, streamEnabled, wsUrl, token, lang)) {
         return@AsyncFunction mapOf("success" to false, "error" to "Consent request failed")
       }
       mapOf("success" to true, "error" to "")
@@ -977,8 +986,14 @@ class EkweNativeModule : Module() {
     AsyncFunction("configureOrb") { config: Map<String, Any?> ->
       val context = appContext.reactContext ?: return@AsyncFunction false
       val enabled = (config["orbEnabled"] as? Boolean) ?: false
-      val autoArm = (config["orbAutoArm"] as? Boolean) ?: false
 
+      val langs = (config["myLanguages"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+      val sourceLang = (config["sourceLang"] as? String) ?: "auto"
+      val targetLang = (config["targetLang"] as? String) ?: "en"
+      if (langs.isNotEmpty() || config.containsKey("sourceLang")) {
+        OrbOverlayManager.getInstance(context).configureLanguages(langs, sourceLang, targetLang)
+      }
+      OrbOverlayManager.getInstance(context).setEntitlement(enabled)
       OrbOverlayManager.getInstance(context).setEnabled(enabled)
       true
     }
@@ -990,12 +1005,33 @@ class EkweNativeModule : Module() {
       } else {
         true
       }
+      val (langs, sourceLang, targetLang) = if (context != null) {
+        OrbOverlayManager.getInstance(context).readLanguages()
+      } else {
+        Triple(emptyList<String>(), "auto", "en")
+      }
+      val overlay = if (context != null) OrbOverlayManager.getInstance(context) else null
       mapOf(
         "running" to OrbCaptureService.isRunning,
         "hasMediaProjection" to OrbCaptureService.hasMediaProjection,
         "foregroundApp" to OrbCaptureService.currentForegroundApp,
         "lastPeakAmplitude" to OrbCaptureService.lastPeakAmplitude.toDouble(),
-        "canDrawOverlays" to canDraw
+        "canDrawOverlays" to canDraw,
+        "myLanguages" to langs,
+        "sourceLang" to sourceLang,
+        "targetLang" to targetLang,
+        "outputPath" to OrbCaptureService.activeOutputPath,
+        "startedAt" to OrbCaptureService.startedAtMs,
+        "resultText" to (overlay?.getResultText() ?: ""),
+        "hiddenByUser" to (overlay?.readHiddenByUser() ?: false),
+        "streaming" to (overlay?.isStreaming ?: false),
+        "streamState" to (overlay?.streamState ?: "idle"),
+        "streamError" to overlay?.streamError,
+        "silenceSuspected" to (overlay?.silenceSuspected ?: false),
+        "liveText" to (overlay?.getLiveText() ?: ""),
+        "liveFinal" to (overlay?.getLiveFinal() ?: ""),
+        "liveInterim" to (overlay?.getLiveInterim() ?: ""),
+        "detectedLang" to (overlay?.getDetectedLanguage())
       )
     }
 
@@ -1026,6 +1062,29 @@ class EkweNativeModule : Module() {
     AsyncFunction("updateOrbText") { text: String ->
       val context = appContext.reactContext ?: return@AsyncFunction false
       OrbOverlayManager.getInstance(context).updateText(text)
+      true
+    }
+
+    AsyncFunction("setOrbResult") { text: String ->
+      val context = appContext.reactContext ?: return@AsyncFunction false
+      OrbOverlayManager.getInstance(context).setResultText(text)
+      true
+    }
+
+    AsyncFunction("dismissOrbPanel") { ->
+      val activity = appContext.currentActivity
+      if (activity is expo.modules.ekwenative.orb.OrbPanelActivity) {
+        activity.dismissNativeLoader()
+        activity.finish()
+      }
+      true
+    }
+
+    AsyncFunction("dismissOrbLoader") { ->
+      val activity = appContext.currentActivity
+      if (activity is expo.modules.ekwenative.orb.OrbPanelActivity) {
+        activity.dismissNativeLoader()
+      }
       true
     }
 

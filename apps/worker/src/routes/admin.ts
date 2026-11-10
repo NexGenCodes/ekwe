@@ -9,6 +9,26 @@ import { withCache } from "@/core/cache";
 import { logger } from "@/core/logger";
 import { describeError, retryTransient } from "@/db/retry";
 
+async function writeAdminAudit(
+  env: Env,
+  adminEmail: string,
+  action: string,
+  detail: string | null,
+) {
+  try {
+    await env.DB.prepare(
+      "INSERT INTO admin_audit_log (admin_email, action, target_user_id, detail, created_at) VALUES (?, ?, NULL, ?, ?)",
+    )
+      .bind(adminEmail, action, detail, Date.now())
+      .run();
+  } catch (err) {
+    logger.warn("[admin] audit insert failed", {
+      action,
+      error: describeError(err),
+    });
+  }
+}
+
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const MANIFEST_KEY = "update:manifest";
 
@@ -61,7 +81,9 @@ async function sendExpoBatch(
 export async function handleUpdateNotify(
   body: z.infer<typeof pushNotifyRequestSchema>,
   env: Env,
+  adminEmail = "unknown",
 ): Promise<Response> {
+  const version = body.version;
   const versionCode = body.versionCode;
   const checksumSha256 = body.checksumSha256;
 
@@ -84,10 +106,14 @@ export async function handleUpdateNotify(
   }
 
   if (androidTokens.length === 0) {
-    return Response.json({ ok: true, sent: 0 });
+    await writeAdminAudit(
+      env,
+      adminEmail,
+      "releases.notify",
+      JSON.stringify({ version, sent: 0, deactivated: 0, errors: 0 }),
+    );
+    return Response.json({ ok: true, sent: 0, deactivated: 0, errors: 0 });
   }
-
-  const version = body.version;
 
   const messages: ExpoPushMessage[] = androidTokens.map((token) => ({
     to: token,
@@ -175,6 +201,19 @@ export async function handleUpdateNotify(
     });
   }
 
+  await writeAdminAudit(
+    env,
+    adminEmail,
+    "releases.notify",
+    JSON.stringify({
+      version,
+      sent: androidTokens.length,
+      deactivated,
+      errors: failed,
+      ...(batchFailure ? { batchFailure } : {}),
+    }),
+  );
+
   return Response.json({
     ok: true,
     sent: androidTokens.length,
@@ -213,7 +252,18 @@ export async function handleGetUpdateManifest(
 export async function handlePostUpdateManifest(
   manifest: z.infer<typeof updateManifestSchema>,
   env: Env,
+  adminEmail = "unknown",
 ): Promise<Response> {
   await env.EKWE_KV.put(MANIFEST_KEY, JSON.stringify(manifest));
+  await writeAdminAudit(
+    env,
+    adminEmail,
+    "releases.publish_manifest",
+    JSON.stringify({
+      latest_version: manifest.latest_version,
+      latest_version_code: manifest.latest_version_code,
+      min_supported_version_code: manifest.min_supported_version_code,
+    }),
+  );
   return Response.json({ ok: true });
 }

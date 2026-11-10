@@ -178,7 +178,7 @@ export default function BillingScreen(): React.ReactElement {
               variant="heading1"
               style={[styles.heroTitle, { color: color.foreground }]}
             >
-              {isPro ? "You're on Ekwe Paid" : "Unlock Ekwe Paid"}
+              {isPro ? "You're on Ekwe Premium" : "Unlock Ekwe Premium"}
             </Text>
             <Text
               variant="body"
@@ -289,7 +289,7 @@ export default function BillingScreen(): React.ReactElement {
               style={{ marginTop: spacing.sm }}
               accessibilityLabel="Check your plan status"
               accessibilityRole="link"
-              accessibilityHint="Checks whether your account has an active paid plan"
+              accessibilityHint="Checks whether your account has an active Premium plan"
             >
               <Text
                 variant="bodySmall"

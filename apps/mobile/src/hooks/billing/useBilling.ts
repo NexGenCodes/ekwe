@@ -65,7 +65,7 @@ export function useBilling(): UseBillingReturn {
     if (!session) {
       AppAlert.info(
         "Account Required",
-        "Please sign in or create an account to upgrade to Ekwe Paid.",
+        "Please sign in or create an account to upgrade to Ekwe Premium.",
       );
       return;
     }
@@ -131,8 +131,8 @@ export function useBilling(): UseBillingReturn {
                   currency: session?.currency ?? null,
                 });
                 AppAlert.success(
-                  "Welcome to Ekwe Paid!",
-                  "Your paid plan is active. Thank you for supporting Ekwe!",
+                  "Welcome to Ekwe Premium!",
+                  "Your Premium plan is active. Thank you for supporting Ekwe!",
                 );
                 return;
               }
@@ -151,15 +151,15 @@ export function useBilling(): UseBillingReturn {
           currency: session?.currency ?? null,
         });
         AppAlert.success(
-          "Welcome to Ekwe Paid!",
-          "Your paid plan is active. Thank you for supporting Ekwe!",
+          "Welcome to Ekwe Premium!",
+          "Your Premium plan is active. Thank you for supporting Ekwe!",
         );
         return;
       }
 
       AppAlert.info(
         "Payment Pending",
-        "We could not confirm your payment yet. If you were charged, the paid plan will activate automatically once the payment provider confirms it.",
+        "We could not confirm your payment yet. If you were charged, your Premium plan will activate automatically once the payment provider confirms it.",
       );
     },
     [],
@@ -180,18 +180,18 @@ export function useBilling(): UseBillingReturn {
       const upgraded = user?.tier === "PREMIUM";
 
       if (upgraded) {
-        AppAlert.success("Paid Plan Active", "Your paid plan is active.");
+        AppAlert.success("Premium Plan Active", "Your Premium plan is active.");
       } else {
         AppAlert.info(
-          "No Active Paid Plan",
-          "We could not find an active paid plan on this account. If you believe this is an error, please contact support.",
+          "No Active Premium Plan",
+          "We could not find an active Premium plan on this account. If you believe this is an error, please contact support.",
         );
       }
     } catch (err) {
       logger.error("[billing] paid status check failed", err);
       AppAlert.error(
         "Status Check Failed",
-        "Could not check your paid plan status. Please check your connection and try again.",
+        "Could not check your Premium plan status. Please check your connection and try again.",
       );
     } finally {
       setLoading(false);

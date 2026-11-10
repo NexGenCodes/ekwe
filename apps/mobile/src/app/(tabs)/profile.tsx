@@ -59,6 +59,7 @@ import { invalidateUsage } from "@/hooks/queries/useUsageQuery";
 import {
   checkForApkUpdate,
   resolveApkDownloadUrl,
+  type UpdateManifest,
 } from "@/services/otaUpdates";
 import { SyncService } from "@/services/syncService";
 import { auth$, settings$, settingsActions, update$ } from "@/store";
@@ -141,6 +142,22 @@ export default function ProfileScreen(): React.JSX.Element {
   const currentVersion =
     APP_VERSION || Constants.expoConfig?.version || "1.0.0";
 
+  const promptUpdate = useCallback((manifest: UpdateManifest): void => {
+    AppAlert.info(
+      "Update available",
+      `Version ${manifest.latest_version} is available.`,
+      [
+        { text: "Later", style: "cancel" },
+        {
+          text: "Download",
+          onPress: (): void => {
+            Linking.openURL(resolveApkDownloadUrl(manifest));
+          },
+        },
+      ],
+    );
+  }, []);
+
   const handleCheckForUpdate = useCallback(async (): Promise<void> => {
     if (isCheckingUpdate) return;
     await triggerHaptic();
@@ -149,26 +166,14 @@ export default function ProfileScreen(): React.JSX.Element {
       const manifest = await checkForApkUpdate();
       update$.manifest.set(manifest);
       if (manifest) {
-        AppAlert.info(
-          "Update available",
-          `Version ${manifest.latest_version} is available.`,
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Download",
-              onPress: (): void => {
-                Linking.openURL(resolveApkDownloadUrl(manifest));
-              },
-            },
-          ],
-        );
+        promptUpdate(manifest);
       } else {
         AppAlert.info("Up to date", "You're running the latest version.");
       }
     } finally {
       setIsCheckingUpdate(false);
     }
-  }, [isCheckingUpdate]);
+  }, [isCheckingUpdate, promptUpdate]);
 
   const rawName = user?.displayName ?? "";
   const userEmail = user?.email || "";
@@ -298,7 +303,7 @@ export default function ProfileScreen(): React.JSX.Element {
               icon={CreditCard}
               sfIcon="creditcard.fill"
               iconColor={isPro ? color.brand : color.foreground}
-              title={isPro ? "Ekwe Paid" : "Plan & Billing"}
+              title={isPro ? "Ekwe Premium" : "Plan & Billing"}
               subtitle={
                 isPro
                   ? "No daily caps · Studio voices · Live dictation"
@@ -522,22 +527,37 @@ export default function ProfileScreen(): React.JSX.Element {
                 sfIcon="circle.dotted"
                 iconColor={color.foreground}
                 title="Orb"
-                subtitle="Android only · Transcribe while playing in another app"
+                subtitle="Floating button to transcribe audio from other apps — screen-audio, not microphone."
                 checked={isPro ? orbEnabled : undefined}
                 locked={!isPro}
                 navigateToBilling
                 onPress={async () => {
-                  if (isPro) {
-                    await triggerHaptic();
-                    if (!orbEnabled && Platform.OS === "android") {
-                      const hasPerm =
-                        await EkweNative.checkOverlayPermission?.();
-                      if (hasPerm === false) {
-                        await EkweNative.requestOverlayPermission?.();
-                      }
-                    }
-                    setOrbEnabled(!orbEnabled);
+                  if (!isPro) return;
+                  await triggerHaptic();
+                  if (orbEnabled) {
+                    setOrbEnabled(false);
+                    return;
                   }
+                  AppAlert.info(
+                    "Turn on Orb?",
+                    "Orb needs: 1) Display over other apps. 2) Screen-capture consent (Android 10+). Nothing is recorded when Orb is off. Tap the floating button over any app to start.",
+                    [
+                      { text: "Not now", style: "cancel" },
+                      {
+                        text: "Turn on",
+                        onPress: (): void => {
+                          void (async (): Promise<void> => {
+                            const hasPerm =
+                              await EkweNative.checkOverlayPermission?.();
+                            if (hasPerm === false) {
+                              await EkweNative.requestOverlayPermission?.();
+                            }
+                            setOrbEnabled(true);
+                          })();
+                        },
+                      },
+                    ],
+                  );
                 }}
                 trailing={
                   isPro ? (
@@ -662,36 +682,39 @@ export default function ProfileScreen(): React.JSX.Element {
                 iconColor={color.foreground}
                 title="Check for Updates"
                 subtitle={
-                  availableUpdate
-                    ? `Current version ${currentVersion} · ${availableUpdate.latest_version} available`
-                    : `Current version ${currentVersion}`
+                  isCheckingUpdate
+                    ? "Checking for a newer version…"
+                    : availableUpdate
+                      ? `Version ${availableUpdate.latest_version} is ready to install`
+                      : undefined
                 }
-                onPress={handleCheckForUpdate}
+                onPress={
+                  availableUpdate
+                    ? (): void => {
+                        void triggerHaptic();
+                        promptUpdate(availableUpdate);
+                      }
+                    : handleCheckForUpdate
+                }
                 trailing={
                   isCheckingUpdate ? (
                     <Spinner size="sm" color={color.muted} />
                   ) : availableUpdate ? (
                     <Box
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: spacing.sm,
-                      }}
+                      style={[
+                        styles.updateBadge,
+                        { backgroundColor: color.brand },
+                      ]}
                     >
-                      <Box
-                        style={[
-                          styles.updateBadge,
-                          { backgroundColor: color.brand },
-                        ]}
+                      <Text
+                        variant="caption"
+                        style={{
+                          color: color.onBrand,
+                          fontWeight: "600",
+                        }}
                       >
-                        <Text
-                          variant="caption"
-                          style={{ color: color.onBrand }}
-                        >
-                          New
-                        </Text>
-                      </Box>
-                      <ChevronRight size={20} color={color.muted} />
+                        Update
+                      </Text>
                     </Box>
                   ) : undefined
                 }

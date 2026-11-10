@@ -154,7 +154,7 @@ describe("useBilling", () => {
 
       expect(mockReconcile).toHaveBeenCalled();
       expect(AppAlert.success).toHaveBeenCalledWith(
-        "Welcome to Ekwe Paid!",
+        "Welcome to Ekwe Premium!",
         expect.any(String),
       );
     });
@@ -287,7 +287,7 @@ describe("useBilling", () => {
 
       expect(mockFetchUser).toHaveBeenCalled();
       expect(AppAlert.success).toHaveBeenCalledWith(
-        "Paid Plan Active",
+        "Premium Plan Active",
         expect.any(String),
       );
     });
@@ -301,7 +301,7 @@ describe("useBilling", () => {
       });
 
       expect(AppAlert.info).toHaveBeenCalledWith(
-        "No Active Paid Plan",
+        "No Active Premium Plan",
         expect.any(String),
       );
     });

@@ -420,7 +420,7 @@ export function guardStreamingAllowed(tier: Tier): GuardResult {
       response: error(
         WORKER_ERROR_CODES.STREAM_PRO_ONLY,
         403,
-        "Live transcription is a paid feature.",
+        "Live transcription is a Premium feature.",
       ),
     };
   }

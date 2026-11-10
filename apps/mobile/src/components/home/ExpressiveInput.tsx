@@ -31,6 +31,7 @@ export interface ExpressiveInputProps {
   onConvert: () => void;
   sourceLang: string;
   targetLang: string;
+  detectedLanguage?: string | null;
   onSwap: () => void;
   onSourceChange: (code: string) => void;
   onTargetChange: (code: string) => void;
@@ -77,6 +78,7 @@ export const ExpressiveInput = React.memo(
     onConvert,
     sourceLang,
     targetLang,
+    detectedLanguage,
     onSwap,
     onSourceChange,
     onTargetChange,
@@ -282,6 +284,7 @@ export const ExpressiveInput = React.memo(
           <LanguageSwitcher
             sourceLang={sourceLang}
             targetLang={targetLang}
+            detectedLanguage={detectedLanguage}
             onSwap={onSwap}
             onSourceChange={onSourceChange}
             onTargetChange={onTargetChange}

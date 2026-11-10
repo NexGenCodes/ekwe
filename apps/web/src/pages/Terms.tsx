@@ -95,9 +95,9 @@ export default function Terms() {
               </p>
               <h2>9. Subscriptions &amp; Billing</h2>
               <p>
-                {a} offers optional paid subscriptions ("Paid") that unlock
-                additional features and higher usage limits. By subscribing, you
-                agree to the following:
+                {a} offers optional Premium subscriptions ("Premium") that
+                unlock additional features and higher usage limits. By
+                subscribing, you agree to the following:
               </p>
               <ul>
                 <li>
@@ -114,7 +114,7 @@ export default function Terms() {
                   <strong>Cancellation:</strong> You may cancel your
                   subscription at any time by contacting support at{" "}
                   <a href={`mailto:${e}`}>{e}</a>. Cancellation takes effect at
-                  the end of the current billing period; you retain paid-plan
+                  the end of the current billing period; you retain Premium
                   access until then.
                 </li>
                 <li>

@@ -128,7 +128,7 @@ function guardVoiceEntitlement(
     return Response.json(
       {
         error: WORKER_ERROR_CODES.PREMIUM_FEATURE_REQUIRED,
-        message: "Studio voices require Ekwe Paid.",
+        message: "Studio voices require Ekwe Premium.",
       },
       { status: 403 },
     );

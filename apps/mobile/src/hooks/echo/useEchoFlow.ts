@@ -408,7 +408,7 @@ export const useEchoFlow = (
         dispatch({
           type: "FAIL",
           payload: {
-            error: `Audio exceeds your plan limit (${limitSec}s). Please upgrade to Paid for longer files.`,
+            error: `Audio exceeds your plan limit (${limitSec}s). Please upgrade to Premium for longer files.`,
           },
         });
         return;

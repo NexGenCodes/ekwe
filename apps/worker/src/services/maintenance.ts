@@ -10,6 +10,7 @@ import { REFRESH_TOKEN_TTL_SECONDS, utcDay } from "@ekwe/shared";
 import { d1Cleanup } from "@/services/d1-cache";
 import { purgeExpiredSpeechCache } from "@/services/speech";
 import { reconcileFlutterwaveTransactions } from "@/services/flutterwave";
+import { deleteAccount } from "@/auth/users";
 
 const DAY_MS = 86_400_000;
 const USAGE_RETENTION_DAYS = 7;
@@ -142,6 +143,33 @@ export async function cleanupSyncState(env: Env): Promise<number> {
   return result.meta.changes ?? 0;
 }
 
+/** Hard-delete accounts whose scheduled deletion time has passed. */
+export async function purgeScheduledDeletions(env: Env): Promise<number> {
+  const now = Date.now();
+  const rows = await env.DB.prepare(
+    "SELECT id, email_norm FROM users WHERE delete_after IS NOT NULL AND delete_after <= ? LIMIT 50",
+  )
+    .bind(now)
+    .all<{ id: string; email_norm: string }>();
+  let purged = 0;
+  for (const row of rows.results ?? []) {
+    try {
+      await deleteAccount(env, row.id);
+      purged += 1;
+      logger.info("[scheduled] purged scheduled deletion", {
+        userId: row.id,
+        emailNorm: row.email_norm,
+      });
+    } catch (error) {
+      logger.error("[scheduled] scheduled deletion purge failed", {
+        userId: row.id,
+        error: describeError(error),
+      });
+    }
+  }
+  return purged;
+}
+
 async function runStep(
   name: string,
   step: () => Promise<unknown>,
@@ -168,6 +196,7 @@ export async function runMaintenance(env: Env): Promise<void> {
   await runStep("monthly usage cleanup", () => cleanupMonthlyUsage(env));
   await runStep("billing claim cleanup", () => cleanupBillingClaims(env));
   await runStep("sync state cleanup", () => cleanupSyncState(env));
+  await runStep("scheduled deletion purge", () => purgeScheduledDeletions(env));
   await runStep("speech cache purge", () => purgeExpiredSpeechCache(env));
   await runStep("flutterwave reconciliation", () =>
     reconcileFlutterwaveTransactions(env),

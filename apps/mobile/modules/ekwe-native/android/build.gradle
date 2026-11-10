@@ -35,6 +35,7 @@ dependencies {
   implementation "com.google.firebase:firebase-messaging:25.0.1"
   // Nitro Modules — exposes NitroModules prefab for CMake find_package()
   implementation project(':react-native-nitro-modules')
+  implementation "com.squareup.okhttp3:okhttp:4.12.0"
 }
 
 android {

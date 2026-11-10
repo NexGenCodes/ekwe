@@ -115,7 +115,7 @@ export function AvatarPickerModal({
               marginTop: spacing.xs,
             }}
           >
-            Auto
+            Default
           </Text>
         </Pressable>
       </Box>

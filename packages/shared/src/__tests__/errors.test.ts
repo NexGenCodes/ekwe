@@ -21,6 +21,7 @@ describe("WORKER_ERROR_CODES", () => {
 
   it("contains every code the worker currently emits", () => {
     const expected = [
+      "ACCOUNT_DISABLED",
       "NOT_FOUND",
       "TOO_MANY_REQUESTS",
       "PAYLOAD_TOO_LARGE",

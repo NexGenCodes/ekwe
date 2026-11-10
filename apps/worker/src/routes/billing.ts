@@ -101,8 +101,8 @@ export async function handleCheckout(
           email: auth.userEmail,
         },
         customizations: {
-          title: "Ekwe Paid",
-          description: `Upgrade to Ekwe Paid (${body.plan.replace("ekwe_pro_", "")})`,
+          title: "Ekwe Premium",
+          description: `Upgrade to Ekwe Premium (${body.plan.replace("ekwe_pro_", "")})`,
         },
       }),
     });
