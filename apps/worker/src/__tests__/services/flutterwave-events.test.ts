@@ -526,7 +526,7 @@ describe("Flutterwave event processing", () => {
   });
 
   describe("event dispatch", () => {
-    test("acks ignored events", async () => {
+    test("records charge lifecycle events that do not grant access", async () => {
       const result = await processWebhookEvent(
         "flutterwave",
         buildEvent({ event: "charge.failed", data: { status: "failed" } }),
@@ -534,7 +534,7 @@ describe("Flutterwave event processing", () => {
       );
 
       expect(await jsonBody(result.response)).toMatchObject({
-        action: "ignored",
+        action: "recorded",
       });
     });
 

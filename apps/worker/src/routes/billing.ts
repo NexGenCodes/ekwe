@@ -16,6 +16,7 @@ import {
   setProStatus,
 } from "@/services/flutterwave";
 import { claimFlutterwaveTransaction } from "@/services/flutterwave-claim";
+import { recordBillingEvent } from "@/services/billing-events";
 import { AuthResult } from "@/core/auth";
 import { describeError, retryTransient } from "@/db/retry";
 import {
@@ -300,6 +301,22 @@ export async function handleVerifyTransaction(
 
   if (!applied.ok) {
     logger.error("[billing/verify] Failed to activate the paid plan");
+    await recordBillingEvent(env, {
+      provider: "flutterwave",
+      eventKey: `flw:verify:${fwData.data.id}:charge.success`,
+      eventType: "charge.success",
+      status: "pending",
+      userId: auth.userId,
+      txRef: fwData.data.tx_ref,
+      flwRef: fwData.data.flw_ref,
+      externalId: fwData.data.id,
+      amount: Number(fwData.data.amount),
+      currency: fwData.data.currency,
+      plan,
+      platform: "web",
+      message: "Verified payment but access sync pending",
+      detail: { source: "verify", expiresAt: claim.expiresAt },
+    });
     return Response.json(
       { error: "Failed to activate the paid plan" },
       { status: 500 },
@@ -307,6 +324,30 @@ export async function handleVerifyTransaction(
   }
 
   const permanentlyActivated = applied.permanent;
+
+  await recordBillingEvent(env, {
+    provider: "flutterwave",
+    eventKey: `flw:verify:${fwData.data.id}:charge.success`,
+    eventType: "charge.success",
+    status: "succeeded",
+    userId: auth.userId,
+    txRef: fwData.data.tx_ref,
+    flwRef: fwData.data.flw_ref,
+    externalId: fwData.data.id,
+    amount: Number(fwData.data.amount),
+    currency: fwData.data.currency,
+    plan,
+    platform: "web",
+    message: claim.shouldActivate
+      ? "Payment verified and access activated"
+      : "Payment verified; coverage ensured for redeemed transaction",
+    detail: {
+      source: "verify",
+      expiresAt: claim.expiresAt,
+      permanent: permanentlyActivated,
+      redeemed: !claim.shouldActivate,
+    },
+  });
 
   logger.info("[billing/verify] paid plan activated via verify endpoint", {
     userId: auth.userId,

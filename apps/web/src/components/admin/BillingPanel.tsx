@@ -31,6 +31,7 @@ import {
 } from "./format";
 import type {
   AdminEntitlement,
+  BillingEvent,
   BillingList,
   BillingResponse,
   BillingSummary,
@@ -41,9 +42,10 @@ import type {
 const API = "/admin/api";
 const PAGE_SIZE = 25;
 
-type View = "entitlements" | "subscriptions" | "claims";
+type View = "entitlements" | "subscriptions" | "claims" | "events";
 
 const VIEW_OPTIONS: { value: View; label: string }[] = [
+  { value: "events", label: "Payment history" },
   { value: "entitlements", label: "Entitlements" },
   { value: "subscriptions", label: "Subscriptions" },
   { value: "claims", label: "Claims" },
@@ -154,6 +156,7 @@ export function BillingPanel() {
   const [subscriptions, setSubscriptions] =
     useState<BillingList<Subscription> | null>(null);
   const [claims, setClaims] = useState<BillingList<Claim> | null>(null);
+  const [events, setEvents] = useState<BillingList<BillingEvent> | null>(null);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -206,6 +209,7 @@ export function BillingPanel() {
         if (data.entitlements) setEntitlements(data.entitlements);
         if (data.subscriptions) setSubscriptions(data.subscriptions);
         if (data.claims) setClaims(data.claims);
+        if (data.events) setEvents(data.events);
         setLoadedAt(new Date());
       } catch (e) {
         setError(
@@ -228,14 +232,18 @@ export function BillingPanel() {
       ? entitlements
       : view === "subscriptions"
         ? subscriptions
-        : claims;
+        : view === "claims"
+          ? claims
+          : events;
   const total = activeList?.total ?? 0;
   const itemsCount =
     view === "entitlements"
       ? (entitlements?.items.length ?? 0)
       : view === "subscriptions"
         ? (subscriptions?.items.length ?? 0)
-        : (claims?.items.length ?? 0);
+        : view === "claims"
+          ? (claims?.items.length ?? 0)
+          : (events?.items.length ?? 0);
 
   const filtered = Boolean(
     debouncedQ || status || source || platform || coverage,
@@ -259,6 +267,18 @@ export function BillingPanel() {
       .join(" · ");
   }, [summary]);
 
+  const eventHealth = useMemo(() => {
+    if (!summary)
+      return "Payment events captured from webhooks, verify, and reconciliation";
+    const parts = [
+      `${fmtNumber(summary.eventsSucceeded ?? 0)} succeeded`,
+      `${fmtNumber(summary.eventsPending ?? 0)} pending`,
+      `${fmtNumber(summary.eventsFailed ?? 0)} failed`,
+      `${fmtNumber(summary.eventsRefunded ?? 0)} refunded`,
+    ];
+    return parts.join(" · ");
+  }, [summary]);
+
   const now = Date.now();
 
   return (
@@ -279,18 +299,16 @@ export function BillingPanel() {
           tone="accent"
         />
         <StatCard
-          label="Claim records"
-          value={fmtNumber(summary?.claimsTotal ?? 0)}
-          hint={`${fmtNumber(summary?.claimsWithActiveCoverage ?? 0)} with active coverage window`}
-          icon={<Receipt size={17} />}
+          label="Payment events"
+          value={fmtNumber(summary?.eventsTotal ?? 0)}
+          hint={eventHealth}
+          icon={<CreditCard size={17} />}
         />
         <StatCard
-          label="Claimed amounts"
-          value={
-            summary ? fmtNumber(summary.claimAmountsByCurrency.length) : "—"
-          }
-          hint={amountSummary}
-          icon={<CreditCard size={17} />}
+          label="Claim records"
+          value={fmtNumber(summary?.claimsTotal ?? 0)}
+          hint={`${fmtNumber(summary?.claimsWithActiveCoverage ?? 0)} active coverage · ${amountSummary}`}
+          icon={<Receipt size={17} />}
         />
       </div>
 
@@ -405,6 +423,28 @@ export function BillingPanel() {
                 </select>
               </label>
             )}
+            {view === "events" && (
+              <label className="adm-select-wrap">
+                <span className="sr-only">Status</span>
+                <select
+                  className="adm-select"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  aria-label="Filter by event status"
+                >
+                  <option value="">All statuses</option>
+                  <option value="succeeded">Succeeded</option>
+                  <option value="pending">Pending</option>
+                  <option value="failed">Failed</option>
+                  <option value="refunded">Refunded</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="expired">Expired</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="ignored">Ignored</option>
+                  <option value="unknown">Unknown</option>
+                </select>
+              </label>
+            )}
             {filtered && (
               <Button
                 variant="ghost"
@@ -450,6 +490,13 @@ export function BillingPanel() {
         ) : null}
 
         <div style={{ padding: "0 16px 8px", fontSize: 12, opacity: 0.8 }}>
+          {view === "events" && (
+            <span>
+              Payment events captured from Flutterwave webhooks, verification,
+              and reconciliation (succeeded, pending, failed, refunded, and
+              related states). Events before capture was enabled are not shown.
+            </span>
+          )}
           {view === "entitlements" && (
             <span>
               Entitlements are canonical access grants (staff, manual, billing,
@@ -499,7 +546,7 @@ export function BillingPanel() {
             onOpenUser={openUser}
             now={now}
           />
-        ) : (
+        ) : view === "claims" ? (
           <ClaimsTable
             rows={claims?.items ?? []}
             total={total}
@@ -508,6 +555,15 @@ export function BillingPanel() {
             onClear={clearFilters}
             onOpenUser={openUser}
             now={now}
+          />
+        ) : (
+          <EventsTable
+            rows={events?.items ?? []}
+            total={total}
+            loading={loading}
+            filtered={filtered}
+            onClear={clearFilters}
+            onOpenUser={openUser}
           />
         )}
 
@@ -905,6 +961,120 @@ function ClaimsTable({
         Showing {fmtNumber(rows.length)} of {fmtNumber(total)} claim records.
         Summary amount totals are sums of stored claim records by currency, not
         a reconciled ledger.
+      </div>
+    </div>
+  );
+}
+
+function eventStatusTone(status: string): BadgeTone {
+  const v = status.toLowerCase();
+  if (v === "succeeded") return "success";
+  if (v === "pending") return "warning";
+  if (v === "failed" || v === "rejected" || v === "expired") return "danger";
+  if (v === "refunded" || v === "cancelled") return "neutral";
+  return "neutral";
+}
+
+function EventsTable({
+  rows,
+  loading,
+  filtered,
+  onClear,
+  onOpenUser,
+  total,
+}: {
+  rows: BillingEvent[];
+  total: number;
+  loading: boolean;
+  filtered: boolean;
+  onClear: () => void;
+  onOpenUser: (id: string) => void;
+}) {
+  if (!loading && rows.length === 0) {
+    return (
+      <EmptyBilling
+        filtered={filtered}
+        onClear={onClear}
+        title="No payment events recorded"
+        description="Successful, pending, failed, refunded, and related billing events will appear here as they are processed."
+      />
+    );
+  }
+  return (
+    <div className="adm-table-wrap">
+      <table className="adm-table">
+        <thead>
+          <tr>
+            <th scope="col">Event</th>
+            <th scope="col">Account</th>
+            <th scope="col">Status</th>
+            <th scope="col">Amount</th>
+            <th scope="col">Reference</th>
+            <th scope="col">When</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((e) => {
+            const when = e.occurred_at ?? e.created_at;
+            const ref = e.tx_ref ?? e.flw_ref ?? e.external_id;
+            return (
+              <tr key={e.id}>
+                <td className="adm-cell-primary" data-label="Event">
+                  <div className="adm-user-copy">
+                    <span className="adm-mono adm-mono--soft">
+                      {e.event_type}
+                    </span>
+                    {e.message ? (
+                      <span className="adm-cell-sub" title={e.message}>
+                        {e.message}
+                      </span>
+                    ) : null}
+                  </div>
+                </td>
+                <td data-label="Account">
+                  {e.user_id ? (
+                    <UserCell
+                      userId={e.user_id}
+                      email={e.user_email}
+                      name={e.user_display_name}
+                      onOpen={() => onOpenUser(e.user_id!)}
+                    />
+                  ) : (
+                    <span className="adm-muted">Unresolved</span>
+                  )}
+                </td>
+                <td data-label="Status">
+                  <Badge tone={eventStatusTone(e.status)} dot>
+                    {titleCase(e.status)}
+                  </Badge>
+                </td>
+                <td data-label="Amount" className="adm-cell-money">
+                  {fmtCurrency(e.amount, e.currency)}
+                </td>
+                <td data-label="Reference">
+                  {ref ? (
+                    <div className="adm-user-copy">
+                      <span className="adm-mono" title={ref}>
+                        {shortId(ref, 14)}
+                      </span>
+                      <CopyButton value={ref} label="Copy reference" />
+                    </div>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td data-label="When">
+                  <span className="adm-date" title={fmtDateTime(when)}>
+                    {fmtRelative(when)}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div style={{ padding: "8px 16px" }} className="adm-cell-sub">
+        Showing {fmtNumber(rows.length)} of {fmtNumber(total)} payment events.
       </div>
     </div>
   );

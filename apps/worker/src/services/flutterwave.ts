@@ -10,6 +10,11 @@ import { normalizeEmail } from "@ekwe/shared";
 import { toLowestUnit, resolvePaymentCurrency } from "@ekwe/shared/money";
 import { getAuthoritativePlanPrices } from "@/routes/pricing";
 import { syncBillingEntitlement, syncUserPremiumCache } from "@/auth/users";
+import {
+  parseEventOccurredAt,
+  recordBillingEvent,
+  type BillingEventStatus,
+} from "@/services/billing-events";
 
 interface FlutterwaveEvent {
   id: number;
@@ -403,7 +408,7 @@ async function processFlutterwaveEvent(
   env: Env,
 ): Promise<ProviderResult> {
   const fwEvent = event as unknown as FlutterwaveEvent;
-  const eventType = fwEvent.event;
+  const eventType = fwEvent.event || "unknown";
   const data = fwEvent.data;
 
   logger.info(`[flutterwave] Event: ${eventType}`, {
@@ -412,8 +417,50 @@ async function processFlutterwaveEvent(
     status: data?.status,
   });
 
+  const baseEventKey = `flw:${fwEvent.id ?? "na"}:${eventType}`;
+  const occurredAt = parseEventOccurredAt(fwEvent.created_at);
+
+  const record = async (
+    status: BillingEventStatus,
+    opts: {
+      userId?: string | null;
+      txRef?: string | null;
+      flwRef?: string | null;
+      amount?: number | null;
+      currency?: string | null;
+      plan?: string | null;
+      message?: string | null;
+      detail?: Record<string, unknown> | null;
+      eventKey?: string;
+    } = {},
+  ) => {
+    await recordBillingEvent(env, {
+      provider: "flutterwave",
+      eventKey: opts.eventKey ?? baseEventKey,
+      eventType,
+      status,
+      userId: opts.userId ?? null,
+      txRef: opts.txRef ?? data?.tx_ref ?? null,
+      flwRef: opts.flwRef ?? data?.flw_ref ?? null,
+      externalId: fwEvent.id,
+      amount:
+        typeof opts.amount === "number"
+          ? opts.amount
+          : typeof data?.amount === "number"
+            ? data.amount
+            : null,
+      currency: opts.currency ?? data?.currency ?? null,
+      plan: opts.plan ?? planFromMeta(data?.meta?.plan) ?? null,
+      platform: "web",
+      message: opts.message ?? null,
+      detail: opts.detail ?? null,
+      occurredAt,
+    });
+  };
+
   if (!data) {
     logger.warn("[flutterwave] Missing event data");
+    await record("ignored", { message: "Missing event data" });
     return {
       response: Response.json({ received: true, action: "skipped" }),
       fullyApplied: true,
@@ -425,6 +472,10 @@ async function processFlutterwaveEvent(
   const resolution = await resolveUserIdForClaim(env, txRef, email);
 
   if (resolution.kind === "error") {
+    await record("pending", {
+      message: "User resolution failed; retryable",
+      detail: { resolution: "error" },
+    });
     return {
       response: Response.json({ received: true, action: "unverified" }),
       fullyApplied: false,
@@ -435,6 +486,10 @@ async function processFlutterwaveEvent(
     logger.warn("[flutterwave] Could not resolve user from event", {
       email,
       tx_ref: txRef,
+    });
+    await record("ignored", {
+      message: "Could not resolve user for event",
+      detail: { resolution: "missing", customerEmailPresent: !!email },
     });
     return {
       response: Response.json({ received: true, action: "skipped" }),
@@ -447,6 +502,10 @@ async function processFlutterwaveEvent(
   if (eventType === "charge.success" && data.status === "successful") {
     const verification = await verifyChargeAmount(env, data);
     if (verification.outcome === "reject") {
+      await record("rejected", {
+        userId,
+        message: "Charge verification rejected",
+      });
       return {
         response: Response.json({ received: true, action: "rejected" }),
         fullyApplied: true,
@@ -454,6 +513,10 @@ async function processFlutterwaveEvent(
     }
 
     if (verification.outcome === "retry") {
+      await record("pending", {
+        userId,
+        message: "Charge verification pending (pricing/config unavailable)",
+      });
       return {
         response: Response.json({ received: true, action: "unverified" }),
         fullyApplied: false,
@@ -471,6 +534,11 @@ async function processFlutterwaveEvent(
     });
 
     if (!claim) {
+      await record("pending", {
+        userId,
+        plan,
+        message: "Failed to record claim; retryable",
+      });
       return {
         response: Response.json({ received: true, action: "unverified" }),
         fullyApplied: false,
@@ -484,6 +552,12 @@ async function processFlutterwaveEvent(
         flw_ref: data.flw_ref,
       });
       const repaired = await ensureProCoverage(env, userId, claim.expiresAt);
+      await record("succeeded", {
+        userId,
+        plan,
+        message: "Charge already redeemed; coverage ensured",
+        detail: { redeemed: true, coverageExpiresAt: claim.expiresAt },
+      });
       return ackResult(
         Response.json({ received: true, action: "activated" }),
         repaired,
@@ -495,6 +569,14 @@ async function processFlutterwaveEvent(
       email,
       tx_ref: txRef,
       expires_at: claim.expiresAt,
+    });
+    await record(applied.ok ? "succeeded" : "pending", {
+      userId,
+      plan,
+      message: applied.ok
+        ? "Charge succeeded and access activated"
+        : "Charge succeeded but access sync pending",
+      detail: { expiresAt: claim.expiresAt, permanent: applied.permanent },
     });
     return ackResult(
       Response.json({ received: true, action: "activated" }),
@@ -509,11 +591,21 @@ async function processFlutterwaveEvent(
         email,
         tx_ref: txRef,
       });
+      await record(applied.ok ? "refunded" : "pending", {
+        userId,
+        message: applied.ok
+          ? "Charge refunded; billing access revoked"
+          : "Charge refund received but access update pending",
+      });
       return ackResult(
         Response.json({ received: true, action: "deactivated" }),
         applied,
       );
     }
+    await record("ignored", {
+      userId,
+      message: `Refund event ignored (status=${data.status ?? "unknown"})`,
+    });
     return {
       response: Response.json({ received: true, action: "ignored" }),
       fullyApplied: true,
@@ -528,6 +620,11 @@ async function processFlutterwaveEvent(
         email,
         tx_ref: txRef,
       });
+      await record(applied.ok ? "succeeded" : "pending", {
+        userId,
+        message: "Subscription renewed via invoice",
+        detail: { expiresAt: renewedUntil },
+      });
       return ackResult(
         Response.json({ received: true, action: "renewed" }),
         applied,
@@ -538,6 +635,10 @@ async function processFlutterwaveEvent(
       tx_ref: txRef,
       end_date: data.subscription?.end_date ?? null,
     });
+    await record("ignored", {
+      userId,
+      message: "Invoice update without usable end date",
+    });
     return {
       response: Response.json({ received: true, action: "skipped" }),
       fullyApplied: true,
@@ -546,9 +647,10 @@ async function processFlutterwaveEvent(
 
   if (eventType === "subscription.paused") {
     const applied = await setProStatus(env, { userId }, false, null);
-    logger.info("[flutterwave] Subscription paused", {
-      email,
-      tx_ref: txRef,
+    logger.info("[flutterwave] Subscription paused", { email, tx_ref: txRef });
+    await record(applied.ok ? "cancelled" : "pending", {
+      userId,
+      message: "Subscription paused",
     });
     return ackResult(
       Response.json({ received: true, action: "deactivated" }),
@@ -567,6 +669,10 @@ async function processFlutterwaveEvent(
         email,
         tx_ref: txRef,
       });
+      await record("ignored", {
+        userId,
+        message: "Subscription end event without usable end date",
+      });
       return {
         response: Response.json({ received: true, action: "skipped" }),
         fullyApplied: true,
@@ -583,6 +689,16 @@ async function processFlutterwaveEvent(
       tx_ref: txRef,
       expires_at: retainedUntil,
     });
+    await record(
+      applied.ok ? (stillRunning ? "succeeded" : "cancelled") : "pending",
+      {
+        userId,
+        message: stillRunning
+          ? "Subscription ending; access retained until expiry"
+          : "Subscription ended",
+        detail: { expiresAt: retainedUntil },
+      },
+    );
     return ackResult(
       Response.json({ received: true, action: "retained" }),
       applied,
@@ -595,32 +711,45 @@ async function processFlutterwaveEvent(
       email,
       tx_ref: txRef,
     });
+    await record(applied.ok ? "expired" : "pending", {
+      userId,
+      message: "Subscription expired",
+    });
     return ackResult(
       Response.json({ received: true, action: "deactivated" }),
       applied,
     );
   }
 
-  const ignoredEvents = new Set([
-    "charge.failed",
-    "charge.abandoned",
-    "charge.pending",
-    "charge.initiated",
-    "invoice.payment_failed",
-    "transfer.completed",
-    "transfer.failed",
-    "transfer.reversed",
-  ]);
+  const statusMap: Record<string, BillingEventStatus> = {
+    "charge.failed": "failed",
+    "charge.abandoned": "failed",
+    "invoice.payment_failed": "failed",
+    "transfer.failed": "failed",
+    "transfer.reversed": "failed",
+    "charge.pending": "pending",
+    "charge.initiated": "pending",
+    "transfer.completed": "succeeded",
+  };
 
-  if (ignoredEvents.has(eventType)) {
-    logger.info(`[flutterwave] Ignored event: ${eventType}`);
+  if (eventType in statusMap) {
+    const mapped = statusMap[eventType];
+    logger.info(`[flutterwave] Event recorded: ${eventType} -> ${mapped}`);
+    await record(mapped, {
+      userId,
+      message: `Flutterwave event: ${eventType}`,
+    });
     return {
-      response: Response.json({ received: true, action: "ignored" }),
+      response: Response.json({ received: true, action: "recorded" }),
       fullyApplied: true,
     };
   }
 
   logger.warn(`[flutterwave] Unhandled event type: ${eventType}`);
+  await record("unknown", {
+    userId,
+    message: `Unhandled event type: ${eventType}`,
+  });
   return {
     response: Response.json({ received: true, action: "unknown" }),
     fullyApplied: true,
@@ -807,6 +936,24 @@ export async function processMissingTransaction(
 
   if (!claim.shouldActivate) {
     const repaired = await ensureProCoverage(env, userId, claim.expiresAt);
+    await recordBillingEvent(env, {
+      provider: "flutterwave",
+      eventKey: `flw:reconcile:${data.flw_ref ?? txRef ?? "unknown"}:charge.success`,
+      eventType: "charge.success",
+      status: repaired.ok ? "succeeded" : "pending",
+      userId,
+      txRef,
+      flwRef: data.flw_ref ?? null,
+      externalId: data.id ?? null,
+      amount: data.amount ?? null,
+      currency: data.currency ?? null,
+      plan: period,
+      platform: "web",
+      message: repaired.ok
+        ? "Reconciliation ensured coverage for redeemed transaction"
+        : "Reconciliation found redeemed transaction but access sync pending",
+      detail: { source: "reconciliation", expiresAt: claim.expiresAt },
+    });
     logger.info("[reconciliation] Transaction already redeemed", {
       email,
       tx_ref: txRef,
@@ -817,6 +964,24 @@ export async function processMissingTransaction(
   }
 
   const applied = await setProStatus(env, { userId }, true, claim.expiresAt);
+  await recordBillingEvent(env, {
+    provider: "flutterwave",
+    eventKey: `flw:reconcile:${data.flw_ref ?? txRef ?? "unknown"}:charge.success`,
+    eventType: "charge.success",
+    status: applied.ok ? "succeeded" : "pending",
+    userId,
+    txRef,
+    flwRef: data.flw_ref ?? null,
+    externalId: data.id ?? null,
+    amount: data.amount ?? null,
+    currency: data.currency ?? null,
+    plan: period,
+    platform: "web",
+    message: applied.ok
+      ? "Transaction reconciled and access activated"
+      : "Transaction reconciled but access sync pending",
+    detail: { source: "reconciliation", expiresAt: claim.expiresAt },
+  });
   if (applied.ok) {
     logger.info("[reconciliation] Successfully processed missing transaction", {
       email,

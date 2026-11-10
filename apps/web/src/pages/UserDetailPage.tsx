@@ -41,6 +41,7 @@ import type {
   AdminSession,
   AdminUser,
   AuditRow,
+  BillingEvent,
   Claim,
   Subscription,
   Toast,
@@ -208,7 +209,8 @@ export default function UserDetailPage() {
   const [billing, setBilling] = useState<{
     subscriptions: Subscription[];
     claims: Claim[];
-  }>({ subscriptions: [], claims: [] });
+    events: BillingEvent[];
+  }>({ subscriptions: [], claims: [], events: [] });
   const [usage, setUsage] = useState<{
     daily: UsageRow[];
     monthly: UsageRow[];
@@ -308,6 +310,7 @@ export default function UserDetailPage() {
           api<{
             subscriptions?: Subscription[] | { items?: Subscription[] };
             claims?: Claim[] | { items?: Claim[] };
+            events?: BillingEvent[] | { items?: BillingEvent[] };
           }>(`/billing?userId=${id}&limit=25`),
           api<{ daily?: UsageRow[]; monthly?: UsageRow[] }>(
             `/usage?userId=${id}&limit=30`,
@@ -318,6 +321,8 @@ export default function UserDetailPage() {
         const subsRaw = b.subscriptions as
           Subscription[] | { items?: Subscription[] } | undefined;
         const claimsRaw = b.claims as Claim[] | { items?: Claim[] } | undefined;
+        const eventsRaw = b.events as
+          BillingEvent[] | { items?: BillingEvent[] } | undefined;
         setBilling({
           subscriptions: Array.isArray(subsRaw)
             ? subsRaw
@@ -325,6 +330,9 @@ export default function UserDetailPage() {
           claims: Array.isArray(claimsRaw)
             ? claimsRaw
             : (claimsRaw?.items ?? []),
+          events: Array.isArray(eventsRaw)
+            ? eventsRaw
+            : (eventsRaw?.items ?? []),
         });
         setUsage({ daily: us.daily ?? [], monthly: us.monthly ?? [] });
         setDetails({
@@ -971,6 +979,60 @@ export default function UserDetailPage() {
                       title={r.user_agent ?? undefined}
                     >
                       {r.user_agent || "—"}
+                    </td>
+                  </>
+                );
+              }}
+            />
+
+            <RecordTable<BillingEvent>
+              title="Payment history"
+              icon={<Receipt size={16} aria-hidden="true" />}
+              count={billing.events.length}
+              empty="No payment/billing events recorded for this account yet. Events are captured from processed webhooks, verification, and reconciliation going forward."
+              columns={["Event", "Status", "Amount", "Reference", "When"]}
+              rows={billing.events}
+              rowKey={(e) => e.id}
+              renderRow={(e) => {
+                const v = (e.status || "").toLowerCase();
+                const tone =
+                  v === "succeeded"
+                    ? "success"
+                    : v === "pending"
+                      ? "warning"
+                      : v === "failed" || v === "rejected" || v === "expired"
+                        ? "danger"
+                        : "neutral";
+                const when = e.occurred_at ?? e.created_at;
+                const ref = e.tx_ref ?? e.flw_ref ?? e.external_id;
+                return (
+                  <>
+                    <td data-label="Event">
+                      <span className="adm-mono adm-mono--soft">
+                        {e.event_type}
+                      </span>
+                      {e.message ? (
+                        <div className="adm-cell-sub" title={e.message}>
+                          {e.message}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td data-label="Status">
+                      <Badge tone={tone} dot>
+                        {e.status}
+                      </Badge>
+                    </td>
+                    <td data-label="Amount">
+                      {fmtCurrency(e.amount, e.currency)}
+                    </td>
+                    <td
+                      data-label="Reference"
+                      className="adm-mono adm-mono--soft"
+                    >
+                      {ref ? <span title={ref}>{ref}</span> : "—"}
+                    </td>
+                    <td data-label="When" title={fmtDateTime(when)}>
+                      {fmtRelative(when)}
                     </td>
                   </>
                 );

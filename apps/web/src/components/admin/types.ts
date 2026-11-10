@@ -111,6 +111,38 @@ export interface BillingList<T> {
   offset: number;
 }
 
+export interface BillingEvent {
+  id: string;
+  provider: string;
+  event_key: string;
+  event_type: string;
+  status:
+    | "succeeded"
+    | "pending"
+    | "failed"
+    | "refunded"
+    | "cancelled"
+    | "expired"
+    | "rejected"
+    | "ignored"
+    | "unknown";
+  user_id: string | null;
+  tx_ref: string | null;
+  flw_ref: string | null;
+  external_id: string | null;
+  amount: number | null;
+  currency: string | null;
+  plan: string | null;
+  platform: string | null;
+  message: string | null;
+  detail: string | null;
+  occurred_at: number | null;
+  created_at: number;
+  user_email?: string | null;
+  user_display_name?: string | null;
+  user_role?: string | null;
+}
+
 export interface BillingSummary {
   activeSubscriptions: number;
   subscriptionsTotal: number;
@@ -119,6 +151,11 @@ export interface BillingSummary {
   claimsTotal: number;
   claimsWithActiveCoverage: number;
   claimAmountsByCurrency: { currency: string; total: number; count: number }[];
+  eventsTotal?: number;
+  eventsSucceeded?: number;
+  eventsFailed?: number;
+  eventsPending?: number;
+  eventsRefunded?: number;
 }
 
 export interface BillingResponse {
@@ -126,6 +163,7 @@ export interface BillingResponse {
   subscriptions?: BillingList<Subscription>;
   claims?: BillingList<Claim>;
   entitlements?: BillingList<AdminEntitlement>;
+  events?: BillingList<BillingEvent>;
 }
 
 export interface UsageRow {

@@ -25,7 +25,7 @@ async function audit(
 }
 
 type BillingSection =
-  "all" | "summary" | "subscriptions" | "claims" | "entitlements";
+  "all" | "summary" | "subscriptions" | "claims" | "entitlements" | "events";
 
 function parsePositiveInt(
   value: string | undefined,
@@ -52,6 +52,7 @@ export async function handleBilling(c: Context<AppEnv>) {
   const source = c.req.query("source")?.trim().toLowerCase() ?? "";
   const platform = c.req.query("platform")?.trim().toLowerCase() ?? "";
   const coverage = c.req.query("coverage")?.trim().toLowerCase() ?? "";
+  const eventType = c.req.query("eventType")?.trim().toLowerCase() ?? "";
   const limit = Math.min(
     Math.max(parsePositiveInt(c.req.query("limit"), 25, 100), 1),
     100,
@@ -71,6 +72,11 @@ export async function handleBilling(c: Context<AppEnv>) {
         claimsTotal,
         claimsActive,
         amounts,
+        eventsTotal,
+        eventsSucceeded,
+        eventsFailed,
+        eventsPending,
+        eventsRefunded,
       ] = await Promise.all([
         env.DB.prepare(
           `SELECT COUNT(*) AS n FROM user_subscriptions
@@ -107,6 +113,29 @@ export async function handleBilling(c: Context<AppEnv>) {
               GROUP BY COALESCE(currency, 'UNKNOWN')
               ORDER BY total DESC`,
         ).all<{ currency: string; total: number; count: number }>(),
+        env.DB.prepare(`SELECT COUNT(*) AS n FROM billing_events`)
+          .first<{ n: number }>()
+          .catch(() => ({ n: 0 })),
+        env.DB.prepare(
+          `SELECT COUNT(*) AS n FROM billing_events WHERE status = 'succeeded'`,
+        )
+          .first<{ n: number }>()
+          .catch(() => ({ n: 0 })),
+        env.DB.prepare(
+          `SELECT COUNT(*) AS n FROM billing_events WHERE status = 'failed'`,
+        )
+          .first<{ n: number }>()
+          .catch(() => ({ n: 0 })),
+        env.DB.prepare(
+          `SELECT COUNT(*) AS n FROM billing_events WHERE status = 'pending'`,
+        )
+          .first<{ n: number }>()
+          .catch(() => ({ n: 0 })),
+        env.DB.prepare(
+          `SELECT COUNT(*) AS n FROM billing_events WHERE status = 'refunded'`,
+        )
+          .first<{ n: number }>()
+          .catch(() => ({ n: 0 })),
       ]);
       return {
         activeSubscriptions: subsActive?.n ?? 0,
@@ -120,6 +149,11 @@ export async function handleBilling(c: Context<AppEnv>) {
           total: Number(r.total ?? 0),
           count: Number(r.count ?? 0),
         })),
+        eventsTotal: eventsTotal?.n ?? 0,
+        eventsSucceeded: eventsSucceeded?.n ?? 0,
+        eventsFailed: eventsFailed?.n ?? 0,
+        eventsPending: eventsPending?.n ?? 0,
+        eventsRefunded: eventsRefunded?.n ?? 0,
       };
     })();
 
@@ -258,8 +292,57 @@ export async function handleBilling(c: Context<AppEnv>) {
       };
     };
 
+    const loadEvents = async () => {
+      const where: string[] = [];
+      const binds: unknown[] = [];
+      if (userId) {
+        where.push("ev.user_id = ?");
+        binds.push(userId);
+      }
+      if (status) {
+        where.push("lower(ev.status) = ?");
+        binds.push(status);
+      }
+      if (eventType) {
+        where.push("lower(ev.event_type) = ?");
+        binds.push(eventType);
+      }
+      if (q) {
+        where.push(
+          "(lower(COALESCE(ev.user_id,'')) LIKE ? OR lower(COALESCE(ev.tx_ref,'')) LIKE ? OR lower(COALESCE(ev.flw_ref,'')) LIKE ? OR lower(COALESCE(ev.external_id,'')) LIKE ? OR lower(COALESCE(ev.event_type,'')) LIKE ? OR lower(COALESCE(ev.message,'')) LIKE ? OR lower(COALESCE(u.email,'')) LIKE ? OR lower(COALESCE(u.display_name,'')) LIKE ?)",
+        );
+        const p = likeParam(q);
+        binds.push(p, p, p, p, p, p, p, p);
+      }
+      const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+      const base = `FROM billing_events ev LEFT JOIN users u ON u.id = ev.user_id ${whereSql}`;
+      const countRow = await env.DB.prepare(`SELECT COUNT(*) AS n ${base}`)
+        .bind(...binds)
+        .first<{ n: number }>()
+        .catch(() => ({ n: 0 }));
+      const rows = await env.DB.prepare(
+        `SELECT ev.id, ev.provider, ev.event_key, ev.event_type, ev.status, ev.user_id,
+                ev.tx_ref, ev.flw_ref, ev.external_id, ev.amount, ev.currency, ev.plan,
+                ev.platform, ev.message, ev.detail, ev.occurred_at, ev.created_at,
+                u.email AS user_email, u.display_name AS user_display_name,
+                COALESCE(u.role, 'user') AS user_role
+           ${base}
+          ORDER BY COALESCE(ev.occurred_at, ev.created_at) DESC, ev.created_at DESC
+          LIMIT ? OFFSET ?`,
+      )
+        .bind(...binds, limit, offset)
+        .all<Record<string, unknown>>()
+        .catch(() => ({ results: [] as Record<string, unknown>[] }));
+      return {
+        items: rows.results ?? [],
+        total: countRow?.n ?? 0,
+        limit,
+        offset,
+      };
+    };
+
     const wantAll = section === "all";
-    const [subscriptions, claims, entitlements] = await Promise.all([
+    const [subscriptions, claims, entitlements, events] = await Promise.all([
       wantAll || section === "subscriptions" || userId
         ? loadSubscriptions()
         : Promise.resolve(null),
@@ -269,6 +352,9 @@ export async function handleBilling(c: Context<AppEnv>) {
       wantAll || section === "entitlements" || userId
         ? loadEntitlements()
         : Promise.resolve(null),
+      wantAll || section === "events" || userId
+        ? loadEvents()
+        : Promise.resolve(null),
     ]);
 
     if (section === "summary") return c.json({ summary });
@@ -277,6 +363,7 @@ export async function handleBilling(c: Context<AppEnv>) {
     if (subscriptions) response.subscriptions = subscriptions;
     if (claims) response.claims = claims;
     if (entitlements) response.entitlements = entitlements;
+    if (events) response.events = events;
     return c.json(response);
   } catch (e) {
     logger.error("[admin-ops] billing query failed", {
