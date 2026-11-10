@@ -6,6 +6,7 @@ import { isProviderDegraded } from "@/services/health";
 import { PROVIDER_MODULES } from "@/providers";
 import { error } from "@/core/http";
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
+import { syncFlutterwaveBillingData } from "@/services/flutterwave";
 
 async function audit(
   env: Env,
@@ -25,7 +26,16 @@ async function audit(
 }
 
 type BillingSection =
-  "all" | "summary" | "subscriptions" | "claims" | "entitlements" | "events";
+  | "all"
+  | "summary"
+  | "subscriptions"
+  | "claims"
+  | "entitlements"
+  | "events"
+  | "attempts"
+  | "refunds"
+  | "disputes"
+  | "records";
 
 function parsePositiveInt(
   value: string | undefined,
@@ -341,8 +351,58 @@ export async function handleBilling(c: Context<AppEnv>) {
       };
     };
 
+    const loadSimpleLedger = async (
+      table: string,
+      alias: string,
+      extraCols = "",
+    ) => {
+      const where: string[] = ["1=1"];
+      const binds: unknown[] = [];
+      if (userId) {
+        where.push(`${alias}.user_id = ?`);
+        binds.push(userId);
+      }
+      if (status) {
+        where.push(`lower(${alias}.status) = ?`);
+        binds.push(status);
+      }
+      if (q) {
+        where.push(
+          `(lower(COALESCE(${alias}.user_id,'')) LIKE ? OR lower(COALESCE(${alias}.tx_ref,'')) LIKE ? OR lower(COALESCE(${alias}.flw_ref,'')) LIKE ? OR lower(COALESCE(u.email,'')) LIKE ?)`,
+        );
+        const p = likeParam(q);
+        binds.push(p, p, p, p);
+      }
+      const whereSql = `WHERE ${where.join(" AND ")}`;
+      const base = `FROM ${table} ${alias} LEFT JOIN users u ON u.id = ${alias}.user_id ${whereSql}`;
+      const countRow = await env.DB.prepare(`SELECT COUNT(*) AS n ${base}`)
+        .bind(...binds)
+        .first<{ n: number }>()
+        .catch(() => ({ n: 0 }));
+      const rows = await env.DB.prepare(
+        `SELECT ${alias}.*${extraCols}, u.email AS user_email, u.display_name AS user_display_name, COALESCE(u.role,'user') AS user_role ${base} ORDER BY ${alias}.updated_at DESC LIMIT ? OFFSET ?`,
+      )
+        .bind(...binds, limit, offset)
+        .all<Record<string, unknown>>()
+        .catch(() => ({ results: [] as Record<string, unknown>[] }));
+      return {
+        items: rows.results ?? [],
+        total: countRow?.n ?? 0,
+        limit,
+        offset,
+      };
+    };
+
     const wantAll = section === "all";
-    const [subscriptions, claims, entitlements, events] = await Promise.all([
+    const [
+      subscriptions,
+      claims,
+      entitlements,
+      events,
+      attempts,
+      refunds,
+      disputes,
+    ] = await Promise.all([
       wantAll || section === "subscriptions" || userId
         ? loadSubscriptions()
         : Promise.resolve(null),
@@ -355,6 +415,15 @@ export async function handleBilling(c: Context<AppEnv>) {
       wantAll || section === "events" || userId
         ? loadEvents()
         : Promise.resolve(null),
+      wantAll || section === "attempts" || userId
+        ? loadSimpleLedger("billing_payment_attempts", "a")
+        : Promise.resolve(null),
+      wantAll || section === "refunds" || userId
+        ? loadSimpleLedger("billing_refunds", "r")
+        : Promise.resolve(null),
+      wantAll || section === "disputes" || userId
+        ? loadSimpleLedger("billing_disputes", "d")
+        : Promise.resolve(null),
     ]);
 
     if (section === "summary") return c.json({ summary });
@@ -364,6 +433,9 @@ export async function handleBilling(c: Context<AppEnv>) {
     if (claims) response.claims = claims;
     if (entitlements) response.entitlements = entitlements;
     if (events) response.events = events;
+    if (attempts) response.attempts = attempts;
+    if (refunds) response.refunds = refunds;
+    if (disputes) response.disputes = disputes;
     return c.json(response);
   } catch (e) {
     logger.error("[admin-ops] billing query failed", {
@@ -460,4 +532,29 @@ export async function handleAuditWrite(c: Context<AppEnv>) {
     body ? JSON.stringify(body).slice(0, 500) : null,
   );
   return c.json({ ok: true });
+}
+
+export async function handleBillingSync(c: Context<AppEnv>) {
+  const adminEmail = c.get("adminEmail") ?? "unknown";
+  try {
+    const body = (await c.req.json().catch(() => ({}))) as { days?: number };
+    const days = typeof body?.days === "number" ? body.days : 7;
+    const result = await syncFlutterwaveBillingData(c.env, { days });
+    await audit(
+      c.env,
+      adminEmail,
+      "billing.sync",
+      JSON.stringify({ days, ...result }).slice(0, 500),
+    );
+    return c.json({ ok: true, ...result });
+  } catch (e) {
+    logger.error("[admin-ops] billing sync failed", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return error(
+      WORKER_ERROR_CODES.SERVER_ERROR,
+      500,
+      "Failed to sync billing data from Flutterwave.",
+    );
+  }
 }

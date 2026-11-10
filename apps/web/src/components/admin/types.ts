@@ -143,6 +143,62 @@ export interface BillingEvent {
   user_role?: string | null;
 }
 
+export interface BillingAttempt {
+  id: string;
+  provider: string;
+  user_id: string | null;
+  tx_ref: string | null;
+  flw_ref: string | null;
+  transaction_id: string | null;
+  event_type: string | null;
+  status: string;
+  amount: number | null;
+  currency: string | null;
+  plan: string | null;
+  payment_type: string | null;
+  processor_response: string | null;
+  updated_at: number;
+  user_email?: string | null;
+  user_display_name?: string | null;
+}
+
+export interface BillingRefund {
+  id: string;
+  provider: string;
+  provider_refund_id: string | null;
+  transaction_id: string | null;
+  tx_ref: string | null;
+  flw_ref: string | null;
+  user_id: string | null;
+  amount_refunded: number | null;
+  currency: string | null;
+  status: string;
+  reason: string | null;
+  created_at_provider: number | null;
+  updated_at: number;
+  user_email?: string | null;
+  user_display_name?: string | null;
+}
+
+export interface BillingDispute {
+  id: string;
+  provider: string;
+  provider_dispute_id: string;
+  transaction_id: string | null;
+  tx_ref: string | null;
+  flw_ref: string | null;
+  user_id: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string;
+  stage: string | null;
+  reason: string | null;
+  evidence_due_at: number | null;
+  updated_at: number;
+  user_email?: string | null;
+  user_display_name?: string | null;
+}
+
 export interface BillingSummary {
   activeSubscriptions: number;
   subscriptionsTotal: number;
@@ -164,6 +220,9 @@ export interface BillingResponse {
   claims?: BillingList<Claim>;
   entitlements?: BillingList<AdminEntitlement>;
   events?: BillingList<BillingEvent>;
+  attempts?: BillingList<BillingAttempt>;
+  refunds?: BillingList<BillingRefund>;
+  disputes?: BillingList<BillingDispute>;
 }
 
 export interface UsageRow {

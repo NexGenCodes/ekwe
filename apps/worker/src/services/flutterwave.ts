@@ -15,6 +15,12 @@ import {
   recordBillingEvent,
   type BillingEventStatus,
 } from "@/services/billing-events";
+import {
+  recordProviderSnapshot,
+  upsertDispute,
+  upsertPaymentAttempt,
+  upsertRefund,
+} from "@/services/billing-ledger";
 
 interface FlutterwaveEvent {
   id: number;
@@ -420,6 +426,51 @@ async function processFlutterwaveEvent(
   const baseEventKey = `flw:${fwEvent.id ?? "na"}:${eventType}`;
   const occurredAt = parseEventOccurredAt(fwEvent.created_at);
 
+  const asRec = (v: unknown): Record<string, unknown> =>
+    v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+
+  await recordProviderSnapshot(env, {
+    recordType: "webhook",
+    providerId: fwEvent.id,
+    txRef: data?.tx_ref ?? null,
+    flwRef: data?.flw_ref ?? null,
+    userId: null,
+    status: data?.status ?? eventType,
+    amount: data?.amount ?? null,
+    currency: data?.currency ?? null,
+    payload: fwEvent,
+    occurredAt,
+  });
+
+  if (eventType.startsWith("charge.") || eventType === "charge") {
+    await upsertPaymentAttempt(env, {
+      userId: null,
+      txRef: data?.tx_ref ?? null,
+      flwRef: data?.flw_ref ?? null,
+      transactionId: data?.id != null ? String(data.id) : null,
+      eventType,
+      status: data?.status ?? "unknown",
+      amount: data?.amount ?? null,
+      currency: data?.currency ?? null,
+      plan: planFromMeta(data?.meta?.plan),
+      paymentType:
+        typeof asRec(data).payment_type === "string"
+          ? String(asRec(data).payment_type)
+          : null,
+      processorResponse:
+        typeof asRec(data).processor_response === "string"
+          ? String(asRec(data).processor_response)
+          : null,
+      customerEmail: data?.customer?.email ?? null,
+      narrative:
+        typeof asRec(data).narration === "string"
+          ? String(asRec(data).narration)
+          : null,
+      raw: data ?? fwEvent,
+      occurredAt,
+    });
+  }
+
   const record = async (
     status: BillingEventStatus,
     opts: {
@@ -585,6 +636,27 @@ async function processFlutterwaveEvent(
   }
 
   if (eventType === "charge.refund" || eventType === "charge.refunded") {
+    const rd = asRec(data);
+    await upsertRefund(env, {
+      providerRefundId:
+        idStr(rd.refund_id) ?? idStr(rd.id) ?? String(fwEvent.id),
+      transactionId:
+        idStr(rd.transaction_id) ?? (data?.id != null ? String(data.id) : null),
+      txRef,
+      flwRef: data?.flw_ref ?? null,
+      userId,
+      amountRefunded:
+        typeof rd.amount_refunded === "number"
+          ? rd.amount_refunded
+          : typeof data?.amount === "number"
+            ? data.amount
+            : null,
+      currency: data?.currency ?? null,
+      status: data?.status ?? "unknown",
+      reason: typeof rd.reason === "string" ? rd.reason : null,
+      raw: data ?? fwEvent,
+      occurredAt,
+    });
     if (data.status === "successful" || data.status === "completed") {
       const applied = await setProStatus(env, { userId }, false, null);
       logger.info("[flutterwave] Charge refunded — paid plan revoked", {
@@ -719,6 +791,51 @@ async function processFlutterwaveEvent(
       Response.json({ received: true, action: "deactivated" }),
       applied,
     );
+  }
+
+  if (eventType.includes("dispute") || eventType.includes("chargeback")) {
+    const dd = asRec(data);
+    const disputeId =
+      idStr(dd.id) ?? idStr(dd.dispute_id) ?? String(fwEvent.id);
+    await upsertDispute(env, {
+      providerDisputeId: disputeId,
+      transactionId:
+        idStr(dd.transaction_id) ?? (data?.id != null ? String(data.id) : null),
+      txRef,
+      flwRef: data?.flw_ref ?? null,
+      userId,
+      amount:
+        typeof data?.amount === "number"
+          ? data.amount
+          : typeof dd.amount_disputed === "number"
+            ? dd.amount_disputed
+            : null,
+      currency: data?.currency ?? null,
+      status:
+        typeof data?.status === "string"
+          ? data.status
+          : typeof dd.stage === "string"
+            ? dd.stage
+            : "unknown",
+      stage: typeof dd.stage === "string" ? dd.stage : null,
+      reason:
+        typeof dd.reason === "string"
+          ? dd.reason
+          : typeof dd.narration === "string"
+            ? dd.narration
+            : null,
+      raw: data ?? fwEvent,
+      occurredAt,
+    });
+    await record("pending", {
+      userId,
+      message: `Dispute/chargeback event recorded: ${eventType}`,
+      detail: { disputeId },
+    });
+    return {
+      response: Response.json({ received: true, action: "recorded" }),
+      fullyApplied: true,
+    };
   }
 
   const statusMap: Record<string, BillingEventStatus> = {
@@ -1085,4 +1202,289 @@ export async function reconcileFlutterwaveTransactions(
     }
     throw err;
   }
+}
+
+export async function fetchFlutterwaveCollection(
+  env: Env,
+  path: string,
+  params: Record<string, string | number | undefined> = {},
+): Promise<unknown[] | null> {
+  if (!env.FLUTTERWAVE_SECRET) return null;
+  const url = new URL(`https://api.flutterwave.com/v3${path}`);
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
+  }
+  try {
+    const res = await fetchWithTimeout(
+      url.toString(),
+      {
+        headers: { Authorization: `Bearer ${env.FLUTTERWAVE_SECRET}` },
+      },
+      TIMEOUT_FAST,
+    );
+    const body = (await res.json().catch(() => null)) as {
+      status?: string;
+      data?: unknown;
+    } | null;
+    if (!res.ok || body?.status !== "success") return null;
+    const data = body.data;
+    if (Array.isArray(data)) return (data as unknown[]).slice();
+    if (data && typeof data === "object") {
+      const rec = data as Record<string, unknown>;
+      const maybe = rec.data;
+      if (Array.isArray(maybe)) return (maybe as unknown[]).slice();
+      return [data];
+    }
+    return [];
+  } catch (e) {
+    logger.warn("[flutterwave] collection fetch failed", {
+      path,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return null;
+  }
+}
+
+function asObj(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+}
+
+function idStr(v: unknown): string | null {
+  if (typeof v === "string" || typeof v === "number" || typeof v === "bigint") {
+    const s = String(v).trim();
+    return s ? s : null;
+  }
+  return null;
+}
+
+function parseMaybeDate(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v !== "string") return null;
+  const t = Date.parse(v);
+  return Number.isNaN(t) ? null : t;
+}
+
+export async function syncFlutterwaveBillingData(
+  env: Env,
+  options?: { days?: number },
+): Promise<{
+  transactions: number;
+  refunds: number;
+  disputes: number;
+  errors: string[];
+}> {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const days = Math.max(1, Math.min(options?.days ?? 7, 30));
+  const from = new Date(Date.now() - days * dayMs).toISOString().slice(0, 10);
+  const to = new Date().toISOString().slice(0, 10);
+  const errors: string[] = [];
+  let txCount = 0;
+  let refundCount = 0;
+  let disputeCount = 0;
+
+  const collected: unknown[] = [];
+  const successful = await fetchFlutterwaveCollection(env, "/transactions", {
+    from,
+    to,
+    status: "successful",
+  });
+  if (successful) collected.push(...successful);
+  const all = await fetchFlutterwaveCollection(env, "/transactions", {
+    from,
+    to,
+  });
+  if (all) collected.push(...all);
+
+  const seenTx = new Set<string>();
+  for (const raw of collected) {
+    const tx = asObj(raw);
+    const txRef = typeof tx.tx_ref === "string" ? tx.tx_ref : null;
+    const flwRef = typeof tx.flw_ref === "string" ? tx.flw_ref : null;
+    const id = idStr(tx.id);
+    const dedupe = id ?? txRef ?? flwRef;
+    if (dedupe && seenTx.has(dedupe)) continue;
+    if (dedupe) seenTx.add(dedupe);
+
+    const status = typeof tx.status === "string" ? tx.status : "unknown";
+    const amount = typeof tx.amount === "number" ? tx.amount : null;
+    const currency = typeof tx.currency === "string" ? tx.currency : null;
+    const customer = asObj(tx.customer);
+    const email = typeof customer.email === "string" ? customer.email : null;
+    const meta = asObj(tx.meta);
+    const metaUserId = typeof meta.user_id === "string" ? meta.user_id : null;
+    let userId = metaUserId;
+    if (!userId) {
+      const resolution = await resolveUserIdForClaim(env, txRef, email);
+      if (resolution.kind === "found") userId = resolution.userId;
+    }
+
+    const occurredAt = parseMaybeDate(tx.created_at);
+    const plan =
+      (typeof meta.plan === "string" ? meta.plan : null) ??
+      parsePlanFromTxRef(txRef);
+
+    await recordProviderSnapshot(env, {
+      recordType: "transaction",
+      providerId: id,
+      txRef,
+      flwRef,
+      userId,
+      status,
+      amount,
+      currency,
+      payload: raw,
+      occurredAt,
+    });
+    await upsertPaymentAttempt(env, {
+      userId,
+      txRef,
+      flwRef,
+      transactionId: id,
+      eventType: "transaction.sync",
+      status,
+      amount,
+      currency,
+      plan,
+      paymentType: typeof tx.payment_type === "string" ? tx.payment_type : null,
+      processorResponse:
+        typeof tx.processor_response === "string"
+          ? tx.processor_response
+          : null,
+      customerEmail: email,
+      narrative: typeof tx.narration === "string" ? tx.narration : null,
+      raw,
+      occurredAt,
+    });
+    await recordBillingEvent(env, {
+      provider: "flutterwave",
+      eventKey: `sync:tx:${id ?? txRef ?? crypto.randomUUID()}:${status}`,
+      eventType: "transaction.sync",
+      status:
+        status === "successful"
+          ? "succeeded"
+          : status === "pending" || status === "new"
+            ? "pending"
+            : status === "failed"
+              ? "failed"
+              : "unknown",
+      userId,
+      txRef,
+      flwRef,
+      externalId: id,
+      amount,
+      currency,
+      plan,
+      message: "Synced from Flutterwave transactions API",
+      detail: { source: "sync" },
+      occurredAt,
+    });
+    txCount++;
+  }
+
+  const refunds = await fetchFlutterwaveCollection(env, "/refunds", {
+    from,
+    to,
+  });
+  if (refunds) {
+    for (const raw of refunds) {
+      const r = asObj(raw);
+      const txRef = typeof r.tx_ref === "string" ? r.tx_ref : null;
+      const flwRef = typeof r.flw_ref === "string" ? r.flw_ref : null;
+      const refundId = idStr(r.id);
+      const txId = idStr(r.transaction_id);
+      const resolution = await resolveUserIdForClaim(env, txRef, null);
+      const userId = resolution.kind === "found" ? resolution.userId : null;
+      const amountRefunded =
+        typeof r.amount_refunded === "number"
+          ? r.amount_refunded
+          : typeof r.amount === "number"
+            ? r.amount
+            : null;
+      await recordProviderSnapshot(env, {
+        recordType: "refund",
+        providerId: refundId,
+        txRef,
+        flwRef,
+        userId,
+        status: typeof r.status === "string" ? r.status : null,
+        amount: amountRefunded,
+        currency: typeof r.currency === "string" ? r.currency : null,
+        payload: raw,
+        occurredAt: parseMaybeDate(r.created_at),
+      });
+      await upsertRefund(env, {
+        providerRefundId: refundId,
+        transactionId: txId,
+        txRef,
+        flwRef,
+        userId,
+        amountRefunded,
+        currency: r.currency,
+        status: r.status,
+        reason: typeof r.reason === "string" ? r.reason : null,
+        raw,
+        occurredAt: parseMaybeDate(r.created_at),
+      });
+      refundCount++;
+    }
+  } else {
+    errors.push("refunds_unavailable_or_forbidden");
+  }
+
+  const disputes = await fetchFlutterwaveCollection(env, "/disputes", {
+    from,
+    to,
+  });
+  if (disputes) {
+    for (const raw of disputes) {
+      const d = asObj(raw);
+      const disputeId = idStr(d.id);
+      if (!disputeId) continue;
+      const txRef = typeof d.tx_ref === "string" ? d.tx_ref : null;
+      const txId = idStr(d.transaction_id);
+      const resolution = await resolveUserIdForClaim(env, txRef, null);
+      const userId = resolution.kind === "found" ? resolution.userId : null;
+      await recordProviderSnapshot(env, {
+        recordType: "dispute",
+        providerId: disputeId,
+        txRef,
+        flwRef: typeof d.flw_ref === "string" ? d.flw_ref : null,
+        userId,
+        status: typeof d.status === "string" ? d.status : null,
+        amount: typeof d.amount === "number" ? d.amount : null,
+        currency: typeof d.currency === "string" ? d.currency : null,
+        payload: raw,
+        occurredAt: parseMaybeDate(d.created_at),
+      });
+      await upsertDispute(env, {
+        providerDisputeId: disputeId,
+        transactionId: txId,
+        txRef,
+        flwRef: typeof d.flw_ref === "string" ? d.flw_ref : null,
+        userId,
+        amount: d.amount,
+        currency: d.currency,
+        status: d.status,
+        stage: typeof d.stage === "string" ? d.stage : null,
+        reason:
+          typeof d.reason === "string"
+            ? d.reason
+            : typeof d.narration === "string"
+              ? d.narration
+              : null,
+        raw,
+        occurredAt: parseMaybeDate(d.created_at),
+      });
+      disputeCount++;
+    }
+  } else {
+    errors.push("disputes_unavailable_or_forbidden");
+  }
+
+  return {
+    transactions: txCount,
+    refunds: refundCount,
+    disputes: disputeCount,
+    errors,
+  };
 }

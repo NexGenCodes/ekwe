@@ -41,7 +41,10 @@ import type {
   AdminSession,
   AdminUser,
   AuditRow,
+  BillingAttempt,
+  BillingDispute,
   BillingEvent,
+  BillingRefund,
   Claim,
   Subscription,
   Toast,
@@ -210,7 +213,17 @@ export default function UserDetailPage() {
     subscriptions: Subscription[];
     claims: Claim[];
     events: BillingEvent[];
-  }>({ subscriptions: [], claims: [], events: [] });
+    attempts: BillingAttempt[];
+    refunds: BillingRefund[];
+    disputes: BillingDispute[];
+  }>({
+    subscriptions: [],
+    claims: [],
+    events: [],
+    attempts: [],
+    refunds: [],
+    disputes: [],
+  });
   const [usage, setUsage] = useState<{
     daily: UsageRow[];
     monthly: UsageRow[];
@@ -311,6 +324,9 @@ export default function UserDetailPage() {
             subscriptions?: Subscription[] | { items?: Subscription[] };
             claims?: Claim[] | { items?: Claim[] };
             events?: BillingEvent[] | { items?: BillingEvent[] };
+            attempts?: BillingAttempt[] | { items?: BillingAttempt[] };
+            refunds?: BillingRefund[] | { items?: BillingRefund[] };
+            disputes?: BillingDispute[] | { items?: BillingDispute[] };
           }>(`/billing?userId=${id}&limit=25`),
           api<{ daily?: UsageRow[]; monthly?: UsageRow[] }>(
             `/usage?userId=${id}&limit=30`,
@@ -323,6 +339,12 @@ export default function UserDetailPage() {
         const claimsRaw = b.claims as Claim[] | { items?: Claim[] } | undefined;
         const eventsRaw = b.events as
           BillingEvent[] | { items?: BillingEvent[] } | undefined;
+        const attemptsRaw = b.attempts as
+          BillingAttempt[] | { items?: BillingAttempt[] } | undefined;
+        const refundsRaw = b.refunds as
+          BillingRefund[] | { items?: BillingRefund[] } | undefined;
+        const disputesRaw = b.disputes as
+          BillingDispute[] | { items?: BillingDispute[] } | undefined;
         setBilling({
           subscriptions: Array.isArray(subsRaw)
             ? subsRaw
@@ -333,6 +355,15 @@ export default function UserDetailPage() {
           events: Array.isArray(eventsRaw)
             ? eventsRaw
             : (eventsRaw?.items ?? []),
+          attempts: Array.isArray(attemptsRaw)
+            ? attemptsRaw
+            : (attemptsRaw?.items ?? []),
+          refunds: Array.isArray(refundsRaw)
+            ? refundsRaw
+            : (refundsRaw?.items ?? []),
+          disputes: Array.isArray(disputesRaw)
+            ? disputesRaw
+            : (disputesRaw?.items ?? []),
         });
         setUsage({ daily: us.daily ?? [], monthly: us.monthly ?? [] });
         setDetails({

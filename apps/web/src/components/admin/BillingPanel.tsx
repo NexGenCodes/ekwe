@@ -35,6 +35,9 @@ import type {
   BillingList,
   BillingResponse,
   BillingSummary,
+  BillingAttempt,
+  BillingDispute,
+  BillingRefund,
   Claim,
   Subscription,
 } from "./types";
@@ -42,10 +45,20 @@ import type {
 const API = "/admin/api";
 const PAGE_SIZE = 25;
 
-type View = "entitlements" | "subscriptions" | "claims" | "events";
+type View =
+  | "entitlements"
+  | "subscriptions"
+  | "claims"
+  | "events"
+  | "attempts"
+  | "refunds"
+  | "disputes";
 
 const VIEW_OPTIONS: { value: View; label: string }[] = [
   { value: "events", label: "Payment history" },
+  { value: "attempts", label: "Attempts" },
+  { value: "refunds", label: "Refunds" },
+  { value: "disputes", label: "Disputes" },
   { value: "entitlements", label: "Entitlements" },
   { value: "subscriptions", label: "Subscriptions" },
   { value: "claims", label: "Claims" },
@@ -157,6 +170,16 @@ export function BillingPanel() {
     useState<BillingList<Subscription> | null>(null);
   const [claims, setClaims] = useState<BillingList<Claim> | null>(null);
   const [events, setEvents] = useState<BillingList<BillingEvent> | null>(null);
+  const [attempts, setAttempts] = useState<BillingList<BillingAttempt> | null>(
+    null,
+  );
+  const [refunds, setRefunds] = useState<BillingList<BillingRefund> | null>(
+    null,
+  );
+  const [disputes, setDisputes] = useState<BillingList<BillingDispute> | null>(
+    null,
+  );
+  const [syncing, setSyncing] = useState(false);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -210,6 +233,9 @@ export function BillingPanel() {
         if (data.subscriptions) setSubscriptions(data.subscriptions);
         if (data.claims) setClaims(data.claims);
         if (data.events) setEvents(data.events);
+        if (data.attempts) setAttempts(data.attempts);
+        if (data.refunds) setRefunds(data.refunds);
+        if (data.disputes) setDisputes(data.disputes);
         setLoadedAt(new Date());
       } catch (e) {
         setError(
@@ -227,6 +253,31 @@ export function BillingPanel() {
     void load();
   }, [load]);
 
+  const syncFromFlutterwave = useCallback(async () => {
+    setSyncing(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/billing/sync`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: 7 }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(
+          (data && (data.error || data.message)) ||
+            `Sync failed (${res.status})`,
+        );
+      }
+      await load(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }, [load]);
+
   const activeList =
     view === "entitlements"
       ? entitlements
@@ -234,7 +285,13 @@ export function BillingPanel() {
         ? subscriptions
         : view === "claims"
           ? claims
-          : events;
+          : view === "events"
+            ? events
+            : view === "attempts"
+              ? attempts
+              : view === "refunds"
+                ? refunds
+                : disputes;
   const total = activeList?.total ?? 0;
   const itemsCount =
     view === "entitlements"
@@ -243,7 +300,13 @@ export function BillingPanel() {
         ? (subscriptions?.items.length ?? 0)
         : view === "claims"
           ? (claims?.items.length ?? 0)
-          : (events?.items.length ?? 0);
+          : view === "events"
+            ? (events?.items.length ?? 0)
+            : view === "attempts"
+              ? (attempts?.items.length ?? 0)
+              : view === "refunds"
+                ? (refunds?.items.length ?? 0)
+                : (disputes?.items.length ?? 0);
 
   const filtered = Boolean(
     debouncedQ || status || source || platform || coverage,
@@ -423,25 +486,57 @@ export function BillingPanel() {
                 </select>
               </label>
             )}
-            {view === "events" && (
+            {(view === "events" ||
+              view === "attempts" ||
+              view === "refunds" ||
+              view === "disputes") && (
               <label className="adm-select-wrap">
                 <span className="sr-only">Status</span>
                 <select
                   className="adm-select"
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  aria-label="Filter by event status"
+                  aria-label="Filter by status"
                 >
                   <option value="">All statuses</option>
-                  <option value="succeeded">Succeeded</option>
-                  <option value="pending">Pending</option>
-                  <option value="failed">Failed</option>
-                  <option value="refunded">Refunded</option>
-                  <option value="cancelled">Cancelled</option>
-                  <option value="expired">Expired</option>
-                  <option value="rejected">Rejected</option>
-                  <option value="ignored">Ignored</option>
-                  <option value="unknown">Unknown</option>
+                  {view === "events" ? (
+                    <>
+                      <option value="succeeded">Succeeded</option>
+                      <option value="pending">Pending</option>
+                      <option value="failed">Failed</option>
+                      <option value="refunded">Refunded</option>
+                      <option value="cancelled">Cancelled</option>
+                      <option value="expired">Expired</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="ignored">Ignored</option>
+                      <option value="unknown">Unknown</option>
+                    </>
+                  ) : view === "refunds" ? (
+                    <>
+                      <option value="completed">Completed</option>
+                      <option value="pending">Pending</option>
+                      <option value="failed">Failed</option>
+                      <option value="unknown">Unknown</option>
+                    </>
+                  ) : view === "disputes" ? (
+                    <>
+                      <option value="open">Open</option>
+                      <option value="pending">Pending</option>
+                      <option value="won">Won</option>
+                      <option value="lost">Lost</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="unknown">Unknown</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="succeeded">Succeeded</option>
+                      <option value="successful">Successful</option>
+                      <option value="pending">Pending</option>
+                      <option value="failed">Failed</option>
+                      <option value="abandoned">Abandoned</option>
+                      <option value="unknown">Unknown</option>
+                    </>
+                  )}
                 </select>
               </label>
             )}
@@ -455,6 +550,15 @@ export function BillingPanel() {
                 Clear
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void syncFromFlutterwave()}
+              loading={syncing}
+              icon={<RefreshCw size={14} />}
+            >
+              Sync Flutterwave
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -495,6 +599,25 @@ export function BillingPanel() {
               Payment events captured from Flutterwave webhooks, verification,
               and reconciliation (succeeded, pending, failed, refunded, and
               related states). Events before capture was enabled are not shown.
+            </span>
+          )}
+          {view === "attempts" && (
+            <span>
+              Payment attempts derived from webhook events and synced
+              Flutterwave transactions (best-effort; depends on available
+              provider data).
+            </span>
+          )}
+          {view === "refunds" && (
+            <span>
+              Refund records from webhook events and Flutterwave refund sync
+              where the API/account permits listing.
+            </span>
+          )}
+          {view === "disputes" && (
+            <span>
+              Dispute/chargeback records from webhook events and Flutterwave
+              disputes sync where the API/account permits listing.
             </span>
           )}
           {view === "entitlements" && (
@@ -556,9 +679,39 @@ export function BillingPanel() {
             onOpenUser={openUser}
             now={now}
           />
-        ) : (
+        ) : view === "events" ? (
           <EventsTable
             rows={events?.items ?? []}
+            total={total}
+            loading={loading}
+            filtered={filtered}
+            onClear={clearFilters}
+            onOpenUser={openUser}
+          />
+        ) : view === "attempts" ? (
+          <SimpleLedgerTable
+            kind="attempts"
+            rows={attempts?.items ?? []}
+            total={total}
+            loading={loading}
+            filtered={filtered}
+            onClear={clearFilters}
+            onOpenUser={openUser}
+          />
+        ) : view === "refunds" ? (
+          <SimpleLedgerTable
+            kind="refunds"
+            rows={refunds?.items ?? []}
+            total={total}
+            loading={loading}
+            filtered={filtered}
+            onClear={clearFilters}
+            onOpenUser={openUser}
+          />
+        ) : (
+          <SimpleLedgerTable
+            kind="disputes"
+            rows={disputes?.items ?? []}
             total={total}
             loading={loading}
             filtered={filtered}
@@ -1075,6 +1228,166 @@ function EventsTable({
       </table>
       <div style={{ padding: "8px 16px" }} className="adm-cell-sub">
         Showing {fmtNumber(rows.length)} of {fmtNumber(total)} payment events.
+      </div>
+    </div>
+  );
+}
+
+type LedgerKind = "attempts" | "refunds" | "disputes";
+type LedgerRow = BillingAttempt | BillingRefund | BillingDispute;
+
+function ledgerStatusTone(status: string): BadgeTone {
+  const v = status.toLowerCase();
+  if (["succeeded", "successful", "completed", "won", "resolved"].includes(v))
+    return "success";
+  if (["pending", "open"].includes(v)) return "warning";
+  if (["failed", "lost", "abandoned", "error"].includes(v)) return "danger";
+  if (["refunded", "cancelled", "canceled"].includes(v)) return "neutral";
+  return "neutral";
+}
+
+function SimpleLedgerTable({
+  kind,
+  rows,
+  loading,
+  filtered,
+  onClear,
+  onOpenUser,
+  total,
+}: {
+  kind: LedgerKind;
+  rows: LedgerRow[];
+  total: number;
+  loading: boolean;
+  filtered: boolean;
+  onClear: () => void;
+  onOpenUser: (id: string) => void;
+}) {
+  if (!loading && rows.length === 0) {
+    const label = kind === "attempts" ? "payment attempts" : kind;
+    return (
+      <EmptyBilling
+        filtered={filtered}
+        onClear={onClear}
+        title={`No ${label}`}
+        description={`No ${label} recorded yet. Use Sync Flutterwave to backfill from available provider APIs (where permitted), or wait for new webhook events.`}
+      />
+    );
+  }
+  const title =
+    kind === "attempts" ? "Attempt" : kind === "refunds" ? "Refund" : "Dispute";
+  return (
+    <div className="adm-table-wrap">
+      <table className="adm-table">
+        <thead>
+          <tr>
+            <th scope="col">{title}</th>
+            <th scope="col">Account</th>
+            <th scope="col">Status</th>
+            <th scope="col">Amount</th>
+            <th scope="col">Reference</th>
+            <th scope="col">Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const rec = r as unknown as Record<string, unknown>;
+            const amount =
+              kind === "refunds"
+                ? typeof rec.amount_refunded === "number"
+                  ? rec.amount_refunded
+                  : null
+                : typeof rec.amount === "number"
+                  ? rec.amount
+                  : null;
+            const currency =
+              typeof rec.currency === "string" ? rec.currency : null;
+            const refVal =
+              rec.tx_ref ??
+              rec.flw_ref ??
+              rec.transaction_id ??
+              rec.provider_refund_id ??
+              rec.provider_dispute_id;
+            const ref = refVal == null ? null : String(refVal);
+            const label =
+              kind === "attempts"
+                ? typeof rec.event_type === "string"
+                  ? rec.event_type
+                  : "payment"
+                : kind === "refunds"
+                  ? "refund"
+                  : typeof rec.stage === "string"
+                    ? rec.stage
+                    : "dispute";
+            const msgVal = rec.processor_response ?? rec.reason ?? rec.message;
+            const msg = typeof msgVal === "string" ? msgVal : null;
+            const userId = typeof rec.user_id === "string" ? rec.user_id : null;
+            const email =
+              typeof rec.user_email === "string" ? rec.user_email : null;
+            const name =
+              typeof rec.user_display_name === "string"
+                ? rec.user_display_name
+                : null;
+            const status =
+              typeof rec.status === "string" ? rec.status : "unknown";
+            const updatedAt =
+              typeof rec.updated_at === "number" ? rec.updated_at : 0;
+            return (
+              <tr key={r.id}>
+                <td className="adm-cell-primary" data-label={title}>
+                  <div className="adm-user-copy">
+                    <span className="adm-mono adm-mono--soft">{label}</span>
+                    {msg ? (
+                      <span className="adm-cell-sub" title={msg}>
+                        {msg}
+                      </span>
+                    ) : null}
+                  </div>
+                </td>
+                <td data-label="Account">
+                  {userId ? (
+                    <UserCell
+                      userId={userId}
+                      email={email}
+                      name={name}
+                      onOpen={() => onOpenUser(userId)}
+                    />
+                  ) : (
+                    <span className="adm-muted">Unresolved</span>
+                  )}
+                </td>
+                <td data-label="Status">
+                  <Badge tone={ledgerStatusTone(status)} dot>
+                    {titleCase(status)}
+                  </Badge>
+                </td>
+                <td data-label="Amount" className="adm-cell-money">
+                  {fmtCurrency(amount, currency)}
+                </td>
+                <td data-label="Reference">
+                  {ref ? (
+                    <div className="adm-user-copy">
+                      <span className="adm-mono" title={ref}>
+                        {shortId(ref, 14)}
+                      </span>
+                      <CopyButton value={ref} label="Copy reference" />
+                    </div>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+                <td data-label="Updated">
+                  <span className="adm-date" title={fmtDateTime(updatedAt)}>
+                    {fmtRelative(updatedAt)}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div style={{ padding: "8px 16px" }} className="adm-cell-sub">
+        Showing {fmtNumber(rows.length)} of {fmtNumber(total)} {kind}.
       </div>
     </div>
   );

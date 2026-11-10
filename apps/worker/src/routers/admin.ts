@@ -29,6 +29,7 @@ import {
 } from "@/routes/adminUsers";
 import {
   handleBilling,
+  handleBillingSync,
   handleUsage,
   handleAdminHealth,
   handleAuditWrite,
@@ -102,6 +103,7 @@ adminRouter.post(
 adminRouter.post("/users/:id/delete", adminUserMiddleware, handleDeleteUser);
 adminRouter.get("/audit", adminUserMiddleware, handleListAudit);
 adminRouter.get("/billing", adminUserMiddleware, handleBilling);
+adminRouter.post("/billing/sync", adminUserMiddleware, handleBillingSync);
 adminRouter.get("/usage", adminUserMiddleware, handleUsage);
 adminRouter.get("/health", adminUserMiddleware, handleAdminHealth);
 adminRouter.post("/audit", adminUserMiddleware, handleAuditWrite);
