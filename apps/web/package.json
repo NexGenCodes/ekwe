@@ -8,7 +8,7 @@
     "build": "node scripts/generate.mjs && vite build",
     "preview": "vite preview",
     "deploy": "wrangler pages deploy --branch master",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node scripts/generate.mjs && tsc --noEmit",
     "lint": "eslint src/ --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "test": "node -e \"process.exit(0)\""
