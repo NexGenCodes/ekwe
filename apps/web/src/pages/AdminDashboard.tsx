@@ -16,12 +16,10 @@ import { ReleasesPanel } from "../components/admin/ReleasesPanel";
 import type {
   AdminUser,
   AuditRow,
-  Claim,
   HealthRes,
   Manifest,
   ManifestPayload,
   NotifyPayload,
-  Subscription,
   Tab,
   Toast,
   UsageRow,
@@ -101,10 +99,7 @@ export default function AdminDashboard() {
   const access = searchParams.get("access") ?? "";
   const page = pageFromSearch(searchParams);
 
-  const [billing, setBilling] = useState<{
-    subscriptions: Subscription[];
-    claims: Claim[];
-  }>({ subscriptions: [], claims: [] });
+  // billing tab is self-contained (BillingPanel)
   const [usage, setUsage] = useState<{
     daily: UsageRow[];
     monthly: UsageRow[];
@@ -188,13 +183,7 @@ export default function AdminDashboard() {
                 signal,
               })
             : null;
-        const billingRequest =
-          tab === "billing"
-            ? api<{ subscriptions?: Subscription[]; claims?: Claim[] }>(
-                "/billing?limit=50",
-                { signal },
-              )
-            : null;
+        // billing tab fetches its own data
         const usageRequest =
           tab === "usage"
             ? api<{ daily?: UsageRow[]; monthly?: UsageRow[] }>(
@@ -219,14 +208,12 @@ export default function AdminDashboard() {
 
         const [
           userResult,
-          billingResult,
           usageResult,
           healthResult,
           auditResult,
           manifestResult,
         ] = await Promise.allSettled([
           usersRequest ?? Promise.resolve(null),
-          billingRequest ?? Promise.resolve(null),
           usageRequest ?? Promise.resolve(null),
           healthRequest ?? Promise.resolve(null),
           auditRequest ?? Promise.resolve(null),
@@ -241,13 +228,6 @@ export default function AdminDashboard() {
         if (userResult.status === "fulfilled" && userResult.value) {
           setUsers(userResult.value.users ?? []);
           setTotal(userResult.value.total ?? 0);
-        }
-
-        if (billingResult.status === "fulfilled" && billingResult.value) {
-          setBilling({
-            subscriptions: billingResult.value.subscriptions ?? [],
-            claims: billingResult.value.claims ?? [],
-          });
         }
 
         if (usageResult.status === "fulfilled" && usageResult.value) {
@@ -270,7 +250,6 @@ export default function AdminDashboard() {
         }
 
         const failures = [
-          billingResult,
           usageResult,
           healthResult,
           auditResult,
@@ -549,13 +528,7 @@ export default function AdminDashboard() {
           />
         )}
 
-        {tab === "billing" && (
-          <BillingPanel
-            subscriptions={billing.subscriptions}
-            claims={billing.claims}
-            loading={loading}
-          />
-        )}
+        {tab === "billing" && <BillingPanel />}
 
         {tab === "usage" && (
           <UsagePanel

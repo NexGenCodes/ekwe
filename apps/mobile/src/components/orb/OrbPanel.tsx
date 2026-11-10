@@ -168,7 +168,9 @@ export const OrbPanel = (): React.ReactElement => {
     };
     tick();
     const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
+    return (): void => {
+      clearInterval(id);
+    };
   }, [running]);
 
   const handleStart = useCallback(async (): Promise<void> => {

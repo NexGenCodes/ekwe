@@ -36,6 +36,7 @@ export interface AdminUser {
 
 export interface AdminEntitlement {
   id: string;
+  user_id?: string;
   plan: "premium";
   source: "staff" | "manual" | "billing" | "promo";
   status: "active" | "revoked" | "expired";
@@ -43,8 +44,12 @@ export interface AdminEntitlement {
   expires_at: number | null;
   granted_by?: string | null;
   reason?: string | null;
+  external_ref?: string | null;
   created_at: number;
   updated_at?: number;
+  user_email?: string | null;
+  user_display_name?: string | null;
+  user_role?: string | null;
 }
 
 export interface AdminIdentity {
@@ -80,6 +85,10 @@ export interface Subscription {
   expires_at: number | null;
   created_at?: number;
   updated_at?: number;
+  user_email?: string | null;
+  user_display_name?: string | null;
+  user_role?: string | null;
+  user_tier?: string | null;
 }
 
 export interface Claim {
@@ -90,6 +99,33 @@ export interface Claim {
   currency: string | null;
   claimed_at: number;
   expires_at: number;
+  user_email?: string | null;
+  user_display_name?: string | null;
+  user_role?: string | null;
+}
+
+export interface BillingList<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface BillingSummary {
+  activeSubscriptions: number;
+  subscriptionsTotal: number;
+  activePremiumEntitlements: number;
+  entitlementsTotal: number;
+  claimsTotal: number;
+  claimsWithActiveCoverage: number;
+  claimAmountsByCurrency: { currency: string; total: number; count: number }[];
+}
+
+export interface BillingResponse {
+  summary?: BillingSummary;
+  subscriptions?: BillingList<Subscription>;
+  claims?: BillingList<Claim>;
+  entitlements?: BillingList<AdminEntitlement>;
 }
 
 export interface UsageRow {

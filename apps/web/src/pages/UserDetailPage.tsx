@@ -305,18 +305,26 @@ export default function UserDetailPage() {
       try {
         const [u, b, us, d] = await Promise.all([
           api<{ user: AdminUser }>(`/users/${id}`),
-          api<{ subscriptions?: Subscription[]; claims?: Claim[] }>(
-            `/billing?userId=${id}&limit=25`,
-          ),
+          api<{
+            subscriptions?: Subscription[] | { items?: Subscription[] };
+            claims?: Claim[] | { items?: Claim[] };
+          }>(`/billing?userId=${id}&limit=25`),
           api<{ daily?: UsageRow[]; monthly?: UsageRow[] }>(
             `/usage?userId=${id}&limit=30`,
           ),
           api<DetailsData>(`/users/${id}/details`),
         ]);
         setUser(u.user);
+        const subsRaw = b.subscriptions as
+          Subscription[] | { items?: Subscription[] } | undefined;
+        const claimsRaw = b.claims as Claim[] | { items?: Claim[] } | undefined;
         setBilling({
-          subscriptions: b.subscriptions ?? [],
-          claims: b.claims ?? [],
+          subscriptions: Array.isArray(subsRaw)
+            ? subsRaw
+            : (subsRaw?.items ?? []),
+          claims: Array.isArray(claimsRaw)
+            ? claimsRaw
+            : (claimsRaw?.items ?? []),
         });
         setUsage({ daily: us.daily ?? [], monthly: us.monthly ?? [] });
         setDetails({
@@ -977,58 +985,76 @@ export default function UserDetailPage() {
               columns={["Status", "Platform", "Product", "Expires", "Updated"]}
               rows={billing.subscriptions}
               rowKey={(_, i) => String(i)}
-              renderRow={(s) => (
-                <>
-                  <td data-label="Status">
-                    <Badge tone="neutral" dot>
-                      {s.status}
-                    </Badge>
-                  </td>
-                  <td data-label="Platform">{s.platform ?? "—"}</td>
-                  <td data-label="Product">
-                    <span className="adm-mono adm-mono--soft">
-                      {s.product_id ?? "—"}
-                    </span>
-                  </td>
-                  <td data-label="Expires">
-                    {s.expires_at ? fmtRelative(s.expires_at) : "—"}
-                  </td>
-                  <td data-label="Updated">{fmtRelative(s.updated_at)}</td>
-                </>
-              )}
+              renderRow={(s) => {
+                const v = (s.status || "").toLowerCase();
+                const tone =
+                  v === "active"
+                    ? "success"
+                    : v === "expired" || v === "cancelled" || v === "canceled"
+                      ? "danger"
+                      : "neutral";
+                return (
+                  <>
+                    <td data-label="Status">
+                      <Badge tone={tone} dot>
+                        {s.status}
+                      </Badge>
+                    </td>
+                    <td data-label="Platform">{s.platform ?? "—"}</td>
+                    <td data-label="Product">
+                      <span className="adm-mono adm-mono--soft">
+                        {s.product_id ?? "—"}
+                      </span>
+                    </td>
+                    <td data-label="Expires">
+                      {s.expires_at ? fmtRelative(s.expires_at) : "—"}
+                    </td>
+                    <td data-label="Updated">{fmtRelative(s.updated_at)}</td>
+                  </>
+                );
+              }}
             />
 
             <RecordTable<Claim>
               title="Flutterwave claims"
               icon={<Receipt size={16} aria-hidden="true" />}
               count={billing.claims.length}
-              empty="No claimed transactions for this account."
-              columns={["Reference", "Amount", "Expires", "Claimed"]}
+              empty="No Flutterwave claim/redemption records for this account."
+              columns={["Reference", "Amount", "Coverage", "Claimed"]}
               rows={billing.claims}
               rowKey={(c) => c.flw_ref}
-              renderRow={(c) => (
-                <>
-                  <td data-label="Reference">
-                    <span className="adm-mono" title={c.tx_ref ?? undefined}>
-                      {c.flw_ref}
-                    </span>
-                  </td>
-                  <td data-label="Amount">
-                    {fmtCurrency(c.amount, c.currency)}
-                  </td>
-                  <td data-label="Expires">
-                    {c.expires_at ? fmtRelative(c.expires_at) : "—"}
-                  </td>
-                  <td data-label="Claimed">{fmtRelative(c.claimed_at)}</td>
-                </>
-              )}
+              renderRow={(c) => {
+                const activeCoverage =
+                  !!c.expires_at && c.expires_at > Date.now();
+                return (
+                  <>
+                    <td data-label="Reference">
+                      <span className="adm-mono" title={c.tx_ref ?? undefined}>
+                        {c.flw_ref}
+                      </span>
+                    </td>
+                    <td data-label="Amount">
+                      {fmtCurrency(c.amount, c.currency)}
+                    </td>
+                    <td data-label="Coverage">
+                      <Badge tone={activeCoverage ? "success" : "danger"} dot>
+                        {activeCoverage ? "Active" : "Expired"}
+                      </Badge>
+                      <div className="adm-cell-sub">
+                        {c.expires_at ? fmtRelative(c.expires_at) : "—"}
+                      </div>
+                    </td>
+                    <td data-label="Claimed">{fmtRelative(c.claimed_at)}</td>
+                  </>
+                );
+              }}
             />
 
             <RecordTable<AdminEntitlement>
               title="Entitlements"
               icon={<Crown size={16} aria-hidden="true" />}
               count={details.entitlements.length}
-              empty="No explicit entitlements recorded. Access may still come from legacy tier cache or subscription records."
+              empty="No explicit entitlement records. Effective access may still be provided by role, subscriptions, or derived cache state."
               columns={["Plan", "Source", "Status", "Expires", "Granted by"]}
               rows={details.entitlements}
               rowKey={(e) => e.id}
