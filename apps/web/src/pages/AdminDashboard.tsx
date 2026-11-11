@@ -103,7 +103,48 @@ export default function AdminDashboard() {
   const [usage, setUsage] = useState<{
     daily: UsageRow[];
     monthly: UsageRow[];
-  }>({ daily: [], monthly: [] });
+    dailyTotal: number;
+    monthlyTotal: number;
+    dailyAggregate: {
+      translate_count: number;
+      transcribe_count: number;
+      speech_chars: number;
+      stream_count: number;
+      ai_credits: number;
+    };
+    monthlyAggregate: {
+      translate_count: number;
+      transcribe_count: number;
+      speech_chars: number;
+      stream_count: number;
+      ai_credits: number;
+    };
+    limit: number;
+    offset: number;
+  }>({
+    daily: [],
+    monthly: [],
+    dailyTotal: 0,
+    monthlyTotal: 0,
+    dailyAggregate: {
+      translate_count: 0,
+      transcribe_count: 0,
+      speech_chars: 0,
+      stream_count: 0,
+      ai_credits: 0,
+    },
+    monthlyAggregate: {
+      translate_count: 0,
+      transcribe_count: 0,
+      speech_chars: 0,
+      stream_count: 0,
+      ai_credits: 0,
+    },
+    limit: 50,
+    offset: 0,
+  });
+  const [usageUserId, setUsageUserId] = useState("");
+  const [usageOffset, setUsageOffset] = useState(0);
   const [health, setHealth] = useState<HealthRes | null>(null);
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [manifest, setManifest] = useState<Manifest | null>(null);
@@ -186,11 +227,34 @@ export default function AdminDashboard() {
         // billing tab fetches its own data
         const usageRequest =
           tab === "usage"
-            ? api<{ daily?: UsageRow[]; monthly?: UsageRow[] }>(
-                "/usage?limit=50",
-                {
-                  signal,
-                },
+            ? api<{
+                daily?: UsageRow[];
+                monthly?: UsageRow[];
+                dailyTotal?: number;
+                monthlyTotal?: number;
+                dailyAggregate?: {
+                  translate_count: number;
+                  transcribe_count: number;
+                  speech_chars: number;
+                  stream_count: number;
+                  ai_credits: number;
+                };
+                monthlyAggregate?: {
+                  translate_count: number;
+                  transcribe_count: number;
+                  speech_chars: number;
+                  stream_count: number;
+                  ai_credits: number;
+                };
+                limit?: number;
+                offset?: number;
+              }>(
+                `/usage?limit=50&offset=${usageOffset}${
+                  usageUserId.trim()
+                    ? `&userId=${encodeURIComponent(usageUserId.trim())}`
+                    : ""
+                }`,
+                { signal },
               )
             : null;
         const healthRequest =
@@ -231,9 +295,22 @@ export default function AdminDashboard() {
         }
 
         if (usageResult.status === "fulfilled" && usageResult.value) {
+          const zeroAgg = {
+            translate_count: 0,
+            transcribe_count: 0,
+            speech_chars: 0,
+            stream_count: 0,
+            ai_credits: 0,
+          };
           setUsage({
             daily: usageResult.value.daily ?? [],
             monthly: usageResult.value.monthly ?? [],
+            dailyTotal: usageResult.value.dailyTotal ?? 0,
+            monthlyTotal: usageResult.value.monthlyTotal ?? 0,
+            dailyAggregate: usageResult.value.dailyAggregate ?? zeroAgg,
+            monthlyAggregate: usageResult.value.monthlyAggregate ?? zeroAgg,
+            limit: usageResult.value.limit ?? 50,
+            offset: usageResult.value.offset ?? usageOffset,
           });
         }
 
@@ -274,7 +351,7 @@ export default function AdminDashboard() {
         }
       }
     },
-    [debouncedQ, role, status, access, page, tab],
+    [debouncedQ, role, status, access, page, tab, usageOffset, usageUserId],
   );
 
   const updateUserSearch = useCallback(
@@ -534,7 +611,19 @@ export default function AdminDashboard() {
           <UsagePanel
             daily={usage.daily}
             monthly={usage.monthly}
-            loading={loading}
+            dailyTotal={usage.dailyTotal}
+            monthlyTotal={usage.monthlyTotal}
+            dailyAggregate={usage.dailyAggregate}
+            monthlyAggregate={usage.monthlyAggregate}
+            limit={usage.limit}
+            offset={usage.offset}
+            userId={usageUserId}
+            onUserIdChange={(value) => {
+              setUsageUserId(value);
+              setUsageOffset(0);
+            }}
+            onOffsetChange={setUsageOffset}
+            loading={loading || refreshing}
           />
         )}
 

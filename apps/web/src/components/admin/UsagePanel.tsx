@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { BarChart3, TrendingUp } from "lucide-react";
+import { BarChart3, Filter, TrendingUp } from "lucide-react";
 import {
+  Button,
   CopyButton,
   EmptyState,
   SegmentedControl,
@@ -9,16 +10,17 @@ import {
   TableSkeleton,
 } from "./primitives";
 import { fmtDuration, fmtNumber, fmtPercent, shortId } from "./format";
-import type { UsageRow } from "./types";
+import type { UsageAggregate, UsageRow } from "./types";
 
 type UsageView = "daily" | "monthly";
 
-function sum(rows: UsageRow[], key: keyof UsageRow): number {
-  return rows.reduce((total, row) => {
-    const value = row[key];
-    return total + (typeof value === "number" ? value : 0);
-  }, 0);
-}
+const ZERO_AGG: UsageAggregate = {
+  translate_count: 0,
+  transcribe_count: 0,
+  speech_chars: 0,
+  stream_count: 0,
+  ai_credits: 0,
+};
 
 function periodOf(row: UsageRow): string {
   return row.day ?? row.month ?? "";
@@ -53,7 +55,7 @@ function MetricBars({
       <div className="adm-trend-head">
         <span className="adm-trend-label">{label}</span>
         <span className="adm-trend-meta">
-          {fmtNumber(total)} total
+          {fmtNumber(total)} in loaded rows
           {delta !== null && (
             <span
               className={
@@ -68,9 +70,7 @@ function MetricBars({
       <div
         className="adm-bars"
         role="img"
-        aria-label={`${label}: ${points.length} periods, ${fmtNumber(
-          total,
-        )} total. Latest ${fmtNumber(latest)}.`}
+        aria-label={`${label}: ${points.length} periods, ${fmtNumber(total)} total in loaded rows. Latest ${fmtNumber(latest)}.`}
       >
         {points.map((point, index) => (
           <div
@@ -95,48 +95,124 @@ function MetricBars({
 export function UsagePanel({
   daily,
   monthly,
+  dailyTotal,
+  monthlyTotal,
+  dailyAggregate,
+  monthlyAggregate,
+  limit,
+  offset,
+  userId,
+  onUserIdChange,
+  onOffsetChange,
   loading,
 }: {
   daily: UsageRow[];
   monthly: UsageRow[];
+  dailyTotal: number;
+  monthlyTotal: number;
+  dailyAggregate: UsageAggregate;
+  monthlyAggregate: UsageAggregate;
+  limit: number;
+  offset: number;
+  userId: string;
+  onUserIdChange: (value: string) => void;
+  onOffsetChange: (offset: number) => void;
   loading: boolean;
 }) {
   const [view, setView] = useState<UsageView>("daily");
+  const [draftUser, setDraftUser] = useState(userId);
   const rows = view === "daily" ? daily : monthly;
+  const total = view === "daily" ? dailyTotal : monthlyTotal;
+  const aggregate =
+    view === "daily" ? dailyAggregate : (monthlyAggregate ?? ZERO_AGG);
   const periodLabel = view === "daily" ? "Day" : "Month";
-
-  const totals = {
-    translate: sum(rows, "translate_count"),
-    transcribe: sum(rows, "transcribe_count"),
-    speech: sum(rows, "speech_chars"),
-    credits: sum(rows, "ai_credits"),
-  };
+  const hasPrev = offset > 0;
+  const hasNext = offset + limit < total;
+  const showingFrom = total === 0 ? 0 : offset + 1;
+  const showingTo = Math.min(offset + rows.length, total);
 
   return (
     <div className="adm-stack">
+      <SectionCard
+        title="Usage filters"
+        description="Scope admin usage rows and aggregates. Totals/aggregates reflect the selected filter; the table is paginated."
+        actions={
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <input
+              className="adm-input"
+              aria-label="Filter usage by user ID"
+              placeholder="Filter by user ID"
+              value={draftUser}
+              onChange={(e) => setDraftUser(e.target.value)}
+              style={{ minWidth: 220 }}
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Filter size={14} />}
+              onClick={() => onUserIdChange(draftUser.trim())}
+            >
+              Apply
+            </Button>
+            {(userId || draftUser) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDraftUser("");
+                  onUserIdChange("");
+                }}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+        }
+      >
+        <p className="adm-muted" style={{ margin: 0 }}>
+          {userId ? (
+            <>
+              Filtered to user{" "}
+              <code className="adm-mono">{shortId(userId, 16)}</code>.{" "}
+            </>
+          ) : (
+            "Showing all users. "
+          )}
+          Credits shown are tracked usage credits (not necessarily a separate
+          enforced budget, depending on plan configuration).
+        </p>
+      </SectionCard>
+
       <div className="adm-stats">
         <StatCard
           label="Translations"
-          value={fmtNumber(totals.translate)}
-          hint={`${view} window`}
+          value={fmtNumber(aggregate.translate_count)}
+          hint={`${view} scope total (${fmtNumber(total)} rows)`}
           icon={<TrendingUp size={17} />}
         />
         <StatCard
           label="Transcriptions"
-          value={fmtNumber(totals.transcribe)}
-          hint={`${view} window`}
+          value={fmtNumber(aggregate.transcribe_count)}
+          hint={`${view} scope total`}
           icon={<BarChart3 size={17} />}
         />
         <StatCard
           label="Speech characters"
-          value={fmtNumber(totals.speech)}
-          hint={`${view} window`}
+          value={fmtNumber(aggregate.speech_chars)}
+          hint={`${view} scope total`}
           icon={<BarChart3 size={17} />}
         />
         <StatCard
           label="AI credits"
-          value={fmtNumber(totals.credits)}
-          hint={`${view} window`}
+          value={fmtNumber(aggregate.ai_credits)}
+          hint={`${view} scope total`}
           icon={<TrendingUp size={17} />}
         />
       </div>
@@ -159,25 +235,23 @@ export function UsagePanel({
             />
           </div>
           <p className="adm-trend-note">
-            Trends reflect the {Math.min(rows.length, 14)} most recent returned{" "}
-            {view} rows, shown chronologically.
+            Trends reflect up to {Math.min(rows.length, 14)} of the currently
+            loaded {view} rows, shown chronologically.
           </p>
         </section>
       )}
 
       <SectionCard
         title="Consumption by account"
-        description={`Totals across the ${rows.length} most recent ${view} row${
-          rows.length === 1 ? "" : "s"
-        } returned by the worker.`}
+        description={`Showing ${showingFrom}–${showingTo} of ${fmtNumber(total)} ${view} row${total === 1 ? "" : "s"} for the selected scope.`}
         actions={
           <SegmentedControl<UsageView>
             ariaLabel="Usage period"
             value={view}
             onChange={setView}
             options={[
-              { value: "daily", label: "Daily", count: daily.length },
-              { value: "monthly", label: "Monthly", count: monthly.length },
+              { value: "daily", label: "Daily", count: dailyTotal },
+              { value: "monthly", label: "Monthly", count: monthlyTotal },
             ]}
           />
         }
@@ -188,86 +262,124 @@ export function UsagePanel({
           <EmptyState
             icon={<BarChart3 size={22} />}
             title={`No ${view} usage recorded`}
-            description="Usage counters are written as people translate and transcribe audio."
+            description="Usage counters are written on successful billable activity for the selected scope."
           />
         ) : (
-          <div className="adm-table-wrap">
-            <table className="adm-table">
-              <thead>
-                <tr>
-                  <th scope="col">Account</th>
-                  <th scope="col">{periodLabel}</th>
-                  <th scope="col" className="adm-th-num">
-                    Translations
-                  </th>
-                  <th scope="col" className="adm-th-num">
-                    Transcriptions
-                  </th>
-                  <th scope="col" className="adm-th-num">
-                    Speech chars
-                  </th>
-                  <th scope="col" className="adm-th-num">
-                    Streams
-                  </th>
-                  <th scope="col" className="adm-th-num">
-                    AI credits
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, index) => (
-                  <tr key={`${row.user_id}-${row.day ?? row.month ?? index}`}>
-                    <td className="adm-cell-primary" data-label="Account">
-                      <div className="adm-id">
-                        <span className="adm-mono">
-                          {shortId(row.user_id, 12)}
-                        </span>
-                        <CopyButton value={row.user_id} label="Copy user ID" />
-                      </div>
-                    </td>
-                    <td data-label={periodLabel}>
-                      <span className="adm-date adm-mono--soft">
-                        {row.day ?? row.month ?? "—"}
-                      </span>
-                    </td>
-                    <td data-label="Translations" className="adm-num">
-                      {fmtNumber(row.translate_count)}
-                    </td>
-                    <td data-label="Transcriptions" className="adm-num">
-                      <span className="adm-cell-stack">
-                        <span className="adm-num-main">
-                          {fmtNumber(row.transcribe_count)}
-                        </span>
-                        {row.transcribe_ms ? (
-                          <span className="adm-num-sub">
-                            {fmtDuration(row.transcribe_ms)}
-                          </span>
-                        ) : null}
-                      </span>
-                    </td>
-                    <td data-label="Speech chars" className="adm-num">
-                      {fmtNumber(row.speech_chars)}
-                    </td>
-                    <td data-label="Streams" className="adm-num">
-                      <span className="adm-cell-stack">
-                        <span className="adm-num-main">
-                          {fmtNumber(row.stream_count ?? 0)}
-                        </span>
-                        {row.stream_ms ? (
-                          <span className="adm-num-sub">
-                            {fmtDuration(row.stream_ms)}
-                          </span>
-                        ) : null}
-                      </span>
-                    </td>
-                    <td data-label="AI credits" className="adm-num">
-                      {fmtNumber(row.ai_credits)}
-                    </td>
+          <>
+            <div className="adm-table-wrap">
+              <table className="adm-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Account</th>
+                    <th scope="col">{periodLabel}</th>
+                    <th scope="col" className="adm-th-num">
+                      Translations
+                    </th>
+                    <th scope="col" className="adm-th-num">
+                      Transcriptions
+                    </th>
+                    <th scope="col" className="adm-th-num">
+                      Speech chars
+                    </th>
+                    <th scope="col" className="adm-th-num">
+                      Streams
+                    </th>
+                    <th scope="col" className="adm-th-num">
+                      AI credits
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {rows.map((row, index) => (
+                    <tr key={`${row.user_id}-${row.day ?? row.month ?? index}`}>
+                      <td className="adm-cell-primary" data-label="Account">
+                        <div className="adm-id">
+                          <span className="adm-mono">
+                            {shortId(row.user_id, 12)}
+                          </span>
+                          <CopyButton
+                            value={row.user_id}
+                            label="Copy user ID"
+                          />
+                        </div>
+                      </td>
+                      <td data-label={periodLabel}>
+                        <span className="adm-date adm-mono--soft">
+                          {row.day ?? row.month ?? "—"}
+                        </span>
+                      </td>
+                      <td data-label="Translations" className="adm-num">
+                        {fmtNumber(row.translate_count)}
+                      </td>
+                      <td data-label="Transcriptions" className="adm-num">
+                        <span className="adm-cell-stack">
+                          <span className="adm-num-main">
+                            {fmtNumber(row.transcribe_count)}
+                          </span>
+                          {row.transcribe_ms ? (
+                            <span className="adm-num-sub">
+                              {fmtDuration(row.transcribe_ms)}
+                            </span>
+                          ) : null}
+                        </span>
+                      </td>
+                      <td data-label="Speech chars" className="adm-num">
+                        {fmtNumber(row.speech_chars)}
+                      </td>
+                      <td data-label="Streams" className="adm-num">
+                        <span className="adm-cell-stack">
+                          <span className="adm-num-main">
+                            {fmtNumber(row.stream_count ?? 0)}
+                          </span>
+                          {row.stream_ms ? (
+                            <span className="adm-num-sub">
+                              {fmtDuration(row.stream_ms)}
+                            </span>
+                          ) : null}
+                        </span>
+                      </td>
+                      <td data-label="AI credits" className="adm-num">
+                        {fmtNumber(row.ai_credits)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginTop: 12,
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <span className="adm-muted">
+                Page {total === 0 ? 0 : Math.floor(offset / limit) + 1} ·{" "}
+                {fmtNumber(total)} total row{total === 1 ? "" : "s"}
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!hasPrev || loading}
+                  onClick={() => onOffsetChange(Math.max(0, offset - limit))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!hasNext || loading}
+                  onClick={() => onOffsetChange(offset + limit)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </>
         )}
       </SectionCard>
     </div>

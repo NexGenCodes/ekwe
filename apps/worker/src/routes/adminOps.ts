@@ -460,38 +460,76 @@ export async function handleUsage(c: Context<AppEnv>) {
   const where = userId ? "WHERE user_id = ?" : "";
   const binds = userId ? [userId] : [];
 
-  const [daily, monthly, dailyCount, monthlyCount] = await Promise.all([
-    env.DB.prepare(
-      `SELECT user_id, day, translate_count, transcribe_count, transcribe_ms, speech_chars, stream_count, stream_ms, ai_credits
+  const [daily, monthly, dailyCount, monthlyCount, dailyAgg, monthlyAgg] =
+    await Promise.all([
+      env.DB.prepare(
+        `SELECT user_id, day, translate_count, transcribe_count, transcribe_ms, speech_chars, stream_count, stream_ms, ai_credits
          FROM user_daily_usage ${where} ORDER BY day DESC, user_id ASC LIMIT ? OFFSET ?`,
-    )
-      .bind(...binds, limit, offset)
-      .all()
-      .catch(() => ({ results: [] })),
-    env.DB.prepare(
-      `SELECT user_id, month, translate_count, transcribe_count, transcribe_ms, speech_chars, stream_count, stream_ms, ai_credits
+      )
+        .bind(...binds, limit, offset)
+        .all()
+        .catch(() => ({ results: [] })),
+      env.DB.prepare(
+        `SELECT user_id, month, translate_count, transcribe_count, transcribe_ms, speech_chars, stream_count, stream_ms, ai_credits
          FROM user_monthly_usage ${where} ORDER BY month DESC, user_id ASC LIMIT ? OFFSET ?`,
-    )
-      .bind(...binds, limit, offset)
-      .all()
-      .catch(() => ({ results: [] })),
-    env.DB.prepare(`SELECT COUNT(*) AS n FROM user_daily_usage ${where}`)
-      .bind(...binds)
-      .first<{ n: number }>()
-      .catch(() => ({ n: 0 })),
-    env.DB.prepare(`SELECT COUNT(*) AS n FROM user_monthly_usage ${where}`)
-      .bind(...binds)
-      .first<{ n: number }>()
-      .catch(() => ({ n: 0 })),
-  ]);
+      )
+        .bind(...binds, limit, offset)
+        .all()
+        .catch(() => ({ results: [] })),
+      env.DB.prepare(`SELECT COUNT(*) AS n FROM user_daily_usage ${where}`)
+        .bind(...binds)
+        .first<{ n: number }>()
+        .catch(() => ({ n: 0 })),
+      env.DB.prepare(`SELECT COUNT(*) AS n FROM user_monthly_usage ${where}`)
+        .bind(...binds)
+        .first<{ n: number }>()
+        .catch(() => ({ n: 0 })),
+      env.DB.prepare(
+        `SELECT COALESCE(SUM(translate_count),0) AS translate_count,
+              COALESCE(SUM(transcribe_count),0) AS transcribe_count,
+              COALESCE(SUM(speech_chars),0) AS speech_chars,
+              COALESCE(SUM(stream_count),0) AS stream_count,
+              COALESCE(SUM(ai_credits),0) AS ai_credits
+         FROM user_daily_usage ${where}`,
+      )
+        .bind(...binds)
+        .first<Record<string, number>>()
+        .catch(() => null),
+      env.DB.prepare(
+        `SELECT COALESCE(SUM(translate_count),0) AS translate_count,
+              COALESCE(SUM(transcribe_count),0) AS transcribe_count,
+              COALESCE(SUM(speech_chars),0) AS speech_chars,
+              COALESCE(SUM(stream_count),0) AS stream_count,
+              COALESCE(SUM(ai_credits),0) AS ai_credits
+         FROM user_monthly_usage ${where}`,
+      )
+        .bind(...binds)
+        .first<Record<string, number>>()
+        .catch(() => null),
+    ]);
 
   return c.json({
     daily: daily.results ?? [],
     monthly: monthly.results ?? [],
     dailyTotal: dailyCount?.n ?? 0,
     monthlyTotal: monthlyCount?.n ?? 0,
+    dailyAggregate: {
+      translate_count: Number(dailyAgg?.translate_count ?? 0),
+      transcribe_count: Number(dailyAgg?.transcribe_count ?? 0),
+      speech_chars: Number(dailyAgg?.speech_chars ?? 0),
+      stream_count: Number(dailyAgg?.stream_count ?? 0),
+      ai_credits: Number(dailyAgg?.ai_credits ?? 0),
+    },
+    monthlyAggregate: {
+      translate_count: Number(monthlyAgg?.translate_count ?? 0),
+      transcribe_count: Number(monthlyAgg?.transcribe_count ?? 0),
+      speech_chars: Number(monthlyAgg?.speech_chars ?? 0),
+      stream_count: Number(monthlyAgg?.stream_count ?? 0),
+      ai_credits: Number(monthlyAgg?.ai_credits ?? 0),
+    },
     limit,
     offset,
+    userId: userId || null,
   });
 }
 

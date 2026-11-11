@@ -238,6 +238,26 @@ export interface UsageRow {
   ai_credits: number;
 }
 
+export interface UsageAggregate {
+  translate_count: number;
+  transcribe_count: number;
+  speech_chars: number;
+  stream_count: number;
+  ai_credits: number;
+}
+
+export interface AdminUsageResponse {
+  daily: UsageRow[];
+  monthly: UsageRow[];
+  dailyTotal?: number;
+  monthlyTotal?: number;
+  dailyAggregate?: UsageAggregate;
+  monthlyAggregate?: UsageAggregate;
+  limit?: number;
+  offset?: number;
+  userId?: string | null;
+}
+
 export interface HealthRes {
   status: string;
   timestamp: number;
