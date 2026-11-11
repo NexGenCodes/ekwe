@@ -101,8 +101,16 @@ export function HealthPanel({
   }
 
   const degraded = health.degradedProviders ?? [];
-  const providers =
-    health.providers ?? degraded.map((name) => ({ name, status: "degraded" }));
+  const providers = (
+    health.providers ?? degraded.map((name) => ({ name, status: "degraded" }))
+  )
+    .slice()
+    .sort((a, b) => {
+      const aDegraded = a.status === "degraded" ? 0 : 1;
+      const bDegraded = b.status === "degraded" ? 0 : 1;
+      if (aDegraded !== bDegraded) return aDegraded - bDegraded;
+      return a.name.localeCompare(b.name);
+    });
   const providerTotal = health.providerSummary?.total ?? providers.length;
   const providerHealthy =
     health.providerSummary?.healthy ??
