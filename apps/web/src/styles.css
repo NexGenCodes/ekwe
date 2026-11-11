@@ -3764,9 +3764,26 @@ html.js [data-reveal].is-visible {
   min-width: 0;
 }
 
+.adm-health-provider-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
 .adm-health-provider-id {
   font-size: 0.78rem;
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adm-health-provider-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

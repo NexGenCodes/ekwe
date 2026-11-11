@@ -15,6 +15,13 @@ interface HealthState {
   openMs: number;
 }
 
+export interface ProviderHealthInfo {
+  degraded: boolean;
+  failures: number;
+  trippedAt: number | null;
+  openUntil: number | null;
+}
+
 interface MemoEntry {
   untilEpochMs: number;
   state: HealthState | null;
@@ -97,6 +104,35 @@ export async function isProviderDegraded(
     state,
   });
   return isStateOpen(state, now);
+}
+
+export async function getProviderHealth(
+  env: Env,
+  provider: string,
+): Promise<ProviderHealthInfo> {
+  const now = Date.now();
+  const memo = healthMemo.get(provider);
+  const state =
+    memo && memo.untilEpochMs > now
+      ? memo.state
+      : await (async () => {
+          const s = await readState(env, provider);
+          healthMemo.set(provider, {
+            untilEpochMs: now + HEALTH_MEMO_TTL_MS,
+            state: s,
+          });
+          return s;
+        })();
+  const degraded = isStateOpen(state, now);
+  return {
+    degraded,
+    failures: state?.failures ?? 0,
+    trippedAt: state?.trippedAtEpochMs ? state.trippedAtEpochMs : null,
+    openUntil:
+      degraded && state
+        ? state.trippedAtEpochMs + state.openMs
+        : null,
+  };
 }
 
 export async function reportProviderOutcome(

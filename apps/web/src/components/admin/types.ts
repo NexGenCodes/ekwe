@@ -261,6 +261,10 @@ export interface AdminUsageResponse {
 export interface HealthProvider {
   name: string;
   status: "healthy" | "degraded" | string;
+  failures?: number;
+  trippedAt?: number | null;
+  openUntil?: number | null;
+  capabilities?: string[];
 }
 
 export interface HealthRes {

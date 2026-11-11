@@ -54,14 +54,20 @@ function StatusPill({ status }: { status: string }) {
     >
       <span className="adm-health-provider-dot" aria-hidden="true" />
       <span className="adm-health-provider-name">
-        {status === "healthy"
-          ? "Healthy"
-          : status === "degraded"
-            ? "Degraded"
-            : status}
+        {healthy ? "Healthy" : degraded ? "Degraded" : status}
       </span>
     </span>
   );
+}
+
+function capabilityLabel(cap: string): string {
+  const map: Record<string, string> = {
+    stt: "STT",
+    ttt: "Translate",
+    tts: "TTS",
+    sttStream: "Live STT",
+  };
+  return map[cap] ?? cap;
 }
 
 export function HealthPanel({
@@ -263,19 +269,48 @@ export function HealthPanel({
             className="adm-health-provider-list"
             aria-label="Provider health statuses"
           >
-            {providers.map((provider) => (
-              <li key={provider.name} className="adm-health-provider-row">
-                <span className="adm-mono adm-health-provider-id">
-                  {provider.name}
-                </span>
-                <StatusPill status={provider.status} />
-              </li>
-            ))}
+            {providers.map((provider) => {
+              const isDegraded = provider.status === "degraded";
+              const caps = provider.capabilities ?? [];
+              const meta: string[] = [];
+              if (caps.length > 0) meta.push(caps.map(capabilityLabel).join(", "));
+              if (isDegraded && (provider.failures ?? 0) > 0) {
+                const failures = provider.failures ?? 0;
+                meta.push(`${fmtNumber(failures)} failure${failures === 1 ? "" : "s"}`);
+              }
+              if (isDegraded && provider.openUntil) {
+                meta.push(`recovers ${fmtRelative(provider.openUntil)}`);
+              } else if (isDegraded && provider.trippedAt) {
+                meta.push(`tripped ${fmtRelative(provider.trippedAt)}`);
+              }
+              return (
+                <li key={provider.name} className="adm-health-provider-row">
+                  <div className="adm-health-provider-main">
+                    <span className="adm-mono adm-health-provider-id">
+                      {provider.name}
+                    </span>
+                    {meta.length > 0 && (
+                      <span
+                        className="adm-health-provider-meta"
+                        title={
+                          isDegraded && provider.openUntil
+                            ? `Open until ${fmtDateTime(provider.openUntil)}`
+                            : undefined
+                        }
+                      >
+                        {meta.join(" · ")}
+                      </span>
+                    )}
+                  </div>
+                  <StatusPill status={provider.status} />
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <div className="adm-empty adm-empty--compact">
             <p className="adm-empty-desc">
-              No provider status details available.
+              No configured provider modules were found.
             </p>
           </div>
         )}

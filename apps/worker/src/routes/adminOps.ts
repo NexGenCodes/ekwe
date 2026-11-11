@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import type { AppEnv } from "@/app";
 import type { Env } from "@/core/types";
 import { logger } from "@/core/logger";
-import { isProviderDegraded } from "@/services/health";
+import { getProviderHealth } from "@/services/health";
 import { PROVIDER_MODULES } from "@/providers";
 import { error } from "@/core/http";
 import { WORKER_ERROR_CODES } from "@ekwe/shared";
@@ -538,10 +538,24 @@ export async function handleAdminHealth(c: Context<AppEnv>) {
   const names = Object.keys(PROVIDER_MODULES).sort();
   const [providerResults, d1Result, kvResult, pushStats] = await Promise.all([
     Promise.all(
-      names.map(async (name) => ({
-        name,
-        degraded: await isProviderDegraded(env, name).catch(() => false),
-      })),
+      names.map(async (name) => {
+        const info = await getProviderHealth(env, name).catch(() => ({
+          degraded: false,
+          failures: 0,
+          trippedAt: null as number | null,
+          openUntil: null as number | null,
+        }));
+        const mod = PROVIDER_MODULES[name];
+        return {
+          name,
+          status: info.degraded ? "degraded" : "healthy",
+          degraded: info.degraded,
+          failures: info.failures,
+          trippedAt: info.trippedAt,
+          openUntil: info.openUntil,
+          capabilities: mod?.capabilities ?? [],
+        };
+      }),
     ),
     (async () => {
       const started = Date.now();
@@ -574,7 +588,11 @@ export async function handleAdminHealth(c: Context<AppEnv>) {
 
   const providers = providerResults.map((r) => ({
     name: r.name,
-    status: r.degraded ? "degraded" : "healthy",
+    status: r.status,
+    failures: r.failures,
+    trippedAt: r.trippedAt,
+    openUntil: r.openUntil,
+    capabilities: r.capabilities,
   }));
   const degraded = providers
     .filter((p) => p.status === "degraded")
