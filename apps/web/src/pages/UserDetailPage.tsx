@@ -895,94 +895,126 @@ export default function UserDetailPage() {
               >
                 <div className="adm-record-panel-head">
                   <h3 id="adm-usage-title">Usage</h3>
-                  <p>Recent recorded usage (daily and monthly windows).</p>
+                  <p>
+                    Recent recorded usage for this account (loaded daily and
+                    monthly windows).
+                  </p>
                 </div>
-                {usage.daily.length === 0 && usage.monthly.length === 0 ? (
-                  <div className="adm-record-empty">
-                    No usage recorded for this account.
-                  </div>
-                ) : (
-                  <div className="adm-stack" style={{ gap: 16 }}>
-                    <div>
-                      <p className="adm-muted" style={{ marginBottom: 8 }}>
-                        Recent daily totals (loaded rows)
-                      </p>
-                      {usage.daily.length === 0 ? (
-                        <div className="adm-record-empty">
-                          No daily usage in the loaded window.
-                        </div>
-                      ) : (
-                        <div className="adm-metrics">
-                          <div className="adm-metric">
-                            <span className="adm-metric-label">
-                              Translations
-                            </span>
-                            <strong>{fmtNumber(usageTotals.translate)}</strong>
-                          </div>
-                          <div className="adm-metric">
-                            <span className="adm-metric-label">
-                              Transcriptions
-                            </span>
-                            <strong>{fmtNumber(usageTotals.transcribe)}</strong>
-                          </div>
-                          <div className="adm-metric">
-                            <span className="adm-metric-label">
-                              Speech characters
-                            </span>
-                            <strong>{fmtNumber(usageTotals.speech)}</strong>
-                          </div>
-                          <div className="adm-metric">
-                            <span className="adm-metric-label">AI credits</span>
-                            <strong>{fmtNumber(usageTotals.credits)}</strong>
-                          </div>
-                        </div>
-                      )}
+                <div className="adm-record-panel-body">
+                  {usage.daily.length === 0 && usage.monthly.length === 0 ? (
+                    <div className="adm-record-empty">
+                      No usage recorded for this account.
                     </div>
-                    <div>
-                      <p className="adm-muted" style={{ marginBottom: 8 }}>
-                        Recent monthly totals (loaded rows)
-                      </p>
-                      {usage.monthly.length === 0 ? (
-                        <div className="adm-record-empty">
-                          No monthly usage in the loaded window.
+                  ) : (
+                    <div className="adm-stack">
+                      <section aria-labelledby="adm-usage-daily-sub">
+                        <div className="adm-record-panel-head adm-record-panel-head--compact">
+                          <h4
+                            id="adm-usage-daily-sub"
+                            className="adm-subheading"
+                          >
+                            Daily totals
+                          </h4>
+                          <p>
+                            Sum of the most recently loaded daily rows (UTC
+                            days).
+                          </p>
                         </div>
-                      ) : (
-                        <div className="adm-metrics">
-                          <div className="adm-metric">
-                            <span className="adm-metric-label">
-                              Translations
-                            </span>
-                            <strong>
-                              {fmtNumber(monthlyUsageTotals.translate)}
-                            </strong>
+                        {usage.daily.length === 0 ? (
+                          <div className="adm-record-empty">
+                            No daily usage in the loaded window.
                           </div>
-                          <div className="adm-metric">
-                            <span className="adm-metric-label">
-                              Transcriptions
-                            </span>
-                            <strong>
-                              {fmtNumber(monthlyUsageTotals.transcribe)}
-                            </strong>
+                        ) : (
+                          <div className="adm-metrics">
+                            <div className="adm-metric">
+                              <span className="adm-metric-label">
+                                Translations
+                              </span>
+                              <strong>
+                                {fmtNumber(usageTotals.translate)}
+                              </strong>
+                            </div>
+                            <div className="adm-metric">
+                              <span className="adm-metric-label">
+                                Transcriptions
+                              </span>
+                              <strong>
+                                {fmtNumber(usageTotals.transcribe)}
+                              </strong>
+                            </div>
+                            <div className="adm-metric">
+                              <span className="adm-metric-label">
+                                Speech characters
+                              </span>
+                              <strong>{fmtNumber(usageTotals.speech)}</strong>
+                            </div>
+                            <div className="adm-metric">
+                              <span className="adm-metric-label">
+                                AI credits
+                              </span>
+                              <strong>{fmtNumber(usageTotals.credits)}</strong>
+                            </div>
                           </div>
-                          <div className="adm-metric">
-                            <span className="adm-metric-label">
-                              Speech characters
-                            </span>
-                            <strong>
-                              {fmtNumber(monthlyUsageTotals.speech)}
-                            </strong>
-                          </div>
-                          <div className="adm-metric">
-                            <span className="adm-metric-label">AI credits</span>
-                            <strong>
-                              {fmtNumber(monthlyUsageTotals.credits)}
-                            </strong>
-                          </div>
+                        )}
+                      </section>
+
+                      <section aria-labelledby="adm-usage-monthly-sub">
+                        <div className="adm-record-panel-head adm-record-panel-head--compact">
+                          <h4
+                            id="adm-usage-monthly-sub"
+                            className="adm-subheading"
+                          >
+                            Monthly totals
+                          </h4>
+                          <p>
+                            Sum of the most recently loaded monthly rows (UTC
+                            months).
+                          </p>
                         </div>
-                      )}
+                        {usage.monthly.length === 0 ? (
+                          <div className="adm-record-empty">
+                            No monthly usage in the loaded window.
+                          </div>
+                        ) : (
+                          <div className="adm-metrics">
+                            <div className="adm-metric">
+                              <span className="adm-metric-label">
+                                Translations
+                              </span>
+                              <strong>
+                                {fmtNumber(monthlyUsageTotals.translate)}
+                              </strong>
+                            </div>
+                            <div className="adm-metric">
+                              <span className="adm-metric-label">
+                                Transcriptions
+                              </span>
+                              <strong>
+                                {fmtNumber(monthlyUsageTotals.transcribe)}
+                              </strong>
+                            </div>
+                            <div className="adm-metric">
+                              <span className="adm-metric-label">
+                                Speech characters
+                              </span>
+                              <strong>
+                                {fmtNumber(monthlyUsageTotals.speech)}
+                              </strong>
+                            </div>
+                            <div className="adm-metric">
+                              <span className="adm-metric-label">
+                                AI credits
+                              </span>
+                              <strong>
+                                {fmtNumber(monthlyUsageTotals.credits)}
+                              </strong>
+                            </div>
+                          </div>
+                        )}
+                      </section>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </section>
             </div>
 

@@ -3176,6 +3176,22 @@ html.js [data-reveal].is-visible {
   color: var(--text-muted);
   line-height: 1.45;
 }
+.adm-record-panel-head--compact {
+  padding: 0 0 10px;
+}
+.adm-record-panel-head--compact p {
+  margin-top: 2px;
+}
+.adm-record-panel-body {
+  padding: 14px 18px 18px;
+}
+.adm-subheading {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+  color: var(--text-primary);
+}
 .adm-record-panel-head--row {
   display: flex;
   align-items: center;

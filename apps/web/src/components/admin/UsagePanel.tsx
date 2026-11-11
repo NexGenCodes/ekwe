@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BarChart3, Filter, TrendingUp } from "lucide-react";
 import {
   Button,
@@ -121,6 +121,11 @@ export function UsagePanel({
 }) {
   const [view, setView] = useState<UsageView>("daily");
   const [draftUser, setDraftUser] = useState(userId);
+
+  useEffect(() => {
+    setDraftUser(userId);
+  }, [userId]);
+
   const rows = view === "daily" ? daily : monthly;
   const total = view === "daily" ? dailyTotal : monthlyTotal;
   const aggregate =
@@ -130,89 +135,103 @@ export function UsagePanel({
   const hasNext = offset + limit < total;
   const showingFrom = total === 0 ? 0 : offset + 1;
   const showingTo = Math.min(offset + rows.length, total);
+  const page = total === 0 ? 0 : Math.floor(offset / limit) + 1;
+
+  const applyFilter = () => onUserIdChange(draftUser.trim());
 
   return (
     <div className="adm-stack">
       <SectionCard
-        title="Usage filters"
-        description="Scope admin usage rows and aggregates. Totals/aggregates reflect the selected filter; the table is paginated."
-        actions={
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "center",
-              flexWrap: "wrap",
+        title="Usage overview"
+        description="Scope recorded usage by account. Scope totals and aggregates reflect the active filter; rows below are paginated."
+      >
+        <div className="adm-stack" style={{ gap: 12 }}>
+          <form
+            className="adm-toolbar"
+            onSubmit={(e) => {
+              e.preventDefault();
+              applyFilter();
             }}
           >
+            <label className="sr-only" htmlFor="adm-usage-user-filter">
+              Filter usage by user ID
+            </label>
             <input
-              className="adm-input"
-              aria-label="Filter usage by user ID"
+              id="adm-usage-user-filter"
+              className="adm-input adm-search-input"
               placeholder="Filter by user ID"
               value={draftUser}
               onChange={(e) => setDraftUser(e.target.value)}
-              style={{ minWidth: 220 }}
+              autoComplete="off"
+              spellCheck={false}
             />
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<Filter size={14} />}
-              onClick={() => onUserIdChange(draftUser.trim())}
-            >
-              Apply
-            </Button>
-            {(userId || draftUser) && (
+            <div className="adm-toolbar-end">
               <Button
-                variant="ghost"
+                type="submit"
+                variant="secondary"
                 size="sm"
-                onClick={() => {
-                  setDraftUser("");
-                  onUserIdChange("");
-                }}
+                icon={<Filter size={14} />}
               >
-                Clear
+                Apply
               </Button>
+              {(userId || draftUser) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setDraftUser("");
+                    onUserIdChange("");
+                  }}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          </form>
+          <p className="adm-muted" style={{ margin: 0, lineHeight: 1.5 }}>
+            {userId ? (
+              <>
+                Filtered to user{" "}
+                <code className="adm-mono">{shortId(userId, 16)}</code>
+                <CopyButton value={userId} label="Copy filtered user ID" />
+                .{" "}
+              </>
+            ) : (
+              "Showing all users. "
             )}
-          </div>
-        }
-      >
-        <p className="adm-muted" style={{ margin: 0 }}>
-          {userId ? (
-            <>
-              Filtered to user{" "}
-              <code className="adm-mono">{shortId(userId, 16)}</code>.{" "}
-            </>
-          ) : (
-            "Showing all users. "
-          )}
-          Credits shown are tracked usage credits (not necessarily a separate
-          enforced budget, depending on plan configuration).
-        </p>
+            {view === "daily"
+              ? "Daily rows are per UTC day."
+              : "Monthly rows are per UTC month."}{" "}
+            AI credits are tracked usage metrics (a separate enforced budget
+            applies only if configured).
+          </p>
+        </div>
       </SectionCard>
 
       <div className="adm-stats">
         <StatCard
           label="Translations"
           value={fmtNumber(aggregate.translate_count)}
-          hint={`${view} scope total (${fmtNumber(total)} rows)`}
+          hint={`${fmtNumber(total)} ${view} rows in scope`}
           icon={<TrendingUp size={17} />}
         />
         <StatCard
           label="Transcriptions"
           value={fmtNumber(aggregate.transcribe_count)}
-          hint={`${view} scope total`}
+          hint={`Requests in ${view} scope`}
           icon={<BarChart3 size={17} />}
         />
         <StatCard
           label="Speech characters"
           value={fmtNumber(aggregate.speech_chars)}
-          hint={`${view} scope total`}
+          hint={`Characters in ${view} scope`}
           icon={<BarChart3 size={17} />}
         />
         <StatCard
           label="AI credits"
           value={fmtNumber(aggregate.ai_credits)}
-          hint={`${view} scope total`}
+          hint={`Tracked credits in ${view} scope`}
           icon={<TrendingUp size={17} />}
         />
       </div>
@@ -235,15 +254,19 @@ export function UsagePanel({
             />
           </div>
           <p className="adm-trend-note">
-            Trends reflect up to {Math.min(rows.length, 14)} of the currently
-            loaded {view} rows, shown chronologically.
+            Trends show up to {Math.min(rows.length, 14)} of the currently
+            loaded {view} rows, in chronological order.
           </p>
         </section>
       )}
 
       <SectionCard
         title="Consumption by account"
-        description={`Showing ${showingFrom}–${showingTo} of ${fmtNumber(total)} ${view} row${total === 1 ? "" : "s"} for the selected scope.`}
+        description={
+          total === 0
+            ? `No ${view} rows for the selected scope.`
+            : `Showing ${showingFrom}–${showingTo} of ${fmtNumber(total)} ${view} row${total === 1 ? "" : "s"}.`
+        }
         actions={
           <SegmentedControl<UsageView>
             ariaLabel="Usage period"
@@ -257,12 +280,12 @@ export function UsagePanel({
         }
       >
         {loading && rows.length === 0 ? (
-          <TableSkeleton rows={7} columns={6} />
+          <TableSkeleton rows={7} columns={7} />
         ) : rows.length === 0 ? (
           <EmptyState
             icon={<BarChart3 size={22} />}
             title={`No ${view} usage recorded`}
-            description="Usage counters are written on successful billable activity for the selected scope."
+            description="Usage is recorded on successful billable activity for the selected scope and period."
           />
         ) : (
           <>
@@ -346,23 +369,13 @@ export function UsagePanel({
                 </tbody>
               </table>
             </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginTop: 12,
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              <span className="adm-muted">
-                Page {total === 0 ? 0 : Math.floor(offset / limit) + 1} ·{" "}
-                {fmtNumber(total)} total row{total === 1 ? "" : "s"}
-              </span>
-              <div style={{ display: "flex", gap: 8 }}>
+            <div className="adm-pagination">
+              <p className="adm-pagination-info">
+                {showingFrom}–{showingTo} of {fmtNumber(total)} · page {page}
+              </p>
+              <div className="adm-pagination-actions">
                 <Button
-                  variant="secondary"
+                  variant="ghost"
                   size="sm"
                   disabled={!hasPrev || loading}
                   onClick={() => onOffsetChange(Math.max(0, offset - limit))}
@@ -370,7 +383,7 @@ export function UsagePanel({
                   Previous
                 </Button>
                 <Button
-                  variant="secondary"
+                  variant="ghost"
                   size="sm"
                   disabled={!hasNext || loading}
                   onClick={() => onOffsetChange(offset + limit)}
