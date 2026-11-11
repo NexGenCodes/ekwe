@@ -16,6 +16,7 @@ import { handlePostUpdateManifest, handleUpdateNotify } from "@/routes/admin";
 import {
   handleCancelScheduledDeleteUser,
   handleDeleteUser,
+  handleExportAudit,
   handleGetUser,
   handleGetUserDetails,
   handleListAudit,
@@ -101,6 +102,7 @@ adminRouter.post(
   handleCancelScheduledDeleteUser,
 );
 adminRouter.post("/users/:id/delete", adminUserMiddleware, handleDeleteUser);
+adminRouter.get("/audit/export", adminUserMiddleware, handleExportAudit);
 adminRouter.get("/audit", adminUserMiddleware, handleListAudit);
 adminRouter.get("/billing", adminUserMiddleware, handleBilling);
 adminRouter.post("/billing/sync", adminUserMiddleware, handleBillingSync);

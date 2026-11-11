@@ -20,52 +20,21 @@ import type {
   Manifest,
   ManifestPayload,
   NotifyPayload,
+  ReleaseAction,
+  ReleasePushStats,
   Tab,
   Toast,
   UsageRow,
 } from "../components/admin/types";
+import {
+  PAGE_SIZE,
+  api,
+  isAbortError,
+  errorMessage,
+  isAuthError,
+} from "../lib/adminApi";
 
-const API = "/admin/api";
-const PAGE_SIZE = 25;
 const POLL_MS = 30_000;
-
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const { headers, ...rest } = init ?? {};
-  const res = await fetch(`${API}${path}`, {
-    credentials: "include",
-    cache: "no-store",
-    ...rest,
-    headers: { Accept: "application/json", ...headers },
-  });
-  if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`.trim();
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body?.error) message = body.error;
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new Error(message);
-  }
-  return res.json() as Promise<T>;
-}
-
-function isAbortError(error: unknown): boolean {
-  return (
-    (error instanceof DOMException && error.name === "AbortError") ||
-    (error instanceof Error && error.name === "AbortError")
-  );
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Request failed.";
-}
-
-function isAuthError(message: string): boolean {
-  return /ACCESS_SESSION_REQUIRED|\b401\b|Access token|rejected the forwarded/i.test(
-    message,
-  );
-}
 
 function tabFromHash(): Tab {
   const hash = window.location.hash.replace(/^#/, "");
@@ -153,6 +122,8 @@ export default function AdminDashboard() {
   const [auditAction, setAuditAction] = useState("");
   const [auditDebouncedQ, setAuditDebouncedQ] = useState("");
   const [manifest, setManifest] = useState<Manifest | null>(null);
+  const [releasePush, setReleasePush] = useState<ReleasePushStats | null>(null);
+  const [releaseActions, setReleaseActions] = useState<ReleaseAction[]>([]);
 
   const [publishing, setPublishing] = useState(false);
   const [notifying, setNotifying] = useState(false);
@@ -197,7 +168,10 @@ export default function AdminDashboard() {
   }, [q]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setAuditDebouncedQ(auditQ.trim()), 300);
+    const timer = window.setTimeout(
+      () => setAuditDebouncedQ(auditQ.trim()),
+      300,
+    );
     return () => window.clearTimeout(timer);
   }, [auditQ]);
 
@@ -287,9 +261,11 @@ export default function AdminDashboard() {
             : null;
         const manifestRequest =
           tab === "releases"
-            ? api<{ manifest?: Manifest | null }>("/update/manifest", {
-                signal,
-              })
+            ? api<{
+                manifest?: Manifest | null;
+                push?: ReleasePushStats;
+                recentActions?: ReleaseAction[];
+              }>("/update/manifest", { signal })
             : null;
 
         const [
@@ -347,6 +323,8 @@ export default function AdminDashboard() {
 
         if (manifestResult.status === "fulfilled" && manifestResult.value) {
           setManifest(manifestResult.value.manifest ?? null);
+          setReleasePush(manifestResult.value.push ?? null);
+          setReleaseActions(manifestResult.value.recentActions ?? []);
         }
 
         const failures = [
@@ -681,6 +659,26 @@ export default function AdminDashboard() {
               setAuditOffset(0);
             }}
             onOffsetChange={setAuditOffset}
+            onExport={async () => {
+              const params = new URLSearchParams();
+              if (auditDebouncedQ) params.set("q", auditDebouncedQ);
+              if (auditAction) params.set("action", auditAction);
+              const res = await fetch(
+                `${API}/audit/export${params.toString() ? `?${params.toString()}` : ""}`,
+                { credentials: "include", cache: "no-store" },
+              );
+              if (!res.ok)
+                throw new Error(`${res.status} ${res.statusText}`.trim());
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = "audit-export.csv";
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              URL.revokeObjectURL(url);
+            }}
             loading={loading || refreshing}
           />
         )}
@@ -688,6 +686,8 @@ export default function AdminDashboard() {
         {tab === "releases" && (
           <ReleasesPanel
             manifest={manifest}
+            push={releasePush}
+            recentActions={releaseActions}
             loading={loading}
             publishing={publishing}
             notifying={notifying}

@@ -623,16 +623,46 @@ export async function handleAdminHealth(c: Context<AppEnv>) {
 }
 
 export async function handleGetAdminManifest(c: Context<AppEnv>) {
-  const raw = await c.env.EKWE_KV.get("update:manifest").catch(() => null);
-  if (!raw) {
-    return c.json({ manifest: null }, 200);
+  const [raw, pushStatsRow, recentReleases] = await Promise.all([
+    c.env.EKWE_KV.get("update:manifest").catch(() => null),
+    c.env.DB.prepare(
+      `SELECT
+         SUM(CASE WHEN is_active = 1 AND platform = 'android' THEN 1 ELSE 0 END) AS androidActive,
+         SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active,
+         COUNT(*) AS total
+       FROM push_tokens`,
+    )
+      .first<{ androidActive: number; active: number; total: number }>()
+      .catch(() => null),
+    c.env.DB.prepare(
+      `SELECT id, admin_email, action, detail, created_at
+         FROM admin_audit_log
+        WHERE action LIKE 'releases.%'
+        ORDER BY created_at DESC
+        LIMIT 10`,
+    )
+      .all<Record<string, unknown>>()
+      .catch(() => ({ results: [] as Record<string, unknown>[] })),
+  ]);
+
+  let manifest: Record<string, unknown> | null = null;
+  if (raw) {
+    try {
+      manifest = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      manifest = null;
+    }
   }
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return c.json({ manifest: parsed });
-  } catch {
-    return c.json({ manifest: null });
-  }
+
+  return c.json({
+    manifest,
+    push: {
+      androidActive: Number(pushStatsRow?.androidActive ?? 0),
+      active: Number(pushStatsRow?.active ?? 0),
+      total: Number(pushStatsRow?.total ?? 0),
+    },
+    recentActions: recentReleases.results ?? [],
+  });
 }
 
 export async function handleAuditWrite(c: Context<AppEnv>) {

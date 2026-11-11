@@ -470,6 +470,50 @@ export async function handleCancelScheduledDeleteUser(c: Context<AppEnv>) {
   return c.json({ ok: true, user: user ? await userToView(env, user) : null });
 }
 
+function buildAuditWhere(c: Context<AppEnv>): {
+  whereSql: string;
+  binds: unknown[];
+} {
+  const userId = c.req.query("userId")?.trim() ?? "";
+  const action = c.req.query("action")?.trim() ?? "";
+  const q = c.req.query("q")?.trim().toLowerCase() ?? "";
+  const where: string[] = [];
+  const binds: unknown[] = [];
+  if (userId) {
+    where.push("target_user_id = ?");
+    binds.push(userId);
+  }
+  if (action) {
+    where.push("action = ?");
+    binds.push(action);
+  }
+  if (q) {
+    where.push(
+      "(lower(action) LIKE ? OR lower(admin_email) LIKE ? OR lower(COALESCE(detail,'')) LIKE ?)",
+    );
+    const like = `%${q}%`;
+    binds.push(like, like, like);
+  }
+  return {
+    whereSql: where.length ? `WHERE ${where.join(" AND ")}` : "",
+    binds,
+  };
+}
+
+function csvCell(value: unknown): string {
+  const raw =
+    value == null
+      ? ""
+      : typeof value === "string"
+        ? value
+        : typeof value === "number" ||
+            typeof value === "boolean" ||
+            typeof value === "bigint"
+          ? String(value)
+          : JSON.stringify(value);
+  return /[",\n\r]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
+}
+
 export async function handleListAudit(c: Context<AppEnv>) {
   const env = c.env;
   const limit = Math.min(
@@ -477,28 +521,8 @@ export async function handleListAudit(c: Context<AppEnv>) {
     100,
   );
   const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
-  const userId = c.req.query("userId")?.trim() ?? "";
-  const action = c.req.query("action")?.trim() ?? "";
-  const q = c.req.query("q")?.trim().toLowerCase() ?? "";
   try {
-    const where: string[] = [];
-    const binds: unknown[] = [];
-    if (userId) {
-      where.push("target_user_id = ?");
-      binds.push(userId);
-    }
-    if (action) {
-      where.push("action = ?");
-      binds.push(action);
-    }
-    if (q) {
-      where.push(
-        "(lower(action) LIKE ? OR lower(admin_email) LIKE ? OR lower(COALESCE(detail,'')) LIKE ?)",
-      );
-      const like = `%${q}%`;
-      binds.push(like, like, like);
-    }
-    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const { whereSql, binds } = buildAuditWhere(c);
     const countRow = await env.DB.prepare(
       `SELECT COUNT(*) AS n FROM admin_audit_log ${whereSql}`,
     )
@@ -520,5 +544,64 @@ export async function handleListAudit(c: Context<AppEnv>) {
     });
   } catch {
     return c.json({ entries: [], total: 0, limit, offset, hasMore: false });
+  }
+}
+
+export async function handleExportAudit(c: Context<AppEnv>) {
+  const env = c.env;
+  const limit = Math.min(
+    Math.max(parseInt(c.req.query("limit") ?? "1000", 10) || 1000, 1),
+    2000,
+  );
+  try {
+    const { whereSql, binds } = buildAuditWhere(c);
+    const rows = await env.DB.prepare(
+      `SELECT id, created_at, admin_email, action, target_user_id, detail
+         FROM admin_audit_log ${whereSql}
+        ORDER BY created_at DESC
+        LIMIT ?`,
+    )
+      .bind(...binds, limit)
+      .all<Record<string, unknown>>();
+    const entries = rows.results ?? [];
+    const header = [
+      "id",
+      "created_at",
+      "created_at_iso",
+      "admin_email",
+      "action",
+      "target_user_id",
+      "detail",
+    ];
+    const lines = [header.join(",")];
+    for (const e of entries) {
+      const createdAt =
+        typeof e.created_at === "number"
+          ? e.created_at
+          : Number(e.created_at ?? 0);
+      lines.push(
+        [
+          e.id,
+          createdAt,
+          createdAt ? new Date(createdAt).toISOString() : "",
+          e.admin_email,
+          e.action,
+          e.target_user_id,
+          e.detail,
+        ]
+          .map(csvCell)
+          .join(","),
+      );
+    }
+    const csv = `\uFEFF${lines.join("\r\n")}`;
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": 'attachment; filename="audit-export.csv"',
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch {
+    return error(WORKER_ERROR_CODES.SERVER_ERROR, 500);
   }
 }

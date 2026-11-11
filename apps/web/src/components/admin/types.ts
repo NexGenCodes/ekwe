@@ -315,6 +315,20 @@ export interface NotifyPayload {
   checksumSha256?: string;
 }
 
+export interface ReleasePushStats {
+  androidActive: number;
+  active: number;
+  total: number;
+}
+
+export interface ReleaseAction {
+  id: number;
+  admin_email: string;
+  action: string;
+  detail?: string | null;
+  created_at: number;
+}
+
 export interface Toast {
   id: number;
   title: string;

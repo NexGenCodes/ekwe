@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, ScrollText, Search, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Download,
+  ScrollText,
+  Search,
+  X,
+} from "lucide-react";
 import {
   Badge,
   Button,
@@ -13,7 +20,11 @@ import { fmtDateTime, fmtNumber, fmtRelative, shortId } from "./format";
 import type { AuditRow } from "./types";
 
 function actionTone(action: string): BadgeTone {
-  if (action.includes("grant") || action.includes("publish") || action.includes("enabled"))
+  if (
+    action.includes("grant") ||
+    action.includes("publish") ||
+    action.includes("enabled")
+  )
     return "success";
   if (
     action.includes("revoke") ||
@@ -22,7 +33,11 @@ function actionTone(action: string): BadgeTone {
     action.includes("suspend")
   )
     return "warning";
-  if (action.startsWith("releases") || action.includes("billing") || action.includes("sync"))
+  if (
+    action.startsWith("releases") ||
+    action.includes("billing") ||
+    action.includes("sync")
+  )
     return "accent";
   return "neutral";
 }
@@ -37,6 +52,7 @@ export function AuditPanel({
   onQChange,
   onActionChange,
   onOffsetChange,
+  onExport,
   loading,
 }: {
   entries: AuditRow[];
@@ -48,11 +64,13 @@ export function AuditPanel({
   onQChange: (value: string) => void;
   onActionChange: (value: string) => void;
   onOffsetChange: (offset: number) => void;
+  onExport?: () => Promise<void>;
   loading: boolean;
 }) {
   const [draftQ, setDraftQ] = useState(q);
   const [draftAction, setDraftAction] = useState(action);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => setDraftQ(q), [q]);
   useEffect(() => setDraftAction(action), [action]);
@@ -88,8 +106,30 @@ export function AuditPanel({
   return (
     <SectionCard
       title="Admin activity"
-      description="Immutable log of privileged actions. Results are server-filtered and paginated."
-      actions={<Badge tone="neutral">{fmtNumber(total)} total</Badge>}
+      description="Immutable log of privileged actions. Results are server-filtered and paginated. Export downloads the current filtered view (up to 2,000 entries)."
+      actions={
+        <div className="adm-inline" style={{ gap: 8 }}>
+          <Badge tone="neutral">{fmtNumber(total)} total</Badge>
+          {onExport ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Download size={14} />}
+              loading={exporting}
+              onClick={async () => {
+                setExporting(true);
+                try {
+                  await onExport();
+                } finally {
+                  setExporting(false);
+                }
+              }}
+            >
+              Export CSV
+            </Button>
+          ) : null}
+        </div>
+      }
     >
       <div className="adm-stack" style={{ gap: 12 }}>
         <form
@@ -157,7 +197,11 @@ export function AuditPanel({
         ) : entries.length === 0 ? (
           <EmptyState
             icon={<ScrollText size={22} />}
-            title={hasFilters ? "No entries match your filters" : "No admin activity yet"}
+            title={
+              hasFilters
+                ? "No entries match your filters"
+                : "No admin activity yet"
+            }
             description={
               hasFilters
                 ? "Try a different search term or action filter."
@@ -188,10 +232,15 @@ export function AuditPanel({
                   {entries.map((entry) => (
                     <tr key={entry.id}>
                       <td className="adm-cell-primary" data-label="When">
-                        <span className="adm-date" title={fmtDateTime(entry.created_at)}>
+                        <span
+                          className="adm-date"
+                          title={fmtDateTime(entry.created_at)}
+                        >
                           {fmtRelative(entry.created_at)}
                         </span>
-                        <span className="adm-cell-sub">{fmtDateTime(entry.created_at)}</span>
+                        <span className="adm-cell-sub">
+                          {fmtDateTime(entry.created_at)}
+                        </span>
                       </td>
                       <td data-label="Admin">
                         <span className="adm-text">{entry.admin_email}</span>
@@ -204,8 +253,13 @@ export function AuditPanel({
                       <td data-label="Target">
                         {entry.target_user_id ? (
                           <div className="adm-id">
-                            <span className="adm-mono">{shortId(entry.target_user_id, 12)}</span>
-                            <CopyButton value={entry.target_user_id} label="Copy target user ID" />
+                            <span className="adm-mono">
+                              {shortId(entry.target_user_id, 12)}
+                            </span>
+                            <CopyButton
+                              value={entry.target_user_id}
+                              label="Copy target user ID"
+                            />
                           </div>
                         ) : (
                           <span className="adm-muted">—</span>
@@ -219,7 +273,11 @@ export function AuditPanel({
                             return (
                               <div className="adm-detail-wrap">
                                 <span
-                                  className={isOpen ? "adm-detail adm-detail--open" : "adm-detail"}
+                                  className={
+                                    isOpen
+                                      ? "adm-detail adm-detail--open"
+                                      : "adm-detail"
+                                  }
                                   title={isOpen ? undefined : entry.detail}
                                 >
                                   {entry.detail}
@@ -234,16 +292,27 @@ export function AuditPanel({
                                     >
                                       {isOpen ? (
                                         <>
-                                          <ChevronUp size={13} aria-hidden="true" /> Less
+                                          <ChevronUp
+                                            size={13}
+                                            aria-hidden="true"
+                                          />{" "}
+                                          Less
                                         </>
                                       ) : (
                                         <>
-                                          <ChevronDown size={13} aria-hidden="true" /> More
+                                          <ChevronDown
+                                            size={13}
+                                            aria-hidden="true"
+                                          />{" "}
+                                          More
                                         </>
                                       )}
                                     </button>
                                   )}
-                                  <CopyButton value={entry.detail} label="Copy detail" />
+                                  <CopyButton
+                                    value={entry.detail}
+                                    label="Copy detail"
+                                  />
                                 </div>
                               </div>
                             );

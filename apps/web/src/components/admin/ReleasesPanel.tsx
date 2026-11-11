@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  BellRing,
   Download,
   ExternalLink,
   FileText,
   Hash,
+  History,
   Package,
   Rocket,
   RotateCcw,
@@ -20,8 +22,14 @@ import {
   TextAreaField,
   TextField,
 } from "./primitives";
-import { fmtBytes } from "./format";
-import type { Manifest, ManifestPayload, NotifyPayload } from "./types";
+import { fmtBytes, fmtDateTime, fmtNumber, fmtRelative } from "./format";
+import type {
+  Manifest,
+  ManifestPayload,
+  NotifyPayload,
+  ReleaseAction,
+  ReleasePushStats,
+} from "./types";
 
 interface PublishForm {
   latest_version: string;
@@ -153,8 +161,59 @@ function validateNotify(form: NotifyForm): NotifyErrors {
   return errors;
 }
 
+function parseReleaseDetail(
+  detail?: string | null,
+): Record<string, unknown> | null {
+  if (!detail) return null;
+  try {
+    const parsed = JSON.parse(detail) as unknown;
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function releaseOutcome(action: ReleaseAction): string | null {
+  const d = parseReleaseDetail(action.detail);
+  if (!d) return action.detail ?? null;
+  if (action.action === "releases.notify") {
+    const sent = typeof d.sent === "number" ? d.sent : null;
+    const deactivated =
+      typeof d.deactivated === "number" ? d.deactivated : null;
+    const errors = typeof d.errors === "number" ? d.errors : null;
+    const parts = [
+      typeof d.version === "string" ? `v${d.version}` : null,
+      sent != null ? `sent ${fmtNumber(sent)}` : null,
+      deactivated != null ? `deactivated ${fmtNumber(deactivated)}` : null,
+      errors != null ? `errors ${fmtNumber(errors)}` : null,
+      typeof d.batchFailure === "string" ? `batch: ${d.batchFailure}` : null,
+    ].filter(Boolean);
+    return parts.length ? parts.join(" · ") : (action.detail ?? null);
+  }
+  if (action.action === "releases.publish_manifest") {
+    const v = typeof d.latest_version === "string" ? d.latest_version : null;
+    const code =
+      typeof d.latest_version_code === "number" ? d.latest_version_code : null;
+    const min =
+      typeof d.min_supported_version_code === "number"
+        ? d.min_supported_version_code
+        : null;
+    const parts = [
+      v ? `v${v}` : null,
+      code != null ? `code ${fmtNumber(code)}` : null,
+      min != null ? `min ${fmtNumber(min)}` : null,
+    ].filter(Boolean);
+    return parts.length ? parts.join(" · ") : (action.detail ?? null);
+  }
+  return action.detail ?? null;
+}
+
 export function ReleasesPanel({
   manifest,
+  push,
+  recentActions,
   loading,
   publishing,
   notifying,
@@ -162,12 +221,15 @@ export function ReleasesPanel({
   onNotify,
 }: {
   manifest: Manifest | null;
+  push?: ReleasePushStats | null;
+  recentActions?: ReleaseAction[];
   loading: boolean;
   publishing: boolean;
   notifying: boolean;
   onPublish: (payload: ManifestPayload) => void;
   onNotify: (payload: NotifyPayload) => void;
 }) {
+  const actions = useMemo(() => recentActions ?? [], [recentActions]);
   const [form, setForm] = useState<PublishForm>(EMPTY_PUBLISH);
   const [notifyForm, setNotifyForm] = useState<NotifyForm>(EMPTY_NOTIFY);
   const [errors, setErrors] = useState<PublishErrors>({});
@@ -375,6 +437,108 @@ export function ReleasesPanel({
       </SectionCard>
 
       <SectionCard
+        title="Release reach & activity"
+        description="Estimated notification reach from active device tokens and recent audited release actions."
+      >
+        <div className="adm-stack" style={{ gap: 16 }}>
+          <div className="adm-metric-grid">
+            <div className="adm-metric">
+              <span className="adm-metric-icon" aria-hidden="true">
+                <BellRing size={18} />
+              </span>
+              <span className="adm-metric-body">
+                <span className="adm-metric-label">
+                  Active Android recipients
+                </span>
+                <strong className="adm-metric-value">
+                  {push ? fmtNumber(push.androidActive) : "—"}
+                </strong>
+                <span className="adm-metric-hint">
+                  Estimated devices that would receive an update notification
+                  now.
+                </span>
+              </span>
+            </div>
+            <div className="adm-metric">
+              <span className="adm-metric-icon" aria-hidden="true">
+                <Smartphone size={18} />
+              </span>
+              <span className="adm-metric-body">
+                <span className="adm-metric-label">Active push tokens</span>
+                <strong className="adm-metric-value">
+                  {push ? fmtNumber(push.active) : "—"}
+                </strong>
+                <span className="adm-metric-hint">
+                  All platforms · {push ? fmtNumber(push.total) : "—"} total
+                  registered
+                </span>
+              </span>
+            </div>
+          </div>
+
+          <div className="adm-stack" style={{ gap: 8 }}>
+            <p className="adm-kv-label">
+              <History size={13} aria-hidden="true" /> Recent release actions
+            </p>
+            {actions.length === 0 ? (
+              <p className="adm-muted">
+                No publish or notify actions recorded yet.
+              </p>
+            ) : (
+              <div className="adm-table-wrap">
+                <table className="adm-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">When</th>
+                      <th scope="col">Action</th>
+                      <th scope="col">Admin</th>
+                      <th scope="col">Outcome</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {actions.map((entry) => (
+                      <tr key={entry.id}>
+                        <td className="adm-cell-primary" data-label="When">
+                          <span
+                            className="adm-date"
+                            title={fmtDateTime(entry.created_at)}
+                          >
+                            {fmtRelative(entry.created_at)}
+                          </span>
+                          <span className="adm-cell-sub">
+                            {fmtDateTime(entry.created_at)}
+                          </span>
+                        </td>
+                        <td data-label="Action">
+                          <Badge
+                            tone={
+                              entry.action.includes("publish")
+                                ? "success"
+                                : "accent"
+                            }
+                          >
+                            <span className="adm-mono">{entry.action}</span>
+                          </Badge>
+                        </td>
+                        <td data-label="Admin">
+                          <span className="adm-text">{entry.admin_email}</span>
+                        </td>
+                        <td data-label="Outcome">
+                          <span className="adm-text">
+                            {releaseOutcome(entry) ?? "—"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard
         title="Publish manifest"
         description="Updates the version gate served to installed apps on launch. Changes take effect immediately after publish."
         actions={
@@ -517,7 +681,8 @@ export function ReleasesPanel({
             <div>
               <p className="adm-callout-title">Reaches real devices</p>
               <p className="adm-callout-desc">
-                Sends to active Android push tokens. Delivery cannot be recalled once sent. Review version and URL before confirming.
+                Sends to active Android push tokens. Delivery cannot be recalled
+                once sent. Review version and URL before confirming.
               </p>
             </div>
           </div>
@@ -587,7 +752,8 @@ export function ReleasesPanel({
               Send notification
             </Button>
             <p className="adm-form-note">
-              Prefilled from the current manifest when available. You’ll confirm before sending.
+              Prefilled from the current manifest when available. You’ll confirm
+              before sending.
             </p>
           </div>
         </div>
