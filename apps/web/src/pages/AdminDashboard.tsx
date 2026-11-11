@@ -147,6 +147,11 @@ export default function AdminDashboard() {
   const [usageOffset, setUsageOffset] = useState(0);
   const [health, setHealth] = useState<HealthRes | null>(null);
   const [audit, setAudit] = useState<AuditRow[]>([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditOffset, setAuditOffset] = useState(0);
+  const [auditQ, setAuditQ] = useState("");
+  const [auditAction, setAuditAction] = useState("");
+  const [auditDebouncedQ, setAuditDebouncedQ] = useState("");
   const [manifest, setManifest] = useState<Manifest | null>(null);
 
   const [publishing, setPublishing] = useState(false);
@@ -190,6 +195,11 @@ export default function AdminDashboard() {
     const timer = window.setTimeout(() => setDebouncedQ(q.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [q]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setAuditDebouncedQ(auditQ.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [auditQ]);
 
   useEffect(() => {
     const onHash = () => setTab(tabFromHash());
@@ -261,7 +271,19 @@ export default function AdminDashboard() {
           tab === "health" ? api<HealthRes>("/health", { signal }) : null;
         const auditRequest =
           tab === "audit"
-            ? api<{ entries?: AuditRow[] }>("/audit?limit=30", { signal })
+            ? api<{
+                entries?: AuditRow[];
+                total?: number;
+                offset?: number;
+                limit?: number;
+              }>(
+                `/audit?limit=30&offset=${auditOffset}${
+                  auditDebouncedQ
+                    ? `&q=${encodeURIComponent(auditDebouncedQ)}`
+                    : ""
+                }${auditAction ? `&action=${encodeURIComponent(auditAction)}` : ""}`,
+                { signal },
+              )
             : null;
         const manifestRequest =
           tab === "releases"
@@ -320,6 +342,7 @@ export default function AdminDashboard() {
 
         if (auditResult.status === "fulfilled" && auditResult.value) {
           setAudit(auditResult.value.entries ?? []);
+          setAuditTotal(auditResult.value.total ?? 0);
         }
 
         if (manifestResult.status === "fulfilled" && manifestResult.value) {
@@ -351,7 +374,19 @@ export default function AdminDashboard() {
         }
       }
     },
-    [debouncedQ, role, status, access, page, tab, usageOffset, usageUserId],
+    [
+      debouncedQ,
+      role,
+      status,
+      access,
+      page,
+      tab,
+      usageOffset,
+      usageUserId,
+      auditOffset,
+      auditDebouncedQ,
+      auditAction,
+    ],
   );
 
   const updateUserSearch = useCallback(
@@ -629,7 +664,26 @@ export default function AdminDashboard() {
 
         {tab === "health" && <HealthPanel health={health} loading={loading} />}
 
-        {tab === "audit" && <AuditPanel entries={audit} loading={loading} />}
+        {tab === "audit" && (
+          <AuditPanel
+            entries={audit}
+            total={auditTotal}
+            limit={30}
+            offset={auditOffset}
+            q={auditQ}
+            action={auditAction}
+            onQChange={(value) => {
+              setAuditQ(value);
+              setAuditOffset(0);
+            }}
+            onActionChange={(value) => {
+              setAuditAction(value);
+              setAuditOffset(0);
+            }}
+            onOffsetChange={setAuditOffset}
+            loading={loading || refreshing}
+          />
+        )}
 
         {tab === "releases" && (
           <ReleasesPanel

@@ -376,7 +376,7 @@ export function ReleasesPanel({
 
       <SectionCard
         title="Publish manifest"
-        description="Publishing updates the version gate for every installed app immediately."
+        description="Updates the version gate served to installed apps on launch. Changes take effect immediately after publish."
         actions={
           <Button
             variant="ghost"
@@ -387,7 +387,7 @@ export function ReleasesPanel({
             disabled={!dirty || publishing}
             icon={<RotateCcw size={14} />}
           >
-            Reset
+            Reset form
           </Button>
         }
       >
@@ -497,82 +497,99 @@ export function ReleasesPanel({
 
       <SectionCard
         title="Send update notification"
-        description="Push an update prompt to every active Android installation."
+        description="Push an update prompt to active Android installations via Expo."
+        actions={
+          manifest ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setNotifyForm(notifyFromManifest(manifest))}
+              disabled={notifying}
+            >
+              Use current manifest
+            </Button>
+          ) : undefined
+        }
       >
-        <div className="adm-callout adm-callout--warning">
-          <AlertTriangle size={18} aria-hidden="true" />
-          <div>
-            <p className="adm-callout-title">This reaches real devices</p>
-            <p className="adm-callout-desc">
-              The notification is delivered through Expo to all active Android
-              push tokens. It cannot be recalled once sent.
+        <div className="adm-stack" style={{ gap: 16 }}>
+          <div className="adm-callout adm-callout--warning">
+            <AlertTriangle size={18} aria-hidden="true" />
+            <div>
+              <p className="adm-callout-title">Reaches real devices</p>
+              <p className="adm-callout-desc">
+                Sends to active Android push tokens. Delivery cannot be recalled once sent. Review version and URL before confirming.
+              </p>
+            </div>
+          </div>
+
+          <div className="adm-form-grid">
+            <TextField
+              id="notify-version"
+              label="Version"
+              value={notifyForm.version}
+              onChange={(value) => updateNotify("version", value)}
+              placeholder="1.4.0"
+              hint="Version string shown in the notification payload."
+              error={notifyErrors.version}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <TextField
+              id="notify-code"
+              label="Version code"
+              value={notifyForm.versionCode}
+              onChange={(value) => updateNotify("versionCode", value)}
+              placeholder="10400"
+              hint="Optional; include if clients use it for comparison."
+              error={notifyErrors.versionCode}
+              optional
+              inputMode="numeric"
+              autoComplete="off"
+            />
+            <div className="adm-form-span">
+              <TextField
+                id="notify-url"
+                label="Download URL"
+                value={notifyForm.downloadUrl}
+                onChange={(value) => updateNotify("downloadUrl", value)}
+                placeholder="https://…/ekwe-1.4.0.apk"
+                hint="Public https:// APK URL included in the update prompt."
+                error={notifyErrors.downloadUrl}
+                autoComplete="off"
+                spellCheck={false}
+                className="adm-mono"
+              />
+            </div>
+            <div className="adm-form-span">
+              <TextField
+                id="notify-checksum"
+                label="SHA-256 checksum"
+                value={notifyForm.checksumSha256}
+                onChange={(value) => updateNotify("checksumSha256", value)}
+                placeholder="64 hex characters"
+                hint="Optional integrity hash for the APK."
+                error={notifyErrors.checksumSha256}
+                optional
+                autoComplete="off"
+                spellCheck={false}
+                className="adm-mono"
+              />
+            </div>
+          </div>
+
+          <div className="adm-form-actions">
+            <Button
+              variant="secondary"
+              onClick={sendNotify}
+              loading={notifying}
+              icon={<Send size={15} />}
+            >
+              Send notification
+            </Button>
+            <p className="adm-form-note">
+              Prefilled from the current manifest when available. You’ll confirm before sending.
             </p>
           </div>
-        </div>
-
-        <div className="adm-form-grid">
-          <TextField
-            id="notify-version"
-            label="Version"
-            value={notifyForm.version}
-            onChange={(value) => updateNotify("version", value)}
-            placeholder="1.4.0"
-            error={notifyErrors.version}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <TextField
-            id="notify-code"
-            label="Version code"
-            value={notifyForm.versionCode}
-            onChange={(value) => updateNotify("versionCode", value)}
-            placeholder="10400"
-            error={notifyErrors.versionCode}
-            optional
-            inputMode="numeric"
-            autoComplete="off"
-          />
-          <div className="adm-form-span">
-            <TextField
-              id="notify-url"
-              label="Download URL"
-              value={notifyForm.downloadUrl}
-              onChange={(value) => updateNotify("downloadUrl", value)}
-              placeholder="https://…/ekwe-1.4.0.apk"
-              error={notifyErrors.downloadUrl}
-              autoComplete="off"
-              spellCheck={false}
-              className="adm-mono"
-            />
-          </div>
-          <div className="adm-form-span">
-            <TextField
-              id="notify-checksum"
-              label="SHA-256 checksum"
-              value={notifyForm.checksumSha256}
-              onChange={(value) => updateNotify("checksumSha256", value)}
-              placeholder="64 hex characters"
-              error={notifyErrors.checksumSha256}
-              optional
-              autoComplete="off"
-              spellCheck={false}
-              className="adm-mono"
-            />
-          </div>
-        </div>
-
-        <div className="adm-form-actions">
-          <Button
-            variant="secondary"
-            onClick={sendNotify}
-            loading={notifying}
-            icon={<Send size={15} />}
-          >
-            Send notification
-          </Button>
-          <p className="adm-form-note">
-            Prefilled from the current manifest. Edit before sending if needed.
-          </p>
         </div>
       </SectionCard>
     </div>
