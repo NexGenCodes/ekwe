@@ -145,9 +145,10 @@ export function UsagePanel({
         title="Usage overview"
         description="Scope recorded usage by account. Scope totals and aggregates reflect the active filter; rows below are paginated."
       >
-        <div className="adm-stack" style={{ gap: 12 }}>
+        <div className="adm-stack" style={{ gap: 12, padding: "0 20px 20px" }}>
           <form
             className="adm-toolbar"
+            style={{ margin: 0 }}
             onSubmit={(e) => {
               e.preventDefault();
               applyFilter();

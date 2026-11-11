@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
-  BellRing,
   Download,
   ExternalLink,
   FileText,
@@ -441,47 +440,32 @@ export function ReleasesPanel({
         description="Estimated notification reach from active device tokens and recent audited release actions."
       >
         <div className="adm-stack" style={{ gap: 16 }}>
-          <div className="adm-metric-grid">
+          <div
+            className="adm-stats"
+            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
+          >
             <div className="adm-metric">
-              <span className="adm-metric-icon" aria-hidden="true">
-                <BellRing size={18} />
-              </span>
-              <span className="adm-metric-body">
-                <span className="adm-metric-label">
-                  Active Android recipients
-                </span>
-                <strong className="adm-metric-value">
-                  {push ? fmtNumber(push.androidActive) : "—"}
-                </strong>
-                <span className="adm-metric-hint">
-                  Estimated devices that would receive an update notification
-                  now.
-                </span>
+              <span className="adm-metric-label">Active Android recipients</span>
+              <strong>{push ? fmtNumber(push.androidActive) : "—"}</strong>
+              <span className="adm-metric-sub">
+                Estimated devices that would receive an update notification now.
               </span>
             </div>
             <div className="adm-metric">
-              <span className="adm-metric-icon" aria-hidden="true">
-                <Smartphone size={18} />
-              </span>
-              <span className="adm-metric-body">
-                <span className="adm-metric-label">Active push tokens</span>
-                <strong className="adm-metric-value">
-                  {push ? fmtNumber(push.active) : "—"}
-                </strong>
-                <span className="adm-metric-hint">
-                  All platforms · {push ? fmtNumber(push.total) : "—"} total
-                  registered
-                </span>
+              <span className="adm-metric-label">Active push tokens</span>
+              <strong>{push ? fmtNumber(push.active) : "—"}</strong>
+              <span className="adm-metric-sub">
+                All platforms · {push ? fmtNumber(push.total) : "—"} total registered
               </span>
             </div>
           </div>
 
           <div className="adm-stack" style={{ gap: 8 }}>
-            <p className="adm-kv-label">
+            <p className="adm-kv-label" style={{ margin: 0 }}>
               <History size={13} aria-hidden="true" /> Recent release actions
             </p>
             {actions.length === 0 ? (
-              <p className="adm-muted">
+              <p className="adm-muted" style={{ margin: 0 }}>
                 No publish or notify actions recorded yet.
               </p>
             ) : (
@@ -675,8 +659,8 @@ export function ReleasesPanel({
           ) : undefined
         }
       >
-        <div className="adm-stack" style={{ gap: 16 }}>
-          <div className="adm-callout adm-callout--warning">
+        <div style={{ padding: "20px 20px 0" }}>
+          <div className="adm-callout adm-callout--warning" style={{ margin: 0 }}>
             <AlertTriangle size={18} aria-hidden="true" />
             <div>
               <p className="adm-callout-title">Reaches real devices</p>
@@ -686,76 +670,76 @@ export function ReleasesPanel({
               </p>
             </div>
           </div>
+        </div>
 
-          <div className="adm-form-grid">
+        <div className="adm-form-grid">
+          <TextField
+            id="notify-version"
+            label="Version"
+            value={notifyForm.version}
+            onChange={(value) => updateNotify("version", value)}
+            placeholder="1.4.0"
+            hint="Version string shown in the notification payload."
+            error={notifyErrors.version}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <TextField
+            id="notify-code"
+            label="Version code"
+            value={notifyForm.versionCode}
+            onChange={(value) => updateNotify("versionCode", value)}
+            placeholder="10400"
+            hint="Optional; include if clients use it for comparison."
+            error={notifyErrors.versionCode}
+            optional
+            inputMode="numeric"
+            autoComplete="off"
+          />
+          <div className="adm-form-span">
             <TextField
-              id="notify-version"
-              label="Version"
-              value={notifyForm.version}
-              onChange={(value) => updateNotify("version", value)}
-              placeholder="1.4.0"
-              hint="Version string shown in the notification payload."
-              error={notifyErrors.version}
+              id="notify-url"
+              label="Download URL"
+              value={notifyForm.downloadUrl}
+              onChange={(value) => updateNotify("downloadUrl", value)}
+              placeholder="https://…/ekwe-1.4.0.apk"
+              hint="Public https:// APK URL included in the update prompt."
+              error={notifyErrors.downloadUrl}
               autoComplete="off"
               spellCheck={false}
+              className="adm-mono"
             />
+          </div>
+          <div className="adm-form-span">
             <TextField
-              id="notify-code"
-              label="Version code"
-              value={notifyForm.versionCode}
-              onChange={(value) => updateNotify("versionCode", value)}
-              placeholder="10400"
-              hint="Optional; include if clients use it for comparison."
-              error={notifyErrors.versionCode}
+              id="notify-checksum"
+              label="SHA-256 checksum"
+              value={notifyForm.checksumSha256}
+              onChange={(value) => updateNotify("checksumSha256", value)}
+              placeholder="64 hex characters"
+              hint="Optional integrity hash for the APK."
+              error={notifyErrors.checksumSha256}
               optional
-              inputMode="numeric"
               autoComplete="off"
+              spellCheck={false}
+              className="adm-mono"
             />
-            <div className="adm-form-span">
-              <TextField
-                id="notify-url"
-                label="Download URL"
-                value={notifyForm.downloadUrl}
-                onChange={(value) => updateNotify("downloadUrl", value)}
-                placeholder="https://…/ekwe-1.4.0.apk"
-                hint="Public https:// APK URL included in the update prompt."
-                error={notifyErrors.downloadUrl}
-                autoComplete="off"
-                spellCheck={false}
-                className="adm-mono"
-              />
-            </div>
-            <div className="adm-form-span">
-              <TextField
-                id="notify-checksum"
-                label="SHA-256 checksum"
-                value={notifyForm.checksumSha256}
-                onChange={(value) => updateNotify("checksumSha256", value)}
-                placeholder="64 hex characters"
-                hint="Optional integrity hash for the APK."
-                error={notifyErrors.checksumSha256}
-                optional
-                autoComplete="off"
-                spellCheck={false}
-                className="adm-mono"
-              />
-            </div>
           </div>
+        </div>
 
-          <div className="adm-form-actions">
-            <Button
-              variant="secondary"
-              onClick={sendNotify}
-              loading={notifying}
-              icon={<Send size={15} />}
-            >
-              Send notification
-            </Button>
-            <p className="adm-form-note">
-              Prefilled from the current manifest when available. You’ll confirm
-              before sending.
-            </p>
-          </div>
+        <div className="adm-form-actions">
+          <Button
+            variant="secondary"
+            onClick={sendNotify}
+            loading={notifying}
+            icon={<Send size={15} />}
+          >
+            Send notification
+          </Button>
+          <p className="adm-form-note">
+            Prefilled from the current manifest when available. You’ll confirm
+            before sending.
+          </p>
         </div>
       </SectionCard>
     </div>
