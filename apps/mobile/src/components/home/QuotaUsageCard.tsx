@@ -3,6 +3,7 @@ import RefreshCw from "lucide-react-native/icons/refresh-cw";
 import { useRouter } from "expo-router";
 import React, { useMemo, useCallback } from "react";
 import { USAGE_METER_META } from "@ekwe/shared";
+import type { UsageSnapshot } from "@ekwe/shared";
 
 import { Box, Text, Spinner, Pressable } from "@/components/ui";
 import { Card } from "@/components/Card";
@@ -44,15 +45,42 @@ function formatUsageNumber(value: number): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: 1 });
 }
 
+function usagePeriod(data: UsageSnapshot): "daily" | "monthly" {
+  if (data.period === "daily" || data.period === "monthly") return data.period;
+  return data.resetsAt === data.monthResetsAt ? "monthly" : "daily";
+}
+
+function resetsLabel(resetsAt: number, period: "daily" | "monthly"): string {
+  const diff = resetsAt - Date.now();
+  if (period === "daily") {
+    if (diff <= 0) return "Resets soon";
+    return "Resets at midnight UTC";
+  }
+  if (diff <= 0) return "Resets soon";
+  return `Resets ${new Date(resetsAt).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  })} (UTC)`;
+}
+
 function PoolRow({
   label,
   unit,
   used,
   total,
   remaining,
-}: PoolRowProps): React.ReactElement {
+  period,
+}: PoolRowProps & { period: "daily" | "monthly" }): React.ReactElement {
   const { color } = useTheme();
   const meter = computeMeterState(used, total);
+  const unavailable = total === 0;
+  const statusText =
+    total === null
+      ? "Unlimited"
+      : unavailable
+        ? "Not available on this plan"
+        : `${formatUsageNumber(used)} / ${formatUsageNumber(total)} ${unit}`;
 
   return (
     <Box style={styles.poolRow}>
@@ -69,13 +97,11 @@ function PoolRow({
           numberOfLines={1}
           style={[styles.poolValue, { color: color.muted }]}
         >
-          {total === null
-            ? "Unlimited"
-            : `${formatUsageNumber(used)} / ${formatUsageNumber(total)} ${unit}`}
+          {statusText}
         </Text>
       </Box>
 
-      {meter !== null ? (
+      {meter !== null && !unavailable ? (
         <Box
           style={[
             styles.track,
@@ -83,41 +109,28 @@ function PoolRow({
           ]}
           accessibilityRole="progressbar"
           accessibilityValue={{ min: 0, max: total ?? 0, now: used }}
-          accessibilityLabel={`${label}: ${used} of ${total} used this month, ${formatUsageNumber(
-            remaining ?? 0,
-          )} ${unit} left`}
+          accessibilityLabel={`${label}: ${formatUsageNumber(used)} of ${formatUsageNumber(total ?? 0)} ${unit} used this ${period === "daily" ? "day" : "month"}, ${formatUsageNumber(remaining ?? 0)} ${unit} left`}
         >
           <Box
             style={[
               styles.fill,
               {
-                width: `${Math.max(meter.fraction * 100, 2)}%`,
+                width: `${Math.max(meter.fraction * 100, meter.fraction > 0 ? 2 : 0)}%`,
                 backgroundColor: color[meter.tone],
               },
             ]}
           />
         </Box>
-      ) : (
+      ) : !unavailable ? (
         <Box
           style={[
             styles.track,
             { backgroundColor: withAlpha(color.muted, 0.18) },
           ]}
         />
-      )}
+      ) : null}
     </Box>
   );
-}
-
-function resetsLabel(resetsAt: number): string {
-  const diff = resetsAt - Date.now();
-  if (diff <= 0) return "Resets at midnight";
-  // If resets within 24h, show "Resets at midnight"
-  if (diff < 86_400_000) return "Resets at midnight";
-  return `Resets ${new Date(resetsAt).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  })}`;
 }
 
 export function QuotaUsageCard(): React.ReactElement {
@@ -130,10 +143,12 @@ export function QuotaUsageCard(): React.ReactElement {
     invalidateUsage();
   }, []);
 
+  const period = data ? usagePeriod(data) : "daily";
+
   const { headline, showUpgrade } = useMemo(() => {
     if (isError || !data) return { headline: null, showUpgrade: false };
 
-    const meters = data.meters;
+    const meters = data.meters.filter((p) => p.total !== 0);
     const anyExhausted = meters.some(
       (p) => p.total !== null && p.total > 0 && p.remaining === 0,
     );
@@ -148,16 +163,28 @@ export function QuotaUsageCard(): React.ReactElement {
 
     if (anyExhausted)
       return {
-        headline: { text: "Daily limit reached", tone: "error" as const },
+        headline: {
+          text:
+            period === "daily"
+              ? "Daily limit reached"
+              : "Monthly limit reached",
+          tone: "error" as const,
+        },
         showUpgrade: true,
       };
     if (anyNear)
       return {
-        headline: { text: "Almost out for today", tone: "warning" as const },
+        headline: {
+          text:
+            period === "daily"
+              ? "Almost out for today"
+              : "Almost out this month",
+          tone: "warning" as const,
+        },
         showUpgrade: true,
       };
     return { headline: null, showUpgrade: false };
-  }, [data, isError]);
+  }, [data, isError, period]);
 
   return (
     <Card padding="lg">
@@ -174,7 +201,7 @@ export function QuotaUsageCard(): React.ReactElement {
             variant="body"
             style={{ color: color.foreground, fontWeight: "600" }}
           >
-            Today's usage
+            {period === "daily" ? "Today's usage" : "This month's usage"}
           </Text>
         </Box>
 
@@ -202,7 +229,7 @@ export function QuotaUsageCard(): React.ReactElement {
             </Text>
           ) : data ? (
             <Text variant="caption" style={{ color: color.muted }}>
-              {resetsLabel(data.resetsAt)}
+              {resetsLabel(data.resetsAt, period)}
             </Text>
           ) : null}
 
@@ -287,8 +314,6 @@ export function QuotaUsageCard(): React.ReactElement {
       ) : data ? (
         <Box style={styles.pools}>
           {data.meters.map((meter) => {
-            if (meter.total === 0) return null;
-
             const displayMeta = USAGE_METER_META.find(
               (meta) => meta.id === meter.id,
             );
@@ -301,6 +326,7 @@ export function QuotaUsageCard(): React.ReactElement {
                 used={meter.used}
                 total={meter.total}
                 remaining={meter.remaining}
+                period={period}
               />
             );
           })}
@@ -326,7 +352,7 @@ export function QuotaUsageCard(): React.ReactElement {
             variant="bodySmall"
             style={{ color: color.brand, fontWeight: "600" }}
           >
-            Need more today?
+            {period === "daily" ? "Need more today?" : "Need higher limits?"}
           </Text>
           <Box style={[styles.upgradePill, { backgroundColor: color.brand }]}>
             <Text

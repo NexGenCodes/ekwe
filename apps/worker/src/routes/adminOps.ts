@@ -454,22 +454,45 @@ export async function handleUsage(c: Context<AppEnv>) {
   const userId = c.req.query("userId")?.trim() ?? "";
   const limit = Math.min(
     Math.max(parseInt(c.req.query("limit") ?? "50", 10) || 50, 1),
-    100,
+    200,
   );
+  const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
   const where = userId ? "WHERE user_id = ?" : "";
-  const daily = await env.DB.prepare(
-    `SELECT user_id, day, translate_count, transcribe_count, transcribe_ms, speech_chars, stream_count, stream_ms, ai_credits FROM user_daily_usage ${where} ORDER BY day DESC LIMIT ?`,
-  )
-    .bind(...(userId ? [userId] : []), limit)
-    .all()
-    .catch(() => ({ results: [] }));
-  const monthly = await env.DB.prepare(
-    `SELECT user_id, month, translate_count, transcribe_count, transcribe_ms, speech_chars, stream_count, stream_ms, ai_credits FROM user_monthly_usage ${where} ORDER BY month DESC LIMIT ?`,
-  )
-    .bind(...(userId ? [userId] : []), limit)
-    .all()
-    .catch(() => ({ results: [] }));
-  return c.json({ daily: daily.results ?? [], monthly: monthly.results ?? [] });
+  const binds = userId ? [userId] : [];
+
+  const [daily, monthly, dailyCount, monthlyCount] = await Promise.all([
+    env.DB.prepare(
+      `SELECT user_id, day, translate_count, transcribe_count, transcribe_ms, speech_chars, stream_count, stream_ms, ai_credits
+         FROM user_daily_usage ${where} ORDER BY day DESC, user_id ASC LIMIT ? OFFSET ?`,
+    )
+      .bind(...binds, limit, offset)
+      .all()
+      .catch(() => ({ results: [] })),
+    env.DB.prepare(
+      `SELECT user_id, month, translate_count, transcribe_count, transcribe_ms, speech_chars, stream_count, stream_ms, ai_credits
+         FROM user_monthly_usage ${where} ORDER BY month DESC, user_id ASC LIMIT ? OFFSET ?`,
+    )
+      .bind(...binds, limit, offset)
+      .all()
+      .catch(() => ({ results: [] })),
+    env.DB.prepare(`SELECT COUNT(*) AS n FROM user_daily_usage ${where}`)
+      .bind(...binds)
+      .first<{ n: number }>()
+      .catch(() => ({ n: 0 })),
+    env.DB.prepare(`SELECT COUNT(*) AS n FROM user_monthly_usage ${where}`)
+      .bind(...binds)
+      .first<{ n: number }>()
+      .catch(() => ({ n: 0 })),
+  ]);
+
+  return c.json({
+    daily: daily.results ?? [],
+    monthly: monthly.results ?? [],
+    dailyTotal: dailyCount?.n ?? 0,
+    monthlyTotal: monthlyCount?.n ?? 0,
+    limit,
+    offset,
+  });
 }
 
 export async function handleAdminHealth(c: Context<AppEnv>) {

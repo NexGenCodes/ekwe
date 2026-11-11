@@ -128,9 +128,13 @@ async function increment(
     logger.error("[usage] increment failed", {
       error: describeError(error),
       type,
+      userId,
+      charCount,
+      durationMs,
+      credits,
       recorded: false,
     });
-    await recordUserEvent(env, "usage", userId, "fail", type);
+    await recordUserEvent(env, "usage", userId, "fail", type).catch(() => {});
   }
 }
 
@@ -230,6 +234,7 @@ export async function fetchUsageSnapshot(
       resetsAt: isFree ? nextMidnight : monthResetsAt,
       month,
       monthResetsAt,
+      period: isFree ? "daily" : "monthly",
       meters: USAGE_METER_META.map(({ id, label, unit }) => {
         const total = totals[id];
         return {

@@ -153,6 +153,8 @@ export const usageSnapshotSchema = z.object({
   resetsAt: z.number(),
   month: z.string(),
   monthResetsAt: z.number(),
+  /** Which quota window `meters`/`resetsAt` describe. */
+  period: z.enum(["daily", "monthly"]).optional(),
   meters: z.array(usageMeterSchema),
 });
 export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>;
