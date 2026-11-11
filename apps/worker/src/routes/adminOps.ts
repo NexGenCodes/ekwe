@@ -535,38 +535,72 @@ export async function handleUsage(c: Context<AppEnv>) {
 
 export async function handleAdminHealth(c: Context<AppEnv>) {
   const env = c.env;
-  const names = Object.keys(PROVIDER_MODULES);
-  const degradedResults = await Promise.all(
-    names.map(async (name) => ({
-      name,
-      degraded: await isProviderDegraded(env, name).catch(() => false),
-    })),
-  );
-  const degraded = degradedResults.filter((r) => r.degraded).map((r) => r.name);
-  let d1 = "ok";
-  let kv = "ok";
-  try {
-    await env.DB.prepare("SELECT 1").first();
-  } catch {
-    d1 = "error";
-  }
-  try {
-    await env.EKWE_KV.get("health:probe", { type: "text" });
-  } catch {
-    kv = "error";
-  }
-  const pushActive = await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM push_tokens WHERE is_active = 1",
-  )
-    .first()
-    .then((r) => (r as unknown as { n: number } | null)?.n ?? 0)
-    .catch(() => 0);
+  const names = Object.keys(PROVIDER_MODULES).sort();
+  const [providerResults, d1Result, kvResult, pushStats] = await Promise.all([
+    Promise.all(
+      names.map(async (name) => ({
+        name,
+        degraded: await isProviderDegraded(env, name).catch(() => false),
+      })),
+    ),
+    (async () => {
+      const started = Date.now();
+      try {
+        await env.DB.prepare("SELECT 1").first();
+        return { status: "ok" as const, latencyMs: Date.now() - started };
+      } catch {
+        return { status: "error" as const, latencyMs: Date.now() - started };
+      }
+    })(),
+    (async () => {
+      const started = Date.now();
+      try {
+        await env.EKWE_KV.get("health:probe", { type: "text" });
+        return { status: "ok" as const, latencyMs: Date.now() - started };
+      } catch {
+        return { status: "error" as const, latencyMs: Date.now() - started };
+      }
+    })(),
+    env.DB.prepare(
+      `SELECT
+         SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active,
+         SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) AS inactive,
+         COUNT(*) AS total
+       FROM push_tokens`,
+    )
+      .first<{ active: number; inactive: number; total: number }>()
+      .catch(() => ({ active: 0, inactive: 0, total: 0 })),
+  ]);
+
+  const providers = providerResults.map((r) => ({
+    name: r.name,
+    status: r.degraded ? "degraded" : "healthy",
+  }));
+  const degraded = providers
+    .filter((p) => p.status === "degraded")
+    .map((p) => p.name);
+  const pushActive = Number(pushStats?.active ?? 0);
+  const pushInactive = Number(pushStats?.inactive ?? 0);
+  const pushTotal = Number(pushStats?.total ?? 0);
+  const systemHealthy =
+    degraded.length === 0 &&
+    d1Result.status === "ok" &&
+    kvResult.status === "ok";
+
   return c.json({
-    status: "ok",
+    status: systemHealthy ? "ok" : "degraded",
     timestamp: Date.now(),
     degradedProviders: degraded,
-    bindings: { d1, kv },
+    providers,
+    providerSummary: {
+      total: providers.length,
+      healthy: providers.length - degraded.length,
+      degraded: degraded.length,
+    },
+    bindings: { d1: d1Result.status, kv: kvResult.status },
+    checks: { d1Ms: d1Result.latencyMs, kvMs: kvResult.latencyMs },
     pushActive,
+    push: { active: pushActive, inactive: pushInactive, total: pushTotal },
   });
 }
 

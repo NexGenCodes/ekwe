@@ -258,12 +258,21 @@ export interface AdminUsageResponse {
   userId?: string | null;
 }
 
+export interface HealthProvider {
+  name: string;
+  status: "healthy" | "degraded" | string;
+}
+
 export interface HealthRes {
   status: string;
   timestamp: number;
   degradedProviders: string[];
+  providers?: HealthProvider[];
+  providerSummary?: { total: number; healthy: number; degraded: number };
   bindings: { d1: string; kv: string };
+  checks?: { d1Ms: number; kvMs: number };
   pushActive: number;
+  push?: { active: number; inactive: number; total: number };
 }
 
 export interface AuditRow {
